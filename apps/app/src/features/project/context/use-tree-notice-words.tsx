@@ -1,4 +1,4 @@
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
@@ -317,19 +317,6 @@ function SaidWord({
           }
         />
       );
-    case "partial": {
-      const stayed = plural(said.textLeft, {
-        one: "# text change stayed: it was edited since.",
-        other: "# text changes stayed: they were edited since.",
-      });
-      return (
-        <RowWord
-          tone="warning"
-          word={<Trans>Partly undone</Trans>}
-          sentence={`${t`Undid applying ${name}.`} ${stayed}`}
-        />
-      );
-    }
     case "failed":
       return (
         <RowWord

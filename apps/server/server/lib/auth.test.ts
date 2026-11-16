@@ -104,19 +104,16 @@ function createTestProjectBootstrap(): {
   projects: ProjectBootstrapRepository;
   bootstrapCalls: number;
   readinessChecks: number;
-  personalProjectId: ProjectId | null;
 } {
-  let personalProjectId: ProjectId | null = null;
   let bootstrapCalls = 0;
   let readinessChecks = 0;
   let ready = false;
 
   async function ensureDefaultBootstrap() {
     bootstrapCalls += 1;
-    personalProjectId = randomUUID() as ProjectId;
     ready = true;
     return {
-      projectId: personalProjectId,
+      projectId: randomUUID() as ProjectId,
       documentId: randomUUID() as never,
       manuscriptSourceId: randomUUID() as never,
       uri: "manuscript://chapter-1.md" as never,
@@ -124,9 +121,6 @@ function createTestProjectBootstrap(): {
   }
 
   return {
-    get personalProjectId() {
-      return personalProjectId;
-    },
     get bootstrapCalls() {
       return bootstrapCalls;
     },

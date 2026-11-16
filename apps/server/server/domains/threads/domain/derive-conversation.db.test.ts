@@ -59,7 +59,6 @@ else
         userId: ids.userId,
         name: "Work Lifecycle Race",
         slug: "work-lifecycle-race",
-        isPersonal: false,
         systemPrompt: null,
         settings: {},
         lastActivityAt: new Date().toISOString(),

@@ -33,6 +33,7 @@ import {
   statusOf,
   usePackageSaves,
 } from "./package-save";
+import { UndoSave } from "./UndoSave";
 
 /**
  * `package` (a level's heading, an import's row, a removed import's line): Save alone says there
@@ -58,13 +59,15 @@ export function PackageSave({
 }) {
   const saves = usePackageSaves(projectId);
   const word = saves.wordOf(pkg, status);
+  const saveId = status?.undoable?.saveId;
+  const undo = saveId ? <UndoSave projectId={projectId} pkg={pkg} saveId={saveId} /> : null;
   const save = status ? () => void saves.save([status]) : undefined;
   const content = word ? (
     <Word projectId={projectId} pkg={pkg} word={word} onSave={save} look={look} />
   ) : status && status.state !== "saved" ? (
     <StateAndSave projectId={projectId} pkg={pkg} status={status} look={look} onSave={save} />
   ) : null;
-  if (!content) return null;
+  if (!content && !undo) return null;
   const counted =
     look === "package"
       ? word?.kind !== "saved"
@@ -85,6 +88,7 @@ export function PackageSave({
       {before}
       {changes}
       {content}
+      {undo}
     </span>
   );
 }
@@ -170,13 +174,10 @@ function Word({
   onSave: (() => void) | undefined;
   look: PackageSaveLook;
 }) {
-  const saves = usePackageSaves(projectId);
   const files = useAgentFiles(projectId);
   const label = packageLabel(pkg);
   switch (word.kind) {
     case "saved": {
-      const { saveId } = word.outcome;
-      const undoState = saveId ? saves.undoOf(saveId) : undefined;
       const out = outOfUseAfterSave(files?.files ?? [], files?.packages ?? [], pkg);
       // Nothing new was saved: the edits kept out of use are all the Save has to say.
       const nothingNew = word.outcome.outcome === "unchanged";
@@ -196,20 +197,6 @@ function Word({
               notes={savedNotes(word) ?? []}
             />
           ) : null}
-          {nothingNew ? null : (
-            <RowWord
-              tone={undoState === "failed" ? "warning" : "action"}
-              word={<Trans>Undo</Trans>}
-              label={t`Undo save of ${label}`}
-              sentence={
-                undoState === "failed"
-                  ? t`Couldn't reach the server. Undo tries again.`
-                  : t`Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays.`
-              }
-              pending={!saveId || undoState === "pending"}
-              onAction={saveId ? () => void saves.undo(pkg, saveId) : undefined}
-            />
-          )}
         </>
       );
     }

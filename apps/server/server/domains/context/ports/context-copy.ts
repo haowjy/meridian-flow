@@ -64,9 +64,9 @@ export type CopySourceEntry = CopySourceFolder | CopySourceFile;
 
 /** Content for one copied document, bound for the address its copy lands at. */
 export interface CopiedContent {
-  /** Bound blocks; null for a source with no text, whose copy is empty. */
-  content: BoundWrite | null;
-  copiedFrom: CopiedFrom;
+  content?: BoundWrite | null;
+  state: Uint8Array | null;
+  copiedFrom?: CopiedFrom;
 }
 
 /** Every identity one Copy created; roots first, then each root's subtree in source order. */

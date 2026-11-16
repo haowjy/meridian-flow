@@ -34,28 +34,19 @@ function specOnly<T extends NodeSpec | MarkSpec>(spec: T): Omit<T, "parseDOM" | 
   return structural as Omit<T, "parseDOM" | "toDOM">;
 }
 
-/** Block alignment is a wire-level Layout wrapper, not a schema node. */
-const layoutAlignAttr = {
-  default: null,
-  validate(value: unknown) {
-    if (value !== null && value !== "center" && value !== "right") {
-      throw new RangeError('align must be null, "center", or "right"');
-    }
-  },
-};
+/**
+ * Block alignment is a wire-level Layout wrapper, not a schema node. No `validate` on this or
+ * `level`: the binding deletes a Yjs element the schema cannot build (prosemirror-model runs
+ * `validate` inside `create`), so a bad value must read as itself and fail where Flow writes
+ * (the codec, paste parsers), never where it reads.
+ */
+const layoutAlignAttr = { default: null };
 
 /** The heading levels a paragraph's `level` may hold; every surface that offers a level reads this. */
 export const HEADING_LEVELS = [1, 2, 3, 4, 5, 6] as const;
 export type HeadingLevel = (typeof HEADING_LEVELS)[number];
 
-const paragraphLevelAttr = {
-  default: null,
-  validate(value: unknown) {
-    if (value !== null && !HEADING_LEVELS.includes(value as HeadingLevel)) {
-      throw new RangeError(`level must be null or one of ${HEADING_LEVELS.join(", ")}`);
-    }
-  },
-};
+const paragraphLevelAttr = { default: null };
 
 /**
  * Where a block sits in its quotes and lists (`nest`, in `nesting.ts`, reads them). No

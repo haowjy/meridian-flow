@@ -10,6 +10,7 @@ import {
 } from "@/client/project-shell/store";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { useAccountId, useOptionalDraftOnlyPresentations } from "./context/account-feature-context";
 
@@ -90,6 +91,7 @@ export function useScopeDraftOwner(
   const { workId } = useWorkScope(projectId);
   const { works, deleted, noWork } = useWorks(projectId);
   const thread = useDisplayedThread(projectId, chatThreadId);
+  const pendingCreation = useIsThreadPendingCreation(chatThreadId);
   const snapshot = noWork ? { works: works ?? [], noWork } : null;
   // A deleted Work stays the pick until it is purged, as the scope keeps it.
   const picked =
@@ -97,7 +99,8 @@ export function useScopeDraftOwner(
       ? (workFromSnapshot(snapshot, workId) ?? deleted.find((work) => work.id === workId) ?? null)
       : null;
   const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
-  const chatKey = picked ? "" : chatOwnerKey(chatWork, thread?.rootThreadId ?? null);
+  const chatKey =
+    picked || pendingCreation ? "" : chatOwnerKey(chatWork, thread?.rootThreadId ?? null);
   return useMemo(
     () =>
       picked

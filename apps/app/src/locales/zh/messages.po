@@ -195,8 +195,8 @@ msgstr ""
 
 #. placeholder {0}: said.textLeft
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
-msgstr ""
+#~ msgid "{0, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
+#~ msgstr ""
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
@@ -1143,6 +1143,10 @@ msgstr ""
 msgid "A folder named {name} already exists in this location."
 msgstr ""
 
+#: src/features/agents/UndoSave.tsx
+msgid "A later Save is in use. Nothing changed."
+msgstr ""
+
 #: src/components/app/AppStatus.tsx
 msgid "A new version of Meridian is ready."
 msgstr ""
@@ -1594,6 +1598,10 @@ msgstr ""
 
 #: src/features/agents/PackageSave.tsx
 msgid "Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved."
+msgstr ""
+
+#: src/features/agents/UndoSave.tsx
+msgid "Back to the previous saved version. Your later edits are kept."
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -2679,8 +2687,7 @@ msgstr ""
 msgid "Couldn't reach the server. Check your connection."
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Couldn't reach the server. Undo tries again."
 msgstr ""
 
@@ -5259,8 +5266,8 @@ msgid "Partly restored"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Partly undone"
-msgstr ""
+#~ msgid "Partly undone"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
@@ -7506,21 +7513,24 @@ msgstr ""
 #~ msgid "Unavailable:"
 #~ msgstr ""
 
+#: src/features/agents/UndoSave.tsx
+msgid "Unchanged"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undid applying {name}."
-msgstr ""
+#~ msgid "Undid applying {name}."
+#~ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undid change to Work {0}."
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
@@ -7557,7 +7567,7 @@ msgstr ""
 msgid "Undo discard of {name}"
 msgstr ""
 
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays."
 msgstr ""
 
@@ -7585,8 +7595,7 @@ msgstr ""
 msgid "Undo restore of {title}"
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undo save of {label}"
 msgstr ""
 
@@ -7623,8 +7632,8 @@ msgstr ""
 msgid "Undoing…"
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undone"
 msgstr ""
 

@@ -6,6 +6,7 @@
 
 import { compareCatalogSiblings } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
+import type { DraftPeerShadowAccess } from "../../../collab/index.js";
 import { joinPath, renderFilename } from "../../context/paths.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
@@ -17,10 +18,13 @@ import type {
 import type { ContextDocument, ContextFolder } from "../../ports/context-document-store.js";
 import type { TreeView } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
-import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
+import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./copy-tree.js";
 import { AMBIGUOUS_PATH_FAULT } from "./placement.js";
 
-type ContextFsCopyDeps = CopyTreeDeps;
+type ContextFsCopyDeps = CopyTreeDeps & {
+  documentSync: CopyTreeDeps["documentSync"] &
+    Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
+};
 
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
   const { store, holderUri, folderUri } = deps;
@@ -115,6 +119,16 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
     sourceId: () => store.existingContextSourceId(),
     snapshotSource,
     planCopy: async (input) => Ok(await planCopyTree(deps, input)),
-    copyInto: (input) => insertCopiedTree(deps, input),
+    copyInto: async (input) =>
+      input.plan.dir.join("/") !== input.dir.join("/")
+        ? Ok({ kind: "replan" })
+        : insertPlannedTrees(
+            deps,
+            [input],
+            input.position,
+            input.branchId
+              ? { branchId: input.branchId, documentSync: deps.documentSync }
+              : undefined,
+          ),
   };
 }

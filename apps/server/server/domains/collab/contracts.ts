@@ -389,7 +389,7 @@ export type MarkdownDocumentStore = LinkBinder & {
     base: string;
     target: string;
     origin: DocumentWriteOrigin;
-  }): Promise<Result<void, SyncError>>;
+  }): Promise<Result<{ text: string; clashes: number; changed: boolean }, SyncError>>;
   /**
    * The live coordinator's lease on a document, taken outside any transaction (contract
    * §6.3 B3): a revealed document's first content is admitted under it.

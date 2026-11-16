@@ -47,7 +47,9 @@ export async function loadLiveProjectExportDocuments(db: Database, projectId: st
     .where(eq(documents.projectId, projectId as ProjectId));
   const addresses = new Map(
     (await loadDocumentAddresses(db, { ids: rows.map((row) => row.id) }))
-      .filter((row) => !row.deleted && row.projectId === projectId)
+      .filter(
+        (row) => !row.deleted && row.owner.kind === "project" && row.owner.projectId === projectId,
+      )
       .map((row) => [row.documentId, row]),
   );
   const live = rows.flatMap((row) => {

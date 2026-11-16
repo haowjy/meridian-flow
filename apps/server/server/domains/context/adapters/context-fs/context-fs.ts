@@ -16,6 +16,7 @@ import { compareCatalogSiblings, LIVE } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
   BoundWrite,
+  CollabDomain,
   DocumentCreationAggregate,
   DocumentLinkScopes,
   DraftPeerShadowAccess,
@@ -101,6 +102,7 @@ export interface ContextFSDeps {
   /** Settles ahead refs when a document arrives; absent in a composition without them. */
   arrivals?: DocumentArrivals;
   documentSync: MarkdownDocumentStore &
+    Pick<CollabDomain, "refreshDocumentProjection"> &
     Pick<
       DraftPeerShadowAccess,
       | "writeCreatedDraftContent"
@@ -573,7 +575,7 @@ export class ContextFS implements ContextSchemeAdapter {
       );
       return new Map<string, string>(texts.flatMap((read) => [...read]));
     };
-    // One source has one project association, including personal and Work sources; its
+    // One source has one owner, a project or (the home folder) an account; its
     // chapters' reads join this snapshot, so it is read in their thread.
     return this.links.within(
       {

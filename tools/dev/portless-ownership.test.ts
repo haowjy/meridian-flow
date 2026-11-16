@@ -108,6 +108,6 @@ describe("routeContractFailure", () => {
         body: "<html>foreign listener</html>",
         bodyMarker: "Meridian",
       }),
-    ).toMatch(/did not contain app marker/);
+    ).toMatch(/did not contain marker/);
   });
 });

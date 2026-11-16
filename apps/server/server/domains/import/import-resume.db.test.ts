@@ -16,6 +16,7 @@ import type { ImportSelection } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
+  documentBlockRooms,
   documentBlocks,
   documents,
   documentYjsHeads,
@@ -63,7 +64,7 @@ describe.runIf(enabled)("import resume", () => {
     const projectId = randomUUID();
     await db.insert(users).values(conformanceUserValues(userId, "import-resume"));
     await db.insert(projects).values({ id: projectId, userId, name: "Resume", slug: "resume" });
-    await provisionProjectSources(db, projectId, { personal: false });
+    await provisionProjectSources(db, projectId);
     const objects = createInMemoryObjectStore();
     const repository = createDrizzleImportRepository(db);
     const service = createImportUploadService({
@@ -192,7 +193,9 @@ describe.runIf(enabled)("import resume", () => {
     const blocks = await db
       .select({ id: documentBlocks.blockId })
       .from(documentBlocks)
-      .where(eq(documentBlocks.projectId, projectId as never));
+      .innerJoin(documentBlockRooms, eq(documentBlockRooms.roomId, documentBlocks.roomId))
+      .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
+      .where(eq(documents.projectId, projectId as never));
     expect(blocks.length).toBeGreaterThan(0);
   }, 60_000);
 

@@ -8,6 +8,7 @@ import { inArray } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDrizzleDocumentPropertiesReader } from "../domains/context/index.js";
 import { createProjectRepositoryForTest } from "../domains/projects/test-support/project-repository.js";
+import { accountUserSource } from "../test-support/branch-tree-seeds.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../test-support/drizzle-reset.js";
 import { drizzleFileAccess } from "../test-support/file-grants.js";
 import { treeSeeder } from "../test-support/tree-seed.js";
@@ -25,7 +26,6 @@ if (!RUN) {
     const STRANGER = "00000000-0000-4000-8000-000000000b02";
     const BOOK = "00000000-0000-4000-8000-000000000b11";
     const OTHER_BOOK = "00000000-0000-4000-8000-000000000b12";
-    const USER_FILES = "00000000-0000-4000-8000-000000000b13";
     const STRANGER_BOOK = "00000000-0000-4000-8000-000000000b14";
     const BOOK_DOC = "00000000-0000-4000-8000-000000000b21";
     const USER_DOC = "00000000-0000-4000-8000-000000000b22";
@@ -45,21 +45,13 @@ if (!RUN) {
       await db.insert(projects).values([
         { id: BOOK, userId: WRITER, name: "Book", slug: "book" },
         { id: OTHER_BOOK, userId: WRITER, name: "Other", slug: "other" },
-        {
-          id: USER_FILES,
-          userId: WRITER,
-          name: "User Files",
-          slug: "user-files",
-          isPersonal: true,
-        },
         { id: STRANGER_BOOK, userId: STRANGER, name: "Theirs", slug: "theirs" },
       ]);
       const sources = [
         { projectId: BOOK, slug: "manuscript" },
-        { projectId: USER_FILES, slug: "user" },
         { projectId: STRANGER_BOOK, slug: "manuscript" },
       ];
-      const sourceIds = await db
+      const [book, stranger] = await db
         .insert(contextSources)
         .values(
           sources.map(({ projectId, slug }) => ({
@@ -70,6 +62,7 @@ if (!RUN) {
           })),
         )
         .returning({ id: contextSources.id });
+      const sourceIds = [book, { id: await accountUserSource(db, WRITER as never) }, stranger];
       const properties = { format: "yaml", text: "aliases: [Gate]\ntags: [a, b]\n" };
       const seeder = treeSeeder(db);
       for (const [index, id] of [BOOK_DOC, USER_DOC, STRANGER_DOC].entries())
@@ -97,7 +90,7 @@ if (!RUN) {
       expect(result.entries.map((entry) => entry.key)).toEqual(["aliases", "tags"]);
     });
 
-    it("serves the writer's User file from an ordinary project, though it is stored in their personal one", async () => {
+    it("serves the writer's home-folder file from any of their projects", async () => {
       const { read } = await seed();
       const result = await read({ userId: WRITER, projectId: BOOK, documentId: USER_DOC });
       expect(result.aliases).toEqual(["Gate"]);

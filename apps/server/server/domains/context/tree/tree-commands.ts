@@ -254,7 +254,7 @@ function noteChanges(
   writtenUri: string,
 ) {
   const writtenLeaf = written.segments[written.segments.length - 1] ?? "";
-  const setters = projection.setters.get(node.id);
+  const history = projection.history.get(node.id);
   const nowName = node.displayName;
   const sameName =
     nowName === writtenLeaf ||
@@ -262,7 +262,7 @@ function noteChanges(
   if (!sameName)
     noteConcurrent(
       cx,
-      actorOfRecord(cx, setters?.label?.id),
+      actorOfRecord(cx, history?.label.at(-1)?.id),
       `renamed: ${writtenUri} → ${nowName}`,
     );
   const writtenParent = written.segments.slice(0, -1);
@@ -270,7 +270,7 @@ function noteChanges(
   if (writtenParent.join("/") !== nowParent.join("/"))
     noteConcurrent(
       cx,
-      actorOfRecord(cx, setters?.place?.id),
+      actorOfRecord(cx, history?.place.at(-1)?.id),
       `moved: ${writtenUri} → ${uriOf(areaOfNode(cx, node), nowParent, true)}`,
     );
 }
@@ -443,7 +443,7 @@ function noteLoopCause(
   const named = uriOf(written.area, written.segments.slice(0, along + 1), true);
   noteConcurrent(
     cx,
-    actorOfRecord(cx, projection.setters.get(inside.id)?.place?.id),
+    actorOfRecord(cx, projection.history.get(inside.id)?.place.at(-1)?.id),
     `moved: ${named} into ${nodeUri(cx, projection, node)}`,
   );
 }
@@ -678,7 +678,8 @@ function keptStanding(
   const first = kept[0];
   if (!holder || first === undefined) return undefined;
   const placer =
-    actorOfRecord(cx, after.setters.get(first)?.place?.id) ?? after.nodes.get(first)?.createdBy;
+    actorOfRecord(cx, after.history.get(first)?.place.at(-1)?.id) ??
+    after.nodes.get(first)?.createdBy;
   return `${nodeUri(cx, after, holder)} with ${kept
     .map((id) => nodeUri(cx, after, after.nodes.get(id) as TreeNode))
     .join(", ")}, added by ${labelOf(placer ?? "")} after you last listed it`;

@@ -1,6 +1,6 @@
 /** Transactional namespace locks and live-path occupancy checks for context commands. */
 import type { Database } from "@meridian/database";
-import { contextSources, projects, treeNodes, works } from "@meridian/database/schema";
+import { contextSources, treeNodes, works } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -9,18 +9,20 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWorks } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
+import type { TreeList } from "../../ports/tree-list-store.js";
+import { ownerFrom, sourceOwnerProjectId } from "../../tree/source-owner.js";
 
+/** A source's names: its owner's, under a scheme and (for a Work's source) its Work. */
 export type ContextNamespace = {
-  projectId: string;
-  userId: string;
+  owner: TreeList;
   scheme: string;
   workId: string | null;
 };
 
 export function contextNamespaceKey(input: ContextNamespace): string {
-  return input.scheme === "user"
-    ? `context-user:${input.userId}`
-    : `context-project:${input.projectId}:${input.workId ?? "none"}:${input.scheme}`;
+  return input.owner.kind === "account"
+    ? `context-user:${input.owner.userId}`
+    : `context-project:${input.owner.projectId}:${input.workId ?? "none"}:${input.scheme}`;
 }
 
 /** Acquire only namespace locks. Callers are responsible for Work checks. */
@@ -92,22 +94,15 @@ async function sourceNamespaces(
   if (sourceIds.length === 0) return [];
   const rows = await currentDrizzleDb(db)
     .select({
-      projectId: contextSources.projectId,
-      userId: projects.userId,
+      projectId: sourceOwnerProjectId,
+      userId: contextSources.userId,
       workId: contextSources.workId,
-      workProjectId: works.projectId,
       scheme: contextSources.slug,
     })
     .from(contextSources)
-    .leftJoin(projects, eq(projects.id, contextSources.projectId))
     .leftJoin(works, eq(works.id, contextSources.workId))
     .where(inArray(contextSources.id, [...new Set(sourceIds)]));
-  return rows.map((row) => ({
-    projectId: (row.projectId ?? row.workProjectId) as string,
-    userId: row.userId ?? "",
-    workId: row.workId,
-    scheme: row.scheme,
-  }));
+  return rows.map((row) => ({ owner: ownerFrom(row), workId: row.workId, scheme: row.scheme }));
 }
 
 const namespaceLocks = {};

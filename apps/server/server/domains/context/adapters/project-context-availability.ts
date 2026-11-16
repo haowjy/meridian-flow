@@ -98,10 +98,8 @@ function classifySourceIdentity(input: {
   const { node, source, sourceProject, work } = input.row;
   const rawProjectIsRequested = source?.projectId === input.requestProjectId;
   const rawWorkIsRequested = work?.projectId === input.requestProjectId;
-  const isActorUserSource =
-    source?.slug === "user" &&
-    sourceProject?.isPersonal === true &&
-    sourceProject.userId === input.actorUserId;
+  // The home folder is its account's: visible only to that account, from any of its projects.
+  const isActorUserSource = source?.scope === "account" && source.userId === input.actorUserId;
   if (!rawProjectIsRequested && !rawWorkIsRequested && !isActorUserSource) {
     return { kind: "not-visible" };
   }
@@ -125,11 +123,14 @@ function classifySourceIdentity(input: {
     scheme === "uploads";
   const hasWorkOwnership = source.scope === "work" && source.workId !== null;
   const hasProjectOwnership = source.scope === "project" && source.projectId !== null;
+  const hasAccountOwnership =
+    source.scope === "account" && source.userId !== null && scheme === "user";
   const ownershipKinds = [
     hasLineageOwnership,
     hasChatOwnership,
     hasWorkOwnership,
     hasProjectOwnership,
+    hasAccountOwnership,
   ].filter(Boolean).length;
   if (
     ownershipKinds !== 1 ||
@@ -139,8 +140,7 @@ function classifySourceIdentity(input: {
       (hasProjectOwnership || hasLineageOwnership || hasChatOwnership) ||
     (hasWorkOwnership && (!work || work.id !== source.workId)) ||
     (hasProjectOwnership && (!sourceProject || sourceProject.id !== source.projectId)) ||
-    (scheme === "user" &&
-      (!sourceProject?.isPersonal || sourceProject.userId !== input.actorUserId))
+    (scheme === "user" && !isActorUserSource)
   ) {
     return { kind: "inconsistent" };
   }

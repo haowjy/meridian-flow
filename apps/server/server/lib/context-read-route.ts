@@ -30,6 +30,7 @@ export interface ContextReadRouteDeps {
   availability: ProjectContextAvailabilityPort;
   liveDocuments: Pick<TreeReader, "findById">;
   documentSync: Pick<AppServices["documentSync"], "readAsMarkdown">;
+  links: Pick<AppServices["linkScopes"], "within">;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
 }
@@ -54,7 +55,11 @@ export async function handleContextReadRequest(
   const ref = fileRefOfVisible(found.document);
   if (!ref.ok) throw createError({ statusCode: 502, message: "Document storage is inconsistent" });
   if (ref.value.kind === "tracked") {
-    const read = await deps.documentSync.readAsMarkdown(documentId);
+    // A home document has no project of its own: its links read in the project asking.
+    const read = await deps.links.within(
+      { projectId: input.projectId, viewer: { accountId: input.userId } },
+      () => deps.documentSync.readAsMarkdown(documentId),
+    );
     if (!read.ok)
       throw createError({
         statusCode: 503,

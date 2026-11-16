@@ -9,18 +9,46 @@ index 16a38a6620ec43c242dde1a65667d042885cefff..aabbec9d7f6bd8146e73f691f0467c12
 +
 +/** Identity-preserving refresh; call from the fragment deep observer on every change. */
 +export function refreshProseMirrorDoc(fragment: Y.XmlFragment, schema: Schema, meta: ReturnType<typeof initProseMirrorDoc>["meta"], transaction: Y.Transaction): { doc: Node; mapping: ProsemirrorMapping };
+diff --git a/dist/src/plugins/sync-plugin.d.ts b/dist/src/plugins/sync-plugin.d.ts
+index 5d249fccd41a1a59e01bfcd4cb8e01a3163e61c2..2a7762147ff488892f36e8c78ed593e04fd43431 100644
+--- a/dist/src/plugins/sync-plugin.d.ts
++++ b/dist/src/plugins/sync-plugin.d.ts
+@@ -7,6 +7,7 @@ export function ySyncPlugin(yXmlFragment: Y.XmlFragment, { colors, colorMapping,
+ export function getRelativeSelection(pmbinding: ProsemirrorBinding, state: import('prosemirror-state').EditorState): {
+     type: any;
+     depth: any;
++    cell?: { anchorId?: string; headId?: string; row: boolean; col: boolean };
+     anchor: any;
+     head: any;
+ };
+@@ -46,6 +47,7 @@ export class ProsemirrorBinding {
+     beforeTransactionSelection: {
+         type: any;
+         depth: any;
++        cell?: { anchorId?: string; headId?: string; row: boolean; col: boolean };
+         anchor: any;
+         head: any;
+     };
+@@ -125,3 +127,5 @@ export type YSyncOpts = {
+ export type NormalizedPNodeContent = Array<Array<PModel.Node> | PModel.Node>;
+ import * as Y from 'yjs';
+ import * as PModel from 'prosemirror-model';
++
++export function resolveRelativeCellSelection(doc: import("prosemirror-model").Node, relative: ReturnType<typeof getRelativeSelection>, binding: ProsemirrorBinding): { selection: import("prosemirror-state").Selection | null; anchor: number | null; head: number | null };
 diff --git a/dist/src/y-tiptap.d.ts b/dist/src/y-tiptap.d.ts
-index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..a4d6d5c8dde7f2175e595db6aeffef85f9766c58 100644
+index c1f9468c4c77434a1ad9f49227fb1274f5ae1915..5f4cdf2bf60dc69a60fc6dd8b7202e2056ceda57 100644
 --- a/dist/src/y-tiptap.d.ts
 +++ b/dist/src/y-tiptap.d.ts
-@@ -2,4 +2,4 @@ export * from "./plugins/cursor-plugin.js";
+@@ -1,5 +1,5 @@
+ export * from "./plugins/cursor-plugin.js";
  export * from "./plugins/undo-plugin.js";
  export * from "./plugins/keys.js";
- export { ySyncPlugin, isVisible, getRelativeSelection, ProsemirrorBinding, updateYFragment } from "./plugins/sync-plugin.js";
+-export { ySyncPlugin, isVisible, getRelativeSelection, ProsemirrorBinding, updateYFragment } from "./plugins/sync-plugin.js";
 -export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc } from "./lib.js";
++export { ySyncPlugin, isVisible, getRelativeSelection, resolveRelativeCellSelection, ProsemirrorBinding, updateYFragment } from "./plugins/sync-plugin.js";
 +export { absolutePositionToRelativePosition, relativePositionToAbsolutePosition, setMeta, prosemirrorJSONToYDoc, yDocToProsemirrorJSON, yDocToProsemirror, prosemirrorToYDoc, prosemirrorJSONToYXmlFragment, yXmlFragmentToProsemirrorJSON, yXmlFragmentToProsemirror, prosemirrorToYXmlFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProseMirrorFragment, initProseMirrorDoc, refreshProseMirrorDoc } from "./lib.js";
 diff --git a/dist/y-tiptap.cjs b/dist/y-tiptap.cjs
-index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e4174ac90749 100644
+index 12c31808278a80ad6b9708b1449ac646bbeea82b..5325a07dfb39e5726f07a330abb90da3e8704317 100644
 --- a/dist/y-tiptap.cjs
 +++ b/dist/y-tiptap.cjs
 @@ -211,6 +211,45 @@ const ySyncPlugin = (yXmlFragment, {
@@ -69,7 +97,108 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
          if (change !== undefined) {
            pluginState = Object.assign({}, pluginState);
            for (const key in change) {
-@@ -474,6 +513,8 @@ class ProsemirrorBinding {
+@@ -314,6 +353,54 @@ const ySyncPlugin = (yXmlFragment, {
+   return plugin
+ };
+ 
++const resolveRelativeCellSelection = (doc, relSel, binding) => {
++  const cell = relSel.cell;
++  const ids = [cell?.anchorId, cell?.headId];
++  const relatives = [relSel.anchor, relSel.head];
++  const positions = relatives.map((relative, index) => {
++    if (!relative) return null
++    const absolute = Y__namespace.createAbsolutePositionFromRelativePosition(relative, binding.doc);
++    if (!absolute || (relative.item && Y__namespace.getItem(binding.doc.store, relative.item).deleted)) return null
++    for (let type = absolute.type; type?._item; type = type._item.parent) {
++      if (type._item.deleted) return null
++    }
++    const pos = relativePositionToAbsolutePosition(binding.doc, binding.type, relative, binding.mapping);
++    if (pos === null) return null
++    const $pos = doc.resolve(pos);
++    const node = $pos.nodeAfter;
++    return $pos.parent.type.spec.tableRole === 'row' && node &&
++      (!ids[index] || node.attrs.id === ids[index]) ? pos : null
++  });
++  // Moves recreate Yjs items. Only an unambiguous cell id can recover that endpoint.
++  const missing = new Map();
++  positions.forEach((pos, index) => {
++    if (pos === null && ids[index]) missing.set(ids[index], []);
++  });
++  if (missing.size) {
++    doc.descendants((node, pos) => {
++      const matches = missing.get(node.attrs.id);
++      if (matches && (node.type.spec.tableRole === 'cell' || node.type.spec.tableRole === 'header_cell')) matches.push(pos);
++    });
++    positions.forEach((pos, index) => {
++      const matches = missing.get(ids[index]);
++      if (pos === null && matches?.length === 1) positions[index] = matches[0];
++    });
++  }
++  const [anchor, head] = positions;
++  let selection = null;
++  if (anchor !== null && head !== null) {
++    const $anchor = doc.resolve(anchor);
++    const $head = doc.resolve(head);
++    if ($anchor.depth === $head.depth && $anchor.before(-1) === $head.before(-1)) {
++      selection = prosemirrorState.Selection.fromJSON(doc, { type: 'cell', anchor, head });
++      // Match CellSelection.map's row-first expansion without a tables dependency.
++      if (cell?.row) selection = selection.constructor.rowSelection($anchor, $head);
++      else if (cell?.col) selection = selection.constructor.colSelection($anchor, $head);
++    }
++  }
++  return { selection, anchor, head }
++};
++
+ /**
+  * @param {import('prosemirror-state').Transaction} tr
+  * @param {ReturnType<typeof getRelativeSelection>} relSel
+@@ -321,7 +408,15 @@ const ySyncPlugin = (yXmlFragment, {
+  */
+ const restoreRelativeSelection = (tr, relSel, binding) => {
+   if (relSel !== null && relSel.anchor !== null && relSel.head !== null) {
+-    if (relSel.type === 'all') {
++    if (relSel.type === 'cell') {
++      const { selection, anchor, head } = resolveRelativeCellSelection(tr.doc, relSel, binding);
++      if (selection) {
++        tr.setSelection(selection);
++      } else {
++        const mappedHead = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
++        tr.setSelection(prosemirrorState.Selection.near(tr.doc.resolve(head ?? anchor ?? mappedHead ?? tr.selection.head)));
++      }
++    } else if (relSel.type === 'all') {
+       tr.setSelection(new prosemirrorState.AllSelection(tr.doc));
+     } else if (relSel.type === 'node') {
+       const anchor = relativePositionToAbsolutePosition(
+@@ -432,17 +527,26 @@ const createSafeNodeRangeSelection = (tr, anchor, head, depth) => {
+  */
+ const getRelativeSelection = (pmbinding, state) => {
+   const type = /** @type {any} */ (state.selection).jsonID;
++  const cell = type === 'cell' ? state.selection.toJSON() : null;
++  const anchor = cell ? cell.anchor : state.selection.anchor;
++  const head = cell ? cell.head : state.selection.head;
+   return {
+     type,
++    cell: cell ? {
++      anchorId: state.doc.nodeAt(anchor)?.attrs.id,
++      headId: state.doc.nodeAt(head)?.attrs.id,
++      row: state.selection.isRowSelection(),
++      col: state.selection.isColSelection()
++    } : undefined,
+     // `depth` is only meaningful for NodeRangeSelection; undefined for every other type.
+     depth: type === 'nodeRange' ? /** @type {any} */ (state.selection).depth : undefined,
+     anchor: absolutePositionToRelativePosition(
+-      state.selection.anchor,
++      anchor,
+       pmbinding.type,
+       pmbinding.mapping
+     ),
+     head: absolutePositionToRelativePosition(
+-      state.selection.head,
++      head,
+       pmbinding.type,
+       pmbinding.mapping
+     )
+@@ -474,6 +578,8 @@ class ProsemirrorBinding {
       * @type {Map<import('prosemirror-model').MarkType, boolean>}
       */
      this.isOMark = new Map();
@@ -78,7 +207,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
      this._observeFunction = this._typeChanged.bind(this);
      /**
       * @type {Y.Doc}
-@@ -611,7 +652,7 @@ class ProsemirrorBinding {
+@@ -611,7 +717,7 @@ class ProsemirrorBinding {
          const clampedAnchor = math__namespace.min(math__namespace.max(sel.anchor, 0), tr.doc.content.size);
          const clampedHead = math__namespace.min(math__namespace.max(sel.head, 0), tr.doc.content.size);
  
@@ -87,7 +216,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
        }
        this.prosemirrorView.dispatch(
          tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, binding: this })
-@@ -753,35 +794,14 @@ class ProsemirrorBinding {
+@@ -753,35 +859,14 @@ class ProsemirrorBinding {
        return
      }
      this.mux(() => {
@@ -126,7 +255,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
        );
        restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
        tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y__namespace.UndoManager });
-@@ -798,8 +818,13 @@ class ProsemirrorBinding {
+@@ -798,8 +883,13 @@ class ProsemirrorBinding {
     * @param {import('prosemirror-model').Node} doc
     */
    _prosemirrorChanged (doc) {
@@ -140,7 +269,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
        this.beforeTransactionSelection = getRelativeSelection(
          this,
          this.prosemirrorView.state
-@@ -900,20 +925,7 @@ const createNodeFromYElement = (
+@@ -900,20 +990,7 @@ const createNodeFromYElement = (
          children.push(n);
        }
      } else {
@@ -162,7 +291,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
        const ns = createTextNodesFromYText(
          type,
          schema,
-@@ -1104,11 +1116,61 @@ const normalizePNodeContent = (pnode) => {
+@@ -1104,11 +1181,61 @@ const normalizePNodeContent = (pnode) => {
  };
  
  /**
@@ -227,7 +356,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
    return delta.length === ptexts.length &&
      delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
        d.insert === /** @type {any} */ (ptexts[i]).text &&
-@@ -1131,7 +1193,7 @@ const equalYTextPText = (ytext, ptexts) => {
+@@ -1131,7 +1258,7 @@ const equalYTextPText = (ytext, ptexts) => {
  };
  
  /**
@@ -236,7 +365,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
   * @param {any|Array<any>} pnode
   */
  const equalYTypePNode = (ytype, pnode) => {
-@@ -1140,13 +1202,14 @@ const equalYTypePNode = (ytype, pnode) => {
+@@ -1140,13 +1267,14 @@ const equalYTypePNode = (ytype, pnode) => {
      matchNodeName(ytype, pnode)
    ) {
      const normalizedContent = normalizePNodeContent(pnode);
@@ -254,7 +383,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
      equalYTextPText(ytype, pnode)
  };
  
-@@ -1168,7 +1231,7 @@ const mappedIdentity = (mapped, pcontent) =>
+@@ -1168,7 +1296,7 @@ const mappedIdentity = (mapped, pcontent) =>
   * @return {{ foundMappedChild: boolean, equalityFactor: number }}
   */
  const computeChildEqualityFactor = (ytype, pnode, meta) => {
@@ -263,7 +392,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
    const pChildren = normalizePNodeContent(pnode);
    const pChildCnt = pChildren.length;
    const yChildCnt = yChildren.length;
-@@ -1179,7 +1242,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1179,7 +1307,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left < minCnt; left++) {
      const leftY = yChildren[left];
      const leftP = pChildren[left];
@@ -272,7 +401,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
        foundMappedChild = true; // definite (good) match!
      } else if (!equalYTypePNode(leftY, leftP)) {
        break
-@@ -1188,7 +1251,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1188,7 +1316,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left + right < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -281,7 +410,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
        foundMappedChild = true;
      } else if (!equalYTypePNode(rightY, rightP)) {
        break
-@@ -1233,22 +1296,50 @@ const ytextTrans = (ytext) => {
+@@ -1233,22 +1361,50 @@ const ytextTrans = (ytext) => {
   * @param {Array<any>} ptexts
   * @param {BindingMetadata} meta
   */
@@ -342,7 +471,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
  };
  
  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-@@ -1311,6 +1402,12 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1311,6 +1467,12 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
      throw new Error('node name mismatch!')
    }
    meta.mapping.set(yDomFragment, pNode);
@@ -355,7 +484,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
    // update attributes
    if (yDomFragment instanceof Y__namespace.XmlElement) {
      const yDomAttrs = yDomFragment.getAttributes();
-@@ -1334,19 +1431,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1334,19 +1496,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    // update children
    const pChildren = normalizePNodeContent(pNode);
    const pChildCnt = pChildren.length;
@@ -383,7 +512,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
        } else {
          break
        }
-@@ -1356,15 +1457,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1356,15 +1522,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    for (; right + left + 1 < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -402,7 +531,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
    y.transact(() => {
      // try to compare and update
      while (yChildCnt - left - right > 0 && pChildCnt - left - right > 0) {
-@@ -1372,16 +1474,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1372,16 +1539,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
        const leftP = pChildren[left];
        const rightY = yChildren[yChildCnt - right - 1];
        const rightP = pChildren[pChildCnt - right - 1];
@@ -444,7 +573,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
          if (updateLeft && updateRight) {
            // decide which which element to update
            const equalityLeft = computeChildEqualityFactor(
-@@ -1427,33 +1551,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1427,33 +1616,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -489,7 +618,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
      }
    }, ySyncPluginKey);
  };
-@@ -1466,6 +1592,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1466,6 +1657,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
  const matchNodeName = (yElement, pNode) =>
    !(pNode instanceof Array) && yElement.nodeName === pNode.type.name;
  
@@ -584,7 +713,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
  /**
   * Either a node if type is YXmlElement or an Array of text nodes if YXmlText
   * @typedef {Map<Y.AbstractType, Node | Array<Node>>} ProsemirrorMapping
-@@ -1797,6 +2011,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1797,6 +2076,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -628,7 +757,7 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2351,28 +2602,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2351,28 +2667,40 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -678,16 +807,18 @@ index 12c31808278a80ad6b9708b1449ac646bbeea82b..d3d897ede6af68415afc2f88fce5e417
        }
      }
    }
-@@ -2388,6 +2651,7 @@ exports.defaultProtectedNodes = defaultProtectedNodes;
+@@ -2387,7 +2715,9 @@ exports.defaultDeleteFilter = defaultDeleteFilter;
+ exports.defaultProtectedNodes = defaultProtectedNodes;
  exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.getRelativeSelection = getRelativeSelection;
++exports.resolveRelativeCellSelection = resolveRelativeCellSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
 +exports.refreshProseMirrorDoc = refreshProseMirrorDoc;
  exports.isVisible = isVisible;
  exports.prosemirrorJSONToYDoc = prosemirrorJSONToYDoc;
  exports.prosemirrorJSONToYXmlFragment = prosemirrorJSONToYXmlFragment;
 diff --git a/dist/y-tiptap.js b/dist/y-tiptap.js
-index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed61efd0fd6 100644
+index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..d93e9f7dfec978db7691035bd8de01b08e5f0ba1 100644
 --- a/dist/y-tiptap.js
 +++ b/dist/y-tiptap.js
 @@ -177,6 +177,45 @@ const ySyncPlugin = (yXmlFragment, {
@@ -736,7 +867,108 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
          if (change !== undefined) {
            pluginState = Object.assign({}, pluginState);
            for (const key in change) {
-@@ -440,6 +479,8 @@ class ProsemirrorBinding {
+@@ -280,6 +319,54 @@ const ySyncPlugin = (yXmlFragment, {
+   return plugin
+ };
+ 
++const resolveRelativeCellSelection = (doc, relSel, binding) => {
++  const cell = relSel.cell;
++  const ids = [cell?.anchorId, cell?.headId];
++  const relatives = [relSel.anchor, relSel.head];
++  const positions = relatives.map((relative, index) => {
++    if (!relative) return null
++    const absolute = Y.createAbsolutePositionFromRelativePosition(relative, binding.doc);
++    if (!absolute || (relative.item && Y.getItem(binding.doc.store, relative.item).deleted)) return null
++    for (let type = absolute.type; type?._item; type = type._item.parent) {
++      if (type._item.deleted) return null
++    }
++    const pos = relativePositionToAbsolutePosition(binding.doc, binding.type, relative, binding.mapping);
++    if (pos === null) return null
++    const $pos = doc.resolve(pos);
++    const node = $pos.nodeAfter;
++    return $pos.parent.type.spec.tableRole === 'row' && node &&
++      (!ids[index] || node.attrs.id === ids[index]) ? pos : null
++  });
++  // Moves recreate Yjs items. Only an unambiguous cell id can recover that endpoint.
++  const missing = new Map();
++  positions.forEach((pos, index) => {
++    if (pos === null && ids[index]) missing.set(ids[index], []);
++  });
++  if (missing.size) {
++    doc.descendants((node, pos) => {
++      const matches = missing.get(node.attrs.id);
++      if (matches && (node.type.spec.tableRole === 'cell' || node.type.spec.tableRole === 'header_cell')) matches.push(pos);
++    });
++    positions.forEach((pos, index) => {
++      const matches = missing.get(ids[index]);
++      if (pos === null && matches?.length === 1) positions[index] = matches[0];
++    });
++  }
++  const [anchor, head] = positions;
++  let selection = null;
++  if (anchor !== null && head !== null) {
++    const $anchor = doc.resolve(anchor);
++    const $head = doc.resolve(head);
++    if ($anchor.depth === $head.depth && $anchor.before(-1) === $head.before(-1)) {
++      selection = Selection.fromJSON(doc, { type: 'cell', anchor, head });
++      // Match CellSelection.map's row-first expansion without a tables dependency.
++      if (cell?.row) selection = selection.constructor.rowSelection($anchor, $head);
++      else if (cell?.col) selection = selection.constructor.colSelection($anchor, $head);
++    }
++  }
++  return { selection, anchor, head }
++};
++
+ /**
+  * @param {import('prosemirror-state').Transaction} tr
+  * @param {ReturnType<typeof getRelativeSelection>} relSel
+@@ -287,7 +374,15 @@ const ySyncPlugin = (yXmlFragment, {
+  */
+ const restoreRelativeSelection = (tr, relSel, binding) => {
+   if (relSel !== null && relSel.anchor !== null && relSel.head !== null) {
+-    if (relSel.type === 'all') {
++    if (relSel.type === 'cell') {
++      const { selection, anchor, head } = resolveRelativeCellSelection(tr.doc, relSel, binding);
++      if (selection) {
++        tr.setSelection(selection);
++      } else {
++        const mappedHead = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
++        tr.setSelection(Selection.near(tr.doc.resolve(head ?? anchor ?? mappedHead ?? tr.selection.head)));
++      }
++    } else if (relSel.type === 'all') {
+       tr.setSelection(new AllSelection(tr.doc));
+     } else if (relSel.type === 'node') {
+       const anchor = relativePositionToAbsolutePosition(
+@@ -398,17 +493,26 @@ const createSafeNodeRangeSelection = (tr, anchor, head, depth) => {
+  */
+ const getRelativeSelection = (pmbinding, state) => {
+   const type = /** @type {any} */ (state.selection).jsonID;
++  const cell = type === 'cell' ? state.selection.toJSON() : null;
++  const anchor = cell ? cell.anchor : state.selection.anchor;
++  const head = cell ? cell.head : state.selection.head;
+   return {
+     type,
++    cell: cell ? {
++      anchorId: state.doc.nodeAt(anchor)?.attrs.id,
++      headId: state.doc.nodeAt(head)?.attrs.id,
++      row: state.selection.isRowSelection(),
++      col: state.selection.isColSelection()
++    } : undefined,
+     // `depth` is only meaningful for NodeRangeSelection; undefined for every other type.
+     depth: type === 'nodeRange' ? /** @type {any} */ (state.selection).depth : undefined,
+     anchor: absolutePositionToRelativePosition(
+-      state.selection.anchor,
++      anchor,
+       pmbinding.type,
+       pmbinding.mapping
+     ),
+     head: absolutePositionToRelativePosition(
+-      state.selection.head,
++      head,
+       pmbinding.type,
+       pmbinding.mapping
+     )
+@@ -440,6 +544,8 @@ class ProsemirrorBinding {
       * @type {Map<import('prosemirror-model').MarkType, boolean>}
       */
      this.isOMark = new Map();
@@ -745,7 +977,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
      this._observeFunction = this._typeChanged.bind(this);
      /**
       * @type {Y.Doc}
-@@ -577,7 +618,7 @@ class ProsemirrorBinding {
+@@ -577,7 +683,7 @@ class ProsemirrorBinding {
          const clampedAnchor = math.min(math.max(sel.anchor, 0), tr.doc.content.size);
          const clampedHead = math.min(math.max(sel.head, 0), tr.doc.content.size);
  
@@ -754,7 +986,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
        }
        this.prosemirrorView.dispatch(
          tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, binding: this })
-@@ -719,35 +760,14 @@ class ProsemirrorBinding {
+@@ -719,35 +825,14 @@ class ProsemirrorBinding {
        return
      }
      this.mux(() => {
@@ -793,7 +1025,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
        );
        restoreRelativeSelection(tr, this.beforeTransactionSelection, this);
        tr = tr.setMeta(ySyncPluginKey, { isChangeOrigin: true, isUndoRedoOperation: transaction.origin instanceof Y.UndoManager });
-@@ -764,8 +784,13 @@ class ProsemirrorBinding {
+@@ -764,8 +849,13 @@ class ProsemirrorBinding {
     * @param {import('prosemirror-model').Node} doc
     */
    _prosemirrorChanged (doc) {
@@ -807,7 +1039,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
        this.beforeTransactionSelection = getRelativeSelection(
          this,
          this.prosemirrorView.state
-@@ -866,20 +891,7 @@ const createNodeFromYElement = (
+@@ -866,20 +956,7 @@ const createNodeFromYElement = (
          children.push(n);
        }
      } else {
@@ -829,7 +1061,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
        const ns = createTextNodesFromYText(
          type,
          schema,
-@@ -1070,11 +1082,61 @@ const normalizePNodeContent = (pnode) => {
+@@ -1070,11 +1147,61 @@ const normalizePNodeContent = (pnode) => {
  };
  
  /**
@@ -894,7 +1126,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
    return delta.length === ptexts.length &&
      delta.every(/** @type {(d:any,i:number) => boolean} */ (d, i) =>
        d.insert === /** @type {any} */ (ptexts[i]).text &&
-@@ -1097,7 +1159,7 @@ const equalYTextPText = (ytext, ptexts) => {
+@@ -1097,7 +1224,7 @@ const equalYTextPText = (ytext, ptexts) => {
  };
  
  /**
@@ -903,7 +1135,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
   * @param {any|Array<any>} pnode
   */
  const equalYTypePNode = (ytype, pnode) => {
-@@ -1106,13 +1168,14 @@ const equalYTypePNode = (ytype, pnode) => {
+@@ -1106,13 +1233,14 @@ const equalYTypePNode = (ytype, pnode) => {
      matchNodeName(ytype, pnode)
    ) {
      const normalizedContent = normalizePNodeContent(pnode);
@@ -921,7 +1153,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
      equalYTextPText(ytype, pnode)
  };
  
-@@ -1134,7 +1197,7 @@ const mappedIdentity = (mapped, pcontent) =>
+@@ -1134,7 +1262,7 @@ const mappedIdentity = (mapped, pcontent) =>
   * @return {{ foundMappedChild: boolean, equalityFactor: number }}
   */
  const computeChildEqualityFactor = (ytype, pnode, meta) => {
@@ -930,7 +1162,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
    const pChildren = normalizePNodeContent(pnode);
    const pChildCnt = pChildren.length;
    const yChildCnt = yChildren.length;
-@@ -1145,7 +1208,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1145,7 +1273,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left < minCnt; left++) {
      const leftY = yChildren[left];
      const leftP = pChildren[left];
@@ -939,7 +1171,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
        foundMappedChild = true; // definite (good) match!
      } else if (!equalYTypePNode(leftY, leftP)) {
        break
-@@ -1154,7 +1217,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
+@@ -1154,7 +1282,7 @@ const computeChildEqualityFactor = (ytype, pnode, meta) => {
    for (; left + right < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -948,7 +1180,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
        foundMappedChild = true;
      } else if (!equalYTypePNode(rightY, rightP)) {
        break
-@@ -1199,22 +1262,50 @@ const ytextTrans = (ytext) => {
+@@ -1199,22 +1327,50 @@ const ytextTrans = (ytext) => {
   * @param {Array<any>} ptexts
   * @param {BindingMetadata} meta
   */
@@ -1009,7 +1241,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
  };
  
  const hashedMarkNameRegex = /(.*)(--[a-zA-Z0-9+/=]{8})$/;
-@@ -1277,6 +1368,12 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1277,6 +1433,12 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
      throw new Error('node name mismatch!')
    }
    meta.mapping.set(yDomFragment, pNode);
@@ -1022,7 +1254,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
    // update attributes
    if (yDomFragment instanceof Y.XmlElement) {
      const yDomAttrs = yDomFragment.getAttributes();
-@@ -1300,19 +1397,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1300,19 +1462,23 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    // update children
    const pChildren = normalizePNodeContent(pNode);
    const pChildCnt = pChildren.length;
@@ -1050,7 +1282,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
        } else {
          break
        }
-@@ -1322,15 +1423,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1322,15 +1488,16 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
    for (; right + left + 1 < minCnt; right++) {
      const rightY = yChildren[yChildCnt - right - 1];
      const rightP = pChildren[pChildCnt - right - 1];
@@ -1069,7 +1301,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
    y.transact(() => {
      // try to compare and update
      while (yChildCnt - left - right > 0 && pChildCnt - left - right > 0) {
-@@ -1338,16 +1440,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1338,16 +1505,38 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
        const leftP = pChildren[left];
        const rightY = yChildren[yChildCnt - right - 1];
        const rightP = pChildren[pChildCnt - right - 1];
@@ -1111,7 +1343,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
          if (updateLeft && updateRight) {
            // decide which which element to update
            const equalityLeft = computeChildEqualityFactor(
-@@ -1393,33 +1517,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1393,33 +1582,35 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
            );
            right += 1;
          } else {
@@ -1156,7 +1388,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
      }
    }, ySyncPluginKey);
  };
-@@ -1432,6 +1558,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
+@@ -1432,6 +1623,94 @@ const updateYFragment = (y, yDomFragment, pNode, meta) => {
  const matchNodeName = (yElement, pNode) =>
    !(pNode instanceof Array) && yElement.nodeName === pNode.type.name;
  
@@ -1251,7 +1483,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
  /**
   * Either a node if type is YXmlElement or an Array of text nodes if YXmlText
   * @typedef {Map<Y.AbstractType, Node | Array<Node>>} ProsemirrorMapping
-@@ -1763,6 +1977,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1763,6 +2042,43 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
    return { doc, meta, mapping: meta.mapping }
  };
  
@@ -1295,7 +1527,7 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
  /**
   * Utility method to convert a Prosemirror Doc Node into a Y.Doc.
   *
-@@ -2317,32 +2568,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -2317,32 +2633,44 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
    view: view => {
      const ystate = ySyncPluginKey.getState(view.state);
      const undoManager = yUndoPluginKey.getState(view.state).undoManager;
@@ -1348,5 +1580,5 @@ index 75d4d7d13db7442e424598b38cbb35bc09fbacb5..2b30005d6e656661a2feaee823d75ed6
  });
  
 -export { ProsemirrorBinding, absolutePositionToRelativePosition, createDecorations, defaultAwarenessStateFilter, defaultCursorBuilder, defaultDeleteFilter, defaultProtectedNodes, defaultSelectionBuilder, getRelativeSelection, initProseMirrorDoc, isVisible, prosemirrorJSONToYDoc, prosemirrorJSONToYXmlFragment, prosemirrorToYDoc, prosemirrorToYXmlFragment, redo, relativePositionToAbsolutePosition, setMeta, undo, updateYFragment, yCursorPlugin, yCursorPluginKey, yDocToProsemirror, yDocToProsemirrorJSON, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey, yXmlFragmentToProseMirrorFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProsemirror, yXmlFragmentToProsemirrorJSON };
-+export { ProsemirrorBinding, absolutePositionToRelativePosition, createDecorations, defaultAwarenessStateFilter, defaultCursorBuilder, defaultDeleteFilter, defaultProtectedNodes, defaultSelectionBuilder, getRelativeSelection, initProseMirrorDoc, refreshProseMirrorDoc, isVisible, prosemirrorJSONToYDoc, prosemirrorJSONToYXmlFragment, prosemirrorToYDoc, prosemirrorToYXmlFragment, redo, relativePositionToAbsolutePosition, setMeta, undo, updateYFragment, yCursorPlugin, yCursorPluginKey, yDocToProsemirror, yDocToProsemirrorJSON, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey, yXmlFragmentToProseMirrorFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProsemirror, yXmlFragmentToProsemirrorJSON };
++export { ProsemirrorBinding, absolutePositionToRelativePosition, createDecorations, defaultAwarenessStateFilter, defaultCursorBuilder, defaultDeleteFilter, defaultProtectedNodes, defaultSelectionBuilder, getRelativeSelection, resolveRelativeCellSelection, initProseMirrorDoc, refreshProseMirrorDoc, isVisible, prosemirrorJSONToYDoc, prosemirrorJSONToYXmlFragment, prosemirrorToYDoc, prosemirrorToYXmlFragment, redo, relativePositionToAbsolutePosition, setMeta, undo, updateYFragment, yCursorPlugin, yCursorPluginKey, yDocToProsemirror, yDocToProsemirrorJSON, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yUndoPluginKey, yXmlFragmentToProseMirrorFragment, yXmlFragmentToProseMirrorRootNode, yXmlFragmentToProsemirror, yXmlFragmentToProsemirrorJSON };
  //# sourceMappingURL=y-tiptap.js.map

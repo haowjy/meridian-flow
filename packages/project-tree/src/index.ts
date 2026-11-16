@@ -46,13 +46,9 @@ export {
 export {
   type DroppedRecord,
   deleteCovering,
-  type LabelBefore,
-  type NodeSetters,
-  type PlaceBefore,
   placeIn,
   recordsOfItem,
   replay,
-  type Setter,
   type SkipReason,
   type TrashEntry,
   type TreeNode,
