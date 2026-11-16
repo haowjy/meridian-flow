@@ -713,9 +713,7 @@ describe("tables and Layout round-trip corpus", () => {
   });
 
   it("rejects the align-left ghost state", () => {
-    // prosemirror-model validates attributes when it creates a node, so the ghost is forged after.
-    const ghost = schema.nodes.paragraph.create({ align: null }, t("prose"));
-    Object.assign(ghost.attrs, { align: "left" });
+    const ghost = schema.nodes.paragraph.create({ align: "left" }, t("prose"));
     expect(() => codec.serializeBlock(ghost, UNSCOPED_DOCUMENT_LINKS)).toThrow(
       'invalid Layout align value "left"',
     );
