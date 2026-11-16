@@ -1,5 +1,6 @@
 /** Writer receipt and failed-response policies over immutable forward-inverse parts. */
 import { randomUUID } from "node:crypto";
+import { setImmediate } from "node:timers/promises";
 import {
   editHandle,
   type InversePart,
@@ -172,15 +173,17 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
  * Each document's ordered steps, for both command and dry run; each step lands where its
  * original did, live or in its draft. Each of the turn's original edits is one step, newest
  * first for an undo and oldest first for a redo, judged on what the steps before it leave: a
- * reversed undo puts the edit it undid back on the stack.
+ * reversed undo puts the edit it undid back on the stack. A `preview` plan has the steps and
+ * skips of the real one, but its steps carry no parts: the chip needs the answer, not the Undo.
  */
-function prepare(
+async function prepare(
   store: TurnInverseStore,
   documents: InverseDocument[],
   query: TurnInverseQuery,
   kind: "undo" | "redo",
   actionId: string,
-): PreparedDocumentInverse[] {
+  { preview = false }: { preview?: boolean } = {},
+): Promise<PreparedDocumentInverse[]> {
   const direction = kind;
   const keys = new Set(
     documents.flatMap((document) =>
@@ -198,7 +201,11 @@ function prepare(
   const selectedAction = selected?.id;
   const accepted = selected?.targets ?? new Set<string>();
   const consumes = selectedAction ? [selectedAction] : [];
-  return documents.map((document) => {
+  const plans: PreparedDocumentInverse[] = [];
+  for (const document of documents) {
+    // One document's plan is synchronous CPU of hundreds of milliseconds; the server answers
+    // its other requests between documents.
+    await setImmediate();
     const targets = document.history.filter(
       (part) =>
         targetsTurn(part, query) &&
@@ -278,7 +285,7 @@ function prepare(
     // eligibility.
     const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
       [...selection].map(([destination, parts]) => {
-        return [destination, entryPlanner.compute(destination, parts, actionId)];
+        return [destination, entryPlanner.compute(destination, parts, actionId, { preview })];
       }),
     );
     const classifiedKeys = new Set(
@@ -315,8 +322,9 @@ function prepare(
           ]
         : [];
     });
-    return { document, steps, consumes, skips };
-  });
+    plans.push({ document, steps, consumes, skips });
+  }
+  return plans;
 }
 
 /**
@@ -329,11 +337,7 @@ function inSequence(plans: readonly PreparedDocumentInverse[], direction: "undo"
     .flatMap((plan) => plan.steps.map((step) => ({ plan, step })))
     .sort((a, b) => (direction === "undo" ? b.step.at - a.step.at : a.step.at - b.step.at));
 }
-const countAccepted = (plans: PreparedDocumentInverse[]) =>
-  plans.reduce(
-    (count, plan) => count + plan.steps.reduce((n, step) => n + step.edit.parts.length, 0),
-    0,
-  );
+const hasSteps = (plans: PreparedDocumentInverse[]) => plans.some((plan) => plan.steps.length > 0);
 
 /**
  * What became of this reply's text in each drafted document: still a draft while a waiting
@@ -385,20 +389,24 @@ export function createTurnInverseService(store: TurnInverseStore) {
         const drafts = draftStates(documents, query, (document, part) =>
           store.describePart(document, part),
         );
-        const redo = prepare(store, documents, query, "redo", randomUUID());
-        if (countAccepted(redo) || treeRedo)
+        const redo = await prepare(store, documents, query, "redo", randomUUID(), {
+          preview: true,
+        });
+        if (hasSteps(redo) || treeRedo)
           return {
             state: "live-reversed",
             control: "redo",
             skips: redo.flatMap((plan) => plan.skips),
           };
-        const undo = prepare(store, documents, query, "undo", randomUUID());
+        const undo = await prepare(store, documents, query, "undo", randomUUID(), {
+          preview: true,
+        });
         // Text the writer discarded is gone: an Undo has nothing to take out, and its Redo
         // would bring the discarded text back.
         const allDiscarded =
           drafts !== undefined &&
           documents.every(({ documentId }) => drafts[documentId] === "discarded");
-        if ((countAccepted(undo) && !allDiscarded) || treeUndo)
+        if ((hasSteps(undo) && !allDiscarded) || treeUndo)
           return {
             state: "live-active",
             control: "undo",
@@ -433,7 +441,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
       },
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
-        const plans = prepare(store, documents, query, query.direction, randomUUID());
+        const plans = await prepare(store, documents, query, query.direction, randomUUID());
         const tree = await store.treeSteps(query, query.direction);
         const treeSteps = tree.acting + tree.gone;
         if (!query.documentIds && !plans.length && !treeSteps)
@@ -442,7 +450,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
             documents: [],
           };
         const committed =
-          countAccepted(plans) || treeSteps
+          hasSteps(plans) || treeSteps
             ? await store.commit({
                 plans,
                 sequence: inSequence(plans, query.direction),
