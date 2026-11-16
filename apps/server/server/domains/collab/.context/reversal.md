@@ -83,7 +83,7 @@ cannot use a reconstruction endpoint, reversal table, or reserved client. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
 commands. A card Undo pops the turn's poppable stack prefix and writes forward reverts for its
-other text parts, including applied parts. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest.
+other text parts, including applied parts. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest. A part of an open draft that no change waits on and that was not applied is skipped as `discarded` the same way, so the card offers Undo only while some of the turn's text still stands in a draft; the Discard's own notice Undo covers the rest.
 Each agent is its own peer: Undo of its edit removes the items the edit inserted and restores
 the items it deleted, item by item, and keeps everyone else's typing, so a later writer edit
 never refuses it. An item that is already gone is skipped ("Stayed as you edited it"): text

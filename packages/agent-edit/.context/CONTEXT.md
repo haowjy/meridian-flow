@@ -81,10 +81,12 @@ holding a live descendant outside the receipt stays (`delete-filter.ts`) with al
 (`id` first: an element without one is not a block); only the AI's own text inside it goes. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
 leaves a writer's later attribute value.
 
-A replacement undoes as plain Yjs does: the deleted run comes back wherever it was, beside whatever
-the writer put there. Over "One big cat." (the AI replaced `small` with `big`), a writer who typed
-"huge" over "big" gets "One smallhuge cat." on Undo, and one who typed before the word gets
-"One smallvery  cat.". Undo never drops an original word to avoid doubling or joining text.
+A replacement undoes while any of its inserted text is still visible: the deleted run comes back
+wherever it was, beside whatever the writer put there. Over "One big cat." (the AI replaced `small`
+with `big`), a writer who typed before the word gets "One smallvery  cat.". Once none of the
+replacement's inserted text is visible (a Discard took it out, or the writer typed over every
+letter), the part restores nothing and reads `changed`: the old word returns only with the writer's
+own text, never as a second copy beside it. A part that only deleted still restores.
 The result equals a plain `Y.UndoManager`'s replacement restoration, with no stranded rule and no
 word rule, except the descendant protection above: Flow keeps the writer's text inside a block the
 AI created, where plain Yjs deletes it, so no writer text is lost.
@@ -93,4 +95,4 @@ A pull or Apply keeps who wrote which characters only where text was inserted: `
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
 Any other change, a deletion inside a word or a letter swap, writes the run whole, so a replaced
 word never has letters of two authors. A writer's letter swap or deletion inside the AI's word
-therefore lands as a replacement, and Undo restores the original beside the writer's letters.
+therefore lands as a replacement, and Undo leaves it alone.
