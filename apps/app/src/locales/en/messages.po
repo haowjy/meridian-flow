@@ -5948,6 +5948,7 @@ msgstr "scene break"
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch"
 msgstr "Scratch"
 

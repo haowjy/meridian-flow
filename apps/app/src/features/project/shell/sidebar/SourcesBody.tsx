@@ -46,6 +46,7 @@ import { EntryList, useEntryList } from "../../context/entry-drag/use-entry-list
 import { useOptionalTreeCreation } from "../../context/TreeCreationProvider";
 import { DropRegion } from "../../context/tree-drop/DropRegion";
 import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree-drop";
+import { useScopeScratchSource } from "../../context/use-scratch-trees";
 import { useWorkSourceWritable } from "../../context/use-work-source-writable";
 import { useAiDraftLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
@@ -283,8 +284,7 @@ export function SourcesBody({
 }) {
   // Scratch is the picked Work's when that is a named one; under No Work a chat keeps its notes
   // in its Files menu, and the foot has no Scratch.
-  const { noWork } = useWorks(projectId);
-  const scratchWorkId = noWork && editorWorkId !== noWork.id ? editorWorkId : null;
+  const scratchWorkId = useScopeScratchSource(projectId)?.owner.workId ?? null;
   // An archived or deleted Work's Scratch shows, and takes no change until it is back.
   const scratchWritable = useWorkSourceWritable(projectId, scratchWorkId);
   // Another owner's note (another Work's, a chat's) is in no list here.

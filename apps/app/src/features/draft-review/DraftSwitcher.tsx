@@ -213,7 +213,7 @@ function DraftItem({ draft }: { draft: DraftVersion }) {
     <DropdownMenuItem
       selected={draft.current}
       onSelect={draft.current ? undefined : draft.onSelect}
-      className="h-auto min-h-8 flex-col items-start gap-0.5"
+      className="h-auto min-h-8 flex-col items-start justify-center gap-0.5 coarse:h-auto coarse:min-h-11"
     >
       <span className="min-w-0 max-w-full truncate">{draft.name}</span>
       {draft.detail ? <span className="text-xs text-muted-foreground">{draft.detail}</span> : null}

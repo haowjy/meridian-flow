@@ -181,7 +181,10 @@ is lost or sits on another selected row (`settleFocus`).
 Both offer the same destinations, and a folder cannot go inside itself in either. Their root
 lists the project's areas and, as the sidebar does, the picked Work's Scratch
 (`useScopeScratchSource`); a Scratch row's picker offers that row's own Scratch instead. Under
-None no Scratch is offered: a chat's notes live in its Files menu.
+None no Scratch is offered: a chat's notes live in its Files menu. Only an area that takes changes
+is a destination (`MenuArea.writable`: an ended Work's Scratch, by `useWorkSourceWritable`, and
+every tree on a deleted Work's Draft take none), so it is left off the top level and offers no
+Copy here or Move here; Copy to… from a row in it still works.
 They differ in what a pick does: Copy to… has no "Already in" refusal and no
 position choices (it always adds, and its copy takes the next free name in the
 parent the row is already in), and it calls `copyRows` where Move… calls `moveRows`.

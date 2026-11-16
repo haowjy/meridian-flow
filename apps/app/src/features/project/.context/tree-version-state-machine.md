@@ -50,7 +50,10 @@ stateDiagram-v2
 - **The page's version chip is the same state, and the same control.** Picking the Work's draft
   or Live in its menu sets the toggle, and opening any of the Work's drafts (a Changes row, the chat's dock, a
   review link: `review-launch.tsx`) puts it on Draft. The chip on Live is neutral with a jade
-  dot while a draft waits, jade on Draft.
+  dot while a draft waits, jade on Draft. Each chip shows only while there is another version
+  to switch to: the sidebar's while the Work has pending changes (**offered**), the page's while
+  the document has a draft of any owner, or its review is open (it carries the review's Close
+  review, and on a phone its Apply and Discard).
 - **On Live** each row the Work changes carries a jade dot, and a page the Work drafts says
   what the draft does to it with Show draft (`LiveDraftNotice`). A page the draft created stays
   on its draft and says live has no version of it; its chip reads Draft.
