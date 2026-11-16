@@ -11,6 +11,7 @@ import type { TurnInverseSkip, TurnTreeState } from "@meridian/contracts/protoco
 import type { Database } from "@meridian/database";
 import { documents, treeEditReceipts, treeNodes } from "@meridian/database/schema";
 import {
+  appliedRestores,
   type DraftedFate,
   deleteStands,
   draftedFates,
@@ -291,6 +292,14 @@ export function createTurnTreeInverse(deps: {
               else {
                 if (back.draft === null) inLive = true;
                 made.push({ record: back.id, node: entry.node });
+                // A change an Apply landed on a node live had deleted comes back with the restore
+                // the Apply wrote for it.
+                if (back.draft === null)
+                  for (const id of appliedRestores(writer.doc, entry.node)) {
+                    const restored = undoChange(writer, LIVE, actor, id);
+                    if (typeof restored !== "string")
+                      made.push({ record: restored.id, node: entry.node });
+                  }
               }
             }
             return { receipt, made, failed, inLive };
