@@ -662,7 +662,7 @@ export function startReplay(
       case "restore":
         if (dry) return { parent: parentAfter(node, flipsOf(record)) };
         // An Apply's restore of a node the Work's view kept brings back what live deleted and
-        // leaves the node where it arrived: the numbering the writer reviewed stays.
+        // leaves the node where it arrived: the twin the writer saw as plain stays plain.
         lift(record, node, record.fromDraft === undefined ? { index } : { ownOnly: false });
         take(record, index);
         return;

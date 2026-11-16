@@ -1284,6 +1284,8 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     expect(left).toEqual([]);
     expect([t.at(ch2)?.trashed, t.at(arc)?.trashed]).toEqual([false, false]);
     expect(t.at(map)).toMatchObject({ name: "Ch2" });
+    expect(t.at(ch2)?.suffix).toBeUndefined();
+    expect(t.at(map)?.suffix).toBe(idHex(map).slice(0, 4));
     t.valid();
   });
 

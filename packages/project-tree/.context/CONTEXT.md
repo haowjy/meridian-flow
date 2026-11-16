@@ -59,6 +59,9 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
     and where the name it shows last changed (`stoodAt`, `placedAt`, `namedAt`), or a purge's
     rehoming. An Undo of a move or rename settles those from the changes still in force, and a
     restore that `undoes` a delete leaves them alone, so an Undo leaves the twins as they were.
+    What an Apply's restore brings back keeps its own arrival, so a returning twin may take the
+    plain name and the twin the writer applied may then read suffixed (the property test's seed 137
+    pins it).
 
 A row that differs from live only in a suffix is no change the Work made: `BranchRow.changed`
 is false, and the count and the Changes list skip it (`changedFolders`, the server's
