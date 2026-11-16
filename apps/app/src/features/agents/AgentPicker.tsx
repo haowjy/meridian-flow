@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { agentsRootOf } from "@meridian/contracts/agents";
-import type { ModelOption } from "@meridian/contracts/protocol";
+import type { ModelList, ModelOption } from "@meridian/contracts/protocol";
 import { NO_OVERRIDES, type ThreadOverrides } from "@meridian/contracts/threads";
 import { resolveReasoning } from "@meridian-flow/runtime/gateway";
 import { Settings2 } from "lucide-react";
@@ -21,7 +21,6 @@ import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
-import { useReasoningLevels } from "@/lib/mars-schema";
 import { cn } from "@/lib/utils";
 import { useOpenAgentFile } from "./agent-file-document";
 import { type CreationAgent, creationAgentOf, isPickable as pickable } from "./creation-agent";
@@ -60,7 +59,7 @@ type AgentPickerPanelProps = {
   /** The chosen Agent's slug and overrides (for a started chat, the bound ones). */
   current: { slug: string | null; overrides: ThreadOverrides };
   mode: AgentPickerMode;
-  models: ModelOption[] | null;
+  options: ModelList | null;
   /** The project whose Agent files "Open" and "Manage Agents" reach. */
   projectId: string;
   /** Closes the picker's popover: after a handoff, and before it opens a file or the Agents tab. */
@@ -81,7 +80,7 @@ export function AgentPickerPanel({
   status,
   current,
   mode,
-  models,
+  options,
   projectId,
   onClose,
   focusRefs,
@@ -247,12 +246,13 @@ export function AgentPickerPanel({
   };
   const overrides = overridesFor(shown);
   const runsOn = overrides.model ?? shown.model;
-  const option = (id: string | null) => (id ? models?.find((model) => model.id === id) : undefined);
+  const option = (id: string | null) =>
+    id ? options?.models.find((model) => model.id === id) : undefined;
   const runsOnOption = option(runsOn);
   const awaitsBinding = shown === own && bound.isPending;
   const bindingFailed = shown === own && bound.isError;
   // Reasoning as the gateway settles it on the model: the Agent's own level, and the one it runs at.
-  const levels = useReasoningLevels();
+  const levels = options?.reasoningLevels ?? [];
   const ownLevel = settledReasoning(shown.effort, runsOnOption, levels);
   const thinksAt = overrides.effort
     ? settledReasoning(overrides.effort, runsOnOption, levels)
@@ -409,7 +409,7 @@ export function AgentPickerPanel({
                   <ModelChoices
                     agent={shown}
                     runsOn={runsOn}
-                    models={models}
+                    models={options?.models ?? null}
                     onChoose={(id) => {
                       // A reasoning override follows the model: settled on it, and dropped once
                       // it is the new model's own level.
@@ -643,10 +643,10 @@ function ReasoningChoices({
 function settledReasoning(
   requested: string | null,
   model: ModelOption | undefined,
-  levels: readonly string[] | undefined,
+  levels: readonly string[],
 ): string | null {
   if (!requested) return null;
-  if (!model || !levels) return requested;
+  if (!model) return requested;
   const settled = resolveReasoning(requested, { efforts: model.efforts }, levels);
   return settled === "default" ? null : settled.effort;
 }

@@ -1,5 +1,7 @@
 /** GET /api/models: the models the Agent picker offers, and which of them this deployment can run. */
+
 import { serializeTransport } from "@meridian/contracts/protocol";
+import { effortLevels } from "@meridian-flow/mars-schema";
 import { defineEventHandler } from "nitro/h3";
 import { requireAppUser } from "../../lib/auth-gate.js";
 import { MODEL_REGISTRY } from "../../lib/gateway/registry.js";
@@ -25,5 +27,5 @@ export default defineEventHandler(async (event) => {
     available: usable.has(id),
     efforts: reasoning.efforts,
   }));
-  return serializeTransport({ models });
+  return serializeTransport({ models, reasoningLevels: effortLevels() });
 });

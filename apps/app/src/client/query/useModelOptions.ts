@@ -6,7 +6,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 
-/** The models this account's chats can run on, for the Agent picker's "Runs on". */
+/** The models (and the reasoning ladder) this account's chats can run on, for the Agent picker's "Runs on". */
 export function useModelOptions(enabled = true) {
   const accountId = useAccountId();
   const accountSignal = useAccountEpochSignal();
@@ -14,12 +14,10 @@ export function useModelOptions(enabled = true) {
     ...queryOptions({
       queryKey: ["models", accountId] as const,
       queryFn: async ({ signal }) =>
-        (
-          await getJson("/api/models", {
-            signal: AbortSignal.any([accountSignal, signal]),
-            schema: modelListSchema,
-          })
-        ).models,
+        await getJson("/api/models", {
+          signal: AbortSignal.any([accountSignal, signal]),
+          schema: modelListSchema,
+        }),
       staleTime: 5 * 60_000,
     }),
     enabled,

@@ -496,8 +496,10 @@ export const forkThreadRequestSchema = z
   })
   .strict();
 
-/** `GET /api/models`: every model Flow knows, for the Agent picker. */
+/** `GET /api/models`: every model Flow knows, for the Agent picker, and Mars's reasoning ladder it settles a level on. */
 export const modelListSchema = z.object({
+  /** Mars's reasoning ladder, lowest first (`effortLevels()`); the picker settles a level a model lacks on it, as the gateway does. */
+  reasoningLevels: z.array(z.string()),
   models: z.array(
     z.object({
       id: z.string(),
@@ -506,7 +508,7 @@ export const modelListSchema = z.object({
       available: z.boolean(),
       /** Who made the model, whoever serves it, for the picker's mark; null for one the registry doesn't know (a mock). The picker shows a mark only for a maker it has art for. */
       maker: z.string().nullable(),
-      /** The levels it lists, lowest first, as its row gives them; `none` means it can switch reasoning off. */
+      /** The levels it lists, lowest first; `none` means it can switch reasoning off. */
       efforts: z.array(z.string()),
     }),
   ),
