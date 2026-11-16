@@ -17,7 +17,7 @@
  *   naming another document, or `gone`, replaces it; with nothing there, the
  *   server's `missing` is "doesn't exist yet".
  * - A link with no ref resolves by its address: the complete index first
- *   (`matchDocumentPath`, through the catalog's `documentFor`), then the
+ *   (the project trees' walk, through the catalog's `documentFor`), then the
  *   server.
  * - A folder (a `folder:` ref, or a directory address) resolves from the local
  *   index when it can. Otherwise the server answers it in the same request as

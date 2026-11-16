@@ -5,14 +5,13 @@
  * draft; `E` is a second chat writing into the same draft.
  */
 
-import { idHex } from "@meridian/contracts/protocol";
+import { childAtSegment, idHex } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   appliedNodes,
   applyDraft,
   changedFolders,
-  childAtSegment,
   childrenOf,
   discardDraft,
   discardedBy,

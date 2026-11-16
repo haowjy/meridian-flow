@@ -63,7 +63,6 @@ export {
   projectedRows,
 } from "./rows.js";
 export {
-  childAtSegment,
   childrenOf,
   descendantsOf,
   fingerprint,
@@ -71,7 +70,6 @@ export {
   rankAt,
   segmentOf,
   treeViolations,
-  type Walkable,
 } from "./shape.js";
 export {
   compareCatalogSiblings,

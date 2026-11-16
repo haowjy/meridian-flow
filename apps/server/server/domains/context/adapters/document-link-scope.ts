@@ -11,7 +11,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { BranchId, CatalogFolder, DraftOwnerKey } from "@meridian/contracts";
+import type { BranchId, CatalogFolder, ContextSourceId, DraftOwnerKey } from "@meridian/contracts";
 import {
   type CatalogDocument,
   type ContextUriScheme,
@@ -41,6 +41,7 @@ import type {
   ScopePrepareRequest,
 } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
+import type { AheadHolder } from "../ports/link-ahead-registry.js";
 import type { ProjectContextAvailabilityPort } from "../ports/project-context-availability.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { ownedByRequest } from "../tree/source-owner.js";
@@ -54,6 +55,7 @@ import {
   createTreeReader,
   type IdentityStatus,
   LIVE_TREE,
+  type PathQuery,
   type TreeView,
 } from "../tree/tree-view.js";
 import {
@@ -79,11 +81,12 @@ type Row = {
   manuscript: boolean;
 };
 
+/** An address in a source: what the tree walks. */
+type Place = { uri: string; contextSourceId: ContextSourceId | null; path: string };
+
 /** One view's index: where each loaded document sits in that view. */
 type ViewIndex = {
   statuses: ReadonlyMap<DocumentId, IdentityStatus>;
-  /** Decoded URI in this view → rows visible there. */
-  byUri: Map<string, Row[]>;
   /** The Work's branch and its owner, for a branch view: what "in a draft" names. */
   branch?: { branchId: string; owner: DraftOwnerKey };
 };
@@ -262,35 +265,16 @@ export function createDrizzleDocumentLinkScopes(deps: {
     for (const view of new Map(views.map((item) => [viewKey(item), item])).values()) {
       const byId = snapshot.foldersByView.get(viewKey(view)) ?? new Map();
       const atAddress = snapshot.foldersAtByView.get(viewKey(view)) ?? new Map();
-      const addressIds = new Map<string, string | null>();
-      for (const uri of snapshot.folderAddresses) {
-        if (atAddress.has(uri)) continue;
-        let folderId: string | null = null;
-        try {
-          const coordinates = await resolveCanonicalPath(db, {
-            holderProjectId: snapshot.projectId as ProjectId,
-            address: uri,
-          });
-          const sourceId = await presentSourceId(db, {
-            scheme: coordinates.scheme,
-            workId: coordinates.workId,
-            rootThreadId: coordinates.rootThreadId,
-            chatThreadId: coordinates.chatThreadId,
-            owner: coordinates.owner,
-          });
-          const found = sourceId
-            ? await tree.resolvePath(treeViewOf(view), {
-                contextSourceId: sourceId,
-                path: coordinates.path,
-              })
-            : null;
-          folderId =
-            found?.kind === "found" && found.node.kind === "folder" ? found.node.folder.id : null;
-        } catch (cause) {
-          if (!(cause instanceof UnresolvableAddressError)) throw cause;
-        }
-        addressIds.set(uri, folderId);
-      }
+      const wanted = [...snapshot.folderAddresses].filter((uri) => !atAddress.has(uri));
+      const places = await placesOf({ holderProjectId: snapshot.projectId as ProjectId }, wanted);
+      const found = await tree.folderIdsAt(
+        treeViewOf(view),
+        places.flatMap((place) => (place.contextSourceId ? [place as PathQuery] : [])),
+      );
+      let next = 0;
+      const addressIds = new Map<string, string | null>(
+        places.map((place) => [place.uri, place.contextSourceId ? (found[next++] ?? null) : null]),
+      );
       const ids = new Set([
         ...[...snapshot.folderIds].filter((id) => !byId.has(id)),
         ...[...addressIds.values()].filter((id): id is string => id !== null && !byId.has(id)),
@@ -320,8 +304,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         }
       }
       for (const [uri, id] of addressIds) {
-        const folder = id ? (byId.get(id) ?? null) : null;
-        atAddress.set(uri, folder?.uri === uri ? folder : null);
+        atAddress.set(uri, id ? (byId.get(id) ?? null) : null);
       }
       snapshot.foldersByView.set(viewKey(view), byId);
       snapshot.foldersAtByView.set(viewKey(view), atAddress);
@@ -421,43 +404,62 @@ export function createDrizzleDocumentLinkScopes(deps: {
         ? { holderUserId: snapshot.viewer as UserId }
         : null;
     if (!holder) return;
-    const places = await Promise.all(
-      uris.map(async (uri) => {
-        try {
-          const coordinates = await resolveCanonicalPath(db, { ...holder, address: uri });
-          const contextSourceId = await presentSourceId(db, {
-            scheme: coordinates.scheme,
-            workId: coordinates.workId,
-            rootThreadId: coordinates.rootThreadId,
-            chatThreadId: coordinates.chatThreadId,
-            owner: coordinates.owner,
-          });
-          return { uri, contextSourceId, path: coordinates.path };
-        } catch (cause) {
-          if (!(cause instanceof UnresolvableAddressError)) throw cause;
-          return { uri, contextSourceId: null, path: "" };
-        }
-      }),
+    const places = (await placesOf(holder, uris)).flatMap((place) =>
+      place.contextSourceId ? [place as Place & PathQuery] : [],
     );
     const named = new Set<string>();
     for (const view of new Map(views.map((item) => [viewKey(item), item])).values()) {
       const answers = snapshot.resolved.get(viewKey(view)) ?? new Map();
-      await Promise.all(
-        places.map(async ({ uri, contextSourceId, path }) => {
-          const found = contextSourceId
-            ? await tree.resolveDocumentAddress(treeViewOf(view), { contextSourceId, path })
+      const found = await tree.resolveDocumentAddresses(treeViewOf(view), places);
+      places.forEach((place, index) => {
+        const answer = found[index];
+        const id =
+          answer?.kind === "found" && answer.node.kind === "document"
+            ? answer.node.document.id
             : null;
-          const id =
-            found?.kind === "found" && found.node.kind === "document"
-              ? found.node.document.id
-              : null;
-          answers.set(uri, id);
-          if (id && !snapshot.rows.get(id)) named.add(id);
-        }),
-      );
+        answers.set(place.uri, id);
+        if (id && !snapshot.rows.get(id)) named.add(id);
+      });
       snapshot.resolved.set(viewKey(view), answers);
     }
     for (const row of await loadRows({ ids: [...named] }, views)) remember(snapshot, row);
+  }
+
+  /**
+   * The source and source-relative path each address names (a null source: it names nothing).
+   * Which source an address is in depends on its scheme and authority only, so each is looked up once.
+   */
+  async function placesOf(holder: AheadHolder, uris: readonly string[]): Promise<Place[]> {
+    const sources = new Map<string, Promise<ContextSourceId | null>>();
+    return Promise.all(
+      uris.map(async (uri) => {
+        const parsed = parseContextUri(uri);
+        if (!parsed.ok || parsed.value.normalized !== uri)
+          return { uri, contextSourceId: null, path: "" };
+        const { scheme, authority, path } = parsed.value;
+        const key = JSON.stringify([scheme, authority]);
+        let source = sources.get(key);
+        if (!source) {
+          source = (async () => {
+            try {
+              const coordinates = await resolveCanonicalPath(db, { ...holder, address: uri });
+              return await presentSourceId(db, {
+                scheme: coordinates.scheme,
+                workId: coordinates.workId,
+                rootThreadId: coordinates.rootThreadId,
+                chatThreadId: coordinates.chatThreadId,
+                owner: coordinates.owner,
+              });
+            } catch (cause) {
+              if (!(cause instanceof UnresolvableAddressError)) throw cause;
+              return null;
+            }
+          })();
+          sources.set(key, source);
+        }
+        return { uri, contextSourceId: await source, path };
+      }),
+    );
   }
 
   /** Storage coordinates of canonical addresses; an address naming nothing is skipped. */
@@ -542,7 +544,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const statuses = await tree.identityStatus(treeViewOf(view), ids);
       const index: ViewIndex = {
         statuses,
-        byUri: new Map(),
         ...(view.kind === "branch" && owners.has(view.branchId)
           ? {
               branch: {
@@ -555,7 +556,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       for (const [id, status] of statuses) {
         const row = snapshot.rows.get(id);
         if (!row || status.kind !== "visible") continue;
-        push(index.byUri, status.address.uri, row);
       }
       snapshot.views.set(key, index);
     }
@@ -796,16 +796,17 @@ function snapshotCatalog(
       nameable: owned(row),
     };
   };
-  const atAddress = (uri: string) => {
-    const index = snapshot.views.get(key);
-    if (!index) {
-      miss(`view:${key}`);
+  /** The document this view's tree reaches at an address a link names; undefined: not loaded. */
+  const reachedAt = (uri: string): CatalogDocument | null | undefined => {
+    const id = snapshot.resolved.get(key)?.get(uri);
+    if (id === undefined) {
+      miss(`resolved:${key}`);
       return undefined;
     }
-    const documents = (index.byUri.get(uri) ?? []).map(toDocument);
-    return documents.includes(UNLOADED)
-      ? undefined
-      : documents.filter((document): document is CatalogDocument | null => document !== UNLOADED);
+    const row = id === null ? null : snapshot.rows.get(id);
+    if (row === undefined) return undefined;
+    const document = row === null ? null : toDocument(row);
+    return document === UNLOADED ? undefined : document;
   };
   // Pictures by their rows' own addresses; presence, as for every link, is the view's
   // identity status: a document in no view is gone, never a deleted picture at its path.
@@ -865,29 +866,12 @@ function snapshotCatalog(
     // An ahead ref binds once, globally, on a live arrival; until then it reads by address.
     settlement: (aheadId) => snapshot.settlements.get(aheadId),
     documentAt(uri) {
-      if (!snapshot.addresses.has(uri)) return undefined;
-      const documents = atAddress(uri);
-      if (documents === undefined) return undefined;
-      return (
-        documents.find(
-          (document): document is CatalogDocument =>
-            document !== null && document.presence !== "deleted",
-        ) ?? null
-      );
+      return snapshot.addresses.has(uri) ? reachedAt(uri) : undefined;
     },
     documentFor(uri) {
       if (!snapshot.addresses.has(uri)) return undefined;
-      const answers = snapshot.resolved.get(key);
-      const id = answers?.get(uri);
-      if (id === undefined) {
-        miss(`resolved:${key}`);
-        return undefined;
-      }
-      const row = id === null ? null : snapshot.rows.get(id);
-      if (row === undefined) return undefined;
-      const document = row === null ? null : toDocument(row);
-      if (document === UNLOADED) return undefined;
-      return document && reachable(document) ? document : null;
+      const document = reachedAt(uri);
+      return document === undefined ? undefined : reachable(document) ? document : null;
     },
     assetAddress(id) {
       const row = snapshot.rows.get(id);

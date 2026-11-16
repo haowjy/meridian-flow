@@ -6,9 +6,14 @@
  * name means now.
  */
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
-import { canonicalLeaf, idHex, readSegment, withSegmentName } from "@meridian/contracts/protocol";
 import {
+  canonicalLeaf,
   childAtSegment,
+  idHex,
+  readSegment,
+  withSegmentName,
+} from "@meridian/contracts/protocol";
+import {
   childrenOf,
   isSourceRoot,
   segmentOf,

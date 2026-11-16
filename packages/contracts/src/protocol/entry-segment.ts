@@ -31,6 +31,47 @@ export function idHex(id: string): string {
   return id.replaceAll("-", "").toLowerCase();
 }
 
+/** What a path walk reads of a node: a replay's node, or any catalog shaped like one. */
+export type Walkable = {
+  id: string;
+  /** Only `"folder"` is read: a folder level of a path answers folders alone. */
+  kind: string;
+  name: string;
+  suffix?: string | undefined;
+  trashed: boolean;
+};
+
+/**
+ * The shown child a path segment reaches. With a `~` suffix, the one whose id's hex digits begin
+ * with it (the lowest id, should a suffix shortened by hand fit two), whatever name is in front;
+ * a suffix that reaches none reads as the name in front, so a writer and a reader take a stale or
+ * made-up `~id` the same way. By name, the child of that name that carries no suffix.
+ *
+ * `folder` reads a folder level of a path: only folders answer, and when the plain twin of the
+ * name is a document, the folder of that name with the lowest id does (`Arc/x` reaches the folder
+ * `Arc~922e` beside a document `Arc`). The SQL walk (`nodesAt`) reads the same.
+ */
+export function childAtSegment<N extends Walkable>(
+  children: readonly N[],
+  segment: string,
+  level?: "folder",
+): N | undefined {
+  const { name, suffix } = readSegment(segment);
+  let byId: N | undefined;
+  let plain: N | undefined;
+  let named: N | undefined;
+  for (const child of children) {
+    if (child.trashed || (level === "folder" && child.kind !== "folder")) continue;
+    if (suffix !== undefined && idHex(child.id).startsWith(suffix)) {
+      if (!byId || child.id < byId.id) byId = child;
+    } else if (child.name === name) {
+      if (child.suffix === undefined) plain = child;
+      else if (level === "folder" && (!named || child.id < named.id)) named = child;
+    }
+  }
+  return byId ?? plain ?? named;
+}
+
 /** A leaf with its suffix kept aside: `read` sees only the name, and its answer gets the suffix back. */
 export function withSegmentName(leaf: string, read: (name: string) => string): string {
   const { name, suffix } = readSegment(leaf);

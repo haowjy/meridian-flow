@@ -376,7 +376,7 @@ Moves and renames therefore do not rewrite document content. An ahead ref is a
 path until an arrival claims it; once a document arrives, settlement binds the
 ref through the final tree. Every tracked create, upload, move-in, Work
 restore, and Apply settles arrivals once in its completion transaction. A ref
-binds once, to the first live document at its exact address, for every holder:
+binds once, to the first live document its address reaches through the tree's walk (a `Kael/Note` link reaches a Note in a folder `Kael~f1` beside a document `Kael`), for every holder:
 a later occupant never captures it, nothing rebinds it, and a paste copies it
 as is. A branch's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot

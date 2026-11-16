@@ -15,7 +15,7 @@ import {
 import { addressCandidates, readSegment } from "@meridian/contracts/protocol";
 import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { and, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
+import { and, inArray, isNull, or, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
@@ -131,6 +131,19 @@ export interface TreeReader {
    */
   resolveDocumentAddress(view: TreeView, at: PathQuery): Promise<PathResolution<TreeNode>>;
   /**
+   * `resolveDocumentAddress` for many addresses at once, answered in order: a fixed number of
+   * statements however many are asked.
+   */
+  resolveDocumentAddresses(
+    view: TreeView,
+    queries: readonly PathQuery[],
+  ): Promise<PathResolution<TreeNode>[]>;
+  /**
+   * The folder each path reaches with every segment, the last included, read at folder level (a
+   * folder `Kael~f1` beside a document `Kael` is `Kael`); null where none, and for the source root.
+   */
+  folderIdsAt(view: TreeView, queries: readonly PathQuery[]): Promise<(FolderId | null)[]>;
+  /**
    * One step of a walk: what this view shows at the segment `filename` directly under
    * `parentId` (null: the source root).
    */
@@ -194,7 +207,7 @@ type SlotHit = { key: number; id: string; how: number };
 
 /**
  * The node of one kind that the view shows at each slot (source, parent, segment), read as
- * `childAtSegment` in `@meridian/project-tree` reads it: a `~` suffix reaches the child whose id
+ * `childAtSegment` in `@meridian/contracts/protocol` reads it: a `~` suffix reaches the child whose id
  * begins with it, the lowest id if two do, and one that reaches none reads as its name; a name
  * reaches the child of that name with no suffix. At a `folder` level of a path, a folder of the
  * name answers when the plain twin is a document (the lowest id). One statement for any number of
@@ -258,6 +271,19 @@ function best(...kinds: SlotHit[][]): SlotHit[][] {
   return kinds.map((hits) => hits.filter((hit) => hit.how === top.get(hit.key)));
 }
 
+type FolderWalk = {
+  sourceId: ContextSourceId;
+  dirs: string[];
+  filename: string;
+  /** The folders the directories reached so far (null: the source root); empty when none. */
+  parents: (FolderId | null)[];
+  respelled: boolean;
+};
+
+/** A hit is as asked when a `~id` reached its node by id, or a name its plain child. */
+const isRespelled = (segment: string, hits: readonly SlotHit[]) =>
+  hits.some((hit) => hit.how !== (readSegment(segment).suffix === undefined ? 1 : 0));
+
 type PathOccupancy = {
   path: string;
   documents: DocumentId[];
@@ -312,33 +338,11 @@ export function createTreeReader(db: Database): TreeReader {
   }
 
   /**
-   * The one meaning of "same path": the id of the node the view shows at each source-relative
-   * path, walked one level at a time through the view's folders by segment (one statement per
-   * depth for the whole batch, then one for the documents and one for the folders). A segment
-   * reaches one node of each kind at most; of a document and a folder the lowest id answers.
+   * Walk each query's directories one level at a time through the view's folders by segment (one
+   * statement per depth for the whole batch), narrowing `parents` to the folder each reaches. A
+   * segment reaches one folder at most.
    */
-  async function pathOccupants(
-    view: TreeView,
-    queries: readonly PathQuery[],
-  ): Promise<PathOccupancy[]> {
-    const walks = queries.map((query) => {
-      const segments = query.path.split("/").filter(Boolean);
-      const filename = segments.pop();
-      return {
-        sourceId: query.contextSourceId,
-        path: [...segments, ...(filename === undefined ? [] : [filename])].join("/"),
-        dirs: segments,
-        filename: filename ?? "",
-        parents:
-          filename !== undefined && isUuid(query.contextSourceId)
-            ? [null]
-            : ([] as (FolderId | null)[]),
-        respelled: false,
-      };
-    });
-    // A hit is as asked when a `~id` reached its node by id, or a name its plain child.
-    const respelled = (segment: string, hits: readonly SlotHit[]) =>
-      hits.some((hit) => hit.how !== (readSegment(segment).suffix === undefined ? 1 : 0));
+  async function walkFolders(view: TreeView, walks: FolderWalk[]) {
     const depth = Math.max(0, ...walks.map((walk) => walk.dirs.length));
     for (let level = 0; level < depth; level += 1) {
       const asked = positions(
@@ -358,9 +362,40 @@ export function createTreeReader(db: Database): TreeReader {
         if (level >= walk.dirs.length) return;
         const mine = asked.hitsFor(owner, hits);
         walk.parents = [...new Set(mine.map((hit) => hit.id))] as FolderId[];
-        if (respelled(walk.dirs[level] as string, mine)) walk.respelled = true;
+        if (isRespelled(walk.dirs[level] as string, mine)) walk.respelled = true;
       });
     }
+  }
+
+  const folderWalk = (query: PathQuery, dirs: string[], filename: string): FolderWalk => ({
+    sourceId: query.contextSourceId,
+    dirs,
+    filename,
+    parents: isUuid(query.contextSourceId) ? [null] : [],
+    respelled: false,
+  });
+
+  /**
+   * The one meaning of "same path": the id of the node the view shows at each source-relative
+   * path, walked through the view's folders by segment, then one statement for the documents and
+   * one for the folders. A segment reaches one node of each kind at most; of a document and a
+   * folder the lowest id answers.
+   */
+  async function pathOccupants(
+    view: TreeView,
+    queries: readonly PathQuery[],
+  ): Promise<PathOccupancy[]> {
+    const walks = queries.map((query) => {
+      const segments = query.path.split("/").filter(Boolean);
+      const filename = segments.pop();
+      const walk = folderWalk(query, segments, filename ?? "");
+      if (filename === undefined) walk.parents = [];
+      return {
+        ...walk,
+        path: [...segments, ...(filename === undefined ? [] : [filename])].join("/"),
+      };
+    });
+    await walkFolders(view, walks);
     const leaves = positions(
       walks.flatMap((walk, owner) =>
         walk.parents.map((parentId) => ({
@@ -384,7 +419,7 @@ export function createTreeReader(db: Database): TreeReader {
       parents: walk.parents,
       respelled:
         walk.respelled ||
-        respelled(walk.filename, [
+        isRespelled(walk.filename, [
           ...leaves.hitsFor(owner, documentHits),
           ...leaves.hitsFor(owner, folderHits),
         ]),
@@ -603,38 +638,107 @@ export function createTreeReader(db: Database): TreeReader {
     return first;
   }
 
+  async function resolveDocumentAddresses(
+    view: TreeView,
+    queries: readonly PathQuery[],
+  ): Promise<PathResolution<TreeNode>[]> {
+    const spellings = queries.map((at) => {
+      const slash = at.path.lastIndexOf("/");
+      return addressCandidates(at.path.slice(slash + 1)).map((leaf) => ({
+        ...at,
+        path: at.path.slice(0, slash + 1) + leaf,
+      }));
+    });
+    const occupancies = await pathOccupants(view, spellings.flat());
+    let next = 0;
+    const walked = queries.map((at, index) => {
+      const mine = occupancies.slice(next, next + (spellings[index]?.length ?? 0));
+      next += mine.length;
+      for (const occupancy of mine) {
+        const ref = lowest(occupancy.documents, occupancy.folders);
+        if (ref?.kind === "document")
+          return { at, hit: { id: ref.id, occupancy }, parent: undefined };
+      }
+      return { at, hit: null, parent: mine[0]?.parents[0] };
+    });
+    const hitRows = await documentRows(view, (vd) =>
+      inArray(
+        vd.id,
+        walked.flatMap(({ hit }) => (hit ? [hit.id] : [])),
+      ),
+    );
+    // A link may leave off the extension: the one document under the reached folder that differs
+    // only by it. All the misses' folders are read at once.
+    const rowOf = new Map(hitRows.map((row) => [row.id, row]));
+    const misses = walked.filter(
+      ({ hit, parent, at }) =>
+        (!hit || !rowOf.has(hit.id)) && parent !== undefined && isUuid(at.contextSourceId),
+    );
+    const siblings =
+      misses.length === 0
+        ? []
+        : await documentRows(view, (vd) =>
+            and(
+              inArray(vd.contextSourceId, [...new Set(misses.map(({ at }) => at.contextSourceId))]),
+              or(
+                inArray(vd.folderId, [
+                  ...new Set(misses.flatMap(({ parent }) => (parent ? [parent] : []))),
+                ]),
+                misses.some(({ parent }) => parent === null) ? isNull(vd.folderId) : undefined,
+              ),
+            ),
+          );
+    const reached = walked.map(({ at, hit, parent }) => {
+      const row = hit && rowOf.get(hit.id);
+      if (row && hit) return { row, path: hit.occupancy.respelled ? null : hit.occupancy.path };
+      if (parent === undefined || !isUuid(at.contextSourceId)) return null;
+      const slash = at.path.lastIndexOf("/");
+      const loose = matchOmittedExtension(
+        siblings.filter(
+          (each) => each.contextSourceId === at.contextSourceId && each.folderId === parent,
+        ),
+        at.path.slice(slash + 1),
+        (each) => each.segment,
+      );
+      return loose ? { row: loose, path: null } : null;
+    });
+    // A path the tree spells differently from the one asked comes from the document's own chain.
+    const chains = await loadFolderChains(
+      tx(),
+      reached.flatMap((each) => (each && each.path === null ? [each.row.folderId] : [])),
+      view,
+    );
+    return reached.map((each): PathResolution<TreeNode> => {
+      if (!each) return { kind: "not_found" };
+      const { row } = each;
+      const path =
+        each.path ??
+        chainPrefix(row.folderId === null ? [] : (chains.get(row.folderId) ?? [])) + row.segment;
+      return { kind: "found", node: { kind: "document", document: toDocument(row, path) } };
+    });
+  }
+
   async function resolveDocumentAddress(
     view: TreeView,
     at: PathQuery,
   ): Promise<PathResolution<TreeNode>> {
-    const slash = at.path.lastIndexOf("/");
-    for (const leaf of addressCandidates(at.path.slice(slash + 1))) {
-      const found = await resolvePath(view, { ...at, path: at.path.slice(0, slash + 1) + leaf });
-      if (found.kind === "found" && found.node.kind === "document") return found;
-    }
-    // A link may leave off the extension: the one document under the reached folder that differs
-    // only by it.
-    const [occupancy] = await pathOccupants(view, [at]);
-    const parent = occupancy?.parents[0];
-    if (parent === undefined || !isUuid(at.contextSourceId)) return { kind: "not_found" };
-    const siblings = await documentRows(view, (vd) =>
-      and(
-        eq(vd.contextSourceId, at.contextSourceId),
-        parent === null ? isNull(vd.folderId) : eq(vd.folderId, parent),
-      ),
+    return (await resolveDocumentAddresses(view, [at]))[0] ?? { kind: "not_found" };
+  }
+
+  async function folderIdsAt(view: TreeView, queries: readonly PathQuery[]) {
+    const walks = queries.map((query) =>
+      folderWalk(query, query.path.split("/").filter(Boolean), ""),
     );
-    const row = matchOmittedExtension(siblings, at.path.slice(slash + 1), (each) => each.segment);
-    if (!row) return { kind: "not_found" };
-    const document = await findById(view, row.id);
-    return document.kind === "found"
-      ? { kind: "found", node: { kind: "document", document: document.document } }
-      : { kind: "not_found" };
+    await walkFolders(view, walks);
+    return walks.map((walk) => walk.parents[0] ?? null);
   }
 
   return {
     resolvePath,
     resolveAddress,
     resolveDocumentAddress,
+    resolveDocumentAddresses,
+    folderIdsAt,
     childAt,
     findById,
     findFolderById,

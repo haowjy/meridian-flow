@@ -1,13 +1,20 @@
 import { parseContextUri } from "@meridian/contracts";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { type ProjectContextTreeScheme, readSegment } from "@meridian/contracts/protocol";
 import type { TreeNode, TreeProjection } from "@meridian/project-tree";
 import { buildTreeView, type TreeView } from "@/core/project-tree/tree-view";
 
 type Row = { documentId: string; uri: string };
 
+/** A UUID from 32 hex digits, its last digits made unique by `n`. */
+const uuidLike = (hex: string, n: number) => {
+  const digits = `${hex.slice(0, 28)}${n.toString(16).padStart(4, "0")}`;
+  return `${digits.slice(0, 8)}-${digits.slice(8, 12)}-${digits.slice(12, 16)}-${digits.slice(16, 20)}-${digits.slice(20)}`;
+};
+
 /**
  * The project trees behind link-index fixtures: one tree per scheme (contextual authority),
  * with a folder for each directory of a row's path, so the index's walk has something to walk.
+ * A folder's id is UUID-like and begins with its `~` suffix, as a real twin's does.
  */
 export function treesOfRows(rows: readonly Row[]): TreeView[] {
   const schemes = new Set<string>();
@@ -19,11 +26,14 @@ export function treesOfRows(rows: readonly Row[]): TreeView[] {
     const source = `source-${scheme}`;
     const nodes = new Map<string, TreeNode>();
     const children = new Map<string, TreeNode[]>();
-    const add = (id: string, kind: "folder" | "document", name: string, parent: string) => {
+    const folderIds = new Map<string, string>();
+    const add = (id: string, kind: "folder" | "document", segment: string, parent: string) => {
+      const { name, suffix } = readSegment(segment);
       const node = {
         id,
         kind,
         name,
+        ...(suffix ? { suffix } : {}),
         parent,
         source,
         filetype: "md",
@@ -42,8 +52,14 @@ export function treesOfRows(rows: readonly Row[]): TreeView[] {
       const name = segments.pop() as string;
       let parent = `source:${source}`;
       for (const segment of segments) {
-        const id = `${parent}/${segment}`;
-        if (!nodes.has(id)) add(id, "folder", segment, parent);
+        const key = `${parent}/${segment}`;
+        let id = folderIds.get(key);
+        if (!id) {
+          const hex = (readSegment(segment).suffix ?? "").padEnd(32, "0");
+          id = uuidLike(hex, folderIds.size);
+          folderIds.set(key, id);
+          add(id, "folder", segment, parent);
+        }
         parent = id;
       }
       add(row.documentId, "document", name, parent);

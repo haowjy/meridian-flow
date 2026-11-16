@@ -6,14 +6,9 @@ import {
   apiProjectContextSourcesPath,
   type ContextSource,
   canonicalLeaf,
-} from "@meridian/contracts/protocol";
-import {
   childAtSegment,
-  childrenOf,
-  sourceRoot,
-  type TreeNode,
-  type TreeProjection,
-} from "@meridian/project-tree";
+} from "@meridian/contracts/protocol";
+import { childrenOf, sourceRoot, type TreeNode, type TreeProjection } from "@meridian/project-tree";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
 import { unknownJsonResponse } from "../../core/session";

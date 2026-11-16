@@ -53,6 +53,9 @@ export function createProjectLinkCatalog(
   });
   const held = (document: LinkableDocument | null | undefined) =>
     document ? catalogDocument(document) : undefined;
+  // Rule 4's lookup by address and pass 3's read the same tree walk.
+  const documentFor = (uri: string) =>
+    index.complete ? (held(indexedDocumentAt(index, uri)) ?? null) : undefined;
   return {
     indexed: (documentId) => byId.get(documentId),
     indexedFolder: (folderId) => foldersById.get(folderId),
@@ -66,15 +69,8 @@ export function createProjectLinkCatalog(
       // Not known settled: rule 4 shows what is at its address while the server is asked.
       return settled ?? null;
     },
-    documentAt(uri) {
-      if (!index.complete) return undefined;
-      const document = index.documents.find((candidate) => candidate.uri === uri);
-      return document ? catalogDocument(document) : null;
-    },
-    documentFor(uri) {
-      if (!index.complete) return undefined;
-      return held(indexedDocumentAt(index, uri)) ?? null;
-    },
+    documentAt: documentFor,
+    documentFor,
     assetAddress: () => undefined,
     assetFor: () => undefined,
   };
