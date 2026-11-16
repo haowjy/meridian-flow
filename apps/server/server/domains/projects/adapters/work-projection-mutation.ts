@@ -5,7 +5,8 @@
  * canonical transaction participant for every mutation visible in a Works snapshot. It owns
  * the Work's stored pending count (the badge): every Work a transaction locks through it is
  * recounted at commit, and a moved count, or a mark that its current drafts changed
- * (`draftMembershipChanged`), bumps the Work's revision and sends a notice. An
+ * (`draftMembershipChanged`), bumps the Work's revision and sends a notice. A chat's first write
+ * to a draft (`draftAuthorJoined`) only wakes the owner: the list names each draft's chats. An
  * ordinary draft append (a keystroke) never enters it: the draft-effect projection runs after
  * every append and recounts then, through `mutate`.
  */
@@ -14,14 +15,15 @@ import { type DraftOwner, draftOwnerKey } from "@meridian/contracts";
 import type { DraftOwnerHint } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, works } from "@meridian/database/schema";
-import { type AnyColumn, and, inArray, ne, or, sql } from "drizzle-orm";
+import { branches, documentDrafts, works } from "@meridian/database/schema";
+import { type AnyColumn, and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
   type BranchDraftRef,
   branchDraftRefs,
   LineageDraftsUnavailableError,
   lockLineageOwners,
   type OwnerLocks,
+  ownerKeyOfColumns,
 } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
@@ -112,6 +114,12 @@ export type WorkProjectionMutation = {
    * appends never mark it.
    */
   draftMembershipChanged(owner: DraftOwner): void;
+  /**
+   * A chat wrote a draft for the first time in the caller's transaction: once it commits, the
+   * draft's owner gets its `draft-owner-hint`, because the list names each draft's chats
+   * (`actorThreads`) and neither its count nor its membership moved. No lock, no revision.
+   */
+  draftAuthorJoined(draftId: string): void;
 };
 
 const WORKS_NOTICE_STATE = {};
@@ -404,6 +412,28 @@ export function createWorkProjectionMutation(input: {
       const state = worksNoticeState();
       if (owner.kind === "work") state.membershipWorkIds.add(owner.workId);
       else state.membershipRootIds.set(owner.rootThreadId, owner.projectId);
+    },
+    draftAuthorJoined(draftId) {
+      runAfterDrizzleCommit(async () => {
+        const [row] = await currentDrizzleDb(input.db)
+          .select({
+            projectId: branches.projectId,
+            workId: branches.originWorkId,
+            rootThreadId: branches.originRootThreadId,
+          })
+          .from(documentDrafts)
+          .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
+          .where(eq(documentDrafts.id, draftId));
+        const owner = row ? ownerKeyOfColumns(row) : null;
+        if (!row || !owner) return;
+        input.draftOwnerHints.publishDraftOwnerHints([
+          {
+            type: "draft-owner-hint",
+            projectId: row.projectId as DraftOwnerHint["projectId"],
+            owner,
+          },
+        ]);
+      });
     },
     lifecycleChanged(work) {
       input.draftOwnerHints.publishDraftOwnerHints([

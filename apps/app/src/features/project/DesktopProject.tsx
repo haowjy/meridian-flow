@@ -51,6 +51,7 @@ import { MainHeader } from "./shell/MainHeader";
 import { UntabbedChip, useMainTabCommands } from "./shell/MainTabStrip";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
+import { useSidebarTabs } from "./shell/sidebar/sidebar-tabs-store";
 import { pageSheetClass } from "./shell/tab-chip";
 import { DocumentChoices } from "./side/DocumentChoices";
 import { SideChatHeader, SideDocumentHeader, SideEmptyHeader } from "./side/SideHeader";
@@ -89,6 +90,14 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     if (!sidebarOver) return;
     foldSidebar();
     focusMain();
+  });
+  // An ask to show a sidebar pane (Manage Agents, the chat strip's "more") opens the sidebar.
+  const asked = useSidebarTabs((state) => state.asked);
+  const seenAsk = useRef(asked);
+  useEffect(() => {
+    if (asked === seenAsk.current) return;
+    seenAsk.current = asked;
+    if (asked && !panels["rail-l"].open) setSlotOpenHere("rail-l", true);
   });
   // A document held beside from a link opens the side, so the click has a visible result.
   const revealed = useSideRevealed();

@@ -732,6 +732,8 @@ export function useWorkBranchCommands({
       start(mode, draft, { kind: "draft" });
     return {
       projectId,
+      /** The Work the commands act for; No Work for a chat's own drafts. */
+      work,
       ownerKey,
       threadId,
       owner,

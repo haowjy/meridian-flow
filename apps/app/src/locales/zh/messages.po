@@ -129,6 +129,8 @@ msgid "{0, plural, one {# document, deleted from {location}} other {# documents,
 msgstr ""
 
 #. placeholder {0}: counted(false)
+#. placeholder {0}: dock.files.length
+#: src/features/chat/DraftDock.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# document} other {# documents}}"
 msgstr ""
@@ -349,6 +351,16 @@ msgstr ""
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{0} items deleted."
+msgstr ""
+
+#. placeholder {0}: dock.more
+#: src/features/chat/DraftDock.tsx
+msgid "{0} more in this Work"
+msgstr ""
+
+#. placeholder {0}: dock.more
+#: src/features/chat/DraftDock.tsx
+msgid "{0} more to review"
 msgstr ""
 
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)

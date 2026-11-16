@@ -18,7 +18,6 @@ import {
 import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
-import { useProjectSurfacePrefsStore } from "@/features/project/layout/surface-prefs-store";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { cn } from "@/lib/utils";
@@ -344,7 +343,6 @@ export function AgentPickerPanel({
                     onOpen={() => {
                       onClose();
                       useSidebarTabs.getState().reveal("agents");
-                      useProjectSurfacePrefsStore.getState().setSlotOpen("rail-l", true);
                     }}
                   />
                 </li>
