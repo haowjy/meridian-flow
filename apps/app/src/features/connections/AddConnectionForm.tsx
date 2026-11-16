@@ -22,6 +22,9 @@ export type AddValues = {
   level: McpConnectionLevel;
 };
 
+/** Why an add failed, shown under the address when the server refused it, else under the form. */
+export type AddError = { on: "address" | "form"; message: string };
+
 export const EMPTY_ADD: AddValues = { url: "", name: null, token: "", level: "account" };
 
 export const addName = (values: AddValues) => values.name ?? suggestedName(values.url);
@@ -44,12 +47,20 @@ export function AddConnectionForm({
 }: {
   values: AddValues;
   inProject: boolean;
-  error: string | null;
+  error: AddError | null;
   onChange: (values: AddValues) => void;
   onSubmit: () => void;
   onCancel: () => void;
 }) {
-  const ids = { url: useId(), name: useId(), token: useId(), level: useId(), warning: useId() };
+  const ids = {
+    url: useId(),
+    urlError: useId(),
+    name: useId(),
+    token: useId(),
+    level: useId(),
+    warning: useId(),
+  };
+  const addressError = error?.on === "address" ? error.message : null;
   const name = addName(values);
   return (
     <form
@@ -71,7 +82,12 @@ export function AddConnectionForm({
           placeholder="https://example.com/mcp"
           value={values.url}
           onChange={(event) => onChange({ ...values, url: event.target.value })}
+          aria-invalid={addressError ? true : undefined}
+          aria-describedby={addressError ? ids.urlError : undefined}
         />
+        {addressError ? (
+          <InlineErrorRow id={ids.urlError} message={addressError} className="px-0" />
+        ) : null}
       </Field>
       <Field id={ids.name} label={<Trans>Name</Trans>}>
         <Input
@@ -117,7 +133,7 @@ export function AddConnectionForm({
           trust.
         </Trans>
       </p>
-      {error ? <InlineErrorRow message={error} className="px-0" /> : null}
+      {error?.on === "form" ? <InlineErrorRow message={error.message} className="px-0" /> : null}
       <div className="flex gap-2">
         <Button type="submit" size="sm" aria-describedby={ids.warning}>
           <Trans>Connect</Trans>
