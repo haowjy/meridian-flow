@@ -69,10 +69,12 @@ export interface LiveDocumentSessionRegistry {
    */
   openStateVector(documentId: DocumentId, view?: "live" | "draft"): Uint8Array | null;
   /**
-   * The writer's Undo of the document's live session in this tab, shown or kept for its undo;
-   * null when the tab holds none.
+   * The writer's Undo of a room's session in this tab, shown or kept for its undo: a document's
+   * live room by its id, a draft room by its name. Null when the tab holds none.
    */
-  liveHistory(documentId: DocumentId): DocumentHistory | null;
+  history(roomKey: string): DocumentHistory | null;
+  /** Calls `observer` each time a session opens in this tab, live or draft, with a new `history`. */
+  observeHistories(observer: () => void): () => void;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,

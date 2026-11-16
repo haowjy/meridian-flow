@@ -141,6 +141,8 @@ export class DocumentHistory implements EditorHistoryHandle {
     histories.set(editor, this);
     this.editors.add(editor);
     editor.on("beforeTransaction", this.rememberRange);
+    // The toolbar read Undo before the editor had this history: tiptap's `onCreate` comes later.
+    if (!editor.isDestroyed) editor.view.dispatch(editor.state.tr.setMeta(HISTORY_META, true));
     return () => {
       editor.off("beforeTransaction", this.rememberRange);
       this.editors.delete(editor);

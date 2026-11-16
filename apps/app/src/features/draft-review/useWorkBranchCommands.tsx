@@ -3,7 +3,7 @@
 import { t } from "@lingui/core/macro";
 import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
@@ -59,6 +59,8 @@ type StepData = {
   commandId: string;
   branchId: string;
   nodes: readonly string[];
+  /** The draft each document was applied from: Ctrl+Z in its editor takes the Apply back too. */
+  drafts: Readonly<Record<string, string>>;
   name: string;
   halves?: ApplyHalves;
 };
@@ -115,7 +117,7 @@ export function useWorkBranchCommands({
     };
     const row = (draft: DraftReviewSelection) =>
       listed()?.find((item) => item.itemKey === draft.itemKey);
-    const liveHistory = (documentId: string) => registry.liveHistory(documentId as DocumentId);
+    const liveHistory = (documentId: string) => registry.history(documentId);
     // The Work's list re-reads with the touched documents' own reads: the route reads a
     // discarded move from the item's metadata, and the document header reads its draft hints.
     const refresh = (documentIds: readonly string[]) => {
@@ -282,7 +284,7 @@ export function useWorkBranchCommands({
      * sources, what its tree half did to each. `account`: a node the project's list doesn't show is
      * in the account's, whose list its tree half is read in too. Null without the tree lists.
      */
-    const stepOf = (data: StepData) => {
+    const stepOf = (data: Omit<StepData, "drafts">) => {
       if (!treeLists) return null;
       const halves = data.halves ?? { text: true, tree: true, restores: [], did: {} };
       const handle = treeLists.acquire({ kind: "project", projectId });
@@ -354,7 +356,11 @@ export function useWorkBranchCommands({
       const made = stepOf(data);
       if (!made) return null;
       let { documentIds, account } = made;
-      let { branchId } = data;
+      let { branchId, drafts } = data;
+      const historiesOf = (documentId: string) => {
+        const draftId = drafts[documentId];
+        return [liveHistory(documentId), draftId ? registry.history(draftRoomName(draftId)) : null];
+      };
       const port = serverPort({
         commandId: data.commandId,
         unapply: (body) => unapplyCommand(projectId, branchId, body),
@@ -373,14 +379,18 @@ export function useWorkBranchCommands({
           const landed = await again(step);
           const next = landed && stepOf(landed);
           if (!landed || !next) return null;
-          ({ documentIds, account, branchId } = { ...next, branchId: landed.branchId });
+          ({ documentIds, account, branchId, drafts } = {
+            ...next,
+            branchId: landed.branchId,
+            drafts: landed.drafts,
+          });
           return { commandId: landed.commandId, init: next.init };
         },
       });
       const step: AppliedCommand = new AppliedCommand(
         made.init,
         port,
-        () => documentIds.map(liveHistory),
+        () => documentIds.flatMap(historiesOf),
         {
           closed,
           seat: seatOn(made.session, () => account),
@@ -389,7 +399,7 @@ export function useWorkBranchCommands({
               projectId,
               ownerKey,
               documentId:
-                documentIds.find((id) => liveHistory(id) === from) ?? documentIds[0] ?? "",
+                documentIds.find((id) => historiesOf(id).includes(from)) ?? documentIds[0] ?? "",
               step,
               answer,
             }),
@@ -470,6 +480,7 @@ export function useWorkBranchCommands({
                 commandId: outcome.commandId,
                 branchId: item.branchId,
                 nodes: [draft.documentId],
+                drafts: item.draftId ? { [draft.documentId]: item.draftId } : {},
                 name,
                 halves: outcome.halves,
               }
@@ -558,6 +569,13 @@ export function useWorkBranchCommands({
                   commandId: landed.commandId,
                   branchId,
                   nodes: taken,
+                  drafts: Object.fromEntries(
+                    members.flatMap(({ draft, item }) =>
+                      item?.draftId && taken.includes(draft.documentId)
+                        ? [[draft.documentId, item.draftId]]
+                        : [],
+                    ),
+                  ),
                   name: name ?? only ?? t`${count} changes`,
                   halves: halvesOf(landed),
                 }

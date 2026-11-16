@@ -18,7 +18,10 @@ import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import type { ApplyClickOutcome, ApplyCommandHandle } from "./apply-click-queue";
 import { itemOf, unappliedOf } from "./draft-notices";
 
-/** The histories of the live sessions this tab holds for the Apply's documents, read now. */
+/**
+ * The histories this tab holds for the Apply's documents, read now: each one's live session, and
+ * the draft rooms it applied from.
+ */
 export type LiveHistories = () => readonly (DocumentHistory | null)[];
 
 export type Answer = Unapplied | { taken: "failed" };
@@ -271,6 +274,11 @@ export class AppliedCommand implements ApplyStep {
     this.say({ from, answer: { taken: "nothing", treeLeft: [], held: this.held }, step: this });
   }
 
+  /** A session of one of its documents opened since it was applied: in force, it shows there. */
+  rejoin(): void {
+    if (this.inForce()) this.shared.enter();
+  }
+
   /** The Apply's port from now on: a band's review let go of its room. */
   switchPort(port: ApplyPort): void {
     this.port = port;
@@ -517,6 +525,11 @@ export class AppliedCommands {
 
   values(): AppliedCommand[] {
     return [...this.all.keys()];
+  }
+
+  /** A session opened: each Apply in force on its document enters its history, oldest first. */
+  rejoin(): void {
+    for (const command of this.all.keys()) command.rejoin();
   }
 
   readonly subscribe = (listener: () => void): (() => void) => {
