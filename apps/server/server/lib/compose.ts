@@ -128,9 +128,12 @@ import {
   type AgentRevisionStore,
   type BoundAgentCatalog,
   createBoundAgentCatalog,
+  createCachedPackageFetcher,
   createDrizzleAgentRevisionStore,
+  createGithubPackageFetcher,
   createInMemoryAgentRevisionStore,
   noLevelFiles,
+  type PackageFetcher,
   readBuiltinPackages,
 } from "../domains/packages/index.js";
 import {
@@ -329,6 +332,7 @@ export type AppServices = {
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  packageFetcher: PackageFetcher;
   eventSink: EventSink;
   eventQuery?: EventQuery;
   accountSettings: AccountSettingsRepository;
@@ -429,6 +433,7 @@ export type ProductionAppPorts = {
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
+  packageFetcher: PackageFetcher;
   accountSettings: AccountSettingsRepository;
   workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
@@ -770,6 +775,9 @@ export async function createProductionAppPorts(input: {
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
     agentCatalog,
+    packageFetcher: createCachedPackageFetcher(
+      createGithubPackageFetcher({ token: environment.FLOW_GITHUB_TOKEN }),
+    ),
     accountSettings,
     workingSet,
     recentDocuments,
@@ -1289,6 +1297,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: ports.agentCatalog,
+    packageFetcher: ports.packageFetcher,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
     accountSettings: ports.accountSettings,
@@ -1858,6 +1867,7 @@ export function createInMemoryAppServices(): AppServices {
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog,
+    packageFetcher: createGithubPackageFetcher(),
     eventSink: createNoopEventSink(),
     accountSettings,
     workingSet,
