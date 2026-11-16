@@ -157,6 +157,14 @@ async function setup(
     async refreshBinding() {
       return undefined;
     },
+    async followRemovedModel<T>(
+      _userId: string,
+      _projectId: string | undefined,
+      _thread: unknown,
+      bound: T,
+    ) {
+      return bound;
+    },
   };
   const gateway = scriptedGateway({ usage: { inputTokens: 1000, outputTokens: 100 }, ...options });
   const { requests } = gateway;

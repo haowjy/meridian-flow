@@ -92,13 +92,13 @@ export interface BoundAgentCatalog extends PackageSaver {
    */
   files(userId: string, input: { projectId?: string }): Promise<AgentFiles>;
   /**
-   * The binding a top-level chat moves onto when it compacts: the newest saved Agent of its name,
+   * The binding a chat moves onto when it compacts: the newest saved Agent of its name,
    * and each skill the chat invoked pinned again to its newest save, whether or not the Agent
-   * moved (a skill no longer saved keeps its pin). A thread with a parent keeps its
-   * binding: its configuration came from the resolver that spawned it, with the parent's overrides, and this resolver would rebuild it without them. Undefined to keep the
-   * binding: not a top-level chat, the Agent is gone or its newest save can't run and no skill
-   * moved, or nothing changed. Writes no binding; the caller writes the result with
-   * `replaceThreadBinding`.
+   * moved (a skill no longer saved keeps its pin). A thread with a parent keeps its binding
+   * while its model is offered: its configuration came from the resolver that spawned it, with
+   * the parent's overrides, and this resolver would rebuild it without them. Undefined to keep
+   * the binding: the Agent is gone or its newest save can't run and no skill moved, or nothing
+   * changed. Writes no binding; the caller writes the result with `replaceThreadBinding`.
    */
   refreshBinding(
     userId: string,
@@ -106,7 +106,19 @@ export interface BoundAgentCatalog extends PackageSaver {
     thread: { id: string; parentThreadId: string | null },
   ): Promise<(AgentRevisionBinding & { revision: AgentRevision }) | undefined>;
   /**
-   * The Agent file a chat is bound to, as saved, with the model and reasoning it runs at, and whether a newer save of the Agent or of an
+   * The binding a turn runs on. A chat bound to a model the host no longer offers moves to its
+   * Agent's current model, children included: the stored binding is replaced and returned. A
+   * model still offered never moves, so a running chat keeps it. Costs no read when it is offered.
+   */
+  followRemovedModel(
+    userId: string,
+    projectId: string | undefined,
+    thread: { id: string; parentThreadId: string | null },
+    bound: AgentRevisionBinding,
+  ): Promise<AgentRevisionBinding>;
+  /**
+   * The Agent file a chat is bound to, as saved, the model, reasoning and availability its next
+   * turn runs at, and whether a newer save of the Agent or of an
    * invoked skill would take over at the chat's next compaction. Undefined for a chat with no Agent file (a generic subagent).
    */
   boundAgent(
@@ -140,9 +152,12 @@ export function createBoundAgentCatalog(input: {
   levelFiles: AgentLevelFiles;
   /** The built-in packages, read once at boot. */
   builtins: AgentSourceSnapshot[];
-  defaultModel(): string | undefined;
+  /** The model id a chat starts with: the default for no name, else an alias resolved; an id stays as written. */
+  modelFor(named?: string): string | undefined;
   /** Host-owned routing/support checks, independent of source syntax compilation. */
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
+  /** Why the host doesn't offer a model; empty when it does. Says nothing of an Agent's fields or tools. */
+  modelUnavailable(model: string): string[];
 }): BoundAgentCatalog {
   const { store } = input;
   const levels: PackageLevels = createPackageLevels(input);
@@ -158,6 +173,10 @@ export function createBoundAgentCatalog(input: {
   /** The stored row of `slug` in `pkg`, retaining the package's files the first time. */
   const rowOf = async (pkg: CompiledPackage, slug: string) =>
     (await install(pkg)).definitions.find((definition) => definition.slug === slug);
+
+  /** The model a chat started on this Agent would run. */
+  const modelOf = (definition: CompiledAgentDefinition) =>
+    input.modelFor(definition.metadata.model);
 
   /** Why an Agent cannot run: its errors, then what the host adds. */
   const reasonsOf = (
@@ -176,7 +195,7 @@ export function createBoundAgentCatalog(input: {
     if (asPrimary && !isPrimary(definition)) {
       return ["This Agent is unavailable for primary conversations"];
     }
-    const model = definition.metadata.model ?? input.defaultModel();
+    const model = modelOf(definition);
     if (!model) return ["No configured default model is available."];
     return input.unavailableReasons(definition, model);
   };
@@ -194,9 +213,7 @@ export function createBoundAgentCatalog(input: {
       path: id && entry.value && found ? `${entry.value.folder}${agentPath(found.slug)}` : null,
       name: found?.name ?? entry.slug,
       description: found?.description ?? "",
-      model: found?.definition
-        ? (found.definition.metadata.model ?? input.defaultModel() ?? null)
-        : null,
+      model: (found?.definition && modelOf(found.definition)) ?? null,
       effort: found?.definition?.metadata.effort
         ? AGENT_EFFORT_CHOICE[found.definition.metadata.effort]
         : null,
@@ -259,7 +276,7 @@ export function createBoundAgentCatalog(input: {
       const configuration = await resolveAgentConfiguration({
         revision,
         store,
-        defaultModel: input.defaultModel(),
+        modelFor: input.modelFor,
       });
       return { ok: true, revision, configuration };
     } catch (error) {
@@ -429,52 +446,109 @@ export function createBoundAgentCatalog(input: {
       const source = await store.readSource(revision.packageRevisionId);
       const text = source?.files[agentPath(revision.slug)];
       if (text === undefined) return undefined;
+      // A binding that only moves to another model is not a newer saved version.
+      const refreshed = await catalog.refreshBinding(userId, projectId, thread);
+      // What the next turn runs: the binding, unless its model left the host, when the turn
+      // moves to the newest save as `followRemovedModel` does.
+      const runs =
+        modelStillOffered({ ...bound, revision }) || !refreshed?.revision
+          ? { ...bound, revision }
+          : { ...refreshed, revision: refreshed.revision };
       return {
         name: revision.definition.metadata.name ?? revision.slug,
         text,
-        stale: (await catalog.refreshBinding(userId, projectId, thread)) !== undefined,
-        model: bound.configuration.model,
-        effort: bound.configuration.effort ? AGENT_EFFORT_CHOICE[bound.configuration.effort] : null,
+        stale:
+          refreshed !== undefined &&
+          (refreshed.revision?.id !== revision.id ||
+            Object.entries(refreshed.invokedSkills).some(
+              ([slug, pin]) => pin.contentDigest !== bound.invokedSkills[slug]?.contentDigest,
+            )),
+        model: runs.configuration.model,
+        effort: runs.configuration.effort ? AGENT_EFFORT_CHOICE[runs.configuration.effort] : null,
         unavailableReasons: input.unavailableReasons(
-          revision.definition,
-          bound.configuration.model,
+          runs.revision.definition,
+          runs.configuration.model,
         ),
       };
     },
 
+    async followRemovedModel(userId, projectId, thread, bound) {
+      if (!bound.revision || modelStillOffered({ ...bound, revision: bound.revision }))
+        return bound;
+      const moved = await refreshFrom(userId, projectId, thread, bound);
+      if (!moved?.revision) return bound;
+      await store.replaceThreadBinding(
+        thread.id,
+        moved.revision.id,
+        moved.configuration,
+        moved.invokedSkills,
+      );
+      return moved;
+    },
+
     async refreshBinding(userId, projectId, thread) {
       const bound = await store.readThreadBinding(thread.id);
-      if (!bound?.revision || thread.parentThreadId !== null) return undefined;
-      const saved = await levels.saved(userId, projectId);
-      // The bound version is the fallback, so an Agent that is gone or whose newest save can't
-      // run resolves to what the chat already has.
-      const newest = await primaryIn(
-        saved,
-        userId,
-        { slug: bound.revision.slug, definitionRevisionId: bound.revision.id },
-        projectId,
-      );
-      const moved =
-        newest.ok &&
-        runsDifferently(bound, { definition: newest.revision.definition, ...newest.configuration })
-          ? newest
-          : undefined;
-      const pins: Record<string, RetainedSkillReference> = {};
-      for (const slug of Object.keys(bound.invokedSkills)) {
-        const skill = await skillIn(saved, slug);
-        if (skill && skill.reference.contentDigest !== bound.invokedSkills[slug]?.contentDigest) {
-          pins[slug] = skill.reference;
-        }
-      }
-      if (!moved && Object.keys(pins).length === 0) return undefined;
-      return {
-        revision: moved?.revision ?? bound.revision,
-        configuration: moved?.configuration ?? bound.configuration,
-        invocationOverlay: bound.invocationOverlay,
-        invokedSkills: { ...bound.invokedSkills, ...pins },
-      };
+      if (!bound?.revision) return undefined;
+      return refreshFrom(userId, projectId, thread, bound);
     },
   };
+  /** Whether the host still offers the model the chat is bound to. */
+  const modelStillOffered = (bound: AgentRevisionBinding & { revision: AgentRevision }) =>
+    input.modelUnavailable(bound.configuration.model).length === 0;
+
+  async function refreshFrom(
+    userId: string,
+    projectId: string | undefined,
+    thread: { id: string; parentThreadId: string | null },
+    bound: AgentRevisionBinding,
+  ): ReturnType<BoundAgentCatalog["refreshBinding"]> {
+    const { revision } = bound;
+    if (!revision) return undefined;
+    // A child's configuration came from the resolver that spawned it, with the parent's
+    // overrides, and this resolver would rebuild it without them: it moves only off a model that left.
+    if (thread.parentThreadId !== null && modelStillOffered({ ...bound, revision }))
+      return undefined;
+    const saved = await levels.saved(userId, projectId);
+    // The bound version is the fallback, so an Agent that is gone or whose newest save can't
+    // run resolves to what the chat already has.
+    const newest = await primaryIn(
+      saved,
+      userId,
+      { slug: revision.slug, definitionRevisionId: revision.id },
+      projectId,
+    );
+    let moved: { revision: AgentRevision; configuration: ResolvedAgentConfiguration } | undefined;
+    if (newest.ok) {
+      // An alias in the Agent's `model` was resolved when the chat started: a newer model in
+      // its family moves no running chat, only a change to the `model` line does, or the
+      // held model leaving the offered ones, which sends the chat to the Agent's current model.
+      const named = newest.revision.definition.metadata.model;
+      const holds =
+        named !== undefined &&
+        named === revision.definition.metadata.model &&
+        input.modelUnavailable(bound.configuration.model).length === 0;
+      const configuration = holds
+        ? { ...newest.configuration, model: bound.configuration.model }
+        : newest.configuration;
+      if (runsDifferently(bound, { definition: newest.revision.definition, ...configuration })) {
+        moved = { revision: newest.revision, configuration };
+      }
+    }
+    const pins: Record<string, RetainedSkillReference> = {};
+    for (const slug of Object.keys(bound.invokedSkills)) {
+      const skill = await skillIn(saved, slug);
+      if (skill && skill.reference.contentDigest !== bound.invokedSkills[slug]?.contentDigest) {
+        pins[slug] = skill.reference;
+      }
+    }
+    if (!moved && Object.keys(pins).length === 0) return undefined;
+    return {
+      revision: moved?.revision ?? revision,
+      configuration: moved?.configuration ?? bound.configuration,
+      invocationOverlay: bound.invocationOverlay,
+      invokedSkills: { ...bound.invokedSkills, ...pins },
+    };
+  }
   return catalog;
 }
 

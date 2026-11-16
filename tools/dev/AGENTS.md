@@ -45,7 +45,7 @@ this directory never imports application packages. The `./mf` CLI lives in
   `bunx --bun` for them.
 - **Bun runs our own tooling; anything that runs server or app code stays on Node**
   (Nitro, Vite, or `apps/server/server/...` imported in-process), because production is Node
-  and those runs are its evidence. So the probes, `apps/server/scripts`, `check:models`,
+  and those runs are its evidence. So the probes, `apps/server/scripts`, `models:refresh`,
   `smoke:project-domain`, `tests/smoke` and the tests that start server code use `tsx` (a root
   dev dependency) or plain `node`; `tools/qa/shared-db-server.ts` is a Bun launcher whose Nitro
   and Vite children (`shared-db-serve.mjs`) run on Node. Nitro fails on Bun (crossws).

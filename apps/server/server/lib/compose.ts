@@ -282,7 +282,7 @@ import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 import { createGatewayFromEnv } from "./gateway/create-from-env.js";
 import { createInstrumentedGateway } from "./gateway/instrumented-gateway.js";
-import { MODEL_REGISTRY, registryTokenRateSource } from "./gateway/registry.js";
+import { MODEL_REGISTRY, modelFor, registryTokenRateSource } from "./gateway/registry.js";
 import { createModelToolRegistrations, createReferenceReader } from "./model-tools/index.js";
 import { createAllowedWorkExecutor } from "./model-tools/work-tool.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
@@ -673,9 +673,10 @@ export async function createProductionAppPorts(input: {
         }
       }),
     builtins: await readBuiltinPackages(defaultModel),
-    defaultModel: () => gateway.getDefaultModel(),
+    modelFor: modelFor(gateway),
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, gateway, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons(gateway, model),
   });
   const users = createDrizzleUserRepository({ db });
   const projects = createDrizzleProjectBootstrapRepository({
@@ -1121,7 +1122,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
-    defaultModel: () => ports.gateway.getDefaultModel(),
+    modelFor: modelFor(ports.gateway),
     repos: {
       threads: ports.threadRepos.threads,
       turns: ports.threadRepos.turns,
@@ -1524,9 +1525,10 @@ export function createInMemoryAppServices(): AppServices {
     store: agentRevisions,
     levelFiles: noLevelFiles,
     builtins: [],
-    defaultModel: () => "mock-model",
+    modelFor: (name) => name ?? "mock-model",
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, { listModels: () => [] }, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons({ listModels: () => [] }, model),
   });
   return {
     gateway: {

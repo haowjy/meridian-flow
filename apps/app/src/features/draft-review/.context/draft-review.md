@@ -337,6 +337,20 @@ An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack 
 command's id, and a refusal (`gone`, `superseded`: something changed since) is a skipped step
 with its notice. A band's Apply has its editor's Undo instead.
 
+Either Apply also enters the Undo history of every live session this tab holds for its
+documents (`registry.liveHistory`: a shown editor or an open tab), so Ctrl+Z there takes the
+Apply back instead of the writer's typing under it. One entry spans those histories
+(`SharedApply`, `apply-history.ts`) for as long as the Apply is in force: Ctrl+Z in any of them
+takes back the whole Apply once, and the others hide it. Whenever it comes back into force (a
+Redo, an Un-Apply that failed or was refused), every history shows it again at its place, under
+what was typed after the Apply and with its Redo kept, and a live history that never had it (a
+session opened since) gets it on top. A sidebar or strip Apply's entry is the
+step's (`AppliedEntry`): its Ctrl+Z is the step's Un-Apply, its Redo sends the same Apply again
+as a new command whose step the entry follows, and an Un-Apply from the sidebar or a notice hides
+it in every history until it answers: `unapplied` or `skipped` ends it, `failed` brings it
+back. A band's entry is its queue's Un-Apply and Redo, and ends when the queue item is
+released.
+
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so
 the line's Apply sends only the tree cut and its Discard keeps the text. `hidden` covers

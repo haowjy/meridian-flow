@@ -5,12 +5,12 @@
  * Hostile input: the central directory's declared sizes are checked before anything inflates, and
  * fflate inflates into a buffer of exactly the declared size, so an entry that lies about it is
  * cut, not grown. Only XML and XHTML entries are inflated. XML with an entity declaration is
- * refused whole (an XXE or entity-expansion file); XHTML goes through an HTML5 parser, which has
- * no DTD to process.
+ * refused whole (an XXE or entity-expansion file); the package files go through htmlparser2 in XML
+ * mode and the chapters through an HTML5 parser, and neither processes a DTD.
  */
 import path from "node:path";
-import { DOMParser } from "@xmldom/xmldom";
 import { type Unzipped, unzipSync } from "fflate";
+import { Parser } from "htmlparser2";
 import { createHtmlToMarkdown } from "../html-markdown.js";
 import { CONVERSION_LIMITS, ConversionRefused, createTextBuilder } from "./limits.js";
 
@@ -67,11 +67,50 @@ function xmlText(data: Uint8Array): string {
   return text;
 }
 
-function parseXml(text: string): Document {
-  const document = new DOMParser({ errorHandler: () => {} }).parseFromString(text, "text/xml");
-  if (!document?.documentElement)
-    throw new ConversionRefused("unreadable", "The EPUB's package file is not valid XML.");
-  return document as unknown as Document;
+type Scan = {
+  rootfile?: string;
+  items: Map<string, { href: string; type: string }>;
+  itemrefs: string[];
+  title?: string;
+};
+
+/**
+ * One streaming pass over the container or package file, with no tree: a lookup per tag name over
+ * a tree of unclosed `<item>`s nests as deep as the file is long and costs the square of it. The
+ * parser is lenient XML: `<item/>` closes itself, CDATA is text, and an unclosed or mismatched
+ * tag, a duplicate attribute or an unquoted value still reads instead of throwing. Names keep
+ * their case, as XML does. The first `rootfile` and the first `dc:title` win.
+ */
+function scanXml(text: string): Scan {
+  const scan: Scan = { items: new Map(), itemrefs: [] };
+  let titleDepth = 0;
+  let titleText = "";
+  const parser = new Parser(
+    {
+      onopentag(name, attribs) {
+        if (titleDepth > 0) titleDepth++;
+        else if (name === "dc:title" && scan.title === undefined) titleDepth = 1;
+        else if (name === "rootfile") scan.rootfile ??= attribs["full-path"];
+        else if (name === "item")
+          scan.items.set(attribs.id ?? "", {
+            href: attribs.href ?? "",
+            type: attribs["media-type"] ?? "",
+          });
+        else if (name === "itemref") scan.itemrefs.push(attribs.idref ?? "");
+      },
+      ontext(data) {
+        if (titleDepth > 0) titleText += data;
+      },
+      onclosetag() {
+        if (titleDepth > 0 && --titleDepth === 0)
+          scan.title = titleText.trim().replace(/\s+/g, " ");
+      },
+    },
+    { xmlMode: true },
+  );
+  parser.write(text);
+  parser.end();
+  return scan;
 }
 
 function resolveEntry(from: string, href: string): string {
@@ -83,22 +122,14 @@ export async function epubToMarkdown(bytes: Uint8Array): Promise<string> {
   const names = new Set(listEntries(bytes).map((entry) => entry.name));
   const container = inflate(bytes, new Set(["META-INF/container.xml"]))["META-INF/container.xml"];
   if (!container) throw new ConversionRefused("unreadable", "The EPUB has no container.xml.");
-  const rootfile = parseXml(xmlText(container)).getElementsByTagName("rootfile")[0];
-  const packagePath = rootfile?.getAttribute("full-path");
+  const packagePath = scanXml(xmlText(container)).rootfile;
   if (!packagePath || !names.has(packagePath))
     throw new ConversionRefused("unreadable", "The EPUB names no package file.");
 
   const packageData = inflate(bytes, new Set([packagePath]))[packagePath];
-  const pkg = parseXml(xmlText(packageData));
-  const manifest = new Map<string, { href: string; type: string }>();
-  for (const item of Array.from(pkg.getElementsByTagName("item"))) {
-    manifest.set(item.getAttribute("id") ?? "", {
-      href: item.getAttribute("href") ?? "",
-      type: item.getAttribute("media-type") ?? "",
-    });
-  }
-  const chapters = Array.from(pkg.getElementsByTagName("itemref")).flatMap((ref) => {
-    const item = manifest.get(ref.getAttribute("idref") ?? "");
+  const { items: manifest, itemrefs, title } = scanXml(xmlText(packageData));
+  const chapters = itemrefs.flatMap((idref) => {
+    const item = manifest.get(idref);
     if (!item || !CONTENT_TYPES.has(item.type)) return [];
     const entry = resolveEntry(packagePath, item.href);
     return names.has(entry) ? [entry] : [];
@@ -108,7 +139,6 @@ export async function epubToMarkdown(bytes: Uint8Array): Promise<string> {
   const files = inflate(bytes, new Set(chapters));
   const htmlToMarkdown = createHtmlToMarkdown({ textOnly: true });
   const out = createTextBuilder();
-  const title = pkg.getElementsByTagName("dc:title")[0]?.textContent?.trim().replace(/\s+/g, " ");
   let titled = false;
   for (const [index, entry] of chapters.entries()) {
     const data = files[entry];

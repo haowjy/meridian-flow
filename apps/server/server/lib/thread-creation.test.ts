@@ -28,11 +28,12 @@ async function fixture() {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "owner", title: "Agents" });
   const agentCatalog = createBoundAgentCatalog({
-    defaultModel: () => "test-model",
+    modelFor: (name) => name ?? "test-model",
     store: app.agentRevisions,
     levelFiles: noLevelFiles,
     builtins: [generalAgentSource("fixture-model")],
     unavailableReasons: () => [],
+    modelUnavailable: () => [],
   });
   const general = (await agentCatalog.list("owner", {})).agents.find(
     (agent) => agent.slug === "general",
