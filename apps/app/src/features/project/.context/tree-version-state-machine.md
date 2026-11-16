@@ -1,8 +1,13 @@
-# Sidebar version: the Live/Draft toggle
+# Sidebar version: the Live/Draft chip
 
 The shell's one version state above a single document (`features/project/tree-version.tsx`).
 It decides which tree every sidebar source shows and acts on, and which version every page
 shows. Change the code and this page together.
+
+The sidebar shows it as the page's version chip (`DraftSwitcher`, drawn by `TreeVersionChip`
+beside Changes, outside the tab strip so it never scrolls away): it names the version showing,
+"Live" (with a jade dot, since a draft waits) or "Draft" (jade), and its menu offers Live and the
+Work's draft. "The toggle" below means this state, whichever chip sets it.
 
 ## State
 
@@ -18,9 +23,9 @@ shows. Change the code and this page together.
 ```mermaid
 stateDiagram-v2
     [*] --> Live
-    Live --> Draft: toggle, Show draft, the Work's draft picked in the chip, or one of its drafts opened
+    Live --> Draft: the Work's draft picked in a chip, Show draft, or one of its drafts opened
     Live --> Draft: Work picked while a page is on its draft
-    Draft --> Live: toggle, or Live picked in the chip
+    Draft --> Live: Live picked in a chip
     Draft --> Live: Work picked, no page on its draft
     Draft --> ShownLive: nothing pending (choice kept)
     ShownLive --> Draft: something pending again
@@ -42,10 +47,13 @@ stateDiagram-v2
 - **Readers behind an action read the view it writes:** the move menus, the destination picker,
   Scratch's trees, the folder menu, the identity bar's commit and a linked document's create read
   `useTreeVersion()`. The Work's `TreeVersion` is one value per branch (`draftTreeVersion`).
-- **The page's version chip is the same state.** Picking the Work's draft or Live in its menu
-  sets the toggle, and opening any of the Work's drafts (a Changes row, the chat's dock, a
+- **The page's version chip is the same state, and the same control.** Picking the Work's draft
+  or Live in its menu sets the toggle, and opening any of the Work's drafts (a Changes row, the chat's dock, a
   review link: `review-launch.tsx`) puts it on Draft. The chip on Live is neutral with a jade
-  dot while a draft waits, jade on Draft.
+  dot while a draft waits, jade on Draft. Each chip shows only while there is another version
+  to switch to: the sidebar's while the Work has pending changes (**offered**), the page's while
+  the document has a draft of any owner, or its review is open (it carries the review's Close
+  review, and on a phone its Apply and Discard).
 - **On Live** each row the Work changes carries a jade dot, and a page the Work drafts says
   what the draft does to it with Show draft (`LiveDraftNotice`). A page the draft created stays
   on its draft and says live has no version of it; its chip reads Draft.

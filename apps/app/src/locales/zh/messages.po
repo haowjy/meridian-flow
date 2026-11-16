@@ -3367,8 +3367,8 @@ msgid "Draft review"
 msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Draft view"
-msgstr ""
+#~ msgid "Draft view"
+#~ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft: {owner}"
@@ -5956,6 +5956,7 @@ msgstr ""
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/chat/use-chat-scratch-source.ts
 #: src/features/project/context/context-schemes.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch"
 msgstr ""
 
@@ -5968,6 +5969,7 @@ msgid "Scratch for {chatTitle}"
 msgstr ""
 
 #: src/features/chat/document-display-name.ts
+#: src/features/project/context/use-scratch-trees.ts
 msgid "Scratch for {name}"
 msgstr ""
 
@@ -6159,15 +6161,19 @@ msgid "Show Work"
 msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Showing draft"
-msgstr ""
+#~ msgid "Showing draft"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/SourcesBody.tsx
-msgid "Showing live"
-msgstr ""
+#~ msgid "Showing live"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Shows token counts and the model on each reply and compaction"
+msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "Sidebar version"
 msgstr ""
 
 #: src/features/account/AccountMenu.tsx
@@ -7003,6 +7009,10 @@ msgstr ""
 #: src/features/editor/EditorView.tsx
 #: src/features/editor/SessionEditor.tsx
 msgid "This chapter is temporarily unavailable"
+msgstr ""
+
+#: src/features/project/shell/sidebar/SourcesBody.tsx
+msgid "This chat"
 msgstr ""
 
 #: src/features/chat/derivation/HandoffBriefCard.tsx

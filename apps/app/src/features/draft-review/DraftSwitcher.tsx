@@ -1,6 +1,7 @@
 /**
- * DraftSwitcher — the version chip with its menu: which version of THIS document
- * the view shows. The versions are the live document and every draft of it, one
+ * DraftSwitcher — the version chip with its menu: which version the view shows. A document's
+ * header uses it for that document, and the sidebar for its trees (`TreeVersionChip`), so the
+ * writer meets one Live/Draft control that names the version on screen. The versions are the live document and every draft of it, one
  * per owner (a Work, or a chat with no Work). The same chip and menu show on the
  * live document (picking a draft shows it) and on a draft (picking Live leaves
  * it, picking another draft switches), so the control the writer used to get in
@@ -13,8 +14,8 @@
  * `marks` and they appear. Both are the same commands the desktop header runs.
  * Rename is offered when the row cannot show its own Rename chip.
  *
- * Presentational: it is handed the versions and the commands
- * (`DocumentVersionMenu` is its one container).
+ * Presentational: it is handed the versions and the commands (`DocumentVersionMenu` for a
+ * document, `TreeVersionChip` for the sidebar).
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -47,6 +48,8 @@ export type DraftVersion = {
 };
 
 export type DraftSwitcherProps = {
+  /** What the chip chooses the version of, read before the version it names. */
+  label?: string;
   /** The version on screen; its menu item is checked and the chip names it. */
   showing: "live" | "draft";
   /** Every owner's draft of the document. */
@@ -73,6 +76,7 @@ export type DraftSwitcherProps = {
 };
 
 export function DraftSwitcher({
+  label = t`Document version`,
   showing,
   drafts,
   owner,
@@ -94,12 +98,11 @@ export function DraftSwitcher({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={t`Document version`}
         data-version-chip
         disabled={disabled && showing === "live"}
-        data-draft-review-chip={showing === "live" ? "" : undefined}
         className={cn(draftChipHitClass(touch), "disabled:opacity-50")}
       >
+        <span className="sr-only">{label}: </span>
         <DraftChipFace
           state={showing === "draft" ? "reviewing" : drafts.length > 0 ? "pending" : "live"}
           menu
@@ -210,7 +213,7 @@ function DraftItem({ draft }: { draft: DraftVersion }) {
     <DropdownMenuItem
       selected={draft.current}
       onSelect={draft.current ? undefined : draft.onSelect}
-      className="h-auto min-h-8 flex-col items-start gap-0.5"
+      className="h-auto min-h-8 flex-col items-start justify-center gap-0.5 coarse:h-auto coarse:min-h-11"
     >
       <span className="min-w-0 max-w-full truncate">{draft.name}</span>
       {draft.detail ? <span className="text-xs text-muted-foreground">{draft.detail}</span> : null}

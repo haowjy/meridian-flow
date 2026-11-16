@@ -1,5 +1,5 @@
 /**
- * The shell's version: the sidebar's one Live/Draft toggle. On Draft the shell shows the picked
+ * The shell's version: the sidebar's one Live/Draft state, which its version chip shows. On Draft the shell shows the picked
  * Work's tree (live, then the Work's pending records, replayed in the browser), and every tree
  * action, click and Ctrl+Z in the sidebar acts there; on Live it is the live tree. The toggle is
  * offered while the Work has pending changes, and with none the shell is live. Every page shows
@@ -47,7 +47,6 @@ export type ShellTreeVersion = {
   tree: WorkTreeChanges | null;
   /** The Work's draft of a document, which a click on Draft opens. */
   draftOf: (documentId: string) => ReviewFileTarget | null;
-  flip: () => void;
   /** Sets the toggle: every page that has the Work's draft shows it, or Live. */
   show: (next: "live" | "draft") => void;
 };
@@ -142,7 +141,6 @@ export function TreeVersionProvider({
     (next: "live" | "draft") => writeTreeVersionChoice(accountId, projectId, next),
     [accountId, projectId],
   );
-  const flip = useCallback(() => show(showing === "live" ? "draft" : "live"), [show, showing]);
 
   const name = work && !work.isNoWork ? workDisplayName(work) : null;
   const state = useMemo<ShellTreeVersion>(
@@ -157,7 +155,6 @@ export function TreeVersionProvider({
       changeCount,
       tree,
       draftOf: fileForDocument,
-      flip,
       show,
     }),
     [
@@ -171,7 +168,6 @@ export function TreeVersionProvider({
       changeCount,
       tree,
       fileForDocument,
-      flip,
       show,
     ],
   );

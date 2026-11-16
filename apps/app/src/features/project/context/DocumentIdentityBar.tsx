@@ -144,7 +144,7 @@ export function DocumentIdentityBar({
             onChooseHome={() => setFieldOpen(true)}
           />
           <AgentFileState projectId={projectId} document={document} />
-          {/* The version chip holds one place: Live, or Draft while reviewing. */}
+          {/* The version chip holds one place: Live while the document has a draft, or Draft while reviewing. */}
           {version ??
             (reviewItemKey || reviewPending ? null : (
               <DocumentVersionMenu projectId={projectId} document={document} />
