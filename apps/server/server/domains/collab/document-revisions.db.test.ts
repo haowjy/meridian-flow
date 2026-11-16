@@ -119,6 +119,12 @@ async function fixture(
       branches,
     }),
     links,
+    async (created) => {
+      for (const { documentId, branchId } of created) {
+        await f.runtime.markdownDocuments.ensureDocumentAuthority(documentId);
+        await f.draftStore.ensureCreatedDocumentDraft({ documentId, branchId });
+      }
+    },
   );
   const revisions = createDocumentRevisions({
     links,
