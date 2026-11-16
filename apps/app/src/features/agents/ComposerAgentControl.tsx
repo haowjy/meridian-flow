@@ -4,6 +4,7 @@
  * subagent's chat only shows its Agent.
  */
 import { t } from "@lingui/core/macro";
+import { Cpu } from "lucide-react";
 import { useRef } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useModelOptions } from "@/client/query/useModelOptions";
@@ -42,7 +43,7 @@ export type ComposerAgentControlProps =
       /** Null until the server has a turn to hand off from. */
       onHandoff: ((choice: AgentChoice) => void) | null;
     }
-  | { mode: "readonly"; name: string };
+  | { mode: "readonly"; name: string; modelOverride: string | null };
 
 export function useComposerAgentToolbarControl(
   props: ComposerAgentControlProps,
@@ -51,7 +52,7 @@ export function useComposerAgentToolbarControl(
     props.mode !== "readonly",
     props.mode === "readonly" ? undefined : props.projectId,
   );
-  const models = useModelOptions(props.mode !== "readonly");
+  const models = useModelOptions(props.mode !== "readonly" || props.modelOverride !== null);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
@@ -69,12 +70,7 @@ export function useComposerAgentToolbarControl(
       : props.mode === "handoff"
         ? (props.bound.name ?? DEFAULT_AGENT_NAME)
         : (selectedAgent?.name ?? DEFAULT_AGENT_NAME);
-  const model =
-    props.mode === "interactive"
-      ? props.model
-      : props.mode === "handoff"
-        ? props.modelOverride
-        : null;
+  const model = props.mode === "interactive" ? props.model : props.modelOverride;
   const modelLabel = model ? modelName(models, model) : null;
   // An override the deployment can't run: replies fall back to the Agent's own model.
   const fallsBack = Boolean(model && models && !runsAvailable(models, model));
@@ -84,6 +80,31 @@ export function useComposerAgentToolbarControl(
       ? t`${name}; ${modelLabel} isn't available, so it runs on its own model`
       : t`${name} on ${modelLabel}`;
   const item = { ariaLabel: t`Agent: ${value}`, label: t`Agent`, value };
+  // The other model's name; on a phone a chip icon, so the Agent's name keeps its place inline.
+  const shown = (
+    <>
+      {name}
+      {modelLabel ? (
+        <>
+          <span
+            className={cn(
+              "ml-1.5 hidden font-normal sm:inline",
+              fallsBack ? "text-muted-foreground line-through" : "text-jade-text",
+            )}
+          >
+            {modelLabel}
+          </span>
+          <Cpu
+            aria-hidden
+            className={cn(
+              "ml-1 inline size-3.5 align-[-2px] sm:hidden",
+              fallsBack ? "text-muted-foreground" : "text-jade-text",
+            )}
+          />
+        </>
+      ) : null}
+    </>
+  );
   if (props.mode === "readonly")
     return {
       kind: "status",
@@ -93,10 +114,12 @@ export function useComposerAgentToolbarControl(
       inline: ({ controlRef }) => (
         <ComposerCurrentValueStatus
           ref={controlRef}
-          ariaLabel={t`Agent: ${name}`}
-          tooltip={t`This chat uses ${name}.`}
+          ariaLabel={t`Agent: ${value}`}
+          tooltip={
+            modelLabel ? t`This chat uses ${name} on ${modelLabel}.` : t`This chat uses ${name}.`
+          }
         >
-          {name}
+          {shown}
         </ComposerCurrentValueStatus>
       ),
     };
@@ -128,17 +151,7 @@ export function useComposerAgentToolbarControl(
         ariaLabel={t`Agent: ${value}`}
         className="max-w-[16rem]"
       >
-        {name}
-        {modelLabel ? (
-          <span
-            className={cn(
-              "ml-1.5 font-normal",
-              fallsBack ? "text-muted-foreground line-through" : "text-jade-text",
-            )}
-          >
-            {modelLabel}
-          </span>
-        ) : null}
+        {shown}
       </ComposerCurrentValueTrigger>
     ),
     panel: {

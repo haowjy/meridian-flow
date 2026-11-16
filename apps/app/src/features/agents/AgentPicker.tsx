@@ -37,6 +37,8 @@ type AgentPickerPanelProps = {
   current: { slug: string | null; model: string | null };
   /** A started chat: its Agent is pinned under "This chat", and the rest hand off. */
   started?: { threadId: string };
+  /** Picking hands off from a turn (the picker under a turn), the current Agent included. */
+  handsOff?: boolean;
   models: ModelOption[] | null;
   onChoose: (choice: AgentChoice) => void;
   /** The project whose Agent files "Open" and "Manage Agents" reach. */
@@ -60,6 +62,7 @@ export function AgentPickerPanel({
   agents: catalog,
   current,
   started,
+  handsOff = false,
   models,
   onChoose,
   projectId,
@@ -128,6 +131,7 @@ export function AgentPickerPanel({
         <ListRow
           density="menu"
           current={isCurrent}
+          pointed={agent.slug === shown.slug}
           crossedOut={!pickable(agent)}
           ref={
             isCurrent
@@ -227,7 +231,7 @@ export function AgentPickerPanel({
                 ?.focus()
             }
             useLabel={
-              started && shown !== own
+              handsOff || (started && shown !== own)
                 ? t`Hand off to ${shown.name}`
                 : shown.slug === current.slug
                   ? null

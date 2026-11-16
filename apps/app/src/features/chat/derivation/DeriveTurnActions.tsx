@@ -145,6 +145,7 @@ function HandoffPicker({
           status={catalog}
           agents={agents}
           current={{ slug: selected?.selection.slug ?? null, model: null }}
+          handsOff
           models={models}
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
           onChoose={(choice) => {

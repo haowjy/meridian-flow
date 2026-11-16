@@ -40,8 +40,10 @@ import {
   viewTranscript,
   waitingWriterMessages,
 } from "@meridian/thread-client";
+import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
+import { rememberStartedAgent } from "@/client/query/useAgentCatalog";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useLineage } from "@/client/query/useLineageTitle";
 import { useSetThreadModel, useThreadModel } from "@/client/query/useSetThreadModel";
@@ -592,6 +594,7 @@ export function ChatView({
       },
     );
   });
+  const queryClient = useQueryClient();
   const handoffTurn = useCommittedEvent((originTurnId: string, choice: AgentChoice) => {
     if (!activeThread || !openThread) return;
     const deps: DerivationDeps = { accountId, accountSignal, threadActions: actions };
@@ -613,6 +616,7 @@ export function ChatView({
       },
       { ...deps, source: activeThread, inherited: null, open: openThread },
     );
+    rememberStartedAgent(queryClient, accountId, projectId, choice.agent.slug);
   });
   const turnDerivation = useMemo<TurnDerivation | null>(() => {
     if (!canDerive || !activeThread || !openThread) return null;
@@ -664,7 +668,7 @@ export function ChatView({
             onModelChange: setThreadModel,
             onHandoff: handoffCutoff ? handoffFromLatest : null,
           }
-        : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME },
+        : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME, modelOverride },
     [
       agentName,
       agentRevisionId,

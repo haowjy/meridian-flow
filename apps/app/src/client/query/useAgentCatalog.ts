@@ -1,6 +1,6 @@
 /** Account/system Agent choices with Project-scoped availability and cache ownership. */
-import type { AgentCatalogItem } from "@meridian/contracts/agents";
-import { queryOptions, useQuery } from "@tanstack/react-query";
+import type { AgentCatalog, AgentCatalogItem } from "@meridian/contracts/agents";
+import { type QueryClient, queryOptions, useQuery } from "@tanstack/react-query";
 import { listAgentCatalog } from "@/client/api/agents-api";
 import {
   useAccountEpochSignal,
@@ -40,4 +40,17 @@ export function useAgentCatalog(enabled = true, projectId?: string): AgentCatalo
     }),
   );
   return { ...result, agents: result.data };
+}
+
+/** A chat just started on this Agent: the next new chat starts on it, as the server will say. */
+export function rememberStartedAgent(
+  client: QueryClient,
+  accountId: string,
+  projectId: string,
+  slug: string,
+): void {
+  client.setQueryData<AgentCatalog>(
+    agentCatalogQueryKey(accountId, projectId),
+    (catalog) => catalog && { ...catalog, lastStartedSlug: slug },
+  );
 }
