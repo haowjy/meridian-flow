@@ -7688,6 +7688,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "hard_limit_seconds": {
+          "name": "hard_limit_seconds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
         "draft_answers": {
           "name": "draft_answers",
           "type": "jsonb",

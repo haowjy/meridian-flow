@@ -11,7 +11,7 @@
  * meanwhile still pulses. `touch` raises the rows and buttons to 44px.
  */
 import { t } from "@lingui/core/macro";
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type DraftChangesView, isWholeDocumentChange } from "./draft-changes";
@@ -25,6 +25,7 @@ export function DocumentChangeRows({
   touch = false,
   showAttribution = false,
   documentName,
+  notice,
 }: {
   view: DraftChangesView;
   onSelect: (change: ReviewChange) => void;
@@ -32,6 +33,8 @@ export function DocumentChangeRows({
   showAttribution?: boolean;
   /** Catalog name when these rows stand in for a listed file's header. */
   documentName?: string;
+  /** The file's header word, shown on the one row that stands in for the header. */
+  notice?: ReactNode;
 }) {
   const wholeDocument = isWholeDocumentChange(view);
   const changes = useMemo(() => view.items.map((item) => item.change), [view.items]);
@@ -65,6 +68,7 @@ export function DocumentChangeRows({
           touch={touch}
           wholeDocument={wholeDocument}
           documentName={wholeDocument ? documentName : undefined}
+          notice={wholeDocument ? notice : undefined}
           showAttribution={showAttribution}
           key={change.id}
           change={change}

@@ -13,6 +13,10 @@ import {
   dropdownPanelClass,
   dropdownRowVariants,
 } from "./dropdown-presentation";
+import { withRowNote } from "./marks";
+
+/** Small words at the row's end (a shortcut, a hint), on the label's baseline. Not with `asChild`. */
+type Noted = { note?: React.ReactNode };
 
 function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
   return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -67,13 +71,16 @@ function DropdownMenuItem({
   inset,
   variant = "default",
   selected = false,
+  note,
+  children,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
-  inset?: boolean;
-  variant?: "default" | "destructive";
-  /** The picker's current value: it wears the hover fill, with no check. */
-  selected?: boolean;
-}) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Item> &
+  Noted & {
+    inset?: boolean;
+    variant?: "default" | "destructive";
+    /** The picker's current value: it wears the hover fill, with no check. */
+    selected?: boolean;
+  }) {
   return (
     <DropdownMenuPrimitive.Item
       data-slot="dropdown-menu-item"
@@ -82,7 +89,9 @@ function DropdownMenuItem({
       aria-current={selected || undefined}
       className={cn(dropdownRowVariants({ selected }), dropdownMenuItemClass, className)}
       {...props}
-    />
+    >
+      {withRowNote(children, note)}
+    </DropdownMenuPrimitive.Item>
   );
 }
 
@@ -91,8 +100,9 @@ function DropdownMenuCheckboxItem({
   className,
   children,
   checked,
+  note,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem> & Noted) {
   return (
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
@@ -100,7 +110,7 @@ function DropdownMenuCheckboxItem({
       checked={checked}
       {...props}
     >
-      {children}
+      {withRowNote(children, note)}
       <span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
           <CheckIcon className="size-4" />
@@ -119,8 +129,10 @@ function DropdownMenuRadioGroup({
 /** A single-value pick: the checked row wears the hover fill, with no dot. */
 function DropdownMenuRadioItem({
   className,
+  note,
+  children,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem> & Noted) {
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
@@ -131,7 +143,9 @@ function DropdownMenuRadioItem({
         className,
       )}
       {...props}
-    />
+    >
+      {withRowNote(children, note)}
+    </DropdownMenuPrimitive.RadioItem>
   );
 }
 
@@ -160,16 +174,6 @@ function DropdownMenuSeparator({
     <DropdownMenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
       className={cn(dropdownMenuSeparatorClass, className)}
-      {...props}
-    />
-  );
-}
-
-function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
-  return (
-    <span
-      data-slot="dropdown-menu-shortcut"
-      className={cn("ml-auto text-xs text-muted-foreground", className)}
       {...props}
     />
   );
@@ -253,7 +257,6 @@ export {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,

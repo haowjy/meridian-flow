@@ -356,6 +356,7 @@ export async function dispatchToolCall(
           executionId: ctx.lease.executionId,
           toolCallId: call.id,
           request: asked,
+          promptCache: ctx.model?.promptCache ?? null,
         });
     if (outcome.kind === "deferred") {
       ctx.batch.deferred = outcome.askId;

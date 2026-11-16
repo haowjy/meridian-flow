@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Finds agent-generated error swallowing, suppressions, and decision IDs in
- * TypeScript source, and real-time waits and clock assertions in test files.
+ * Finds agent-generated error swallowing, suppressions, decision IDs, and small
+ * words hand-sized inside a menu row in TypeScript source, and real-time waits and clock assertions in test files.
  * The baseline lets old findings remain visible while making new findings fail
  * and requiring deliberate baseline reductions.
  */
@@ -14,7 +14,14 @@ import ts from "@typescript/typescript6";
 
 const ROOT = resolve(new URL("../..", import.meta.url).pathname);
 const BASELINE_PATH = resolve(ROOT, "tools/ci/slop-lint-baseline.json");
-const CATEGORIES = ["swallowed-error", "suppression", "decision-id", "middle-dot", "test-timing"];
+const CATEGORIES = [
+  "swallowed-error",
+  "suppression",
+  "decision-id",
+  "middle-dot",
+  "row-note",
+  "test-timing",
+];
 const CATEGORY_MESSAGES = {
   "test-timing":
     "Wait for the event itself or drive time with fake timers; real time varies by machine.",
@@ -23,9 +30,11 @@ const CATEGORY_MESSAGES = {
   "decision-id": "Delete the decision ID; explain the invariant in the comment instead.",
   "middle-dot":
     "Separate UI facts with spacing, weight or muted color; use a sentence or parentheses in text.",
+  "row-note":
+    "Pass the words as the row's `note` (or wrap them in LabelNote): a smaller text box centred in the row sits above the label's baseline.",
 };
 const ALLOW_PATTERN =
-  /slop-lint:\s*allow\s+(swallowed-error|suppression|decision-id|middle-dot|test-timing)\s+(.+?)\s*$/i;
+  /slop-lint:\s*allow\s+(swallowed-error|suppression|decision-id|middle-dot|row-note|test-timing)\s+(.+?)\s*$/i;
 const ALLOW_MARKER = /slop-lint:\s*allow\b/i;
 const SUPPRESSION_PATTERN = /\bbiome-ignore(?:-all)?\b|@ts-(?:ignore|expect-error|nocheck)\b/g;
 const DECISION_PATTERN = /\b[DW]\d+\b/g;
@@ -284,6 +293,108 @@ function collectMiddleDotFindings(sourceFile, lines, findings) {
   visit(sourceFile);
 }
 
+// Rows that centre their items around a text-sm label: the shared menu items, any element styled
+// with dropdownRowVariants, and a SuggestionMenu row's `content`.
+const ROW_COMPONENTS = new Set([
+  "DropdownMenuItem",
+  "DropdownMenuCheckboxItem",
+  "DropdownMenuRadioItem",
+  "DropdownMenuSubTrigger",
+  "ContextMenuItem",
+  "ContextMenuSubTrigger",
+  "SelectItem",
+  "EditorMenuItem",
+  "EditorMenuCheckboxItem",
+  "EditorMenuRadioItem",
+  "EditorMenuSubTrigger",
+]);
+const SMALL_TEXT = /\btext-xs\b|\brole\.rowSecondary\b|\btext-\[(?:length:)?[\d.]+(?:px|r?em)\]/;
+// A column or a baseline-aligned line inside a row sets out its own lines.
+const OWN_LINES = /\bflex-col\b|\bitems-baseline\b/;
+
+function jsxClassName(element) {
+  const attributes = ts.isJsxElement(element)
+    ? element.openingElement.attributes
+    : element.attributes;
+  for (const attribute of attributes.properties) {
+    if (ts.isJsxAttribute(attribute) && attribute.name.getText() === "className") {
+      return attribute.initializer?.getText() ?? "";
+    }
+  }
+  return "";
+}
+
+function jsxTag(element) {
+  return (ts.isJsxElement(element) ? element.openingElement : element).tagName.getText();
+}
+
+function isJsx(node) {
+  return ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node);
+}
+
+function isRowElement(element) {
+  return (
+    ROW_COMPONENTS.has(jsxTag(element)) || jsxClassName(element).includes("dropdownRowVariants(")
+  );
+}
+
+function suggestionRowContents(element) {
+  if (jsxTag(element) !== "SuggestionMenu") return [];
+  const contents = [];
+  function visit(node) {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === "content"
+    ) {
+      contents.push(node.initializer);
+    }
+    ts.forEachChild(node, visit);
+  }
+  const rows = (
+    ts.isJsxElement(element) ? element.openingElement : element
+  ).attributes.properties.filter(
+    (attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText() === "rows",
+  );
+  for (const attribute of rows) visit(attribute);
+  return contents;
+}
+
+function collectRowNoteFindings(sourceFile, lines, findings) {
+  // Inside a row, only what lands on its line: children, not the attributes of what is in it.
+  function inRow(node) {
+    if (isJsx(node)) {
+      const className = jsxClassName(node);
+      if (SMALL_TEXT.test(className)) {
+        addFinding(
+          findings,
+          sourceFile,
+          lines,
+          "row-note",
+          node.getStart(sourceFile),
+          `small text <${jsxTag(node)}> beside a row's label`,
+        );
+      }
+      if (OWN_LINES.test(className) || !ts.isJsxElement(node)) return;
+      for (const child of node.children) inRow(child);
+      return;
+    }
+    ts.forEachChild(node, inRow);
+  }
+  function visit(node) {
+    if (isJsx(node)) {
+      if (isRowElement(node)) {
+        if (!OWN_LINES.test(jsxClassName(node)) && ts.isJsxElement(node)) {
+          for (const child of node.children) inRow(child);
+        }
+      }
+      for (const content of suggestionRowContents(node)) inRow(content);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+}
+
 function isPositiveLiteral(node) {
   return node !== undefined && ts.isNumericLiteral(node) && Number(node.text) > 0;
 }
@@ -373,6 +484,8 @@ function collectFindings() {
     collectSwallowedErrors(sourceFile, lines, findings.get("swallowed-error"));
     collectCommentFindings(sourceFile, text, lines, findings, directives);
     collectMiddleDotFindings(sourceFile, lines, findings.get("middle-dot"));
+    if (filePath.endsWith(".tsx"))
+      collectRowNoteFindings(sourceFile, lines, findings.get("row-note"));
   }
   for (const filePath of paths.filter((path) => TEST_FILE_PATTERN.test(path))) {
     const { lines, sourceFile, text } = parseSource(filePath);

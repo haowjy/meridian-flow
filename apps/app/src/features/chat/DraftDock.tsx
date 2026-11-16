@@ -232,7 +232,7 @@ function DockFileLine({
       documentId: file.row.documentId,
       itemKey: file.row.draft.itemKey,
     },
-    { controller: dock.controller, enabled: true, item: file.row.draft },
+    { controller: dock.controller, enabled: !file.whole, item: file.row.draft },
   );
   const own = new Set(file.changes.map((change) => change.id));
   const items = view.items.filter(({ change }) => own.has(change.id));
@@ -241,6 +241,40 @@ function DockFileLine({
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
   const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
   if (!summary && !expanded) return null;
+  if (file.whole && !summary)
+    return (
+      <div
+        data-draft-dock-file={file.row.documentId}
+        className="border-border-subtle border-b last:border-b-0"
+      >
+        <div className="flex min-h-7 items-center gap-1.5 pr-2 pl-2 text-xs text-foreground">
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-1.5 text-left coarse:min-h-11"
+            onClick={() => dock.review(file)}
+          >
+            <span className="min-w-0 truncate">{fileLabel(file)}</span>
+            <DeletedLiveTag item={file.row.draft} />
+            <span className="ml-auto shrink-0 text-muted-foreground">
+              <ChangeCount count={file.count} />
+            </span>
+          </button>
+          <ReviewActions
+            scope="change"
+            density="icon"
+            touch={touch}
+            labels={{
+              apply: t`Apply this chat's changes to ${file.name}`,
+              discard: t`Discard this chat's changes to ${file.name}`,
+            }}
+            disabled={!dock.canCommand}
+            onDiscard={() => dock.discardFile(file)}
+            onApply={() => dock.applyFile(file)}
+          />
+        </div>
+        {status}
+      </div>
+    );
   return (
     <div
       data-draft-dock-file={file.row.documentId}
@@ -262,6 +296,7 @@ function DockFileLine({
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
+            notice={summary ? undefined : <DeletedLiveTag item={file.row.draft} />}
             view={{ ...view, items, locked: view.locked || dock.generating }}
             touch={touch}
             onSelect={(change) => dock.review(file, change)}

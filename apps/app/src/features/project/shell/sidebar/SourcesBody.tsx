@@ -642,13 +642,7 @@ function TreeVersionChip() {
       drafts={[
         {
           key: shell.ownerKey,
-          name: (
-            <WorkIdentity
-              work={shell.work}
-              unavailableLabel={t`This chat`}
-              className="text-sm font-normal"
-            />
-          ),
+          name: <WorkIdentity work={shell.work} unavailableLabel={t`This chat`} />,
           current: shell.showing === "draft",
           scope: true,
           onSelect: () => shell.show("draft"),

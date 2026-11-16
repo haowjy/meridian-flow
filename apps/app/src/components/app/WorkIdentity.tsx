@@ -15,13 +15,7 @@ export function WorkIdentity({
   unavailableLabel: string;
 }) {
   return (
-    <span
-      className={cn(
-        "flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground",
-        className,
-      )}
-      {...props}
-    >
+    <span className={cn("flex min-w-0 items-center gap-1.5", className)} {...props}>
       <Layers aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       {work ? (
         <WorkName work={work} />

@@ -75,8 +75,9 @@ export type ReviewHeaderModel = {
  *
  * Each failure shows once. While the focused change's bar is on screen
  * (`ReviewChangeBar`: always on a phone, with the marks on a desktop) it
- * carries the open draft's failure, so `commandError` is only the fallback for
- * a review with no bar showing.
+ * carries the open draft's failure, and once no change is left the review's
+ * status line does (`ReviewStateInline`), so `commandError` is only the fallback
+ * for a review with changes and no bar showing.
  */
 export function useReviewFailures(input: {
   documentId: string;
@@ -89,13 +90,11 @@ export function useReviewFailures(input: {
   const snapshot = () => (input.itemKey ? owner.snapshot() : 0);
   useSyncExternalStore(owner.subscribe, snapshot, snapshot);
   const { view } = input;
+  const own = view.itemKey === input.itemKey;
   const barCarries =
-    view.itemKey === input.itemKey &&
-    view.status === "ready" &&
-    Boolean(view.focused) &&
-    (phone || controller.marksVisible);
+    own && view.status === "ready" && Boolean(view.focused) && (phone || controller.marksVisible);
   return {
-    commandError: barCarries ? null : owner.state(input.itemKey).failure,
+    commandError: barCarries || (own && view.finished) ? null : owner.state(input.itemKey).failure,
     failedElsewhere: files.flatMap((row) => {
       const failure = owner.state(row.draft.itemKey).failure;
       // Another document's note beside what landed stays on that document.

@@ -74,6 +74,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
         permissionCommand: { command: "update", workId: target.id, name: "Renamed" },
         deadlineAt: null,
+        hardLimitSeconds: 3300,
         status: "open",
         resolution: null,
         submissionId: null,

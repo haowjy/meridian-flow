@@ -27,7 +27,6 @@ import {
   EditorMenu,
   EditorMenuItem,
   EditorMenuSeparator,
-  EditorMenuShortcut,
   EditorMenuSub,
   EditorMenuSubContent,
   EditorMenuSubTrigger,
@@ -80,17 +79,15 @@ export function BlockMenu({
       className="min-w-56"
     >
       {target.index > 0 ? (
-        <EditorMenuItem onSelect={() => onMove("up")}>
+        <EditorMenuItem onSelect={() => onMove("up")} note={blockMoveShortcut("up")}>
           <ArrowUp aria-hidden />
           {blockMenuLabel("moveUp")}
-          <EditorMenuShortcut>{blockMoveShortcut("up")}</EditorMenuShortcut>
         </EditorMenuItem>
       ) : null}
       {target.index < lastIndex ? (
-        <EditorMenuItem onSelect={() => onMove("down")}>
+        <EditorMenuItem onSelect={() => onMove("down")} note={blockMoveShortcut("down")}>
           <ArrowDown aria-hidden />
           {blockMenuLabel("moveDown")}
-          <EditorMenuShortcut>{blockMoveShortcut("down")}</EditorMenuShortcut>
         </EditorMenuItem>
       ) : null}
       <EditorMenuItem onSelect={onDuplicate}>

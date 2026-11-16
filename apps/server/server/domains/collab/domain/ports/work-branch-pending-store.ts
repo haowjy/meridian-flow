@@ -33,8 +33,12 @@ export type WorkBranchPendingStore = {
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
   ): Promise<WorkBranchDraftMetadata[]>;
-  /** Receipt members for list/report enrichment only, latest first and distinct. */
-  pendingThreadIds(draftId: string): Promise<string[]>;
+  /**
+   * Who wrote the draft's pending changes, for list/report enrichment only: the chats behind its
+   * receipts (latest first, distinct), and whether any change has none, which is the writer's own
+   * typing or evidence in doubt.
+   */
+  pendingWriters(draftId: string): Promise<{ threadIds: string[]; unattributed: boolean }>;
   /**
    * Distinct pending documents per Work, by the canonical draft → branch → Work mapping:
    * its active branch's active drafts with `hasEffect`, plus

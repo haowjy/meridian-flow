@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { type AgentSelection, agentSelectionSchema, REASONING_LEVELS } from "../agents/index.js";
+import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import type { DraftOwnerKey } from "../branches/owner.js";
 import type { StoredResult } from "../commands/index.js";
 import {
@@ -503,24 +503,20 @@ export const forkThreadRequestSchema = z
   })
   .strict();
 
-/** Who made a model, whoever serves it: the picker shows the maker's mark. */
-export const MODEL_MAKERS = ["anthropic", "openai", "deepseek", "google"] as const;
-export type ModelMaker = (typeof MODEL_MAKERS)[number];
-
-/** `GET /api/models`: every model Flow knows, for the Agent picker. */
+/** `GET /api/models`: every model Flow knows, for the Agent picker, and Mars's reasoning ladder it settles a level on. */
 export const modelListSchema = z.object({
+  /** Mars's reasoning ladder, lowest first (`effortLevels()`); the picker settles a level a model lacks on it, as the gateway does. */
+  reasoningLevels: z.array(z.string()),
   models: z.array(
     z.object({
       id: z.string(),
       name: z.string(),
       /** False when this deployment can't run it (no provider key): a chat set to it falls back to its Agent's model. */
       available: z.boolean(),
-      /** Who made the model, for its mark; null for one the registry doesn't know (a mock). */
-      maker: z.enum(MODEL_MAKERS).nullable(),
-      /** The levels it accepts, in the order a picker shows them. */
-      efforts: z.array(z.enum(REASONING_LEVELS)),
-      /** Whether reasoning can be switched off (`disabled`); otherwise `disabled` runs at the lowest level. */
-      canDisable: z.boolean(),
+      /** Who made the model, whoever serves it, for the picker's mark; null for one the registry doesn't know (a mock). The picker shows a mark only for a maker it has art for. */
+      maker: z.string().nullable(),
+      /** The levels it lists, lowest first; `none` means it can switch reasoning off. */
+      efforts: z.array(z.string()),
     }),
   ),
 });

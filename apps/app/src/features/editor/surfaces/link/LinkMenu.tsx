@@ -50,7 +50,6 @@ import {
   EditorMenuItem,
   EditorMenuLabel,
   EditorMenuSeparator,
-  EditorMenuShortcut,
   shortcutLabel,
 } from "@/features/editor/chrome";
 import {
@@ -122,10 +121,10 @@ export function LinkMenu({
             followLinkFrom(editor, { ref: menu.ref, href: menu.href }, menu.at);
             close();
           }}
+          note={shortcutLabel("Alt+Enter")}
         >
           <ExternalLink aria-hidden />
           {t`Open link`}
-          <EditorMenuShortcut>{shortcutLabel("Alt+Enter")}</EditorMenuShortcut>
         </EditorMenuItem>
       ) : null}
       <EditorMenuItem
@@ -164,10 +163,10 @@ export function LinkMenu({
           editor.commands.setTextSelection(linkMenuRange(menu));
           openLinkForm(editor);
         }}
+        note={shortcutLabel("Mod+K")}
       >
         <Pencil aria-hidden />
         {t`Edit link`}
-        <EditorMenuShortcut>{shortcutLabel("Mod+K")}</EditorMenuShortcut>
       </EditorMenuItem>
       <EditorMenuSeparator />
       <EditorMenuItem

@@ -1120,6 +1120,7 @@ export function toWireItem(
       threadId,
       title: threadTitles.get(threadId) ?? null,
     })),
+    unattributed: item.unattributed,
     updatedAt: item.updatedAt.toISOString(),
   };
 }

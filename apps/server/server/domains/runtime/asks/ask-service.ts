@@ -22,6 +22,7 @@ import type {
   ToolContentPart,
 } from "@meridian/contracts/threads";
 import { permissionWorkCommandSchema } from "@meridian/contracts/threads";
+import type { PromptCacheDescriptor } from "@meridian-flow/runtime/gateway";
 import { testHook } from "../../../shared/test-hooks.js";
 import { askToolResult, threadAsk } from "../../threads/domain/ask.js";
 import type {
@@ -34,7 +35,7 @@ import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { DeliveryProducer, DeliveryTransaction } from "../loop/runtime-delivery.js";
 import { jsonContent } from "../tools/tool-content.js";
-import { askDeadline } from "./ask-deadline.js";
+import { askDeadline, askHardLimitSeconds } from "./ask-deadline.js";
 
 export type AskAnswerResult =
   | { ok: true; ask: ThreadAsk }
@@ -81,6 +82,8 @@ export interface AskService {
     executionId: string;
     toolCallId: string;
     request: AskRequest;
+    /** The cache of the model asking, which sets how long a question may wait. Null when unknown. */
+    promptCache: PromptCacheDescriptor | null;
   }): Promise<AskRequestOutcome>;
   answer(input: {
     userId: string;
@@ -371,6 +374,7 @@ export function createAskService(deps: {
         payload: input.request.payload,
         permissionCommand: input.request.kind === "permission" ? input.request.command : null,
         deadlineAt: null,
+        hardLimitSeconds: askHardLimitSeconds(input.promptCache),
         status: "pending",
         resolution: null,
         submissionId: null,
@@ -425,7 +429,7 @@ export function createAskService(deps: {
             (input.answers.length > questions.length || firstMisfit(questions, input.answers) >= 0)
           )
             return "draft_misfit";
-          const deadline = askDeadline(now, stored.openedAt);
+          const deadline = askDeadline(now, stored.openedAt, stored.hardLimitSeconds);
           const updated = await deps.repos.asks.recordPresence({
             id: stored.id,
             deadline,

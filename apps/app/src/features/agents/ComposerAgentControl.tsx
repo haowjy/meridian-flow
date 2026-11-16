@@ -61,7 +61,8 @@ export function useComposerAgentToolbarControl(
   );
   const overrides = props.overrides;
   const model = overrides.model;
-  const models = useModelOptions(props.mode !== "readonly" || model !== null);
+  const options = useModelOptions(props.mode !== "readonly" || model !== null);
+  const models = options?.models ?? null;
   const searchRef = useRef<HTMLInputElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const agents = catalog.status === "ready" ? (catalog.agents ?? []) : [];
@@ -195,7 +196,7 @@ export function useComposerAgentToolbarControl(
                   onHandoff: (next) => props.onHandoff?.(next),
                 }
           }
-          models={models}
+          options={options}
           projectId={props.projectId ?? ""}
           onClose={terminalClose}
         />

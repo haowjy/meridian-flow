@@ -143,7 +143,7 @@ function buildRequest(corpus: CorpusDefinition, imageData: string): GenerateRequ
     model: "",
     messages,
     ...(corpus.id === "image-heavy" ? {} : { tools: [TOOL] }),
-    reasoning: "disabled",
+    reasoning: "none",
     promptCacheRetention: "short",
   };
 }

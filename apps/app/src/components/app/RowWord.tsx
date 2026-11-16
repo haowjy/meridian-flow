@@ -80,7 +80,7 @@ export function RowWord({
           aria-disabled={pending || undefined}
           data-row-word={tone}
           className={cn(
-            "focus-ring flex shrink-0 select-none items-center gap-1 rounded-sm px-1.5 text-xs [-webkit-touch-callout:none] coarse:min-h-11 coarse:min-w-11 coarse:justify-center",
+            "focus-ring flex shrink-0 select-none items-center gap-1 rounded-sm px-1.5 [-webkit-touch-callout:none] coarse:min-h-11 coarse:min-w-11 coarse:justify-center",
             tone === "action"
               ? "font-medium text-jade-text hover:underline underline-offset-2"
               : "text-muted-foreground",
@@ -130,7 +130,12 @@ export function RowWord({
           ) : tone === "done" ? (
             <Check aria-hidden className="size-3.5 text-jade-text" />
           ) : null}
-          {word}
+          {/* In a row, as in LabelNote: the outer span takes the row's text size, so the word
+              sits on the name's baseline rather than centred. Anywhere else it is text-xs like
+              the chips and buttons it sits among, and the line keeps its height. */}
+          <span className="text-xs in-data-list-row:text-[length:inherit] in-data-list-row:leading-[inherit]">
+            <span className="text-xs">{word}</span>
+          </span>
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-64">

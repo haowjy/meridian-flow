@@ -16,7 +16,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
-import { Copy, CopyPlus, Trash2, WrapText } from "lucide-react";
+import { Code2, Copy, CopyPlus, Trash2, WrapText } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { diagramProviderForLanguage, EDITOR_DIAGRAM_PROVIDERS } from "@/core/editor/diagrams";
@@ -145,7 +145,10 @@ export function FenceMenuItems({
   return (
     <>
       <EditorMenuSub open={languageOpen} onOpenChange={setLanguageOpen}>
-        <EditorMenuSubTrigger data-fence-submenu="language">{t`Language`}</EditorMenuSubTrigger>
+        <EditorMenuSubTrigger data-fence-submenu="language">
+          <Code2 aria-hidden />
+          {t`Language`}
+        </EditorMenuSubTrigger>
         <EditorMenuSubContent
           className="min-w-44"
           // Radix answers Escape inside a submenu by closing the whole menu,

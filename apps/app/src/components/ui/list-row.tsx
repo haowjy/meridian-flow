@@ -214,7 +214,7 @@ export function ListRow({
       data-selected={Boolean(current)}
       data-list-row
       className={cn(
-        "group/row dropdown-focus-ring flex min-w-0 items-center rounded-md transition-colors has-[>[data-list-item]:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong data-[selected=true]:font-medium motion-reduce:transition-none",
+        "group/row dropdown-focus-ring flex min-w-0 items-center rounded-md text-sm transition-colors has-[>[data-list-item]:focus-visible]:bg-ink-fill data-[selected=true]:bg-ink-fill-strong data-[selected=true]:font-medium motion-reduce:transition-none",
         // A run of selected rows reads as one block, rounded only at its ends.
         "has-[>[data-selection-run=start]]:rounded-b-none has-[>[data-selection-run=middle]]:rounded-none has-[>[data-selection-run=end]]:rounded-t-none",
         selected && !current && role.selected,

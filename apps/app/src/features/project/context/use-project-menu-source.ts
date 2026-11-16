@@ -28,8 +28,6 @@ export type ProjectMenuSource = {
   tabFor(rowId: string): ServerOpenDocument | null;
   /** How the tree behind the folder on screen (its trail, outermost first) is loading. */
   loadState(trail: readonly DrillNode[]): "ready" | "loading" | "failed";
-  /** The trail that opens inside a folder, from whichever area holds it; null when none does. */
-  trailInside(folderId: string): DrillNode[] | null;
   /** The tree and shown node a folder or file id names, from whichever area holds it. */
   locate(id: string): {
     scheme: ProjectContextTreeScheme;
@@ -206,13 +204,6 @@ export function useProjectMenuSource({
             ? hidden
             : projectViews[areaId?.replace("area:", "") as keyof typeof projectViews];
       return !view || view.tree ? "ready" : view.isError ? "failed" : "loading";
-    },
-    trailInside: (folderId) => {
-      for (const area of areas) {
-        const folder = area.tree ? menuEntryFor(area.tree, folderId) : null;
-        if (folder?.kind === "dir") return trailAlong(area, pathSegments(folder.path));
-      }
-      return null;
     },
     locate: (id) => {
       for (const area of areas) {

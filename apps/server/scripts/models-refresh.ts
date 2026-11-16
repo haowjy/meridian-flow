@@ -14,13 +14,12 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { findFamily } from "../server/lib/gateway/families.js";
-import { PROVIDER_ROWS } from "../server/lib/gateway/provider-rows.js";
+import { factsOf, PROVIDERS, type ProviderData } from "../server/lib/gateway/model-data.js";
 import {
-  assertNoPriceOverrideGaps,
   buildModelRegistry,
   type ModelRegistry,
   type ModelsSnapshot,
-  priceOverrideGaps,
+  modelDataGaps,
   type SnapshotModel,
   unservableReason,
 } from "../server/lib/gateway/registry.js";
@@ -79,8 +78,8 @@ function offeredModels(catalog: Catalog): {
 } {
   const unservable: string[] = [];
   const providers = Object.fromEntries(
-    PROVIDER_ROWS.map((row) => {
-      const models = catalog[row.modelsDevId ?? row.id]?.models ?? {};
+    PROVIDERS.map((row) => {
+      const models = catalog[row.modelsDev ?? row.id]?.models ?? {};
       const offered = Object.keys(models)
         .sort()
         .filter((id) => models[id].status !== "deprecated")
@@ -145,31 +144,16 @@ function section(title: string, lines: readonly string[]): string[] {
 }
 
 function notFromModelsDev(today: string): string[] {
-  return PROVIDER_ROWS.flatMap((row) => {
-    const entries = [
-      {
-        what: `cache lifetimes (${JSON.stringify(row.promptCache.descriptor)})`,
-        ...row.promptCache,
-      },
-      ...(row.longCacheWrite
-        ? [
-            {
-              what: `long-TTL cache write ${row.longCacheWrite.multiplier}x input`,
-              ...row.longCacheWrite,
-            },
-          ]
-        : []),
-      ...Object.entries(row.priceOverrides ?? {}).map(([id, override]) => ({
-        what: `price override for \`${id}\``,
-        ...override,
-      })),
-    ];
-    return entries.map(({ what, source, checked }) => {
-      const age = Math.floor((Date.parse(today) - Date.parse(checked)) / 86_400_000);
-      const flag = age > RECHECK_AFTER_DAYS ? " **re-check**: open the source before merging" : "";
-      return `- \`${row.id}\` ${what}: ${source}, checked ${checked} (${age} days ago)${flag}`;
-    });
-  });
+  return PROVIDERS.flatMap((row) =>
+    Object.entries(row.models).flatMap(([model, facts]) =>
+      Object.entries(facts).map(([name, { value, source, checked, note }]) => {
+        const age = Math.floor((Date.parse(today) - Date.parse(checked)) / 86_400_000);
+        const flag =
+          age > RECHECK_AFTER_DAYS ? " **re-check**: open the source before merging" : "";
+        return `- \`${row.id}/${model}\` ${name} ${JSON.stringify(value)}: ${source}, checked ${checked} (${age} days ago)${flag}${note ? `. ${note}` : ""}`;
+      }),
+    ),
+  );
 }
 
 type CostField = "input" | "output" | "cache_read" | "cache_write";
@@ -177,19 +161,20 @@ const COST_FIELDS: readonly CostField[] = ["input", "output", "cache_read", "cac
 
 /** Overridden prices with models.dev's number beside the billed one, and when an override can go. */
 function overrideLines(before: ModelsSnapshot, after: ModelsSnapshot): string[] {
-  return PROVIDER_ROWS.flatMap((row) =>
-    Object.entries(row.priceOverrides ?? {}).map(([id, override]) => {
+  return PROVIDERS.flatMap((row) =>
+    Object.keys(after.providers[row.id] ?? {}).flatMap((id) => {
+      const override = factsOf(row, id).price;
       const [was, now] = [before.providers[row.id]?.[id], after.providers[row.id]?.[id]];
-      if (!now) {
-        return `- \`${row.id}/${id}\`: the override is for a model that is not in the snapshot. Delete it.`;
-      }
-      const fields = COST_FIELDS.filter((field) => override[field] !== undefined);
+      if (!override || !now) return [];
+      const fields = COST_FIELDS.filter((field) => override.value[field] !== undefined);
       const parts = fields.map((field) => {
         const moved = was && was.cost[field] !== now.cost[field] ? ` (was ${was.cost[field]})` : "";
-        return `${field}: models.dev $${now.cost[field]}${moved}, billed $${override[field]}`;
+        return `${field}: models.dev $${now.cost[field]}${moved}, billed $${override.value[field]}`;
       });
-      const agrees = fields.every((field) => now.cost[field] === override[field]);
-      return `- \`${row.id}/${id}\` ${parts.join("; ")}. Override per ${override.source}, checked ${override.checked}.${agrees ? " **models.dev now agrees: delete the override.**" : ""}`;
+      const agrees = fields.every((field) => now.cost[field] === override.value[field]);
+      return [
+        `- \`${row.id}/${id}\` ${parts.join("; ")}. Override per ${override.source}, checked ${override.checked}.${agrees ? " **models.dev now agrees: delete the override.**" : ""}`,
+      ];
     }),
   );
 }
@@ -218,7 +203,7 @@ function buildReport(input: {
   unservable: readonly string[];
   buildError: string | undefined;
   /** Where price overrides leave a model or a rate at models.dev's price. */
-  overrideGaps: readonly string[];
+  dataGaps: readonly string[];
   /** The snapshot differs from models.dev, or something can't be served. */
   changed: boolean;
 }): string {
@@ -230,7 +215,7 @@ function buildReport(input: {
     today,
     unservable,
     buildError,
-    overrideGaps,
+    dataGaps,
     changed,
   } = input;
   const [was, now] = [offeringFields(oldRegistry), offeringFields(newRegistry)];
@@ -255,15 +240,15 @@ function buildReport(input: {
   const removed = [...was.keys()].filter((key) => !now.has(key)).map((key) => `- \`${key}\``);
 
   const derived = newRegistry.providers.flatMap((provider) => {
-    const multiplier = PROVIDER_ROWS.find((row) => row.id === provider.id)?.longCacheWrite
-      ?.multiplier;
-    return provider.offerings.flatMap(({ model, pricing }) =>
-      multiplier === undefined
+    const row = PROVIDERS.find((candidate) => candidate.id === provider.id) as ProviderData;
+    return provider.offerings.flatMap(({ model, pricing }) => {
+      const multiplier = factsOf(row, model.id).longCacheWrite?.value.multiplier;
+      return multiplier === undefined
         ? []
         : [
             `- \`${provider.id}/${model.id}\`: $${pricing.inputUsdPerMillionTokens} input × ${multiplier} = $${pricing.cacheWriteLongUsdPerMillionTokens} per 1M long-TTL cache-write tokens`,
-          ],
-    );
+          ];
+    });
   });
 
   const header = changed
@@ -273,7 +258,7 @@ function buildReport(input: {
         "Flow charges the committed snapshot, so nothing here is billed yet. To apply it, run",
         "`pnpm models:refresh` on a branch, review the diff to `apps/server/server/lib/gateway/models-snapshot.json`,",
         "and open a PR. This issue closes itself once the snapshot matches models.dev.",
-        ...(unservable.length > 0 || buildError || overrideGaps.length > 0
+        ...(unservable.length > 0 || buildError || dataGaps.length > 0
           ? ["", "`pnpm models:refresh` refuses to write until the problems below are fixed."]
           : []),
         "",
@@ -282,7 +267,7 @@ function buildReport(input: {
   return [
     ...header,
     ...section("Matched a family but can't be served", unservable),
-    ...section("Price overrides that do not cover the snapshot", overrideGaps),
+    ...section("model-data.json that does not fit the snapshot", dataGaps),
     ...section("The new snapshot would not build", buildError ? [buildError] : []),
     ...section("New models", added),
     ...section("Removed models", removed),
@@ -292,7 +277,7 @@ function buildReport(input: {
     ...section("Prices Flow charges that differ from models.dev's", overrideLines(before, after)),
     ...section("Derived long-TTL cache-write prices", derived),
     ...section("Not from models.dev", [
-      `Held in \`provider-rows.ts\`. A date older than ${RECHECK_AFTER_DAYS} days means someone should open the source and confirm it still holds.`,
+      `Held in \`model-data.json\`. A date older than ${RECHECK_AFTER_DAYS} days means someone should open the source and confirm it still holds.`,
       "",
       ...notFromModelsDev(today),
     ]),
@@ -314,8 +299,8 @@ const after: ModelsSnapshot = { takenAt: snapshotChanged ? today : before.takenA
 const oldRegistry = buildModelRegistry(before);
 let newRegistry = oldRegistry;
 let buildError: string | undefined;
-const overrideGaps = priceOverrideGaps(after);
-if (!dryRun) assertNoPriceOverrideGaps(after);
+const dataGaps = modelDataGaps(after);
+if (!dryRun && dataGaps.length > 0) throw new Error(`Nothing written.\n${dataGaps.join("\n")}`);
 try {
   newRegistry = buildModelRegistry(after);
 } catch (error) {
@@ -323,7 +308,7 @@ try {
   buildError = (error as Error).message;
 }
 const changed =
-  snapshotChanged || unservable.length > 0 || buildError !== undefined || overrideGaps.length > 0;
+  snapshotChanged || unservable.length > 0 || buildError !== undefined || dataGaps.length > 0;
 const report = buildReport({
   before,
   after,
@@ -332,7 +317,7 @@ const report = buildReport({
   today,
   unservable,
   buildError,
-  overrideGaps,
+  dataGaps,
   changed,
 });
 
