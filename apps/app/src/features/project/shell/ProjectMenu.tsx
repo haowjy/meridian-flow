@@ -2,7 +2,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, MoreHorizontal, Settings, Upload } from "lucide-react";
+import { ArrowLeft, MoreHorizontal, Pencil, Settings, Upload } from "lucide-react";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -40,6 +40,7 @@ export function ProjectMenu({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" onCloseAutoFocus={onCloseAutoFocus}>
           <DropdownMenuItem onSelect={() => dispatch(onRename)}>
+            <Pencil aria-hidden className="size-3.5" />
             <Trans>Rename project</Trans>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => dispatch(() => setExporting(true))}>
