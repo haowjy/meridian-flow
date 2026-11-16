@@ -64,7 +64,8 @@ export type CopySourceEntry = CopySourceFolder | CopySourceFile;
 export interface CopiedContent {
   /** The copy's first Yjs state; null for a source with no text, whose copy is empty. */
   state: Uint8Array | null;
-  copiedFrom: CopiedFrom;
+  /** Absent for newly authored text. */
+  copiedFrom?: CopiedFrom;
 }
 
 /** Every identity one Copy created; roots first, then each root's subtree in source order. */

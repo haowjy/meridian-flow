@@ -30,6 +30,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
+import { browserStorage, type RecordStorage } from "@/client/storage/browser-record";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
 import { HAND_BACK_NOTICES_PREFIX, handBackNoticesName } from "./hand-back-notices";
@@ -170,10 +171,7 @@ export class LocalDocumentCopies {
     private readonly locks: CrossContextLockManager | null = nativeLocks(),
     private readonly idb: IDBFactory | null = typeof indexedDB === "undefined" ? null : indexedDB,
     /** Where each room's current incarnation is recorded, for every tab of the browser. */
-    private readonly pointers: Pick<
-      Storage,
-      "getItem" | "setItem" | "removeItem"
-    > = typeof localStorage === "undefined" ? memoryStorage() : localStorage,
+    private readonly pointers: RecordStorage = browserStorage("local") ?? memoryStorage(),
   ) {
     this.loading = this.names().then((names) => {
       const found = new Set(names.flatMap((name) => documentOf(name, accountId) ?? []));
@@ -464,7 +462,7 @@ export async function clearCopiesOfOtherAccounts(current: AccountId): Promise<vo
   await Promise.all(others.map(clearAccountCopies));
 }
 
-function memoryStorage(): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
+function memoryStorage(): RecordStorage {
   const values = new Map<string, string>();
   return {
     getItem: (key) => values.get(key) ?? null,

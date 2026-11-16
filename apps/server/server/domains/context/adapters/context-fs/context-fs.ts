@@ -16,6 +16,7 @@ import { compareCatalogSiblings, LIVE } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type {
   BoundWrite,
+  CollabDomain,
   DocumentCreationAggregate,
   DocumentLinkScopes,
   DraftPeerShadowAccess,
@@ -101,6 +102,7 @@ export interface ContextFSDeps {
   /** Settles ahead refs when a document arrives; absent in a composition without them. */
   arrivals?: DocumentArrivals;
   documentSync: MarkdownDocumentStore &
+    Pick<CollabDomain, "refreshDocumentProjection"> &
     Pick<
       DraftPeerShadowAccess,
       | "readEffectiveHashlines"
