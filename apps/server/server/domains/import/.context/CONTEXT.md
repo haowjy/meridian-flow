@@ -159,9 +159,11 @@ the document's properties and aliases and the links it made to documents that do
 makes the planned folders, documents and files `create` records (actor `system`; the top level
 arrives after what its folder already holds, a new folder's children in name order), writes the
 documents' properties and previews, registers the ahead links and settles arrivals, all in the
-transaction that marks the import finished. It is never refused: the list's replay numbers a name
-taken meanwhile and stands a deleted destination folder again. A name numbered at the top level
-is not respelled in links inside the import; they still reach it by id.
+transaction that marks the import finished. It is never refused: a node keeps its name, and beside
+one of that name it is a twin; the replay stands a deleted destination folder again. The plan
+spells each twin's path with the `~id` the replay will give it (`suffixesInArrival` over the
+destination's children, then the plan's nodes in creation order), so the links the stored texts
+spell reach it; the top level's segments are kept in the placement (`topLevelSegments`).
 
 A pass that fails keeps its lease for a delay; five failed passes without a reveal fail the import
 with `organize_failed`. Retry starts again from the stored plan and the texts already written.

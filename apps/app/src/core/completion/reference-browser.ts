@@ -636,6 +636,7 @@ function rowForEntry(
     kind: "folder",
     rowId: `folder:${view.source.id}:${entry.entryId}`,
     label: entry.name,
+    ...(entry.suffix ? { suffix: entry.suffix } : {}),
     location: locationOf(entry.path),
     matchAliases: [],
     action: {

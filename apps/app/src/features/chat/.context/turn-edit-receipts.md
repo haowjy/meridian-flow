@@ -74,8 +74,8 @@ causes (`TurnInverseSkipCause`, the `ancestor_taken` / `folder_missing` /
 `superseded` statuses); the card never prints server prose. A move or delete
 whose folder path a document blocks names the cause, the whole place and the next
 step, and the parts list doesn't repeat what that line already says. A taken leaf
-is not a refusal: the inverse lands at the next free name and the card says where,
-for example "Restored as ch2 (2)." from the committed transition.
+is not a refusal: the inverse lands beside it as a twin, and the card says where from the
+committed transition.
 Copy covers the whole wire status union through an exhaustive switch that fails
 the build when a status is added, and a command that never reached a status at
 all — rejected fetch, HTTP error envelope — gets its own retry line naming the

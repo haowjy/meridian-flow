@@ -6,7 +6,12 @@
  * model could not have known about the nodes it touched. Nothing here writes before it has
  * decided: a refusal makes no record.
  */
-import { canonicalLeaf, type Filetype, storedFilename } from "@meridian/contracts/protocol";
+import {
+  canonicalLeaf,
+  type Filetype,
+  readSegment,
+  storedFilename,
+} from "@meridian/contracts/protocol";
 import {
   type Actor,
   childrenOf,
@@ -17,6 +22,7 @@ import {
   listRecords,
   type MovePlace,
   type NodeKind,
+  segmentOf,
   sourceIdOf,
   sourceRoot,
   type TrashEntry,
@@ -246,6 +252,9 @@ const uriOfPath = (cx: Context, path: string) => {
   return at ? `${at.area}${at.rest}` : path;
 };
 
+/** The name a written segment gives: a twin's `~id` is not part of it. */
+const nameOf = (segment: string) => readSegment(segment).name;
+
 /** What others did to a node since the model last saw its name and place, as the one line each. */
 function noteChanges(
   cx: Context,
@@ -256,19 +265,19 @@ function noteChanges(
 ) {
   const writtenLeaf = written.segments[written.segments.length - 1] ?? "";
   const history = projection.history.get(node.id);
-  const nowName = node.displayName;
+  // Names, not segments: a twin's suffix that came or went since is no rename or move.
   const sameName =
-    nowName === writtenLeaf ||
-    nowName === (written.folder ? writtenLeaf : canonicalLeaf(writtenLeaf));
+    node.name === nameOf(writtenLeaf) ||
+    node.name === nameOf(written.folder ? writtenLeaf : canonicalLeaf(writtenLeaf));
   if (!sameName)
     noteConcurrent(
       cx,
       actorOfRecord(cx, history?.label.at(-1)?.id),
-      `renamed: ${writtenUri} → ${nowName}`,
+      `renamed: ${writtenUri} → ${segmentOf(node)}`,
     );
-  const writtenParent = written.segments.slice(0, -1);
+  const writtenParent = written.segments.slice(0, -1).map(nameOf);
   const nowParent = pathNames(projection, node.id).slice(0, -1);
-  if (writtenParent.join("/") !== nowParent.join("/"))
+  if (writtenParent.join("/") !== nowParent.map(nameOf).join("/"))
     noteConcurrent(
       cx,
       actorOfRecord(cx, history?.place.at(-1)?.id),
@@ -289,14 +298,15 @@ function ensureFolders(
 ): string {
   let parent = start;
   for (const name of segments) {
+    // A segment's `~id` that reached nothing names no folder: the folder is made under its name.
     const created = cx.scope.writer.create(cx.scope.view, cx.scope.actor, {
       kind: "folder",
-      name,
+      name: readSegment(name).name,
       parent,
     });
     remember(cx, created.id, created.node);
     const shown = cx.scope.writer.view(cx.scope.view).nodes.get(created.node);
-    filled.push({ folder: parent, name: shown?.displayName ?? name, node: created.node });
+    filled.push({ folder: parent, name: shown ? segmentOf(shown) : name, node: created.node });
     parent = created.node;
   }
   return parent;
@@ -531,16 +541,16 @@ function decideMove(
   const typedFrom = source.segments.at(-1) ?? "";
   const keepsName =
     toLeaf === undefined ||
-    (source.folder ? typedFrom : canonicalLeaf(typedFrom)) ===
-      (to.folder ? toLeaf : canonicalLeaf(toLeaf));
+    nameOf(source.folder ? typedFrom : canonicalLeaf(typedFrom)) ===
+      nameOf(to.folder ? toLeaf : canonicalLeaf(toLeaf));
   let name: string | undefined;
   let filetype: Filetype | null = null;
   if (!keepsName && toLeaf !== undefined) {
-    if (node.kind === "folder") name = toLeaf;
+    if (node.kind === "folder") name = nameOf(toLeaf);
     else {
-      const ext = node.displayName.lastIndexOf(".");
-      const parsed = storedFilename(toLeaf, {
-        extension: ext > 0 ? node.displayName.slice(ext + 1).toLowerCase() : "",
+      const ext = node.name.lastIndexOf(".");
+      const parsed = storedFilename(nameOf(toLeaf), {
+        extension: ext > 0 ? node.name.slice(ext + 1).toLowerCase() : "",
         editable: node.kind === "document",
         filetype: node.filetype,
       });
@@ -584,7 +594,7 @@ function decideMove(
       shownAt: from,
       toUri,
       oldParent: node.parent,
-      oldName: node.displayName,
+      oldName: segmentOf(node),
       ...(kept ? { kept } : {}),
     },
   };
@@ -623,7 +633,7 @@ function landed(
   const final = cx.scope.writer.view(cx.scope.view);
   const landedNode = final.nodes.get(item.node.id) as TreeNode;
   emptied.push({ folder: item.oldParent, name: item.oldName });
-  filled.push({ folder: landedNode.parent, name: landedNode.displayName, node: item.node.id });
+  filled.push({ folder: landedNode.parent, name: segmentOf(landedNode), node: item.node.id });
   const landedAt = nodeUri(cx, final, landedNode);
   return {
     ok: true,
@@ -743,15 +753,6 @@ function keptStanding(
     .join(", ")}, added by ${labelOf(placer ?? "")} after you last listed it`;
 }
 
-/** The folder a several-move went into, now that the call has made it. */
-function destinationNode(cx: Context, to: Located): string | undefined {
-  const found = resolveShown(cx.scope.writer.view(cx.scope.view), cx.shown, to.root, {
-    segments: to.segments,
-    folder: true,
-  });
-  return found.kind === "node" ? found.node.id : undefined;
-}
-
 /** The path the node had in Trash, matched against what the model wrote for it. */
 function pathMatches(
   projection: TreeProjection,
@@ -809,7 +810,7 @@ export function runTreeCommand(
         return refuse("invalid_write", command.path, "A folder needs a name.");
       const found = resolveShown(projection, shown, path.root, path);
       // A folder that stands there is what the call asked for; a document there is kept and the
-      // new folder is numbered beside it by the replay.
+      // new folder is its twin, beside it.
       if (found.kind === "node" && found.node.kind === "folder" && !found.node.trashed)
         return finish(nothingDone(found.node.id, command.path, { already: "live", notMoved: [] }));
       const parent = destinationParent(cx, path, path.segments.slice(0, -1));
@@ -830,7 +831,7 @@ export function runTreeCommand(
         ok: true,
         subject: last,
         made: [],
-        shownAt: command.path,
+        shownAt: landedAt,
         landedAt,
         ...(landedAt !== uriOfPath(cx, command.path) ? { landed: landedAt } : {}),
         ...(kept ? { kept } : {}),
@@ -983,12 +984,18 @@ export function runTreeCommand(
         };
       }
       const kept = keptTrashed(cx, projection, folder.destination.trashed);
+      const after = cx.scope.writer.view(cx.scope.view);
+      const movedNode = decided[0]?.node.id as string;
+      const folderNode = after.nodes.get((after.nodes.get(movedNode) as TreeNode).parent);
+      // The receipt hangs on a node: at a source's top there is no folder, so it hangs on a moved one.
+      const subject = folderNode ? folderNode.id : movedNode;
+      const landedAt = folderNode ? nodeUri(cx, after, folderNode) : uriOf(to.area, [], true);
       return finish({
         ok: true,
-        subject: destinationNode(cx, to) ?? (cx.made[0]?.node as string),
+        subject,
         made: [],
-        shownAt: command.path,
-        landedAt: uriOf(to.area, to.segments, true),
+        shownAt: landedAt,
+        landedAt,
         moved: { made, of: command.from.length },
         notMoved,
         ...(leftOut.length > 0 ? { leftOut } : {}),
@@ -1072,7 +1079,7 @@ export function runTreeCommand(
         taken: took,
         arrived: [],
         touched: [],
-        delta: changeDelta([{ folder: node.parent, name: node.displayName }], []),
+        delta: changeDelta([{ folder: node.parent, name: segmentOf(node) }], []),
       });
     }
 
@@ -1136,7 +1143,7 @@ export function runTreeCommand(
         touched: [],
         delta: changeDelta(
           [],
-          [{ folder: landedNode.parent, name: landedNode.displayName, node: node.id }],
+          [{ folder: landedNode.parent, name: segmentOf(landedNode), node: node.id }],
         ),
       });
     }
@@ -1210,11 +1217,11 @@ export function runTreeUndo(
       names: [
         ...touched.flatMap((t): Array<[string, string, string | null]> => {
           const was = before.nodes.get(t.node);
-          return was ? [[was.parent, was.displayName, null]] : [];
+          return was ? [[was.parent, segmentOf(was), null]] : [];
         }),
         ...touched.flatMap((t): Array<[string, string, string | null]> => {
           const now = after.nodes.get(t.node);
-          return now && !now.trashed ? [[now.parent, now.displayName, t.node]] : [];
+          return now && !now.trashed ? [[now.parent, segmentOf(now), t.node]] : [];
         }),
       ],
     },
@@ -1231,7 +1238,7 @@ function touchedNodes(cx: Context, before: TreeProjection, after: TreeProjection
       was &&
       !named.has(id) &&
       was.parent === node.parent &&
-      was.displayName === node.displayName &&
+      segmentOf(was) === segmentOf(node) &&
       was.trashed === node.trashed
     )
       continue;

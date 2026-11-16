@@ -2,9 +2,10 @@ import {
   apiProjectDocumentReadPath,
   contextReadResponseSchema,
   documentFilenameAt,
+  readSegment,
   renderFilename,
 } from "@meridian/contracts/protocol";
-import { type CreateRecord, LIVE, newId } from "@meridian/project-tree";
+import { type CreateRecord, isSourceRoot, LIVE, newId, segmentOf } from "@meridian/project-tree";
 import { CliError, usageError } from "../../core/cli-error";
 import {
   type CommandSpec,
@@ -43,7 +44,6 @@ export async function putDocument(
   previousDocumentId: string | null;
 }> {
   const target = await resolveUri(session, input.projectId, input.uri, input.work, input.chat);
-  const segments = target.path.split("/").filter(Boolean);
   const parsedName = documentFilenameAt(target.scheme, target.path);
   if (!parsedName.ok) throw usageError(parsedName.error.message);
   const kept = parsedName.value.filetype === "source";
@@ -52,18 +52,12 @@ export async function putDocument(
       `doc put creates markdown documents: drop .${parsedName.value.extension} from ${target.uri}`,
     );
   const stem = renderFilename(parsedName.value.name, parsedName.value.extension);
-  const folders = segments.slice(0, -1);
   const trees = new Trees(session, input.projectId);
   try {
     const opened = await trees.at(target);
     let previousDocumentId: string | null = null;
     const existing = lookupPath(opened.list.replay(), opened.source, target.path).node;
-    if (existing) {
-      if (!input.overwrite) {
-        throw new CliError("usage", `${target.uri} already exists`, {
-          hint: "Pass --overwrite to delete it and create a new document at this URI (new id, old drafts lost).",
-        });
-      }
+    if (existing && input.overwrite) {
       previousDocumentId = await deleteAt(opened, target);
     }
     let created: CreateRecord;
@@ -71,7 +65,12 @@ export async function putDocument(
       const { parent, missing } = lookupPath(opened.list.replay(), opened.source, target.path);
       created = (
         await opened.list.append((writer) => {
-          const made = missing.map((name) => ({ name, kind: "folder" as const, node: newId() }));
+          // A `~id` that reached no folder names none: it is made under its name.
+          const made = missing.map((segment) => ({
+            name: readSegment(segment).name,
+            kind: "folder" as const,
+            node: newId(),
+          }));
           let at = parent;
           return writer.createAll(LIVE, opened.actor, [
             ...made.map((folder) => {
@@ -119,8 +118,15 @@ export async function putDocument(
         kept ? "source" : undefined,
       );
     }
+    // The path it landed at: a twin's segment carries its `~id`.
+    const shown = opened.list.replay();
+    const landed: string[] = [];
+    for (let at = shown.nodes.get(created.node); at; ) {
+      landed.unshift(segmentOf(at));
+      at = isSourceRoot(at.parent) ? undefined : shown.nodes.get(at.parent);
+    }
     return {
-      uri: uriIn(opened.source, [...folders, created.name].join("/")),
+      uri: uriIn(opened.source, landed.join("/")),
       documentId: created.node,
       replaced: previousDocumentId !== null,
       previousDocumentId,

@@ -32,15 +32,6 @@ export const rowId = (row: TreeRow): string =>
 export const rowKind = (row: TreeRow): "dir" | "file" =>
   row.origin === "import" ? row.kind : row.node.kind;
 
-export const rowName = (row: TreeRow): string =>
-  row.origin === "import" ? row.name : row.node.name;
-
-/** Pending roots reserve no names; only real siblings constrain namespace edits. */
-export const siblingsOf = (rows: readonly TreeRow[]) =>
-  rows
-    .filter((row) => row.origin === "tree")
-    .map((row) => ({ entryId: rowId(row), name: rowName(row), kind: rowKind(row) }));
-
 /** The rows of a tree no import touches. */
 export function plainTree(tree: TreeView): ImportedTree {
   const cache = new Map<string, readonly TreeRow[]>();

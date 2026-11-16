@@ -740,7 +740,6 @@ export async function createProductionAppPorts(input: {
       db,
       documentSync,
       treeLists,
-      arrivals,
       links: documentLinks,
     }),
     onSaved: (userId, projectId, level) =>
@@ -836,6 +835,7 @@ export async function createProductionAppPorts(input: {
     workProjectionMutation,
     documentLinks: createDocumentLinkResolver({
       sources: contextSources,
+      tree: createTreeReader(db),
       workAuthorityResolver,
       history: createDrizzleDocumentLinkHistory(db),
       lineages: createDrizzleScratchLineages(db),
@@ -1590,9 +1590,6 @@ export function createInMemoryAppServices(
     async ownedBy() {
       return [];
     },
-    async liveDocuments() {
-      return [];
-    },
   };
   const workAuthorityResolver: ProjectWorkAuthorityResolver = {
     async byId() {
@@ -1791,7 +1788,15 @@ export function createInMemoryAppServices(
       serializeCreate: (_entryId, create) => create(),
     },
     projectWakeHub: createProjectWakeHub(),
-    documentLinks: createDocumentLinkResolver({ sources: noContextSources, workAuthorityResolver }),
+    documentLinks: createDocumentLinkResolver({
+      sources: noContextSources,
+      tree: {
+        async resolveDocumentAddress() {
+          throw new Error("Live tree reads are unavailable in memory");
+        },
+      },
+      workAuthorityResolver,
+    }),
     projectExport: createProjectExport({
       pendingDrafts: {
         async count() {

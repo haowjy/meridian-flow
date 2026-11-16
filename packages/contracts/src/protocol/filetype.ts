@@ -13,6 +13,7 @@
  */
 
 import { z } from "zod";
+import { readSegment } from "./entry-segment.js";
 import type { DocumentFileType } from "./http-types.js";
 
 /** ProseMirror schema backing a Yjs-tracked document. */
@@ -162,7 +163,7 @@ export function filetypeForPath(path: string): Filetype {
  * distinguish known text from arbitrary bytes do not treat every blob as text.
  */
 export function filetypeForKnownPath(path: string): Filetype | null {
-  const basename = path.slice(path.lastIndexOf("/") + 1).trim();
+  const basename = readSegment(path.slice(path.lastIndexOf("/") + 1).trim()).name;
   const dot = basename.lastIndexOf(".");
   if (dot < 0) return null;
   return filetypeForExtension(basename.slice(dot + 1));

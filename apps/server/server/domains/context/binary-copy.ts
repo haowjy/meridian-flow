@@ -11,7 +11,7 @@
  * creates the destination in one go for callers with nothing to join.
  */
 
-import { copiedFilename, renderFilename } from "@meridian/contracts/protocol";
+import { copiedFilename, readSegment, renderFilename } from "@meridian/contracts/protocol";
 import { Err, type Result } from "../../shared/result.js";
 import type { FileGrant } from "../file-policy/index.js";
 import {
@@ -92,7 +92,7 @@ interface BinaryCopyInput {
   origin?: WriteProvenance;
 }
 
-/** Copies a binary file to a destination that must not exist yet. */
+/** Copies a binary file to a destination; beside a file of that name it lands as a twin. */
 export async function copyBinaryDocument(
   input: BinaryCopyInput,
 ): Promise<Result<ContextBinaryWriteResult, ContextError>> {
@@ -101,23 +101,15 @@ export async function copyBinaryDocument(
     throw new Error("A binary copy's grant must name its source document");
   }
   const slash = input.destinationUri.lastIndexOf("/");
-  // The name is decided here once and handed to `writeBinary`, which does not parse it again.
-  const copied = copiedFilename(input.destinationUri.slice(slash + 1), {
+  // The name is decided here once and handed to `writeBinary`, which does not parse it again. A
+  // file of that name already there gets a twin; a leaf's `~id` picks no file to land on.
+  const copied = copiedFilename(readSegment(input.destinationUri.slice(slash + 1)).name, {
     extension: input.source.extension,
     editable: false,
   });
   if (!copied.ok) return Err({ ...copied.error, uri: input.destinationUri });
   const { name, extension } = copied.filename;
   const destinationUri = input.destinationUri.slice(0, slash + 1) + renderFilename(name, extension);
-  const existing = await input.port.stat(destinationUri);
-  if (existing.ok) {
-    return Err({
-      code: "invalid_operation",
-      uri: existing.value.uri,
-      message: `File already exists: ${input.destinationUri}. A binary copy can't replace an existing file.`,
-    });
-  }
-  if (existing.error.code !== "not_found") return existing;
 
   const prepared = await prepareBinaryCopy({
     objectStore: input.objectStore,

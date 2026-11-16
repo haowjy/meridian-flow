@@ -1,6 +1,7 @@
 /**
  * The tree half of the review list, read from the Work's rows (`branch_tree_nodes`, written by
  * the replay of the list) against live's (`tree_nodes`). Addresses are spelled by the tree reader.
+ * A row the Work did not change (`changed` false: only a twin's suffix differs) is no row here.
  */
 import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -26,7 +27,7 @@ type Row = {
   revision: string | null;
 };
 
-/** One digest of everything a Work's row says, so a click that froze it sees any later change. */
+/** One digest of the change a Work's row says, so a click that froze it sees any later change. */
 const REVISION = sql`md5(concat_ws('|', b.context_source_id::text, coalesce(b.parent_id::text, ''),
   b.name, b.rank, b.deleted::text, b.exists_only_in_draft::text))`;
 
@@ -44,7 +45,7 @@ export async function branchRowRevisions(
   const rows = await currentDrizzleDb(db).execute<{ id: string; revision: string }>(sql`
     SELECT b.id::text AS id, ${REVISION} AS revision
     FROM branch_tree_nodes b
-    WHERE b.branch_id = ${branchId}::uuid
+    WHERE b.branch_id = ${branchId}::uuid AND b.changed
       AND b.id IN (${sql.join(
         ids.map((id) => sql`${id}::uuid`),
         sql`, `,
@@ -61,7 +62,7 @@ export async function branchFolderRevisions(
   const rows = await currentDrizzleDb(db).execute<{ id: string; revision: string }>(sql`
     SELECT b.id::text AS id, ${REVISION} AS revision
     FROM branch_tree_nodes b
-    WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder'`);
+    WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder' AND b.changed`);
   return [...rows];
 }
 
@@ -101,7 +102,8 @@ export function createDrizzleBranchTreeState(
           d.storage_url IS NOT NULL AS binary,
           CASE WHEN b.id IS NULL THEN NULL ELSE ${REVISION} END AS revision
         FROM documents d
-          LEFT JOIN branch_tree_nodes b ON b.id = d.id AND b.branch_id = ${branchId}::uuid
+          LEFT JOIN branch_tree_nodes b
+            ON b.id = d.id AND b.branch_id = ${branchId}::uuid AND b.changed
           LEFT JOIN tree_nodes t ON t.id = d.id
         WHERE (b.id IS NOT NULL
           OR (t.trash_record IS NULL AND t.id IS NOT NULL

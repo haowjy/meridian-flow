@@ -36,6 +36,7 @@ type DocumentRow = Pick<
   | "id"
   | "folderId"
   | "name"
+  | "segment"
   | "extension"
   | "fileType"
   | "storageUrl"
@@ -66,6 +67,7 @@ export function mapDocument(row: DocumentRow): ContextDocument {
     folderId: row.folderId,
     name: stemOf(row),
     extension: row.extension,
+    segment: row.segment,
     // The row keeps a stored file's own type (`png`); readers want its kind (`image`).
     fileType: isBinary ? binaryKind(row.fileType) : null,
     filetype: isBinary ? null : (row.fileType as Filetype),
@@ -127,7 +129,6 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
       contextSourceId: this.sourceId,
       path,
     });
-    if (found.kind === "ambiguous") return found;
     return found.kind === "found" && found.node.kind === "document"
       ? { kind: "found", node: mapDocument(found.node.document) }
       : { kind: "not_found" };
@@ -163,6 +164,7 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
           id: vf.id,
           parentId: vf.parentId,
           name: vf.name,
+          segment: vf.segment,
           rank: vf.rank,
         })
         .from(vf)
@@ -172,28 +174,16 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
     return { folders, documents: docs.map(mapDocument) };
   }
 
-  async namesAt(view: TreeView, parentId: string | null): Promise<Set<string>> {
-    const vd = visibleDocuments(view);
-    const vf = visibleFolders(view);
-    const here = (parent: typeof vd.folderId | typeof vf.parentId) =>
-      parentId === null ? isNull(parent) : eq(parent, parentId as FolderId);
-    const [documents, folders] = await Promise.all([
-      this.db
-        .select({ name: vd.name })
-        .from(vd)
-        .where(and(eq(vd.contextSourceId, this.sourceId), here(vd.folderId))),
-      this.db
-        .select({ name: vf.name })
-        .from(vf)
-        .where(and(eq(vf.contextSourceId, this.sourceId), here(vf.parentId))),
-    ]);
-    return new Set([...documents, ...folders].map((row) => row.name));
-  }
-
   async listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]> {
     const vf = visibleFolders(view);
     return this.db
-      .select({ id: vf.id, parentId: vf.parentId, name: vf.name, rank: vf.rank })
+      .select({
+        id: vf.id,
+        parentId: vf.parentId,
+        name: vf.name,
+        segment: vf.segment,
+        rank: vf.rank,
+      })
       .from(vf)
       .where(
         and(

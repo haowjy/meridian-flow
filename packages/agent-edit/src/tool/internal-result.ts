@@ -23,6 +23,8 @@ interface InternalWriteResultBase {
   aheadSettlements?: ReadonlyMap<string, string>;
   model?: AgentEditModelPayload;
   writeId?: string;
+  /** Host-only: a `create` without overwrite met a document with text; the host makes a twin. */
+  occupied?: true;
 }
 
 /** A missing document; a removed one says who removed it and how. */

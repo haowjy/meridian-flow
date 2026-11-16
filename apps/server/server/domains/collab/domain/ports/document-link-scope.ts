@@ -77,8 +77,7 @@ export interface DocumentLinkScopes {
    */
   reader(input: { uri: string | null; view: LinkView }): HolderLinkScope;
   /**
-   * The document a branch view created at an address (exact, else the one extension-omitted
-   * match), once `prepare` has loaded that address. Typed links never bind to a branch's
+   * The document a branch view created at an address, as the view's tree reaches it, once `prepare` has loaded that address. Typed links never bind to a branch's
    * hidden document; this is how an address names one. Null for the live view, another
    * branch's creation, or what the reader may not read.
    */

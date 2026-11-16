@@ -33,6 +33,8 @@ export interface PlannedNode {
   entryId: number | null;
   path: string;
   filename: string;
+  /** The segment it lands at when it lands as a later twin (`filename~id`, rule 14). */
+  segment?: string;
   name: string;
   extension: string;
   kind: "folder" | "note" | "docx" | "code" | "binary";

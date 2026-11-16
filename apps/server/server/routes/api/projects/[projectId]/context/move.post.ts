@@ -1,5 +1,6 @@
 import { formatParsedContextUri, parseContextUri } from "@meridian/contracts/context-uri";
 import { canonicalLeaf, storedFilename } from "@meridian/contracts/protocol";
+import { segmentOf } from "@meridian/project-tree";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { contextPortForProjectAuthorities } from "../../../../../domains/context/index.js";
 import { requireProjectOwner } from "../../../../../domains/projects/index.js";
@@ -107,9 +108,9 @@ export default defineEventHandler((event) =>
           make: (scope) => {
             const node = scope.writer.view(scope.view).nodes.get(entry.id);
             if (!node || node.kind === "folder") return { result: entry.name };
-            const ext = node.displayName.lastIndexOf(".");
+            const ext = node.name.lastIndexOf(".");
             const parsed = storedFilename(name, {
-              extension: ext > 0 ? node.displayName.slice(ext + 1).toLowerCase() : "",
+              extension: ext > 0 ? node.name.slice(ext + 1).toLowerCase() : "",
               editable: node.kind === "document",
               filetype: node.filetype,
             });
@@ -123,9 +124,8 @@ export default defineEventHandler((event) =>
                 ? parsed.filename.filetype
                 : undefined,
             );
-            return {
-              result: scope.writer.view(scope.view).nodes.get(entry.id)?.displayName ?? entry.name,
-            };
+            const shown = scope.writer.view(scope.view).nodes.get(entry.id);
+            return { result: shown ? segmentOf(shown) : entry.name };
           },
         }),
       );

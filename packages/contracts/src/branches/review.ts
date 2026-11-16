@@ -60,19 +60,10 @@ export type ApplyClickRefusalReason =
   | "not_found"
   | "ancestor_taken";
 
-export type ApplyRenamedNote = {
-  code: "renamed";
-  /** The branch path the change asked for. */
-  wanted: string;
-  /** The live path the document claimed. */
-  path: string;
-};
-
 export type AppliedReviewItem = {
   itemKey: DraftItemKey;
   /** The committed move, when this click settled the item's branch tree row. */
   transition?: { from: string | null; to: string | null };
-  renamed?: ApplyRenamedNote;
 };
 
 export type ApplyClickResult =

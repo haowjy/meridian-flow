@@ -26,7 +26,7 @@ import {
 import type { DocumentId } from "@meridian/contracts";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
-import { parseDocumentFilename } from "@meridian/contracts/protocol";
+import { parseDocumentFilename, readSegment } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/runtime/gateway";
 import {
   createCopyIdentityMap,
@@ -111,10 +111,12 @@ export async function resolveDocumentAddress(
     metadata?: DocumentCreationMetadata;
     origin?: import("../../domains/context/index.js").WriteProvenance;
     recordCreate?: NonNullable<
-      import("../../domains/context/ports/context-adapter.js").ContextEnsureTrackedOptions["recordCreate"]
+      import("../../domains/context/ports/context-adapter.js").ContextEnsureTrackedPortOptions["recordCreate"]
     >;
     /** The folder node a create goes in, as the names shown resolved its folders. */
     into?: string;
+    /** A new document even where the path reaches one (a twin): the one there holds text. */
+    beside?: true;
   } = {},
 ): Promise<ResolvedDocumentAddress | WriteToolErrorOutput> {
   const port = context.port;
@@ -129,6 +131,7 @@ export async function resolveDocumentAddress(
       ...(options.metadata ? { metadata: options.metadata } : {}),
       ...(options.recordCreate ? { recordCreate: options.recordCreate } : {}),
       ...(options.into ? { into: options.into } : {}),
+      ...(options.beside ? { beside: options.beside } : {}),
     };
     const ensured = await port.ensureTrackedDocument(
       basePath,
@@ -160,11 +163,6 @@ export async function resolveDocumentAddress(
         ref.error.workHandle !== undefined ||
         ref.error.unknownScheme !== undefined ||
         ref.error.slip !== undefined);
-    if (ref.error.code === "invalid_operation" && ref.error.reason === "ambiguous_path") {
-      return writeToolError(command, contextErrorMessage(ref.error), "ambiguous_path", {
-        path: path,
-      });
-    }
     return writeToolError(
       command,
       contextErrorMessage(ref.error),
@@ -431,7 +429,13 @@ async function writeUnderGrant(
   // was a partial failure's echo. Whatever frontier a result carries records,
   // error or not.
   const evidence = evidenceOf(address.documentId, written);
-  if (written.isError) return { isError: true, output: written.result, evidence };
+  if (written.isError)
+    return {
+      isError: true,
+      output: written.result,
+      evidence,
+      ...(written.occupied ? { occupied: true as const } : {}),
+    };
   // Showing and frontier are host-only: they leave here only as `evidence`.
   const { showing: _showing, frontier: _frontier, ...outcome } = written;
   return {
@@ -709,10 +713,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
         reached = first;
         engine = { ...engine, path: first.path } as typeof written;
       }
-      const address =
-        existing ??
-        (await inContainer(deps, principal, engine.command, target, () =>
+      const resolveCreated = (beside: boolean) =>
+        inContainer(deps, principal, engine.command, target, () =>
           resolveDocumentAddress(context, engine.command, engine.path, {
+            ...(beside ? { beside: true as const } : {}),
             origin: {
               type: "agent",
               agentSlug: ctx.agentSlug,
@@ -728,10 +732,10 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             ...(creates && reached?.node?.kind === "folder" ? { into: reached.node.id } : {}),
             ...(creates
               ? {
-                  recordCreate: async ({ documentId, record, folders, draftBranchId }) => {
+                  recordCreate: async ({ documentId, record, folders, draftBranchId, uri }) => {
                     await deps.documentSync.treeHistory().recordAgentTreeChange({
                       subject: documentId,
-                      nodes: [{ nodeId: documentId, beforeAt: null, afterAt: engine.path }],
+                      nodes: [{ nodeId: documentId, beforeAt: null, afterAt: uri }],
                       records: [...folders, { record, node: documentId }],
                       threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
                       ...(ctx.turnId
@@ -741,23 +745,24 @@ export function createWriteHandler(deps: ToolWiringDeps) {
                       ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
                       op: "create",
                       ...(draftBranchId ? { draftBranchId } : {}),
-                      shownAt: engine.path,
+                      shownAt: uri,
                     });
                   },
                 }
               : {}),
           }),
-        ));
+        );
+      let address = existing ?? (await resolveCreated(false));
       if (isToolError(address)) return address;
 
       // The effect can run again: `copied` stays what the source read gave, and each attempt
       // remaps its own copy of it to the document that attempt made.
-      let placed = copied;
-      if (engine.command === "copy" && copied) {
+      const placedAt = (address: ResolvedDocumentAddress) => {
+        if (engine.command !== "copy" || !copied) return copied;
         // The copy's new identity is known now: a whole document's own links name the copy, not
         // the original (`collab/domain/copied-blocks.ts`, the one remap a writer Copy also uses).
         // A selection is not the copied set: its links to the whole source keep naming it.
-        placed = {
+        return {
           ...copied,
           nodes: remapCopiedBlocks({
             blocks: copied.nodes,
@@ -778,17 +783,25 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             }),
           }),
         };
-      }
+      };
+      const writeAt = (at: ResolvedDocumentAddress) =>
+        writeUnderGrant(
+          deps,
+          principal,
+          engine,
+          at,
+          placedAt(at),
+          ctx,
+          context.resolution.uploadsOwner?.chatRef,
+        );
 
-      let outcome = await writeUnderGrant(
-        deps,
-        principal,
-        engine,
-        address,
-        placed,
-        ctx,
-        context.resolution.uploadsOwner?.chatRef,
-      );
+      let outcome = await writeAt(address);
+      // The path reaches a document with text: the create makes another of that name, a twin.
+      if (creates && outcome.isError && "occupied" in outcome && outcome.occupied) {
+        address = await resolveCreated(true);
+        if (isToolError(address)) return address;
+        outcome = await writeAt(address);
+      }
       // A reversed move left the document somewhere else: the result names where it is now. A
       // reversed creation removed the document, so its text half must not claim an empty document
       // survived the tree half of the same inverse.
@@ -950,6 +963,6 @@ function isCommandResult(value: unknown): value is ModelEditHandlerResult {
 }
 
 function sourceExtension(uri: string): string {
-  const parsed = parseDocumentFilename(uri.slice(uri.lastIndexOf("/") + 1));
+  const parsed = parseDocumentFilename(readSegment(uri.slice(uri.lastIndexOf("/") + 1)).name);
   return parsed.ok ? parsed.value.extension : "";
 }

@@ -6,8 +6,8 @@ import type { BranchId } from "@meridian/contracts";
  * the tree it will insert (names and identities, which are its namespace's to decide), the
  * layer above binds every document's content for the address its copy will have, and the
  * adapter inserts the whole tree in the caller's transaction. Planning and binding hold no
- * lock: the insert confirms under its lock that the plan still holds, and says `replan` when a
- * concurrent write took a name. `context/copy/` owns the orchestration.
+ * lock; a copy keeps its source's names, so one beside a sibling of that name is a twin and the
+ * entries say the path that landed. `context/copy/` owns the orchestration.
  *
  * Binaries are not bound: their bytes were duplicated before the transaction, and the
  * inserted row carries that object.
@@ -144,21 +144,19 @@ export interface ContextCopyAdapter {
    */
   snapshotSource(path: string, view: TreeView): Promise<Result<CopySourceEntry, AdapterFault>>;
   /**
-   * Plan `roots` under the scheme-relative folder `dir`: allocate every name and mint every
-   * identity, writing nothing and holding no lock. A selected root that carries the device's
-   * `copyId` takes it; every descendant is minted here. Names are allocated against the destination view
-   * occupants and the rest of the batch; a hidden node on a root's name yields at the insert. A copied folder
+   * Plan `roots` under the scheme-relative folder `dir`: mint every identity, writing nothing
+   * and holding no lock. A selected root that carries the device's `copyId` takes it; every
+   * descendant is minted here. Each keeps its source's name. A copied folder
    * keeps its source ordering policy, and its children arrive in source order.
    */
   planCopy(input: {
     dir: readonly string[];
     roots: readonly CopySourceEntry[];
-    view: TreeView;
   }): Promise<Result<CopyPlan, AdapterFault>>;
   /**
    * Insert a plan, inside the caller's transaction and under its locks. `contents` has one
-   * entry per tracked document in the plan, by source document id. When the roots' names are
-   * no longer the ones the plan allocated, nothing is inserted and the answer is `replan`.
+   * entry per tracked document in the plan, by source document id. When the plan was made for
+   * another folder, nothing is inserted and the answer is `replan`.
    */
   copyInto(input: {
     dir: readonly string[];

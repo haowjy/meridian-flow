@@ -69,12 +69,7 @@ import { createContextFsCopyAdapter } from "./copy-adapter.js";
 import { fileRefOf } from "./file-ref.js";
 import { type GrepRead, scanDocuments } from "./grep-scan.js";
 import { LiveCreate } from "./live-create.js";
-import {
-  AMBIGUOUS_PATH_FAULT,
-  type ContextPlacement,
-  type CreatePlacement,
-  createPlacement,
-} from "./placement.js";
+import { type ContextPlacement, type CreatePlacement, createPlacement } from "./placement.js";
 import { actorOf, type SourceTree, type TreeWriteTarget, viewOfBranch } from "./tree-writes.js";
 
 /**
@@ -266,7 +261,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const parsed = parseDocumentPath(this.scheme, path);
     if (!parsed.ok || !parsed.value) return Ok(null);
     const found = await this.store.resolveDocumentAt(view, path);
-    if (found.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
     return Ok(found.kind === "found" ? found.node : null);
   }
 
@@ -291,10 +285,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const doc = found.value;
     if (!doc || !parsed.value) return Ok(null);
 
-    return fileRefOf(
-      doc,
-      joinPath(parsed.value.dir.join("/"), renderFilename(doc.name, doc.extension)),
-    );
+    return fileRefOf(doc, joinPath(parsed.value.dir.join("/"), doc.segment));
   }
 
   async read(
@@ -392,7 +383,7 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
     markdown: string,
     options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
     const refused = this.placement.refuse("create a file with text");
     if (refused) return Err(refused);
     let bound: BoundWrite | null = null;
@@ -408,7 +399,7 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
     bound: BoundWrite | null,
     options?: ContextWriteOptions,
-  ): Promise<Result<{ documentId: string }, AdapterFault>> {
+  ): Promise<Result<{ documentId: string; path: string }, AdapterFault>> {
     const refused = this.placement.refuse("create a file with text");
     if (refused) return Err(refused);
     if (bound && !this.boundWrites.boundFor(path, bound, null)) {
@@ -425,21 +416,23 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok({
       documentId: located.document.id,
       path: located.path,
-      name: renderFilename(located.document.name, located.document.extension),
+      name: located.document.segment,
     });
   }
 
   ensureTrackedDocument(
     path: string,
     options?: ContextEnsureTrackedOptions,
-  ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
+  ): Promise<Result<{ documentId: string; created: boolean; path: string }, AdapterFault>> {
     return this.placement.ensureTracked(path, options);
   }
 
   writeBinary(
     path: string,
     options: ContextWriteBinaryOptions,
-  ): Promise<Result<{ documentId: string; placement: "live" | "draft" }, AdapterFault>> {
+  ): Promise<
+    Result<{ documentId: string; placement: "live" | "draft"; path: string }, AdapterFault>
+  > {
     return this.placement.writeBinary(path, options);
   }
 
@@ -450,7 +443,6 @@ export class ContextFS implements ContextSchemeAdapter {
     const view = await this.readTreeView();
     // Every segment of `path` is a folder name (no trailing filename to split).
     const folder = await this.store.resolveFolderAt(view, path);
-    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
     if (folder.kind === "not_found") return Err({ code: "not_found" });
     const folderId = folder.node?.id ?? null;
 
@@ -488,18 +480,18 @@ export class ContextFS implements ContextSchemeAdapter {
     for (const sibling of siblings) {
       if ("folder" in sibling) {
         entries.push({
-          path: joinPath(path, sibling.folder.name),
+          path: joinPath(path, sibling.folder.segment),
           kind: "directory",
           folderId: sibling.folder.id,
         });
         continue;
       }
       const doc = sibling.document;
-      const ref = fileRefOf(doc, joinPath(path, renderFilename(doc.name, doc.extension)));
+      const ref = fileRefOf(doc, joinPath(path, doc.segment));
       if (!ref.ok) return ref;
       const file = ref.value;
       entries.push({
-        path: joinPath(path, renderFilename(doc.name, doc.extension)),
+        path: joinPath(path, doc.segment),
         kind: "file",
         documentId: doc.id,
         sizeBytes: doc.sizeBytes ?? undefined,
@@ -535,7 +527,7 @@ export class ContextFS implements ContextSchemeAdapter {
       if (known !== undefined) return known;
       const folder = byId.get(id as string);
       const parent = folder ? folderPath(folder.parentId) : null;
-      const path = folder && parent !== null ? joinPath(parent, folder.name) : null;
+      const path = folder && parent !== null ? joinPath(parent, folder.segment) : null;
       folderPaths.set(id, path);
       return path;
     };
@@ -544,7 +536,7 @@ export class ContextFS implements ContextSchemeAdapter {
         if (document.fileType !== null) return [];
         const folder = folderPath(document.folderId);
         if (folder === null) return [];
-        const path = joinPath(folder, renderFilename(document.name, document.extension));
+        const path = joinPath(folder, document.segment);
         const inPrefix = !prefix || path === prefix || path.startsWith(`${prefix}/`);
         return inPrefix && (!query.glob || query.glob(path)) ? [{ id: document.id, path }] : [];
       })

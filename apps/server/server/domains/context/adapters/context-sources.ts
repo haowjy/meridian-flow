@@ -1,4 +1,4 @@
-import type { ContextSourceId, DocumentId, ProjectId, WorkId } from "@meridian/contracts";
+import type { ContextSourceId, ProjectId, WorkId } from "@meridian/contracts";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { ContextSource, ContextSourceOwner } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -97,18 +97,6 @@ export function createDrizzleContextSources(db: Database): ContextSources {
     },
     ofUser(userId) {
       return read(and(eq(contextSources.scope, "account"), eq(contextSources.userId, userId)));
-    },
-    async liveDocuments(sourceId) {
-      const rows = await currentDrizzleDb(db).execute<{ id: DocumentId; path: string }>(sql`
-        WITH RECURSIVE placed AS (
-          SELECT id, kind, name::text AS path FROM tree_nodes
-          WHERE context_source_id = ${sourceId} AND parent_id IS NULL AND trash_record IS NULL
-          UNION ALL
-          SELECT t.id, t.kind, p.path || '/' || t.name FROM tree_nodes t
-          JOIN placed p ON t.parent_id = p.id WHERE t.trash_record IS NULL
-        )
-        SELECT id, path FROM placed WHERE kind = 'document'`);
-      return [...rows];
     },
     ownedBy(projectId, owner) {
       switch (owner.kind) {

@@ -12,7 +12,7 @@ import {
   type ParsedContextAuthority,
   parseUnifiedContextUri,
 } from "@meridian/contracts/context-uri";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { type ProjectContextTreeScheme, readSegment } from "@meridian/contracts/protocol";
 import { humanizeSkillSlug, skillFile } from "@meridian/thread-client";
 import { areaOf, schemeLabel } from "@/features/project/context/context-schemes";
 
@@ -164,6 +164,10 @@ export function folderDisplayName(uriOrPath: string): string {
   // The writer's Agents level is named as the Agents tab names it, never `.agents` of Your files.
   const place = scheme ? areaOf(scheme, path) : null;
   if (place && place.area !== (scheme && schemeLabel(scheme)) && !place.rest) return place.area;
-  const segments = path.split("/").filter(Boolean);
-  return segments.at(-1) ?? (scheme ? schemeLabel(scheme) : t`Untitled document`);
+  const segment = path.split("/").filter(Boolean).at(-1);
+  return segment !== undefined
+    ? readSegment(segment).name
+    : scheme
+      ? schemeLabel(scheme)
+      : t`Untitled document`;
 }

@@ -9,7 +9,6 @@ import { focusWhenFree } from "@/lib/focus-follow";
 import { useShellTreeVersion } from "../tree-version";
 import { type EntryAction, useEntryMenu } from "./ContextEntryActions";
 import type { ContextCreateKind } from "./context-create-kind";
-import type { ContextEntrySibling } from "./context-entry-name";
 import { parentContextEntryPath } from "./context-entry-name";
 import { type DragEntry, dragEntry } from "./entry-drag/entry";
 import type { UseRenameEntryFormOptions } from "./use-rename-entry-form";
@@ -47,7 +46,6 @@ export function useEntryInteraction({
   capabilities,
   onRequestDelete,
   create,
-  siblings,
   arriving,
   onArrived,
   importHere,
@@ -60,7 +58,6 @@ export function useEntryInteraction({
   /** Deletes entries in one gesture: this row, or the selection its menu acted on. */
   onRequestDelete: (entries: readonly DragEntry[]) => void;
   create?: EntryCreation;
-  siblings: readonly ContextEntrySibling[];
   /** A row creation just made: it takes focus once it is on screen. */
   arriving?: boolean;
   onArrived?: () => void;
@@ -152,7 +149,6 @@ export function useEntryInteraction({
     entryId: id,
     currentName: node.name,
     ...(node.kind === "file" ? { row: node } : {}),
-    siblings,
     kind,
     onDone: () => {
       refocus.current = true;

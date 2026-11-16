@@ -224,10 +224,11 @@ export function createWriteCommands(deps: {
         );
     if (!parsed.ok) return status("invalid_write", parsed.message);
 
-    const alreadyExists = status(
-      "invalid_write",
-      `File already exists: ${address.filePath}. Read it, then edit it; use overwrite=true only to replace all of its content.`,
-    );
+    // The host answers this by making another document of the name and writing there.
+    const occupied: InternalWriteResult = {
+      ...status("invalid_write", `${address.filePath} holds text; nothing was written.`),
+      occupied: true,
+    };
     return withRoom(
       {
         docId: address.documentId,
@@ -237,7 +238,7 @@ export function createWriteCommands(deps: {
       async (room) => {
         const overwriting = command.overwrite === true;
         const existing = options.model.getBlocks(toDocHandle(room.doc)).length > 0;
-        if (existing && !overwriting) return alreadyExists;
+        if (existing && !overwriting) return occupied;
         // Creating a document or initializing an empty one plans on the room copy, exempt;
         // replacing a non-empty one plans on the model's view of it.
         const plan = (planDoc: Y.Doc) =>
@@ -253,7 +254,7 @@ export function createWriteCommands(deps: {
             copiedNodes,
             boundNodes,
             overwriting,
-            alreadyExists,
+            occupied,
           });
         if (existing && !isEmptyDocument(room.doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)))
           return withPlanDoc(room, address.documentId, context, actor, plan);
@@ -280,11 +281,11 @@ export function createWriteCommands(deps: {
       copiedNodes: readonly Block[] | undefined;
       boundNodes: readonly Block[] | undefined;
       overwriting: boolean;
-      alreadyExists: InternalWriteResult;
+      occupied: InternalWriteResult;
     },
   ): Promise<InternalWriteResult> {
     const { command, session, context, address, actor, parsed, content, given } = input;
-    const { copiedNodes, boundNodes, overwriting, alreadyExists } = input;
+    const { copiedNodes, boundNodes, overwriting, occupied } = input;
     const shown = given ? [] : await shownLinksFor(address.documentId, context);
     const links = await openCommandLinks(options, {
       documentId: address.documentId,
@@ -295,7 +296,7 @@ export function createWriteCommands(deps: {
     });
     const assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
     const existingBlocks = options.model.getBlocks(toDocHandle(planDoc));
-    if (existingBlocks.length > 0 && !overwriting) return alreadyExists;
+    if (existingBlocks.length > 0 && !overwriting) return occupied;
     let overwrite: Extract<ResolveWriteResult, { ok: true }> | undefined;
     if (overwriting && existingBlocks.length > 0) {
       const resolved = resolveOverwrite(
@@ -338,7 +339,7 @@ export function createWriteCommands(deps: {
       docId: address.documentId,
       filePath: address.filePath,
       plan: overwrite ? { edits: overwrite.edits, ir: overwrite.ir } : { blocks: written.blocks },
-      ...(overwriting ? {} : { refuseUnlessEmpty: alreadyExists }),
+      ...(overwriting ? {} : { ifOccupied: occupied }),
       ...(copiedNodes
         ? { copy: { from: command.command === "copy" ? command.from.path : "", edges: false } }
         : {}),
@@ -462,7 +463,7 @@ export function createWriteCommands(deps: {
     docId: string;
     filePath: string;
     plan: { edits: readonly ResolvedEdit[]; ir: SemanticEditIRV1 } | { blocks: readonly Block[] };
-    refuseUnlessEmpty?: InternalWriteResult;
+    ifOccupied?: InternalWriteResult;
     copy?: { from: string; edges: boolean };
   }
 
@@ -546,7 +547,7 @@ export function createWriteCommands(deps: {
           semanticEditIr,
         },
       },
-      refuseUnlessEmpty: edit.refuseUnlessEmpty,
+      ifOccupied: edit.ifOccupied,
       ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
     });
     if (isInternalWriteResult(saved)) return saved;

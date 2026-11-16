@@ -224,17 +224,12 @@ export function createApplyTreeOperations(input: {
       const status = after.get(it.node as DocumentId);
       const to = status?.kind === "visible" ? status.address.uri : null;
       const wasAt = before.get(it.node as DocumentId);
-      const renamed =
-        it.item?.uri && to && it.item.uri !== to
-          ? { code: "renamed" as const, wanted: it.item.uri, path: to }
-          : undefined;
       if (!landing(it) && !restoring(it)) continue;
       applied.push({
         itemKey: draftItemKey(branchId, it.node as DocumentId),
         ...(result.landed.has(it.node)
           ? { transition: { from: wasAt?.kind === "visible" ? wasAt.address.uri : null, to } }
           : {}),
-        ...(renamed ? { renamed } : {}),
       });
     }
 

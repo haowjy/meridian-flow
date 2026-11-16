@@ -144,7 +144,6 @@ export function DraftNoticeLine({
       return [];
     });
     const landed = facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
-    const renamed = facts.flatMap((fact) => (fact.kind === "renamed" ? [fact.name] : []));
     const restored = facts.flatMap((fact) => (fact.kind === "restored" ? [fact] : []));
     const also = facts.flatMap((fact) =>
       fact.kind === "also" ? [`${fact.from} → ${fact.to}`] : [],
@@ -157,7 +156,7 @@ export function DraftNoticeLine({
     // once per place, so the line holds at sidebar width.
     const sentence = [
       ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
-      appliedSentence(restored, renamed, also),
+      appliedSentence(restored, also),
       removalSentence([...removed.values()]),
     ]
       .filter(Boolean)
@@ -303,7 +302,6 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         const facts = factsOf(id);
         const [first] = facts;
         if (!first) return null;
-        const renamed = facts.some((fact) => fact.kind === "renamed");
         const now = whereabouts(id, factName(first));
         const name = now.kind === "placed" ? documentDisplayName(now.uri) : factName(first);
         const said =
@@ -332,8 +330,8 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         return (
           <RowWord
             tone="done"
-            label={renamed ? t`${name}, renamed` : t`${name}, applied`}
-            word={renamed ? <Trans>Renamed</Trans> : <Trans>Applied</Trans>}
+            label={t`${name}, applied`}
+            word={<Trans>Applied</Trans>}
             sentence={said}
           />
         );
@@ -418,7 +416,7 @@ function useWhereabouts(projectId: string): (documentId: string, name: string) =
     const standing = trees.standing(documentId);
     if (standing.kind !== "in-trash" && standing.kind !== "purged") return { kind: "unread" };
     const answer = removalAnswer(standing);
-    const title = standing.kind === "in-trash" ? standing.node.displayName : name;
+    const title = standing.kind === "in-trash" ? standing.node.name : name;
     return {
       kind: "removed",
       removal: { title, record: answer?.kind === "removed" ? answer.record : null },
@@ -442,10 +440,6 @@ function factSentence(fact: AppliedFact): string {
     case "landed": {
       const place = placeOf(fact.uri);
       return t`Applied. Now in ${place}.`;
-    }
-    case "renamed": {
-      const name = fact.name;
-      return t`Applied as ${name}: the name was taken.`;
     }
     case "applied": {
       const area = schemeLabel(fact.scheme);
@@ -567,16 +561,12 @@ function placeOf(uri: string): string {
 
 export function appliedSentence(
   restored: readonly InArea[],
-  renamed: readonly string[],
   alsoApplied: readonly string[] = [],
 ): string {
   const others = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
     alsoApplied,
   );
   return [
-    ...(renamed.length === 1
-      ? [t`Added as ${renamed[0]}.`]
-      : renamed.map((name) => t`Added as ${name}.`)),
     ...(restored.length ? [restoredSentence(restored)] : []),
     ...(alsoApplied.length ? [t`Also applied ${others}.`] : []),
   ].join(" ");

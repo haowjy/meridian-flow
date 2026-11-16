@@ -152,8 +152,7 @@ if (!RUN) {
           value: { uri: "uploads://chapter", fileType: "markdown" },
         });
 
-        // Two uploads of one name at once: both read the folder before either lands, so the
-        // second learns the name is taken from the port's conflict and takes the next.
+        // Two uploads of one name at once: both keep it, and the later to land is the twin.
         const zip = new Uint8Array([0x50, 0x4b, 3, 4, 0, 0, 0, 0]);
         const twin = (db: Database) =>
           uploadBytes(service(db), objectStore, {
@@ -173,14 +172,17 @@ if (!RUN) {
                 : outcome,
             )
             .sort(),
-        ).toEqual(["uploads://notes (2).zip", "uploads://notes.zip"]);
+        ).toEqual([
+          "uploads://notes.zip",
+          expect.stringMatching(/^uploads:\/\/notes\.zip~[0-9a-f]{4,}$/),
+        ]);
       } finally {
         await firstDb.delete(users).where(eq(users.id, USER));
         await Promise.all([firstDb.close(), waiterDb.close()]);
       }
     });
 
-    it("converges idempotency, names the file where it lands, derives the address from the chat's handle, and numbers a taken name", async () => {
+    it("converges idempotency, names the file where it lands, derives the address from the chat's handle, and keeps a taken name as a twin", async () => {
       const repo = await seed();
       const first = await repo.reserve(reservation("one", NEW_CHAT));
       const replay = await repo.reserve(reservation("one", NEW_CHAT));
@@ -199,7 +201,7 @@ if (!RUN) {
       const claimed = await repo.claim(claimInput("one"));
       expect(claimed.kind === "claimed" && claimed.reservation.finalPath).toBe(null);
 
-      // Through the chat's own port: the folder is read before the write.
+      // Through the chat's own port.
       const objectStore = createInMemoryObjectStore();
       const intake = productionIntake(database.current, objectStore);
       const send = (chatId: string, filename: string, mimeType: string, bytes: Uint8Array) =>
@@ -219,13 +221,13 @@ if (!RUN) {
         "uploads://chapter",
       ]);
       expect(await uris([send(NEW_CHAT, "chapter.md", "text/markdown", text)])).toEqual([
-        "uploads://chapter (2)",
+        expect.stringMatching(/^uploads:\/\/chapter~[0-9a-f]{4,}$/),
       ]);
       expect(await uris([send(CHAT, "notes.zip", "application/zip", zip)])).toEqual([
         "uploads://@c1/notes.zip",
       ]);
       expect(await uris([send(CHAT, "notes.zip", "application/zip", zip)])).toEqual([
-        "uploads://@c1/notes (2).zip",
+        expect.stringMatching(/^uploads:\/\/@c1\/notes\.zip~[0-9a-f]{4,}$/),
       ]);
 
       // The New chat gets its row, and so its handle, at Send: the same upload now reads there.
@@ -289,9 +291,10 @@ if (!RUN) {
         const content = new TextEncoder().encode(text);
         const cases = [
           ["Chapter 13.md", "text/markdown", "Chapter 13", "", "markdown"],
-          ["Chapter 13.markdown", "application/octet-stream", "Chapter 13 (2)", "", "markdown"],
-          ["Chapter 13.mdx", "application/octet-stream", "Chapter 13 (3)", "", "markdown"],
-          ["Chapter 13.txt", "text/plain", "Chapter 13 (4)", "", "markdown"],
+          // The same name again: each keeps it, a twin whose path carries `~id`.
+          ["Chapter 13.markdown", "application/octet-stream", "Chapter 13", "", "markdown"],
+          ["Chapter 13.mdx", "application/octet-stream", "Chapter 13", "", "markdown"],
+          ["Chapter 13.txt", "text/plain", "Chapter 13", "", "markdown"],
           ["Chapter 14", "text/markdown", "Chapter 14", "", "markdown"],
           ["Chapter 15", "text/plain", "Chapter 15", "", "markdown"],
           ["config", "application/json", "config", "json", "json"],
@@ -301,6 +304,7 @@ if (!RUN) {
           ["Binary.txt", "application/pdf", "Binary", "pdf", "pdf"],
           ["LICENSE", "application/pdf", "LICENSE", "pdf", "pdf"],
         ];
+        const landed = new Set<string>();
         for (const [filename, mimeType, name, extension, fileType] of cases) {
           const result = await uploadBytes(service, intakeStore, {
             intakeId: filename,
@@ -311,11 +315,15 @@ if (!RUN) {
             mimeType,
             bytes: content,
           });
-          expect(result).toMatchObject({
-            ok: true,
-            value: { uri: `uploads://${name}${extension ? `.${extension}` : ""}`, fileType },
-          });
           if (!result.ok) throw new Error(result.error.code);
+          const leaf = `${name}${extension ? `.${extension}` : ""}`;
+          expect(result.value.fileType).toBe(fileType);
+          expect(
+            result.value.uri === `uploads://${leaf}` ? !landed.has(leaf) : landed.has(leaf),
+          ).toBe(true);
+          if (result.value.uri !== `uploads://${leaf}`)
+            expect(result.value.uri).toMatch(/^uploads:\/\/Chapter 13~[0-9a-f]{4,}$/);
+          landed.add(leaf);
           const [document] = await db
             .select()
             .from(treeNodes)
@@ -390,7 +398,6 @@ if (!RUN) {
     });
 
     describe("start, PUT, finish", () => {
-      const noop = () => ({ ok: true as const });
       type Content = UploadContentPort<null>;
 
       async function flow(overrides: { content?: Partial<Content> } = {}) {
@@ -398,12 +405,11 @@ if (!RUN) {
         const store = createInMemoryObjectStore();
         const bound: string[] = [];
         const content: Content = {
-          names: async () => new Set(),
           bind: async ({ text }) => {
             bound.push(text);
             return { ok: true, bound: null };
           },
-          persist: async () => noop(),
+          persist: async ({ reservation }) => ({ ok: true, finalPath: reservation.finalPath }),
           ...overrides.content,
         };
         const intake: UploadIntake = createUploadIntake({
@@ -509,7 +515,10 @@ if (!RUN) {
       it("resumes from the stored object when persisting fails, without deleting anything", async () => {
         let fail = true;
         const f = await flow({
-          content: { persist: async () => (fail ? { ok: false, conflict: false } : { ok: true }) },
+          content: {
+            persist: async ({ reservation }) =>
+              fail ? { ok: false } : { ok: true, finalPath: reservation.finalPath },
+          },
         });
         const first = reservedOf(await f.start("resume", 8));
         await f.put(first.documentId, f.bytesOf(8));

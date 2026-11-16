@@ -5,7 +5,7 @@
  * last replay wrote, and writes the rows that differ with the history text derivations need.
  */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts";
-import { filetypeForMimeType } from "@meridian/contracts/protocol";
+import { entrySegment, filetypeForMimeType } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
   branchTreeNodes,
@@ -85,8 +85,7 @@ function trashRecords(
   return out;
 }
 
-/** Where a node is: its source and the names above it, so a move of any ancestor shows. */
-/** Each node's source (its top folder's) and its path from that source's top. */
+/** Each node's source (its top folder's) and its path from that source's top, so a move or a twin's suffix flip of any ancestor shows. */
 function addresses(
   rows: ReadonlyMap<string, ProjectedRow>,
 ): Map<string, { source: string; path: string }> {
@@ -95,9 +94,10 @@ function addresses(
     const known = memo.get(row.id);
     if (known) return known;
     const parent = row.parentId === null ? undefined : rows.get(row.parentId);
+    const segment = entrySegment(row.name, row.suffix);
     const address = parent
-      ? { source: addressOf(parent).source, path: `${addressOf(parent).path}/${row.name}` }
-      : { source: row.sourceId, path: row.name };
+      ? { source: addressOf(parent).source, path: `${addressOf(parent).path}/${segment}` }
+      : { source: row.sourceId, path: segment };
     memo.set(row.id, address);
     return address;
   };
@@ -111,6 +111,7 @@ const columnsOf = (row: ProjectedRow) => ({
   contextSourceId: row.sourceId,
   parentId: row.parentId,
   name: row.name,
+  suffix: row.suffix,
   extension: row.extension,
   fileType: row.filetype,
   rank: row.rank,
@@ -127,6 +128,7 @@ async function loadLive(tx: DrizzleDb, listId: string): Promise<Map<string, Live
         parentId: row.parentId,
         sourceId: row.contextSourceId,
         name: row.name,
+        suffix: row.suffix,
         extension: row.extension,
         filetype: row.fileType,
         rank: row.rank,
@@ -153,11 +155,13 @@ async function loadBranches(
       parentId: row.parentId,
       sourceId: row.contextSourceId,
       name: row.name,
+      suffix: row.suffix,
       extension: row.extension,
       filetype: row.fileType,
       rank: row.rank,
       deleted: row.deleted,
       existsOnlyInDraft: row.existsOnlyInDraft,
+      changed: row.changed,
     });
     out.set(row.branchId, byNode);
   }
@@ -393,6 +397,7 @@ async function writeLive(
           contextSourceId: sql`excluded.context_source_id`,
           parentId: sql`excluded.parent_id`,
           name: sql`excluded.name`,
+          suffix: sql`excluded.suffix`,
           extension: sql`excluded.extension`,
           fileType: sql`excluded.file_type`,
           rank: sql`excluded.rank`,
@@ -449,6 +454,7 @@ async function writeBranch(
           listId,
           deleted: row.deleted,
           existsOnlyInDraft: row.existsOnlyInDraft,
+          changed: row.changed,
         })),
       )
       .onConflictDoUpdate({
@@ -458,11 +464,13 @@ async function writeBranch(
           contextSourceId: sql`excluded.context_source_id`,
           parentId: sql`excluded.parent_id`,
           name: sql`excluded.name`,
+          suffix: sql`excluded.suffix`,
           extension: sql`excluded.extension`,
           fileType: sql`excluded.file_type`,
           rank: sql`excluded.rank`,
           deleted: sql`excluded.deleted`,
           existsOnlyInDraft: sql`excluded.exists_only_in_draft`,
+          changed: sql`excluded.changed`,
         },
       });
   for (const batch of chunks(gone))
@@ -573,7 +581,8 @@ export async function syncRows(
       // for it, so the stored count is the one the Changes list shows.
       for (const id of faulted) {
         const row = rows.get(id);
-        if (row && !differing.has(id)) differing.set(id, { ...row, existsOnlyInDraft: false });
+        if (row && !differing.get(id)?.changed)
+          differing.set(id, { ...row, existsOnlyInDraft: false, changed: true });
       }
       return [branchId, differing] as const;
     }),

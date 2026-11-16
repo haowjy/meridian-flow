@@ -171,8 +171,8 @@ msgstr "{0, plural, one {# folder} other {# folders}}"
 
 #. placeholder {0}: renamed.length
 #: src/features/project/context/entry-drag/drop-choice.ts
-msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
-msgstr "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+#~ msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+#~ msgstr "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
 
 #. placeholder {0}: result.outsideLinks.count
 #: src/features/export/ExportProjectDialog.tsx
@@ -402,8 +402,8 @@ msgstr "{0} tok/s"
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
 #: src/features/project/context/entry-drag/drop-choice.ts
-msgid "{0} will be renamed {1}"
-msgstr "{0} will be renamed {1}"
+#~ msgid "{0} will be renamed {1}"
+#~ msgstr "{0} will be renamed {1}"
 
 #. placeholder {0}: finding.file
 #. placeholder {1}: finding.message
@@ -921,8 +921,8 @@ msgid "{name}, applied"
 msgstr "{name}, applied"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{name}, renamed"
-msgstr "{name}, renamed"
+#~ msgid "{name}, renamed"
+#~ msgstr "{name}, renamed"
 
 #. placeholder {0}: modelLabel ?? ""
 #: src/features/agents/ComposerAgentControl.tsx
@@ -1260,16 +1260,16 @@ msgid "A file can’t go there."
 msgstr "A file can’t go there."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {name} already exists in this location."
-msgstr "A file named {name} already exists in this location."
+#~ msgid "A file named {name} already exists in this location."
+#~ msgstr "A file named {name} already exists in this location."
 
 #: src/features/import/reason-copy.ts
 msgid "A file path in this selection is too long to import."
 msgstr "A file path in this selection is too long to import."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {name} already exists in this location."
-msgstr "A folder named {name} already exists in this location."
+#~ msgid "A folder named {name} already exists in this location."
+#~ msgstr "A folder named {name} already exists in this location."
 
 #: src/features/agents/UndoSave.tsx
 msgid "A later Save is in use. Nothing changed."
@@ -1411,16 +1411,16 @@ msgstr "Added"
 
 #. placeholder {0}: renamed[0]
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Added as {0}."
-msgstr "Added as {0}."
+#~ msgid "Added as {0}."
+#~ msgstr "Added as {0}."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Added as {name}."
-msgstr "Added as {name}."
+#~ msgid "Added as {name}."
+#~ msgstr "Added as {name}."
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Added as {renamed}"
-msgstr "Added as {renamed}"
+#~ msgid "Added as {renamed}"
+#~ msgstr "Added as {renamed}"
 
 #: src/features/agents/SavedDiffDialog.tsx
 msgid "Added: "
@@ -1572,8 +1572,8 @@ msgid "An Agent named {name} is already here."
 msgstr "An Agent named {name} is already here."
 
 #: src/features/project/context/context-entry-name.ts
-msgid "An entry named {name} already exists in this location."
-msgstr "An entry named {name} already exists in this location."
+#~ msgid "An entry named {name} already exists in this location."
+#~ msgstr "An entry named {name} already exists in this location."
 
 #: src/features/import/import-presentation.ts
 msgid "Another import in this project is organizing."
@@ -1605,8 +1605,8 @@ msgid "Applied {what}"
 msgstr "Applied {what}"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied as {name}: the name was taken."
-msgstr "Applied as {name}: the name was taken."
+#~ msgid "Applied as {name}: the name was taken."
+#~ msgstr "Applied as {name}: the name was taken."
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied just now: its changes are in {area}."
@@ -1773,7 +1773,7 @@ msgid "Back"
 msgstr "Back"
 
 #. placeholder {0}: choosing.label
-#. placeholder {0}: folder.title ?? folder.name
+#. placeholder {0}: folder.title ?? entrySegment(folder.name, folder.suffix)
 #: src/components/app/DrillInMenu.tsx
 #: src/features/project/side/SideExplorer.tsx
 msgid "Back from {0}"
@@ -6130,8 +6130,8 @@ msgstr "Rename Work"
 #~ msgstr "Rename Work: {0}"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Renamed"
-msgstr "Renamed"
+#~ msgid "Renamed"
+#~ msgstr "Renamed"
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Renamed from {name} just now. Undo puts the old name back."
@@ -8224,12 +8224,12 @@ msgid "Turns {0}"
 msgstr "Turns {0}"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
-msgstr "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
+#~ msgid "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
+#~ msgstr "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Two of this Work's drafts share this path. Review the drafts to keep one."
-msgstr "Two of this Work's drafts share this path. Review the drafts to keep one."
+#~ msgid "Two of this Work's drafts share this path. Review the drafts to keep one."
+#~ msgstr "Two of this Work's drafts share this path. Review the drafts to keep one."
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ul"

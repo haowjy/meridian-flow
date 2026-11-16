@@ -171,8 +171,8 @@ msgstr ""
 
 #. placeholder {0}: renamed.length
 #: src/features/project/context/entry-drag/drop-choice.ts
-msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
-msgstr ""
+#~ msgid "{0, plural, one {# item will be renamed} other {# items will be renamed}}"
+#~ msgstr ""
 
 #. placeholder {0}: result.outsideLinks.count
 #: src/features/export/ExportProjectDialog.tsx
@@ -402,8 +402,8 @@ msgstr "{0} 词元/秒"
 #. placeholder {0}: only.name
 #. placeholder {1}: only.as
 #: src/features/project/context/entry-drag/drop-choice.ts
-msgid "{0} will be renamed {1}"
-msgstr ""
+#~ msgid "{0} will be renamed {1}"
+#~ msgstr ""
 
 #. placeholder {0}: finding.file
 #. placeholder {1}: finding.message
@@ -921,8 +921,8 @@ msgid "{name}, applied"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{name}, renamed"
-msgstr ""
+#~ msgid "{name}, renamed"
+#~ msgstr ""
 
 #. placeholder {0}: modelLabel ?? ""
 #: src/features/agents/ComposerAgentControl.tsx
@@ -1260,16 +1260,16 @@ msgid "A file can’t go there."
 msgstr "文件不能放在那里。"
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A file named {name} already exists in this location."
-msgstr ""
+#~ msgid "A file named {name} already exists in this location."
+#~ msgstr ""
 
 #: src/features/import/reason-copy.ts
 msgid "A file path in this selection is too long to import."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "A folder named {name} already exists in this location."
-msgstr ""
+#~ msgid "A folder named {name} already exists in this location."
+#~ msgstr ""
 
 #: src/features/agents/UndoSave.tsx
 msgid "A later Save is in use. Nothing changed."
@@ -1411,16 +1411,16 @@ msgstr ""
 
 #. placeholder {0}: renamed[0]
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Added as {0}."
-msgstr ""
+#~ msgid "Added as {0}."
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Added as {name}."
-msgstr ""
+#~ msgid "Added as {name}."
+#~ msgstr ""
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Added as {renamed}"
-msgstr ""
+#~ msgid "Added as {renamed}"
+#~ msgstr ""
 
 #: src/features/agents/SavedDiffDialog.tsx
 msgid "Added: "
@@ -1572,8 +1572,8 @@ msgid "An Agent named {name} is already here."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
-msgid "An entry named {name} already exists in this location."
-msgstr ""
+#~ msgid "An entry named {name} already exists in this location."
+#~ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "Another import in this project is organizing."
@@ -1605,8 +1605,8 @@ msgid "Applied {what}"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied as {name}: the name was taken."
-msgstr ""
+#~ msgid "Applied as {name}: the name was taken."
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied just now: its changes are in {area}."
@@ -1773,7 +1773,7 @@ msgid "Back"
 msgstr "返回"
 
 #. placeholder {0}: choosing.label
-#. placeholder {0}: folder.title ?? folder.name
+#. placeholder {0}: folder.title ?? entrySegment(folder.name, folder.suffix)
 #: src/components/app/DrillInMenu.tsx
 #: src/features/project/side/SideExplorer.tsx
 msgid "Back from {0}"
@@ -6130,8 +6130,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Renamed"
-msgstr ""
+#~ msgid "Renamed"
+#~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Renamed from {name} just now. Undo puts the old name back."
@@ -8224,12 +8224,12 @@ msgid "Turns {0}"
 msgstr "轮次 {0}"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
-msgstr "此工作中的两个草稿使用了相同路径 {name}。请查看草稿并保留其中一个。"
+#~ msgid "Two of this Work's drafts share the path {name}. Review the drafts to keep one."
+#~ msgstr "此工作中的两个草稿使用了相同路径 {name}。请查看草稿并保留其中一个。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "Two of this Work's drafts share this path. Review the drafts to keep one."
-msgstr "此工作中的两个草稿使用了相同路径。请查看草稿并保留其中一个。"
+#~ msgid "Two of this Work's drafts share this path. Review the drafts to keep one."
+#~ msgstr "此工作中的两个草稿使用了相同路径。请查看草稿并保留其中一个。"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ul"

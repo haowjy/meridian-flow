@@ -25,6 +25,8 @@ export type CatalogFileRow = {
   folderId: string | null;
   /** The filename as the tree shows it, extension included. */
   name: string;
+  /** The path segment: the filename, and a later twin's `~` suffix. */
+  segment: string;
   extension: string;
   fileType: string;
   storageUrl: string | null;
@@ -67,7 +69,7 @@ export function mapAuthoritativeFile(input: {
 }): CatalogFileEntry {
   const { document, scope, scheme } = input;
   const filename = document.name;
-  const path = [...input.parentPath, filename];
+  const path = [...input.parentPath, document.segment];
   const classification = classifyFiletype(document.fileType);
   const storageBacked = isStorageBackedDocument(document);
   const persistedClassification =

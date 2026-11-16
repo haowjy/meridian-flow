@@ -1,6 +1,6 @@
 /**
  * POST draft/provenance: the one-room evidence request of a tab on protocol 3, answered through
- * `drafts/provenance`. Delete in the release after the one that raised `MIN_PROTOCOL_VERSION` to 4 (#1677).
+ * `drafts/provenance`. Delete in the release after the one that first shipped this batched route (`MIN_PROTOCOL_VERSION` 5) (#1677).
  */
 import type { BranchId } from "@meridian/contracts";
 import { draftOwnerKey } from "@meridian/contracts/branches";

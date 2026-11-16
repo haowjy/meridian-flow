@@ -1,5 +1,5 @@
-import { classifyFiletype } from "@meridian/contracts/protocol";
-import { freeName, shownName } from "./names.js";
+import { classifyFiletype, idHex } from "@meridian/contracts/protocol";
+import { shownName } from "./names.js";
 import {
   type Actor,
   type BlobRef,
@@ -15,9 +15,13 @@ import { readStored } from "./validate.js";
 export type TreeNode = {
   id: string;
   kind: NodeKind;
+  /** The name shown, which a sibling may share (rule 4). */
   name: string;
-  /** The name shown: `name`, or a numbered copy when a sibling already shows that name (rule 4). */
-  displayName: string;
+  /**
+   * A later twin's suffix (rule 14): hex digits from the start of its id, without the `~`. Its
+   * path segment is `name~suffix` (`entrySegment`); the first to arrive under a name has none.
+   */
+  suffix?: string;
   /** A folder's id, or a source root. */
   parent: string;
   /** The source this node is in now, from the top of its parent chain. */
@@ -44,7 +48,7 @@ export type TreeNode = {
   createdBy: Actor;
   /** The actor of the record that last changed where it is or what it is called. */
   lastChangedBy: Actor;
-  /** Order of arrival under its name, which decides who shows a number (rule 4). */
+  /** Order of arrival under its name, which decides which twin carries a suffix (rule 14). */
   arrival: number;
 };
 
@@ -157,7 +161,7 @@ type Working = {
   createdBy: Actor;
   lastChangedBy: Actor;
   createdAt: number;
-  /** Position of the record that last brought it to its parent under its name: who gets a number. */
+  /** Position of the record that last brought it to its parent under its name: who carries a suffix. */
   arrivedAt: number;
   /** Where it last came to stand in this list: its create, or the restore that brought it back. */
   stoodAt: number;
@@ -265,7 +269,8 @@ export function replay(
     };
     deletes = deletes.filter((entry) => !took.entries.includes(entry));
     for (const entry of took.entries) entry.putBackBy.clear();
-    if (!touch) {
+    // An Undo's restore puts the node back as it stood, arrival included: the twins read as before.
+    if (!touch && record.undoes === undefined) {
       node.stoodAt = how.index;
       node.arrivedAt = how.index;
     }
@@ -544,8 +549,6 @@ export function replay(
           const back = lifted.get(record.undoes);
           if (back) putBack(record, back);
           pend(record);
-          if (record.name !== undefined && record.actor.startsWith("user:"))
-            node.provisional = false;
           node.lastChangedBy = record.actor;
           break;
         }
@@ -559,13 +562,9 @@ export function replay(
         pend(record);
         const sets: Sets = {
           place: holder(record, index, { parent: record.parent, rank: record.rank }),
-          ...(record.name === undefined
-            ? {}
-            : { label: holder(record, index, { name: record.name }) }),
         };
         take(record, index, sets);
         set(node, sets, index);
-        if (record.name !== undefined && record.actor.startsWith("user:")) node.provisional = false;
         node.lastChangedBy = record.actor;
         break;
       }
@@ -783,8 +782,9 @@ type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean
 
 /**
  * One pass over the nodes, parents before children on the way down and children before parents
- * on the way up: what is deleted (rules 2 and 7), which deleted folders stand (rule 3) and the
- * names shown (rule 4). Cost follows the number of nodes and what the deletes name, not depth.
+ * on the way up: what is deleted (rules 2 and 7), which deleted folders stand (rule 3) and which
+ * twins carry a suffix (rule 14). Cost follows the number of nodes and what the deletes name, not
+ * depth.
  */
 function derive(
   nodes: Map<string, Working>,
@@ -816,7 +816,7 @@ function derive(
   ]);
 
   const standing = new Map<string, Standing>();
-  const displayNames = new Map<string, string>();
+  const suffixes = new Map<string, string>();
   const active = new Set<DeleteInForce>();
   type Frame = {
     key: string;
@@ -857,20 +857,12 @@ function derive(
         open(child.id, frame.source, child);
         continue;
       }
-      // Every child has been finished: number the names shown here, then report upward.
-      const shown = frame.kids
-        .filter((kid) => {
-          const state = standing.get(kid.id);
-          return !kid.purged && state && (!state.deleted || state.keptByChild);
-        })
-        // The node already standing keeps its name; the one that arrived later is numbered.
-        .sort((a, b) => a.arrivedAt - b.arrivedAt || a.createdAt - b.createdAt);
-      const taken = new Set<string>();
-      for (const kid of shown) {
-        const name = freeName(kid.kind, kid.name, taken);
-        taken.add(name);
-        displayNames.set(kid.id, name);
-      }
+      // Every child has been finished: give the twins shown here their suffixes, then report upward.
+      const shown = frame.kids.filter((kid) => {
+        const state = standing.get(kid.id);
+        return !kid.purged && state && (!state.deleted || state.keptByChild);
+      });
+      for (const [id, suffix] of twinSuffixes(shown)) suffixes.set(id, suffix);
       stack.pop();
       const node = frame.node;
       if (!node) continue;
@@ -897,7 +889,7 @@ function derive(
       id: node.id,
       kind: node.kind,
       name: node.name,
-      displayName: displayNames.get(node.id) ?? node.name,
+      ...(suffixes.has(node.id) ? { suffix: suffixes.get(node.id) } : {}),
       parent: node.parent,
       source: state.source,
       rank: node.rank,
@@ -950,6 +942,52 @@ function derive(
       ]),
     ),
   };
+}
+
+/**
+ * Rule 14. Of shown siblings with one name, every one but the first to arrive (list order, then
+ * creation) carries the shortest start, four hex digits or more, of its id's hex digits that no
+ * other shown sibling's begins with. A folder with no twins pays only the name check.
+ */
+function twinSuffixes(shown: readonly Working[]): Map<string, string> {
+  return suffixesInArrival(
+    [...shown].sort((a, b) => a.arrivedAt - b.arrivedAt || a.createdAt - b.createdAt),
+  );
+}
+
+/**
+ * Rule 14 over one folder's shown children listed in arrival order: the suffix of each that
+ * carries one. The replay's own reading, for a planner that knows the ids and the order its
+ * creates will arrive in (an import spelling its links before the tree has them).
+ */
+export function suffixesInArrival(
+  children: readonly { id: string; name: string }[],
+): Map<string, string> {
+  const out = new Map<string, string>();
+  const plain = new Set<string>();
+  const twins: string[] = [];
+  for (const kid of children) {
+    if (plain.has(kid.name)) twins.push(kid.id);
+    else plain.add(kid.name);
+  }
+  if (twins.length === 0) return out;
+  // Sorted, so the longest start an id shares with any other is the one it shares with a neighbour.
+  const hexes = children.map((kid) => idHex(kid.id)).sort();
+  const index = new Map(hexes.map((hex, at) => [hex, at]));
+  for (const twin of twins) {
+    const hex = idHex(twin);
+    const at = index.get(hex) as number;
+    const shared = Math.max(common(hex, hexes[at - 1]), common(hex, hexes[at + 1]));
+    out.set(twin, hex.slice(0, Math.max(4, shared + 1)));
+  }
+  return out;
+}
+
+function common(a: string, b: string | undefined): number {
+  if (b === undefined) return 0;
+  let n = 0;
+  while (n < a.length && a[n] === b[n]) n += 1;
+  return n;
 }
 
 /** By rank, then id, so equal ranks from concurrent inserts still sort the same everywhere. */

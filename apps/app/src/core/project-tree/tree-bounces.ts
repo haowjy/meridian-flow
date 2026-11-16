@@ -102,7 +102,7 @@ function madeAt(
   return {
     name: shownName(record.kind, record.name, record.filetype),
     kind: record.kind === "folder" ? "folder" : "document",
-    folder: top ? null : (projection.nodes.get(record.parent)?.displayName ?? null),
+    folder: top ? null : (projection.nodes.get(record.parent)?.name ?? null),
     parent: top ? sourceIdOf(record.parent) : record.parent,
     after: before.map((child) => child.id).reverse(),
   };

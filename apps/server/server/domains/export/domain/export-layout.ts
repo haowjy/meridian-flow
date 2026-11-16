@@ -4,6 +4,7 @@ import {
   DEFAULT_EXPORT_AREA_NAMES,
   type ProjectExportOptions,
 } from "@meridian/contracts";
+import { readSegment } from "@meridian/contracts/protocol";
 import type { ExportDocument, ExportSourceRoot } from "../ports/export-snapshot.js";
 export function portableName(name: string): string {
   // slop-lint: allow suppression the control range is the point of the pattern
@@ -74,9 +75,10 @@ export function buildExportLayout(
     if (!parent) continue;
     roots.set(doc.uri.slice(0, -doc.path.length), parent);
     let key = `${doc.scheme}:${doc.workId}:${doc.rootThreadId}`;
+    // Twin folders stay apart by segment; on disk each is its name, numbered where it repeats.
     for (const segment of doc.path.split("/").slice(0, -1)) {
       key += `/${segment}`;
-      parent = folder(key, parent, segment);
+      parent = folder(key, parent, readSegment(segment).name);
     }
     placed.push({ doc, parent });
   }

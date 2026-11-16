@@ -4,21 +4,27 @@
  * with one writer (the server appending for the writer, for chats and for live). `D` is a Work's
  * draft; `E` is a second chat writing into the same draft.
  */
+
+import { childAtSegment, idHex } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   appliedNodes,
   applyDraft,
+  changedFolders,
   childrenOf,
   discardDraft,
   discardedBy,
   fingerprint,
   LIVE,
   pendingRecords,
+  rankAt,
   recordsOf,
   replayView,
   restoreDiscard,
+  segmentOf,
   sourceRoot,
+  type TreeNode,
   type TreeProjection,
   type TreeRecord,
   TreeWriter,
@@ -28,7 +34,7 @@ import {
   type View,
   viewRecords,
 } from "./index.js";
-import { projectedRows } from "./rows.js";
+import { branchRows, projectedRows } from "./rows.js";
 
 const ROOT = sourceRoot("manuscript");
 
@@ -47,7 +53,7 @@ function start() {
   const chapter = (name: string, parent = ROOT, view: View = LIVE, actor = WRITER) =>
     w.create(view, actor, { kind: "document", filetype: "markdown", name, parent }).node;
   const names = (parent: string, view: View = LIVE) =>
-    childrenOf(w.view(view), parent).map((node) => node.displayName);
+    childrenOf(w.view(view), parent).map(segmentOf);
   const at = (node: string, view: View = LIVE) => w.view(view).nodes.get(node);
   const valid = () => {
     expect(treeViolations(w.view(LIVE))).toEqual([]);
@@ -71,15 +77,35 @@ function targetGone(doc: Y.Doc, view: View): TreeRecord[] {
 }
 
 describe("part 1: a draft and live changed the same thing", () => {
+  it("replays an old move carrying its retired name field", () => {
+    const t = start();
+    const folder = t.folder("Destination");
+    const chapter = t.chapter("Chapter");
+    t.doc.getArray("ops").push([
+      {
+        id: cmd(),
+        node: chapter,
+        actor: WRITER,
+        draft: null,
+        type: "move",
+        parent: folder,
+        rank: "a0",
+        from: { parent: ROOT, rank: "a0" },
+        name: "Chapter 2",
+      },
+    ]);
+    expect(t.at(chapter)).toMatchObject({ parent: folder, name: "Chapter" });
+  });
+
   it("1. draft moved a chapter, live renamed it: both stand", () => {
     const t = start();
     const arc = t.folder("Arc 3");
     const ch = t.chapter("Chapter 49");
     t.w.move(D, CHAT, ch, arc);
     t.w.rename(LIVE, WRITER, ch, "The Fall");
-    expect(t.at(ch, D)).toMatchObject({ parent: arc, displayName: "The Fall" });
+    expect(t.at(ch, D)).toMatchObject({ parent: arc, name: "The Fall" });
     applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(t.at(ch)).toMatchObject({ parent: arc, displayName: "The Fall" });
+    expect(t.at(ch)).toMatchObject({ parent: arc, name: "The Fall" });
     t.valid();
   });
 
@@ -88,9 +114,9 @@ describe("part 1: a draft and live changed the same thing", () => {
     const ch = t.chapter("Chapter 49");
     t.w.rename(D, CHAT, ch, "Draft name");
     t.w.rename(LIVE, WRITER, ch, "Live name");
-    expect(t.at(ch, D)?.displayName).toBe("Draft name");
+    expect(t.at(ch, D)?.name).toBe("Draft name");
     const [copy] = applyDraft(t.w, "work-1", WRITER, cmd()).copies;
-    expect(t.at(ch)?.displayName).toBe("Draft name");
+    expect(t.at(ch)?.name).toBe("Draft name");
     // What review can say: the drafted rename was made over "Chapter 49"; live now says "Live name".
     expect(copy).toMatchObject({ type: "rename", fromName: "Live name" });
     const drafted = recordsOf(t.doc)
@@ -161,20 +187,22 @@ describe("part 1: a draft and live changed the same thing", () => {
     expect(t.w.view(LIVE).skipped).toEqual([]);
     expect(t.at(b)).toMatchObject({ parent: a });
     expect(t.at(a)).toMatchObject({ parent: ROOT });
-    expect(t.at(other)?.displayName).toBe("Renamed");
+    expect(t.at(other)?.name).toBe("Renamed");
     t.valid();
   });
 
-  it("7. both created Notes in F: both stay, the draft's shows a number until Apply and after", () => {
+  it("7. both created Notes in F: both named Notes, the draft's carries the suffix until Apply and after", () => {
     const t = start();
     const f = t.folder("F");
     const drafted = t.chapter("Notes", f, D, CHAT);
     const live = t.chapter("Notes", f);
-    expect(t.at(drafted, D)?.displayName).toBe("Notes (2)");
-    expect(t.at(live, D)?.displayName).toBe("Notes");
-    applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(t.at(live)?.displayName).toBe("Notes");
-    expect(t.at(drafted)?.displayName).toBe("Notes (2)");
+    const suffixed = `Notes~${idHex(drafted).slice(0, 4)}`;
+    expect(t.names(f, D).sort()).toEqual(["Notes", suffixed]);
+    expect(t.at(live, D)?.suffix).toBeUndefined();
+    const { copies } = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(copies.find((copy) => copy.node === drafted)).toMatchObject({ name: "Notes" });
+    expect(t.at(live)?.suffix).toBeUndefined();
+    expect(segmentOf(t.at(drafted) as TreeNode)).toBe(suffixed);
     t.valid();
   });
 
@@ -203,7 +231,7 @@ describe("part 1: a draft and live changed the same thing", () => {
     expect(t.at(ch)?.trashed).toBe(true);
     expect(t.at(ch, D)).toMatchObject({
       parent: arc,
-      displayName: "The Fall",
+      name: "The Fall",
       trashed: false,
       keptByPending: true,
     });
@@ -213,7 +241,7 @@ describe("part 1: a draft and live changed the same thing", () => {
     expect(copies.map((op) => op.type)).toEqual(["move", "rename", "rename"]);
     expect(left).toEqual([]);
     expect(lifted.map(({ node, copy }) => [node, copy.type])).toEqual([[ch, "move"]]);
-    expect(t.at(ch)).toMatchObject({ trashed: false, parent: arc, displayName: "The Fall" });
+    expect(t.at(ch)).toMatchObject({ trashed: false, parent: arc, name: "The Fall" });
     expect(fingerprint(t.w.view(D), false)).toBe(before);
     t.valid();
   });
@@ -261,7 +289,7 @@ describe("part 1: a draft and live changed the same thing", () => {
     const ch = t.chapter("Chapter 49");
     t.w.move(LIVE, WRITER, ch, arc);
     t.w.rename(LIVE, WRITER, ch, "The Fall");
-    expect(t.at(ch, D)).toMatchObject({ id: ch, parent: arc, displayName: "The Fall" });
+    expect(t.at(ch, D)).toMatchObject({ id: ch, parent: arc, name: "The Fall" });
   });
 });
 
@@ -310,18 +338,16 @@ describe("part 2: two authors inside one Work's draft", () => {
     const ch = t.chapter("Chapter 49");
     t.w.rename(D, CHAT, ch, "First");
     t.w.rename(D, CHAT2, ch, "Second");
-    expect(t.at(ch, D)?.displayName).toBe("Second");
+    expect(t.at(ch, D)?.name).toBe("Second");
   });
 
-  it("16. both create a chapter with one name in one folder: both stay, the later numbered", () => {
+  it("16. both create a chapter with one name in one folder: both are named Notes, the later's segment carries ~id", () => {
     const t = start();
     const f = t.folder("F");
     const first = t.chapter("Notes", f, D, CHAT);
     const second = t.chapter("Notes", f, D, CHAT2);
-    expect([t.at(first, D)?.displayName, t.at(second, D)?.displayName]).toEqual([
-      "Notes",
-      "Notes (2)",
-    ]);
+    expect([t.at(first, D)?.name, t.at(second, D)?.name]).toEqual(["Notes", "Notes"]);
+    expect(t.names(f, D)).toEqual(["Notes", `Notes~${idHex(second).slice(0, 4)}`]);
   });
 });
 
@@ -360,7 +386,7 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     const t = reorganisation();
     const { copies } = applyDraft(t.w, "work-1", WRITER, cmd(), [t.renamed2.id]);
     expect(copies.map((op) => op.carries)).toEqual([t.renamed1.id, t.renamed2.id]);
-    expect(t.at(t.ch2)?.displayName).toBe("Third");
+    expect(t.at(t.ch2)?.name).toBe("Third");
   });
 
   it("19. applies a move that depends on an earlier drafted move: both are taken, the draft's view is unchanged", () => {
@@ -386,7 +412,7 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     expect(gone).toHaveLength(3);
     expect(t.at(t.ch1, D)?.parent).toBe(ROOT);
     expect(t.at(t.arc, D)).toBeUndefined();
-    expect(t.at(t.ch2, D)?.displayName).toBe("Third");
+    expect(t.at(t.ch2, D)?.name).toBe("Third");
   });
 
   it("21. applies everything: live equals what the Work's view showed", () => {
@@ -448,13 +474,17 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     expect([t.at(f)?.trashed, t.at(ch)?.trashed]).toEqual([false, false]);
   });
 
-  it("27. restores a chapter beside one of the same name: the restored one is numbered", () => {
+  it("27. restores a chapter beside one of the same name: the restored one carries the suffix", () => {
     const t = start();
     const old = t.chapter("Notes");
     t.w.delete(LIVE, WRITER, old);
     const standing = t.chapter("Notes");
     t.w.restore(LIVE, WRITER, old);
-    expect([t.at(standing)?.displayName, t.at(old)?.displayName]).toEqual(["Notes", "Notes (2)"]);
+    expect([t.at(standing)?.name, t.at(old)?.name]).toEqual(["Notes", "Notes"]);
+    expect([t.at(standing)?.suffix, t.at(old)?.suffix]).toEqual([
+      undefined,
+      idHex(old).slice(0, 4),
+    ]);
   });
 
   it("28. applies a Work where one part cannot land: the rest lands; the part is reported before and after, and stays in the draft", () => {
@@ -474,7 +504,7 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     const { copies, left } = applyDraft(t.w, "work-1", WRITER, cmd());
     expect(copies.map((op) => op.carries)).toEqual([expect.any(String), revived.id]);
     expect(left.map(({ record, why }) => [record.id, why])).toEqual([[loop.id, "would_loop"]]);
-    expect(t.at(ch)?.displayName).toBe("Renamed");
+    expect(t.at(ch)?.name).toBe("Renamed");
     expect(t.at(a)?.parent).toBe(ROOT);
     // The rename of a node live had in Trash lands and brings it back (rule 9).
     expect(t.at(gone)).toMatchObject({ trashed: false, name: "Brought back" });
@@ -603,7 +633,7 @@ describe("found in the second review", () => {
     const landed = applyDraft(t.w, "work-1", WRITER, cmd());
     expect(landed.left).toEqual([]);
     // The landed rename acts on a node in Trash, which restores it (rule 9).
-    expect(t.at(k)).toMatchObject({ displayName: "K renamed", trashed: false, keptByChild: false });
+    expect(t.at(k)).toMatchObject({ name: "K renamed", trashed: false, keptByChild: false });
     expect(t.at(y)?.parent).toBe(k);
     t.valid();
   });
@@ -662,7 +692,7 @@ describe("Undo of an Apply, fact by fact", () => {
   const shown = (t: ReturnType<typeof start>, view: View = LIVE) =>
     [...t.w.view(view).nodes.values()]
       .filter((node) => !node.trashed)
-      .map((node) => [node.displayName, node.parent])
+      .map((node) => [node.name, node.parent])
       .sort();
 
   it("at once: live reads as before, the Work as it was, and it can be applied again", () => {
@@ -689,7 +719,7 @@ describe("Undo of an Apply, fact by fact", () => {
     const stray = t.chapter("Stray", arc);
     const result = undoApply(t.w, command, WRITER, cmd());
     expect(result.left).toEqual([]);
-    expect(t.at(other)?.displayName).toBe("Renamed since");
+    expect(t.at(other)?.name).toBe("Renamed since");
     // The created folder is gone, but what was put in it since stands, and keeps it standing.
     expect(t.at(arc)).toMatchObject({ trashed: false, keptByChild: true });
     expect(t.at(stray)).toMatchObject({ trashed: false, parent: arc });
@@ -708,8 +738,8 @@ describe("Undo of an Apply, fact by fact", () => {
     expect(result.left.map(({ record, why }) => [record.node, why])).toEqual([
       [a, "changed_since"],
     ]);
-    expect(t.at(a)?.displayName).toBe("A by the writer");
-    expect(t.at(b)?.displayName).toBe("B");
+    expect(t.at(a)?.name).toBe("A by the writer");
+    expect(t.at(b)?.name).toBe("B");
     expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([b]);
   });
 
@@ -744,7 +774,7 @@ describe("Undo of an Apply, fact by fact", () => {
     expect(result.left.map(({ record, why }) => [record.id, why])).toEqual([
       [late.id, "after_press"],
     ]);
-    expect(t.at(a)?.displayName).toBe("Seen");
+    expect(t.at(a)?.name).toBe("Seen");
   });
 });
 
@@ -766,7 +796,7 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
     const { command, copies } = applyDraft(t.w, "work-1", WRITER, cmd());
     expect(inLive(t, command)).toEqual([n]);
     const undid = undoChange(t.w, D, CHAT, drafted.id) as TreeRecord;
-    expect(t.at(n)?.displayName).toBe("Hall");
+    expect(t.at(n)?.name).toBe("Hall");
     expect(inLive(t, command)).toEqual([]);
     expect(undoChange(t.w, LIVE, WRITER, (copies[0] as TreeRecord).id)).toBe("already");
     expect(undoApply(t.w, command, WRITER, cmd())).toMatchObject({
@@ -774,35 +804,14 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
       left: [{ why: "already" }],
     });
     const redo = undoChange(t.w, LIVE, CHAT, undid.id) as TreeRecord;
-    expect(t.at(n)?.displayName).toBe("Lobby");
+    expect(t.at(n)?.name).toBe("Lobby");
     expect(inLive(t, command)).toEqual([n]);
     expect(undoChange(t.w, LIVE, CHAT, undid.id)).toBe("already");
     expect(redo.undoes).toBe(undid.id);
     const result = undoApply(t.w, command, WRITER, cmd());
     expect(result.left).toEqual([]);
-    expect(t.at(n)?.displayName).toBe("Hall");
+    expect(t.at(n)?.name).toBe("Hall");
     expect(inLive(t, command)).toEqual([]);
-  });
-
-  it("the same for a move that also set a name", () => {
-    const t = start();
-    const folder = t.folder("Arc");
-    t.chapter("Hall", folder);
-    const n = t.chapter("Hall");
-    const drafted = t.w.move(D, CHAT, n, folder);
-    expect(drafted.name).toBeDefined();
-    const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
-    const moved = { displayName: drafted.name, parent: folder };
-    expect(t.at(n)).toMatchObject(moved);
-    const undid = undoChange(t.w, D, CHAT, drafted.id) as TreeRecord;
-    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: ROOT });
-    expect(inLive(t, command)).toEqual([]);
-    expect(undoApply(t.w, command, WRITER, cmd()).undone).toEqual([]);
-    undoChange(t.w, LIVE, CHAT, undid.id);
-    expect(t.at(n)).toMatchObject(moved);
-    expect(inLive(t, command)).toEqual([n]);
-    expect(undoApply(t.w, command, WRITER, cmd()).left).toEqual([]);
-    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: ROOT });
   });
 
   it("an Apply that only restores lists the node until Un-Apply or a card's Undo takes the restore back", () => {
@@ -821,23 +830,6 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
       expect(t.at(n)?.trashed).toBe(true);
       expect(appliedNodes(t.doc, command, mine)).toEqual([]);
     }
-  });
-
-  it("a move's name undone as a rename and redone is still taken back by Undo of the move", () => {
-    const t = start();
-    const folder = t.folder("Arc");
-    const other = t.folder("Elsewhere");
-    t.chapter("Hall", folder);
-    const n = t.chapter("Hall");
-    const moved = t.w.move(LIVE, WRITER, n, folder);
-    t.w.move(LIVE, WRITER, n, other);
-    const undid = undoChange(t.w, LIVE, CHAT, moved.id) as TreeRecord;
-    expect(undid.type).toBe("rename");
-    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: other });
-    undoChange(t.w, LIVE, CHAT, undid.id);
-    expect(t.at(n)?.displayName).toBe(moved.name);
-    expect(undoChange(t.w, LIVE, WRITER, moved.id)).toMatchObject({ type: "rename" });
-    expect(t.at(n)).toMatchObject({ displayName: "Hall", parent: other });
   });
 });
 
@@ -888,7 +880,7 @@ describe("part 5: what a document is", () => {
       type: "rename",
       undoes: renamed.id,
     });
-    expect(t.at(ch)?.displayName).toBe("Chapter 1");
+    expect(t.at(ch)?.name).toBe("Chapter 1");
     expect(undoChange(t.w, LIVE, WRITER, renamed.id)).toBe("already");
   });
 
@@ -901,8 +893,8 @@ describe("part 5: what a document is", () => {
     const restored = restoreDiscard(t.w, command, WRITER, "work-2", cmd());
     if (restored === "already") throw new Error("expected copies");
     expect(restored.copies.map((copy) => copy.draft)).toEqual(["work-2"]);
-    expect(t.at(ch, { draft: "work-2" })?.displayName).toBe("Draft name");
-    expect(t.at(ch, D)?.displayName).toBe("Chapter 1");
+    expect(t.at(ch, { draft: "work-2" })?.name).toBe("Draft name");
+    expect(t.at(ch, D)?.name).toBe("Chapter 1");
   });
 
   it("35. restores a Discard over a newer draft: the newer record is discarded under the restore, and restoring that brings it back", () => {
@@ -912,17 +904,17 @@ describe("part 5: what a document is", () => {
     const first = cmd();
     discardDraft(t.w, "work-1", WRITER, first);
     t.w.rename(D, CHAT, ch, "New");
-    expect(t.at(ch, D)?.displayName).toBe("New");
+    expect(t.at(ch, D)?.name).toBe("New");
     const restore = cmd();
     expect(restoreDiscard(t.w, first, WRITER, "work-1", restore)).not.toBe("already");
-    expect(t.at(ch, D)?.displayName).toBe("Old");
+    expect(t.at(ch, D)?.name).toBe("Old");
     expect(pendingRecords(t.doc, "work-1").map((op) => op.type === "rename" && op.name)).toEqual([
       "Old",
     ]);
     const second = discardedBy(t.doc, restore);
     expect(second.records.map((op) => op.type === "rename" && op.name)).toEqual(["New"]);
     expect(restoreDiscard(t.w, restore, WRITER, "work-1", cmd())).not.toBe("already");
-    expect(t.at(ch, D)?.displayName).toBe("New");
+    expect(t.at(ch, D)?.name).toBe("New");
   });
 
   it("36. restores a discarded selective Undo: it lifts the delete it undid, not another actor's pending delete", () => {
@@ -957,7 +949,7 @@ describe("part 5: what a document is", () => {
     expect(copies).toHaveLength(2);
     // The first round's copies are in no view now: only the second round's copies were applied.
     expect(undoChange(t.w, LIVE, WRITER, ids[0][0])).toMatchObject({ type: "rename" });
-    expect(t.at(ch)?.displayName).toBe("Chapter 1");
+    expect(t.at(ch)?.name).toBe("Chapter 1");
     expect(t.w.restoreEntry(LIVE, WRITER, ids[0][1])).toMatchObject({ type: "restore" });
     expect(t.at(gone)?.trashed).toBe(false);
   });
@@ -969,9 +961,9 @@ describe("part 5: what a document is", () => {
     const second = t.w.rename(D, CHAT, ch, "Second");
     expect(undoChange(t.w, D, CHAT, second.id)).toMatchObject({ type: "rename" });
     applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(t.at(ch)?.displayName).toBe("First");
+    expect(t.at(ch)?.name).toBe("First");
     expect(undoChange(t.w, LIVE, WRITER, first.id)).toMatchObject({ type: "rename" });
-    expect(t.at(ch)?.displayName).toBe("Original");
+    expect(t.at(ch)?.name).toBe("Original");
   });
 });
 
@@ -986,7 +978,7 @@ describe("replay rules 9 to 13", () => {
     const move = t.w.move(LIVE, CHAT, ch, arc);
     const rename = t.w.rename(LIVE, WRITER, removed, "Back");
     expect(t.at(ch)).toMatchObject({ trashed: false, parent: arc });
-    expect(t.at(removed)).toMatchObject({ trashed: false, displayName: "Back" });
+    expect(t.at(removed)).toMatchObject({ trashed: false, name: "Back" });
     expect(undoChange(t.w, LIVE, WRITER, move.id)).not.toBe("already");
     expect(t.at(ch)?.trashed).toBe(true);
     expect(undoChange(t.w, LIVE, WRITER, rename.id)).not.toBe("already");
@@ -1007,7 +999,7 @@ describe("replay rules 9 to 13", () => {
     expect(t.at(live, D)).toMatchObject({ trashed: false, keptByPending: true });
     expect(t.at(own, D)).toMatchObject({
       trashed: false,
-      displayName: "Renamed after its own delete",
+      name: "Renamed after its own delete",
     });
   });
 
@@ -1052,7 +1044,7 @@ describe("replay rules 9 to 13", () => {
     const ch = t.chapter("Chapter");
     t.w.rename(LIVE, WRITER, ch, "Scan.pdf", "pdf");
     expect(t.at(pdf)).toBeUndefined();
-    expect(t.at(ch)).toMatchObject({ displayName: "Chapter", filetype: "markdown" });
+    expect(t.at(ch)).toMatchObject({ name: "Chapter", filetype: "markdown" });
     expect(t.w.view(LIVE).skipped.map((skip) => skip.reason)).toEqual([
       "type-not-editable",
       "type-not-editable",
@@ -1064,7 +1056,7 @@ describe("replay rules 9 to 13", () => {
     const ch = t.chapter("Chapter");
     t.w.rename(LIVE, WRITER, ch, "Chapter.py", "python");
     t.w.rename(LIVE, WRITER, ch, "Chapter.toml", "text");
-    expect(t.at(ch)).toMatchObject({ displayName: "Chapter.toml", filetype: "text" });
+    expect(t.at(ch)).toMatchObject({ name: "Chapter.toml", filetype: "text" });
     expect(t.w.view(LIVE).skipped.map((skip) => skip.reason)).toEqual(["type-across-schemas"]);
   });
 
@@ -1074,34 +1066,8 @@ describe("replay rules 9 to 13", () => {
     const ch = t.chapter("Chapter");
     t.w.author(LIVE, CHAT, { type: "rename", node: folder, name: "1/2", fromName: "Arc" });
     t.w.author(LIVE, CHAT, { type: "rename", node: ch, name: "notes.md", fromName: "Chapter" });
-    expect(t.at(folder)?.displayName).toBe("1∕2");
-    expect(t.at(ch)?.displayName).toBe("notes");
-  });
-
-  it("a clashing name that ends in a number continues it: Notes, Notes (2), Notes (3)", () => {
-    const t = start();
-    const f = t.folder("F");
-    t.chapter("Notes", f);
-    t.chapter("Notes", f);
-    t.chapter("Notes (2)", f);
-    t.chapter("Notes (2)", f);
-    expect(t.names(f)).toEqual(["Notes", "Notes (2)", "Notes (3)", "Notes (4)"]);
-    t.valid();
-  });
-
-  it("only the numbers the numbering writes continue: a huge or zero-led one is part of the name", () => {
-    const t = start();
-    const f = t.folder("F");
-    t.chapter("Notes (9007199254740992)", f);
-    t.chapter("Notes (9007199254740992)", f);
-    t.chapter("Notes (02)", f);
-    t.chapter("Notes (02)", f);
-    expect(t.names(f)).toEqual([
-      "Notes (9007199254740992)",
-      "Notes (9007199254740992) (2)",
-      "Notes (02)",
-      "Notes (02) (2)",
-    ]);
+    expect(t.at(folder)?.name).toBe("1∕2");
+    expect(t.at(ch)?.name).toBe("notes");
   });
 
   it("a create the server stamped dropped is in no view and is listed", () => {
@@ -1113,64 +1079,181 @@ describe("replay rules 9 to 13", () => {
   });
 });
 
-describe("numbered names after a partial Apply", () => {
-  it("a copy is not numbered against a record the Apply leaves out", () => {
+/** Ids whose hex digits begin with `start`, for the cases where a suffix's length is the point. */
+const idStarting = (start: string, n: number) =>
+  `${start}${n.toString(16).padStart(8 - start.length, "0")}-0000-4000-8000-000000000000`;
+
+describe("rule 14: twins keep the name, and the later carries a suffix", () => {
+  /** A create with an id the case chooses, where a suffix's length is the point. */
+  const unseen = (
+    t: ReturnType<typeof start>,
+    name: string,
+    parent = ROOT,
+    node: string = crypto.randomUUID(),
+    kind: "document" | "folder" = "document",
+  ) =>
+    t.w.author(LIVE, WRITER, {
+      type: "create",
+      node,
+      kind,
+      name,
+      parent,
+      source: "manuscript",
+      rank: rankAt(t.w.view(LIVE), parent, Number.MAX_SAFE_INTEGER),
+      ...(kind === "document" ? { filetype: "markdown" } : {}),
+    }).node;
+
+  it("two creates of Notes in F: both named Notes, the later's segment is Notes~ and four hex digits", () => {
     const t = start();
-    const map = t.chapter("Map");
-    const ch2 = t.folder("Ch2");
-    t.folder("Arc", ch2);
-    t.w.delete(LIVE, WRITER, ch2);
-    t.w.author(D, CHAT, { type: "rename", node: map, name: "Ch2", fromName: "Map" });
-    // Putting Ch2 back would bring Arc back too, which is not in the Work: it stays pending.
-    t.w.author(D, CHAT, {
-      type: "move",
-      node: ch2,
-      parent: ROOT,
-      rank: "a1",
-      from: { parent: ROOT, rank: "a1" },
+    const f = t.folder("F");
+    const first = unseen(t, "Notes", f);
+    const later = unseen(t, "Notes", f);
+    expect(t.at(first)?.suffix).toBeUndefined();
+    expect(t.at(later)).toMatchObject({ name: "Notes", suffix: idHex(later).slice(0, 4) });
+    t.valid();
+  });
+
+  it("the plain twin renamed away: the other is plain; renamed back, it arrives later and carries the suffix", () => {
+    const t = start();
+    const first = unseen(t, "Kael");
+    const later = unseen(t, "Kael");
+    t.w.rename(LIVE, WRITER, first, "Kael the elder");
+    expect(t.at(later)?.suffix).toBeUndefined();
+    t.w.author(LIVE, WRITER, {
+      type: "rename",
+      node: first,
+      name: "Kael",
+      fromName: "Kael the elder",
     });
-    const { left } = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(left.map(({ record }) => record.node)).toEqual([ch2]);
-    // In live the folder is in Trash, so nothing is called Ch2 but this.
-    expect(t.at(map)?.displayName).toBe("Ch2");
+    expect([t.at(later)?.suffix, t.at(first)?.suffix]).toEqual([
+      undefined,
+      idHex(first).slice(0, 4),
+    ]);
   });
 
-  it("a rename to the name a node has is not baked into a number", () => {
+  it("the plain twin deleted: the other is plain; a plain restore gives the restored one the suffix", () => {
     const t = start();
-    const first = t.chapter("Notes");
-    const second = t.chapter("Alpha");
-    const third = t.chapter("Beta");
-    // Clients that did not number: each literal name is the one the number would take.
-    t.w.author(LIVE, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Alpha" });
-    t.w.author(LIVE, CHAT, { type: "rename", node: third, name: "Notes (2)", fromName: "Beta" });
-    const shown = () => [first, second, third].map((node) => t.at(node)?.displayName);
-    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (3)"]);
-    t.w.author(D, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Notes" });
-    applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(shown()).toEqual(["Notes", "Notes (2)", "Notes (3)"]);
+    const first = unseen(t, "Kael");
+    const later = unseen(t, "Kael");
+    t.w.delete(LIVE, WRITER, first);
+    expect(t.names(ROOT)).toEqual(["Kael"]);
+    t.w.restore(LIVE, WRITER, first);
+    expect([t.at(later)?.suffix, t.at(first)?.suffix]).toEqual([
+      undefined,
+      idHex(first).slice(0, 4),
+    ]);
   });
 
-  it("a move into another folder keeping its name is numbered against what is there", () => {
+  it("delete of the plain twin, then Undo: the twins read as before", () => {
+    const t = start();
+    const first = unseen(t, "Kael");
+    const later = unseen(t, "Kael");
+    const removal = t.w.delete(LIVE, WRITER, first);
+    expect(undoChange(t.w, LIVE, WRITER, removal.id)).toMatchObject({ type: "restore" });
+    expect([t.at(first)?.suffix, t.at(later)?.suffix]).toEqual([
+      undefined,
+      idHex(later).slice(0, 4),
+    ]);
+  });
+
+  it("the suffix grows past four digits while another shown child of any name shares them", () => {
+    const t = start();
+    unseen(t, "Kael", ROOT, idStarting("b21c0", 1));
+    const later = unseen(t, "Kael", ROOT, idStarting("b21c9", 1));
+    expect(t.at(later)?.suffix).toBe("b21c9");
+    unseen(t, "Other", ROOT, idStarting("b21c9a", 1));
+    expect(t.at(later)?.suffix).toBe("b21c90");
+    t.valid();
+  });
+
+  it("a child in Trash does not lengthen a shown twin's suffix", () => {
+    const t = start();
+    unseen(t, "Kael", ROOT, idStarting("b21c0", 1));
+    const later = unseen(t, "Kael", ROOT, idStarting("b21c9", 1));
+    const other = unseen(t, "Other", ROOT, idStarting("b21c9a", 1));
+    t.w.delete(LIVE, WRITER, other);
+    expect(t.at(later)?.suffix).toBe("b21c9");
+  });
+
+  it("a move into a folder that shows the name: the moved node carries the suffix; Undo takes it back with the arrival", () => {
     const t = start();
     const a = t.folder("A");
     const b = t.folder("B");
     const x = t.chapter("Notes", b);
     const y = t.chapter("Notes", a);
-    t.w.author(D, CHAT, {
+    const move = t.w.author(LIVE, WRITER, {
       type: "move",
       node: y,
       parent: b,
       rank: "a5",
       from: { parent: a, rank: "a1" },
-      name: "Notes",
     });
-    expect(t.names(b, D)).toEqual(["Notes", "Notes (2)"]);
+    expect(t.names(b)).toEqual(["Notes", `Notes~${idHex(y).slice(0, 4)}`]);
+    expect(t.at(x)?.suffix).toBeUndefined();
+    expect(undoChange(t.w, LIVE, WRITER, move.id)).toMatchObject({ type: "move", undoes: move.id });
+    expect([t.at(y)?.parent, t.at(y)?.suffix, t.at(x)?.suffix]).toEqual([a, undefined, undefined]);
+  });
+
+  it("a folder and a document named Kael: the later carries the suffix", () => {
+    const t = start();
+    const folder = unseen(t, "Kael", ROOT, crypto.randomUUID(), "folder");
+    const document = unseen(t, "Kael");
+    expect([t.at(folder)?.suffix, t.at(document)?.suffix]).toEqual([
+      undefined,
+      idHex(document).slice(0, 4),
+    ]);
+    t.valid();
+  });
+
+  it("a segment reaches its node: plain is the first twin, ~id the one its id begins with, a ~id that reaches none is its name", () => {
+    const t = start();
+    const first = unseen(t, "Kael", ROOT, idStarting("b21c0", 1));
+    const later = unseen(t, "Kael", ROOT, idStarting("b21c9", 1));
+    const kids = childrenOf(t.w.view(LIVE), ROOT);
+    expect(childAtSegment(kids, "Kael")?.id).toBe(first);
+    expect(childAtSegment(kids, "Kael~b21c9")?.id).toBe(later);
+    expect(childAtSegment(kids, "anything~B21C9")?.id).toBe(later);
+    // Shortened by hand to fit both: the lowest id answers.
+    expect(childAtSegment(kids, "Kael~b21c")?.id).toBe(first);
+    expect(childAtSegment(kids, "Kael~ffff")?.id).toBe(first);
+    expect(childAtSegment(kids, "Ghost~ffff")).toBeUndefined();
+  });
+
+  it("a folder level of a path reaches the folder of the name when the plain twin is a document", () => {
+    const t = start();
+    const doc = unseen(t, "Arc");
+    const folder = unseen(t, "Arc", ROOT, crypto.randomUUID(), "folder");
+    const kids = childrenOf(t.w.view(LIVE), ROOT);
+    expect(childAtSegment(kids, "Arc")?.id).toBe(doc);
+    expect(childAtSegment(kids, "Arc", "folder")?.id).toBe(folder);
+    expect(childAtSegment(kids, "Arc~ffff", "folder")?.id).toBe(folder);
+  });
+
+  it("a Work that renames the plain twin changes one folder, not its twin", () => {
+    const t = start();
+    const first = unseen(t, "Kael", ROOT, crypto.randomUUID(), "folder");
+    const later = unseen(t, "Kael", ROOT, crypto.randomUUID(), "folder");
+    t.w.rename(D, CHAT, first, "Kael the elder");
+    expect(t.at(later, D)?.suffix).toBeUndefined();
+    const live = t.w.view(LIVE);
+    const work = t.w.view(D);
+    const pending = pendingRecords(t.doc, "work-1");
+    expect([...changedFolders(live, work, pending)]).toEqual([first]);
+    const rows = branchRows(projectedRows(live), projectedRows(work), pending);
+    expect(rows.get(later)).toMatchObject({ suffix: null, changed: false });
+    expect(rows.get(first)).toMatchObject({ changed: true });
+  });
+
+  it("a rename to the name a node has keeps its place among twins, through an Apply", () => {
+    const t = start();
+    const first = t.chapter("Notes");
+    const second = t.chapter("Alpha");
+    t.w.author(LIVE, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Alpha" });
+    const shown = () => [first, second].map((node) => t.at(node)?.suffix);
+    expect(shown()).toEqual([undefined, idHex(second).slice(0, 4)]);
+    t.w.author(D, CHAT, { type: "rename", node: second, name: "Notes", fromName: "Notes" });
     applyDraft(t.w, "work-1", WRITER, cmd());
-    // x goes and comes back: y must keep the number it was shown.
-    t.w.delete(LIVE, WRITER, x);
-    t.w.restore(LIVE, WRITER, x);
-    expect(t.at(y)?.displayName).toBe("Notes (2)");
-    expect(t.at(x)?.displayName).toBe("Notes");
+    expect(shown()).toEqual([undefined, idHex(second).slice(0, 4)]);
   });
 });
 
@@ -1196,7 +1279,7 @@ describe("Undo and Redo of names and places read the changes in force", () => {
     w.create(LIVE, W, { kind: "folder", name, parent }).node;
   const at = (w: TreeWriter, node: string, view: View = LIVE) => {
     const shown = w.view(view).nodes.get(node);
-    return shown && { name: shown.displayName, parent: shown.parent, trashed: shown.trashed };
+    return shown && { name: shown.name, parent: shown.parent, trashed: shown.trashed };
   };
   const nameOf = (w: TreeWriter, node: string, view: View = LIVE) => at(w, node, view)?.name;
   const parentOf = (w: TreeWriter, node: string, view: View = LIVE) => at(w, node, view)?.parent;
@@ -1263,10 +1346,9 @@ describe("Undo and Redo of names and places read the changes in force", () => {
     expect(nameOf(a, node)).toBe("Earlier");
   });
 
-  it("a move that set a name, renamed since: Undo takes the place back and keeps the name", () => {
+  it("a move, renamed since: Undo takes the place back and keeps the name", () => {
     const a = replica(1000);
     const into = folder(a, "Into");
-    folder(a, "Name", into);
     const node = folder(a, "Name");
     const move = a.move(LIVE, W, node, into);
     a.rename(LIVE, W, node, "Mine");
@@ -1348,10 +1430,10 @@ describe("Undo and Redo of names and places read the changes in force", () => {
     const x = folder(a, "Doc", p);
     const y = folder(a, "Other", p);
     a.rename(LIVE, W, y, "Doc");
-    const shown = () => [nameOf(a, x), nameOf(a, y)];
-    expect(shown()).toEqual(["Doc", "Doc (2)"]);
+    const suffixed = () => [x, y].map((id) => a.view(LIVE).nodes.get(id)?.suffix !== undefined);
+    expect(suffixed()).toEqual([false, true]);
     undo(a, a.rename(LIVE, W, x, "Tmp").id);
-    expect(shown()).toEqual(["Doc", "Doc (2)"]);
+    expect(suffixed()).toEqual([false, true]);
   });
 
   it("Un-Apply of an applied stale Undo, after live undid the move itself: the move stays out", () => {
@@ -1387,26 +1469,6 @@ describe("Undo and Redo of names and places read the changes in force", () => {
     expect(parentOf(a, f)).toBe(ROOT);
     expect(said(undoChange(a, LIVE, W, out.id))).toBe("move");
     expect(parentOf(a, node)).toBe(f);
-  });
-
-  it("Un-Apply of a move that carried the name the node already had takes both facts back and reports none kept", () => {
-    const a = replica(1000);
-    const from = folder(a, "A");
-    const into = folder(a, "B");
-    const node = a.create(LIVE, W, { kind: "folder", name: "Notes", parent: from }).node;
-    a.author(D, CHAT, {
-      type: "move",
-      node,
-      parent: into,
-      rank: "a5",
-      from: { parent: from, rank: "a0" },
-      name: "Notes",
-    });
-    const applied = applyDraft(a, "work-1", W, cmd());
-    expect(parentOf(a, node)).toBe(into);
-    const back = undoApply(a, applied.command, W, cmd());
-    expect([back.undone.length, back.left]).toEqual([1, []]);
-    expect(at(a, node)).toMatchObject({ name: "Notes", parent: from });
   });
 
   it("an applied delete undone on two copies: the Apply's tree half has ended", () => {

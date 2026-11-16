@@ -15,13 +15,17 @@ import type {
   CopySourceFile,
   CopySourceFolder,
 } from "../../ports/context-copy.js";
-import type { ContextDocument, ContextFolder } from "../../ports/context-document-store.js";
+import type {
+  ContextDocument,
+  ContextDocumentStore,
+  ContextFolder,
+} from "../../ports/context-document-store.js";
 import type { TreeView } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./copy-tree.js";
-import { AMBIGUOUS_PATH_FAULT } from "./placement.js";
 
 type ContextFsCopyDeps = CopyTreeDeps & {
+  store: ContextDocumentStore;
   documentSync: CopyTreeDeps["documentSync"] &
     Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
 };
@@ -42,12 +46,10 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
       });
     }
     const folder = await store.resolveFolderAt(view, clean);
-    if (folder.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
     if (folder.kind === "found" && folder.node) {
       return Ok(await folderSnapshot(clean, folder.node, view));
     }
     const document = await store.resolveDocumentAt(view, clean);
-    if (document.kind === "ambiguous") return Err(AMBIGUOUS_PATH_FAULT);
     if (document.kind === "found") return Ok(fileSnapshot(clean, document.node));
     return Err({ code: "not_found" });
   }
@@ -80,11 +82,8 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
     for (const sibling of siblings) {
       children.push(
         "folder" in sibling
-          ? await folderSnapshot(joinPath(path, sibling.folder.name), sibling.folder, view)
-          : fileSnapshot(
-              joinPath(path, renderFilename(sibling.document.name, sibling.document.extension)),
-              sibling.document,
-            ),
+          ? await folderSnapshot(joinPath(path, sibling.folder.segment), sibling.folder, view)
+          : fileSnapshot(joinPath(path, sibling.document.segment), sibling.document),
       );
     }
     return {
@@ -118,7 +117,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
   return {
     sourceId: () => store.existingContextSourceId(),
     snapshotSource,
-    planCopy: async (input) => Ok(await planCopyTree(deps, input)),
+    planCopy: async (input) => Ok(planCopyTree(deps, input)),
     copyInto: async (input) =>
       input.plan.dir.join("/") !== input.dir.join("/")
         ? Ok({ kind: "replan" })

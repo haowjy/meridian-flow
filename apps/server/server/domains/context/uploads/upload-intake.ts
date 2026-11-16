@@ -13,8 +13,8 @@ import type {
 import {
   ASSETS_FOLDER,
   classifyFiletype,
-  firstFreeName,
   MAX_UPLOAD_BYTES,
+  renderFilename,
 } from "@meridian/contracts/protocol";
 import {
   needsPreviewConversion,
@@ -43,7 +43,6 @@ import type { ContextPort } from "../ports/context-port.js";
 const HEAD_BYTES = 8 * 1024;
 
 /** Names a source upload tries before it gives up: other writers can take a name between tries. */
-const MAX_NAME_COPIES = 100;
 
 /**
  * Where a source upload (a file dropped into a document) lands: `assets/` of the host's own
@@ -174,22 +173,13 @@ export interface UploadIntakeRepository {
  * locks finalize holds (contract §6.2). `persist` applies what it bound.
  */
 export interface UploadContentPort<Bound = unknown> {
-  /**
-   * The names the upload's folder holds now: a chat's `uploads`, or `assets/` of the source. None
-   * when the folder does not exist yet.
-   */
-  names(input: {
-    reservation: UploadReservation;
-    actorUserId: string;
-    source?: UploadSourceDestination;
-  }): Promise<Set<string>>;
   bind(input: {
     reservation: PlacedUpload;
     actorUserId: string;
     /** The file's text, read from the stored object; empty for anything that is not tracked text. */
     text: string;
     source?: UploadSourceDestination;
-  }): Promise<{ ok: true; bound: Bound } | { ok: false; conflict: boolean }>;
+  }): Promise<{ ok: true; bound: Bound } | { ok: false }>;
   persist(input: {
     reservation: PlacedUpload;
     bound: Bound;
@@ -202,7 +192,8 @@ export interface UploadContentPort<Bound = unknown> {
     /** Text stored as a binary row: its name keeps the extension the port would otherwise strip. */
     keptAsFile: boolean;
     source?: UploadSourceDestination;
-  }): Promise<{ ok: true } | { ok: false; conflict: boolean }>;
+    /** The scheme-relative path it landed at: a twin of a file already there has a `~id` leaf. */
+  }): Promise<{ ok: true; finalPath: string } | { ok: false }>;
 }
 
 export interface UploadIntake {
@@ -298,7 +289,7 @@ async function classifyStored(
   };
 }
 
-/** The name a file of this type takes, before any copy number. */
+/** The name a file of this type takes. */
 function uploadName(
   upload: Pick<UploadReservation, "filename" | "mimeType">,
   fileType: Filetype,
@@ -308,8 +299,7 @@ function uploadName(
   const named = keptAsFile
     ? { ok: true as const, value: { ...keptFileName(filename), filetype: "binary" as const } }
     : intakeFilename(filename, fileType, mimeType);
-  // A name whose extension no file type claims ("notes.zip") stays whole in the parse; a copy
-  // must number the stem ("notes (2).zip"), so the extension is split off here.
+  // A name whose extension no file type claims stays whole in the parse; split it here.
   return named.ok && classifyFiletype(fileType).kind !== "tracked" && named.value.extension === ""
     ? { ok: true as const, value: { ...named.value, ...keptFileName(named.value.name) } }
     : named;
@@ -378,17 +368,9 @@ export function createUploadIntake<Bound>(deps: {
         return { ok: false, error: { code: "owner_unavailable" } };
       const { reservation } = reserved;
       const { documentId } = reservation;
-      // The name finish would give the file now, by finish's own rule, so a chip can be labelled
-      // before the bytes are sent. Finish names it again: another upload finishing first between
-      // the two can take this name, and the file lands one number on.
-      const freeName = async () => {
-        const taken = await deps.content.names({
-          reservation,
-          actorUserId: raw.actorUserId,
-          ...(source ? { source } : {}),
-        });
-        return firstFreeName(named.value, taken).filename;
-      };
+      // The file's own name, so a chip can be labelled before the bytes are sent: an upload
+      // keeps it wherever it lands, beside a file of that name as its twin.
+      const name = renderFilename(named.value.name, named.value.extension);
       switch (reservation.state) {
         case "finalized": {
           const placed = placedOf(claimedOf(reservation));
@@ -404,7 +386,7 @@ export function createUploadIntake<Bound>(deps: {
         case "object_stored":
           return {
             ok: true,
-            value: { state: "stored", name: await freeName(), documentId },
+            value: { state: "stored", name, documentId },
           };
         case "reserved": {
           const put = await deps.objectStore.signPut(
@@ -416,7 +398,7 @@ export function createUploadIntake<Bound>(deps: {
             ok: true,
             value: {
               state: "reserved",
-              name: await freeName(),
+              name,
               documentId,
               put: put.value,
             },
@@ -513,7 +495,7 @@ export function createUploadIntake<Bound>(deps: {
             })
           : false;
 
-      /** Binds and persists under one name. `taken` means another writer holds it. */
+      /** Binds and persists under the file's name, then records the path it landed at. */
       const place = async (placed: PlacedUpload) => {
         const bound = await deps.content.bind({
           reservation: placed,
@@ -521,10 +503,7 @@ export function createUploadIntake<Bound>(deps: {
           text: text ?? "",
           ...(source ? { source } : {}),
         });
-        if (!bound.ok) {
-          if (bound.conflict) return { kind: "taken" as const };
-          throw new FinishFault("upload binding failed");
-        }
+        if (!bound.ok) throw new FinishFault("upload binding failed");
         return deps.repository.transaction(async () => {
           const locked = await deps.repository.lockForFinalize(projectId, raw.intakeId);
           if (locked.state === "finalized")
@@ -540,36 +519,23 @@ export function createUploadIntake<Bound>(deps: {
             keptAsFile,
             ...(source ? { source } : {}),
           });
-          if (!persisted.ok) {
-            if (persisted.conflict) return { kind: "taken" as const };
-            throw new FinishFault("upload persistence failed");
-          }
+          if (!persisted.ok) throw new FinishFault("upload persistence failed");
           return {
             kind: "finalized" as const,
-            reservation: await deps.repository.finalize(projectId, raw.intakeId, placed.finalPath),
+            reservation: await deps.repository.finalize(
+              projectId,
+              raw.intakeId,
+              persisted.finalPath,
+            ),
           };
         });
       };
 
       try {
-        // An upload is named where it lands, now, not when it started: the same file sent twice
-        // keeps both ("map.pdf", then "map (2).pdf"). The folder is read once, so the first try
-        // already skips every name it holds; the loop only covers another writer taking the name
-        // between that read and the write, which the port reports as a conflict.
-        const taken = await deps.content.names({
-          reservation: claimed,
-          actorUserId: raw.actorUserId,
-          ...(source ? { source } : {}),
-        });
+        // The same file sent twice keeps both, each named `map.pdf`: the second is a twin.
         const folder = source ? `${ASSETS_FOLDER}/` : "";
-        let name = firstFreeName(parsed.value, taken).filename;
-        let outcome = await place(placedOf(claimed, folder + name));
-        for (let copy = 1; outcome.kind === "taken"; copy += 1) {
-          if (copy >= MAX_NAME_COPIES) throw new FinishFault("no free name for the upload");
-          taken.add(name);
-          name = firstFreeName(parsed.value, taken).filename;
-          outcome = await place(placedOf(claimed, folder + name));
-        }
+        const name = renderFilename(parsed.value.name, parsed.value.extension);
+        const outcome = await place(placedOf(claimed, folder + name));
         await deps.release.keys(tracked ? [incomingKey, claimed.objectKey] : [incomingKey]);
         return { ok: true, value: resultOf(outcome.reservation, source) };
       } catch (error) {

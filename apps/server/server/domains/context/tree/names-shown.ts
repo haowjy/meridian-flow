@@ -1,15 +1,22 @@
 /**
  * The model's tree: the names it has been shown (tree-tools.md, "The tree frontier"). A name is a
- * folder and a leaf; the map says which node the model was shown it to mean, or that nothing was
+ * folder and a leaf's path segment (a later twin's carries its `~id`, project-tree rule 14); the map says which node the model was shown it to mean, or that nothing was
  * there. Paths the model writes are resolved through it against the tree as it is now, so a name
  * that was renamed, moved or deleted since still reaches the node the model meant, whatever the
  * name means now.
  */
 import { normalEntryName } from "@meridian/contracts/context-entry-validation";
-import { canonicalLeaf } from "@meridian/contracts/protocol";
+import {
+  canonicalLeaf,
+  childAtSegment,
+  idHex,
+  readSegment,
+  withSegmentName,
+} from "@meridian/contracts/protocol";
 import {
   childrenOf,
   isSourceRoot,
+  segmentOf,
   type TreeNode,
   type TreeProjection,
 } from "@meridian/project-tree";
@@ -71,7 +78,7 @@ export function listingDelta(
       ...above.names,
       ...childrenOf(projection, folder)
         .filter(visible)
-        .map((node): [string, string, string] => [folder, node.displayName, node.id]),
+        .map((node): [string, string, string] => [folder, segmentOf(node), node.id]),
     ],
   };
 }
@@ -147,12 +154,14 @@ export function resolveShown(
       const written =
         width === 1
           ? (segments[at] as string)
-          : normalEntryName("folder", segments.slice(at, at + width).join("/"));
+          : withSegmentName(segments.slice(at, at + width).join("/"), (joined) =>
+              normalEntryName("folder", joined),
+            );
       const last = at + width === segments.length;
       for (name of candidates(written, last, path.folder)) {
-        // The name's holder now: a standing node before one in Trash that kept the same name.
-        const named = kids.filter((child) => child.displayName === name);
-        const now = named.find((child) => !child.trashed) ?? named[0];
+        // The segment's holder now: a standing node before one in Trash it would reach.
+        const now =
+          childAtSegment(kids, name, last ? undefined : "folder") ?? inTrashAt(kids, name);
         const was = shownAt(shown, folder, name);
         const meant = was ? projection.nodes.get(was) : undefined;
         // A node the map names but this view lacks was shown in the other view: its name here
@@ -191,7 +200,7 @@ export function printedDelta(projection: TreeProjection, ids: Iterable<string>):
       node = isSourceRoot(node.parent) ? undefined : projection.nodes.get(node.parent)
     ) {
       seen.add(node.id);
-      names.push([node.parent, node.displayName, node.id]);
+      names.push([node.parent, segmentOf(node), node.id]);
     }
   return { whole: [], names };
 }
@@ -218,6 +227,20 @@ export function pathNames(projection: TreeProjection, id: string): string[] {
     node;
     node = isSourceRoot(node.parent) ? undefined : projection.nodes.get(node.parent)
   )
-    names.unshift(node.displayName);
+    names.unshift(segmentOf(node));
   return names;
+}
+
+/** The child in Trash a segment reaches: by the start of its id, else by its name. */
+function inTrashAt(kids: readonly TreeNode[], segment: string): TreeNode | undefined {
+  const { suffix } = readSegment(segment);
+  return kids
+    .filter((child) =>
+      !child.trashed
+        ? false
+        : suffix === undefined
+          ? child.name === segment
+          : idHex(child.id).startsWith(suffix),
+    )
+    .sort((a, b) => (a.id < b.id ? -1 : 1))[0];
 }

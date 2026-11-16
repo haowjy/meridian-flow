@@ -57,6 +57,7 @@ export * from "./document-filename.js";
 export * from "./document-links.js";
 export type { DocumentRemovalRecord } from "./document-removal.js";
 export * from "./document-revision.js";
+export * from "./entry-segment.js";
 export * from "./event-seq.js";
 export * from "./file-access.js";
 export * from "./filetype.js";

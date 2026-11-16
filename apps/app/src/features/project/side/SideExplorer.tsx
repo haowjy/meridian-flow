@@ -1,5 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { entrySegment } from "@meridian/contracts/protocol";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useProject } from "@/client/query/useProjectList";
 import { type DrillNode, useDrill } from "@/components/app/DrillInMenu";
@@ -75,7 +76,10 @@ export function SideExplorer({
                 <ChevronLeft className="size-4 shrink-0 text-muted-foreground" aria-hidden />
               }
               title={folder.title ?? folder.name}
-              controlProps={{ "aria-label": t`Back from ${folder.title ?? folder.name}` }}
+              {...(folder.title ? {} : { suffix: folder.suffix })}
+              controlProps={{
+                "aria-label": t`Back from ${folder.title ?? entrySegment(folder.name, folder.suffix)}`,
+              }}
             />
           </li>
         ) : null}
@@ -89,6 +93,7 @@ export function SideExplorer({
               onOpen={() => (node.folder ? enter(node) : onPick(node.documentId ?? node.id))}
               leading={<node.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />}
               title={node.name}
+              suffix={node.suffix}
               trailing={
                 node.folder ? (
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />

@@ -811,12 +811,11 @@ try {
     const c = restoring(f.click());
     const applied = await f.send(c);
     assert.equal(applied.status, "applied", JSON.stringify(applied));
-    assert.equal(
-      applied.status === "applied" && applied.applied[0]?.renamed?.path.endsWith(" (2)"),
-      true,
-      JSON.stringify(applied),
-    );
     assert.equal(await living(f), true);
+    // Beside the new one it keeps its name, as the later twin.
+    const [restored] = await h.raw`select name, suffix from tree_nodes where id=${f.documentId}`;
+    assert.equal(restored?.name, name);
+    assert.notEqual(restored?.suffix, null);
     f.close();
   });
 

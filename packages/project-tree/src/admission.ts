@@ -187,7 +187,7 @@ export function changedSources(before: TreeProjection, after: TreeProjection): S
     node && [
       node.kind,
       node.name,
-      node.displayName,
+      node.suffix,
       node.parent,
       node.source,
       node.rank,

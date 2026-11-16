@@ -11,6 +11,7 @@
  * running an action belong to the caller.
  */
 import { t } from "@lingui/core/macro";
+import { entrySegment } from "@meridian/contracts/protocol";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import {
   type ComponentPropsWithoutRef,
@@ -32,6 +33,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { EntryName } from "@/components/ui/entry-name";
 
 /** The list scrolls above the actions, which stay in reach on a long folder. */
 const MENU_CLASS =
@@ -42,6 +44,8 @@ export type DrillNode = {
   /** The document a file entry opens, when it differs from `id`. */
   documentId?: string;
   name: string;
+  /** A twin's `~id` (`EntryName`). */
+  suffix?: string;
   /** What the back row says inside a folder, when that is richer than the row's name. */
   title?: string;
   icon: LucideIcon;
@@ -305,10 +309,12 @@ export function DrillInMenuBody({
             event.preventDefault();
             drill.back();
           }}
-          aria-label={t`Back from ${folder.title ?? folder.name}`}
+          aria-label={t`Back from ${folder.title ?? entrySegment(folder.name, folder.suffix)}`}
         >
           <ChevronLeft aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{folder.title ?? folder.name}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {folder.title ?? <EntryName name={folder.name} suffix={folder.suffix} truncate />}
+          </span>
         </DropdownMenuItem>
       ) : null}
       <div className="min-h-0 overflow-y-auto">
@@ -325,7 +331,9 @@ export function DrillInMenuBody({
             }}
           >
             <node.icon aria-hidden />
-            <span className="min-w-0 flex-1 truncate">{node.name}</span>
+            <span className="min-w-0 flex-1 truncate">
+              <EntryName name={node.name} suffix={node.suffix} truncate />
+            </span>
             {node.folder ? <ChevronRight className="ml-auto" aria-hidden /> : null}
           </DropdownMenuItem>
         ))}

@@ -18,11 +18,7 @@ import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import {
-  allocateContextEntryArrivalName,
-  documentRow,
-  entryNameStemEnd,
-} from "./context-entry-name";
+import { documentRow, entryNameStemEnd } from "./context-entry-name";
 import { areaOf, schemeLabel } from "./context-schemes";
 import {
   type AnnotatedFileSuggestion,
@@ -183,21 +179,7 @@ export function IdentityPlacementField({
     }
     await runCommit({
       destination: identityDestination(location, editorWorkId, destination ?? undefined),
-      name: allocateContextEntryArrivalName(
-        name,
-        new Set(
-          folderChildren(
-            allEntries,
-            destination?.scheme ?? location.scheme,
-            destination?.folderPath ?? location.parentPath,
-          )
-            .filter((entry) => entry.entryId !== document.documentId)
-            .map((entry) => entry.name),
-        ),
-        "file",
-        documentRow(location.leaf),
-      ),
-      typedName: name,
+      name,
     });
   }
 

@@ -1,16 +1,9 @@
 import * as Y from "yjs";
 import { assertNewCommand } from "./list-index.js";
-import {
-  type Actor,
-  nameSet,
-  newId,
-  recordsOf,
-  type Settlement,
-  type TreeRecord,
-} from "./record.js";
+import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { type NotUndone, undoFacts } from "./undo.js";
+import { type NotUndone, prepareUndo } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import {
   LIVE,
@@ -78,8 +71,7 @@ function factsIn(records: readonly TreeRecord[]): Facts {
     }
     const sets = base.type === "move" || base.type === "rename" ? base : record;
     if (sets.type === "rename") return [`name:${sets.node}`];
-    if (sets.type === "move")
-      return [`place:${sets.node}`, ...(sets.name === undefined ? [] : [`name:${sets.node}`])];
+    if (sets.type === "move") return [`place:${sets.node}`];
     if (sets.type === "delete" || sets.type === "restore") return [`presence:${sets.node}`];
     return [`create:${sets.node}`];
   };
@@ -314,15 +306,7 @@ export function applyDraft(
     });
     const overridden = new Set([...superseded, ...already].map((record) => record.id));
 
-    // A copy's `from` is what live had just before it, as the copies before it leave live. And it
-    // carries the name the writer saw: where the Work's tree, as it will read once what can land
-    // has landed, shows the node's name numbered, the clash was visible to the one applying, so
-    // the record that gave the name holds the numbered one (design, section 4) and a later change
-    // to its sibling cannot flip it back.
-    const ends = (record: TreeRecord) =>
-      leftIds.has(record.id) ||
-      (wanted.has(record.id) && !taken.has(record.id) && !overridden.has(record.id));
-    const reads = replay([...live, ...pending.filter((record) => !ends(record))], { draft });
+    // A copy's `from` is what live had just before it, as the copies before it leave live.
     const was = new Map<string, { name: string; parent: string; rank: string }>();
     const turned = new Set<string>();
     // After a copy of an Undo, what live has of its node is what the records in force say: replayed
@@ -334,14 +318,6 @@ export function applyDraft(
       }
       return was.get(node) ?? liveNow.nodes.get(node);
     };
-    const lastNamed = new Map<string, string>();
-    for (const record of pending)
-      if (
-        taken.has(record.id) &&
-        record.undoes === undefined &&
-        (record.type === "create" || nameSet(record) !== undefined)
-      )
-        lastNamed.set(record.node, record.id);
     const copies: TreeRecord[] = [];
     const ofCopy = new Map<string, string>();
     for (const record of pending) {
@@ -357,28 +333,12 @@ export function applyDraft(
       const before = stands(copy.node);
       if (copy.type === "move" && before) copy.from = { parent: before.parent, rank: before.rank };
       if (copy.type === "rename" && before) copy.fromName = before.name;
-      if (
-        (copy.type === "create" || copy.type === "rename" || copy.type === "move") &&
-        (copy.type === "create" || nameSet(copy) !== undefined)
-      ) {
-        const shown = reads.nodes.get(copy.node);
-        // A node keeping both its name and its folder arrives in no new place in the numbering, so
-        // baking a number onto it would move it behind the siblings that arrived since. A move
-        // into another folder does arrive in a new place there, so it is baked even with its name.
-        if (
-          lastNamed.get(copy.node) === record.id &&
-          shown &&
-          shown.name === copy.name &&
-          !(before?.name === copy.name && (copy.type !== "move" || before.parent === copy.parent))
-        )
-          copy.name = shown.displayName;
-      }
       if (copy.undoes !== undefined) turned.add(copy.node);
       else if (copy.type === "create")
         was.set(copy.node, { name: copy.name, parent: copy.parent, rank: copy.rank });
       else if (before && copy.type === "move")
         was.set(copy.node, {
-          name: copy.name ?? before.name,
+          name: before.name,
           parent: copy.parent,
           rank: copy.rank,
         });
@@ -522,11 +482,8 @@ export type UndoLeftWhy = NotUndone | "has_text" | "closed";
 export type UndoApplyResult = {
   /** The opposite records made, newest first. */
   undone: TreeRecord[];
-  /**
-   * The live copies not taken back, each with why. `fact` is set when the copy was a move that
-   * also set a name and only the other of the two went back.
-   */
-  left: Array<{ record: TreeRecord; why: UndoLeftWhy; fact?: "name" | "place"; source?: string }>;
+  /** The live copies not taken back, each with why; `source` is the closed one a `closed` names. */
+  left: Array<{ record: TreeRecord; why: UndoLeftWhy; source?: string }>;
 };
 
 /**
@@ -535,8 +492,7 @@ export type UndoApplyResult = {
  * a created folder) is kept, as it is for any other Undo. A fact something later changed stays
  * (`changed_since`), as does a document with text written since (`has_text`, from
  * `writtenSince`: text is not in the list), a node that is gone (`purged`) and a change no longer
- * in force (`already`); each is in `left`. A move that also set a name goes back fact by fact, and
- * the fact that stays is in `left` too. The records whose copies were taken back are pending
+ * in force (`already`); each is in `left`. The records whose copies were taken back are pending
  * again in the Work; the others stay applied. The live
  * `restore` records an Apply made first (`restoredByApply`) are taken back with the copies.
  */
@@ -565,25 +521,23 @@ export function undoApply(
         left.push({ record: copy, why: "has_text" });
         continue;
       }
-      const back = undoFacts(writer, LIVE, by, copy.id);
+      const back = prepareUndo(writer, LIVE, by, copy.id);
       if (typeof back === "string") {
         left.push({ record: copy, why: back });
         continue;
       }
       const source =
         options.closed &&
-        replay([...viewRecords(writer.doc, LIVE), back.record])
-          .changes.get(back.record.id)
+        replay([...viewRecords(writer.doc, LIVE), back])
+          .changes.get(back.id)
           ?.sources.find(options.closed);
       if (source) {
         left.push({ record: copy, why: "closed", source });
         continue;
       }
-      writer.append(back.record);
-      undone.push(back.record);
+      writer.append(back);
+      undone.push(back);
       reversed.add(copy.carries ?? copy.id);
-      // A move that also set a name, of which only one fact still stood: the other stays.
-      if (back.kept) left.push({ record: copy, why: "changed_since", fact: back.kept });
     }
     // A record this Apply settled is pending again once a copy of it is taken back: matched by
     // root, since a restored Discard's record (a copy itself) and its live copy share the original

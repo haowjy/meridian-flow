@@ -18,7 +18,8 @@ function tree(root: string, entries: Entry[]): TreeView {
     entry: (id: string) => shown.find((entry) => entry.entryId === id) ?? null,
     children: (parent: string) => shown.filter((entry) => entry.parent === parent),
     files: () => shown.filter((entry) => entry.kind === "file"),
-    findPath: (path: string) => shown.find((entry) => entry.path === path) ?? null,
+    findFolder: (path: string) =>
+      shown.find((entry) => entry.kind === "dir" && entry.path === `/${path}`) ?? null,
   } as unknown as TreeView;
 }
 

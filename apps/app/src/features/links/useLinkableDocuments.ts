@@ -51,6 +51,12 @@ export type LinkableDocumentIndex = {
   readonly documents: readonly LinkableDocument[];
   readonly folders: readonly LinkableFolder[];
   /**
+   * The trees the rows came from, which say what an address reaches (`indexedDocumentAt`). A
+   * same-revision rebuild keeps the prior index with its trees: the revision holds every path
+   * and id, which is all a walk reads.
+   */
+  readonly trees: readonly TreeView[];
+  /**
    * Which tree these rows are. Content, not an object identity and not a
    * counter: a refetch that found the same documents is the same revision and
    * invalidates nothing, while any change to what a link could reach is a
@@ -90,11 +96,13 @@ export function useLinkableDocuments({
   return useMemo(() => {
     const documents: LinkableDocument[] = [];
     const folders: LinkableFolder[] = [];
+    const trees: TreeView[] = [];
     let complete = scopes !== null;
     for (const scheme of LINKABLE_SCHEMES) {
       const { tree, isComplete } = views[scheme];
       complete &&= isComplete;
       if (!tree) continue;
+      trees.push(tree);
       documents.push(
         ...(scheme === "scratch"
           ? linkableDocuments(tree, scopedRootThreadId ? null : scopedWorkId, scopedRootThreadId)
@@ -105,6 +113,7 @@ export function useLinkableDocuments({
     const next = {
       documents,
       folders,
+      trees,
       revision: `${resolutionEpoch}\n${treeRevision(documents, folders)}`,
       complete,
     };

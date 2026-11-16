@@ -198,7 +198,7 @@ function classifySourceIdentity(input: {
     if (!folder || (!node.deleted && source.deletedAt === null && folder.deleted)) {
       return { kind: "inconsistent" };
     }
-    parentPath.unshift(folder.name);
+    parentPath.unshift(folder.segment);
     folderId = folder.parentId;
   }
   return { kind: "valid", identity: { scope, authority, scheme, parentPath } };
@@ -242,6 +242,7 @@ type PlacedRow = {
   contextSourceId: string;
   parentId: string | null;
   name: string;
+  segment: string;
   extension: string;
   fileType: string | null;
   rank: string;
@@ -257,7 +258,7 @@ async function loadPlacedRows(tx: Database, view: TreeView, ids: readonly string
       ? []
       : await tx.execute<PlacedRow>(sql`
           SELECT n.id::text AS id, n.kind, n.context_source_id::text AS "contextSourceId",
-            n.parent_id::text AS "parentId", n.name, n.extension, n.file_type AS "fileType",
+            n.parent_id::text AS "parentId", n.name, n.segment, n.extension, n.file_type AS "fileType",
             n.rank, n.location_version::text AS "locationVersion", n.deleted
           FROM ${placedNodesSql(view)} n
           WHERE n.id IN (${sql.join(
@@ -290,6 +291,7 @@ async function loadPlacedRows(tx: Database, view: TreeView, ids: readonly string
       contextSourceId: string;
       parentId: string | null;
       name: string;
+      segment: string;
       deleted: boolean;
     };
   })[] = [];
@@ -304,6 +306,7 @@ async function loadPlacedRows(tx: Database, view: TreeView, ids: readonly string
           contextSourceId: row.contextSourceId,
           parentId: row.parentId,
           name: row.name,
+          segment: row.segment,
           deleted: row.deleted,
         },
       });
@@ -318,6 +321,7 @@ async function loadPlacedRows(tx: Database, view: TreeView, ids: readonly string
         contextSourceId: row.contextSourceId,
         folderId: row.parentId,
         name: row.name,
+        segment: row.segment,
         extension: row.extension,
         fileType: row.fileType,
         storageUrl: content.storageUrl,
@@ -452,7 +456,7 @@ async function readPlacedNodes(
         const classification = classify(source, row.parentId);
         if (classification.kind !== "valid" || !live(source)) continue;
         const { scope, scheme, parentPath } = classification.identity;
-        const path = [...parentPath, row.name];
+        const path = [...parentPath, row.segment];
         out.folders.set(row.id, {
           entry: {
             kind: "folder",
@@ -540,7 +544,7 @@ export async function resolveActiveFolderUri(
   if (classification.kind !== "valid") return null;
   return canonicalContextUri(
     classification.identity.scheme,
-    [...classification.identity.parentPath, row.folder.name].join("/"),
+    [...classification.identity.parentPath, row.folder.segment].join("/"),
     sourceAuthority(
       classification.identity.scheme,
       row.work?.id ?? null,
@@ -571,12 +575,14 @@ async function resolveHeldContextNode(input: {
       ? placed.documents.map((row) => ({
           ...row,
           name: row.document.name,
+          segment: row.document.segment,
           parentId: row.document.folderId,
           deleted: row.document.deleted,
         }))[0]
       : placed.folders.map((row) => ({
           ...row,
           name: row.folder.name,
+          segment: row.folder.segment,
           parentId: row.folder.parentId,
           deleted: row.folder.deleted,
         }))[0];
@@ -605,7 +611,7 @@ async function resolveHeldContextNode(input: {
   }
   if (classification.kind !== "valid") return { kind: "unreachable" };
   const { scheme, parentPath } = classification.identity;
-  const path = [...parentPath, found.name].join("/");
+  const path = [...parentPath, found.segment].join("/");
   return {
     kind: "held",
     address: {

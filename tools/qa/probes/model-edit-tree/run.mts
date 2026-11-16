@@ -111,15 +111,23 @@ const cases: ModelEditCase[] = [
     },
   ),
   {
-    name: "a create refused after the claim leaves no node",
-    expected: "the refusal is the stored outcome; no document appears under the name",
+    name: "a move refused after the claim leaves no node",
+    expected: "the refusal is the stored outcome; no document appears under the new name",
     async run({ h, start }) {
       const tag = `t${Math.random().toString(36).slice(2, 8)}`;
-      const { thread, documentId, path } = await seedCase(h, tag, "direct");
+      const { thread, documentId } = await seedCase(h, tag, "direct");
       const child = await start();
-      // The path is taken by the seed document and `overwrite` is not given.
+      // Nothing stands at the source path, so the move is refused; a taken name never refuses.
       await child.script([
-        { toolCalls: [write("call-1", { command: "create", path, content: "Other." })] },
+        {
+          toolCalls: [
+            write("call-1", {
+              command: "move",
+              from: { path: `manuscript://${tag}-missing` },
+              path: `manuscript://${tag}-moved`,
+            }),
+          ],
+        },
         reply,
       ]);
       await send(child, h, thread);

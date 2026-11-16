@@ -43,9 +43,6 @@ export function deleteStands(writer: TreeWriter, asked: View, recordId: string):
   return standsIn(writer.view(record.draft === null ? LIVE : asked), record);
 }
 
-/** A move's fact that stays where a later change holds it, when its Undo turns the other. */
-export type Kept = "name" | "place";
-
 /**
  * The Undo of `named`, a move or rename or an Undo about one. Taking `named` out flips which
  * records about its change are in force (`flips`, as the replay will read them): the change goes
@@ -55,8 +52,6 @@ export type Kept = "name" | "place";
  * works that out again from the records in force, so a copy that had not seen an earlier change
  * settles on the same tree. It is a move when the place turns, a rename when only the name does
  * (Trash reads that: a rename leaves what the move lifted lifted), else of the change's type.
- * `kept` names a fact of a move that set a name which a later change holds, when it turns the
- * other.
  */
 function turn(
   writer: TreeWriter,
@@ -68,7 +63,7 @@ function turn(
   base: Change & { sets: Sets },
   flips: readonly Change[],
   undoes: string,
-): { record: TreeRecord; kept?: Kept } | NotUndone {
+): TreeRecord | NotUndone {
   let place = history.place;
   let label = history.label;
   for (const each of flips)
@@ -79,27 +74,21 @@ function turn(
   const placed = place.at(-1) !== history.place.at(-1);
   const named = label.at(-1) !== history.label.at(-1);
   if (flips.length > 0 && !placed && !named) return "changed_since";
-  const both = base.sets.place !== undefined && base.sets.label !== undefined;
   const shows = labelOf(node.kind, history.born, label);
   const extra = { undoes };
   if (!placed && (named || !base.sets.place))
-    return {
-      record: writer.prepare(
-        view,
-        actor,
-        {
-          type: "rename",
-          node: node.id,
-          name: shows.name,
-          fromName: node.name,
-          ...(shows.filetype && shows.filetype !== node.filetype
-            ? { filetype: shows.filetype }
-            : {}),
-        },
-        extra,
-      ),
-      ...(both && named ? { kept: "place" as const } : {}),
-    };
+    return writer.prepare(
+      view,
+      actor,
+      {
+        type: "rename",
+        node: node.id,
+        name: shows.name,
+        fromName: node.name,
+        ...(shows.filetype && shows.filetype !== node.filetype ? { filetype: shows.filetype } : {}),
+      },
+      extra,
+    );
   const { parent, rank } = place.at(-1)?.says ?? history.born;
   if (placed) {
     const back = projection.nodes.get(parent);
@@ -107,22 +96,18 @@ function turn(
     // The folder it would return to has gone inside it since: the replay would skip the record.
     if (wouldLoop(projection.nodes, node.id, parent)) return "changed_since";
   }
-  return {
-    record: writer.prepare(
-      view,
-      actor,
-      {
-        type: "move",
-        node: node.id,
-        parent,
-        rank,
-        from: { parent: node.parent, rank: node.rank },
-        ...(named && shows.name !== node.name ? { name: shows.name } : {}),
-      },
-      extra,
-    ),
-    ...(both && placed && !named ? { kept: "name" as const } : {}),
-  };
+  return writer.prepare(
+    view,
+    actor,
+    {
+      type: "move",
+      node: node.id,
+      parent,
+      rank,
+      from: { parent: node.parent, rank: node.rank },
+    },
+    extra,
+  );
 }
 
 /**
@@ -168,19 +153,19 @@ export function undoChange(
   actor: Actor,
   recordId: string,
 ): TreeRecord | NotUndone {
-  const done = undoFacts(writer, asked, actor, recordId);
-  if (typeof done === "string") return done;
-  writer.append(done.record);
-  return done.record;
+  const prepared = prepareUndo(writer, asked, actor, recordId);
+  if (typeof prepared === "string") return prepared;
+  writer.append(prepared);
+  return prepared;
 }
 
-/** `undoChange`, saying which fact of a move that set a name stays (`kept`), when one does. */
-export function undoFacts(
+/** The Undo record `undoChange` would append, not yet written, so a caller can judge it first. */
+export function prepareUndo(
   writer: TreeWriter,
   asked: View,
   actor: Actor,
   recordId: string,
-): { record: TreeRecord; kept?: Kept } | NotUndone {
+): TreeRecord | NotUndone {
   const named = lastOfFamily(writer.doc, asked, recordId);
   if (named === "unknown") return named;
   if (!named) return "already";
@@ -216,9 +201,7 @@ export function undoFacts(
   const node = placeIn(projection.nodes, record.node);
   if (!node) return "purged";
   const extra = { undoes: record.carries ?? record.id };
-  const author = (made: TreeRecordInput) => ({
-    record: writer.prepare(view, actor, made, extra),
-  });
+  const author = (made: TreeRecordInput) => writer.prepare(view, actor, made, extra);
   switch (record.type) {
     case "create":
       if (node.trashed) return "already";

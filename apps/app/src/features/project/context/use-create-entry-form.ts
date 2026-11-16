@@ -17,7 +17,6 @@ import { type InlineEdit, useInlineEdit } from "@/components/ui/use-inline-edit"
 import { writeFirstAgentText } from "@/features/agents/agent-file-template";
 import { useLiveDocumentSessionRegistry } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
-import type { ContextEntrySibling } from "./context-entry-name";
 import {
   joinContextEntryPath,
   storedDocumentName,
@@ -34,14 +33,12 @@ export type UseCreateEntryFormOptions = {
   parentId: string;
   /** That folder's path; `""` at the top. */
   parent?: string;
-  /** Sibling names for the clash warning. */
-  siblings?: readonly ContextEntrySibling[];
   /** Called when the form completes (successful create or cancel). */
   onDone: () => void;
   /** Called on cancel instead of `onDone`. */
   onCancel?: () => void;
-  /** Called after a successful create, with the new entry's path (numbered if a name was taken). */
-  onCreated?: (path: string) => void;
+  /** Called after a successful create, with the new entry's id. */
+  onCreated?: (node: string) => void;
 };
 
 export type CreateEntryForm = InlineEdit & {
@@ -56,7 +53,6 @@ export function useCreateEntryForm({
   kind,
   parentId,
   parent = "",
-  siblings = [],
   onDone,
   onCancel = onDone,
   onCreated,
@@ -84,14 +80,14 @@ export function useCreateEntryForm({
       const path = joinContextEntryPath(parent, made.name);
       const location = kind === "file" ? agentsLocationOf(scheme, path.slice(1)) : null;
       if (location) void writeFirstAgentText(registry, projectId, made.node, location.path);
-      onCreated?.(path);
+      onCreated?.(made.node);
     },
     [actions, registry, projectId, scheme, kind, parentId, parent, onCreated],
   );
 
   const form = useInlineEdit({
     initial: "",
-    validate: (draft) => validateContextEntryName(draft, siblings, kind),
+    validate: (draft) => validateContextEntryName(draft, kind),
     onCommit: (name) => {
       handleSubmit(name);
       onDone();

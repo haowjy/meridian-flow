@@ -32,7 +32,7 @@ import { schemeLabel } from "./context-schemes";
 import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
 import { useEntryActions } from "./entry-drag/entry-actions";
 import { runCopy, runMove } from "./entry-drag/entry-failure";
-import { namedRowOf, type ReadyCopy, type ReadyMove } from "./entry-drag/move-plan";
+import type { ReadyCopy, ReadyMove } from "./entry-drag/move-plan";
 import { useOptionalEntrySelection } from "./entry-drag/selection";
 import { useProjectMenuSource } from "./use-project-menu-source";
 import { useScopeScratchSource } from "./use-scratch-trees";
@@ -209,7 +209,7 @@ function OpenPicker({
       if (!here) return [];
       const from = here.entry.parentId ?? here.tree.root.entryId;
       if (several && from === destination.entryId) return [];
-      return [{ entry: row.ref, name: row.name, from, named: namedRowOf(here.entry) }];
+      return [{ entry: row.ref, from }];
     });
     const plan: ReadyMove = {
       kind: "ready",

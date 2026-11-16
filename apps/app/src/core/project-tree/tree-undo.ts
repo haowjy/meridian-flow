@@ -270,7 +270,7 @@ async function takeLatest(
       continue;
     }
     const names = step.nodes.flatMap(
-      (node) => session.replay(view, pendingText).nodes.get(node)?.displayName ?? [],
+      (node) => session.replay(view, pendingText).nodes.get(node)?.name ?? [],
     );
     if (takeBack(session, step, view, actor, pendingText))
       return { kind: "undone", skipped, nodes: step.nodes };
