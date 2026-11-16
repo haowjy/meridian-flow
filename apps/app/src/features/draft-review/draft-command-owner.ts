@@ -8,7 +8,6 @@ import {
   applySpanPatches,
   baseViewDelta,
   composeGroups,
-  type ReviewGroup,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
 import { type BranchId, type DraftItemKey, draftItemKey } from "@meridian/contracts";
@@ -21,7 +20,6 @@ import type {
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
-import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import * as Y from "yjs";
 import {
   applyDraftClick,
