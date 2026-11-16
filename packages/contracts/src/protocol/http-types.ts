@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { type AgentSelection, agentSelectionSchema, REASONING_LEVELS } from "../agents/index.js";
+import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import type { DraftOwnerKey } from "../branches/owner.js";
 import {
   CONTEXT_URI_SCHEMES,
@@ -506,10 +506,8 @@ export const modelListSchema = z.object({
       available: z.boolean(),
       /** Who made the model, whoever serves it, for the picker's mark; null for one the registry doesn't know (a mock). The picker shows a mark only for a maker it has art for. */
       maker: z.string().nullable(),
-      /** The levels it accepts, in the order a picker shows them. */
-      efforts: z.array(z.enum(REASONING_LEVELS)),
-      /** Whether reasoning can be switched off (`disabled`); otherwise `disabled` runs at the lowest level. */
-      canDisable: z.boolean(),
+      /** The levels it lists, lowest first, as its row gives them; `none` means it can switch reasoning off. */
+      efforts: z.array(z.string()),
     }),
   ),
 });

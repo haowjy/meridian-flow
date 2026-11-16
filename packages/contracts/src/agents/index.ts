@@ -3,8 +3,8 @@ import { z } from "zod";
 import { isUuid } from "../request-id.js";
 import {
   type InvocationPatch,
-  type ReasoningChoice,
-  reasoningChoiceSchema,
+  type ReasoningLevel,
+  reasoningLevelSchema,
 } from "./execution-knobs.js";
 import { type AgentPackageStatus, agentPackageStatusSchema } from "./save.js";
 
@@ -39,8 +39,8 @@ export interface AgentCatalogItem {
   name: string;
   description: string;
   model: string | null;
-  /** The Agent's own reasoning setting, in the wire vocabulary; null when its file sets none. */
-  effort: ReasoningChoice | null;
+  /** The Agent's own reasoning level; null when its file sets none. */
+  effort: ReasoningLevel | null;
   /** False for an Agent only other Agents call: it starts no chat, so the picker leaves it out. */
   primary: boolean;
   level: AgentLevel;
@@ -62,7 +62,7 @@ export const agentCatalogSchema = z.object({
       name: z.string(),
       description: z.string(),
       model: z.string().nullable(),
-      effort: reasoningChoiceSchema.nullable(),
+      effort: reasoningLevelSchema.nullable(),
       primary: z.boolean(),
       level: agentLevelSchema,
       shadows: z.array(agentLevelSchema),
@@ -145,7 +145,7 @@ export const threadAgentSchema = z.object({
   stale: z.boolean(),
   /** The model and reasoning the next turn runs with no per-chat override. */
   model: z.string(),
-  effort: reasoningChoiceSchema.nullable(),
+  effort: reasoningLevelSchema.nullable(),
   /** Why the Agent can't run on that model now; empty when it can. */
   unavailableReasons: z.array(z.string()),
 });

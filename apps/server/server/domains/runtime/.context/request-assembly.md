@@ -19,12 +19,13 @@ comparing the override with the newest turn's model, or with `GET /api/models` (
 turn about to run. The effort override always replaces the Agent's effort; the server never drops it. The
 gateway's `resolveReasoning` clamps whichever runs to the nearest level the resolved model accepts,
 as it does for the Agent's own level. Every reader of the chat's model goes through `threadModelId`,
-which takes the gateway. The wire vocabulary is the gateway's (`low|medium|high|max` plus `disabled` and
-`adaptive`). An Agent file's `effort` is first read by Mars's rule for the `meridian-flow` host
-(`storedAgentEffort`, from `@meridian-flow/mars-schema`'s `resolveEffort`): `minimal` reads as low, `xhigh` as
-max, and `auto` as no effort. The stored `xhigh`/`none` then read as `max`/`disabled`
-(`AGENT_EFFORT_CHOICE`). Mars and the gateway round a level the model lacks the same way: to the nearest
-on the ladder, a tie going up.
+which takes the gateway. There is one vocabulary, Mars's ladder (`effortLevels()` in
+`@meridian-flow/mars-schema`: none, minimal, low, medium, high, xhigh, max), and the gateway is built with it
+(`reasoningLevels`). An Agent file's `effort` (checked where Mars reads the file), a chat's override and the request's
+`reasoning` are the level's name, unchanged: `xhigh` stays `xhigh`, `none` is off where the model lists it. `auto` and a
+missing `effort` store nothing, the model's own default. Flow does not use mars-schema's `meridian-flow` host set. The
+gateway's `resolveReasoning` runs a level the model does not list at the nearest one it does on the ladder, a tie going
+up; a name off the ladder runs at the model's default.
 `LIVE_TEST_MODEL` redirects at the gateway, so an override cannot bypass it. A change costs a
 cache rebuild, already predicted as `model_changed`.
 

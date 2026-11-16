@@ -133,11 +133,14 @@ OpenAI GPT-5.6+ rows set `inputTierTokens` to 272K with `aboveTierMultipliers`: 
 1.5x output above it. The snapshot has no effective dates: Gemini 4 Argon bills Google's standard rates through a price override, whose
 report line says to delete it once models.dev lists them (Google's introductory rates end 2026-11-30).
 
-Each model row's `reasoning: { efforts, canDisable? }` comes from models.dev `reasoning_options` (only the
-efforts in the package's `REASONING_EFFORTS`, so `xhigh` drops): `canDisable` is a `toggle` option or a `none` effort. Claude Opus 5.5, Sonnet 5.5 and
-Fable 5.1 have no toggle, so `thinking: disabled` and `budget_tokens` are a 400 on them, and no registered model gets
-a thinking budget. DeepSeek rows declare `reasoning.thinksByDefault` (not inferred from `canDisable`) and the
-Anthropic models declare `projectToolSchema`, each a `model-data.json` fact.
+Each model row's `reasoning: { efforts, thinksByDefault? }` lists the levels models.dev gives in `reasoning_options`, as
+they are, adding `none` (first) when the model has a `toggle` and does not list it. Nothing filters them against a
+list: the gateway is built with Mars's ladder (`reasoningLevels: effortLevels()`) and ranks by it only to settle a
+level the model lacks (`resolveReasoning`, also what the picker runs). `none` in `efforts` means the model can switch
+reasoning off. Claude Opus 5.5, Sonnet 5.5 and Fable 5.1 have no toggle, so `thinking: disabled` and `budget_tokens` are
+a 400 on them, and no registered model gets a thinking budget. DeepSeek rows declare `reasoning.thinksByDefault` (a
+`model-data.json` fact, not inferred from `none`), the Anthropic models `projectToolSchema` and Gemini 4 Argon
+`functionCallIds`.
 
 Every model declares a tokenizer family with no fallback. No request sets an output limit; the registry maximum is
 subtracted once from the usable input window for compaction, and optional work reserves `outputReserveTokens` (capped

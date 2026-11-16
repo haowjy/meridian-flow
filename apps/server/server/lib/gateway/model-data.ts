@@ -48,6 +48,8 @@ const modelFacts = z.strictObject({
   thinksByDefault: fact(z.literal(true)).optional(),
   /** Largest file, in bytes, the provider fetches by link, where its docs state one. */
   maxLinkBytes: fact(z.number().int().positive()).optional(),
+  /** Function calls carry ids their results pair with, with the Gemini 3 wire behaviours that come with it (the runtime's `ModelInfo.functionCallIds`). */
+  functionCallIds: fact(z.literal(true)).optional(),
   /** Anthropic-format hosts that need Anthropic's tool-schema projection. */
   projectToolSchema: fact(z.literal(true)).optional(),
   /**

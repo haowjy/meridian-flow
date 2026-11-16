@@ -8,16 +8,15 @@
  * gateway is created from env.
  */
 
-import {
-  type BuiltinAdapter,
-  type GatewayConfig,
-  type InputModality,
-  type PromptCacheDescriptor,
-  type ProviderConfig,
-  type ProviderModel,
-  REASONING_EFFORTS,
-  type ReasoningSupport,
-  type TokenizerFamily,
+import type {
+  BuiltinAdapter,
+  GatewayConfig,
+  InputModality,
+  PromptCacheDescriptor,
+  ProviderConfig,
+  ProviderModel,
+  ReasoningSupport,
+  TokenizerFamily,
 } from "@meridian-flow/runtime/gateway";
 import {
   createLayeredTokenRateSource,
@@ -54,6 +53,8 @@ export interface RegisteredModel {
   maxLinkBytes?: number;
   /** Needs Anthropic's tool-schema projection. */
   projectToolSchema?: true;
+  /** Function calls carry ids their results pair with (Gemini 3 and later). */
+  functionCallIds?: true;
   reasoning: ReasoningSupport;
 }
 
@@ -132,14 +133,13 @@ function usd(price: number, multiplier = 1): string {
   return formatUsd(toNano(price * multiplier));
 }
 
+/** The levels models.dev lists, in its order, plus `none` when the model has a toggle and doesn't list it. */
 function toReasoning(model: SnapshotModel, thinksByDefault: boolean): ReasoningSupport {
   const effort = model.reasoning_options.find((option) => option.type === "effort");
   const values = effort?.type === "effort" ? effort.values : [];
-  const canDisable =
-    model.reasoning_options.some((option) => option.type === "toggle") || values.includes("none");
+  const toggle = model.reasoning_options.some((option) => option.type === "toggle");
   return {
-    efforts: REASONING_EFFORTS.filter((level) => values.includes(level)),
-    ...(canDisable ? { canDisable: true as const } : {}),
+    efforts: toggle && !values.includes("none") ? ["none", ...values] : values,
     ...(thinksByDefault ? { thinksByDefault: true as const } : {}),
   };
 }
@@ -342,6 +342,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
             inputModalities: model.modalities.input,
             ...(facts.maxLinkBytes ? { maxLinkBytes: facts.maxLinkBytes.value } : {}),
             ...(facts.projectToolSchema ? { projectToolSchema: true as const } : {}),
+            ...(facts.functionCallIds ? { functionCallIds: true as const } : {}),
             reasoning: toReasoning(model, facts.thinksByDefault !== undefined),
           },
           pricing: toPricing(row, snapshot, id, model),
@@ -471,6 +472,7 @@ function toModelInfo(provider: RegisteredProvider, offering: RegisteredOffering)
     inputTierTokens: pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
     ...(model.projectToolSchema ? { projectToolSchema: true as const } : {}),
+    ...(model.functionCallIds ? { functionCallIds: true as const } : {}),
     promptCache: offering.promptCache,
     reasoning: model.reasoning,
     inputModalities: model.inputModalities,

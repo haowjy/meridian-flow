@@ -36,7 +36,6 @@ import type { ConnectionBake, ConnectionsPort } from "../ports/connections.js";
 import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
 import {
   type ResolveAgentThreadTurnContextInput,
-  reasoningOfChoice,
   resolveAgentThreadTurnContext,
 } from "../tools/agent-thread-context.js";
 import {
@@ -227,8 +226,8 @@ interface PreparedNextTurnContext
 /**
  * The chat's model override replaces the Agent's model while the gateway lists it. An id it no
  * longer lists runs on the Agent's model, and the turn's recorded model says so. The chat's effort
- * override replaces the Agent's effort always; the gateway clamps whichever runs to the nearest
- * level the model accepts.
+ * override replaces the Agent's effort always; the gateway runs whichever level it is at the
+ * nearest one the model lists.
  */
 function turnGatewayParams(
   gateway: AssembleNextTurnContextInput["gateway"],
@@ -237,9 +236,7 @@ function turnGatewayParams(
 ): Pick<GenerateRequest, "model" | "reasoning"> {
   const model = threadModelId(gateway, thread.overrides, agentParams.model);
   const effort = thread.overrides.effort;
-  return effort
-    ? { ...agentParams, model, reasoning: reasoningOfChoice(effort) }
-    : { ...agentParams, model };
+  return effort ? { ...agentParams, model, reasoning: effort } : { ...agentParams, model };
 }
 
 /**

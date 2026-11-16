@@ -143,6 +143,12 @@
             "source": "https://ai.google.dev/gemini-api/docs/caching",
             "checked": "2026-11-05",
             "note": "The Gemini API documents no lifetime for implicit caching, so prediction reads it as cold. Implicit cache only: no write fee."
+          },
+          "functionCallIds": {
+            "value": true,
+            "source": "https://ai.google.dev/gemini-api/docs/function-calling",
+            "checked": "2026-11-16",
+            "note": "Gemini 3 and later put an id on each function call and let a function response hold media; the runtime used to read this from a gemini-N id. Carried over for gemini-4-argon without re-reading the source."
           }
         },
         "gemini-4-argon": {

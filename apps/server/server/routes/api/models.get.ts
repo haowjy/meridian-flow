@@ -1,5 +1,4 @@
 /** GET /api/models: the models the Agent picker offers, and which of them this deployment can run. */
-import { REASONING_LEVELS } from "@meridian/contracts/agents";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { defineEventHandler } from "nitro/h3";
 import { requireAppUser } from "../../lib/auth-gate.js";
@@ -24,8 +23,7 @@ export default defineEventHandler(async (event) => {
     name: displayName,
     maker: makers.get(id) ?? null,
     available: usable.has(id),
-    efforts: REASONING_LEVELS.filter((level) => reasoning.efforts.includes(level)),
-    canDisable: reasoning.canDisable === true,
+    efforts: reasoning.efforts,
   }));
   return serializeTransport({ models });
 });

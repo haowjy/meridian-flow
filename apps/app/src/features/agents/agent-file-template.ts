@@ -8,15 +8,7 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-
-/** Mars's browser build, started once on first use. */
-let marsSchema: Promise<typeof import("@meridian-flow/mars-schema")> | undefined;
-const loadMars = () =>
-  (marsSchema ??= import("@meridian-flow/mars-schema").then(async (mars) => {
-    const init = (mars as { default?: unknown }).default;
-    if (typeof init === "function") await init();
-    return mars;
-  }));
+import { loadMars } from "@/lib/mars-schema";
 
 /**
  * The text a new file at an Agent or skill path starts with: frontmatter Mars reads without a

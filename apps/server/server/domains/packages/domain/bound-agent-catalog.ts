@@ -14,7 +14,6 @@ import type {
   RetainedSkillReference,
   ThreadAgent,
 } from "@meridian/contracts/agents";
-import { AGENT_EFFORT_CHOICE } from "@meridian/contracts/agents";
 import type { AgentLevelFiles } from "../ports/agent-level-files.js";
 import type {
   AgentRevision,
@@ -214,9 +213,7 @@ export function createBoundAgentCatalog(input: {
       name: found?.name ?? entry.slug,
       description: found?.description ?? "",
       model: (found?.definition && modelOf(found.definition)) ?? null,
-      effort: found?.definition?.metadata.effort
-        ? AGENT_EFFORT_CHOICE[found.definition.metadata.effort]
-        : null,
+      effort: found?.definition?.metadata.effort ?? null,
       primary: found?.definition ? isPrimary(found.definition) : true,
       level: entry.level,
       shadows: entry.shadows,
@@ -464,7 +461,7 @@ export function createBoundAgentCatalog(input: {
               ([slug, pin]) => pin.contentDigest !== runs.invokedSkills[slug]?.contentDigest,
             )),
         model: runs.configuration.model,
-        effort: runs.configuration.effort ? AGENT_EFFORT_CHOICE[runs.configuration.effort] : null,
+        effort: runs.configuration.effort ?? null,
         unavailableReasons: input.unavailableReasons(agent.definition, runs.configuration.model),
       };
     },

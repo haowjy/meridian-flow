@@ -8,6 +8,7 @@ import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { HandBackRequest, StopResponse } from "@meridian/contracts/threads";
+import { effortLevels } from "@meridian-flow/mars-schema";
 import type { GenerateRequest, ModelInfo, StreamEvent } from "@meridian-flow/runtime/gateway";
 import { createGateway } from "@meridian-flow/runtime/gateway";
 import { and, eq } from "drizzle-orm";
@@ -999,6 +1000,7 @@ else
         silent.close();
       });
       const realGateway = createGateway({
+        reasoningLevels: effortLevels(),
         providers: [
           {
             id: "openai",
