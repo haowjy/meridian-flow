@@ -39,13 +39,11 @@ async function createAppServices(): Promise<AppServices> {
     environment: process.env,
   });
   const app = composeAppServices(ports);
-  await listenForThreadEvents({
-    db,
-    eventHub: app.threadEventHub,
-    eventSink,
-  });
-  await ports.fileAccessChanges.listen();
-  await ports.treeLists.listen();
+  const listeners = await Promise.all([
+    listenForThreadEvents({ db, eventHub: app.threadEventHub, eventSink }),
+    ports.fileAccessChanges.listen(),
+    ports.treeLists.listen(),
+  ]);
   const scheduler = startRecoveryScheduler(
     [
       {
@@ -97,6 +95,8 @@ async function createAppServices(): Promise<AppServices> {
   );
   app.organizeWake.bind(() => scheduler.wake("import-organize"));
   registerProcessShutdownCallback(async () => {
+    // A notification after shutdown starts would begin reads the drain no longer waits for.
+    await Promise.all(listeners.map((listener) => listener.unlisten()));
     await Promise.all([scheduler.stop(), app.shutdown()]);
   });
   return app;

@@ -42,6 +42,7 @@ export async function inReceiveScope<Context, Result>(
   if (!release) throw new ImportError(429, "import_busy");
   const controller = new AbortController();
   let pulse: ReturnType<typeof setInterval> | undefined;
+  let pulsing: Promise<unknown> = Promise.resolve();
   const stopPulse = () => clearInterval(pulse);
   let deadline: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -60,12 +61,13 @@ export async function inReceiveScope<Context, Result>(
       const context = await input.authorize();
       controller.signal.throwIfAborted();
       pulse = setInterval(() => {
-        void input.pulse().catch(input.reportError);
+        pulsing = input.pulse().catch(input.reportError);
       }, 30_000);
       return await run(context, controller.signal);
     } finally {
       stopPulse();
       clearTimeout(deadline);
+      await pulsing;
       release();
     }
   })();

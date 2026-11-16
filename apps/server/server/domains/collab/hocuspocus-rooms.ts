@@ -2,6 +2,7 @@
 import type { Document, Hocuspocus } from "@hocuspocus/server";
 import { draftRoomName, parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import { processDetachedWork } from "../../shared/detached-work.js";
 
 /** After commit: close the draft's stable room, even if it is still loading. */
 export function closeDraftRooms(hocuspocus: Hocuspocus | null, draftId: string): void {
@@ -27,7 +28,7 @@ export function closeRoom(
     connection.context.closeTransport?.(close);
     connection.close(close);
   }
-  void hocuspocus.unloadDocument(document);
+  void processDetachedWork.track(hocuspocus.unloadDocument(document), "unload closed room");
 }
 
 /**

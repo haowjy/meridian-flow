@@ -17,6 +17,7 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import * as Y from "yjs";
+import { type DetachedWorkTracker, processDetachedWork } from "../../../shared/detached-work.js";
 import { KeyedMutex } from "../../../shared/keyed-mutex.js";
 import { partitionConcurrentUpdates } from "../domain/concurrent-updates.js";
 import {
@@ -45,7 +46,12 @@ type CoordinatorDeps = {
   diagnostics?: RoomDeliveryDiagnostics;
   /** The waits before each retry of a failed delivery; the last repeats until the outage ends. */
   deliveryBackoffMs?: readonly number[];
+  /** Tracks the delivery chains, so shutdown and test resets wait for their reads. */
+  backgroundTasks?: DetachedWorkTracker;
 };
+
+/** `stop` ends every delivery outage's retries; a pass already running still finishes. */
+export type StoppableLiveDocumentCoordinator = LiveDocumentCoordinator & { stop(): void };
 
 /**
  * A delivery outage, reported once at each end: the first failed attempt, and the pass that
@@ -74,7 +80,9 @@ const RECOVERY_ORIGIN = {
   context: { origin: { type: "system", reason: "journal-recovery" } },
 } satisfies TransactionOrigin;
 
-export function createHocuspocusCoordinator(deps: CoordinatorDeps): LiveDocumentCoordinator {
+export function createHocuspocusCoordinator(
+  deps: CoordinatorDeps,
+): StoppableLiveDocumentCoordinator {
   return createCoordinator(deps, defaultOpenLiveDocument(deps.hocuspocus));
 }
 
@@ -283,14 +291,14 @@ export function liveRoomFor(docId: string, doc: Y.Doc): string | null {
 
 export function createHocuspocusCoordinatorForTest(
   deps: CoordinatorDeps & { openLiveDoc: OpenLiveDocument },
-): LiveDocumentCoordinator {
+): StoppableLiveDocumentCoordinator {
   return createCoordinator(deps, deps.openLiveDoc);
 }
 
 function createCoordinator(
   deps: CoordinatorDeps,
   openLiveDoc: OpenLiveDocument,
-): LiveDocumentCoordinator {
+): StoppableLiveDocumentCoordinator {
   const mutex = deps.mutex ?? new KeyedMutex();
 
   async function persistedState(
@@ -358,6 +366,7 @@ function createCoordinator(
     },
     backoffMs: deps.deliveryBackoffMs ?? DELIVERY_BACKOFF_MS,
     diagnostics: deps.diagnostics,
+    backgroundTasks: deps.backgroundTasks ?? processDetachedWork,
   });
 
   /**
@@ -394,6 +403,7 @@ function createCoordinator(
 
   return {
     deliver: delivery.deliver,
+    stop: delivery.stop,
     withDocument<T>(
       docId: string,
       fn: (doc: Y.Doc) => Promise<T>,
@@ -440,10 +450,12 @@ function createRoomDelivery(deps: {
   loaded(docId: string): Y.Doc | undefined;
   backoffMs: readonly number[];
   diagnostics: RoomDeliveryDiagnostics | undefined;
-}): { deliver(docId: string): Promise<void> } {
+  backgroundTasks: DetachedWorkTracker;
+}): { deliver(docId: string): Promise<void>; stop(): void } {
   // `wake` cuts short a retry's wait: a new request is served at once, not after the backoff.
   type Chain = { again: boolean; waiters: (() => void)[]; wake?: () => void };
   const chains = new Map<string, Chain>();
+  let stopped = false;
 
   async function run(docId: string, chain: Chain): Promise<void> {
     // The outage in progress: its failed attempts (0: none), and the room left behind.
@@ -470,6 +482,7 @@ function createRoomDelivery(deps: {
             failures += 1;
             behind = deps.loaded(docId);
             if (!behind) end("unloaded");
+            else if (stopped) behind = undefined;
             else {
               const wait = deps.backoffMs[Math.min(failures, deps.backoffMs.length) - 1] ?? 0;
               for (const resolve of waiters) resolve();
@@ -507,8 +520,12 @@ function createRoomDelivery(deps: {
         }
         const chain: Chain = { again: true, waiters: [resolve] };
         chains.set(docId, chain);
-        void run(docId, chain);
+        void deps.backgroundTasks.track(run(docId, chain), "hocuspocus-room-delivery");
       });
+    },
+    stop() {
+      stopped = true;
+      for (const chain of chains.values()) chain.wake?.();
     },
   };
 }

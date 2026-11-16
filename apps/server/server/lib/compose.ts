@@ -270,7 +270,11 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
-import { createDetachedWorkTracker, type DetachedWorkTracker } from "../shared/detached-work.js";
+import {
+  createDetachedWorkTracker,
+  type DetachedWorkTracker,
+  processDetachedWork,
+} from "../shared/detached-work.js";
 import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { lockThreadAndWorks } from "../shared/thread-work-lock.js";
@@ -499,7 +503,7 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const backgroundTasks = input.backgroundTasks ?? createDetachedWorkTracker();
+  const backgroundTasks = input.backgroundTasks ?? processDetachedWork;
   const projectWakeHub = createProjectWakeHub();
   const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
   const contextSources = createDrizzleContextSources(db);
@@ -807,6 +811,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     );
   });
   const threadEventHub = createThreadEventHub({
+    backgroundTasks,
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,

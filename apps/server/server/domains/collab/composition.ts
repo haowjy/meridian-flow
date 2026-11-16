@@ -196,6 +196,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     journal: persistence.journal,
     transactions: { inTransaction: isInDrizzleTransaction, afterCommit: deferUntilDrizzleCommit },
     diagnostics: createRoomDeliveryDiagnostics(deps.eventSink),
+    backgroundTasks: deps.backgroundTasks,
   });
   // Every bounded draft-store attempt's rollback boundary.
   const attemptScope: AttemptScope = (operation) => runInDrizzleSavepoint(deps.db, operation);
@@ -624,6 +625,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       dispose: async () => {
         await Promise.all([draftAheads.shutdown(), draftPulls.shutdown(), draftEffects.dispose()]);
         deps.liveTextHints?.stop();
+        liveCoordinator.stop();
       },
     },
     transport: {
