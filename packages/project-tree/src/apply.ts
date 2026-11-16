@@ -501,12 +501,29 @@ export function appliedNodes(
   restoredByApply: readonly string[],
 ): string[] {
   const standing = replayView(doc, LIVE).inForce;
+  return [
+    ...new Set(
+      madeBy(doc, applied, restoredByApply)
+        .filter((record) => standing.has(record.id))
+        .map((record) => record.node),
+    ),
+  ];
+}
+
+/**
+ * The live records an Apply command made: the restores it made first (`restoredByApply`), then
+ * its copies. Whether or not they still stand: `appliedNodes` filters, an estimate does not.
+ */
+export function madeBy(
+  doc: Y.Doc,
+  applied: string,
+  restoredByApply: readonly string[],
+): TreeRecord[] {
   const restores = new Set(restoredByApply);
-  const copies = appliedBy(doc, applied).copies.filter((copy) => standing.has(copy.id));
-  const restored = listRecords(doc).filter(
-    (record) => restores.has(record.id) && standing.has(record.id),
-  );
-  return [...new Set([...restored, ...copies].map((record) => record.node))];
+  return [
+    ...listRecords(doc).filter((record) => restores.has(record.id)),
+    ...appliedBy(doc, applied).copies,
+  ];
 }
 
 /** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
@@ -552,9 +569,8 @@ export function undoApply(
   } = {},
 ): UndoApplyResult {
   assertNewCommand(writer.doc, command);
-  const { settled, copies } = appliedBy(writer.doc, applied);
-  const restores = new Set(options.restoredByApply);
-  const made = [...listRecords(writer.doc).filter((record) => restores.has(record.id)), ...copies];
+  const { settled } = appliedBy(writer.doc, applied);
+  const made = madeBy(writer.doc, applied, options.restoredByApply ?? []);
   const undone: TreeRecord[] = [];
   const left: UndoApplyResult["left"] = [];
   // The roots (`carries ?? id`) of the copies taken back, at least in part.

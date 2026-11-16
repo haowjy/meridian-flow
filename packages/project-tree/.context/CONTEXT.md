@@ -156,7 +156,9 @@ the replay uses them (package `AGENTS.md`).
   stands: the nodes whose live copies are in force, and the nodes whose Apply-made `restore` (the
   ids `undoApply` takes back) is in force. An Apply that only brought a document back from Trash
   lists it until Un-Apply or a card's Undo takes the restore back. A tab can tell the Apply's tree
-  half has ended (a card's Undo of the drafted change took the copy back). `appliedBy` keeps
+  half has ended (a card's Undo of the drafted change took the copy back). `madeBy` is the one reader
+  of the records themselves, standing or not (restores first, then copies): `appliedNodes` filters it, and
+  the server's Un-Apply estimate reads `Change.sources` of each. `appliedBy` keeps
   copies not in force, so `undoApply` reports them `already`. One Undo takes out every copy of a
   record: when a record applied, Un-Applied and applied again has its first copy back in force (an
   Undo of the Un-Apply's Undo), Un-Apply of the second Apply takes out both. Apply's

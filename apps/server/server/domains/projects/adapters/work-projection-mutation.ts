@@ -91,8 +91,15 @@ export type WorkProjectionMutation = {
    * that must hold them earlier (in the order of another lock family) declares.
    */
   ownersOf(set: WorkWriteSet): Promise<OwnerLocks>;
-  /** `lockWorks`, then `operation`, in one transaction (its own when the caller has none). */
-  mutate<T>(set: WorkWriteSet, operation: () => Promise<T>, options?: WorkWriteOptions): Promise<T>;
+  /**
+   * `lockWorks`, then `operation` (given what the locks read), in one transaction (its own when
+   * the caller has none).
+   */
+  mutate<T>(
+    set: WorkWriteSet,
+    operation: (locked: LockedWorkWriteSet) => Promise<T>,
+    options?: WorkWriteOptions,
+  ): Promise<T>;
   /**
    * Works whose pending count the caller's transaction changed without holding them (it is
    * past Work-first order): each is recounted in a root transaction of its own once the caller
@@ -419,10 +426,9 @@ export function createWorkProjectionMutation(input: {
      * structural draft write enters Work, then branch, then draft, the order Archive takes.
      */
     mutate(set, operation, options) {
-      return runInDrizzleTransaction(input.db, async () => {
-        await lockWriteSet(set, options);
-        return operation();
-      });
+      return runInDrizzleTransaction(input.db, async () =>
+        operation(await lockWriteSet(set, options)),
+      );
     },
   };
   return mutation;

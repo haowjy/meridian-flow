@@ -17,6 +17,7 @@ export {
   discardDraft,
   discardedBy,
   type LeftRecord,
+  madeBy,
   recordsAdmittedAfter,
   restoreDiscard,
   undoApply,
