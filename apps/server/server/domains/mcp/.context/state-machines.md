@@ -38,7 +38,8 @@ system:
   whichever returns first.
 
 `check_finished_at` is separate: it records that a check of the current version ended, kept or not,
-and paces the next one.
+and paces the next one. A failure's age (the two-minute rule for listing a chat's connection by name)
+is `status_started_at`, never `check_finished_at`.
 
 ## What moves the status (`domain/connection-checks.ts`)
 
@@ -47,6 +48,7 @@ and paces the next one.
 | Check answered; a call `answered`, `rejected` or `too_large` | `connected` |
 | `unauthorized` from a check or a call | `needs_sign_in` |
 | A check fails, and a second one 3 s later (`start_failed`, `connect_timeout`, `disconnected`, `server_error`, `bad_reply`, `forbidden`, a timeout) | `unreachable`, with the reason |
+| A check Flow refused to make (a private address) or a redirect it will not follow | `unreachable` at once, with no second try, and a reason of its own for a redirect |
 | A check is `rate_limited` | unchanged |
 | A call `start_failed`, `connect_timeout` or `disconnected` | unchanged; starts a check |
 | Any other call failure | unchanged |

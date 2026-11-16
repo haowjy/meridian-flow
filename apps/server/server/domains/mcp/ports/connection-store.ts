@@ -67,7 +67,7 @@ export interface ConnectionStore {
     spec: McpConnectionSpec;
     sealedToken: string | null;
   }): Promise<StoredConnection>;
-  /** Bumps the settings version. `sealedToken`: a string replaces the token, null clears it, undefined leaves it. */
+  /** Bumps the settings version. A new `spec` drops the current pin: it listed another server. `sealedToken`: a string replaces the token, null clears it, undefined leaves it. */
   edit(
     accountId: UserId,
     id: McpConnectionId,
