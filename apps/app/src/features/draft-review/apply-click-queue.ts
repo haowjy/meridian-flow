@@ -35,12 +35,12 @@ export type FrozenApply = {
   send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
 
-/** A click frozen on `draftId`'s room: the room folds it into its base until it records it. */
 /** Whether `answer` says this item's text cut landed: text that never landed has nothing to fold. */
 function textLanded(answer: ApplyClickResult, node: string): boolean {
   return itemOf(answer, node)?.text?.landed === true;
 }
 
+/** A click frozen on `draftId`'s room: the room folds it into its base until it records it. */
 export function frozenOn(command: { body: ApplyClick }, draftId: string): boolean {
   return command.body.snapshot !== undefined && command.body.draftId === draftId;
 }
