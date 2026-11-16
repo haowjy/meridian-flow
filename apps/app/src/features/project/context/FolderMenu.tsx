@@ -90,7 +90,7 @@ export function FolderMenuBody({
     own: own ? { ...own, heading } : null,
   });
   // A catalog already on hand opens the menu at once; the lookup only has to answer for the rest.
-  const openAt = source.trailInside(folderId);
+  const openAt = source.tree.trailInside(folderId);
   if (openAt) {
     const onPick = (node: DrillNode) => host.openDocument(node.documentId ?? node.id);
     return (

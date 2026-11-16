@@ -161,7 +161,10 @@ opens. The source owns `own.crumbTrail(path, depth)`, including the exception fo
 an area not offered at the root; `own.openAt(path)` remains the full folder trail
 used by placement. The first menu mounts with its final trail and highlight IDs.
 Both trails come from `trailAlong(area, folders)` in `menu-tree.ts`; a folder
-chip's menu uses `trailInside(folderId)`, the trail that ends inside that folder.
+chip's menu uses `tree.trailInside(folderId)`, the trail that ends inside that folder. A
+drill-in menu keeps only the ids of the folders entered and reads its trail from
+`trailInside` on every render, so a renamed or moved folder shows its current name and place;
+a deleted one leaves the menu in the deepest entered folder that still exists.
 
 ### Folder chip menu
 

@@ -60,6 +60,8 @@ export type DrillTree = {
   heading: string;
   /** A folder's entries in display order; `null` is the top level. */
   children: (folderId: string | null) => readonly DrillNode[];
+  /** A folder with the ones above it, outermost first, as the tree has them now; null once it is gone. */
+  trailInside: (folderId: string) => readonly DrillNode[] | null;
 };
 
 export type DrillAction = {
@@ -174,22 +176,26 @@ export function useDrill({
   /** The focusable rows inside `scopeRef`. */
   rowSelector?: string;
 }): Drill {
-  const [stepped, setTrail] = useState<readonly DrillNode[]>(openAt);
+  // The trail is the live ancestry of the deepest folder entered that still exists, so a folder
+  // renamed or moved while the menu is open shows its current name and place; one that is gone
+  // leaves the writer in the nearest one that is not.
+  const [entered, setEntered] = useState<readonly string[]>(() => openAt.map((node) => node.id));
   const [exitedId, setExitedId] = useState<string | null>(null);
   const scopeRef = useRef<HTMLDivElement>(null);
   const focusFirstRow = useCallback(() => {
     requestAnimationFrame(() => scopeRef.current?.querySelector<HTMLElement>(rowSelector)?.focus());
   }, [rowSelector]);
-  // The trail remembers which folders were entered; each is read again from the live tree, so a
-  // folder renamed or moved while the menu is open shows its current name.
-  const trail = stepped.map((node, depth) => {
-    const parentId = depth === 0 ? null : stepped[depth - 1].id;
-    return tree.children(parentId).find((live) => live.id === node.id) ?? node;
-  });
+  const trail = (() => {
+    for (const id of entered.toReversed()) {
+      const live = tree.trailInside(id);
+      if (live) return live;
+    }
+    return [];
+  })();
   // Drilling unmounts the focused row, so every drill moves focus to the new level.
   const drillTo = (next: readonly DrillNode[]) => {
     setExitedId(next.length < trail.length ? (trail.at(-1)?.id ?? null) : null);
-    setTrail(next);
+    setEntered(next.map((node) => node.id));
     focusFirstRow();
   };
   const folder = trail.at(-1) ?? null;
