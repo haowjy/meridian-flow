@@ -63,7 +63,7 @@ export interface LiveDocumentSessionRegistry {
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   /**
-   * The writer's Undo of the document's live session in this tab, shown or kept for an open tab;
+   * The writer's Undo of the document's live session in this tab, shown or kept for its undo;
    * null when the tab holds none.
    */
   liveHistory(documentId: DocumentId): DocumentHistory | null;

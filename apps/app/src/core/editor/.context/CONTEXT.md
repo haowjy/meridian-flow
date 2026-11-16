@@ -550,8 +550,12 @@ keyboard, pointer, drop, or draft-recovery answer.
 
 ### Live session teardown
 
-- A session holds the writer's undo (`session.history`), so teardown ends it. The registry's
-  3 s grace therefore applies to documents no open tab keeps (see `useOpenTabSessions`).
+- A session holds the writer's undo (`session.history`), so teardown ends it. When no host holds
+  a live session and its history has entries, the registry keeps it, off its socket, wherever it
+  was shown: a side document whose review just ended, a closed tab, a phone sheet. A band or card
+  Apply puts an entry in that history, so this is what keeps an Apply's Ctrl+Z. At most
+  `KEPT_FOR_UNDO_CAP` (8) are kept, the least recently edited retired first; a history that
+  empties ends its session, and a host that takes the session back reattaches it.
 - A retained session's socket is open when some owner wants it (a host is on screen, reported
   through `setHosted` / `retain`'s `detachedDocumentIds`) or it has unsent edits it can still
   deliver. One function, `DocumentSessionRegistry.reconcileRetainedSessions`, applies that on every
@@ -559,8 +563,9 @@ keyboard, pointer, drop, or draft-recovery answer.
   Nothing else attaches or detaches a retained live session. `DocumentSession.detachTransport`
   also cancels an attach still waiting for local persistence.
 - When the last host releases a live document, the registry retires its session after a
-  3 s grace. A session with unacknowledged edits is held instead, so edits made offline
-  reach the server without the writer reopening the document. Reopening takes the
+  3 s grace, unless it is kept for its undo (above). A session with unacknowledged edits is
+  held first, so edits made offline reach the server without the writer reopening the
+  document; once they are acknowledged it is kept for its undo or retired. Reopening takes the
   same session back and cancels the hold.
 - `DocumentSession.canDeliverUnsentEdits()` says whether the wait can still end in
   delivery. It is false for a reset, unauthorized, terminal, destroyed or read-only room
