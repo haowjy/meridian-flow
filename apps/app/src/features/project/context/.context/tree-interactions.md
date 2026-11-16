@@ -218,8 +218,8 @@ move sends no name: the replay numbers a clash, and `renamesOnArrival` only pred
 warning shown before the drop. A positional destination (an edge drop, the picker's "Change
 position", a Trash row dragged to an edge) names a sibling by id, or the top or bottom, never an
 index: `TreeWriter.moveAll` lands the first row there and each next one right after the one
-before it, so several rows arrive together in screen order wherever they started, and a
-same-parent placement is a reorder rather than "already there". A move between the account's files
+before it, so several rows arrive together in screen order wherever they started (the AI's
+`move` of several paths places through the same call), and a same-parent placement is a reorder rather than "already there". A move between the account's files
 and a project is not a record the browser can append to two lists; the drop offers Copy there.
 Copy stays a server route: `copyRows` (`entry-drag/execute-copy.ts`) mints the copies' ids and the
 command's id, sends them once, and the copies arrive through the list. A refused Copy toasts with
