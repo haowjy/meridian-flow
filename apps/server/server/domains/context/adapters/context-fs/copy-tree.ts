@@ -1,3 +1,4 @@
+import type { BranchId } from "@meridian/contracts";
 /**
  * Copy's destination half in one ContextFS source: naming and identity, planned without a
  * lock, and the insertion of a plan inside the caller's command transaction.
@@ -119,7 +120,7 @@ export async function insertCopiedTree(
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
     position?: ContextSiblingPosition;
-    branchId: import("@meridian/contracts").BranchId | null;
+    branchId: BranchId | null;
   },
 ): Promise<Result<CopyOutcome, AdapterFault>> {
   const { plan, contents } = input;
@@ -144,7 +145,7 @@ export async function insertCopiedTree(
             ? [
                 {
                   documentId: documentId as DocumentId,
-                  branchId: input.branchId as import("@meridian/contracts").BranchId,
+                  branchId: input.branchId as BranchId,
                   content,
                 },
               ]

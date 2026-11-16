@@ -1,3 +1,4 @@
+import type { CopySourceView } from "./ports/context-port.js";
 /**
  * Unified context-port factory: composes project-scoped (manuscript/kb/user) and
  * Work-scoped (scratch) ContextFS adapters, and chat-scoped (uploads) ones into one router per scope.
@@ -243,10 +244,7 @@ function buildUnifiedContextPort(input: {
   treeLists: AdapterAssembly["treeLists"];
   db: Database;
   arrivals?: DocumentArrivals;
-  resolveDestinationFolder?: (
-    folderId: string,
-    view?: import("./ports/context-port.js").CopySourceView,
-  ) => Promise<string | null>;
+  resolveDestinationFolder?: (folderId: string, view?: CopySourceView) => Promise<string | null>;
   copyCommands?: CopyCommands;
   copy?: ContextCopyCommandDeps;
 }): ContextPort {

@@ -226,10 +226,6 @@ export class ContextFS implements ContextSchemeAdapter {
       ...(deps.arrivals ? { arrivals: deps.arrivals } : {}),
       holderUri: (path) => this.holderUri(path),
       folderUri: (path) => canonicalContextUri(this.scheme, path, this.holder.authority),
-      branchOwner:
-        this.placement.kind === "draft" && this.placement.branchOwner
-          ? { ...this.placement.branchOwner, mode: "ensure" }
-          : null,
     });
   }
 

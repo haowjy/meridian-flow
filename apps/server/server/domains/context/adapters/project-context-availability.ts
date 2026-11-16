@@ -517,7 +517,7 @@ export async function resolveActiveFolderUri(
   projectId: string,
   userId: string,
   folderId: string,
-  view: import("../tree/tree-view.js").TreeView = LIVE_TREE,
+  view: TreeView = LIVE_TREE,
 ): Promise<string | null> {
   const tx = currentDrizzleDb(db) as Database;
   const [row] = (await loadPlacedRows(tx, view, [folderId])).folders;

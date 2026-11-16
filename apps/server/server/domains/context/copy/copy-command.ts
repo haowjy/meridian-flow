@@ -1,3 +1,6 @@
+import type { BranchId } from "@meridian/contracts";
+import type { Branches } from "../../collab/domain/branches.js";
+import type { ContextCommandBranch } from "../ports/context-command-transaction.js";
 /**
  * Copy: one atomic command per drop, for a selection of roots into one destination.
  *
@@ -113,7 +116,7 @@ export interface CopyDestinationHandoff {
   dir: readonly string[];
   /** The Work whose lifecycle and namespace this end belongs to; null for no Work. */
   workScopeId: string | null;
-  branch: import("../ports/context-command-transaction.js").ContextCommandBranch | null;
+  branch: ContextCommandBranch | null;
 }
 
 export interface ContextCopyCommandDeps {
@@ -121,7 +124,7 @@ export interface ContextCopyCommandDeps {
     CollabDomain,
     "readEffectiveBlocks" | "bindCopiedBlocks" | "refreshDocumentProjection"
   >;
-  branches: Pick<import("../../collab/domain/branches.js").Branches, "viewForOwner">;
+  branches: Pick<Branches, "viewForOwner">;
   objectStore: ObjectStorePort;
   release: Pick<ObjectRelease, "keys">;
 }
@@ -431,7 +434,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
-    branchId: import("@meridian/contracts").BranchId | null,
+    branchId: BranchId | null,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
     const destination = await resolvedDestination(input, prepared);
     if (!destination.ok) return destination;

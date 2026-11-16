@@ -1,3 +1,4 @@
+import type { BranchId } from "@meridian/contracts";
 /**
  * What one tree must tell a Copy about itself, and what it must do with what a Copy made.
  *
@@ -136,7 +137,6 @@ export type CopyOutcome =
 export interface ContextCopyAdapter {
   /** This adapter's context source, provisioned; the copy command locks it. */
   sourceId(): Promise<string | null>;
-  branchOwner: import("./context-command-transaction.js").ContextCommandBranch | null;
   /**
    * The source subtree at `path`: the folder with every descendant in the folder's visible
    * order (empty folders included), or the one file there. Read once; the copy works from
@@ -164,7 +164,7 @@ export interface ContextCopyAdapter {
     dir: readonly string[];
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
-    branchId: import("@meridian/contracts").BranchId | null;
+    branchId: BranchId | null;
     position?: ContextSiblingPosition;
   }): Promise<Result<CopyOutcome, AdapterFault>>;
 }

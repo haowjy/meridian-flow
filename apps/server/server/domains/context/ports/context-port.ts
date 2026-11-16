@@ -1,3 +1,4 @@
+import type { ContextCommandBranch } from "./context-command-transaction.js";
 /**
  * Context port + scheme vocabulary: the stat/read/list/write/search/delete
  * contract over context URI schemes plus file-entry, result, and error types.
@@ -305,7 +306,7 @@ export interface ContextCopyRequest {
   }[];
   /** Canonical address of the destination parent folder. */
   destinationUri: string;
-  destinationBranch?: import("./context-command-transaction.js").ContextCommandBranch;
+  destinationBranch?: ContextCommandBranch;
   /** The identity-based destination, for the receipt and the in-transaction recheck. */
   destinationParent?: ContextDestinationParent;
   position?: ContextSiblingPosition;

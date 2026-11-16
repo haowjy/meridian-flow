@@ -5,6 +5,7 @@ import type {
   ContextSiblingPosition,
   CopyContextEntriesResult,
   CopyContextEntrySource,
+  CopyContextEntryView,
 } from "./http-types.js";
 
 /**
@@ -59,7 +60,7 @@ export type ContextOperationCommand = {
   /** Ordered roots by canonical address; the read view travels with each. */
   sources: CopyContextEntryCommandSource[];
   destinationUri: string;
-  destinationView?: import("./http-types.js").CopyContextEntryView;
+  destinationView?: CopyContextEntryView;
   destinationParent?: ContextDestinationParent;
   position?: ContextSiblingPosition;
 };

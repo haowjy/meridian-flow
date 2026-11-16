@@ -20,9 +20,7 @@ import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
 import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.js";
 import { AMBIGUOUS_PATH_FAULT } from "./placement.js";
 
-export interface ContextFsCopyDeps extends CopyTreeDeps {
-  branchOwner: import("../../ports/context-command-transaction.js").ContextCommandBranch | null;
-}
+type ContextFsCopyDeps = CopyTreeDeps;
 
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
   const { store, holderUri, folderUri } = deps;
@@ -115,7 +113,6 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
 
   return {
     sourceId: () => store.existingContextSourceId(),
-    branchOwner: deps.branchOwner,
     snapshotSource,
     planCopy: async (input) => Ok(await planCopyTree(deps, input)),
     copyInto: (input) => insertCopiedTree(deps, input),

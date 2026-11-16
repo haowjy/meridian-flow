@@ -1,3 +1,4 @@
+import type { DraftOwnerKey } from "@meridian/contracts";
 /**
  * Row-anchored folder placement using the same project tree as document paths. One picker for
  * Move… and Copy to…. Move… offers the places in the row's own list (the project's files, or the
@@ -109,7 +110,7 @@ function OpenPicker({
               shell?.showing === "draft"
                 ? {
                     kind: "draft",
-                    owner: shell.ownerKey as import("@meridian/contracts").DraftOwnerKey,
+                    owner: shell.ownerKey as DraftOwnerKey,
                   }
                 : LIVE_VIEW,
           },
@@ -268,7 +269,7 @@ function OpenPicker({
           ? {
               view: {
                 kind: "draft" as const,
-                owner: shell.ownerKey as import("@meridian/contracts").DraftOwnerKey,
+                owner: shell.ownerKey as DraftOwnerKey,
               },
             }
           : {}),

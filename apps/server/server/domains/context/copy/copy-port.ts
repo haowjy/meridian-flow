@@ -1,3 +1,4 @@
+import type { CopySourceView } from "../ports/context-port.js";
 /**
  * The port's Copy: turn a request of canonical addresses into the adapters that own them and
  * hand the command its sources, destination and (for an identity destination) a way to
@@ -5,6 +6,7 @@
  * reads or writes is `copy-command.ts`.
  */
 
+import { isDraftedScheme } from "@meridian/contracts/context-uri";
 import type { CopyContextEntriesResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { ContextSchemeAdapter } from "../ports/context-adapter.js";
@@ -37,7 +39,7 @@ export interface ContextCopyPortDeps {
     parent: { folderId: string; createFolders?: readonly string[] },
     options: {
       authorize?: (uri: string) => Promise<boolean>;
-      view?: import("../ports/context-port.js").CopySourceView;
+      view?: CopySourceView;
     },
   ) => Promise<Result<CopyEnd, ContextError>>;
   resolve(uri: string): Promise<Result<CopyEnd, ContextError>>;
@@ -57,7 +59,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
           scheme: end.adapter.name as ContextScheme,
           dir: end.path.split("/").filter(Boolean),
           workScopeId: end.workScopeId,
-          branch: branch ?? copy.branchOwner,
+          branch: isDraftedScheme(end.adapter.name as ContextScheme) ? (branch ?? null) : null,
         }
       : null;
   };

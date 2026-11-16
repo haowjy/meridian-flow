@@ -199,7 +199,7 @@ export type TreeReceiptInput = {
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   /** The Work's branch the record was drafted in; absent when it is live. */
-  draftBranchId?: import("@meridian/contracts").BranchId;
+  draftBranchId?: BranchId;
   /** The path the model gave. */
   shownAt: string;
   /** An undo or redo names the receipt it reverses. */
@@ -641,15 +641,15 @@ export type DraftPeerShadowAccess = {
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
+  writeCreatedDraftContent(
+    created: readonly { documentId: DocumentId; branchId: BranchId; content: BoundWrite }[],
+  ): Promise<void>;
   /**
    * Each text document a branch's admitted create just made gets its Yjs authority and its
    * Work text draft (empty: a draft create never seeds live Yjs), in the admitting
    * transaction under the list's key: the tree list store calls it for every create in a
    * Work's version, the writer's and the AI's alike (contract §6.2 step 5).
    */
-  writeCreatedDraftContent(
-    created: readonly { documentId: DocumentId; branchId: BranchId; content: BoundWrite }[],
-  ): Promise<void>;
   draftCreatedDocuments(
     created: readonly { documentId: DocumentId; branchId: BranchId }[],
   ): Promise<void>;

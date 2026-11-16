@@ -1,3 +1,5 @@
+import type { BranchId } from "@meridian/contracts";
+import type { FileDestination } from "../../domains/file-policy/index.js";
 /**
  * The sources of a model's `move` that are in another list (a project's files and the account's
  * `user://` files are two lists): each is copied, with the writer's Copy (`port.copy`), and the
@@ -58,7 +60,7 @@ export async function copyAcross(
   ctx: ToolHandlerContext,
   grants: FileGrant<"edit">[],
   command: { from: readonly string[]; path: string; many: boolean },
-  destination?: import("../../domains/file-policy/index.js").FileDestination,
+  destination?: FileDestination,
 ): Promise<{ refused: unknown } | Copies> {
   const to = areaOfPath(command.path) as NonNullable<ReturnType<typeof areaOfPath>>;
   const shown = await shownNamesOf(ctx);
@@ -111,6 +113,16 @@ export async function copyAcross(
           : {}),
       })),
       destinationUri: joinContextUri(to.area, into),
+      ...(destination?.kind === "draft"
+        ? {
+            destinationBranch: {
+              mode: "ensure" as const,
+              owner: destination.owner,
+              threadId: ctx.threadId as ThreadId,
+              userId: call.principal.accountId,
+            },
+          }
+        : {}),
     }),
   );
   if (!copy.ok)
@@ -210,7 +222,7 @@ export async function recordCopies(
         records: made.value.records,
         op: "create",
         ...(made.value.draftBranchId
-          ? { draftBranchId: made.value.draftBranchId as import("@meridian/contracts").BranchId }
+          ? { draftBranchId: made.value.draftBranchId as BranchId }
           : {}),
         threadId: ctx.threadId as ThreadId,
         ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),

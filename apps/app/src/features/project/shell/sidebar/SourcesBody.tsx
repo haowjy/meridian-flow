@@ -1,4 +1,5 @@
 import { t } from "@lingui/core/macro";
+import type { DraftOwnerKey } from "@meridian/contracts";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import {
@@ -429,7 +430,7 @@ export function SourcesBody({
                   ? {
                       view: {
                         kind: "draft" as const,
-                        owner: shell.ownerKey as import("@meridian/contracts").DraftOwnerKey,
+                        owner: shell.ownerKey as DraftOwnerKey,
                       },
                     }
                   : {}),

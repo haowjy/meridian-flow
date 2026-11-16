@@ -1,3 +1,4 @@
+import type { BranchId } from "@meridian/contracts";
 /**
  * Where a ContextFS adapter's writes land, as a strategy (contract §2.3, §6.1). The port factory
  * decides the placement once (`placementFor`); ContextFS delegates the commands whose meaning
@@ -186,11 +187,8 @@ function draftPlacement(
   const { executor, tree } = deps;
   const owner = branchOwnerOf(placement);
   /** A command in the drafting Work's branch, which the transaction ensures and locks. */
-  const inBranch = <T>(
-    operation: (branch: {
-      id: import("@meridian/contracts").BranchId;
-    }) => Promise<Result<T, AdapterFault>>,
-  ) => executor.runInBranch({ ...owner, mode: "ensure" }, (branch) => operation({ id: branch.id }));
+  const inBranch = <T>(operation: (branch: { id: BranchId }) => Promise<Result<T, AdapterFault>>) =>
+    executor.runInBranch({ ...owner, mode: "ensure" }, (branch) => operation({ id: branch.id }));
   return {
     kind: "draft",
     readView: (version) =>
