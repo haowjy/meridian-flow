@@ -80,6 +80,12 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `equalYTypePNode`, `computeChildEqualityFactor`, the `createNodeFromYElement`
   read) and keep `refreshProseMirrorDoc`, `sameBlock` and the forced-render selection
   resolver (until upstream resolves valid selections there too).
+- `updateYText` places a typed or deleted run where the cursor is (`placeAtCursor`). `simpleDiff`
+  puts an edit at the far end of any run of equal characters, so a space typed before a space, or
+  a letter beside the same letter, became the item at the other end of the run: the word's
+  characters then sat in the wrong item order, and the Copy notice for unsent typing read them
+  split and out of order (`Second\nunsent `). Without a collapsed cursor in that text block the
+  plain diff stands. To drop it, upstream's diff must take the editor's selection.
 - The binding’s forced render replaces the editor’s document before restoring its selection.
   It resolves offsets from the previous document to a valid selection in the rendered one,
   a text selection when text is available. A clamped offset alone can land at a table
