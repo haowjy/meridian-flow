@@ -33,6 +33,7 @@ import type { ReadyCopy } from "./entry-drag/move-plan";
 import { selectRows, useOptionalEntrySelection } from "./entry-drag/selection";
 import { revealFolder } from "./tree-reveal";
 import { useProjectMenuSource } from "./use-project-menu-source";
+import { useWorkSourceWritable } from "./use-work-source-writable";
 
 export type PickedEntry = {
   kind: "file" | "folder";
@@ -89,12 +90,19 @@ function OpenPicker({
     () => (scheme && owner ? { scheme, owner, heading: schemeLabel(scheme) } : null),
     [scheme, owner],
   );
+  // An ended Work's Scratch is a source to copy out of, never a place to copy into.
+  const scratchWritable = useWorkSourceWritable(projectId, owner?.workId);
   const scratch = useMemo(
-    () => (scheme === "scratch" && owner ? { owner, heading: schemeLabel(scheme) } : null),
-    [scheme, owner],
+    () =>
+      scheme === "scratch" && owner && scratchWritable
+        ? { owner, heading: schemeLabel(scheme) }
+        : null,
+    [scheme, owner, scratchWritable],
   );
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
-  const openAt = own ? source.own.openAt(entry.path) : [];
+  // Opens at the row's own folder, except in a Scratch that takes no copy: the root then.
+  const openAt =
+    own && (scheme !== "scratch" || scratchWritable) ? source.own.openAt(entry.path) : [];
   const unavailable = t`This location is unavailable. Refresh and try again.`;
 
   const several = picked !== undefined && picked.length > 1;
