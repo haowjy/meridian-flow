@@ -46,7 +46,8 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
 3. **Draft source.** The same chat overwrites `manuscript://Outside/Sheet` in its
    draft. Copy it with `--draft-work w1`: the copy holds the draft text and
    `metadata.copiedFrom.version` is `draft`. Copy without the flag: the live text,
-   `live`. A folder with a draft view is refused (`invalid_operation`). The draft is the
+   `live`. A folder with a draft view copies each document as the Work shows it: the draft text
+   where the Work holds a draft, otherwise the live text. The draft is the
    Work's, whichever chat wrote it: rebind the chat to another Work, and `--draft-work w1`
    still copies Work w1's draft. Discard the draft (Discard all) and copy again with the
    draft view: the closed draft's text, not the live one. A Work that never drafted the

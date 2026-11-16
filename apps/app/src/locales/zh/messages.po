@@ -549,11 +549,11 @@ msgstr ""
 msgid "{count, plural, one {# call} other {# calls}}"
 msgstr ""
 
-#: src/features/draft-review/CommandNotice.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 #~ msgid "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
 #~ msgstr ""
 
-#: src/features/draft-review/CommandNotice.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
 msgid "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
 msgstr ""
 
@@ -795,10 +795,6 @@ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "{left, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
-#~ msgstr ""
-
-#: src/features/draft-review/CommandNotice.tsx
-#~ msgid "{left, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
 #~ msgstr ""
 
 #: src/features/chat/tool-result-preview.ts
@@ -1438,8 +1434,8 @@ msgid "Actually…"
 msgstr "其实…"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Adaptive"
-msgstr ""
+#~ msgid "Adaptive"
+#~ msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Add {name} to your message"
@@ -1762,6 +1758,11 @@ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Apply is waiting for confirmation."
+msgstr ""
+
+#. placeholder {0}: file.name
+#: src/features/chat/DraftDock.tsx
+msgid "Apply this chat's changes to {0}"
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -3689,6 +3690,11 @@ msgstr ""
 #~ msgid "Discard this change? This can't be undone."
 #~ msgstr ""
 
+#. placeholder {0}: file.name
+#: src/features/chat/DraftDock.tsx
+msgid "Discard this chat's changes to {0}"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
 msgid "Discard this chat's changes to {documents} documents"
 msgstr ""
@@ -4073,6 +4079,10 @@ msgstr ""
 #: src/features/export/ExportProjectDialog.tsx
 msgid "Exporting {project}."
 msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Extra high"
+msgstr "超高"
 
 #: src/features/billing/BillingPage.tsx
 msgid "Extra usage"
@@ -4954,6 +4964,10 @@ msgstr ""
 #: src/components/app/composer/Composer.tsx
 msgid "Message"
 msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Minimal"
+msgstr "极低"
 
 #. placeholder {0}: formatPreset(amountOptions.minUsd)
 #: src/features/billing/ExtraUsagePicker.tsx
@@ -6508,6 +6522,7 @@ msgstr ""
 msgid "Retry deleting {title}"
 msgstr ""
 
+#: src/features/chat/AssistantTurn.tsx
 #: src/features/home/ProjectLibrary.tsx
 msgid "Retry loading"
 msgstr ""
@@ -7447,8 +7462,8 @@ msgid "That Work isn't available."
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "That Work no longer has a draft of it."
-msgstr ""
+#~ msgid "That Work no longer has a draft of it."
+#~ msgstr ""
 
 #: src/features/import/selection-limits.ts
 msgid "That's {count} files. Import up to {limit} at a time."
@@ -8254,6 +8269,10 @@ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "This project's own; it hides {below}."
+msgstr ""
+
+#: src/features/chat/AssistantTurn.tsx
+msgid "This reply’s edits couldn’t load."
 msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx

@@ -5,8 +5,9 @@ import type { ListDiscardEntriesResponse } from "@meridian/contracts/branches";
 import { ArchiveRestore } from "lucide-react";
 import { RowWord } from "@/components/app/RowWord";
 import { ListRow } from "@/components/ui/list-row";
-import { leftOutSentence, restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
+import { restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
 import type { DiscardRestoreState } from "@/features/draft-review/discard-restores";
+import { leftOutSentence } from "@/features/draft-review/ReviewMessageText";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { relativeTime } from "../../relative-time";
 

@@ -51,6 +51,8 @@ export type DraftReviewItem = {
   tree: { movedFrom: string | null; deleted: boolean } | null;
   /** Chats with pending writes on the draft, latest first, then the chats behind its tree row. */
   actorThreadIds: string[];
+  /** The draft holds a change no chat is known to have written (the writer's typing, or evidence in doubt). */
+  unattributed: boolean;
   updatedAt: Date;
 };
 
@@ -78,7 +80,7 @@ export function createBranchReviewItems(deps: {
     documentIds?: readonly DocumentId[],
   ): Promise<readonly WorkBranchDraftMetadata[]>;
   /** Expensive receipt membership, read only for listed items. */
-  pendingThreadIds(draftId: string): Promise<string[]>;
+  pendingWriters(draftId: string): Promise<{ threadIds: string[]; unattributed: boolean }>;
   /** The chats behind each document's branch row (moved or deleted it, created it). */
   treeActors(
     branchId: BranchId,
@@ -110,8 +112,14 @@ export function createBranchReviewItems(deps: {
       const listed = (await items(branchId)).flatMap(({ item, listed }) => (listed ? [item] : []));
       return Promise.all(
         listed.map(async (item) => {
-          const members = item.draftId ? await deps.pendingThreadIds(item.draftId) : [];
-          return { ...item, actorThreadIds: [...new Set([...members, ...item.actorThreadIds])] };
+          const writers = item.draftId
+            ? await deps.pendingWriters(item.draftId)
+            : { threadIds: [], unattributed: false };
+          return {
+            ...item,
+            actorThreadIds: [...new Set([...writers.threadIds, ...item.actorThreadIds])],
+            unattributed: writers.unattributed,
+          };
         }),
       );
     },
@@ -152,6 +160,7 @@ function toItem(
     deletedLive: node.deletedLive,
     deletedFrom: node.deletedLive ? node.deletedFromUri : null,
     actorThreadIds: [...treeActorThreadIds],
+    unattributed: false,
     updatedAt: evidence?.updatedAt ?? new Date(),
   };
 }

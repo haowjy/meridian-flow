@@ -25,8 +25,8 @@ export type TurnContextPreview = {
   tools: TurnContextPreviewFunctionTool[];
   gatewayParams: {
     model?: string;
-    /** JSON-natural mirror of `GenerateRequest.reasoning`; the gateway declaration is authoritative. */
-    reasoning?: "disabled" | "adaptive" | { effort: "low" | "medium" | "high" | "max" };
+    /** `GenerateRequest.reasoning`: the level asked for; absent means the model's own default. */
+    reasoning?: string;
   };
 };
 

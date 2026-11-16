@@ -2,7 +2,7 @@
 
 import { ChevronRight } from "lucide-react";
 import { ContextMenu as Primitive } from "radix-ui";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import {
   dropdownGroupLabelClass,
@@ -12,6 +12,7 @@ import {
   dropdownPageClass,
   dropdownRowVariants,
 } from "./dropdown-presentation";
+import { withRowNote } from "./marks";
 
 export const ContextMenu = Primitive.Root;
 export const ContextMenuSub = Primitive.Sub;
@@ -68,12 +69,22 @@ export function ContextMenuContent({
   );
 }
 
-export function ContextMenuItem({ className, ...props }: ComponentProps<typeof Primitive.Item>) {
+export function ContextMenuItem({
+  className,
+  note,
+  children,
+  ...props
+}: ComponentProps<typeof Primitive.Item> & {
+  /** Small words at the row's end, on the label's baseline. Not with `asChild`. */
+  note?: ReactNode;
+}) {
   return (
     <Primitive.Item
       {...props}
       className={cn(dropdownRowVariants(), dropdownMenuItemClass, className)}
-    />
+    >
+      {withRowNote(children, note)}
+    </Primitive.Item>
   );
 }
 

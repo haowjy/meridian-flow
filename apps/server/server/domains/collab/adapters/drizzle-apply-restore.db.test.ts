@@ -164,7 +164,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       reviewItems: createBranchReviewItems({
         tree: branchTree,
         drafts: pending.listBranchDraftMetadata,
-        pendingThreadIds: pending.pendingThreadIds,
+        pendingWriters: pending.pendingWriters,
         treeActors: createDrizzleBranchTreeActors(db, treeLists),
       }),
     });

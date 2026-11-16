@@ -1,4 +1,4 @@
-/** Account-stamped device memory of document-relative places, bounded by LRU. */
+/** Account-stamped device memory of places per Yjs room (a document's Live and Draft views are two), bounded by LRU. */
 
 import * as Y from "yjs";
 import { browserRecord, isRecord, type StorageSource } from "@/client/storage/browser-record";
@@ -10,7 +10,7 @@ export type ReadingPosition = {
   viewport: { block: ReadingAnchor; text: ReadingAnchor | null; offset: number };
   selection: { anchor: ReadingAnchor; head: ReadingAnchor; node: boolean };
 };
-type Entry = { documentId: string; place: ReadingPosition; updatedAt: number; accessedAt: number };
+type Entry = { roomKey: string; place: ReadingPosition; updatedAt: number; accessedAt: number };
 
 function validAnchor(value: unknown): value is ReadingAnchor {
   if (
@@ -47,7 +47,7 @@ function validPlace(value: unknown): value is ReadingPosition {
 function validEntry(value: unknown): value is Entry {
   return (
     isRecord(value) &&
-    typeof value.documentId === "string" &&
+    typeof value.roomKey === "string" &&
     validPlace(value.place) &&
     [value.updatedAt, value.accessedAt].every(
       (time) => typeof time === "number" && Number.isFinite(time),
@@ -70,28 +70,28 @@ export class ReadingPositionStore {
           !Array.isArray(value) ||
           value.length > READING_POSITION_LIMIT ||
           !value.every(validEntry) ||
-          new Set(value.map((entry) => entry.documentId)).size !== value.length
+          new Set(value.map((entry) => entry.roomKey)).size !== value.length
         )
           return undefined;
         return value;
       },
     );
   }
-  load(documentId: string): ReadingPosition | null {
+  load(roomKey: string): ReadingPosition | null {
     const entries = this.record.read() ?? [];
-    const entry = entries.find((entry) => entry.documentId === documentId);
+    const entry = entries.find((entry) => entry.roomKey === roomKey);
     if (!entry) return null;
     entry.accessedAt = Date.now();
     this.record.write(entries);
     return entry.place;
   }
-  save(documentId: string, place: ReadingPosition, updatedAt: number): void {
+  save(roomKey: string, place: ReadingPosition, updatedAt: number): void {
     let entries = this.record.read() ?? [];
-    const previous = entries.find((entry) => entry.documentId === documentId);
+    const previous = entries.find((entry) => entry.roomKey === roomKey);
     // A background view flushing an earlier gesture must not overwrite the last active view.
     if (previous && previous.updatedAt > updatedAt) return;
-    entries = entries.filter((entry) => entry.documentId !== documentId);
-    entries.push({ documentId, place, updatedAt, accessedAt: updatedAt });
+    entries = entries.filter((entry) => entry.roomKey !== roomKey);
+    entries.push({ roomKey, place, updatedAt, accessedAt: updatedAt });
     entries.sort((a, b) => b.accessedAt - a.accessedAt);
     entries.length = Math.min(entries.length, READING_POSITION_LIMIT);
     this.record.write(entries);

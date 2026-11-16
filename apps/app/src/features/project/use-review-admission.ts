@@ -52,6 +52,8 @@ export function useReviewAdmission({
   const refused = useRef<{ itemKey: string; port: ReviewAdmissionPort } | null>(null);
   /** The focus and the pin's change as last reconciled: whichever differs from it is what moved. */
   const settled = useRef<{ focus?: string; pin?: string }>({});
+  /** The first reconcile with the review painted and read: where a restored place gives way, once. */
+  const reconciled = useRef(false);
   const { changes, status } = useOpenReviewChanges(review.controller);
   const requested = presented?.review ?? null;
 
@@ -68,6 +70,7 @@ export function useReviewAdmission({
         requested.itemKey === inline.itemKey;
       if (!names) {
         settled.current = {};
+        reconciled.current = false;
         review.controller.exitInlineReview();
         return;
       }
@@ -84,10 +87,12 @@ export function useReviewAdmission({
         }
         return;
       }
-      if (requested.changeId === settled.current.pin) return;
       // Until the review has painted and its changes are read, the controller's default (the
       // first change) would stand in for the one the pin names.
       if (!inline.shown || status !== "ready") return;
+      const first = !reconciled.current;
+      reconciled.current = true;
+      if (requested.changeId === settled.current.pin) return;
       settled.current.pin = requested.changeId;
       // A change that is gone (applied, discarded, regrouped) leaves the first, which then
       // replaces the stale id on the pin.
@@ -96,11 +101,12 @@ export function useReviewAdmission({
         review.controller.focusReviewChange(
           { documentId: inline.documentId, itemKey: inline.itemKey },
           change,
-          { scroll: true },
+          { scroll: true, keepRestoredPlace: first },
         );
       return;
     }
     settled.current = {};
+    reconciled.current = false;
     if (!requested || !presented?.documentId || !presented.scheme || !presented.path) {
       restoring.current = null;
       refused.current = null;

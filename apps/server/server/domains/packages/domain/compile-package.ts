@@ -11,7 +11,7 @@
  * fails only on a broken `mars.toml`; a saved Agent can still be unavailable, because a newer
  * reader finds an error the older one did not, or the item was never saved without one.
  */
-import { OPT_IN_TOOLS, TOOL_CATALOG } from "@meridian/contracts/agents";
+import { OPT_IN_TOOLS, type ReasoningLevel, TOOL_CATALOG } from "@meridian/contracts/agents";
 import { canonicalizeJsonObject, sha256 } from "./helpers.js";
 import {
   type AgentFields,
@@ -26,7 +26,6 @@ import {
   projectRules,
   readPackage,
   skillSlugOf,
-  storedAgentEffort,
   type ToolProjection,
 } from "./mars.js";
 import type { SkillFiles } from "./types.js";
@@ -59,7 +58,7 @@ export interface NormalizedAgentMetadata {
   name?: string;
   description?: string;
   model?: string;
-  effort?: "none" | "low" | "medium" | "high" | "xhigh";
+  effort?: ReasoningLevel;
   mode?: "primary" | "subagent";
   permission?: "read" | "edit";
   "model-invocable"?: boolean;
@@ -577,7 +576,8 @@ function rejectBrokenSubagents(drafts: Map<string, Draft>): void {
 
 function definitionOf(draft: Draft): CompiledAgentDefinition {
   const fields = draft.fields as AgentFields;
-  const effort = storedAgentEffort(fields.effort);
+  // `auto` and a missing key are the model's own default: nothing is stored.
+  const effort = fields.effort === "auto" ? null : fields.effort;
   const metadata: NormalizedAgentMetadata = {
     ...(fields.name !== null ? { name: fields.name } : {}),
     ...(fields.description !== null ? { description: fields.description } : {}),
@@ -585,7 +585,7 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
     ...(fields.mode !== null ? { mode: fields.mode } : {}),
     "model-invocable": fields["model-invocable"],
     "user-invocable": fields["user-invocable"],
-    ...(effort !== undefined ? { effort } : {}),
+    ...(effort !== null ? { effort } : {}),
     skills: { load: fields.skills.load, available: fields.skills.available },
     subagents: fields.subagents,
     ...(draft.permission !== undefined ? { permission: draft.permission } : {}),

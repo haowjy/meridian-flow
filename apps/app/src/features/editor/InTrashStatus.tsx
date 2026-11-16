@@ -4,7 +4,8 @@ import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useState } from "react";
 import { useTrashDiscards } from "@/client/query/useDocumentTrash";
 import { Button } from "@/components/ui/button";
-import { leftOutSentence, restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
+import { restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
+import { leftOutSentence } from "@/features/draft-review/ReviewMessageText";
 import { useDocumentTrashRestore } from "@/features/project/context/DocumentTrashRestoreProvider";
 import { useRestoreDiscard } from "@/features/project/context/use-restore-discard";
 

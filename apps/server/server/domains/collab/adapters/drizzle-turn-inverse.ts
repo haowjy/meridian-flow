@@ -212,11 +212,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const ids = await selectedDocuments(query);
       const rows = await history(ids);
       for (const row of rows) if (row.purgedDisposition) purged.set(row.id, row.purgedDisposition);
-      const draftIds = inverseDraftIds(query, rows);
       const parts: StoredInversePart[] = rows.map((part) => ({
         ...part,
         disposition: "pending",
       }));
+      const partsByDocument = new Map<string, StoredInversePart[]>();
+      for (const part of parts) {
+        const list = partsByDocument.get(part.documentId);
+        if (list) list.push(part);
+        else partsByDocument.set(part.documentId, [part]);
+      }
       const documents: InverseDocument[] = [];
       const removals = await input.removals.lookup(ids);
       const liveAvailability = new Map(
@@ -260,7 +265,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             liveRoom: removal ? null : liveRoomName,
             removal,
             createdInTurn: createdDocuments.has(documentId),
-            history: parts.filter((part) => part.documentId === documentId),
+            history: partsByDocument.get(documentId) ?? [],
             drafts: new Map(),
             excerptViews: new Map(),
             destinationOf: () => {
@@ -272,7 +277,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             string,
             InverseDocument["drafts"] extends ReadonlyMap<string, infer D> ? D : never
           >();
-          for (const draftId of draftIds) {
+          for (const draftId of inverseDraftIds(query, document.history)) {
             const read = await input.drafts.readDraftAt(draftId);
             const documentDraft = read?.documentDraft;
             if (

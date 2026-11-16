@@ -27,6 +27,7 @@ import { type Removal, removalSentence } from "@/features/project/context/Remove
 import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { type AppliedFact, type DraftNotice, hasLine, type RestoreReturned } from "./draft-notices";
+import { leftOutSentence } from "./ReviewMessageText";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
@@ -250,11 +251,12 @@ export function DraftNoticeLine({
     );
   }
   if (notice.status === "partial") {
-    const count = notice.leftOut;
+    const first = notice.appliedFirst.length;
+    const left = leftOutSentence(notice.leftOut);
     return (
       <ActionNotice
         data-command-notice="undo-partial"
-        sentence={leftOutSentence(count)}
+        sentence={first === 0 ? left : `${left} ${appliedFirstLine(first)}`}
         onDismiss={notice.dismiss}
         className={className}
       />
@@ -553,13 +555,6 @@ function factSentence(fact: AppliedFact): string {
     }
   }
 }
-
-/** What an Undo or Restore of a Discard couldn't bring back, wherever it says so. */
-export const leftOutSentence = (count: number) =>
-  plural(count, {
-    one: "# change couldn't come back: the text changed after it was discarded.",
-    other: "# changes couldn't come back: the text changed after they were discarded.",
-  });
 
 /** What a restore that did nothing says, wherever it was sent from. */
 export function restoreReturnedSentence(why: RestoreReturned | null): string {

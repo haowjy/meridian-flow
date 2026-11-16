@@ -74,7 +74,12 @@ import {
   viewOf,
 } from "./draft-notices";
 import { GroupApply } from "./group-apply";
-import type { ApplyLine, BranchCommandFailure, DraftRef } from "./review-command-types";
+import type {
+  ApplyLine,
+  BranchCommandFailure,
+  CommandRefusal,
+  DraftRef,
+} from "./review-command-types";
 import {
   buildFrame,
   inSchema,
@@ -1263,8 +1268,8 @@ export class DraftCommandOwner {
     const started = startDraftDiscardSession({
       target,
       history,
-      onNoticeEnd: () => {
-        if (handle) this.notices.partEnded(handle);
+      onNoticeEnd: (leftOut) => {
+        if (handle) this.notices.partEnded(handle, leftOut);
       },
       entry,
       registry: this.registry,
@@ -1427,7 +1432,7 @@ export class DraftCommandOwner {
     const own = [...scope.values()].map((ref) => this.generation(ref.itemKey));
     for (const key of own) this.discardedHere.add(key);
     for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: true, failure: null });
-    const failed = (failure: BranchCommandFailure | null) => {
+    const failed = (failure: CommandRefusal | null) => {
       for (const key of own) this.discardedHere.delete(key);
       if (this.active)
         for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false, failure });

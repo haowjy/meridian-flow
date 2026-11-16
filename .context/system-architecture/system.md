@@ -115,7 +115,7 @@ The model providers: Anthropic, OpenAI, DeepSeek and Gemini.
 Called through one gateway, with no fallback between providers. With no provider key, or `MODEL_PROVIDER=mock`, a mock provider runs in process.
 
 - Kind: external
-- Paths: `apps/server/server/lib/gateway/registry.ts`, `apps/server/server/lib/gateway/families.ts`, `apps/server/server/lib/gateway/provider-rows.ts`, `apps/server/server/lib/gateway/models-snapshot.json`, `apps/server/scripts/models-refresh.ts`, `.github/workflows/models-refresh.yml`
+- Paths: `apps/server/server/lib/gateway/registry.ts`, `apps/server/server/lib/gateway/families.ts`, `apps/server/server/lib/gateway/model-data.json`, `apps/server/server/lib/gateway/models-snapshot.json`, `apps/server/scripts/models-refresh.ts`, `.github/workflows/models-refresh.yml`
 - Docs: [gateway wiring CONTEXT](../../apps/server/server/lib/gateway/.context/CONTEXT.md), [gateway package CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/src/gateway/.context/CONTEXT.md), [runtime CONTEXT](../../apps/server/server/domains/runtime/.context/CONTEXT.md)
 
 ## workos

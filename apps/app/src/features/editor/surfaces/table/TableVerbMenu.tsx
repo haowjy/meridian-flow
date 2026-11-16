@@ -46,7 +46,6 @@ import {
   EditorMenuRadioGroup,
   EditorMenuRadioItem,
   EditorMenuSeparator,
-  EditorMenuShortcut,
   EditorMenuSub,
   EditorMenuSubContent,
   EditorMenuSubTrigger,
@@ -99,10 +98,10 @@ function TableVerbItem({
       variant={destructive ? "destructive" : "default"}
       blockedReason={blockedReason}
       onSelect={() => run(verb)}
+      note={shortcut}
     >
       {icon}
       {tableVerbLabel(verb)}
-      {shortcut ? <EditorMenuShortcut>{shortcut}</EditorMenuShortcut> : null}
     </EditorMenuItem>
   );
 }

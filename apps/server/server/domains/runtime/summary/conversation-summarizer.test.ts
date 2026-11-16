@@ -141,7 +141,7 @@ describe("conversation summarizer", () => {
         { role: "user", content: [{ type: "text", text: "Task" }] },
       ],
       tools: [{ type: "function", name: "read", description: "Read", inputSchema: {} }],
-      reasoning: "disabled",
+      reasoning: "none",
       promptCacheKey: "owner",
     };
     rig.input.retainedMessages = [{ role: "user", content: [{ type: "text", text: "Task" }] }];

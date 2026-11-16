@@ -1,9 +1,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AgentCatalogItem, ReasoningChoice, ReasoningLevel } from "@meridian/contracts/agents";
-import { agentsRootOf, REASONING_LEVELS } from "@meridian/contracts/agents";
-import type { ModelOption } from "@meridian/contracts/protocol";
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
+import { agentsRootOf } from "@meridian/contracts/agents";
+import type { ModelList, ModelOption } from "@meridian/contracts/protocol";
 import { NO_OVERRIDES, type ThreadOverrides } from "@meridian/contracts/threads";
+import { resolveReasoning } from "@meridian-flow/runtime/gateway";
 import { Settings2 } from "lucide-react";
 import { type CSSProperties, type RefObject, useLayoutEffect, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { handleListKeys } from "@/components/ui/list-keys";
 import { ListLine, ListRow } from "@/components/ui/list-row";
+import { LabelNote } from "@/components/ui/marks";
 import { Picker, PickerSearch, PickerSection } from "@/components/ui/picker";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -58,7 +60,7 @@ type AgentPickerPanelProps = {
   /** The chosen Agent's slug and overrides (for a started chat, the bound ones). */
   current: { slug: string | null; overrides: ThreadOverrides };
   mode: AgentPickerMode;
-  models: ModelOption[] | null;
+  options: ModelList | null;
   /** The project whose Agent files "Open" and "Manage Agents" reach. */
   projectId: string;
   /** Closes the picker's popover: after a handoff, and before it opens a file or the Agents tab. */
@@ -79,7 +81,7 @@ export function AgentPickerPanel({
   status,
   current,
   mode,
-  models,
+  options,
   projectId,
   onClose,
   focusRefs,
@@ -245,13 +247,17 @@ export function AgentPickerPanel({
   };
   const overrides = overridesFor(shown);
   const runsOn = overrides.model ?? shown.model;
-  const option = (id: string | null) => (id ? models?.find((model) => model.id === id) : undefined);
+  const option = (id: string | null) =>
+    id ? options?.models.find((model) => model.id === id) : undefined;
   const runsOnOption = option(runsOn);
   const awaitsBinding = shown === own && bound.isPending;
   const bindingFailed = shown === own && bound.isError;
   // Reasoning as the gateway settles it on the model: the Agent's own level, and the one it runs at.
-  const ownLevel = settledReasoning(shown.effort, runsOnOption);
-  const thinksAt = overrides.effort ? settledReasoning(overrides.effort, runsOnOption) : ownLevel;
+  const levels = options?.reasoningLevels ?? [];
+  const ownLevel = settledReasoning(shown.effort, runsOnOption, levels);
+  const thinksAt = overrides.effort
+    ? settledReasoning(overrides.effort, runsOnOption, levels)
+    : ownLevel;
 
   return (
     <Picker>
@@ -404,15 +410,17 @@ export function AgentPickerPanel({
                   <ModelChoices
                     agent={shown}
                     runsOn={runsOn}
-                    models={models}
+                    models={options?.models ?? null}
                     onChoose={(id) => {
                       // A reasoning override follows the model: settled on it, and dropped once
                       // it is the new model's own level.
                       const next = option(id);
-                      const effort = overrides.effort && settledReasoning(overrides.effort, next);
+                      const effort =
+                        overrides.effort && settledReasoning(overrides.effort, next, levels);
                       adjust(shown, {
                         model: id === shown.model ? null : id,
-                        effort: effort === settledReasoning(shown.effort, next) ? null : effort,
+                        effort:
+                          effort === settledReasoning(shown.effort, next, levels) ? null : effort,
                       });
                     }}
                   />
@@ -590,18 +598,14 @@ function ReasoningChoices({
 }: {
   model: ModelOption | undefined;
   /** The Agent's own level on this model; null when it leaves reasoning to the model. */
-  own: ReasoningChoice | null;
-  thinksAt: ReasoningChoice | null;
-  onChoose: (level: ReasoningChoice | null) => void;
+  own: string | null;
+  thinksAt: string | null;
+  onChoose: (level: string | null) => void;
 }) {
   // A model with no levels to choose leaves the models the whole column.
-  if (!model || (model.efforts.length === 0 && !model.canDisable)) return null;
+  if (!model || model.efforts.length === 0) return null;
   // The Agent's own level is marked Default; an Agent that names none gets a Default of its own.
-  const levels: (ReasoningChoice | null)[] = [
-    ...(own === null ? [null] : []),
-    ...(model.canDisable ? (["disabled"] as const) : []),
-    ...model.efforts,
-  ];
+  const levels: (string | null)[] = [...(own === null ? [null] : []), ...model.efforts];
   return (
     <section aria-label={t`Reasoning on ${model.name}`} className="shrink-0">
       <div aria-hidden className={dropdownMenuSeparatorClass} />
@@ -621,9 +625,7 @@ function ReasoningChoices({
               onClick={() => onChoose(level)}
             >
               {level ? reasoningName(level) : t`Default`}
-              {level && level === own ? (
-                <span className="text-xs text-muted-foreground">{t`Default`}</span>
-              ) : null}
+              {level && level === own ? <LabelNote>{t`Default`}</LabelNote> : null}
             </button>
           </li>
         ))}
@@ -633,29 +635,19 @@ function ReasoningChoices({
 }
 
 /**
- * The level a model runs a reasoning choice at, settled as the gateway's `resolveReasoning` does:
- * the nearest level it offers (a tie goes higher), Off as its lowest level where it can't turn
- * reasoning off, and null (the model's own default) for adaptive or no choice.
+ * The level a model runs a requested level at, as the gateway's `resolveReasoning` settles it on
+ * Mars's ladder; null (the model's own default) for no request. Until the ladder has loaded the
+ * request stands as asked.
  */
 function settledReasoning(
-  choice: ReasoningChoice | null,
+  requested: string | null,
   model: ModelOption | undefined,
-): ReasoningChoice | null {
-  if (!choice || choice === "adaptive") return null;
-  if (!model) return choice;
-  if (choice === "disabled" && model.canDisable) return "disabled";
-  const rank = (level: ReasoningLevel) => REASONING_LEVELS.indexOf(level);
-  const wanted = rank(choice === "disabled" ? "low" : choice);
-  const distance = (level: ReasoningLevel) => Math.abs(rank(level) - wanted);
-  return model.efforts.reduce<ReasoningLevel | null>(
-    (best, level) =>
-      best === null ||
-      distance(level) < distance(best) ||
-      (distance(level) === distance(best) && rank(level) > rank(best))
-        ? level
-        : best,
-    null,
-  );
+  levels: readonly string[],
+): string | null {
+  if (!requested) return null;
+  if (!model) return requested;
+  const settled = resolveReasoning(requested, { efforts: model.efforts }, levels);
+  return settled === "default" ? null : settled.effort;
 }
 
 function sameOverrides(a: ThreadOverrides, b: ThreadOverrides): boolean {
@@ -667,20 +659,25 @@ export function runsAvailable(models: readonly ModelOption[], id: string): boole
   return models.some((option) => option.id === id && option.available);
 }
 
-export function reasoningName(choice: ReasoningChoice): string {
-  switch (choice) {
+/** A level's label; a level on Mars's ladder with no label here shows by name. */
+export function reasoningName(level: string): string {
+  switch (level) {
+    case "none":
+      return t`Off`;
+    case "minimal":
+      return t`Minimal`;
     case "low":
       return t`Low`;
     case "medium":
       return t`Medium`;
     case "high":
       return t`High`;
+    case "xhigh":
+      return t`Extra high`;
     case "max":
       return t`Max`;
-    case "disabled":
-      return t`Off`;
-    case "adaptive":
-      return t`Adaptive`;
+    default:
+      return level;
   }
 }
 

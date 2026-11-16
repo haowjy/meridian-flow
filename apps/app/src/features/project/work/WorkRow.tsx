@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
 import { useWorks } from "@/client/query/useWorks";
 import { WorkName } from "@/components/app/WorkName";
 import { ListRow } from "@/components/ui/list-row";
+import { LabelNote } from "@/components/ui/marks";
 import { relativeTime } from "../relative-time";
 import { WorkTitleLine } from "./WorkTitleLine";
 
@@ -57,9 +58,7 @@ export function WorkRow({
         actions={
           liveState || actions ? (
             <>
-              {liveState ? (
-                <span className="px-1.5 text-xs text-muted-foreground">{liveState}</span>
-              ) : null}
+              {liveState ? <LabelNote className="px-1.5">{liveState}</LabelNote> : null}
               {actions}
             </>
           ) : null

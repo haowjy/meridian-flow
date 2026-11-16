@@ -16,6 +16,7 @@ import {
 } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
+import { markStepDone, touchedSince } from "./touched-since";
 
 type StackItem = Y.UndoManager["undoStack"][number];
 
@@ -58,6 +59,10 @@ const noop = () => {};
 const HISTORY_META = "meridian-editor-history";
 /** On a stack item: the range selection from just before the change it holds ran. */
 const RANGE_META = "meridian-editor-range";
+/** On a stack item: its `Guard`. */
+const GUARD_META = "meridian-editor-guard";
+
+type Guard = { dropped(): void };
 
 type RelativeSelection = ReturnType<typeof getRelativeSelection>;
 
@@ -230,10 +235,14 @@ export class DocumentHistory implements EditorHistoryHandle {
     if (!this.active) return false;
     const source = direction === "undo" ? this.undo : this.redo;
     const entry = direction === "undo" ? source.findLast((each) => !passedOver(each)) : source[0];
-    if (direction === "undo")
-      for (const over of source.slice(entry ? source.indexOf(entry) + 1 : 0))
-        if (over.kind === "apply") over.action.passed?.();
-    if (!entry) return false;
+    const over = direction === "undo" ? source.slice(entry ? source.indexOf(entry) + 1 : 0) : [];
+    const passed = () => {
+      for (const each of over) if (each.kind === "apply") each.action.passed?.();
+    };
+    if (!entry) {
+      passed();
+      return false;
+    }
     if (entry.kind === "apply") {
       source.splice(source.indexOf(entry), 1);
       insert(direction === "undo" ? this.redo : this.undo, entry);
@@ -243,9 +252,8 @@ export class DocumentHistory implements EditorHistoryHandle {
         void entry.action.undo().then((happened) => {
           if (!happened && entry.presses === press) this.reinstate(entry);
         });
-    } else {
-      this.runNative(direction, source, editor);
-    }
+      passed();
+    } else if (this.runNative(direction, source, editor)) passed();
     this.changed();
     return true;
   }
@@ -260,17 +268,45 @@ export class DocumentHistory implements EditorHistoryHandle {
   }
 
   /**
-   * Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary. An undo
-   * passes over an Apply that waits for a closed owner, as a press does.
+   * Undo may take the step back only while what it wrote stands as it left it (a Discard): Ctrl+Z
+   * drops it unrun once a later edit touched that text (`touchedSince`, from `markStepDone`), and
+   * calls `dropped`. Its Redo is guarded the same way, from the state the Redo left.
    */
-  private runNative(direction: "undo" | "redo", source: Entry[], editor: Editor): void {
+  guard(item: StackItem, dropped: () => void): void {
+    item.meta.set(GUARD_META, { dropped } satisfies Guard);
+  }
+
+  /** Takes a step out of the history: its owner undid it some other way. */
+  take(item: StackItem): void {
+    for (const stack of [this.manager.undoStack, this.manager.redoStack]) {
+      const at = stack.indexOf(item);
+      if (at >= 0) stack.splice(at, 1);
+    }
+    this.removeMissing(this.undo, new Set(this.manager.undoStack));
+    this.removeMissing(this.redo, new Set(this.manager.redoStack));
+    this.changed();
+  }
+
+  /**
+   * Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary or reach a
+   * guarded step: that one runs alone, once its guard says it still can. An undo passes over an
+   * Apply that waits for a closed owner, as a press does.
+   */
+  private runNative(direction: "undo" | "redo", source: Entry[], editor: Editor): boolean {
     const segment: Extract<Entry, { kind: "yjs" }>[] = [];
     if (direction === "undo") {
       for (let index = source.length - 1; index >= 0; index--) {
         const entry = source[index];
         if (entry && passedOver(entry)) continue;
         if (!entry || entry.kind === "apply") break;
+        const guard = entry.item.meta.get(GUARD_META) as Guard | undefined;
+        if (guard && segment.length) break;
         segment.push(entry);
+        if (!guard) continue;
+        if (!touchedSince(this.manager.doc, entry.item)) break;
+        this.take(entry.item);
+        guard.dropped();
+        return false;
       }
     } else {
       for (const entry of source) {
@@ -298,6 +334,11 @@ export class DocumentHistory implements EditorHistoryHandle {
     if (popped && generated) {
       const range = popped.meta.get(RANGE_META) as RelativeSelection | undefined;
       if (range) generated.meta.set(RANGE_META, range);
+      const guard = popped.meta.get(GUARD_META) as Guard | undefined;
+      if (guard) {
+        markStepDone(this.manager.doc, generated);
+        this.guard(generated, guard.dropped);
+      }
       const known = popped.meta.get(HISTORY_META) as Entry | undefined;
       const moved: Entry = {
         kind: "yjs",
@@ -307,6 +348,7 @@ export class DocumentHistory implements EditorHistoryHandle {
       generated.meta.set(HISTORY_META, moved);
       insert(direction === "undo" ? this.redo : this.undo, moved);
     }
+    return true;
   }
 
   /**

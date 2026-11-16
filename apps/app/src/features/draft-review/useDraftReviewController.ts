@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { keepsRestoredPlace } from "@/core/editor/reading-position-navigation";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -84,11 +85,12 @@ export type DraftReviewController = {
    * Focus one change: in the manuscript and in every list. `scroll` brings it
    * into view. `review` is the review the caller meant: a caller that waited
    * (a command's answer) may find another one open, and then nothing happens.
+   * `keepRestoredPlace`: an editor that reopened at the writer's place stays there.
    */
   focusReviewChange: (
     review: DraftReviewSelection,
     change: ReviewChangeTarget,
-    options?: { scroll?: boolean; instant?: boolean },
+    options?: { scroll?: boolean; instant?: boolean; keepRestoredPlace?: boolean },
   ) => void;
   toast: ReviewToast | null;
   dismissToast: (id: number) => void;
@@ -213,7 +215,7 @@ export function useDraftReviewController({
     (
       review: DraftReviewSelection,
       change: ReviewChangeTarget,
-      options?: { scroll?: boolean; instant?: boolean },
+      options?: { scroll?: boolean; instant?: boolean; keepRestoredPlace?: boolean },
     ) => {
       // The identity is checked before anything is touched: the open review, and
       // the editor showing it, are the ones this focus was meant for.
@@ -229,7 +231,7 @@ export function useDraftReviewController({
       )
         return;
       runtime.editor.commands.setReviewActiveChange(change.id);
-      if (options?.scroll)
+      if (options?.scroll && !(options.keepRestoredPlace && keepsRestoredPlace(runtime.editor)))
         runtime.editor.commands.scrollReviewChangeIntoView(change.id, {
           instant: options.instant,
         });

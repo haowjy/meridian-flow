@@ -42,6 +42,7 @@ import {
 } from "@/features/draft-review/useReviewHeader";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { focusIsFree, lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
+import { cn } from "@/lib/utils";
 import { DocumentVersionMenu } from "./DocumentVersionMenu";
 
 export type DraftReviewBandProps = {
@@ -157,7 +158,11 @@ export function DraftReviewBand({
   const controls = (
     <span
       ref={controlsRef}
-      className="ml-auto flex shrink-0 items-center gap-1.5 font-sans text-xs"
+      // Finished, its status line may hold a failure, which wraps across the line's width.
+      className={cn(
+        "ml-auto flex items-center gap-1.5 font-sans text-xs",
+        finished ? "min-w-0 grow" : "shrink-0",
+      )}
       data-draft-review-controls
     >
       <ChangeListPopover header={header} />
@@ -181,6 +186,7 @@ export function DraftReviewBand({
         </>
       ) : null}
       <ReviewStateInline
+        itemKey={itemKey}
         finished={finished}
         completing={header.completing}
         next={header.next}

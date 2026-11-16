@@ -7,6 +7,8 @@
  * composition root may bypass this and call createGateway() directly with
  * secrets from a secret store.
  */
+
+import { effortLevels } from "@meridian-flow/mars-schema";
 import {
   assertModelsOnWire,
   createGateway,
@@ -147,6 +149,7 @@ export async function createGatewayFromEnv(
 
   const gateway = createGateway({
     providers,
+    reasoningLevels: effortLevels(),
     ...gatewayOptions,
     attemptStallMs: parseEnvMs(env.MODEL_CALL_STALL_MS) ?? gatewayOptions.attemptStallMs,
     attemptCeilingMs: parseEnvMs(env.MODEL_CALL_TIMEOUT_MS) ?? gatewayOptions.attemptCeilingMs,
