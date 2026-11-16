@@ -9,6 +9,7 @@ import {
   baseViewDelta,
   blocksEqual,
   composeGroups,
+  type ReviewGroup,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
 import { type BranchId, type DraftItemKey, draftItemKey } from "@meridian/contracts";
@@ -21,6 +22,7 @@ import type {
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
+import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import * as Y from "yjs";
 import {
   applyDraftClick,
@@ -31,12 +33,13 @@ import {
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
-import { type DocumentSession, isSignInLapse } from "@/core/editor/document-session";
+import type { DocumentSession } from "@/core/editor/document-session";
 import {
   type DraftRoomRead,
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
+import { readRoomOnce } from "@/core/editor/room-read-once";
 import {
   type ApplyClickOutcome,
   ApplyClickQueue,
@@ -49,7 +52,7 @@ import { startDraftDiscardSession } from "./draft-discard-session";
 import { type DiscardUndo, DraftNotices } from "./draft-notices";
 import { GroupApply } from "./group-apply";
 import type { BranchCommandFailure, DraftRef } from "./review-command-types";
-import { readBase } from "./review-frame";
+import { buildFrame, type ReviewFrame, readBase, roomContent } from "./review-frame";
 import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
@@ -129,6 +132,11 @@ type Entry = {
   roomKey: string;
   item: Item;
   binding: Binding | null;
+  /**
+   * The room that ended, kept for its projection only: it folds the clicks the server applied
+   * without a record (`ApplyClickQueue.landedUnrecorded`) until a room opens again.
+   */
+  ended: Binding | null;
   users: number;
   lease: DraftRoomRead | null;
   unwatchLease(): void;
@@ -163,6 +171,31 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
       return "gone";
   }
 }
+const family = (id: string) => id.replace(/~\d+$/, "");
+const baseRange = (group: ReviewGroup) =>
+  group.hunks.map((h) => `${h.baseTokens.from}-${h.baseTokens.to}`).join(",");
+/**
+ * The id `read` gives the change `shown` calls `group`. Identical edits share an id up to the `~n`
+ * they take in document order, so one id can name another edit in the other frame. On the same
+ * base the base tokens an edit replaces tell repeats apart; on different bases a shift can line one
+ * repeat up with another, so only an edit with no repeat in either frame is named.
+ */
+const sameChange = (
+  shown: readonly ReviewGroup[],
+  read: readonly ReviewGroup[],
+  sameBase: boolean,
+  group: ReviewGroup,
+) => {
+  const repeats = (groups: readonly ReviewGroup[]) =>
+    groups.filter((other) => family(other.id) === family(group.id));
+  const candidates = repeats(read);
+  if (sameBase) return candidates.find((other) => baseRange(other) === baseRange(group))?.id;
+  return repeats(shown).length === 1 && candidates.length === 1 ? candidates[0].id : undefined;
+};
+const inSchema = (schema: Schema, blocks: readonly PMNode[]) =>
+  blocks.every((block) => block.type.schema === schema)
+    ? blocks
+    : blocks.map((block) => schema.nodeFromJSON(block.toJSON()));
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
@@ -276,6 +309,7 @@ export class DraftCommandOwner {
         roomKey: session.roomKey,
         item,
         binding: null,
+        ended: null,
         users: 0,
         lease: null,
         unwatchLease: () => {},
@@ -306,6 +340,7 @@ export class DraftCommandOwner {
         changed: () => {
           for (const entry of item.rooms) {
             entry.binding?.runtime.invalidateBase();
+            entry.ended?.runtime.invalidateBase();
             this.holdRoom(entry);
           }
           this.publishQueue(item);
@@ -339,8 +374,9 @@ export class DraftCommandOwner {
 
   /** A draft with clicks outstanding keeps its room read, surface or not, to observe their record. */
   private holdRoom(entry: Entry) {
+    // A click whose room ended settles on its answer: no room needs opening to see its record.
     const pending =
-      this.textClicks(entry).length > 0 ||
+      this.textClicks(entry).some((click) => !click.roomEnded) ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId);
     if (pending && !entry.lease) {
       const lease = readDraftRoom(this.registry, {
@@ -364,15 +400,17 @@ export class DraftCommandOwner {
   }
 
   private detach(entry: Entry) {
-    const binding = entry.binding;
-    if (!binding) return;
+    const { binding, ended } = entry;
     entry.binding = null;
-    binding.stop();
+    entry.ended = null;
+    binding?.stop();
+    ended?.stop();
   }
 
   private attach(entry: Entry, session: DocumentSession) {
-    if (entry.binding?.session === session) return;
+    if (entry.binding?.session === session || entry.ended?.session === session) return;
     this.detach(entry);
+    if (!session.isRoomEnded()) entry.item.queue.roomOpened(entry.draftId);
     const hold = retainReviewRuntime(session);
     const binding: Binding = {
       session,
@@ -385,7 +423,10 @@ export class DraftCommandOwner {
       return entry.item.queue.project(
         entry.draftId,
         readBase(session.document, schema),
-        (base, before, after) => applyBase(schema, base, before, after),
+        // A headless room projects with a schema of its own each time: a click frozen on an earlier
+        // one is read into this one, or no block would ever equal the base.
+        (base, before, after) =>
+          applyBase(schema, base, inSchema(schema, before), inSchema(schema, after)),
       );
     });
     const record = session.document.getArray(APPLY_RECORD_ROOT);
@@ -417,14 +458,11 @@ export class DraftCommandOwner {
         (connection.disposition === "closed" || connection.disposition === "removed")
       ) {
         void this.resolveEnd(entry.ref, entry.draftId);
-      } else if (
-        snapshot.status === "destroyed" ||
-        connection?.kind === "reset" ||
-        connection?.kind === "terminal" ||
-        (connection?.kind === "unauthorized" && !isSignInLapse(connection))
-      ) {
-        this.detach(entry);
-        entry.item.queue.refuseUnsent(entry.draftId);
+      } else if (session.isRoomEnded()) {
+        entry.item.queue.roomEnded(entry.draftId);
+        // It records nothing more, but its rows go on showing what the queue applies.
+        entry.binding = null;
+        entry.ended = binding;
       }
       // A released room is kept while it holds typing it can still send; this lets it go.
       this.releaseIdle(entry);
@@ -729,6 +767,8 @@ export class DraftCommandOwner {
       return whole || tree
         ? this.captureOnReceipt(ref, { draftId: whole, tree }, restore, joint)
         : null;
+    if (target.kind === "groups" && !room)
+      return this.captureEnded(ref, target, restore, tree, joint);
     return this.captureText(ref, target, restore, tree, histories, joint);
   }
 
@@ -824,11 +864,18 @@ export class DraftCommandOwner {
     };
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
     this.setState(ref.itemKey, { failure: null });
+    const rebuilt = this.rebuilder(
+      entry.draftId,
+      target.kind === "draft" ? null : ids,
+      frame,
+      body,
+    );
     const frozen: FrozenApply = {
       body,
       optimistic,
       patched,
       acknowledged,
+      rebuild: rebuilt.rebuild,
       ...(joint ? { send: joint.send } : {}),
     };
     const scheduled = histories
@@ -857,11 +904,164 @@ export class DraftCommandOwner {
       this.bandApplies.add(band);
     }
     binding.runtime.projectNow();
-    const outcome = scheduled.outcome.then((answer) => {
-      joint?.answered(answer);
-      return this.settled(ref, entry.draftId, answer, restore);
+    return {
+      sent: true,
+      outcome: this.textOutcome(ref, entry.draftId, scheduled.outcome, restore, rebuilt, joint),
+    };
+  }
+
+  /**
+   * Some changes chosen on a frame whose room has ended (or isn't open yet): the click is built
+   * from the draft as the server holds it when it is sent (`rebuilder`).
+   */
+  private captureEnded(
+    ref: DraftRef,
+    target: GroupsTarget,
+    restore: boolean,
+    tree: { revision: string | null } | undefined,
+    joint?: Joint,
+  ): StartedApply | null {
+    const draftId = this.identities.get(ref.itemKey);
+    if (!draftId || this.records.get(draftId)?.ended) return null;
+    const { frame, groupIds } = target;
+    // The frame's own cut: what the rows fold while it is rebuilt, and what goes when the room
+    // can't be read (closed, access ended), so the server says why.
+    const body: ApplyClick = {
+      commandId: joint?.commandId ?? crypto.randomUUID(),
+      draftId,
+      snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
+      groupIds: [...groupIds],
+      baseViewDelta: [],
+      ...(restore ? { restore: true as const } : {}),
+      ...(tree ? { tree: { revision: tree.revision } } : {}),
+    };
+    const rebuilt = this.rebuilder(draftId, groupIds, frame, body);
+    const schema = frame.doc.type.schema;
+    const optimistic = frame.diff.base.blocks;
+    this.setState(ref.itemKey, { failure: null });
+    const outcome = this.item(ref).queue.enqueue({
+      body,
+      optimistic,
+      patched: applySpanPatches(
+        optimistic,
+        composeGroups(schema, frame, groupIds, "apply"),
+        "base",
+      ),
+      acknowledged: Promise.resolve(),
+      madeAfterRoomEnded: true,
+      rebuild: rebuilt.rebuild,
+      ...(joint ? { send: joint.send } : {}),
     });
-    return { sent: true, outcome };
+    return {
+      sent: true,
+      outcome: this.textOutcome(ref, draftId, outcome, restore, rebuilt, joint),
+    };
+  }
+
+  /**
+   * A text click again, for a room that ended before the server had its typing: the whole draft
+   * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
+   * server now. A choice is never widened: a chosen change goes only when the server's read has
+   * the same change (`sameChange`); any other stays (`stayed`).
+   * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
+   * it applies (the read's own blocks are another schema's). A room that
+   * can't be read sends the click as it was frozen, and the server says why; `needsReload` when
+   * only a reload of this tab could read it.
+   */
+  private rebuilder(
+    draftId: string,
+    chosen: readonly string[] | null,
+    shown: ReviewFrame,
+    body: ApplyClick,
+  ): { rebuild: NonNullable<FrozenApply["rebuild"]>; stayed: string[]; needsReload: boolean } {
+    const result = {
+      stayed: [] as string[],
+      needsReload: false,
+      rebuild: async (signal: AbortSignal) => {
+        const fields = {
+          commandId: body.commandId,
+          draftId,
+          ...(body.restore ? { restore: true as const } : {}),
+          ...(body.tree ? { tree: body.tree } : {}),
+        };
+        if (!chosen)
+          return {
+            body: { ...fields, whole: true as const, groupIds: [], baseViewDelta: [] },
+            optimistic: [],
+            patched: [],
+          };
+        const fresh = await readRoomOnce(draftRoomName(draftId), signal);
+        if (!(fresh instanceof Y.Doc)) {
+          result.needsReload = fresh === "schema";
+          return undefined;
+        }
+        try {
+          const content = roomContent(fresh);
+          const schema = content.doc.type.schema;
+          const base = readBase(fresh, schema);
+          const frame = buildFrame(fresh, base, content.doc);
+          const sameBase = blocksEqual(base, inSchema(schema, shown.diff.base.blocks));
+          const going = shown.groups.flatMap((group) => {
+            const read =
+              chosen.includes(group.id) && sameChange(shown.groups, frame.groups, sameBase, group);
+            return read ? [{ shown: group.id, read }] : [];
+          });
+          result.stayed = chosen.filter((id) => !going.some((pair) => pair.shown === id));
+          if (!going.length) return null;
+          return {
+            body: {
+              ...fields,
+              snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
+              groupIds: going.map((pair) => pair.read),
+              baseViewDelta: [],
+            },
+            optimistic: shown.diff.base.blocks,
+            patched: applySpanPatches(
+              shown.diff.base.blocks,
+              composeGroups(
+                shown.doc.type.schema,
+                shown,
+                going.map((pair) => pair.shown),
+                "apply",
+              ),
+              "base",
+            ),
+          };
+        } finally {
+          fresh.destroy();
+        }
+      },
+    };
+    return result;
+  }
+
+  /** A text click's outcome, with the changes a rebuild left in the draft said on its item. */
+  private textOutcome(
+    ref: DraftRef,
+    draftId: string,
+    outcome: Promise<ApplyClickOutcome>,
+    restore: boolean,
+    rebuilt: { stayed: string[]; needsReload: boolean },
+    joint?: Joint,
+  ): Promise<CommandOutcome> {
+    return outcome.then((answer) => {
+      joint?.answered(answer);
+      const settled = this.settled(ref, draftId, answer, restore);
+      // The server can't take a click from this build until the tab reloads: say that, not "try again".
+      if (rebuilt.needsReload && answer.status === "refused" && answer.reason === "unsynced")
+        this.setState(
+          ref.itemKey,
+          { failure: { code: "apply-refused", serverCode: "needs_reload" } },
+          draftId,
+        );
+      else if (rebuilt.stayed.length && settled.kind !== "change-refused")
+        this.setState(
+          ref.itemKey,
+          { failure: { code: "apply-refused", serverCode: "left_out_not_on_server" } },
+          draftId,
+        );
+      return settled;
+    });
   }
 
   /**

@@ -102,13 +102,44 @@ waits behind the text clicks before it. Draft rooms are resources the item attac
 `bind(ref, session)` installs a replaceable session binding on that draft's room. A text
 click names its draft (`body.draftId`), and only that room records it, folds it, holds a
 reader for it (following replacement sessions even without a surface) and cancels it on
-close, so a newer draft under the same key can't inherit an old click. Retiring a
-session refuses only its draft's unsent clicks.
+close, so a newer draft under the same key can't inherit an old click. The client never
+refuses a click: when its draft's room ends (reset, terminal, access ended, destroyed) before
+the click is sent, the click goes anyway (`roomEnded`), and the server's answer is the truth
+about the draft (closed, archived, applied).
+
 
 `apply` with the draft's room ready in this tab synchronously freezes the `draftId`, Yjs
 snapshot, reviewed base blocks, selected ids, the result of applying those groups and one
 room-base-to-O delta. Its acknowledgement barrier waits for the server to acknowledge every
-local update in the cut before sending. The queue keeps its own `readDraftRoom` lease until
+local update in the cut before sending; a room that ends releases it, since it will deliver
+nothing more. A whole-draft target then goes as the whole cut below (`wholeCut`), the draft
+as the server holds it. Typing the room never delivered stays in this browser's copy of the
+draft room and replays into the draft, as a change by You, the next time that room opens. A
+whole cut leaves the draft with no changes, so nothing lists it and nothing opens its room: the
+typing shows again only when another change comes to that draft.
+A click on some changes is built again when it reaches the head of the queue (`rebuilder`): the
+draft is read as the server holds it into a fresh document (`readRoomOnce`, one sync, nothing sent),
+its review recomputed, and the chosen changes it finds go as an ordinary frozen click from that
+read, so the snapshot is the server's exactly. A chosen change goes only when the read has the
+same change (`sameChange`). Identical edits are numbered `X`, `X~1` in document order, so one id
+can name another edit in the other frame. When the read's base equals the base the writer chose
+on, an edit is the one with the same id up to its `~n` over the same base tokens. When the bases
+differ (another tab applied a change, an earlier click left part out), a shift can line one
+repeat up with another, so only an edit with no repeat in either frame goes, by its id; a
+repeated one stays. Any other chosen change (typing the server never got, an edit changed since
+by another client) stays in the draft, shown as `left_out_not_on_server`: a choice is never widened. Nothing left sends nothing.
+The read is a request like a send: unanswered in 10 seconds, it closes and is tried again, then
+the head stalls with Retry; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
+server won't open (closed, access ended) sends the frame's own cut and the server says why. A room
+this build can't open (schema stale or superseded) can't be read either: when the server then
+answers `unsynced`, the item says `needs_reload` with the deploy notice's own words
+(`ReloadWords`), since only a reload lets the click succeed. The ended room stays bound for its
+projection only (`Entry.ended`): its rows fold the click while it runs, as any Apply's do, and
+keep folding it once it lands (`landedUnrecorded`), since no record will show, until a room opens
+on the draft again. No lease opens a room for such a click. A click
+whose typing was acknowledged before the room ended goes frozen as it is. Either way a click whose
+room ended settles on its answer, and never waits on the server's sync (`unsynced` stays for live
+rooms). The queue keeps its own `readDraftRoom` lease until
 terminal. With no room ready, a whole-draft target (`{kind: "draft", draftId}`, the list's id)
 sends a whole cut instead (`captureOnReceipt`): the server applies every change its copy of the
 draft holds on receipt. That click has no optimistic base and no room to record it (`frozenOn`
@@ -134,8 +165,8 @@ and unknown-delivery states, shown on the folder row with Retry, as a document's
 list response's `folders[].revision`, read once when the command first goes, so a resend
 carries the same body; folders lead the items. Every member's queue settles from the one answer,
 `conflict` included, and the group's answer, which makes the Undo step and the notice, is the
-first a sent member settles on: the post's, a Retry's, or a closed queue's lookup (a queue
-refuses an unsent click itself, under the group's id, and that refusal is not the command's); groups are enqueued in item order in one turn, so two groups never wait on
+first a sent member settles on: the post's, a Retry's, or a closed queue's lookup (an unsent
+member ends cancelled, and that is not the command's answer); groups are enqueued in item order in one turn, so two groups never wait on
 each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
 the same id.
 

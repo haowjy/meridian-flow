@@ -3,6 +3,8 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
+import { reloadNow } from "@/client/release/release";
+import { ReloadWords } from "@/components/app/AppStatus";
 import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
 
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
@@ -37,6 +39,8 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This chat is in the trash, so its drafts are frozen. Restore the chat to apply them.`;
     case "ancestor_taken":
       return msg`A document blocks part of this location. Move or rename it, then apply again.`;
+    case "left_out_not_on_server":
+      return msg`The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft.`;
     default:
       return undefined;
   }
@@ -44,7 +48,12 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** State answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return serverCode === "stale" || serverCode === "needs_restore" || serverCode === "changed";
+  return (
+    serverCode === "stale" ||
+    serverCode === "needs_restore" ||
+    serverCode === "changed" ||
+    serverCode === "left_out_not_on_server"
+  );
 }
 
 /**
@@ -72,6 +81,15 @@ export function ReviewMessageText({
     case "unapply-refused":
       return <Trans>Couldn't undo this Apply. Try again.</Trans>;
     case "apply-refused":
+      if (serverCode === "needs_reload")
+        return (
+          <>
+            <Trans>Couldn't apply this draft.</Trans>{" "}
+            <button type="button" className="text-button coarse:min-h-11" onClick={reloadNow}>
+              <ReloadWords />
+            </button>
+          </>
+        );
       return (
         <>
           {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}

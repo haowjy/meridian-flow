@@ -7493,6 +7493,10 @@ msgstr ""
 msgid "The server didn't answer."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft."
+msgstr ""
+
 #: src/features/connections/ConnectionPanel.tsx
 msgid "The server didn't list its tools."
 msgstr ""
@@ -7889,6 +7893,10 @@ msgstr ""
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
 msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+#~ msgid "This draft moved on since you pressed Apply, so it wasn't applied."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."

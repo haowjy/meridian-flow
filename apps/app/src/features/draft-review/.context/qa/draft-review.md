@@ -133,8 +133,8 @@ server resolves on receipt.
 | Drop the answer | The same body and id retry after 1, 2, and 4 seconds; then the item shows Retry and no successor sends. |
 | Slow ten clicks | Groups leave together; Applying uses reserved space after 500 ms and completion is FIFO. |
 | Navigate to the Changes source during the head | The owner receives the answer and record and settles without a mounted editor. |
-| Hold the final draft update, click Apply, archive the Work in another tab | The unsent click refuses silently, with no failure or Applying/Retry limbo. Unarchive and reopen: a fresh Apply works. |
-| Sent Apply loses its answer and the session rebuilds | The sent id remains pending until retry, lookup, or its room record; unsent successors refuse. |
+| Hold the final draft update, click Apply, archive the Work in another tab | The click is sent when the room ends; the server's `work_archived` answer reverts it silently, with no Applying/Retry limbo. Unarchive and reopen: a fresh Apply works. |
+| Sent Apply loses its answer and the session rebuilds | The sent id remains pending until retry, lookup, or its room record; unsent successors are sent after it. |
 | Reload with queued clicks | The sent head may finish; unsent clicks return as draft work. |
 | Disconnect before the record, close from another tab, reconnect | The head settles from its durable answer; queued clicks cancel without Retry. |
 | Live rebase before landing | Both edits survive the merge; no stale refusal or re-cut occurs. |
