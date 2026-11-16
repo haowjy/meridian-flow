@@ -392,9 +392,14 @@ function indexFor(
   parent: string,
   moving: string | undefined,
   position: Placement | undefined,
+  after?: string,
 ): { index: number; atEnd?: string } {
   const projection = cx.scope.writer.view(cx.scope.view);
   const siblings = childrenOf(projection, parent).filter((node) => node.id !== moving);
+  if (after !== undefined) {
+    const at = siblings.findIndex((node) => node.id === after);
+    if (at >= 0) return { index: at + 1 };
+  }
   if (!position || position.kind === "end") return { index: siblings.length };
   if (position.kind === "start") return { index: 0 };
   const written = pathFrom(cx, position.sibling);
@@ -470,6 +475,7 @@ function moveOne(
   filled: Array<{ folder: string; name: string; node: string }>,
   emptied: Array<{ folder: string; name: string }>,
   viaMany: boolean,
+  after?: string,
 ):
   | { done: Done; fail?: undefined; skip?: undefined }
   | { fail: Refused; done?: undefined; skip?: undefined }
@@ -541,7 +547,7 @@ function moveOne(
       `deleted: ${fromUri}; this move brought it back`,
     );
   const folder = makeDestination(cx, destination, filled);
-  const { index, atEnd } = indexFor(cx, folder, node.id, position);
+  const { index, atEnd } = indexFor(cx, folder, node.id, position, after);
   const oldParent = node.parent;
   const oldName = node.displayName;
   if (!sameParent || position || node.trashed) {
@@ -841,6 +847,9 @@ export function runTreeCommand(
       const arrived: string[] = [];
       let nothingToMake: string | undefined;
       let made = 0;
+      // Each item lands right after the one moved before it, so several keep their order at
+      // `start`, `before` and `after` alike.
+      let placedLast: string | undefined;
       for (const from of command.from) {
         const fromPath = pathFrom(cx, from);
         const leaf = fromPath.segments.at(-1) ?? "";
@@ -854,10 +863,11 @@ export function runTreeCommand(
           from,
           item,
           uriOf(to.area, item.segments, item.folder),
-          undefined,
+          command.position,
           filled,
           emptied,
           true,
+          placedLast,
         );
         if (result.skip) {
           if (result.skip.notMoved) notMoved.push(result.skip.notMoved);
@@ -865,6 +875,7 @@ export function runTreeCommand(
           nothingToMake ??= result.skip.node;
         } else if (result.done) {
           made += 1;
+          placedLast = result.done.subject;
           arrived.push(...result.done.arrived);
         } else notMoved.push(`${uriOfPath(cx, from)} (${result.fail?.status})`);
       }
