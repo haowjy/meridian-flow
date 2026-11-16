@@ -23,15 +23,13 @@ export function markEditorTarget(editor: Editor): void {
 export function mayRestoreReadingPosition(
   editor: Editor,
   documentId: string,
-  review: boolean,
   address: string,
 ): boolean {
   const url = new URL(address);
   return (
-    !review &&
     !pending.has(documentId) &&
     !targeted.has(editor) &&
-    !url.searchParams.has("item") &&
+    !url.searchParams.has("change") &&
     !url.hash
   );
 }

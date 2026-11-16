@@ -417,7 +417,6 @@ function ActiveSessionEditorView({
     accountId,
     documentId,
     active,
-    review: inReview || held,
     session,
     signal: accountEpoch,
   });

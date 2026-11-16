@@ -676,8 +676,8 @@ from the wire alone, with nothing stored between handshakes.
   have unmounted (`retireReplaced`, quarantined by persistence name), and its copy then goes by the
   older-copy path below, like any older incarnation: read whole against the new session's first
   handshake, so words another tab wrote into the same copy meanwhile come back (once). Holders
-  follow through `observeReplacement` (live bindings and open tabs, draft room reads); a review
-  mount carries its reading position across it (`use-reading-position.ts`).
+  follow through `observeReplacement` (live bindings and open tabs, draft room reads); a mount keeps its
+  reading position across it, because the store is keyed by room (`use-reading-position.ts`).
 - **One notice store per account.** A hand-back notice is a record that holds its own words
   (`hand-back-notices.ts`, IndexedDB `meridian-handback:<account>`, one store keyed by id and
   indexed by the copy's database name). The copies are working storage only: nothing in them says
