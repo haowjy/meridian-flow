@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** Real persistence contract for the two HTTP owner gates and shared root creation policy. */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import * as schema from "@meridian/database/schema";
@@ -195,7 +196,11 @@ describe("root creation policy shared by POST /api/threads and POST /api/project
     };
     const create = async (overrides: Partial<typeof args> = {}) => {
       try {
-        return await createThreadForProject(deps, { ...args, ...overrides });
+        return await createThreadForProject(deps, {
+          overrides: NO_OVERRIDES,
+          ...args,
+          ...overrides,
+        });
       } catch (error) {
         throwThreadCreationError(error);
       }

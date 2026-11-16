@@ -5,7 +5,7 @@
  */
 
 import { z } from "zod";
-import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
+import { type AgentSelection, agentSelectionSchema, REASONING_LEVELS } from "../agents/index.js";
 import type { DraftOwnerKey } from "../branches/owner.js";
 import {
   CONTEXT_URI_SCHEMES,
@@ -33,7 +33,12 @@ import type {
   TurnStatus,
   TurnUsage,
 } from "../threads/index.js";
-import { threadSchema } from "../threads/thread.js";
+import {
+  NO_OVERRIDES,
+  type ThreadOverrides,
+  threadOverridesSchema,
+  threadSchema,
+} from "../threads/thread.js";
 import type { RemovalIdentity } from "../tree-change.js";
 import type { AiWriteMode, Work, WorksSnapshot } from "../works/index.js";
 import type { DocumentRemovalRecord } from "./document-removal.js";
@@ -477,6 +482,8 @@ export type CreateThreadRequest = {
    * given, it also becomes that Work's default.
    */
   aiWriteMode?: AiWriteMode;
+  /** What the new chat runs on instead of its Agent's own. */
+  overrides: ThreadOverrides;
 };
 
 export type CreateThreadResponse = Thread;
@@ -489,10 +496,43 @@ export const forkThreadRequestSchema = z
   })
   .strict();
 
+/** Who made a model, whoever serves it: the picker shows the maker's mark. */
+export const MODEL_MAKERS = ["anthropic", "openai", "deepseek", "google"] as const;
+export type ModelMaker = (typeof MODEL_MAKERS)[number];
+
+/** `GET /api/models`: every model Flow knows, for the Agent picker. */
+export const modelListSchema = z.object({
+  models: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      /** False when this deployment can't run it (no provider key): a chat set to it falls back to its Agent's model. */
+      available: z.boolean(),
+      /** Who made the model, for its mark; null for one the registry doesn't know (a mock). */
+      maker: z.enum(MODEL_MAKERS).nullable(),
+      /** The levels it accepts, in the order a picker shows them. */
+      efforts: z.array(z.enum(REASONING_LEVELS)),
+      /** Whether reasoning can be switched off (`disabled`); otherwise `disabled` runs at the lowest level. */
+      canDisable: z.boolean(),
+    }),
+  ),
+});
+export type ModelList = z.infer<typeof modelListSchema>;
+export type ModelOption = ModelList["models"][number];
+
+/** `PATCH /api/threads/:threadId/overrides`: sets both; `null` clears one, so the Agent's own applies. */
+export const setThreadOverridesRequestSchema = z.strictObject({
+  commandId: z.uuid(),
+  overrides: threadOverridesSchema,
+});
+export type SetThreadOverridesRequest = z.infer<typeof setThreadOverridesRequestSchema>;
+
 export const handoffThreadRequestSchema = z.strictObject({
   id: z.uuid(),
   originTurnId: z.uuid(),
   agentSelection: agentSelectionSchema,
+  /** Omitted means none, as a tab from before overrides sends it. */
+  overrides: threadOverridesSchema.default(NO_OVERRIDES),
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 

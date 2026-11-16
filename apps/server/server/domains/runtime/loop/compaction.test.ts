@@ -93,6 +93,7 @@ function thread(ref: string | null = "c12"): Thread {
     initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
+    overrides: { model: null, effort: null },
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: null,

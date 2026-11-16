@@ -61,6 +61,8 @@ type ListRowProps = {
    * Rows whose control carries `data-selection-run` (start, middle, end) join into one block.
    */
   selected?: boolean;
+  /** The row another part of the surface shows (a picker's detail): the hover fill, held. */
+  pointed?: boolean;
   /** Disables the main control; the actions beside it stay live. */
   disabled?: boolean;
   /**
@@ -122,6 +124,7 @@ export function ListRow({
   onOpen,
   current = false,
   selected = false,
+  pointed = false,
   disabled: disabledProp,
   gone = false,
   crossedOut = false,
@@ -212,6 +215,7 @@ export function ListRow({
         "has-[>[data-selection-run=start]]:rounded-b-none has-[>[data-selection-run=middle]]:rounded-none has-[>[data-selection-run=end]]:rounded-t-none",
         selected && !current && role.selected,
         !current && !selected && !disabled && "hover:bg-ink-fill",
+        pointed && !current && !selected && "bg-ink-fill",
       )}
     >
       {wrapControl ? wrapControl(control) : control}

@@ -2270,6 +2270,18 @@
           "notNull": true,
           "default": "'direct'"
         },
+        "model_override": {
+          "name": "model_override",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "effort_override": {
+          "name": "effort_override",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -8741,7 +8753,7 @@
       "checkConstraints": {
         "commands_kind_valid": {
           "name": "commands_kind_valid",
-          "value": "\"commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create')"
+          "value": "\"commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides')"
         }
       },
       "isRLSEnabled": false

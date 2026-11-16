@@ -12,22 +12,17 @@
  * brief reports it as the open request.
  */
 import { t } from "@lingui/core/macro";
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 import { Forward, GitFork } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
-import {
-  dropdownGroupLabelClass,
-  dropdownSurfaceVariants,
-} from "@/components/ui/dropdown-presentation";
+import { useModelOptions } from "@/client/query/useModelOptions";
+import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
+import { dropdownSurfaceVariants } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { AgentPickerPanel } from "@/features/agents/AgentPicker";
-import {
-  type BoundAgent,
-  boundAgentRow,
-  type CreationAgent,
-  pickableAgents,
-} from "@/features/agents/creation-agent";
+import { type AgentChoice, AgentPickerPanel } from "@/features/agents/AgentPicker";
+import { type BoundAgent, boundAgentRow, pickableAgents } from "@/features/agents/creation-agent";
 import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
 
@@ -36,7 +31,7 @@ export type TurnDerivation = {
   /** The Agent the source chat is bound to, for the picker's default. */
   sourceAgent: BoundAgent;
   fork: (turnId: string) => void;
-  handoff: (turnId: string, agent: CreationAgent) => void;
+  handoff: (turnId: string, choice: AgentChoice) => void;
 };
 
 const TurnDerivationContext = createContext<TurnDerivation | null>(null);
@@ -105,23 +100,24 @@ function HandoffPicker({
   align: "start" | "end";
 }) {
   const [open, setOpen] = useState(false);
+  const collision = useDensityPopoverCollisionProps();
   const catalog = useAgentCatalog(open, derivation.projectId);
-  const selectedRef = useRef<HTMLButtonElement | null>(null);
-  const firstRef = useRef<HTMLButtonElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const agents = catalog.status === "ready" ? pickableAgents(catalog.agents ?? []) : [];
-  const selected = boundAgentRow(agents, derivation.sourceAgent);
+  const models = useModelOptions(open);
+  const agents = catalog.status === "ready" ? (catalog.agents ?? []) : [];
+  const selected = boundAgentRow(pickableAgents(agents), derivation.sourceAgent);
   const label = t`Hand off from here`;
   const ready = catalog.status;
-  // Land on the source's Agent so Enter hands off to it. The catalog may load
-  // after the picker opens; focus waits on the panel until a row exists.
+  // Land in the search, as every searchable picker does. The catalog may load after the
+  // picker opens; focus waits on the panel until the search exists.
   useEffect(() => {
     if (!open) return;
     const frame = requestAnimationFrame(() => {
       const content = contentRef.current;
       if (!content || content.ownerDocument.activeElement !== content) return;
-      (selectedRef.current ?? firstRef.current ?? retryRef.current)?.focus();
+      (searchRef.current ?? retryRef.current)?.focus();
     });
     return () => cancelAnimationFrame(frame);
   }, [open, ready, agents.length]);
@@ -136,23 +132,22 @@ function HandoffPicker({
         ref={contentRef}
         tabIndex={-1}
         align={align}
+        {...collision}
         aria-label={t`Hand off to an Agent`}
-        className={cn(dropdownSurfaceVariants({ measure: "identity" }), "text-tier-chat")}
+        className={cn(dropdownSurfaceVariants({ measure: "split" }), "text-tier-chat")}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           contentRef.current?.focus();
         }}
       >
-        <p className={dropdownGroupLabelClass}>{t`Hand off to`}</p>
         <AgentPickerPanel
           status={catalog}
-          agents={agents}
-          selectedAgent={selected}
-          focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
-          onSelect={(agent) => {
-            setOpen(false);
-            derivation.handoff(turnId, agent);
-          }}
+          current={{ slug: selected?.selection.slug ?? null, overrides: NO_OVERRIDES }}
+          mode={{ kind: "turn", onHandoff: (choice) => derivation.handoff(turnId, choice) }}
+          models={models}
+          focusRefs={{ search: searchRef, retry: retryRef }}
+          projectId={derivation.projectId}
+          onClose={() => setOpen(false)}
         />
       </PopoverContent>
     </Popover>

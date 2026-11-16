@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * Compaction's two commits exercise real inbox, lease, epoch, and journal transactions.
  *
@@ -487,6 +488,7 @@ else
       const { answer, results } = await documentTail(rig);
       const source = (await rig.repos.threads.findById(rig.threadId))!;
       const { thread: forkBefore } = await rig.repos.threads.createDerivedPrimary({
+        overrides: NO_OVERRIDES,
         aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
@@ -516,6 +518,7 @@ else
       await run.execute();
       const c = (await rig.repos.turns.findById(run.executionTurnId))!;
       const { thread: forkAfter } = await rig.repos.threads.createDerivedPrimary({
+        overrides: NO_OVERRIDES,
         aiWriteMode: "direct",
         id: crypto.randomUUID(),
         source,
@@ -711,6 +714,7 @@ else
         gateway: rig.deps.gateway,
         eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
+        threads: rig.deps.repos.threads,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
@@ -808,6 +812,7 @@ else
         gateway: rig.deps.gateway,
         eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
+        threads: rig.deps.repos.threads,
         prefixCacheStateFor: async () => ({ state: "warm", reason: "reusable_prefix" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,
@@ -899,6 +904,7 @@ else
         gateway: rig.deps.gateway,
         eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
+        threads: rig.deps.repos.threads,
         prefixCacheStateFor: createPrefixCacheStateService({ repos: rig.repos })
           .prefixCacheStateFor,
         modelRequestDebug: rig.deps.modelRequestDebug,
@@ -2002,6 +2008,7 @@ else
         gateway: rig.deps.gateway,
         eventSink: rig.deps.eventSink,
         agentRevisions: rig.deps.agentRevisions,
+        threads: rig.deps.repos.threads,
         prefixCacheStateFor: async () => ({ state: "cold", reason: "ttl_expired" }),
         modelRequestDebug: rig.deps.modelRequestDebug,
         toolRegistry: rig.deps.toolRegistry,

@@ -8,6 +8,7 @@
  * the adapters (`assertModelsOnWire`) and run over every row when a gateway is created from env.
  */
 
+import type { ModelMaker } from "@meridian/contracts/protocol";
 import {
   type BuiltinAdapter,
   DEFAULT_PRIMARY_PROMPT_CACHE_TTL,
@@ -30,6 +31,7 @@ import {
 
 export interface RegisteredModel {
   id: string;
+  maker: ModelMaker;
   tokenizer: TokenizerFamily;
   displayName: string;
   contextWindow: number;
@@ -122,6 +124,7 @@ const GPT_REASONING: ReasoningSupport = { efforts: ["low", "medium", "high", "ma
 const GPT_REASONING_CAN_DISABLE: ReasoningSupport = { ...GPT_REASONING, canDisable: true };
 const CLAUDE_OPUS_5_5_MODEL = {
   id: "claude-opus-5-5",
+  maker: "anthropic",
   tokenizer: "anthropic",
   displayName: "Claude Opus 5.5",
   contextWindow: 1_000_000,
@@ -132,6 +135,7 @@ const CLAUDE_OPUS_5_5_MODEL = {
 
 const CLAUDE_SONNET_5_5_MODEL = {
   id: "claude-sonnet-5-5",
+  maker: "anthropic",
   tokenizer: "anthropic",
   displayName: "Claude Sonnet 5.5",
   contextWindow: 1_000_000,
@@ -142,6 +146,7 @@ const CLAUDE_SONNET_5_5_MODEL = {
 
 const CLAUDE_FABLE_5_1_MODEL = {
   id: "claude-fable-5-1",
+  maker: "anthropic",
   tokenizer: "anthropic",
   displayName: "Claude Fable 5.1",
   contextWindow: 1_000_000,
@@ -153,6 +158,7 @@ const CLAUDE_FABLE_5_1_MODEL = {
 // OpenAI has not published the GPT-6 / GPT-5.6 tokenizer; o200k is the estimate.
 const GPT_6_1_SOL_MODEL = {
   id: "gpt-6.1-sol",
+  maker: "openai",
   tokenizer: "o200k",
   displayName: "GPT-6.1 Sol",
   contextWindow: 1_050_000,
@@ -163,6 +169,7 @@ const GPT_6_1_SOL_MODEL = {
 
 const GPT_6_1_TERRA_MODEL = {
   id: "gpt-6.1-terra",
+  maker: "openai",
   tokenizer: "o200k",
   displayName: "GPT-6.1 Terra",
   contextWindow: 1_050_000,
@@ -173,6 +180,7 @@ const GPT_6_1_TERRA_MODEL = {
 
 const GPT_5_6_LUNA_MODEL = {
   id: "gpt-5.6-luna",
+  maker: "openai",
   tokenizer: "o200k",
   displayName: "GPT-5.6 Luna",
   contextWindow: 1_050_000,
@@ -183,6 +191,7 @@ const GPT_5_6_LUNA_MODEL = {
 
 const DEEPSEEK_FLASH_MODEL = {
   id: "deepseek-flash",
+  maker: "deepseek",
   tokenizer: "deepseek",
   displayName: "DeepSeek V4.1 Flash",
   contextWindow: 1_048_576,
@@ -194,6 +203,7 @@ const DEEPSEEK_FLASH_MODEL = {
 
 const GEMINI_4_ARGON_MODEL = {
   id: "gemini-4-argon",
+  maker: "google",
   tokenizer: "gemini",
   displayName: "Gemini 4 Argon",
   contextWindow: 1_048_576,

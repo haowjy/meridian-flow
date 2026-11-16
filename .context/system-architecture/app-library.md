@@ -37,7 +37,7 @@ The root screen after sign-in: the project list and the new-project view.
 
 The dialog for creating a project.
 
-The command that lets the app open a new project before the server answers is the driver's `project_create` kind (`client/query/project-commands.ts`).
+The command that lets the app open a new project before the server answers is the driver's `project_create` kind (`client/query/project-commands.ts`). A chat's model and reasoning overrides are the `thread_set_overrides` kind (`client/query/thread-overrides-command.ts`).
 
 - Kind: feature
 - Paths: `apps/app/src/features/creation`

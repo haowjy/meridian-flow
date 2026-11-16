@@ -228,6 +228,7 @@ import {
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
 import { wakeOnContendedRelease } from "../domains/runtime/loop/contended-claim-wake.js";
+import { threadModelId } from "../domains/runtime/loop/turn-context-assembly.js";
 import { createWakeIfRunnable } from "../domains/runtime/loop/wake-if-runnable.js";
 import type { ModelRequestDebugStore } from "../domains/runtime/model-request-debug/index.js";
 import {
@@ -958,8 +959,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     registry: toolRegistry,
     chatFiles: ports.contextPorts.chatFiles,
     async tokenizer(caller) {
-      const binding = await ports.agentRevisions.readThreadBinding(caller.id);
-      const modelId = binding?.configuration.model ?? ports.gateway.getDefaultModel();
+      const [binding, thread] = await Promise.all([
+        ports.agentRevisions.readThreadBinding(caller.id),
+        ports.threadRepos.threads.findById(caller.id),
+      ]);
+      const modelId =
+        (thread
+          ? threadModelId(ports.gateway, thread.overrides, binding?.configuration.model)
+          : binding?.configuration.model) ?? ports.gateway.getDefaultModel();
       const model = ports.gateway.listModels().find((model) => model.id === modelId);
       if (!model)
         return {
@@ -1145,6 +1152,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       gateway: ports.gateway,
       eventSink: ports.eventSink,
       agentRevisions: ports.agentRevisions,
+      threads: ports.threadRepos.threads,
       prefixCacheStateFor: createPrefixCacheStateService({ repos: ports.threadRepos })
         .prefixCacheStateFor,
       modelRequestDebug: ports.modelRequestDebug,
