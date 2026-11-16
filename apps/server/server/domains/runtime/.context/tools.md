@@ -64,9 +64,8 @@ says in its report what is missing (`SUBAGENT_GUIDANCE`). The parent carries on
 from the report: it does the work itself, sends the child what it needs, or asks
 the writer with its own `ask_user` (the spawn description says so).
 
-A question ask times out on a clock the server owns (`asks/ask-deadline.ts`): 4 minutes
-idle, restarted by each `ask.presence` message the takeover sends while the writer is active
-on the page (any pointer, key, wheel or touch, at most one per 30 s; not `scroll`, which the page causes itself), and never past 55 minutes after the ask opened (`asks.opened_at`). A presence
+A question ask times out on a clock the server owns (`asks/ask-deadline.ts`): idle for a minute short of the asking model's short cache lifetime (4 minutes on Claude), restarted by each `ask.presence` message the takeover sends while the writer is active
+on the page (any pointer, key, wheel or touch, at most one per 30 s; not `scroll`, which the page causes itself), and never past five minutes short of its long lifetime after the ask opened (`asks.opened_at`; 55 minutes on Claude). Both lengths are stored on the ask when it is requested (`asks.idle_seconds`, `asks.hard_limit_seconds`); a model with no documented lifetime gets 4 and 55 minutes by policy. A presence
 message that carries `answers` (sent only when the writer changed one) also stores them
 (`asks.draft_answers`); one without leaves the stored answers alone, so a tab that only sees
 activity can't overwrite newer answers from another tab or device. It publishes

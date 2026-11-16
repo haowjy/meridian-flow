@@ -36,7 +36,10 @@ export function promptCacheRetentionFor(threadKind: Thread["kind"]): PromptCache
   return threadKind === "subagent" ? "short" : "long";
 }
 
-/** Used when the model publishes no cache lifetime. */
+/**
+ * How long a link stays identical when there is no cache lifetime to follow (a model that documents
+ * none, or no known model). A link policy, not a cache fact: no cache is waiting on the bytes.
+ */
 const DEFAULT_LINK_WINDOW_SECONDS = 3600;
 
 /**

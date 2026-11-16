@@ -782,7 +782,8 @@ export async function createProductionAppPorts(input: {
         webhookSecret: environment.STRIPE_WEBHOOK_SECRET as string,
       })
     : null;
-  const summarizerModel = environment.COMPACTION_SUMMARIZER_MODEL ?? "deepseek-flash";
+  const summarizerModel =
+    environment.COMPACTION_SUMMARIZER_MODEL ?? MODEL_REGISTRY.compactionSummarizerModel;
   if (
     !MODEL_REGISTRY.providers.some((provider) =>
       provider.offerings.some((offering) => offering.model.id === summarizerModel),

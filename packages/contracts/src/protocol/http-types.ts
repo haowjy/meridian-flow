@@ -496,10 +496,6 @@ export const forkThreadRequestSchema = z
   })
   .strict();
 
-/** Who made a model, whoever serves it: the picker shows the maker's mark. */
-export const MODEL_MAKERS = ["anthropic", "openai", "deepseek", "google"] as const;
-export type ModelMaker = (typeof MODEL_MAKERS)[number];
-
 /** `GET /api/models`: every model Flow knows, for the Agent picker. */
 export const modelListSchema = z.object({
   models: z.array(
@@ -508,8 +504,8 @@ export const modelListSchema = z.object({
       name: z.string(),
       /** False when this deployment can't run it (no provider key): a chat set to it falls back to its Agent's model. */
       available: z.boolean(),
-      /** Who made the model, for its mark; null for one the registry doesn't know (a mock). */
-      maker: z.enum(MODEL_MAKERS).nullable(),
+      /** Who made the model, whoever serves it, for the picker's mark; null for one the registry doesn't know (a mock). The picker shows a mark only for a maker it has art for. */
+      maker: z.string().nullable(),
       /** The levels it accepts, in the order a picker shows them. */
       efforts: z.array(z.enum(REASONING_LEVELS)),
       /** Whether reasoning can be switched off (`disabled`); otherwise `disabled` runs at the lowest level. */

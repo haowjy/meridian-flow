@@ -1,13 +1,13 @@
 /**
  * Model/provider registry, built from `models-snapshot.json` (models.dev rows), `families.ts`
- * (which models Flow offers) and `provider-rows.ts` (wire, key, cache lifetimes, long-write rates).
- * Key decisions: provider enablement from each provider's apiKeyEnv. A provider lists offerings:
- * a model plus what that provider charges for it and how it caches it, since the same model can
- * cache and bill differently per provider. Adapter-specific wire checks (cache lifetimes) live in
- * the adapters (`assertModelsOnWire`) and run over every row when a gateway is created from env.
+ * (which models Flow offers) and `model-data.json` (wire, key, and every fact models.dev lacks,
+ * each with its source). Key decisions: provider enablement from each provider's apiKeyEnv. A
+ * provider lists offerings: a model plus what that provider charges for it and how it caches it,
+ * since the same model can cache and bill differently per provider. Adapter-specific wire checks
+ * (cache lifetimes) live in the adapters (`assertModelsOnWire`) and run over every row when a
+ * gateway is created from env.
  */
 
-import type { ModelMaker } from "@meridian/contracts/protocol";
 import {
   type BuiltinAdapter,
   type GatewayConfig,
@@ -27,19 +27,20 @@ import {
   type ModelTokenRateSource,
 } from "../../domains/runtime/costing/pricing.js";
 import type { ModelFor } from "../../domains/runtime/spawn/resolve-child-invocation.js";
+import { findFamily, MODEL_FAMILIES, type ModelFamily, newestInFamily } from "./families.js";
 import {
+  COMPACTION_SUMMARIZER_MODEL_ID,
   DEFAULT_MODEL_ID,
-  findFamily,
-  MODEL_FAMILIES,
-  type ModelFamily,
-  newestInFamily,
-} from "./families.js";
+  factsOf,
+  PROVIDERS,
+  type ProviderData,
+} from "./model-data.js";
 import snapshotJson from "./models-snapshot.json" with { type: "json" };
-import { PROVIDER_ROWS, type ProviderRow } from "./provider-rows.js";
 
 export interface RegisteredModel {
   id: string;
-  maker: ModelMaker;
+  /** Who made the model, whoever serves it: `model-data.json`, else the models.dev provider the row comes from. */
+  maker: string;
   tokenizer: TokenizerFamily;
   /** The picker name: the family alias for its newest model, "alias version" for an older one. */
   displayName: string;
@@ -51,6 +52,8 @@ export interface RegisteredModel {
   inputModalities: readonly InputModality[];
   /** Largest file, in bytes, the provider fetches by link, where its docs state one. */
   maxLinkBytes?: number;
+  /** Needs Anthropic's tool-schema projection. */
+  projectToolSchema?: true;
   reasoning: ReasoningSupport;
 }
 
@@ -68,8 +71,6 @@ export interface RegisteredProvider {
   /** Environment variable that must contain a real key for this provider to enable. */
   apiKeyEnv: string;
   baseUrl?: string;
-  /** Anthropic-format hosts that need Anthropic's tool-schema projection; the first-party API is the only one today. */
-  projectToolSchema?: true;
   offerings: readonly RegisteredOffering[];
 }
 
@@ -77,6 +78,8 @@ export interface ModelRegistry {
   providers: readonly RegisteredProvider[];
   /** Model ID used when callers omit a model. Must exist in at least one provider entry. */
   defaultModel: string;
+  /** The rolling summarizer's model unless the environment names another. Must exist too. */
+  compactionSummarizerModel: string;
 }
 
 /** The slice of a models.dev model row that Flow reads, keyed in the snapshot by Flow's provider id then model id. */
@@ -129,7 +132,7 @@ function usd(price: number, multiplier = 1): string {
   return formatUsd(toNano(price * multiplier));
 }
 
-function toReasoning(model: SnapshotModel, family: ModelFamily): ReasoningSupport {
+function toReasoning(model: SnapshotModel, thinksByDefault: boolean): ReasoningSupport {
   const effort = model.reasoning_options.find((option) => option.type === "effort");
   const values = effort?.type === "effort" ? effort.values : [];
   const canDisable =
@@ -137,7 +140,7 @@ function toReasoning(model: SnapshotModel, family: ModelFamily): ReasoningSuppor
   return {
     efforts: REASONING_EFFORTS.filter((level) => values.includes(level)),
     ...(canDisable ? { canDisable: true as const } : {}),
-    ...(family.thinksByDefault ? { thinksByDefault: true as const } : {}),
+    ...(thinksByDefault ? { thinksByDefault: true as const } : {}),
   };
 }
 
@@ -192,9 +195,14 @@ export function unservableReason(model: Partial<SnapshotModel>): string | undefi
  * unset. Either would bill that rate at models.dev's number, not the one Flow pays.
  */
 export function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
-  return PROVIDER_ROWS.flatMap((row) => {
-    const overrides = row.priceOverrides ?? {};
+  return PROVIDERS.flatMap((row) => {
     const rows = snapshot.providers[row.id] ?? {};
+    const overrides = Object.fromEntries(
+      Object.keys(rows).flatMap((id) => {
+        const override = factsOf(row, id).price;
+        return override ? [[id, override.value] as const] : [];
+      }),
+    );
     const overriddenFamilies = new Set(
       Object.keys(overrides).flatMap((id) => findFamily(row.id, id)?.id ?? []),
     );
@@ -208,7 +216,7 @@ export function priceOverrideGaps(snapshot: ModelsSnapshot): string[] {
       const override = overrides[id];
       if (!override) {
         return [
-          `- \`${row.id}/${id}\` is in family \`${family.id}\`, which has price overrides, but has none itself (${listed}). Add \`priceOverrides["${id}"]\` in \`provider-rows.ts\` with the rates Flow pays.`,
+          `- \`${row.id}/${id}\` is in family \`${family.id}\`, which has price overrides, but has none itself (${listed}). Add a \`price\` fact for \`${id}\` under \`${row.id}\` in \`model-data.json\` with the rates Flow pays.`,
         ];
       }
       return (["cache_read", "cache_write"] as const)
@@ -228,29 +236,31 @@ export function assertNoPriceOverrideGaps(snapshot: ModelsSnapshot): void {
 }
 
 /** What Flow charges for a row: the provider's override when it has one, else models.dev's cost. */
-export function billedCost(row: ProviderRow, id: string, cost: SnapshotModel["cost"]) {
-  const override = row.priceOverrides?.[id];
+export function billedCost(row: ProviderData, id: string, cost: SnapshotModel["cost"]) {
+  const override = factsOf(row, id).price;
   if (!override) return { cost, override };
   if (cost.tiers) throw new Error(`${row.id}/${id}: a price override cannot sit on context tiers`);
-  const { input, output, cache_read, cache_write } = override;
+  const { input, output, cache_read, cache_write } = override.value;
   return { cost: { input, output, cache_read, cache_write }, override };
 }
 
 function toPricing(
-  row: ProviderRow,
+  row: ProviderData,
   snapshot: ModelsSnapshot,
   id: string,
   model: SnapshotModel,
 ): ModelPricing {
   const { cost, override } = billedCost(row, id, model.cost);
+  const { longCacheWrite } = factsOf(row, id);
+  const longWrite = longCacheWrite?.value.multiplier;
   const tier = tierOf(cost);
   if (typeof tier === "string") throw new Error(`${row.id}/${id}: ${tier}`);
   const notes = [
     `models.dev snapshot ${snapshot.takenAt}`,
     ...(override ? [`price per ${override.source} (checked ${override.checked})`] : []),
-    ...(row.longCacheWrite
+    ...(longCacheWrite
       ? [
-          `long-TTL cache write ${row.longCacheWrite.multiplier}x input per ${row.longCacheWrite.source} (checked ${row.longCacheWrite.checked})`,
+          `long-TTL cache write ${longCacheWrite.value.multiplier}x input per ${longCacheWrite.source} (checked ${longCacheWrite.checked})`,
         ]
       : []),
   ];
@@ -262,11 +272,7 @@ function toPricing(
     ...(cost.cache_write === undefined
       ? {}
       : { cacheWriteUsdPerMillionTokens: usd(cost.cache_write) }),
-    ...(row.longCacheWrite
-      ? {
-          cacheWriteLongUsdPerMillionTokens: usd(cost.input, row.longCacheWrite.multiplier),
-        }
-      : {}),
+    ...(longWrite ? { cacheWriteLongUsdPerMillionTokens: usd(cost.input, longWrite) } : {}),
     outputUsdPerMillionTokens: usd(cost.output),
     ...tier,
     source: notes.join("; "),
@@ -303,7 +309,7 @@ function pickerNames(
 
 /** The registry the snapshot, the families and the provider rows describe. Throws on a row Flow cannot serve. */
 export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
-  const providers = PROVIDER_ROWS.map((row): RegisteredProvider => {
+  const providers = PROVIDERS.map((row): RegisteredProvider => {
     const rows = snapshot.providers[row.id] ?? {};
     // A snapshot row the allowlist no longer admits stays in the file until the next refresh
     // and gets no offering.
@@ -318,21 +324,28 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
         const model = rows[id];
         const problem = unservableReason(model);
         if (problem) throw new Error(`${row.id}/${id}: ${problem}`);
+        const facts = factsOf(row, id);
+        if (!facts.tokenizer)
+          throw new Error(`${row.id}/${id}: model-data.json gives it no tokenizer`);
+        if (!facts.promptCache) {
+          throw new Error(`${row.id}/${id}: model-data.json gives it no promptCache`);
+        }
         return {
           model: {
             id,
-            maker: family.maker,
-            tokenizer: family.tokenizer,
+            maker: facts.maker?.value ?? row.modelsDev ?? row.id,
+            tokenizer: facts.tokenizer.value,
             displayName: names.get(id) as string,
             ...(model.release_date === undefined ? {} : { releaseDate: model.release_date }),
             contextWindow: model.limit.context,
             maxOutputTokens: model.limit.output,
             inputModalities: model.modalities.input,
-            ...(row.maxLinkBytes === undefined ? {} : { maxLinkBytes: row.maxLinkBytes }),
-            reasoning: toReasoning(model, family),
+            ...(facts.maxLinkBytes ? { maxLinkBytes: facts.maxLinkBytes.value } : {}),
+            ...(facts.projectToolSchema ? { projectToolSchema: true as const } : {}),
+            reasoning: toReasoning(model, facts.thinksByDefault !== undefined),
           },
           pricing: toPricing(row, snapshot, id, model),
-          promptCache: row.promptCache.descriptor,
+          promptCache: facts.promptCache.value,
         };
       });
     });
@@ -341,7 +354,6 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
       adapter: row.adapter,
       apiKeyEnv: row.apiKeyEnv,
       ...(row.baseUrl === undefined ? {} : { baseUrl: row.baseUrl }),
-      ...(row.projectToolSchema ? { projectToolSchema: true as const } : {}),
       offerings,
     };
   });
@@ -356,15 +368,21 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
       .map(({ model }) => model.id);
     throw new Error(`Two models are named "${repeated}" in the picker: ${clash.join(", ")}`);
   }
-  const registry = { providers, defaultModel: DEFAULT_MODEL_ID };
-  if (
-    !providers.some((provider) =>
-      provider.offerings.some(({ model }) => model.id === DEFAULT_MODEL_ID),
-    )
-  ) {
+  const offered = (modelId: string) =>
+    providers.some((provider) => provider.offerings.some(({ model }) => model.id === modelId));
+  if (!offered(DEFAULT_MODEL_ID)) {
     throw new Error(`The snapshot has no default model ${DEFAULT_MODEL_ID}`);
   }
-  return registry;
+  if (!offered(COMPACTION_SUMMARIZER_MODEL_ID)) {
+    throw new Error(
+      `The snapshot has no compaction summarizer model ${COMPACTION_SUMMARIZER_MODEL_ID}`,
+    );
+  }
+  return {
+    providers,
+    defaultModel: DEFAULT_MODEL_ID,
+    compactionSummarizerModel: COMPACTION_SUMMARIZER_MODEL_ID,
+  };
 }
 
 assertNoPriceOverrideGaps(snapshotJson as ModelsSnapshot);
@@ -452,7 +470,7 @@ function toModelInfo(provider: RegisteredProvider, offering: RegisteredOffering)
     contextWindow: model.contextWindow,
     inputTierTokens: pricing.inputTierTokens,
     maxOutputTokens: model.maxOutputTokens,
-    ...(provider.projectToolSchema ? { projectToolSchema: true as const } : {}),
+    ...(model.projectToolSchema ? { projectToolSchema: true as const } : {}),
     promptCache: offering.promptCache,
     reasoning: model.reasoning,
     inputModalities: model.inputModalities,

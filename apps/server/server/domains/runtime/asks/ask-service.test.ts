@@ -36,6 +36,8 @@ async function openQuestion() {
     },
     permissionCommand: null,
     deadlineAt: new Date(0),
+    idleSeconds: 240,
+    hardLimitSeconds: 3300,
     status: "open",
     resolution: null,
     submissionId: null,

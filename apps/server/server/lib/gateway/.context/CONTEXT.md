@@ -17,28 +17,35 @@ when the registry is built, not in the deployment that holds that provider's key
   `release_date`, limits, input modalities, tool calls, `reasoning_options`, `cost` with `cost.tiers`), in models.dev's
   own field names, and the date it was taken. Never edit it by hand; `pnpm models:refresh` rewrites it.
 - `families.ts`: which models Flow offers, per provider, as `[models.<family>]`-style `match` and `exclude` globs (as in
-  meridian-base's `mars.toml`), plus per-family facts models.dev lacks: tokenizer, `thinksByDefault`.
-  A family id is its alias in `mars.toml` (`opus`, `sonnet`, `fable`, `sol`, `terra`, `luna`, `deepseek`, `argon`, `hydrogen`),
-  kept equal by hand: nothing in CI reads `mars.toml`. Flow has no family Mars lacks, and Mars has aliases Flow does not offer (haiku, astra, glm, kimi, grok and others).
-  Also the default model; the build fails when the snapshot lacks it. A new version in a listed family appears at the
-  next refresh; an `exclude` entry is a dated, deprecated or older-generation id Flow does not offer. `newestInFamily`
-  applies Mars's alias rule (`resolveAlias` from `@meridian-flow/mars-schema`) to a family.
-- `provider-rows.ts`: per provider, the wire, base URL, `FLOW_` key name, tool-schema projection, `maxLinkBytes`, the full
-  `promptCache` descriptor, the long-TTL cache-write multiplier (Anthropic 2x input, OpenAI 2.5x) and `priceOverrides`,
-  the one way Flow charges a price other than models.dev's (a rate per model id): DeepSeek's peak rates, and Gemini 4
-  Argon's standard rates while models.dev lists Google's introductory ones. Each carries a `source` URL and a `checked`
-  date; a refresh report flags one older than 90 days, prints models.dev's number beside the billed one, and says
-  "models.dev now agrees: delete the override" once they match. An override replaces every rate models.dev lists for
-  its model, and it is absolute (no multiplier, which would double-charge once models.dev catches up). Because a
-  family can admit a model its override was not written for, loading the registry fails when a family has an override for any
-  model and another model it admits has none, or when models.dev lists a cache rate the override leaves unset; the
-  refresh report shows each as "Price overrides that do not cover the snapshot", naming the family and the rates. The report mode (`--dry-run`) lists the gaps and builds the new
+  meridian-base's `mars.toml`) and nothing else. A family id is its alias in `mars.toml` (`opus`, `sonnet`, `fable`,
+  `sol`, `terra`, `luna`, `deepseek`, `argon`, `hydrogen`), kept equal by hand: nothing in CI reads `mars.toml`. Flow has no family
+  Mars lacks, and Mars has aliases Flow does not offer (haiku, astra, glm, kimi, grok and others). A new version in a
+  listed family appears at the next refresh; an `exclude` entry is a dated, deprecated or older-generation id Flow does
+  not offer. `newestInFamily` applies Mars's alias rule (`resolveAlias` from `@meridian-flow/mars-schema`) to a family.
+  The allowlist moves to a mars-schema release later; the facts below do not.
+- `model-data.json`, read through the zod schema in `model-data.ts` when the registry loads: everything else Flow holds
+  about a model. The default model and the compaction summarizer's default (`defaultModel`,
+  `compactionSummarizerModel`; the build fails when the snapshot lacks either) and, per provider, the wire
+  (`adapter`), `apiKeyEnv`, `baseUrl`, the key models.dev files it under (`modelsDev`) and `models`: facts under `"*"`
+  (the provider-wide default) and under exact model ids, an exact id winning fact by fact. A fact is `{ value, source,
+  checked, note? }`: `maker` (only to override the models.dev provider the row comes from), `tokenizer`, `promptCache`
+  (`kind` and both lifetimes in seconds, null for a provider that documents none), `longCacheWrite` (the long-TTL
+  cache-write multiple of the input price: Claude 2x, OpenAI 2.5x), `thinksByDefault`, `maxLinkBytes`,
+  `projectToolSchema` and `price`, the one way Flow charges a price other than models.dev's: DeepSeek's peak rates, and
+  Gemini 4 Argon's standard rates while models.dev lists Google's introductory ones. An override replaces every rate
+  models.dev lists for its model, and it is absolute (no multiplier, which would double-charge once models.dev catches
+  up). A model with no `tokenizer` or `promptCache` fact fails the build. A refresh report flags a fact older than 90
+  days, prints models.dev's number beside the billed one for a price, and says "models.dev now agrees: delete the
+  override" once they match. Because a family can admit a model its override was not written for, loading the
+  registry fails when a family has an override for any model and another model it admits has none, or when models.dev
+  lists a cache rate the override leaves unset; the refresh report shows each as "Price overrides that do not cover
+  the snapshot", naming the family and the rates. The report mode (`--dry-run`) lists the gaps and builds the new
   registry anyway, so the daily issue still shows every other change; write mode refuses. The check covers families that
-  hold an override, not a provider's new family.
+  hold an override, not a provider's new family. To offer a model from a new provider, add the provider, its facts and
+  a family; no code names a model or a provider.
 
 `registry.ts` joins them (`buildModelRegistry`) and keeps the exported registry types. Billing charges the snapshot's
-prices, never live data; a charge's `pricingSnapshot.source` reads `models.dev snapshot <date>`, plus the provider
-row's source for an overridden price or a derived rate. A single `cost.tiers` step becomes `inputTierTokens` and `aboveTierMultipliers`;
+prices, never live data; a charge's `pricingSnapshot.source` reads `models.dev snapshot <date>`, plus the fact's source for an overridden price or a derived rate. A single `cost.tiers` step becomes `inputTierTokens` and `aboveTierMultipliers`;
 the build throws when the step is not one threshold with one multiplier for every input-side rate. A snapshot row the
 allowlist no longer admits (a new `exclude`) gets no offering and stays in the file until the next refresh.
 
@@ -63,13 +70,13 @@ keys for local subscriptions, and Flow must not bill those. `check:negative-spac
 Each provider's key goes in `ProviderConfig.auth` as `{ apiKey }`; Flow sets no per-call `GenerateRequest.auth`.
 
 Model facts come from models.dev through the snapshot; a provider's API docs are only for what models.dev lacks, which
-the provider rows hold. Nothing fetches models.dev at run time.
+`model-data.json` holds. Nothing fetches models.dev at run time.
 
 **Refreshing.** `pnpm models:refresh` (`apps/server/scripts/models-refresh.ts`, network, outside `pnpm check`) fetches
 models.dev, rewrites the snapshot, and prints the report: new and removed models, every price change as old → new,
 cache rates models.dev dropped (billing would fall back to the input rate), limit, modality, reasoning and cache
 changes, the prices Flow overrides beside models.dev's, the derived long-TTL cache-write prices, and a "Not from
-models.dev" section listing each provider-row fact with its source and checked date (marked **re-check** after 90
+models.dev" section listing each `model-data.json` fact with its source, checked date and note (marked **re-check** after 90
 days). It refuses to write when the new snapshot would not build or a family-matched row can't be served. A person
 runs it on a branch, reads the report, and opens a PR; a charge changes only when that PR merges. `--dry-run` is
 report mode: it leaves the snapshot alone, and a row Flow can't serve (or a snapshot that would not build) becomes
@@ -97,19 +104,20 @@ snapshots, journal rows, or JSONL.
 
 How the package models cache lifetimes, retention, cache-write billing, tiers, reasoning resolution and tool-schema
 envelopes is in its [CONTEXT](https://github.com/haowjy/meridian-runtime/blob/main/src/gateway/.context/CONTEXT.md).
-This section is the values Flow puts in the provider rows and families.
+This section is the values `model-data.json` holds for cache and prices.
 
 A provider lists offerings `{ model, pricing, promptCache }`: what an endpoint caches and charges belongs to the
-provider serving the model (DeepSeek uses the Anthropic adapter and caches differently). The provider row holds the
-full `promptCache` descriptor; there are no defaults to merge over. Lifetimes are the provider's real values; code that must
-beat one computes its buffer from them, as `asks/ask-deadline.ts` does.
+provider serving the model (DeepSeek uses the Anthropic adapter and caches differently). A model's `promptCache`
+fact is its full descriptor, from its own entry or the provider's `"*"` entry; there are no defaults to merge over.
+Lifetimes are the provider's real values and no code names one; code that must beat one computes its buffer from the
+model's, as `asks/ask-deadline.ts` does (a model with no lifetime gets a policy clock there).
 
 `validateModelRegistry` runs when the registry loads and throws on: lifetimes not both set or both null; a long
 lifetime shorter than the short one; two lifetimes with `cacheWriteUsdPerMillionTokens` but no
 `cacheWriteLongUsdPerMillionTokens`; and an `inputTierTokens` that is not positive and below the context window.
 `create-from-env.ts` also runs the package's `assertModelsOnWire` over every row.
 
-| Provider | kind | short | long |
+| Provider (`"*"` entry) | kind | short | long |
 | --- | --- | --- | --- |
 | Anthropic (Claude) | explicit | 5m | 1h |
 | OpenAI (GPT-5.6+) | automatic | 30m | 12h (the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl`; the 30m default is never sent) |
@@ -120,7 +128,7 @@ Flow sets `promptCacheRetention` by thread kind so the cached prefix never varie
 threads, `short` for subagents, `none` for the rolling summarizer (OpenAI still keeps its 30m default; Flow can't
 turn it off).
 
-Claude and GPT-5.6+ rows carry both write rates (Claude 1.25x input short, 2x long; OpenAI 1.25x short, 2.5x long).
+Claude and GPT-5.6+ rows carry both write rates through `longCacheWrite` (Claude 1.25x input short, 2x long; OpenAI 1.25x short, 2.5x long).
 OpenAI GPT-5.6+ rows set `inputTierTokens` to 272K with `aboveTierMultipliers`: whole request at 2x input and cache,
 1.5x output above it. The snapshot has no effective dates: Gemini 4 Argon bills Google's standard rates through a price override, whose
 report line says to delete it once models.dev lists them (Google's introductory rates end 2026-11-30).
@@ -129,7 +137,7 @@ Each model row's `reasoning: { efforts, canDisable? }` comes from models.dev `re
 efforts in the package's `REASONING_EFFORTS`, so `xhigh` drops): `canDisable` is a `toggle` option or a `none` effort. Claude Opus 5.5, Sonnet 5.5 and
 Fable 5.1 have no toggle, so `thinking: disabled` and `budget_tokens` are a 400 on them, and no registered model gets
 a thinking budget. DeepSeek rows declare `reasoning.thinksByDefault` (not inferred from `canDisable`) and the
-Anthropic row declares `projectToolSchema`.
+Anthropic models declare `projectToolSchema`, each a `model-data.json` fact.
 
 Every model declares a tokenizer family with no fallback. No request sets an output limit; the registry maximum is
 subtracted once from the usable input window for compaction, and optional work reserves `outputReserveTokens` (capped

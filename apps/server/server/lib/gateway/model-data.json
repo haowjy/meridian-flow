@@ -1,0 +1,163 @@
+{
+  "defaultModel": "deepseek-flash",
+  "compactionSummarizerModel": "deepseek-flash",
+  "providers": {
+    "anthropic": {
+      "adapter": "anthropic",
+      "apiKeyEnv": "FLOW_ANTHROPIC_API_KEY",
+      "models": {
+        "*": {
+          "tokenizer": {
+            "value": "anthropic",
+            "source": "https://platform.claude.com/docs/en/build-with-claude/token-counting",
+            "checked": "2026-11-16",
+            "note": "Moved from families.ts on 2026-11-16 without re-reading the source."
+          },
+          "projectToolSchema": {
+            "value": true,
+            "source": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview",
+            "checked": "2026-11-16",
+            "note": "Anthropic-format hosts that need the tool-schema projection; the first-party API is the only one today. Moved from families.ts on 2026-11-16 without re-reading the source."
+          },
+          "promptCache": {
+            "value": {
+              "kind": "explicit",
+              "shortTtlSeconds": 300,
+              "longTtlSeconds": 3600
+            },
+            "source": "https://platform.claude.com/docs/en/build-with-claude/prompt-caching",
+            "checked": "2026-11-05",
+            "note": "Explicit breakpoints, 5m and 1h. Claude bills cache writes by the TTL written: 5m at 1.25x input (the models.dev price), 1h at 2x (https://platform.claude.com/docs/en/about-claude/pricing, checked 2026-11-05)."
+          },
+          "longCacheWrite": {
+            "value": {
+              "multiplier": 2
+            },
+            "source": "https://platform.claude.com/docs/en/about-claude/pricing",
+            "checked": "2026-11-05",
+            "note": "Models.dev lists only the short-TTL write price; the long-TTL write is this multiple of the input price."
+          }
+        }
+      }
+    },
+    "openai": {
+      "adapter": "openai",
+      "apiKeyEnv": "FLOW_OPENAI_API_KEY",
+      "models": {
+        "*": {
+          "tokenizer": {
+            "value": "o200k",
+            "source": "https://github.com/openai/tiktoken",
+            "checked": "2026-11-16",
+            "note": "OpenAI has not published the GPT-6 / GPT-5.6 tokenizer; o200k is the estimate. Moved from families.ts on 2026-11-16 without re-reading the source."
+          },
+          "promptCache": {
+            "value": {
+              "kind": "automatic",
+              "shortTtlSeconds": 1800,
+              "longTtlSeconds": 43200
+            },
+            "source": "https://developers.openai.com/api/docs/guides/prompt-caching",
+            "checked": "2026-11-05",
+            "note": "GPT-5.6+ caches automatically: `prompt_cache_options.ttl` is \"30m\" (default) or \"12h\". A long request takes the shortest option of at least 1 hour, which is 12h. Writes bill 1.25x input for 30m (the models.dev price) and 2.5x for 12h (https://developers.openai.com/api/docs/pricing, checked 2026-11-05)."
+          },
+          "longCacheWrite": {
+            "value": {
+              "multiplier": 2.5
+            },
+            "source": "https://developers.openai.com/api/docs/pricing",
+            "checked": "2026-11-05",
+            "note": "Models.dev lists only the short-TTL write price; the long-TTL write is this multiple of the input price."
+          }
+        }
+      }
+    },
+    "deepseek": {
+      "adapter": "anthropic",
+      "apiKeyEnv": "FLOW_DEEPSEEK_API_KEY",
+      "baseUrl": "https://api.deepseek.com/anthropic",
+      "models": {
+        "*": {
+          "tokenizer": {
+            "value": "deepseek",
+            "source": "https://api-docs.deepseek.com/quick_start/token_usage",
+            "checked": "2026-11-16",
+            "note": "Moved from families.ts on 2026-11-16 without re-reading the source."
+          },
+          "thinksByDefault": {
+            "value": true,
+            "source": "https://api-docs.deepseek.com/guides/thinking_mode",
+            "checked": "2026-11-16",
+            "note": "The model thinks unless told not to; models.dev does not say. Moved from families.ts on 2026-11-16 without re-reading the source."
+          },
+          "promptCache": {
+            "value": {
+              "kind": "automatic",
+              "shortTtlSeconds": 3600,
+              "longTtlSeconds": 3600
+            },
+            "source": "https://api-docs.deepseek.com/guides/kv_cache",
+            "checked": "2026-11-05",
+            "note": "DeepSeek documents the cache as cleared \"usually within a few hours to a few days\". One hour is the lower bound of that and an estimate; Flow sends no cache_control and has no lifetime choice, so both chat kinds get it."
+          }
+        },
+        "deepseek-flash": {
+          "price": {
+            "value": {
+              "input": 0.3,
+              "output": 1.2,
+              "cache_read": 0.006
+            },
+            "source": "https://api-docs.deepseek.com/quick_start/pricing",
+            "checked": "2026-11-05",
+            "note": "models.dev lists the off-peak rates; peak is double and Flow charges peak at all hours."
+          }
+        }
+      }
+    },
+    "gemini": {
+      "adapter": "gemini",
+      "apiKeyEnv": "FLOW_GEMINI_API_KEY",
+      "baseUrl": "https://generativelanguage.googleapis.com",
+      "modelsDev": "google",
+      "models": {
+        "*": {
+          "tokenizer": {
+            "value": "gemini",
+            "source": "https://ai.google.dev/gemini-api/docs/tokens",
+            "checked": "2026-11-16",
+            "note": "Moved from families.ts on 2026-11-16 without re-reading the source."
+          },
+          "maxLinkBytes": {
+            "value": 15000000,
+            "source": "https://ai.google.dev/gemini-api/docs/file-input-methods",
+            "checked": "2026-11-16",
+            "note": "Gemini fetches a link up to 15 MB. Moved from families.ts on 2026-11-16 without re-reading the source."
+          },
+          "promptCache": {
+            "value": {
+              "kind": "automatic",
+              "shortTtlSeconds": null,
+              "longTtlSeconds": null
+            },
+            "source": "https://ai.google.dev/gemini-api/docs/caching",
+            "checked": "2026-11-05",
+            "note": "The Gemini API documents no lifetime for implicit caching, so prediction reads it as cold. Implicit cache only: no write fee."
+          }
+        },
+        "gemini-4-argon": {
+          "price": {
+            "value": {
+              "input": 4,
+              "output": 20,
+              "cache_read": 0.2
+            },
+            "source": "https://ai.google.dev/gemini-api/docs/pricing",
+            "checked": "2026-11-16",
+            "note": "Google's standard rates; models.dev lists the introductory ones, which end 2026-11-30 (\"$2.00 through November 30, 2026. $4.00 starting December 1, 2026\")."
+          }
+        }
+      }
+    }
+  }
+}

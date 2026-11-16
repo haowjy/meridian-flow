@@ -14,6 +14,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -58,6 +59,10 @@ export const asks = pgTable(
     /** When a question ask settled the run and opened; its hard timeout limit counts from here. */
     openedAt: timestamp("opened_at", { withTimezone: true }),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }),
+    /** How long a question waits on a writer who has gone quiet, from the asking model's cache. */
+    idleSeconds: integer("idle_seconds").notNull(),
+    /** The most a question waits from the moment it opens, from the asking model's cache. */
+    hardLimitSeconds: integer("hard_limit_seconds").notNull(),
     /** The answers a writer had chosen when they last interacted; a timeout resolves from them. */
     draftAnswers: jsonb("draft_answers").$type<DraftAnswers>(),
     status: text("status").$type<AskStatus>().notNull().default("pending"),
