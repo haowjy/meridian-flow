@@ -1,5 +1,6 @@
 /**
- * The only module in the server that imports `@meridian-flow/mars-schema`. A package is read
+ * The only module in the server that reads Mars files with `@meridian-flow/mars-schema` (the
+ * gateway's `families.ts` takes only its alias rule). A package is read
  * whole with `prepare` (`readPackage`), which adds the package's `[package.tools]` to each Agent
  * as `mars sync` does; a lone file (a skill, a manifest) is read with `read`. `prepare` never
  * runs with `migrate`, and a package it classes as anything but schema 1 is refused by the
@@ -16,6 +17,7 @@ import {
   prepare,
   project,
   read,
+  resolveEffort,
   rewriteBlock,
   type SkillFields,
   type ToolProjection,
@@ -23,6 +25,15 @@ import {
 } from "@meridian-flow/mars-schema";
 
 export { rewriteBlock };
+
+/**
+ * An Agent file's `effort` as a level Flow runs, by Mars's rule for the `meridian-flow` host:
+ * `minimal` reads as low, `xhigh` as max. `auto` and a missing key give null, the model's own
+ * default. The model's own levels are applied later, per call, by the gateway.
+ */
+export function flowEffort(effort: AgentFields["effort"]) {
+  return resolveEffort(effort, null, "meridian-flow").level;
+}
 
 /**
  * The reader that produced a stored definition row. Whoever changes the availability table or

@@ -1,4 +1,5 @@
 import type { ModelMaker } from "@meridian/contracts/protocol";
+import { resolveAlias } from "@meridian-flow/mars-schema";
 import type { TokenizerFamily } from "@meridian-flow/runtime/gateway";
 
 /**
@@ -93,48 +94,23 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
 /** Model ID used when callers omit a model; the registry fails to build when the snapshot lacks it. */
 export const DEFAULT_MODEL_ID = "deepseek-flash";
 
-function globToRegExp(glob: string): RegExp {
-  return new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
-}
-
-interface AliasRule {
-  match: readonly string[];
-  exclude?: readonly string[];
-  provider?: string;
-}
-
 /**
- * Mars's alias rule (`auto_resolve_all` in `mars-agents/src/models/mod.rs`): the newest model
- * that every `match` glob hits and no `exclude` glob hits, within `provider` when one is set.
- * Ids ending in `-latest` are skipped. Newest is the latest `release_date`, then the shorter
- * id, then alphabetical order; a row without a date sorts last.
- * Replace this with `resolveAlias` from `@meridian-flow/mars-schema` when that ships.
+ * The newest of `rows` that `family` admits, by Mars's alias rule (`resolveAlias` in
+ * `@meridian-flow/mars-schema`), or null when it admits none.
  */
-export function resolveAlias(
+export function newestInFamily(
+  family: ModelFamily,
   rows: readonly { id: string; provider: string; releaseDate?: string }[],
-  rule: AliasRule,
 ): string | null {
-  const hits = rows.filter(
-    (row) =>
-      (rule.provider === undefined || row.provider === rule.provider) &&
-      !row.id.endsWith("-latest") &&
-      rule.match.every((glob) => globToRegExp(glob).test(row.id)) &&
-      !(rule.exclude ?? []).some((glob) => globToRegExp(glob).test(row.id)),
+  return resolveAlias(
+    rows.map((row) => ({ id: row.id, provider: row.provider, release_date: row.releaseDate })),
+    { match: [...family.match], exclude: [...(family.exclude ?? [])] },
   );
-  // Byte order, as Mars compares: `localeCompare` ranks "gpt-6_1" and "gpt-6-1" the other way.
-  const byte = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-  hits.sort(
-    (a, b) =>
-      byte(b.releaseDate ?? "", a.releaseDate ?? "") ||
-      a.id.length - b.id.length ||
-      byte(a.id, b.id),
-  );
-  return hits[0]?.id ?? null;
 }
 
 /** The first family of a provider that admits this models.dev id, or undefined. */
 export function findFamily(providerId: string, modelId: string): ModelFamily | undefined {
   return MODEL_FAMILIES[providerId]?.find(
-    (family) => resolveAlias([{ id: modelId, provider: providerId }], family) !== null,
+    (family) => newestInFamily(family, [{ id: modelId, provider: providerId }]) !== null,
   );
 }

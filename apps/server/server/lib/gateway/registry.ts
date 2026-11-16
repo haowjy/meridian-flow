@@ -32,7 +32,7 @@ import {
   findFamily,
   MODEL_FAMILIES,
   type ModelFamily,
-  resolveAlias,
+  newestInFamily,
 } from "./families.js";
 import snapshotJson from "./models-snapshot.json" with { type: "json" };
 import { PROVIDER_ROWS, type ProviderRow } from "./provider-rows.js";
@@ -309,9 +309,9 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
     // and gets no offering.
     const offerings = (MODEL_FAMILIES[row.id] ?? []).flatMap((family) => {
       const ids = Object.keys(rows).filter((id) => findFamily(row.id, id) === family);
-      const newest = resolveAlias(
-        ids.map((id) => ({ id, provider: row.id, releaseDate: rows[id].release_date })),
+      const newest = newestInFamily(
         family,
+        ids.map((id) => ({ id, provider: row.id, releaseDate: rows[id].release_date })),
       );
       const names = pickerNames(family, newest, rows, ids);
       return ids.map((id): RegisteredOffering => {

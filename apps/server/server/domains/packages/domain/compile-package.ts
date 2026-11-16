@@ -20,6 +20,7 @@ import {
   type Check,
   checkFiles,
   type Diagnostic,
+  flowEffort,
   GRAMMAR_VERSION,
   MANIFEST_PATH,
   type Prepared,
@@ -574,6 +575,17 @@ function rejectBrokenSubagents(drafts: Map<string, Draft>): void {
   }
 }
 
+/** A stored definition keeps max as `xhigh`, which `AGENT_EFFORT_CHOICE` reads back as max. */
+function storedEffort(
+  level: ReturnType<typeof flowEffort>,
+): Pick<NormalizedAgentMetadata, "effort"> {
+  if (level === null) return {};
+  if (level === "max") return { effort: "xhigh" };
+  if (level === "minimal" || level === "xhigh")
+    throw new Error(`meridian-flow never runs effort ${level}`);
+  return { effort: level };
+}
+
 function definitionOf(draft: Draft): CompiledAgentDefinition {
   const fields = draft.fields as AgentFields;
   const metadata: NormalizedAgentMetadata = {
@@ -583,9 +595,7 @@ function definitionOf(draft: Draft): CompiledAgentDefinition {
     ...(fields.mode !== null ? { mode: fields.mode } : {}),
     "model-invocable": fields["model-invocable"],
     "user-invocable": fields["user-invocable"],
-    ...(fields.effort !== null
-      ? { effort: fields.effort === "max" ? "xhigh" : fields.effort }
-      : {}),
+    ...storedEffort(flowEffort(fields.effort)),
     skills: { load: fields.skills.load, available: fields.skills.available },
     subagents: fields.subagents,
     ...(draft.permission !== undefined ? { permission: draft.permission } : {}),
