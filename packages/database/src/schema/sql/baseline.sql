@@ -1,3 +1,16 @@
+CREATE FUNCTION public.enforce_mcp_pin_insert_only() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1
+    AND NOT EXISTS (SELECT 1 FROM mcp_connections WHERE id = OLD.connection_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'MCP pins are insert-only'
+    USING ERRCODE = '23514', CONSTRAINT = 'mcp_pins_insert_only';
+END;
+$$;
+
 CREATE FUNCTION public.enforce_prompt_bake_insert_only() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -175,6 +188,8 @@ END;
 $$;
 
 ALTER TABLE public.document_block_rooms SET (fillfactor = 90);
+
+CREATE TRIGGER mcp_pins_insert_only BEFORE DELETE OR UPDATE ON public.mcp_pins FOR EACH ROW EXECUTE FUNCTION public.enforce_mcp_pin_insert_only();
 
 CREATE TRIGGER prompt_bakes_insert_only BEFORE DELETE OR UPDATE ON public.prompt_bakes FOR EACH ROW EXECUTE FUNCTION public.enforce_prompt_bake_insert_only();
 

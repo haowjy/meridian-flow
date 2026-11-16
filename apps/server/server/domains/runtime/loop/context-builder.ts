@@ -11,9 +11,10 @@ import type {
   Turn,
 } from "@meridian/contracts/threads";
 import type {
-  ContentPart,
+  AssistantContentPart,
   MediaPart,
   Message,
+  ReasoningPart,
   TextPart,
   Tool,
   ToolUsePart,
@@ -117,7 +118,7 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
   }
 
   if (turn.role === "assistant") {
-    const assistantParts: ContentPart[] = [];
+    const assistantParts: AssistantContentPart[] = [];
     for (const block of turnBlocks) {
       if (block.blockType === "tool_result") {
         if (assistantParts.length > 0) {
@@ -140,7 +141,7 @@ export function turnContextMessages(turn: Turn, blocks: readonly Block[]): Messa
         continue;
       }
       const part = blockToContentPart(block);
-      if (part) assistantParts.push(part);
+      if (part && part.type !== "media") assistantParts.push(part);
     }
     if (assistantParts.length > 0) {
       const message = assistant(assistantParts.slice());
@@ -268,19 +269,14 @@ function storedContentParts(
   );
 }
 
-function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]): ContentPart[] {
-  const parts: ContentPart[] = [];
-  for (const block of blocks) {
-    if (!allowed.includes(block.blockType)) continue;
-    const part = blockToContentPart(block);
-    if (part) parts.push(part);
-  }
-  return parts;
-}
-
 /** Projects a user turn's allowed blocks and reference results; images arrive pre-projected. */
-function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
-  const parts = turnBlocksToContentParts([...blocks], ["text", "media"]);
+function userTurnContentParts(blocks: readonly Block[]): (TextPart | MediaPart)[] {
+  const parts: (TextPart | MediaPart)[] = [];
+  for (const block of blocks) {
+    if (block.blockType !== "text" && block.blockType !== "media") continue;
+    const part = blockToContentPart(block);
+    if (part?.type === "text" || part?.type === "media") parts.push(part);
+  }
   const included = new Set<string>();
   for (const block of blocks) {
     if (block.blockType === "custom") {
@@ -308,7 +304,7 @@ function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
 }
 
 // Unsupported or empty blocks have no gateway content part.
-function blockToContentPart(block: Block): ContentPart | null {
+function blockToContentPart(block: Block): AssistantContentPart | MediaPart | null {
   switch (block.blockType) {
     case "text":
       return block.textContent ? text(block.textContent) : null;
@@ -332,10 +328,7 @@ function blockToContentPart(block: Block): ContentPart | null {
         text: reasoningText,
         ...(hasProviderOptions
           ? {
-              providerOptions: content.providerOptions as Extract<
-                ContentPart,
-                { type: "reasoning" }
-              >["providerOptions"],
+              providerOptions: content.providerOptions as ReasoningPart["providerOptions"],
             }
           : {}),
       };

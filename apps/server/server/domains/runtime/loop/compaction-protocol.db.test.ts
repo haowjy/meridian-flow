@@ -7,6 +7,7 @@
 
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonObject } from "@meridian/contracts/threads";
+import type { ContentPart } from "@meridian-flow/runtime/gateway";
 import { eq, inArray } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -177,7 +178,7 @@ else
 
     function requestImageData(request: import("@meridian-flow/runtime/gateway").GenerateRequest) {
       return request.messages
-        .flatMap((message) => message.content)
+        .flatMap((message): ContentPart[] => message.content)
         .filter((part) => part.type === "media")
         .map((part) => ("data" in part.source ? part.source.data : part.source));
     }
