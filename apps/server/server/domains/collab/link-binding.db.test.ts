@@ -23,7 +23,6 @@ import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { composeAppServices, createProductionAppPorts } from "../../lib/compose.js";
-import { processDetachedWork } from "../../shared/detached-work.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { unloadHocuspocus } from "../../test-support/composed-runtime.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
@@ -97,7 +96,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         .insert(threadWorks)
         .values({ threadId, workId: noWorkId, projectId, isPrimary: true });
       const ports = await createProductionAppPorts({
-        backgroundTasks: processDetachedWork,
         db,
         eventSink: createNoopEventSink(),
         environment: { FLOW_OPENAI_API_KEY: "sk-test-link-binding" },

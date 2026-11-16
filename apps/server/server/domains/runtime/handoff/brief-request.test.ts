@@ -234,32 +234,33 @@ async function prepareBrief(input: { userCutoff: boolean; previousTooLarge?: boo
   return { result, calls: summarizer.calls, beforeTurns, beforeBlocks, rig, source };
 }
 
-it.each([
-  true,
-])("prepares a source-shaped request through the selected turn (user cutoff=%s)", async (userCutoff) => {
-  const { result, calls, beforeTurns, beforeBlocks, rig, source } = await prepareBrief({
-    userCutoff,
-  });
-  const call = calls[0];
-  const request = call?.requestInHand;
+it.each([true])(
+  "prepares a source-shaped request through the selected turn (user cutoff=%s)",
+  async (userCutoff) => {
+    const { result, calls, beforeTurns, beforeBlocks, rig, source } = await prepareBrief({
+      userCutoff,
+    });
+    const call = calls[0];
+    const request = call?.requestInHand;
 
-  expect(result.outcome.kind).toBe("complete");
-  expect(call).toMatchObject({
-    instruction: "handoff",
-    source: { threadId: source.id },
-    changedDocuments: ["manuscript://chapter-12.md"],
-  });
-  expect(request?.model).toBe(model.id);
-  expect(request?.tools).toEqual([bakedTool]);
-  expect(JSON.stringify(request?.messages)).toContain(
-    userCutoff ? "What should I do about the silver gate?" : "Earlier scene decision.",
-  );
-  expect(JSON.stringify(request?.messages)).not.toContain(
-    "This reply is beyond the selected cutoff.",
-  );
-  expect(await rig.repos.turns.listByThread(source.id)).toEqual(beforeTurns);
-  expect(await rig.repos.blocks.listByThread(source.id)).toEqual(beforeBlocks);
-});
+    expect(result.outcome.kind).toBe("complete");
+    expect(call).toMatchObject({
+      instruction: "handoff",
+      source: { threadId: source.id },
+      changedDocuments: ["manuscript://chapter-12.md"],
+    });
+    expect(request?.model).toBe(model.id);
+    expect(request?.tools).toEqual([bakedTool]);
+    expect(JSON.stringify(request?.messages)).toContain(
+      userCutoff ? "What should I do about the silver gate?" : "Earlier scene decision.",
+    );
+    expect(JSON.stringify(request?.messages)).not.toContain(
+      "This reply is beyond the selected cutoff.",
+    );
+    expect(await rig.repos.turns.listByThread(source.id)).toEqual(beforeTurns);
+    expect(await rig.repos.blocks.listByThread(source.id)).toEqual(beforeBlocks);
+  },
+);
 
 it("marks a retry after a too-large brief rejection as known too large", async () => {
   const { result, calls } = await prepareBrief({ userCutoff: false, previousTooLarge: true });

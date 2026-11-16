@@ -7,31 +7,22 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
-import { Route as HealthzRouteImport } from './routes/healthz'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as LogoutRouteImport } from './routes/logout'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as LogoutRouteImport } from './routes/logout'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as HealthzRouteImport } from './routes/healthz'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
 import { Route as AuthenticatedBillingRouteImport } from './routes/_authenticated/billing'
-import { Route as AuthenticatedPProjectIdRouteImport } from './routes/_authenticated/p/$projectId'
-import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects/new'
+import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authenticated/auth-check'
 import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
+import { Route as AuthenticatedProjectsNewRouteImport } from './routes/_authenticated/projects/new'
+import { Route as AuthenticatedPProjectIdRouteImport } from './routes/_authenticated/p/$projectId'
 import { Route as AuthenticatedPProjectIdSplatRouteImport } from './routes/_authenticated/p/$projectId/$'
 
-const AuthenticatedRoute = AuthenticatedRouteImport.update({
-  id: '/_authenticated',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HealthzRoute = HealthzRouteImport.update({
-  id: '/healthz',
-  path: '/healthz',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogoutRoute = LogoutRouteImport.update({
@@ -39,9 +30,18 @@ const LogoutRoute = LogoutRouteImport.update({
   path: '/logout',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthzRoute = HealthzRouteImport.update({
+  id: '/healthz',
+  path: '/healthz',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
@@ -49,20 +49,20 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedAuthCheckRoute = AuthenticatedAuthCheckRouteImport.update({
-  id: '/auth-check',
-  path: '/auth-check',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
 const AuthenticatedBillingRoute = AuthenticatedBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedPProjectIdRoute = AuthenticatedPProjectIdRouteImport.update({
-  id: '/p/$projectId',
-  path: '/p/$projectId',
+const AuthenticatedAuthCheckRoute = AuthenticatedAuthCheckRouteImport.update({
+  id: '/auth-check',
+  path: '/auth-check',
   getParentRoute: () => AuthenticatedRoute,
+} as any)
+const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
+  id: '/api/auth/callback',
+  path: '/api/auth/callback',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedProjectsNewRoute =
   AuthenticatedProjectsNewRouteImport.update({
@@ -70,10 +70,10 @@ const AuthenticatedProjectsNewRoute =
     path: '/projects/new',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
-  id: '/api/auth/callback',
-  path: '/api/auth/callback',
-  getParentRoute: () => rootRouteImport,
+const AuthenticatedPProjectIdRoute = AuthenticatedPProjectIdRouteImport.update({
+  id: '/p/$projectId',
+  path: '/p/$projectId',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedPProjectIdSplatRoute =
   AuthenticatedPProjectIdSplatRouteImport.update({
@@ -177,25 +177,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_authenticated': {
-      id: '/_authenticated'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/healthz': {
-      id: '/healthz'
-      path: '/healthz'
-      fullPath: '/healthz'
-      preLoaderRoute: typeof HealthzRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logout': {
@@ -205,11 +191,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogoutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/healthz': {
+      id: '/healthz'
+      path: '/healthz'
+      fullPath: '/healthz'
+      preLoaderRoute: typeof HealthzRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/': {
@@ -219,13 +219,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedIndexRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/auth-check': {
-      id: '/_authenticated/auth-check'
-      path: '/auth-check'
-      fullPath: '/auth-check'
-      preLoaderRoute: typeof AuthenticatedAuthCheckRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
     '/_authenticated/billing': {
       id: '/_authenticated/billing'
       path: '/billing'
@@ -233,18 +226,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedBillingRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/p/$projectId': {
-      id: '/_authenticated/p/$projectId'
-      path: '/p/$projectId'
-      fullPath: '/p/$projectId'
-      preLoaderRoute: typeof AuthenticatedPProjectIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/projects/new': {
-      id: '/_authenticated/projects/new'
-      path: '/projects/new'
-      fullPath: '/projects/new'
-      preLoaderRoute: typeof AuthenticatedProjectsNewRouteImport
+    '/_authenticated/auth-check': {
+      id: '/_authenticated/auth-check'
+      path: '/auth-check'
+      fullPath: '/auth-check'
+      preLoaderRoute: typeof AuthenticatedAuthCheckRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/api/auth/callback': {
@@ -253,6 +239,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/auth/callback'
       preLoaderRoute: typeof ApiAuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/projects/new': {
+      id: '/_authenticated/projects/new'
+      path: '/projects/new'
+      fullPath: '/projects/new'
+      preLoaderRoute: typeof AuthenticatedProjectsNewRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/p/$projectId': {
+      id: '/_authenticated/p/$projectId'
+      path: '/p/$projectId'
+      fullPath: '/p/$projectId'
+      preLoaderRoute: typeof AuthenticatedPProjectIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/p/$projectId/$': {
       id: '/_authenticated/p/$projectId/$'

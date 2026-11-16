@@ -18,3 +18,5 @@ changes:
 cd apps/app
 pnpm exec vitest run --config src/core/editor/.context/qa/concurrent-typing.vitest.config.ts
 ```
+
+Upstream: [tiptap#8594](https://github.com/ueberdosis/tiptap/issues/8594) reports the same bug, open as of 2026-11-16. When a y-tiptap release fixes it, drop the `recoverSelectionEndpoint` change from the patch and keep this probe.

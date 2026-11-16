@@ -50,16 +50,15 @@ describe("markdown codec round-trip corpus", () => {
     }
   });
 
-  it.each([
-    "a(b.md",
-    "folder\\ notes.md",
-    "a\\<b> c.md",
-  ])("carries destination %j through the wire unchanged", (href) => {
-    const doc = [paragraph(t("x", [m("link", { href, title: null })]))];
-    const wire = codec.serialize(doc, UNSCOPED_DOCUMENT_LINKS);
-    expect(codec.parse(wire).blocks[0]?.toJSON()).toEqual(doc[0]?.toJSON());
-    expectStable(codec, wire);
-  });
+  it.each(["a(b.md", "folder\\ notes.md", "a\\<b> c.md"])(
+    "carries destination %j through the wire unchanged",
+    (href) => {
+      const doc = [paragraph(t("x", [m("link", { href, title: null })]))];
+      const wire = codec.serialize(doc, UNSCOPED_DOCUMENT_LINKS);
+      expect(codec.parse(wire).blocks[0]?.toJSON()).toEqual(doc[0]?.toJSON());
+      expectStable(codec, wire);
+    },
+  );
 
   it("never lets a destination span lines", () => {
     const doc = [paragraph(t("x", [m("link", { href: "a\nb\r\nc.md", title: null })]))];

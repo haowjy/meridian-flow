@@ -378,7 +378,7 @@ export const commands = pgTable(
       .where(sql`${table.kind} IN ('discard', 'undo_discard')`),
     check(
       "commands_kind_valid",
-      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create')`,
+      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides')`,
     ),
   ],
 );

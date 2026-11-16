@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * E-1: shown-link evidence on PostgreSQL threads (contract §7.3).
  *
@@ -121,6 +122,7 @@ if (!RUN_DB_TESTS || !url) {
       const derive = async (originType: "fork" | "handoff", origin: Turn, from = source) =>
         (
           await repos.threads.createDerivedPrimary({
+            overrides: NO_OVERRIDES,
             aiWriteMode: "direct",
             id: crypto.randomUUID(),
             source: from,

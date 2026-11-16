@@ -7,14 +7,15 @@ import { describe, expect, it } from "vitest";
 import { resolveDebugPathsEnabled, resolveObsVerbose } from "./env.js";
 
 describe("resolveDebugPathsEnabled", () => {
-  it.each([
-    { rawNodeEnv: "development", rawAppEnv: "dev" },
-  ])("is on only with the explicit flag outside production: %o", (environment) => {
-    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "1" })).toBe(true);
-    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "true" })).toBe(true);
-    expect(resolveDebugPathsEnabled(environment)).toBe(false);
-    expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "0" })).toBe(false);
-  });
+  it.each([{ rawNodeEnv: "development", rawAppEnv: "dev" }])(
+    "is on only with the explicit flag outside production: %o",
+    (environment) => {
+      expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "1" })).toBe(true);
+      expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "true" })).toBe(true);
+      expect(resolveDebugPathsEnabled(environment)).toBe(false);
+      expect(resolveDebugPathsEnabled({ ...environment, debugFlag: "0" })).toBe(false);
+    },
+  );
 
   it.each([
     { rawNodeEnv: "production", rawAppEnv: "production" },

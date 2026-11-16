@@ -1443,4 +1443,74 @@ describe("Undo and Redo of names and places read the changes in force", () => {
     sync(a, b);
     expect(at(a, node)).toMatchObject({ name: "A", trashed: false });
   });
+  it("skips an Undo aimed at a change on another node", () => {
+    const a = replica(1000);
+    const x = folder(a, "X");
+    const y = folder(a, "Y");
+    const change = a.rename(LIVE, W, y, "Changed");
+    const crafted = a.author(
+      LIVE,
+      W,
+      { type: "rename", node: x, name: "X", fromName: "X" },
+      { undoes: change.id },
+    );
+    const view = a.view(LIVE);
+    expect(view.skipped).toContainEqual({ record: crafted.id, reason: "undo-other-node" });
+    expect(view.nodes.get(y)?.name).toBe("Changed");
+  });
+  it("holds a folder and its selected child in a closed source", () => {
+    const t = start();
+    const closed = sourceRoot("closed");
+    const parent = t.w.create(D, CHAT, { kind: "folder", name: "P", parent: closed });
+    const child = t.w.create(D, CHAT, {
+      kind: "document",
+      filetype: "markdown",
+      name: "C",
+      parent: parent.node,
+    });
+    const result = applyDraft(
+      t.w,
+      "work-1",
+      WRITER,
+      cmd(),
+      [child.id],
+      undefined,
+      (s) => s === "closed",
+    );
+    expect(result.copies).toEqual([]);
+    expect(result.left.map((r) => [r.record.id, r.why, r.source])).toContainEqual([
+      child.id,
+      "closed",
+      "closed",
+    ]);
+  });
+
+  it("replans a create inside a folder whose move is held", () => {
+    const t = start();
+    const folder = t.folder("P");
+    const moved = t.w.move(D, CHAT, folder, sourceRoot("closed"));
+    const child = t.w.create(D, CHAT, { kind: "folder", name: "C", parent: folder });
+    const result = applyDraft(
+      t.w,
+      "work-1",
+      WRITER,
+      cmd(),
+      undefined,
+      undefined,
+      (s) => s === "closed",
+    );
+    expect(result.left.map((r) => r.record.id)).toContain(moved.id);
+    expect(result.copies.map((r) => r.carries)).toContain(child.id);
+    expect(t.at(child.node)?.source).toBe("manuscript");
+  });
+
+  it("holds Un-Apply when an Undo move would enter a closed source", () => {
+    const t = start();
+    const folder = t.folder("P", sourceRoot("closed"));
+    t.w.move(D, CHAT, folder, ROOT);
+    const applied = applyDraft(t.w, "work-1", WRITER, cmd());
+    const back = undoApply(t.w, applied.command, WRITER, cmd(), { closed: (s) => s === "closed" });
+    expect(back.left).toMatchObject([{ why: "closed", source: "closed" }]);
+    expect(t.at(folder)?.source).toBe("manuscript");
+  });
 });

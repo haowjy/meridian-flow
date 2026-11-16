@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * PostgreSQL contracts for fork cutoffs, idempotency, retained bindings, and provenance.
  *
@@ -638,6 +639,7 @@ else
             },
           },
           {
+            overrides: NO_OVERRIDES,
             id: crypto.randomUUID(),
             threadId: fixture.source.id,
             userId: ids.userId,
@@ -692,6 +694,7 @@ else
           },
         },
         {
+          overrides: NO_OVERRIDES,
           id: crypto.randomUUID(),
           threadId: fixture.source.id,
           userId: ids.userId,
@@ -750,6 +753,7 @@ else
         gateway,
         eventSink: runtime.deps.eventSink,
         agentRevisions: createTestAgentBinding(model.id, "", () => [fixture.source.id]),
+        threads: repos.threads,
         async prefixCacheStateFor() {
           return { state: "warm", reason: "reusable_prefix" };
         },
@@ -793,6 +797,7 @@ else
         userId: ids.userId,
         originTurnId: fixture.firstTurn.id,
         agentSelection: fixture.agent.selection,
+        overrides: NO_OVERRIDES,
       };
 
       const first = await handoffThreadAgent({ ...fixture.deps, handoffBriefs }, input);
@@ -830,6 +835,7 @@ else
             },
           },
           {
+            overrides: NO_OVERRIDES,
             id,
             threadId: fixture.source.id,
             userId: ids.userId,
@@ -876,6 +882,7 @@ else
             },
           },
           {
+            overrides: NO_OVERRIDES,
             id: destinationId,
             threadId: fixture.source.id,
             userId: ids.userId,
@@ -930,6 +937,7 @@ else
             },
           },
           {
+            overrides: NO_OVERRIDES,
             id,
             threadId: fixture.source.id,
             userId: ids.userId,
@@ -942,25 +950,25 @@ else
       expect(await repos.threads.findByIdIncludingDeleted(id as never)).toBeNull();
     });
 
-    it.each([
-      "cancelled",
-      "error",
-    ] as const)("accepts a %s turn as a settled cutoff", async (status) => {
-      const fixture = await setupSource();
-      const settledTurn = await repos.turns.create({
-        threadId: fixture.source.id,
-        role: "assistant",
-        origin: "assistant",
-        status,
-        prevTurnId: fixture.firstTurn.id,
-      });
+    it.each(["cancelled", "error"] as const)(
+      "accepts a %s turn as a settled cutoff",
+      async (status) => {
+        const fixture = await setupSource();
+        const settledTurn = await repos.turns.create({
+          threadId: fixture.source.id,
+          role: "assistant",
+          origin: "assistant",
+          status,
+          prevTurnId: fixture.firstTurn.id,
+        });
 
-      const { thread: fork } = await createFork(fixture.source, fixture.deps, {
-        originTurnId: settledTurn.id,
-      });
+        const { thread: fork } = await createFork(fixture.source, fixture.deps, {
+          originTurnId: settledTurn.id,
+        });
 
-      expect(fork.originTurnId).toBe(settledTurn.id);
-    });
+        expect(fork.originTurnId).toBe(settledTurn.id);
+      },
+    );
 
     it("rejects a selection whose prefix has no settled turns", async () => {
       const fixture = await setupSource();

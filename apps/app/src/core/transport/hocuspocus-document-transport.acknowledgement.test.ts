@@ -194,29 +194,32 @@ describe("document transport server acknowledgement", () => {
   it.each([
     [ROOM, ["update", "update", "update", "step2"]],
     ["draft:draft-1", ["step2", "update", "update", "update"]],
-  ] as const)("is not saved in %s until every offline-queued update is acknowledged", async (roomName, order) => {
-    harness.destroy();
-    harness = createHarness(roomName);
-    const first = await harness.connect();
-    first.acknowledge(roomName);
-    harness.drop(first);
-    expect(harness.acknowledged).toBe(false);
+  ] as const)(
+    "is not saved in %s until every offline-queued update is acknowledged",
+    async (roomName, order) => {
+      harness.destroy();
+      harness = createHarness(roomName);
+      const first = await harness.connect();
+      first.acknowledge(roomName);
+      harness.drop(first);
+      expect(harness.acknowledged).toBe(false);
 
-    harness.edit("one");
-    harness.edit("two");
-    harness.edit("three");
-    await vi.advanceTimersByTimeAsync(1_000);
-    const second = await harness.connect();
+      harness.edit("one");
+      harness.edit("two");
+      harness.edit("three");
+      await vi.advanceTimersByTimeAsync(1_000);
+      const second = await harness.connect();
 
-    expect(sentSyncKinds(second)).toEqual(order);
-    second.acknowledge(roomName);
-    expect(harness.acknowledged).toBe(false);
-    second.acknowledge(roomName);
-    second.acknowledge(roomName);
-    expect(harness.acknowledged).toBe(false);
-    second.acknowledge(roomName);
-    expect(harness.acknowledged).toBe(true);
-  });
+      expect(sentSyncKinds(second)).toEqual(order);
+      second.acknowledge(roomName);
+      expect(harness.acknowledged).toBe(false);
+      second.acknowledge(roomName);
+      second.acknowledge(roomName);
+      expect(harness.acknowledged).toBe(false);
+      second.acknowledge(roomName);
+      expect(harness.acknowledged).toBe(true);
+    },
+  );
 
   it("never becomes saved from an acknowledgement that was not applied", async () => {
     const socket = await harness.connect();

@@ -1,6 +1,7 @@
 /** Ambient Drizzle transaction context shared by adapters that must participate in one app-level DB transaction. */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Database } from "@meridian/database";
+import { processDetachedWork } from "./detached-work.js";
 import { runOutsideEditConfirmation } from "./edit-confirmation.js";
 
 export type DrizzleDatabase = Database;
@@ -287,7 +288,10 @@ export function setDrizzleTransactionLocal<T>(key: object, value: T): boolean {
 export function runAfterDrizzleCommit(callback: () => void | Promise<void>): boolean {
   const active = activeTransaction();
   if (!active) {
-    void runOutsideWrite(callback);
+    // `dispatchAfterCommit` settles a callback's failure without throwing; so does this.
+    void processDetachedWork
+      .track(Promise.resolve(runOutsideWrite(callback)), "after-commit callback")
+      .catch((cause) => process.emitWarning(`after-commit callback failed: ${String(cause)}`));
     return false;
   }
   active.afterCommit.push(callback);

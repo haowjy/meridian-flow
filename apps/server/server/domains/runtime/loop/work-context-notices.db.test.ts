@@ -206,35 +206,35 @@ else
       expect(events.filter((row) => row.eventType === "work_context.changed")).toHaveLength(1);
     });
 
-    it.each([
-      "deleted",
-      "project-deleted",
-    ])("parks %s targets, including new mutations, until restore", async (hidden) => {
-      if (hidden === "project-deleted")
+    it.each(["deleted", "project-deleted"])(
+      "parks %s targets, including new mutations, until restore",
+      async (hidden) => {
+        if (hidden === "project-deleted")
+          await db
+            .update(schema.projects)
+            .set({ deletedAt: new Date() })
+            .where(eq(schema.projects.id, ids.projectId));
+        else
+          await db
+            .update(schema.threads)
+            .set({ deletedAt: new Date() })
+            .where(eq(schema.threads.id, ids.threadId));
+        await delivery().workChanged(ids.workId);
+        await delivery().sweepWorkNotices();
+        expect(await updates()).toHaveLength(0);
+        expect(await delivery().selectPending(ids.threadId)).toHaveLength(1);
         await db
           .update(schema.projects)
-          .set({ deletedAt: new Date() })
+          .set({ deletedAt: null })
           .where(eq(schema.projects.id, ids.projectId));
-      else
         await db
           .update(schema.threads)
-          .set({ deletedAt: new Date() })
+          .set({ deletedAt: null })
           .where(eq(schema.threads.id, ids.threadId));
-      await delivery().workChanged(ids.workId);
-      await delivery().sweepWorkNotices();
-      expect(await updates()).toHaveLength(0);
-      expect(await delivery().selectPending(ids.threadId)).toHaveLength(1);
-      await db
-        .update(schema.projects)
-        .set({ deletedAt: null })
-        .where(eq(schema.projects.id, ids.projectId));
-      await db
-        .update(schema.threads)
-        .set({ deletedAt: null })
-        .where(eq(schema.threads.id, ids.threadId));
-      await delivery().sweepWorkNotices();
-      expect(await updates()).toHaveLength(1);
-    });
+        await delivery().sweepWorkNotices();
+        expect(await updates()).toHaveLength(1);
+      },
+    );
 
     it("materializes at a held run boundary, ordered with messages, and excludes Work IDs from response ack", async () => {
       const notices = delivery();

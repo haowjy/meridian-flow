@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /** Provider-request contract: dynamic context and same-Agent derivation preserve prompt bytes.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
@@ -625,6 +626,7 @@ describe("frozen prompt provider requests", () => {
       ).toBe(true);
     }
     const { thread: handoff } = await handoffThreadAgent(rig.derive, {
+      overrides: NO_OVERRIDES,
       id: crypto.randomUUID(),
       originTurnId: sourceCutoff.id,
       threadId: rig.thread.id,
@@ -662,6 +664,7 @@ describe("frozen prompt provider requests", () => {
     const sourceCutoff = await turnGraph(rig.repos.turns).latest(rig.thread.id);
     if (!sourceCutoff) throw new Error("Expected source cutoff turn");
     const { thread: handoff } = await handoffThreadAgent(rig.derive, {
+      overrides: NO_OVERRIDES,
       id: crypto.randomUUID(),
       originTurnId: sourceCutoff.id,
       threadId: rig.thread.id,
@@ -719,6 +722,7 @@ describe("frozen prompt provider requests", () => {
     ).rejects.toBeInstanceOf(SubagentDerivationError);
     await expect(
       handoffThreadAgent(rig.derive, {
+        overrides: NO_OVERRIDES,
         id: crypto.randomUUID(),
         originTurnId: parentTurn.id,
         threadId: child.id,

@@ -10,6 +10,7 @@
     "./retention": "./src/deletion-retention.ts",
     "./handles": "./src/handles.ts",
     "./request-id": "./src/request-id.ts",
+    "./object-store-env": "./src/object-store-env.ts",
     "./context-entry-validation": "./src/context-entry-validation.ts",
     "./components": "./src/components/index.ts",
     "./threads": "./src/threads/index.ts",

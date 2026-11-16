@@ -163,6 +163,7 @@ it("Edit dissolves every never-created message in order before newer New chat wr
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
+    overrides: { model: null, effort: null },
     agentSelection: { slug: "general", definitionRevisionId: "rev" },
   };
   recordChatSubmission(account, { ...entry(), creation });
@@ -247,6 +248,7 @@ it("dissolves this pane without retiring a message recorded after the transfer r
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
+    overrides: { model: null, effort: null },
     agentSelection: { slug: "general", definitionRevisionId: "rev" },
   };
   recordChatSubmission(account, { ...entry(), creation });
@@ -294,6 +296,7 @@ it("a delayed observer of creation then acceptance loads the real destination, n
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
+    overrides: { model: null, effort: null },
     agentSelection: { slug: "general", definitionRevisionId: "rev" },
   };
   recordChatSubmission(account, { ...entry(), creation });
@@ -405,6 +408,7 @@ it("a chat send during creation hands off its chat draft even if projection thro
       workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
+      overrides: { model: null, effort: null },
       agentSelection: { slug: "general", definitionRevisionId: "rev" },
     },
   });
@@ -505,67 +509,68 @@ it("a received Edit survives draft reload and retries only retirement", async ()
   expect(scenario.appendRequests).toHaveLength(0);
 });
 
-it.each([
-  "projection",
-  "decoding",
-] as const)("destination %s faults report their cause without resolving the destination", async (kind) => {
-  recordChatSubmission(account, {
-    ...entry(),
-    creation: {
-      title: "Opening",
-      workId: null,
-      workAiWriteMode: "direct",
-      agentName: "General",
-      agentSlug: "general",
-      agentSelection: { slug: "general", definitionRevisionId: "rev" },
-    },
-  });
-  const scenario = new ThreadRunScenario();
-  const actions = scenario.store.getState();
-  const mounted = await mount(scenario);
-  const snapshot = {
-    thread: {
-      id: "thread_1",
-      userId: account,
-      projectId: "project-1",
-      title: "Opening",
-      workId: null,
-      createdAt: "2026-10-11T00:00:00Z",
-      updatedAt: "2026-10-11T00:00:00Z",
-    },
-    turns: [],
-    state: null,
-    hasMore: false,
-  } as unknown as Awaited<ReturnType<typeof getThreadSnapshot>>;
-  vi.mocked(getThreadSnapshot).mockResolvedValue(
-    kind === "decoding" ? (null as unknown as typeof snapshot) : snapshot,
-  );
-  const cause = new Error("destination projection");
-  const reported = vi.fn();
-  vi.stubGlobal("reportError", reported);
-  const fault = vi.spyOn(actions, "ensureThread").mockImplementation(() => {
-    throw cause;
-  });
-  try {
-    retireChatSubmission(account, "one");
-    await vi.waitFor(() =>
-      expect(reported).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: kind === "projection" ? cause.message : "Thread snapshot response is empty",
-        }),
-      ),
+it.each(["projection", "decoding"] as const)(
+  "destination %s faults report their cause without resolving the destination",
+  async (kind) => {
+    recordChatSubmission(account, {
+      ...entry(),
+      creation: {
+        title: "Opening",
+        workId: null,
+        workAiWriteMode: "direct",
+        agentName: "General",
+        agentSlug: "general",
+        overrides: { model: null, effort: null },
+        agentSelection: { slug: "general", definitionRevisionId: "rev" },
+      },
+    });
+    const scenario = new ThreadRunScenario();
+    const actions = scenario.store.getState();
+    const mounted = await mount(scenario);
+    const snapshot = {
+      thread: {
+        id: "thread_1",
+        userId: account,
+        projectId: "project-1",
+        title: "Opening",
+        workId: null,
+        createdAt: "2026-10-11T00:00:00Z",
+        updatedAt: "2026-10-11T00:00:00Z",
+      },
+      turns: [],
+      state: null,
+      hasMore: false,
+    } as unknown as Awaited<ReturnType<typeof getThreadSnapshot>>;
+    vi.mocked(getThreadSnapshot).mockResolvedValue(
+      kind === "decoding" ? (null as unknown as typeof snapshot) : snapshot,
     );
-    expect(mounted.dissolved).not.toHaveBeenCalled();
-    fault.mockRestore();
-    vi.mocked(getThreadSnapshot).mockResolvedValue(snapshot);
-    mounted.read().rebuild();
-    await vi.waitFor(() => expect(getThreadSnapshot).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() => expect(scenario.turns()).toEqual([]));
-  } finally {
-    fault.mockRestore();
-    vi.unstubAllGlobals();
-  }
-});
+    const cause = new Error("destination projection");
+    const reported = vi.fn();
+    vi.stubGlobal("reportError", reported);
+    const fault = vi.spyOn(actions, "ensureThread").mockImplementation(() => {
+      throw cause;
+    });
+    try {
+      retireChatSubmission(account, "one");
+      await vi.waitFor(() =>
+        expect(reported).toHaveBeenCalledWith(
+          expect.objectContaining({
+            message: kind === "projection" ? cause.message : "Thread snapshot response is empty",
+          }),
+        ),
+      );
+      expect(mounted.dissolved).not.toHaveBeenCalled();
+      fault.mockRestore();
+      vi.mocked(getThreadSnapshot).mockResolvedValue(snapshot);
+      mounted.read().rebuild();
+      await vi.waitFor(() => expect(getThreadSnapshot).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(scenario.turns()).toEqual([]));
+    } finally {
+      fault.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("Edit focuses the invoking pane even when a sibling rebuilt last", async () => {
   recordChatSubmission(account, entry());

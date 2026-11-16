@@ -33,7 +33,6 @@ import {
   createYjsGateway,
   selectYjsGatewayServices,
 } from "../../../../apps/server/server/lib/yjs-ws-handler.ts";
-import { processDetachedWork } from "../../../../apps/server/server/shared/detached-work.ts";
 import {
   setTestHook,
   type TestHookPoint,
@@ -59,7 +58,6 @@ const db = createDb(process.env.DATABASE_URL as string, {
 });
 const ports = await createProductionAppPorts({
   db,
-  backgroundTasks: processDetachedWork,
   eventSink: new StderrEventSink(),
   // No provider key composes the mock model; its script queue needs the debug gate.
   environment: { APP_DEBUG: "1", NODE_ENV: "test" },

@@ -190,7 +190,7 @@ there. In the Changes list a notice is said on its rows, never as a line (`useDr
 `RowWord`): every row a Discard took stays struck through with Undo, in the place the list
 showed it when the writer pressed (the list is held at the press, per owner, so a switch of list
 keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedFact.step`): the
-sentence says it was applied, with where it landed, the name a clash gave it or that it came back
+sentence says it was applied, with where it is now (read by id from the tree, the removal sentence once it is in Trash or purged), the name a clash gave it or that it came back
 to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
 takes (`undoApply`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
 answers ends the applied notice, so its result ("Skipped", "Retry") shows on the

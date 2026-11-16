@@ -34,8 +34,13 @@ import { FigureNodeView } from "../FigureNodeView";
 import { ImageNodeView } from "../images/ImageNodeView";
 import { imageDragPreviewPlugin } from "../images/image-drag-preview";
 import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
-import { browserPictureSource } from "../images/image-workflow";
+import { inlinePictureSource } from "../images/image-workflow";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
+import {
+  clipboardRemoteSource,
+  REMOTE_SRC_ATTRIBUTE,
+  remotePictureSource,
+} from "../images/remote-image";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import { tablePressPlugin } from "../landing/table-press";
 import { clipboardLinkRef, LINK_KEPT_REF_ATTRIBUTE } from "../links/link-clipboard";
@@ -507,16 +512,29 @@ export const MeridianTableCell = TableCell.extend({
  * paste sanitizer never lets clipboard HTML set (`links/link-clipboard.ts`).
  */
 /**
- * A picture's stored source. Rendered only when the browser may fetch it as
- * written; anything else is named on the clipboard by its metadata
- * (`links/link-clipboard.ts`), never by an `<img src>` the browser would load.
+ * A picture's stored source. Rendered as `src` only when the browser may fetch it as written;
+ * a web address goes in `data-remote-src`, which the browser never fetches and the parse rule
+ * reads back; anything else is named by clipboard metadata (`links/link-clipboard.ts`).
  */
+function pictureSourceAttributes(source: unknown): Record<string, string> {
+  const stored = typeof source === "string" ? source : "";
+  const src = inlinePictureSource(stored);
+  if (src !== null) return { src };
+  const remote = remotePictureSource(stored);
+  return remote === null ? {} : { [REMOTE_SRC_ATTRIBUTE]: remote };
+}
+
 const PICTURE_SOURCE_ATTRIBUTE = {
   default: "",
-  renderHTML: (attrs: Record<string, unknown>) => {
-    const src = browserPictureSource(typeof attrs.src === "string" ? attrs.src : "");
-    return src === null ? {} : { src };
+  parseHTML: (element: HTMLElement) => {
+    const picture = element.localName === "img" ? element : element.querySelector("img");
+    return (
+      clipboardRemoteSource(picture?.getAttribute(REMOTE_SRC_ATTRIBUTE) ?? null) ??
+      picture?.getAttribute("src") ??
+      ""
+    );
   },
+  renderHTML: (attrs: Record<string, unknown>) => pictureSourceAttributes(attrs.src),
 };
 
 const PICTURE_REF_ATTRIBUTE = {
@@ -691,6 +709,10 @@ export const MeridianImage = Image.extend<ImageOptions & { projectId?: string; o
     };
   },
 
+  parseHTML() {
+    return [...(this.parent?.() ?? []), { tag: `img[${REMOTE_SRC_ATTRIBUTE}]` }];
+  },
+
   /** One gesture the browser would otherwise answer for itself. */
   addProseMirrorPlugins() {
     return [imageDragPreviewPlugin()];
@@ -842,7 +864,10 @@ export const MeridianFigure = Node.create<{ projectId?: string; owner?: string }
           const image = node.querySelector("img");
           const caption = node.querySelector("figcaption")?.textContent ?? "";
           return {
-            src: image?.getAttribute("src") ?? "",
+            src:
+              clipboardRemoteSource(image?.getAttribute(REMOTE_SRC_ATTRIBUTE) ?? null) ??
+              image?.getAttribute("src") ??
+              "",
             alt: image?.getAttribute("alt"),
             label: node.getAttribute("data-label"),
             caption,
@@ -858,7 +883,6 @@ export const MeridianFigure = Node.create<{ projectId?: string; owner?: string }
 
   renderHTML({ node, HTMLAttributes }) {
     const attrs = HTMLAttributes as RenderAttrs;
-    const src = browserPictureSource(typeof node.attrs.src === "string" ? node.attrs.src : "");
     const alt = typeof attrs.alt === "string" ? attrs.alt : null;
     const label = typeof attrs.label === "string" ? attrs.label : null;
     const caption = typeof attrs.caption === "string" ? attrs.caption : "";
@@ -866,7 +890,7 @@ export const MeridianFigure = Node.create<{ projectId?: string; owner?: string }
     return [
       "figure",
       mergeAttributes(HTMLAttributes, { "data-type": "figure", "data-label": label }),
-      ["img", src === null ? { alt } : { src, alt }],
+      ["img", { ...pictureSourceAttributes(node.attrs.src), alt }],
       ["figcaption", caption],
     ];
   },

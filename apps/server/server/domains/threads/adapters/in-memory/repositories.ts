@@ -19,6 +19,7 @@ import {
   formatThreadRef,
   isConversationTurn,
   isPendingPlaceholder,
+  NO_OVERRIDES,
 } from "@meridian/contracts/threads";
 import { workLifecycleState } from "@meridian/contracts/works";
 import { isContinuationOwed } from "../../../../shared/ask-continuation-owed.js";
@@ -128,6 +129,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     initialPromptBakeId: null,
     agentDefinitionRevisionId: null,
     agentName: null,
+    overrides: input.overrides ?? NO_OVERRIDES,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: normalized.parentThreadId,
@@ -476,6 +478,16 @@ export function createInMemoryRepositories(
         ...thread,
         title: title === "" ? null : title,
         updatedAt: toIsoString(new Date()),
+      };
+      threads.set(id, updated);
+      return projectThread(updated);
+    },
+    async setOverrides(id, overrides) {
+      const thread = threads.get(id);
+      if (!thread) throw new Error(`Thread not found: ${id}`);
+      const updated = {
+        ...thread,
+        overrides,
       };
       threads.set(id, updated);
       return projectThread(updated);

@@ -4,7 +4,7 @@
  * open while anything watches it; its replay is the session's, computed once per change however
  * many ask.
  */
-import { type DocumentStanding, listIsReadable, standingIn } from "@/core/tree-list/standing";
+import { type DocumentStanding, listIsReadable, standingAcross } from "@/core/tree-list/standing";
 import type { TreeListHandle, TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import type { TreeListSnapshot } from "@/core/tree-list/tree-list-session";
 
@@ -96,16 +96,11 @@ export class ProjectStandings {
     if (!watched) return WAITING;
     let answer = watched.answers.get(documentId);
     if (!answer) {
-      const { session } = watched.handle;
-      answer = standingIn(session.getSnapshot(), session.replay(), documentId);
-      if (answer.kind === "not-in-list") {
-        // Not in the project's list: it may have moved to the account's.
-        const mine = watched.account.session;
-        const there = standingIn(mine.getSnapshot(), mine.replay(), documentId);
-        // An account list not yet read cannot say the document is nowhere.
-        if (there.kind === "waiting") answer = WAITING;
-        else if (there.kind !== "not-in-list") answer = there;
-      }
+      const list = ({ session }: TreeListHandle) => ({
+        snapshot: session.getSnapshot(),
+        projection: session.replay(),
+      });
+      answer = standingAcross(list(watched.handle), list(watched.account), documentId);
       watched.answers.set(documentId, answer);
     }
     return answer;
