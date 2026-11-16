@@ -457,11 +457,23 @@ msgstr "{changes, plural, one {Discard this chat's change to {name}} other {Disc
 msgid "{count, plural, =0 {Read connection tools} one {Read how to use # connection tool} other {Read how to use # connection tools}}"
 msgstr "{count, plural, =0 {Read connection tools} one {Read how to use # connection tool} other {Read how to use # connection tools}}"
 
+#: src/features/chat/script-copy.ts
+msgid "{count, plural, =0 {Script failed before its first call:} one {Script failed after # call:} other {Script failed after # calls:}}"
+msgstr "{count, plural, =0 {Script failed before its first call:} one {Script failed after # call:} other {Script failed after # calls:}}"
+
+#: src/features/chat/script-copy.ts
+msgid "{count, plural, =0 {Script stopped before its first call:} one {Script stopped after # call:} other {Script stopped after # calls:}}"
+msgstr "{count, plural, =0 {Script stopped before its first call:} one {Script stopped after # call:} other {Script stopped after # calls:}}"
+
 #. placeholder {0}: <> {name} can't be saved: {count} problem </>
 #. placeholder {1}: <> {name} can't be saved: {count} problems </>
 #: src/features/agents/PackageSave.tsx
 msgid "{count, plural, one {{0}} other {{1}}}"
 msgstr "{count, plural, one {{0}} other {{1}}}"
+
+#: src/features/chat/script-copy.ts
+msgid "{count, plural, one {# call} other {# calls}}"
+msgstr "{count, plural, one {# call} other {# calls}}"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
@@ -1752,6 +1764,7 @@ msgid "Cache resets"
 msgstr "Cache resets"
 
 #: src/features/chat/AssistantTurnActions.tsx
+#: src/features/chat/mcp-renderers.tsx
 msgid "Calls"
 msgstr "Calls"
 
@@ -2941,6 +2954,10 @@ msgstr "Couldn't retry."
 #: src/features/chat/chat-card-copy.ts
 msgid "Couldn't retry. Another reply started first."
 msgstr "Couldn't retry. Another reply started first."
+
+#: src/features/chat/command-descriptor.ts
+msgid "Couldn't run a script"
+msgstr "Couldn't run a script"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't run that skill"
@@ -4243,6 +4260,10 @@ msgstr "Italic"
 msgid "Its chat is in Trash."
 msgstr "Its chat is in Trash."
 
+#: src/features/chat/script-copy.ts
+msgid "its code didn't parse"
+msgstr "its code didn't parse"
+
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its document wasn't restored"
 msgstr "Its document wasn't restored"
@@ -4352,6 +4373,10 @@ msgstr "LF line ending"
 #: src/features/account/SettingsDialog.tsx
 msgid "Light"
 msgstr "Light"
+
+#: src/features/chat/mcp-renderers.tsx
+msgid "Line {where}: "
+msgstr "Line {where}: "
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Link"
@@ -5575,6 +5600,10 @@ msgstr "Preferences"
 msgid "Previous change"
 msgstr "Previous change"
 
+#: src/features/chat/mcp-renderers.tsx
+msgid "Printed"
+msgstr "Printed"
+
 #: src/features/account/AccountMenu.tsx
 #: src/features/account/SettingsDialog.tsx
 msgid "Profile"
@@ -5649,6 +5678,14 @@ msgstr "Quick thought"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Quote"
 msgstr "Quote"
+
+#: src/features/chat/script-copy.ts
+msgid "Ran a script"
+msgstr "Ran a script"
+
+#: src/features/chat/script-copy.ts
+msgid "Ran a script:"
+msgstr "Ran a script:"
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/compaction/CompactionDivider.tsx
@@ -6099,6 +6136,10 @@ msgstr "Retry Work"
 msgid "Returned from the billing portal."
 msgstr "Returned from the billing portal."
 
+#: src/features/chat/script-copy.ts
+msgid "returned more than the AI can read ({kilobytes} KB)"
+msgstr "returned more than the AI can read ({kilobytes} KB)"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Right"
@@ -6120,6 +6161,14 @@ msgstr "rule"
 #: src/features/chat/SubagentHeader.tsx
 msgid "Running"
 msgstr "Running"
+
+#: src/features/chat/script-copy.ts
+msgid "Running a script:"
+msgstr "Running a script:"
+
+#: src/features/chat/script-copy.ts
+msgid "Running a script…"
+msgstr "Running a script…"
 
 #: src/features/agents/PackageSave.tsx
 #: src/features/connections/ConnectionPanel.tsx
@@ -6244,6 +6293,18 @@ msgstr "Scratch for {workName}"
 #: src/features/project/chat/use-chat-scratch-source.ts
 msgid "Scratch for this chat"
 msgstr "Scratch for this chat"
+
+#: src/features/chat/mcp-renderers.tsx
+msgid "Script"
+msgstr "Script"
+
+#: src/features/chat/script-copy.ts
+msgid "Script couldn't run:"
+msgstr "Script couldn't run:"
+
+#: src/features/chat/script-copy.ts
+#~ msgid "Script didn't finish"
+#~ msgstr "Script didn't finish"
 
 #: src/features/chat/TurnList.tsx
 msgid "Scroll to latest"
@@ -7138,6 +7199,10 @@ msgstr "The requested passage wasn't specific enough."
 msgid "The review updated. Choose the change again."
 msgstr "The review updated. Choose the change again."
 
+#: src/features/chat/script-copy.ts
+msgid "the script runner failed"
+msgstr "the script runner failed"
+
 #: src/features/chat/tool-failure.tsx
 msgid "The server couldn't be reached."
 msgstr "The server couldn't be reached."
@@ -7787,6 +7852,10 @@ msgstr "Too large to load (the limit is {megabytes} MB)."
 msgid "Too large to show"
 msgstr "Too large to show"
 
+#: src/features/chat/script-copy.ts
+msgid "took longer than {seconds} seconds"
+msgstr "took longer than {seconds} seconds"
+
 #: src/features/connections/ToolChooser.tsx
 msgid "Tools that can change things"
 msgstr "Tools that can change things"
@@ -8208,6 +8277,10 @@ msgstr "Use these tools"
 msgid "Used a connection"
 msgstr "Used a connection"
 
+#: src/features/chat/script-copy.ts
+msgid "used more than {seconds} seconds of its own running time"
+msgstr "used more than {seconds} seconds of its own running time"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Using a connection…"
 msgstr "Using a connection…"
@@ -8434,6 +8507,10 @@ msgstr "You have {MCP_CONNECTIONS_PER_ACCOUNT} connections, the most you can hav
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
 msgstr "You left checkout. No purchase was confirmed."
+
+#: src/features/chat/script-copy.ts
+msgid "you stopped it"
+msgstr "you stopped it"
 
 #: src/features/chat/chat-card-copy.ts
 msgid "You're out of usage. Your messages will send when you add more."

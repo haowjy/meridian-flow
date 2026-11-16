@@ -24,6 +24,7 @@ export const JOURNAL_ONLY_EVENT_TYPES = [
   "stream.delta",
   "tool.executing",
   "tool.output_delta",
+  "tool.connection_call",
 ] as const;
 
 export const REPLY_FINISHED_EVENT_TYPES = [

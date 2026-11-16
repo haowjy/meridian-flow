@@ -42,7 +42,7 @@ of this ([design](https://github.com/haowjy/meridian-flow-docs/tree/main/work/sh
 
 ## The tools and the bake
 
-`mcp_describe` and `mcp_call` are two fixed tools (`source: "mcp"`, in `TOOL_CATALOG`); a chat's
+`mcp_describe`, `mcp_call` and `mcp_run` are three fixed tools (`source: "mcp"`, in `TOOL_CATALOG`); a chat's
 connections are prompt text, not tool definitions.
 
 - **A thread's pins live in its prompt bake.** `prompt_bakes.baked_connections` holds, for each
@@ -76,6 +76,20 @@ connections are prompt text, not tool definitions.
   thread does not hold, and a connection removed since, are made without calling the client.
 - **Restart.** The request-time stub for a connection call with no stored result lists its record
   (what was sent and how far it got): it is never sent again.
+- **`mcp_run`** (`domain/script-run.ts`) runs the model's JavaScript on the one QuickJS runner made
+  in `createAppServices` and closed at shutdown; it throws at creation when the bundle lost the
+  runner's worker or `.wasm`, so `pnpm smoke:prod-boot` proves the build (Nitro `traceDeps` holds
+  all of `@meridian-flow/runtime` external for it). A script's `call(id, args)` is `callConnectionTool`
+  with `sequence` counting up from 0, so records, rules and outcomes are `mcp_call`'s. On the MCP
+  side: 8 calls in flight a script, 2 scripts an account (a third waits; the limiter lives in this
+  process), 2 MB a reply and 8 MB a script into the script, media left out and said so in the
+  value. Code goes through `script-code.ts` first (fences off, types stripped in place by Node's
+  `stripTypeScriptTypes`, so an error's line is the line the model wrote). The result text is the
+  value, the calls, the logs; a script that did not return also lists each call's arguments and
+  reply and says not to repeat answered calls (without that, models repeated writes). Each call is
+  journaled as `tool.connection_call` (sent, then finished) for the chat's live rows; the final
+  typed result (`McpRunResult`) lists every call. Limits are `SCRIPT_LIMITS`, which the tool
+  description reads.
 - **After a compaction** each `mcp_describe` emits `McpDescribeAfterCompaction` (source
   `mcp.describe`, `responseId`, `names`, `ms`). The round trip it adds is the model response that
   issued it, so `model_responses.latency_ms` on `responseId` gives the time to sum (owner question

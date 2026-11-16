@@ -45,6 +45,8 @@ function ToolRowComponent({ tool }: ToolRowProps) {
   return <ExecutedToolRow tool={tool} />;
 }
 
+const renderChild = (child: ToolView) => <ToolRow tool={child} />;
+
 function ExecutedToolRow({ tool }: ToolRowProps) {
   const renderer = rendererFor(tool.toolName);
   const status: ActivityRowStatus =
@@ -57,7 +59,7 @@ function ExecutedToolRow({ tool }: ToolRowProps) {
     () => ({
       title: renderer.title(tool),
       // Every failed row can open to say why, whatever its renderer shows otherwise.
-      expand: renderer.expand?.(tool) ?? errorMessageExpand(tool) ?? undefined,
+      expand: renderer.expand?.(tool, renderChild) ?? errorMessageExpand(tool) ?? undefined,
     }),
     [renderer, tool],
   );

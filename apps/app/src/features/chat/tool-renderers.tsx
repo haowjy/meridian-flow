@@ -7,6 +7,7 @@ import {
   documentToolFailed,
   documentToolReturned,
   mcpCallFailed,
+  mcpRunFailed,
   sourcePath,
   stringInput,
   toolCommand,
@@ -32,7 +33,7 @@ import {
 } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
-import { MCP_CALL_RENDERER, MCP_DESCRIBE_RENDERER } from "./mcp-renderers";
+import { MCP_CALL_RENDERER, MCP_DESCRIBE_RENDERER, MCP_RUN_RENDERER } from "./mcp-renderers";
 import { useOwnerNames } from "./owner-names";
 import { PassageDoor } from "./PassageDoor";
 import {
@@ -66,8 +67,11 @@ export type ToolExpand = () => ReactNode;
 export type ToolRenderer = {
   /** Single-line summary of the tool action. Already i18n'd. */
   title: (tool: ToolView) => ReactNode;
-  /** Deferred inline expansion. `null` = no expand affordance on this row. */
-  expand?: (tool: ToolView) => ToolExpand | null;
+  /**
+   * Deferred inline expansion. `null` = no expand affordance on this row. `renderRow` draws a
+   * tool as a row of its own, for a tool that holds others (a script's calls).
+   */
+  expand?: (tool: ToolView, renderRow: (tool: ToolView) => ReactNode) => ToolExpand | null;
 };
 
 /* ── input helpers ─────────────────────────────────────────────────────── */
@@ -254,7 +258,9 @@ function documentFailureDocumentName(tool: ToolView): string | null {
 
 /** Whether the row reports a failure to the writer. */
 export function toolRowFailed(tool: ToolView): boolean {
-  return tool.toolName === "mcp_call" ? mcpCallFailed(tool) : documentToolFailed(tool);
+  if (tool.toolName === "mcp_call") return mcpCallFailed(tool);
+  if (tool.toolName === "mcp_run") return mcpRunFailed(tool);
+  return documentToolFailed(tool);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
@@ -671,6 +677,7 @@ const RENDERERS: Record<string, ToolRenderer> = {
   thread_report: THREAD_REPORT_RENDERER,
   mcp_call: MCP_CALL_RENDERER,
   mcp_describe: MCP_DESCRIBE_RENDERER,
+  mcp_run: MCP_RUN_RENDERER,
 };
 
 export function rendererFor(toolName: string): ToolRenderer {

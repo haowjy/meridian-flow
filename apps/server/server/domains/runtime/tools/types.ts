@@ -4,6 +4,7 @@ import type {
   ModelEditOutcome,
   ModelEditToolResult,
 } from "@meridian/contracts/branches";
+import type { McpScriptCall } from "@meridian/contracts/mcp";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   ReturnResultCapture,
@@ -67,6 +68,16 @@ export interface ToolExecutionContext {
   emitOutputDelta?: (
     toolCallId: string,
     chunk: { stream: "stdout" | "stderr"; text: string },
+  ) => void;
+  /** Live rows of a script's calls; the executor binds the current `ToolCallInput.id`. */
+  emitConnectionCall?: (
+    toolCallId: string,
+    event: {
+      sequence: number;
+      id: string;
+      arguments: JsonObject;
+      call?: McpScriptCall;
+    },
   ) => void;
   spawn?: SpawnToolHandlerContext["spawn"];
   threadMessage?: ThreadMessageToolHandlerContext["threadMessage"];
@@ -164,6 +175,17 @@ export interface ToolHandlerContext {
    * that stream. Undefined for non-streaming handlers.
    */
   emitOutputDelta?: (chunk: { stream: "stdout" | "stderr"; text: string }) => void;
+  /**
+   * Live rows for the calls a script makes (`mcp_run`): journaled as the thread's own events, so
+   * the writer sees each call as it is sent and when it finishes. Not `emitOutputDelta`, which
+   * carries text and drops it past a budget.
+   */
+  emitConnectionCall?: (event: {
+    sequence: number;
+    id: string;
+    arguments: JsonObject;
+    call?: McpScriptCall;
+  }) => void;
   /**
    * Observation-frontier lookups for a tool that shows documents: the frontier
    * a result chains from (`recording`) and the request's view (`planning`).

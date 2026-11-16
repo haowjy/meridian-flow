@@ -174,8 +174,8 @@ settings:
 catalogs:
   default:
     '@meridian-flow/runtime':
-      specifier: ^0.3.0
-      version: 0.3.0
+      specifier: ^0.4.0
+      version: 0.4.0
     '@types/node':
       specifier: ^26
       version: 26.0.1
@@ -596,7 +596,7 @@ importers:
         version: 0.34.5
       '@meridian-flow/runtime':
         specifier: 'catalog:'
-        version: 0.3.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(ws@8.21.0)
+        version: 0.4.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(vitest@4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(ws@8.21.0)
       '@meridian/agent-edit':
         specifier: workspace:*
         version: link:../../packages/agent-edit
@@ -885,7 +885,7 @@ importers:
         version: 0.0.57
       '@meridian-flow/runtime':
         specifier: 'catalog:'
-        version: 0.3.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(ws@8.21.0)
+        version: 0.4.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(vitest@4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(ws@8.21.0)
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
@@ -2336,6 +2336,12 @@ packages:
     resolution: {integrity: sha512-u3UPsIilWKOM3F9CXtrG8LEJmNxwoCQC/XVj4IKYXvvpx7QIi/Kg1LI5uDmDpKlac62NUtX7eLjRh+jVZcLOzw==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
 
+  '@jitl/quickjs-ffi-types@0.32.0':
+    resolution: {integrity: sha512-v9T+GQpmk43VDJ7d72sf0Nexhk+ArvtUihW27dy7lqAl0zBObFKtSBBIm5RBjwIhE8VwsPPm9PNuvPvNqLWUEg==}
+
+  '@jitl/quickjs-wasmfile-release-sync@0.32.0':
+    resolution: {integrity: sha512-BKNDI/TPBfGlLNGYpLrhcDGXmIk4xHm4MRAisOBnOzpXVn9HZWsfmMAc9WMBrAHjvvds6HOikKeaOBKdPdpVrg==}
+
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
 
@@ -2421,9 +2427,14 @@ packages:
   '@meridian-flow/mars-schema@0.34.5':
     resolution: {integrity: sha512-f0BMCOCb2m2KeqTBw8SpD6YL1HfCH0hAXfLMyvLuZnTfUojwHISPWYS6DYSSJNYo/TLxY9P3OmjVWUGnduvkHQ==}
 
-  '@meridian-flow/runtime@0.3.0':
-    resolution: {integrity: sha512-OZDjDp736KjP2m8g31PstcRIRHsonySj5FfNWP8qLgOXRMjDZgE+Wx5yXOcHakqf5jqsiZ62P2BnkYk6GPaR9A==}
+  '@meridian-flow/runtime@0.4.0':
+    resolution: {integrity: sha512-RcjVWkXGRLZ+xgv9lonno+R4yaPtMneFBSyjW/S6t4HKb0g5I4YnndQWfoWsvPNuk1dFY40J2K52UJt85ryN1g==}
     engines: {node: '>=22'}
+    peerDependencies:
+      vitest: '>=4'
+    peerDependenciesMeta:
+      vitest:
+        optional: true
 
   '@mermaid-js/parser@1.2.0':
     resolution: {integrity: sha512-oYPyv8A4As1yH5Bx+04iQEQxXuIQDe0GKCNSRgao6z8AM9jixXIfP0vsppRLvGf+nKIOb9/LdpWA4YuJiVvESA==}
@@ -6388,6 +6399,9 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
+  quickjs-emscripten-core@0.32.0:
+    resolution: {integrity: sha512-QFnPfjFey8EqknSrSxe1hZrf1/8z7/6s1QzGOmKo6++02r7QRRX7ZoyNaZh7JuVjWsVW87KnQrbZqnHkOAzUyg==}
+
   radix-ui@1.8.1:
     resolution: {integrity: sha512-HPfpVGizO9xANlsFSauruLhRe/3+iOt3vPX0MXYle/UQi3gorQrSYtBcdiv0BZYewcl2rvL59qrIuLFMGAmUrw==}
     peerDependencies:
@@ -8428,6 +8442,12 @@ snapshots:
       '@types/yargs': 17.0.35
       chalk: 4.1.2
 
+  '@jitl/quickjs-ffi-types@0.32.0': {}
+
+  '@jitl/quickjs-wasmfile-release-sync@0.32.0':
+    dependencies:
+      '@jitl/quickjs-ffi-types': 0.32.0
+
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
@@ -8543,14 +8563,18 @@ snapshots:
 
   '@meridian-flow/mars-schema@0.34.5': {}
 
-  '@meridian-flow/runtime@0.3.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(ws@8.21.0)':
+  '@meridian-flow/runtime@0.4.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(supports-color@7.2.0)(undici@8.12.4)(vitest@4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(ws@8.21.0)':
     dependencies:
       '@anthropic-ai/sdk': 1.8.0(zod@4.6.7)
       '@google/genai': 3.3.0(supports-color@7.2.0)
+      '@jitl/quickjs-wasmfile-release-sync': 0.32.0
       '@modelcontextprotocol/client': 2.4.0
       jsonrepair: 3.15.0
       openai: 7.57.0(@aws-sdk/credential-provider-node@3.972.58)(@smithy/signature-v4@5.5.2)(google-auth-library@10.9.1(supports-color@7.2.0))(undici@8.12.4)(ws@8.21.0)(zod@4.6.7)
+      quickjs-emscripten-core: 0.32.0
       zod: 4.6.7
+    optionalDependencies:
+      vitest: 4.1.9(@opentelemetry/api@1.10.0)(@types/node@26.0.1)(jsdom@29.1.1(@noble/hashes@2.4.0))(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
     transitivePeerDependencies:
       - '@aws-sdk/credential-provider-node'
       - '@modelcontextprotocol/sdk'
@@ -12881,6 +12905,10 @@ snapshots:
       commander: 10.0.1
 
   punycode@2.3.1: {}
+
+  quickjs-emscripten-core@0.32.0:
+    dependencies:
+      '@jitl/quickjs-ffi-types': 0.32.0
 
   radix-ui@1.8.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7):
     dependencies:

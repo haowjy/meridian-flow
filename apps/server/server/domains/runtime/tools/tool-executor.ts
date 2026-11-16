@@ -543,6 +543,9 @@ export function createToolExecutor(
         emitOutputDelta: ctx.emitOutputDelta
           ? (chunk) => ctx.emitOutputDelta?.(call.id, chunk)
           : undefined,
+        ...(ctx.emitConnectionCall
+          ? { emitConnectionCall: (event) => ctx.emitConnectionCall?.(call.id, event) }
+          : {}),
         ...(key
           ? {
               modelEdit: {

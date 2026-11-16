@@ -1,5 +1,5 @@
-/** The typed `result` of the two connection tools, which the chat rows read. */
-import type { JsonObject, StoredMediaPart } from "../threads/index.js";
+/** The typed `result` of the three connection tools, which the chat rows read. */
+import type { JsonObject, JsonValue, StoredMediaPart } from "../threads/index.js";
 
 /**
  * How one `mcp_call` ended. `answered` is the tool's reply; `tool_error` is the tool running and
@@ -46,6 +46,11 @@ export interface McpCallResult {
    * record.
    */
   reply?: { text: string; cut: boolean; media?: StoredMediaPart[] };
+  /**
+   * The tool's description and input schema, set when the tool reported a problem or the server
+   * refused. The model reads it after the server's words; the row does not show it.
+   */
+  schema?: string;
 }
 
 export interface McpDescribedItem {
@@ -63,5 +68,40 @@ export interface McpDescribedItem {
 export interface McpDescribeResult {
   items: McpDescribedItem[];
   /** What the model read: each tool's description and schema, or each connection's tool lines. */
+  text: string;
+}
+
+/** One call a script made: the `mcp_call` shape with the call's place in the script. */
+export type McpScriptCall = McpCallResult & { sequence: number };
+
+/**
+ * How a script ended. `rejected_code` is code the type stripper could not parse (nothing ran);
+ * `unavailable` is the runner failing to start or dying under the script.
+ */
+export type McpRunEnded =
+  | "returned"
+  | "threw"
+  | "timed_out"
+  | "too_large"
+  | "aborted"
+  | "unavailable"
+  | "rejected_code";
+
+/** The typed `result` of `mcp_run`, which the script row reads. */
+export interface McpRunResult {
+  ended: McpRunEnded;
+  /** The JSON the script returned; set for `returned`, absent when it returned nothing. */
+  value?: JsonValue;
+  /** `threw`, `rejected_code` and `unavailable`: the failure in the runner's or stripper's words. */
+  error?: { name: string; message: string; line?: number; column?: number };
+  /** `timed_out`: which limit, and how long it is. */
+  limit?: "wall" | "cpu";
+  limitMs?: number;
+  /** `too_large`: the size the value had. */
+  bytes?: number;
+  /** In the order the script made them. A reply is cut to what the row shows; the record has it whole. */
+  calls: McpScriptCall[];
+  logs?: { text: string; cutBytes: number };
+  /** What the model read: the value, then the calls, then the logs, in Flow's words. */
   text: string;
 }

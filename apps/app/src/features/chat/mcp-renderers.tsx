@@ -7,7 +7,13 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { McpCallResult } from "@meridian/contracts/mcp";
 import type { JsonValue } from "@meridian/contracts/protocol";
-import { mcpCall, mcpCallFailed, type ToolView } from "@meridian/thread-client";
+import {
+  mcpCall,
+  mcpCallFailed,
+  mcpRun,
+  mcpRunFailed,
+  type ToolView,
+} from "@meridian/thread-client";
 import type { ReactNode } from "react";
 import { useMcpConnections, useRouteProjectId } from "@/client/query/useMcpConnections";
 import { Button } from "@/components/ui/button";
@@ -18,6 +24,7 @@ import { BoundLine, ExpandableProse } from "./ClippedExpand";
 import { CommandTitle } from "./CommandTitle";
 import { descriptorFor, mcpToolLabel, toolActivityPhrase } from "./command-descriptor";
 import { DocumentName } from "./DocumentName";
+import { scriptPhrase } from "./script-copy";
 import { failureText } from "./tool-failure";
 import type { ToolExpand, ToolRenderer } from "./tool-renderers";
 
@@ -52,6 +59,24 @@ export const MCP_CALL_RENDERER: ToolRenderer = {
   },
 };
 
+export const MCP_RUN_RENDERER: ToolRenderer = {
+  // Not `phrase`: a failed script says why it stopped, where a failed row says only what it couldn't do.
+  title: (tool) => {
+    const { verb, parameter } = scriptPhrase(tool);
+    return (
+      <CommandTitle
+        verb={verb}
+        parameter={parameter ? <span className="min-w-0 truncate">{parameter}</span> : undefined}
+      />
+    );
+  },
+  expand: (tool, renderRow) => {
+    const { code, calls, result } = mcpRun(tool);
+    if (!code && !calls.length && !result) return null;
+    return () => <McpRunDetail tool={tool} renderRow={renderRow} />;
+  },
+};
+
 export const MCP_DESCRIBE_RENDERER: ToolRenderer = {
   title: (tool) => (tool.isError ? descriptorFor(tool).failureVerb() : phrase(tool)),
   expand: (tool) => {
@@ -71,6 +96,52 @@ export const MCP_DESCRIBE_RENDERER: ToolRenderer = {
 function describedText(result: JsonValue | null): string | null {
   if (!result || typeof result !== "object" || Array.isArray(result)) return null;
   return typeof result.text === "string" && result.text ? result.text : null;
+}
+
+/** The script and, under it, one row per call: the same row an `mcp_call` has. */
+function McpRunDetail({
+  tool,
+  renderRow,
+}: {
+  tool: ToolView;
+  renderRow: (tool: ToolView) => ReactNode;
+}) {
+  const { code, calls, result } = mcpRun(tool);
+  const failed = tool.status === "complete" && mcpRunFailed(tool);
+  const where = result?.error?.line;
+  return (
+    <div className="space-y-[var(--chat-space-inline)]">
+      {failed && result?.error ? (
+        <p className="text-compact text-destructive">
+          {where !== undefined ? <Trans>Line {where}: </Trans> : null}
+          {result.error.message}
+        </p>
+      ) : null}
+      {code ? (
+        <Part label={<Trans>Script</Trans>}>
+          <ExpandableProse more={<Trans>Show more</Trans>}>
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
+              {code}
+            </pre>
+          </ExpandableProse>
+        </Part>
+      ) : null}
+      {calls.length ? (
+        <Part label={<Trans>Calls</Trans>}>
+          {calls.map((call) => (
+            <div key={call.toolCallId}>{renderRow(call)}</div>
+          ))}
+        </Part>
+      ) : null}
+      {result?.logs?.text ? (
+        <Part label={<Trans>Printed</Trans>}>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-foreground">
+            {result.logs.text}
+          </pre>
+        </Part>
+      ) : null}
+    </div>
+  );
 }
 
 function McpCallDetail({ tool }: { tool: ToolView }) {

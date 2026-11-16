@@ -59,6 +59,8 @@ export interface CallRequest {
   id: string;
   arguments: JsonObject;
   signal: AbortSignal;
+  /** Called once the call's record is written, as the call leaves. */
+  opened?: (recordId: string) => void;
   /** Which tool call made this one: `mcp_call` is sequence 0, a script's calls count up from 0. */
   origin: { turnId: string; modelResponseId: string; toolCallId: string; sequence: number };
 }
@@ -134,6 +136,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       toolName: tool.name,
       arguments: request.arguments,
     });
+    request.opened?.(recordId);
     // A token that no longer opens is a sign-in problem the check reports; no call leaves.
     const outcome: CallOutcome =
       "problem" in loaded
@@ -172,8 +175,28 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
   async function mcpCall(
     request: CallRequest,
   ): Promise<{ result: McpCallResult; isError: boolean }> {
-    const base = { id: request.id, arguments: request.arguments };
     const call = await callConnectionTool(request);
+    return shapeCall(request, call, {
+      schema: true,
+      reply: (recordId, reply) => shapeReply(request.thread.id, recordId, reply),
+    });
+  }
+
+  /**
+   * One call's outcome as the typed result both tools carry. `reply` shapes an answered call's
+   * reply (`mcp_call` stores its pictures, a script leaves them out); `schema` sets the tool's
+   * schema on a failed call, which `mcp_call` follows its words with and a script's failure text
+   * gives once per tool.
+   */
+  async function shapeCall(
+    request: Pick<CallRequest, "id" | "arguments" | "bake">,
+    call: ConnectionCall,
+    how: {
+      schema: boolean;
+      reply: (recordId: string, reply: JsonObject) => Promise<NonNullable<McpCallResult["reply"]>>;
+    },
+  ): Promise<{ result: McpCallResult; isError: boolean }> {
+    const base = { id: request.id, arguments: request.arguments };
     if (call.kind === "refused")
       return {
         isError: true,
@@ -201,14 +224,16 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
       ms: outcome.ms,
       ...(reply ? { reply } : {}),
     });
-    const schema = describeTool(request.id, tool);
+    // The tool's schema follows a failed call's words for the model; the row shows the server's reply alone.
+    const schema = how.schema ? { schema: describeTool(request.id, tool) } : {};
     switch (outcome.kind) {
       case "answered": {
-        const shaped = await shapeReply(request.thread.id, recordId, outcome.reply);
-        // The tool's own error is followed by its schema, every time: the model has what it needs for the next call.
-        const reply = outcome.isError ? { ...shaped, text: `${shaped.text}\n\n${schema}` } : shaped;
+        const reply = await how.reply(recordId, outcome.reply);
         return outcome.isError
-          ? { isError: true, result: failure("The tool reported a problem.", reply) }
+          ? {
+              isError: true,
+              result: { ...failure("The tool reported a problem.", reply), ...schema },
+            }
           : {
               isError: false,
               result: {
@@ -219,14 +244,13 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
               },
             };
       }
-      case "rejected":
+      case "rejected": {
+        const message = `The server refused the request: ${outcome.message}`;
         return {
           isError: true,
-          result: failure(`The server refused the request: ${outcome.message}`, {
-            text: `The server refused the request: ${outcome.message}\n\n${schema}`,
-            cut: false,
-          }),
+          result: { ...failure(message, { text: message, cut: false }), ...schema },
         };
+      }
       case "too_large":
         return {
           isError: true,
@@ -355,7 +379,7 @@ export function createConnectionTools(deps: ConnectionToolsDeps) {
     });
   }
 
-  return { callConnectionTool, mcpCall, describe, recordedCalls };
+  return { callConnectionTool, mcpCall, shapeCall, describe, recordedCalls };
 }
 
 export type ConnectionTools = ReturnType<typeof createConnectionTools>;
