@@ -4,7 +4,6 @@
   import it. The oldest removal this record actually held may fall off the cap,
   which isn't a list-driven clear. `remove` remembers only ids dropped
   from this record in that call, so unrelated removals don't consume removal capacity.
-- A card Undo that takes a live create back removes its recent (`removeAccountRecents`).
   Nothing brings it back: there is no card Redo, and a later open adds it again.
 - A removal the project's list shows (Trash, purge) drops the row; a later locator renames it. A presented document
   does the same for a row still in the record, including a local draft's name.

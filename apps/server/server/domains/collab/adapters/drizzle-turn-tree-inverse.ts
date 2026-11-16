@@ -1,5 +1,5 @@
 /**
- * The tree half of a card's Undo or Redo of a reply: the reply's tree receipts (the model's
+ * The tree half of a card's Undo of a reply: the reply's tree receipts (the model's
  * moves, renames, deletes and creates), taken back by the package's `undoChange` in the list
  * that holds each node, as one step of the card's command. The receipts are the history the
  * model's own `undo` chooses from (`tree_edit_receipts` and their `reverses` links), and each
@@ -42,7 +42,7 @@ export type TreePlan = {
   /** The steps' documents, each where it is reversed, for the edit grants (a restore is its own). */
   documents: { documentId: string; branchId: BranchId | null; restore: boolean }[];
   /**
-   * Documents whose create this Undo takes back: their text stays with the document.
+   * Documents created in this turn: their text stays with the document.
    */
   createdDocuments: string[];
 };
@@ -123,8 +123,20 @@ export function createTurnTreeInverse(deps: {
   }
 
   async function plan(threadId: ThreadId, turnId: TurnId): Promise<TreePlan> {
+    const creates = await db()
+      .select({ id: treeEditReceipts.nodeId })
+      .from(treeEditReceipts)
+      .where(
+        and(
+          eq(treeEditReceipts.threadId, threadId),
+          eq(treeEditReceipts.turnId, turnId),
+          eq(treeEditReceipts.kind, "write"),
+          eq(treeEditReceipts.op, "create"),
+        ),
+      );
+    const createdDocuments = creates.map((row) => row.id as string);
     const all = await deps.history().turnSteps(threadId, turnId);
-    if (all.length === 0) return NO_TREE_STEPS;
+    if (all.length === 0) return { ...NO_TREE_STEPS, createdDocuments };
     const held = new Set<string>();
     const draftedIn = new Map<string, string[]>();
     for (const step of all)
@@ -214,9 +226,7 @@ export function createTurnTreeInverse(deps: {
             ]
           : [];
       }),
-      createdDocuments: steps.flatMap((step) =>
-        step.op === "create" && subjects.has(step.subject) ? [step.subject] : [],
-      ),
+      createdDocuments,
     };
   }
 

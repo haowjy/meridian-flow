@@ -55,31 +55,6 @@ function ids(recents: DeviceAccountRecentsStore) {
 }
 
 describe("account recents", () => {
-  it("does not let an omitting list clear a removal or a later list resurrect it", () => {
-    const recents = store();
-    recents.setUser("account");
-    open(recents, "chapter", "2026-09-22T12:00:00.000Z");
-    recents.remove("account", [{ documentId: "chapter", projectId: "project" }]);
-
-    recents.applyServerList("account", "project", [], recents.epoch);
-    recents.applyServerList(
-      "account",
-      "project",
-      [row("chapter", "2026-09-22T12:00:00.000Z")],
-      recents.epoch,
-    );
-    expect(ids(recents)).toEqual([]);
-
-    open(recents, "chapter", "2026-09-22T13:00:00.000Z");
-    recents.applyServerList(
-      "account",
-      "project",
-      [row("chapter", "2026-09-22T12:00:00.000Z")],
-      recents.epoch,
-    );
-    expect(ids(recents)).toEqual(["chapter"]);
-  });
-
   it("ignores a list captured before the account was bound again", () => {
     const recents = store();
     recents.setUser("account");

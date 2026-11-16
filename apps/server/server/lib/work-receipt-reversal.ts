@@ -84,7 +84,6 @@ export async function reverseTurnCard(
   const alongsideRun = async (outcome: ReversalOutcome): Promise<ReversalOutcome> => {
     const canReverseWorkReceipts =
       outcome.status === "reversed" ||
-      outcome.status === "reconciled" ||
       outcome.status === "nothing_to_undo" ||
       outcome.status === "partial" ||
       outcome.status === "partial_failure";
@@ -185,11 +184,30 @@ export async function reverseWorkReceipts(
 export async function getWorkReceiptReversalAvailability(
   deps: Pick<WorkReceiptReversalDeps, "blocks" | "turns" | "works" | "threads">,
   input: { threadId: ThreadId; turnId: TurnId },
-): Promise<{ undo: boolean }> {
+): Promise<{ undo: boolean; undone: boolean }> {
   const context = await reversalContext(deps, input);
-  if (!context || context.receipts.length === 0) return { undo: false };
-  const plan = await planReceipts(deps, [...context.receipts].reverse(), context.thread);
-  return { undo: plan.length > 0 && plan.every((step) => step.executable) };
+  if (!context || context.receipts.length === 0) return { undo: false, undone: false };
+  const [plan, works] = await Promise.all([
+    planReceipts(deps, [...context.receipts].reverse(), context.thread),
+    deps.works.listByProject(context.thread.projectId, { includeDeleted: true, lifecycle: "all" }),
+  ]);
+  const states = new Map(works.map((work) => [work.id, { ...work, deleted: !!work.deletedAt }]));
+  const undone = context.receipts.every((receipt) => {
+    const work = states.get(receipt.workId);
+    if (!work || !receipt.inverse) return false;
+    if (receipt.operation === "update") {
+      if (work.deleted || !sameState(work, receipt.before) || !receipt.after) return false;
+      Object.assign(work, receipt.after);
+    } else if (receipt.operation === "create") {
+      if (!work.deleted || !sameState(work, receipt.after)) return false;
+      work.deleted = false;
+    } else {
+      if (work.deleted || !sameState(work, receipt.before)) return false;
+      work.deleted = true;
+    }
+    return true;
+  });
+  return { undo: plan.every((step) => step.executable), undone };
 }
 
 async function reversalContext(

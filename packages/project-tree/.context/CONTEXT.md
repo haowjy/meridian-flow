@@ -133,8 +133,8 @@ the replay uses them (package `AGENTS.md`).
   also set a name stays (`kept`), for `undoApply`'s `left`.
 - **Creates, deletes and restores** follow the same in-force rule, but Trash keeps its own
   record-order account: it counts each delete of a node, and a restore lifts deletes outside any
-  Undo chain (a plain restore, rule 9). `undoChange` on them takes back the last record in force
-  of the chain that undid and redid them (`redoneAs`). Undo of a delete is allowed while that
+  Undo chain (a plain restore, rule 9). `undoChange` on them takes back the record in force
+  named by the caller. Undo of a delete is allowed while that
   delete is a Trash entry in force. The opposite record of a
   restore puts back the deletes that restore lifted, under their own ids, with what each took (the
   replay keeps what each restore lifted): the entry is the original delete again, so its Undo and

@@ -81,8 +81,8 @@ describe("Work receipt reversal", () => {
     expect(
       combineWorkReversalOutcome(
         {
-          status: "reconciled",
-          documents: [{ documentId: "document-a", uri: "manuscript://a", status: "reconciled" }],
+          status: "reversed",
+          documents: [{ documentId: "document-a", uri: "manuscript://a", status: "reversed" }],
         },
         [
           {
@@ -246,7 +246,7 @@ describe("Work receipt reversal", () => {
     });
     await expect(
       getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: false });
+    ).resolves.toEqual({ undo: false, undone: false });
     await expect(
       reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
     ).resolves.toEqual([]);
@@ -267,7 +267,7 @@ describe("Work receipt reversal", () => {
 
     await expect(
       getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: true });
+    ).resolves.toEqual({ undo: true, undone: false });
     await expect(
       reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
     ).resolves.toEqual([
@@ -289,7 +289,7 @@ describe("Work receipt reversal", () => {
 
     await expect(
       getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: true });
+    ).resolves.toEqual({ undo: true, undone: false });
     await h.works.update(work.id, { name: "D" });
     await expect(
       reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),

@@ -102,7 +102,8 @@ still hold its nodes in Trash (`deleteStands`; the writer's restore or later del
 leaves one nothing to take back), and a drafted Undo only while its Work's branch places the node.
 A step that can't act is skipped with `superseded` and never run, so one purged document never
 refuses the rest of the reply. The text targets and the grants come from the steps that act. A
-card's Undo of a create skips that document's text steps and takes the document back whole.
+card never targets the text of a document created by the turn, even after the create was undone;
+the tree Undo takes the document back whole.
 The Work's draft stays as it is, with any other turn's change in it.
 A reversal's result names a document in Trash by where it last stood.
 A turn's edit targets include its create transition even when the document is empty. A draft-scoped
