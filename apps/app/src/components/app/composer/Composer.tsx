@@ -239,6 +239,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(running);
   const [initialDraft] = useState(props.initialDraft);
+  const regionRef = useRef<HTMLDivElement>(null);
   const revision = useRef(initialDraft?.revision ?? 0);
   const appliedChange = useRef(props.externalChange?.seq);
   const inFlight = useRef<ComposerSubmitEnvelope | null>(null);
@@ -423,15 +424,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       suppressDraftChangeRef.current = false;
       // The editor now holds exactly the owner's document; the dispatch's own revision bump would make `holds()` fail.
       if (draft) revision.current = draft.revision;
-      // The control that caused this write (Stop, a queue's x, Edit, an Undo) is gone or no longer
-      // the place to type: the box takes focus with the caret after the words, unless the writer is
-      // typing in another field.
+      // The control that caused this write (Stop, a queue's x, Edit, an Undo) is gone: the box takes
+      // focus with the caret after the words. Focus on a control elsewhere stays there.
       const active = document.activeElement;
-      const typingElsewhere =
-        active instanceof HTMLElement &&
-        active !== editor.view.dom &&
-        (active.isContentEditable || active.matches("input, textarea, select"));
-      if (draft && !editor.isFocused && !typingElsewhere) {
+      const focusFree =
+        !active || active === document.body || !!regionRef.current?.contains(active);
+      if (draft && !editor.isFocused && focusFree) {
         editor.commands.focus("end", { scrollIntoView: false });
       }
     });
@@ -718,7 +716,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     </FailureCard>
   ) : null;
   return (
-    <>
+    <div ref={regionRef} className="contents">
       {cards || failureCard ? (
         // Above the box and its strips, as wide as the box: every note above the box is the
         // same card in the same place, whoever raised it. Send is the failure's retry.
@@ -838,6 +836,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ) : null}
         </div>
       </div>
-    </>
+    </div>
   );
 });
