@@ -22,6 +22,14 @@ export interface PackageSave {
   packageRevisionId: string | null;
   contentDigest: string | null;
   createdAt: Date;
+  undoneSaveId: string | null;
+  hasPrevious: boolean;
+  savedBy: "writer" | "ai";
+}
+
+/** A package's latest Save, with every earlier Save of it that an Undo took back. */
+export interface LatestSave extends PackageSave {
+  undoneSaveIds: string[];
 }
 
 /** An available Agent as one reader version read it. The runtime never sees an unavailable one. */
@@ -66,6 +74,7 @@ export interface AgentRevisionStore {
     owner: SaveOwner,
     folder: string,
     packageRevisionId: string | null,
+    metadata?: { savedBy?: "writer" | "ai"; undoneSaveId?: string },
   ): Promise<PackageSave>;
   /**
    * Settles one package's Save as one operation under its ordering: `decide` gets the package's
@@ -77,12 +86,17 @@ export interface AgentRevisionStore {
   settleSave<T>(
     owner: SaveOwner,
     folder: string,
-    decide: (
-      latest: PackageSave | undefined,
-    ) => Promise<{ value: T; publish?: { packageRevisionId: string | null } }>,
+    decide: (latest: PackageSave | undefined) => Promise<{
+      value: T;
+      publish?: {
+        packageRevisionId: string | null;
+        savedBy?: "writer" | "ai";
+        undoneSaveId?: string;
+      };
+    }>,
   ): Promise<{ value: T; row?: PackageSave }>;
   /** Each package's latest Save of `owner`, one row per folder. */
-  readSaved(owner: SaveOwner): Promise<PackageSave[]>;
+  readSaved(owner: SaveOwner): Promise<LatestSave[]>;
   /**
    * Saves the version before `saveId` again, unless a later Save of that package exists, which
    * leaves everything as it is. `undone` is the Save that was undone, with the new row as
@@ -94,7 +108,14 @@ export interface AgentRevisionStore {
     owner: SaveOwner,
     saveId: string,
     restore: (undone: PackageSave, target: PackageSave | null) => Promise<void>,
-  ): Promise<{ current: PackageSave; undone: PackageSave | null } | undefined>;
+  ): Promise<
+    | {
+        current: PackageSave;
+        undone: PackageSave | null;
+        reason?: "already-undone" | "later-save" | "not-undoable";
+      }
+    | undefined
+  >;
   /**
    * The Agent revision, only when a Save of `userId`, or of `projectId` (which the caller has
    * authorized), points at its package: what an account may bind by id.

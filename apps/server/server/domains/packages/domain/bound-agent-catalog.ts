@@ -9,6 +9,7 @@ import type {
   AgentFiles,
   AgentLevel,
   AgentSelection,
+  AgentsLevel,
   ResolvedAgentConfiguration,
   RetainedSkillReference,
 } from "@meridian/contracts/agents";
@@ -50,6 +51,7 @@ import { type SkillListing, skillListingFromMarkdown } from "./skill-listing.js"
 export type {
   AgentCatalogItem as BoundAgentCatalogItem,
   AgentSelection,
+  AgentsLevel,
 } from "@meridian/contracts/agents";
 
 type SavedLevels = Awaited<ReturnType<PackageLevels["saved"]>>;
@@ -132,6 +134,7 @@ export interface BoundAgentCatalog extends PackageSaver {
 
 export function createBoundAgentCatalog(input: {
   store: AgentRevisionStore;
+  onSaved?: (userId: string, projectId: string | undefined, level: AgentsLevel) => void;
   levelFiles: AgentLevelFiles;
   /** The built-in packages, read once at boot. */
   builtins: AgentSourceSnapshot[];
@@ -213,6 +216,7 @@ export function createBoundAgentCatalog(input: {
     store,
     levels,
     levelFiles: input.levelFiles,
+    onSaved: input.onSaved,
   });
 
   const primaryIn = async (

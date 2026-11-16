@@ -123,11 +123,6 @@ msgstr "{0, plural, other {# 次调用}}"
 msgid "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
 msgstr ""
 
-#. placeholder {0}: said.treeLeft
-#: src/features/project/context/use-tree-notice-words.tsx
-#~ msgid "{0, plural, one {# document stayed as it is: it was changed since.} other {# documents stayed as they are: they were changed since.}}"
-#~ msgstr ""
-
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
@@ -193,7 +188,7 @@ msgstr ""
 msgid "{0, plural, one {# note} other {# notes}}"
 msgstr ""
 
-#. placeholder {0}: errors.length
+#. placeholder {0}: problems.length
 #: src/features/agents/PackageSave.tsx
 #~ msgid "{0, plural, one {# problem} other {# problems}}"
 #~ msgstr ""
@@ -246,6 +241,11 @@ msgstr ""
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
 #~ msgid "{0, plural, one {Deleted from {location} with # document} other {Deleted from {location} with # documents}}"
+#~ msgstr ""
+
+#. placeholder {0}: problems.length
+#: src/features/agents/PackageSave.tsx
+#~ msgid "{0, plural, one {Not saved: # problem} other {Not saved: # problems}}"
 #~ msgstr ""
 
 #. placeholder {0}: digest.readDocuments
@@ -503,6 +503,10 @@ msgstr ""
 msgid "{count, plural, one {# draft discarded} other {# drafts discarded}}"
 msgstr ""
 
+#: src/features/agents/PackageSave.tsx
+#~ msgid "{count, plural, one {# left out} other {# left out}}"
+#~ msgstr ""
+
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# match} other {# matches}}"
 msgstr ""
@@ -510,6 +514,10 @@ msgstr ""
 #: src/features/chat/tool-result-preview.ts
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+#~ msgid "{count, plural, one {# not in use} other {# not in use}}"
+#~ msgstr ""
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
@@ -660,6 +668,10 @@ msgstr "{hours}小时"
 #: src/features/agents/findings.ts
 msgid "{key} isn't a key Flow knows, so it has no effect. Check the spelling, or remove it."
 msgstr ""
+
+#: src/features/agents/PackageSave.tsx
+#~ msgid "{label} has nothing new to save"
+#~ msgstr ""
 
 #: src/features/agents/PackageSave.tsx
 #~ msgid "{label} has nothing new to save, and these edits aren't in use"
@@ -892,6 +904,10 @@ msgstr ""
 msgid "{needsYou} waiting on you"
 msgstr ""
 
+#: src/features/project/shell/sidebar/AgentsSource.tsx
+#~ msgid "{notInUse, plural, one {# not in use} other {# not in use}}"
+#~ msgstr ""
+
 #: src/features/agents/findings.ts
 #~ msgid "{others} is also named {name}. Both work under that name."
 #~ msgstr ""
@@ -924,10 +940,6 @@ msgstr "{position} / {count}"
 #: src/features/billing/UsageCard.tsx
 msgid "{remainingPercent}% remaining"
 msgstr ""
-
-#: src/features/chat/TurnEditsReceipt.tsx
-#~ msgid "{replaced} replaced by a later change"
-#~ msgstr ""
 
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "{seconds, plural, one {Continues in # second} other {Continues in # seconds}}"
@@ -964,10 +976,6 @@ msgstr ""
 #: src/features/creation/CreationDialog.tsx
 msgid "{submitLabel} (enter a name first)"
 msgstr ""
-
-#: src/features/project/context/use-tree-notice-words.tsx
-#~ msgid "{text, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
-#~ msgstr ""
 
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
 #~ msgid "{textLeft, plural, one {# text change stayed: it was edited since.} other {# text changes stayed: they were edited since.}}"
@@ -1161,6 +1169,10 @@ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "A folder named {name} already exists in this location."
+msgstr ""
+
+#: src/features/agents/UndoSave.tsx
+msgid "A later Save is in use. Nothing changed."
 msgstr ""
 
 #: src/components/app/AppStatus.tsx
@@ -1582,15 +1594,15 @@ msgstr ""
 msgid "Auto-apply"
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Available to Agents; it isn't in the / menu."
 #~ msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Available to other Agents; it isn't in the picker."
 #~ msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Available."
 #~ msgstr ""
 
@@ -1626,6 +1638,10 @@ msgstr ""
 
 #: src/features/agents/PackageSave.tsx
 msgid "Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved."
+msgstr ""
+
+#: src/features/agents/UndoSave.tsx
+msgid "Back to the previous saved version. Your later edits are kept."
 msgstr ""
 
 #: src/features/billing/BillingPage.tsx
@@ -2715,10 +2731,9 @@ msgstr ""
 msgid "Couldn't reach the server. Check your connection."
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
-#~ msgid "Couldn't reach the server. Undo tries again."
-#~ msgstr ""
+#: src/features/agents/UndoSave.tsx
+msgid "Couldn't reach the server. Undo tries again."
+msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
@@ -4107,7 +4122,7 @@ msgstr ""
 msgid "It finished before it could stop."
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "It hides {hides}."
 #~ msgstr ""
 
@@ -5005,7 +5020,7 @@ msgstr ""
 msgid "Not in use"
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Not in use until it is saved."
 #~ msgstr ""
 
@@ -5070,14 +5085,6 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-#~ msgid "Not undone: it was changed since."
-#~ msgstr ""
-
-#: src/features/project/context/use-tree-notice-words.tsx
-#~ msgid "Not undone: it was edited since."
-#~ msgstr ""
-
-#: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not undone."
 msgstr ""
 
@@ -5087,7 +5094,7 @@ msgid "Not used: {0} hides it"
 msgstr ""
 
 #. placeholder {0}: whose(file.hiddenBy, file.slug)
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Not used: {0} hides it."
 #~ msgstr ""
 
@@ -5461,7 +5468,7 @@ msgstr ""
 msgid "Project actions"
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Project Agent"
 #~ msgstr ""
 
@@ -5469,7 +5476,7 @@ msgstr ""
 msgid "Project creation failed."
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Project skill"
 #~ msgstr ""
 
@@ -7500,10 +7507,6 @@ msgid "This version of Meridian can't display it."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "This was applied before your Discard reached it."
-#~ msgstr ""
-
-#: src/features/draft-review/ReviewMessageText.tsx
 msgid "This was discarded before Apply reached it. Restore it to apply it."
 msgstr ""
 
@@ -7700,13 +7703,17 @@ msgstr ""
 msgid "Unavailable Work"
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Unavailable, and it still hides {hides}:"
 #~ msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Unavailable:"
 #~ msgstr ""
+
+#: src/features/agents/UndoSave.tsx
+msgid "Unchanged"
+msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
@@ -7725,8 +7732,7 @@ msgstr ""
 msgid "Undid part of applying {name}."
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
@@ -7751,8 +7757,6 @@ msgstr ""
 msgid "Undo delete of {title}"
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/turn-receipt-copy.ts
 #: src/features/draft-review/CommandNotice.tsx
@@ -7770,7 +7774,7 @@ msgstr ""
 msgid "Undo discard of {name}"
 msgstr ""
 
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undo goes back to the previous saved version and merges its text into your files. An edit made since is kept, and where you changed the same text yours stays."
 msgstr ""
 
@@ -7798,8 +7802,7 @@ msgstr ""
 msgid "Undo restore of {title}"
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
-#: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 msgid "Undo save of {label}"
 msgstr ""
 
@@ -7836,8 +7839,8 @@ msgstr ""
 msgid "Undoing…"
 msgstr ""
 
-#: src/features/agents/AgentSavesReceipt.tsx
 #: src/features/agents/PackageSave.tsx
+#: src/features/agents/UndoSave.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undone"
 msgstr ""
@@ -8233,7 +8236,7 @@ msgstr ""
 msgid "your {slug}"
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Your Agent, in every project"
 #~ msgstr ""
 
@@ -8281,7 +8284,7 @@ msgstr ""
 msgid "Your latest edit isn't in use"
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Your latest edit isn't in use; the last saved version is:"
 #~ msgstr ""
 
@@ -8357,7 +8360,7 @@ msgstr ""
 msgid "Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost."
 msgstr ""
 
-#: src/features/agents/AgentFileNotice.tsx
+#: src/features/agents/AgentFileState.tsx
 #~ msgid "Your skill, in every project"
 #~ msgstr ""
 
