@@ -95,8 +95,8 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
             string | null
           >`coalesce(${treeEditReceiptNodes.copiedFrom}, ${documents.metadata}->'copiedFrom'->>'uri')`,
           // The model's own undo has the last word on it: the newest receipt of its chain (an
-          // undo, its redo, an undo of that) is an undo no card made. A card's Undo isn't one: the
-          // card still says what the reply did, beside its Redo.
+          // undo, an undo of that) is an undo no card made. A card's Undo isn't one: the card's
+          // rows still say what the reply did.
           undone: sql<boolean>`coalesce((
             with recursive chain as (
               select r.id, r.kind, r.command_id, 1 as depth from tree_edit_receipts r

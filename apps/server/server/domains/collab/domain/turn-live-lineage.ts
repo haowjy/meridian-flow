@@ -265,6 +265,7 @@ function treeLines(entries: readonly TurnTreeEntry[]): Map<string, TurnTreeLine>
     { from: string; at: string; living: boolean; repositioned: boolean; copiedFrom: string | null }
   >();
   for (const entry of entries) {
+    if (entry.undone) continue;
     const key = treeLineKey(entry);
     const state = folded.get(key) ?? {
       from: entry.shownAt ?? "",
