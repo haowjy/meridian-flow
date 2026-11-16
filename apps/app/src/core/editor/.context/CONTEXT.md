@@ -133,8 +133,9 @@ and remain quarantined until their retryable destroy ledger succeeds.
   the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
   `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
   text-run grouping, the id pairing with `movedIds`, the empty-fragment guard, the forced-render
-  selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, and the cell-selection
-  capture and restore (`resolveRelativeCellSelection`).
+  selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
+  capture and restore (`resolveRelativeCellSelection`), and `recoverSelectionEndpoint` trusting a
+  position Yjs resolved into the block with the same `id` (`qa/concurrent-typing.md`).
 - Undo step boundaries: y-tiptap 3.x closes the capture window only for a document-changing
   transaction with `addToHistory: false`; a meta-only one does not. A site that needs its edit to
   be a separate step calls `endUndoStep(state)` (`editor-history.ts`) before the edit: image
