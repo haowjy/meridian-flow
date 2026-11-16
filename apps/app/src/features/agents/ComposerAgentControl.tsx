@@ -4,6 +4,7 @@
  * subagent's chat only shows its Agent.
  */
 import { t } from "@lingui/core/macro";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import { Cpu } from "lucide-react";
 import { useRef } from "react";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
@@ -14,7 +15,13 @@ import {
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
 import { cn } from "@/lib/utils";
-import { type AgentChoice, AgentPickerPanel, modelName, runsAvailable } from "./AgentPicker";
+import {
+  type AgentChoice,
+  AgentPickerPanel,
+  modelName,
+  reasoningName,
+  runsAvailable,
+} from "./AgentPicker";
 import { DEFAULT_AGENT_NAME } from "./constants";
 import {
   type BoundAgent,
@@ -28,8 +35,8 @@ export type ComposerAgentControlProps =
       mode: "interactive";
       projectId?: string;
       selectedAgent: CreationAgent | null;
-      /** The model the new chat will run its Agent on, when not its own. */
-      model: string | null;
+      /** The model and reasoning the new chat will run its Agent at, where not its own. */
+      overrides: ThreadOverrides;
       onChoose: (choice: AgentChoice) => void;
     }
   | {
@@ -38,12 +45,12 @@ export type ComposerAgentControlProps =
       /** The chat, whose bound definition the panel can open. */
       threadId: string;
       bound: BoundAgent;
-      modelOverride: string | null;
-      onModelChange: (model: string | null) => void;
+      overrides: ThreadOverrides;
+      onOverridesChange: (overrides: ThreadOverrides) => void;
       /** Null until the server has a turn to hand off from. */
       onHandoff: ((choice: AgentChoice) => void) | null;
     }
-  | { mode: "readonly"; name: string; modelOverride: string | null };
+  | { mode: "readonly"; name: string; overrides: ThreadOverrides };
 
 export function useComposerAgentToolbarControl(
   props: ComposerAgentControlProps,
@@ -52,7 +59,9 @@ export function useComposerAgentToolbarControl(
     props.mode !== "readonly",
     props.mode === "readonly" ? undefined : props.projectId,
   );
-  const models = useModelOptions(props.mode !== "readonly" || props.modelOverride !== null);
+  const overrides = props.overrides;
+  const model = overrides.model;
+  const models = useModelOptions(props.mode !== "readonly" || model !== null);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
@@ -70,30 +79,41 @@ export function useComposerAgentToolbarControl(
       : props.mode === "handoff"
         ? (props.bound.name ?? DEFAULT_AGENT_NAME)
         : (selectedAgent?.name ?? DEFAULT_AGENT_NAME);
-  const model = props.mode === "interactive" ? props.model : props.modelOverride;
   const modelLabel = model ? modelName(models, model) : null;
   // An override the deployment can't run: replies fall back to the Agent's own model.
   const fallsBack = Boolean(model && models && !runsAvailable(models, model));
-  const value = !modelLabel
+  const effortLabel = overrides.effort ? reasoningName(overrides.effort) : null;
+  const runsAt = [modelLabel, effortLabel && t`${effortLabel} reasoning`]
+    .filter(Boolean)
+    .join(", ");
+  const value = !runsAt
     ? name
     : fallsBack
-      ? t`${name}; ${modelLabel} isn't available, so it runs on its default model`
-      : t`${name} on ${modelLabel}`;
+      ? t`${name}; ${modelLabel ?? ""} isn't available, so it runs on its default model`
+      : t`${name} on ${runsAt}`;
   const item = { ariaLabel: t`Agent: ${value}`, label: t`Agent`, value };
-  // The other model's name; on a phone a chip icon, so the Agent's name keeps its place inline.
+  // The other model's and reasoning's names; on a phone a chip icon, so the Agent's name keeps its
+  // place inline.
   const shown = (
     <>
       {name}
-      {modelLabel ? (
+      {modelLabel || effortLabel ? (
         <>
-          <span
-            className={cn(
-              "ml-1.5 hidden font-normal text-muted-foreground sm:inline",
-              fallsBack && "line-through",
-            )}
-          >
-            {modelLabel}
-          </span>
+          {modelLabel ? (
+            <span
+              className={cn(
+                "ml-1.5 hidden font-normal text-muted-foreground sm:inline",
+                fallsBack && "line-through",
+              )}
+            >
+              {modelLabel}
+            </span>
+          ) : null}
+          {effortLabel ? (
+            <span className="ml-1.5 hidden font-normal text-muted-foreground sm:inline">
+              {effortLabel}
+            </span>
+          ) : null}
           <Cpu
             aria-hidden
             className="ml-1 inline size-3.5 align-[-2px] text-muted-foreground sm:hidden"
@@ -112,9 +132,7 @@ export function useComposerAgentToolbarControl(
         <ComposerCurrentValueStatus
           ref={controlRef}
           ariaLabel={t`Agent: ${value}`}
-          tooltip={
-            modelLabel ? t`This chat uses ${name} on ${modelLabel}.` : t`This chat uses ${name}.`
-          }
+          tooltip={runsAt ? t`This chat uses ${name} on ${runsAt}.` : t`This chat uses ${name}.`}
         >
           {shown}
         </ComposerCurrentValueStatus>
@@ -132,9 +150,10 @@ export function useComposerAgentToolbarControl(
   /** True when the choice hands off, which leaves this chat; any other choice keeps the picker open. */
   const choose = (next: AgentChoice): boolean => {
     const same = next.agent.selection.slug === selectedAgent?.selection.slug;
-    if (same && next.model === model) return false;
+    if (same && next.overrides.model === model && next.overrides.effort === overrides.effort)
+      return false;
     if (props.mode === "interactive") props.onChoose(next);
-    else if (same) props.onModelChange(next.model);
+    else if (same) props.onOverridesChange(next.overrides);
     else {
       props.onHandoff?.(next);
       return true;
@@ -181,7 +200,7 @@ export function useComposerAgentToolbarControl(
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
           status={catalog}
           agents={agents}
-          current={{ slug: selectedAgent?.selection.slug ?? null, model }}
+          current={{ slug: selectedAgent?.selection.slug ?? null, overrides }}
           started={props.mode === "handoff" ? { threadId: props.threadId } : undefined}
           models={models}
           onChoose={(next) => {

@@ -617,8 +617,8 @@ export function ChatView({
         originTurnId,
         agent: choice.agent,
         agentName: choice.agent.name,
-        modelOverride: choice.model,
-        effortOverride: null,
+        modelOverride: choice.overrides.model,
+        effortOverride: choice.overrides.effort,
       },
       { ...deps, source: activeThread, inherited: null, open: openThread },
     );
@@ -657,12 +657,6 @@ export function ChatView({
     if (handoffCutoff) handoffTurn(handoffCutoff, choice);
   });
   const setOverrides = useSetThreadOverrides(threadId);
-  const modelOverride = overrides.model;
-  const effortOverride = overrides.effort;
-  const setThreadModel = useCallback(
-    (model: string | null) => setOverrides({ model, effort: effortOverride }),
-    [setOverrides, effortOverride],
-  );
   const agentName = activeThread?.agentName ?? null;
   const agentRevisionId = activeThread?.agentDefinitionRevisionId ?? null;
   // Busy only while the server has yet to accept the chat's first send; a chat with nothing to
@@ -675,19 +669,19 @@ export function ChatView({
             projectId,
             threadId,
             bound: { name: agentName, definitionRevisionId: agentRevisionId },
-            modelOverride,
-            onModelChange: setThreadModel,
+            overrides,
+            onOverridesChange: setOverrides,
             onHandoff: handoffCutoff ? handoffFromLatest : null,
           }
-        : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME, modelOverride },
+        : { mode: "readonly", name: agentName ?? DEFAULT_AGENT_NAME, overrides },
     [
       agentName,
       agentRevisionId,
       handoffCutoff,
       handoffFromLatest,
-      modelOverride,
+      overrides,
       pendingCreation,
-      setThreadModel,
+      setOverrides,
       projectId,
       threadId,
     ],

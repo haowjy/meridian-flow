@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { type AgentChoice, AgentPickerPanel } from "@/features/agents/AgentPicker";
+import { type AgentChoice, AgentPickerPanel, NO_OVERRIDES } from "@/features/agents/AgentPicker";
 import { type BoundAgent, boundAgentRow, pickableAgents } from "@/features/agents/creation-agent";
 import { cn } from "@/lib/utils";
 import { TURN_ACTION_TOOLTIP_SIDE } from "../turn-action-tooltip";
@@ -144,7 +144,7 @@ function HandoffPicker({
         <AgentPickerPanel
           status={catalog}
           agents={agents}
-          current={{ slug: selected?.selection.slug ?? null, model: null }}
+          current={{ slug: selected?.selection.slug ?? null, overrides: NO_OVERRIDES }}
           handsOff
           models={models}
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}

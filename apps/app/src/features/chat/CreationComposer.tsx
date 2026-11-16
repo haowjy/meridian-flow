@@ -1,4 +1,5 @@
 /** Shared pinned new-chat composer for the main, the side, and the phone. */
+
 import { t } from "@lingui/core/macro";
 import { isWorkArchived } from "@meridian/contracts/works";
 import type { JSONContent } from "@tiptap/core";
@@ -12,6 +13,7 @@ import { Composer, type ComposerDraftChange, type ComposerHandle } from "@/compo
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import type { ReferenceBrowserCatalog } from "@/core/editor/extensions/at-reference";
 import { DEFAULT_AGENT_SLUG, pickableAgents } from "@/features/agents";
+import { NO_OVERRIDES } from "@/features/agents/AgentPicker";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { FolderMenuContext, type FolderMenuHost } from "@/features/project/context/FolderMenu";
@@ -97,7 +99,8 @@ export function CreationComposer({
           workAiWriteMode: work.defaultAiWriteMode,
           ...(choices?.aiWriteMode ? { aiWriteMode: choices.aiWriteMode } : {}),
           agent,
-          modelOverride: choices?.model ?? null,
+          modelOverride: choices?.overrides?.model ?? null,
+          effortOverride: choices?.overrides?.effort ?? null,
         }
       : undefined;
   const unavailableWork =
@@ -167,10 +170,10 @@ export function CreationComposer({
             noWork={works.noWork}
             worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
             agent={agent}
-            model={choices?.model ?? null}
+            overrides={choices?.overrides ?? NO_OVERRIDES}
             writeMode={writeMode}
             onAgentChange={(next) =>
-              creation.updateChoices({ agent: next.agent, model: next.model })
+              creation.updateChoices({ agent: next.agent, overrides: next.overrides })
             }
             // Picking a Work never changes the mode on screen: the mode shown becomes the pick.
             // A Work's default shows only for the Work the composer opened with.

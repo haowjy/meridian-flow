@@ -1,6 +1,7 @@
 /** Prospective Agent, write-mode, and Work controls for a not-yet-created chat. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 import { useRef, useState } from "react";
 import {
@@ -28,7 +29,7 @@ export function NewThreadComposerToolbar({
   noWork,
   worksStatus,
   agent: selectedAgent,
-  model,
+  overrides,
   writeMode,
   onAgentChange,
   onWorkChange,
@@ -42,7 +43,7 @@ export function NewThreadComposerToolbar({
   noWork: Work | null;
   worksStatus: "loading" | "error" | "ready";
   agent: CreationAgent | null;
-  model: string | null;
+  overrides: ThreadOverrides;
   /** The selected Work's default, or the mode the writer chose in this composer. */
   writeMode: AiWriteMode;
   onAgentChange(choice: AgentChoice): void;
@@ -54,7 +55,7 @@ export function NewThreadComposerToolbar({
     mode: "interactive",
     projectId,
     selectedAgent,
-    model,
+    overrides,
     onChoose: onAgentChange,
   });
   const workControl = useProspectiveWorkControl({

@@ -1,5 +1,6 @@
 /** Exact Agent selection plus the display snapshot reserved before creation. */
 import type { AgentCatalogItem, AgentSelection } from "@meridian/contracts/agents";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 
 /** A catalog row the writer can pick: available, with a revision to bind. */
@@ -8,8 +9,8 @@ export type CreationAgent = Pick<PickableAgent, "selection" | "slug" | "name">;
 export type CreationChoices = {
   workId?: string;
   agent?: CreationAgent;
-  /** The model the new chat runs its Agent on, when not the Agent's own. */
-  model?: string | null;
+  /** The model and reasoning the new chat runs its Agent at, where not the Agent's own. */
+  overrides?: ThreadOverrides;
   /** Only a mode the writer picked in this composer; otherwise the Work's default rules. */
   aiWriteMode?: AiWriteMode;
 };

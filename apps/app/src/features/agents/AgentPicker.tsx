@@ -1,7 +1,9 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AgentCatalogItem } from "@meridian/contracts/agents";
+import type { AgentCatalogItem, ReasoningChoice } from "@meridian/contracts/agents";
 import { agentsRootOf } from "@meridian/contracts/agents";
+import type { ModelList } from "@meridian/contracts/protocol";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import { Check, Settings2 } from "lucide-react";
 import { type CSSProperties, type Ref, type RefObject, useRef, useState } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
@@ -17,9 +19,10 @@ import { useOpenAgentFile } from "./agent-file-document";
 import type { CreationAgent } from "./creation-agent";
 import { ThreadAgentDefinition } from "./ThreadAgentDefinition";
 
-export type ModelOption = { id: string; name: string; available: boolean };
-/** An Agent with the model this chat runs it on; null is the Agent's own model. */
-export type AgentChoice = { agent: CreationAgent; model: string | null };
+export type ModelOption = ModelList["models"][number];
+/** An Agent with the model and reasoning this chat runs it at; a null part is the Agent's own. */
+export type AgentChoice = { agent: CreationAgent; overrides: ThreadOverrides };
+export const NO_OVERRIDES: ThreadOverrides = { model: null, effort: null };
 
 const ROW_PX = 32;
 const VISIBLE_ROWS = 10;
@@ -34,7 +37,7 @@ type AgentPickerPanelProps = {
    */
   agents: AgentCatalogItem[];
   /** The chosen Agent's slug and model override (for a started chat, the bound ones). */
-  current: { slug: string | null; model: string | null };
+  current: { slug: string | null; overrides: ThreadOverrides };
   /** A started chat: its Agent is pinned under "This chat", and the rest hand off. */
   started?: { threadId: string };
   /** Picking hands off from a turn (the picker under a turn), the current Agent included. */
@@ -123,8 +126,8 @@ export function AgentPickerPanel({
   // The search, the footer line and the rows: the one height, whatever is pointed at or searched.
   const height = SEARCH_PX + (rows + 1) * ROW_PX + 24;
 
-  const choose = (agent: AgentCatalogItem, model: string | null) => {
-    if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), model });
+  const choose = (agent: AgentCatalogItem, overrides: ThreadOverrides) => {
+    if (pickable(agent)) onChoose({ agent: creationAgentOf(agent), overrides });
   };
   const row = (agent: AgentCatalogItem) => {
     const isCurrent = agent.slug === current.slug;
@@ -159,8 +162,8 @@ export function AgentPickerPanel({
               tapPicks.current = true;
               return setPointed(agent.slug);
             }
-            // The current Agent keeps the model it runs on here.
-            choose(agent, isCurrent ? current.model : null);
+            // The current Agent keeps the model and reasoning it runs at here.
+            choose(agent, isCurrent ? current.overrides : NO_OVERRIDES);
           }}
           title={agent.name}
           meta={sameName.has(agent.name) ? fileName(agent) : undefined}
@@ -221,7 +224,7 @@ export function AgentPickerPanel({
                 }}
                 onSubmit={() => {
                   const first = listed.find(pickable);
-                  if (first) choose(first, null);
+                  if (first) choose(first, NO_OVERRIDES);
                 }}
                 label={t`Search Agents`}
               />
@@ -287,12 +290,12 @@ export function AgentPickerPanel({
                   ? null
                   : t`Use ${shown.name}`
             }
-            onUse={() => choose(shown, null)}
+            onUse={() => choose(shown, NO_OVERRIDES)}
             agent={shown}
             thisChat={started && shown === own ? started.threadId : null}
-            model={shown.slug === current.slug ? current.model : null}
+            overrides={shown.slug === current.slug ? current.overrides : NO_OVERRIDES}
             models={models}
-            onChoose={(model) => choose(shown, model)}
+            onChoose={(overrides) => choose(shown, overrides)}
             onOpenFile={() => {
               if (!shown.path || shown.level === "builtin") return;
               onClose();
@@ -312,7 +315,7 @@ function AgentDetail({
   onUse,
   agent,
   thisChat,
-  model,
+  overrides,
   models,
   onChoose,
   onOpenFile,
@@ -326,13 +329,13 @@ function AgentDetail({
   agent: AgentCatalogItem;
   /** The chat's id when this is the Agent the chat runs. */
   thisChat: string | null;
-  /** The override this Agent runs with here, if any. */
-  model: string | null;
+  /** The overrides this Agent runs with here. */
+  overrides: ThreadOverrides;
   models: ModelOption[] | null;
-  onChoose: (model: string | null) => void;
+  onChoose: (overrides: ThreadOverrides) => void;
   onOpenFile: () => void;
 }) {
-  const runsOn = model ?? agent.model;
+  const runsOn = overrides.model ?? agent.model;
   const usable = pickable(agent);
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: routes arrow keys between the detail's controls. slop-lint: allow suppression the reason is stated in this comment
@@ -412,7 +415,7 @@ function AgentDetail({
             own={agent.model}
             runsOn={runsOn}
             models={models}
-            onChoose={(id) => onChoose(id === agent.model ? null : id)}
+            onChoose={(id) => onChoose({ ...overrides, model: id === agent.model ? null : id })}
           />
         </section>
       )}
@@ -463,6 +466,23 @@ function ModelChoices({
 /** Whether this deployment can run the model; an id it has never heard of can't run either. */
 export function runsAvailable(models: readonly ModelOption[], id: string): boolean {
   return models.some((option) => option.id === id && option.available);
+}
+
+export function reasoningName(choice: ReasoningChoice): string {
+  switch (choice) {
+    case "low":
+      return t`Low`;
+    case "medium":
+      return t`Medium`;
+    case "high":
+      return t`High`;
+    case "max":
+      return t`Max`;
+    case "disabled":
+      return t`Off`;
+    case "adaptive":
+      return t`Adaptive`;
+  }
 }
 
 export function modelName(models: readonly ModelOption[] | null, id: string): string {

@@ -42,7 +42,7 @@ export function useCreationComposer(projectId: string) {
         aiWriteMode?: AiWriteMode;
         agent: CreationAgent;
         modelOverride: string | null;
-        effortOverride?: ReasoningChoice | null;
+        effortOverride: ReasoningChoice | null;
       },
     ) {
       const sent =
