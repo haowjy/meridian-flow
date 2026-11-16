@@ -1,5 +1,5 @@
 import type {
-  AgentCatalogItem,
+  AgentCatalog,
   AgentFiles,
   AgentLevel,
   AgentsLevel,
@@ -21,10 +21,9 @@ import { getJson, postJson } from "./http-client";
 export async function listAgentCatalog(
   signal: AbortSignal,
   projectId?: string,
-): Promise<AgentCatalogItem[]> {
+): Promise<AgentCatalog> {
   const query = projectId ? `?${new URLSearchParams({ projectId })}` : "";
-  const catalog = await getJson(`/api/agents${query}`, { signal, schema: agentCatalogSchema });
-  return catalog.agents;
+  return getJson(`/api/agents${query}`, { signal, schema: agentCatalogSchema });
 }
 
 export async function listAgentFiles(signal: AbortSignal, projectId: string): Promise<AgentFiles> {

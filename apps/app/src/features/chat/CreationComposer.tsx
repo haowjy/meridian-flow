@@ -53,9 +53,11 @@ export function CreationComposer({
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
-  const defaultAgent = pickableAgents(agents.agents ?? []).find(
-    (agent) => agent.slug === DEFAULT_AGENT_SLUG,
-  );
+  // A new chat starts on the Agent the writer last started one with here, on its own model.
+  const pickable = pickableAgents(agents.agents ?? []);
+  const defaultAgent =
+    pickable.find((agent) => agent.slug === agents.lastStartedSlug) ??
+    pickable.find((agent) => agent.slug === DEFAULT_AGENT_SLUG);
   const agent = choices?.agent ?? defaultAgent ?? null;
   const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   // A new chat takes the Work scope unless the writer picked another Work for this draft.

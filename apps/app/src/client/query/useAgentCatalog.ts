@@ -16,6 +16,8 @@ export const agentCatalogQueryKey = (accountId: string, projectId?: string) =>
     : (["agent-catalog", accountId] as const);
 export type AgentCatalogStatus = ListQueryStatus<AgentCatalogItem> & {
   agents: AgentCatalogItem[] | null;
+  /** The Agent of the newest chat started in the project: a new chat starts on it. */
+  lastStartedSlug: string | null;
 };
 
 export function agentCatalogQueryOptions(
@@ -33,13 +35,12 @@ export function agentCatalogQueryOptions(
 export function useAgentCatalog(enabled = true, projectId?: string): AgentCatalogStatus {
   const accountId = useAccountId();
   const accountSignal = useAccountEpochSignal();
-  const result = unwrapListQuery(
-    useQuery({
-      ...agentCatalogQueryOptions(accountId, accountSignal, projectId),
-      enabled: projectReadEnabled(enabled),
-    }),
-  );
-  return { ...result, agents: result.data };
+  const query = useQuery({
+    ...agentCatalogQueryOptions(accountId, accountSignal, projectId),
+    enabled: projectReadEnabled(enabled),
+  });
+  const result = unwrapListQuery({ ...query, data: query.data?.agents });
+  return { ...result, agents: result.data, lastStartedSlug: query.data?.lastStartedSlug ?? null };
 }
 
 /** A chat just started on this Agent: the next new chat starts on it, as the server will say. */
