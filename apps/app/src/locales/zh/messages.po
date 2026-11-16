@@ -453,7 +453,7 @@ msgstr ""
 msgid "{change} stayed: it was changed since."
 msgstr ""
 
-#: src/features/project/context/use-tree-notice-words.tsx
+#: src/core/project-tree/tree-left-sentence.ts
 msgid "{change} stayed: its Work is closed."
 msgstr ""
 
