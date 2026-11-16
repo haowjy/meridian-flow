@@ -1,9 +1,10 @@
-/** Composer-attached strip for this chat's pending changes. Summary and commands share one row; changes expand in place; a command's question asks in the footer below the files. A file's refused command shows once, in its status line. */
+/** Composer-attached strip for this chat's pending changes. Every count on it counts what its commands act on; what else the Work holds is a link to Changes. Summary and commands share one row; changes expand in place; a command's question asks in the footer below the files. A file's refused command shows once, in its status line. */
 
 import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
   ApplyAllQuestion,
@@ -122,7 +123,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">
-          {multi ? <ChangeCount count={dock.reviewCount} /> : only ? fileLabel(only) : null}
+          {multi ? (
+            <Plural value={dock.files.length} one="# document" other="# documents" />
+          ) : only ? (
+            fileLabel(only)
+          ) : null}
         </span>
         {only && !multi ? <DeletedFromManuscriptTag item={only.row.draft} /> : null}
       </FoldToggle>
@@ -155,6 +160,17 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           />
         ))}
       </div>
+      {dock.more > 0 ? (
+        <div className="flex px-[calc(var(--chat-card-pad-x)-0.5rem)] pb-1 @max-[25rem]/dock:px-0">
+          <Button variant="quiet" size="meta" className="font-normal" onClick={dock.showChanges}>
+            {dock.inWork ? (
+              <Trans>{dock.more} more in this Work</Trans>
+            ) : (
+              <Trans>{dock.more} more to review</Trans>
+            )}
+          </Button>
+        </div>
+      ) : null}
       <CommandNotice notice={dock.notice} question={question} />
       <DraftImagePreview target={dock.imagePreview} onClose={dock.closeImagePreview} />
     </div>

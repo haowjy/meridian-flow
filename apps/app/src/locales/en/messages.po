@@ -129,6 +129,8 @@ msgid "{0, plural, one {# document, deleted from {location}} other {# documents,
 msgstr "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
 
 #. placeholder {0}: counted(false)
+#. placeholder {0}: dock.files.length
+#: src/features/chat/DraftDock.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# document} other {# documents}}"
 msgstr "{0, plural, one {# document} other {# documents}}"
@@ -350,6 +352,16 @@ msgstr "{0} isn't available now, so replies use {1}."
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{0} items deleted."
 msgstr "{0} items deleted."
+
+#. placeholder {0}: dock.more
+#: src/features/chat/DraftDock.tsx
+msgid "{0} more in this Work"
+msgstr "{0} more in this Work"
+
+#. placeholder {0}: dock.more
+#: src/features/chat/DraftDock.tsx
+msgid "{0} more to review"
+msgstr "{0} more to review"
 
 #. placeholder {0}: formatFixed(stats.ttftMs / 1000, i18n.locale)
 #: src/features/chat/AssistantTurnActions.tsx
