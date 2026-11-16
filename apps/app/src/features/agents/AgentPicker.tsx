@@ -2,7 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { AgentCatalogItem, ReasoningChoice, ReasoningLevel } from "@meridian/contracts/agents";
 import { agentsRootOf, REASONING_LEVELS } from "@meridian/contracts/agents";
-import type { ModelList } from "@meridian/contracts/protocol";
+import type { ModelOption } from "@meridian/contracts/protocol";
 import { NO_OVERRIDES, type ThreadOverrides } from "@meridian/contracts/threads";
 import { Settings2 } from "lucide-react";
 import { type CSSProperties, type RefObject, useLayoutEffect, useRef, useState } from "react";
@@ -26,7 +26,6 @@ import { type CreationAgent, creationAgentOf, isPickable as pickable } from "./c
 import { ModelMark } from "./ModelMark";
 import { ThreadAgentDefinition } from "./ThreadAgentDefinition";
 
-export type ModelOption = ModelList["models"][number];
 /** An Agent with the model and reasoning this chat runs it at; a null part is the Agent's own. */
 export type AgentChoice = { agent: CreationAgent; overrides: ThreadOverrides };
 

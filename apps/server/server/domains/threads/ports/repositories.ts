@@ -254,7 +254,7 @@ export interface CreateThreadInput {
   workId?: WorkId | null;
   /** No default: every creation path chooses the chat's mode. */
   aiWriteMode: AiWriteMode;
-  /** Omitted runs the Agent's own: a subagent, or a test fixture. */
+  /** Every route passes one; omitted (test fixtures) runs the Agent's own. */
   overrides?: ThreadOverrides;
   kind?: ThreadKind;
   title?: string | null;

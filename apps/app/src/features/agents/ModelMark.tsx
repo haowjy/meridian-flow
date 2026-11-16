@@ -1,6 +1,4 @@
-import type { ModelList } from "@meridian/contracts/protocol";
-
-type ModelOption = ModelList["models"][number];
+import type { ModelOption } from "@meridian/contracts/protocol";
 
 // Single-colour marks from models.dev `/logos/<maker>.svg`, drawn in the text colour.
 const PATHS: Record<NonNullable<ModelOption["maker"]>, string> = {

@@ -23,8 +23,8 @@ model, while the picker under a turn hands off to the same Agent. The control is
 yet to accept the chat's first send, and shows the Agent read-only when there is no complete
 turn to hand off from.
 
-Hand off opens the shared `AgentPickerPanel` with the source's Agent focused, by
-revision then by name, so Enter hands off to the same Agent. A model or reasoning
+Hand off opens the shared `AgentPickerPanel` (mode `turn`) on the source's Agent, by revision
+then by name, with focus in its search; every Agent there hands off, the source's included. A model or reasoning
 level picked in the panel goes with the handoff as `DerivationIntent.overrides`; otherwise the
 new chat runs its Agent's own. A fork copies the source chat's
 overrides, as the writer last set them.

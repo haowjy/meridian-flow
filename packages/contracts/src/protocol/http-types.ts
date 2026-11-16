@@ -33,7 +33,12 @@ import type {
   TurnStatus,
   TurnUsage,
 } from "../threads/index.js";
-import { type ThreadOverrides, threadOverridesSchema, threadSchema } from "../threads/thread.js";
+import {
+  NO_OVERRIDES,
+  type ThreadOverrides,
+  threadOverridesSchema,
+  threadSchema,
+} from "../threads/thread.js";
 import type { RemovalIdentity } from "../tree-change.js";
 import type { AiWriteMode, Work, WorksSnapshot } from "../works/index.js";
 import type { DocumentRemovalRecord } from "./document-removal.js";
@@ -512,6 +517,7 @@ export const modelListSchema = z.object({
   ),
 });
 export type ModelList = z.infer<typeof modelListSchema>;
+export type ModelOption = ModelList["models"][number];
 
 /** `PATCH /api/threads/:threadId/overrides`: sets both; `null` clears one, so the Agent's own applies. */
 export const setThreadOverridesRequestSchema = z.strictObject({
@@ -524,7 +530,8 @@ export const handoffThreadRequestSchema = z.strictObject({
   id: z.uuid(),
   originTurnId: z.uuid(),
   agentSelection: agentSelectionSchema,
-  overrides: threadOverridesSchema,
+  /** Omitted means none, as a tab from before overrides sends it. */
+  overrides: threadOverridesSchema.default(NO_OVERRIDES),
 });
 export type HandoffThreadRequest = z.infer<typeof handoffThreadRequestSchema>;
 
