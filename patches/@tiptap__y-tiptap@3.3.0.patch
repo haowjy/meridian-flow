@@ -253,7 +253,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -955,23 +1114,68 @@ const ytextTrans = (ytext) => {
+@@ -955,23 +1114,73 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -284,7 +284,12 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
 +  if (!edit || edit.node !== pNode) return diff;
 +  const insert = after.slice(edit.index, edit.index + edit.insert);
 +  if (before.slice(0, edit.index) + insert + before.slice(edit.index + edit.remove) !== after) return diff;
-+  return { index: edit.index, insert, remove: edit.remove };
++  let index = edit.index;
++  let skip = 0;
++  while (skip < edit.remove && skip < insert.length && before[index + skip] === insert[skip]) skip++;
++  let tail = 0;
++  while (tail < edit.remove - skip && tail < insert.length - skip && before[index + edit.remove - 1 - tail] === insert[insert.length - 1 - tail]) tail++;
++  return { index: index + skip, insert: insert.slice(skip, insert.length - tail), remove: edit.remove - skip - tail };
 +};
 +/**
 + * @todo test this more
@@ -339,7 +344,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1042,125 +1246,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1042,125 +1251,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -789,7 +794,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1195,6 +1609,10 @@ var ProsemirrorBinding = class {
+@@ -1195,6 +1614,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = (0, lib0_mutex.createMutex)();
  		this.isOMark = /* @__PURE__ */ new Map();
@@ -800,7 +805,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1281,7 +1699,6 @@ var ProsemirrorBinding = class {
+@@ -1281,7 +1704,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -808,7 +813,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1325,7 +1742,7 @@ var ProsemirrorBinding = class {
+@@ -1325,7 +1747,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = lib0_math.min(lib0_math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = lib0_math.min(lib0_math.max(sel.head, 0), tr.doc.content.size);
@@ -817,7 +822,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1426,8 +1843,14 @@ var ProsemirrorBinding = class {
+@@ -1426,8 +1848,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -832,7 +837,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1498,6 +1921,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1498,6 +1926,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -898,7 +903,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1633,14 +2115,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1633,14 +2120,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -925,7 +930,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1758,6 +2250,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1758,6 +2255,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -952,7 +957,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..562dc8ed6b7d3a7701fca846c26ad5e2
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1784,6 +2296,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
+@@ -1784,6 +2301,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.findAbsolutePositionAfterStructuralChange = findAbsolutePositionAfterStructuralChange;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -1318,7 +1323,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -922,23 +1081,68 @@ const ytextTrans = (ytext) => {
+@@ -922,23 +1081,73 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -1349,7 +1354,12 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
 +  if (!edit || edit.node !== pNode) return diff;
 +  const insert = after.slice(edit.index, edit.index + edit.insert);
 +  if (before.slice(0, edit.index) + insert + before.slice(edit.index + edit.remove) !== after) return diff;
-+  return { index: edit.index, insert, remove: edit.remove };
++  let index = edit.index;
++  let skip = 0;
++  while (skip < edit.remove && skip < insert.length && before[index + skip] === insert[skip]) skip++;
++  let tail = 0;
++  while (tail < edit.remove - skip && tail < insert.length - skip && before[index + edit.remove - 1 - tail] === insert[insert.length - 1 - tail]) tail++;
++  return { index: index + skip, insert: insert.slice(skip, insert.length - tail), remove: edit.remove - skip - tail };
 +};
 +/**
 + * @todo test this more
@@ -1404,7 +1414,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1009,125 +1213,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1009,125 +1218,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -1854,7 +1864,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1162,6 +1576,10 @@ var ProsemirrorBinding = class {
+@@ -1162,6 +1581,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = createMutex();
  		this.isOMark = /* @__PURE__ */ new Map();
@@ -1865,7 +1875,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1248,7 +1666,6 @@ var ProsemirrorBinding = class {
+@@ -1248,7 +1671,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -1873,7 +1883,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1292,7 +1709,7 @@ var ProsemirrorBinding = class {
+@@ -1292,7 +1714,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = math.min(math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = math.min(math.max(sel.head, 0), tr.doc.content.size);
@@ -1882,7 +1892,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1393,8 +1810,14 @@ var ProsemirrorBinding = class {
+@@ -1393,8 +1815,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -1897,7 +1907,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1465,6 +1888,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1465,6 +1893,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -1963,7 +1973,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1600,14 +2082,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1600,14 +2087,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -1990,7 +2000,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1725,6 +2217,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1725,6 +2222,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -2017,7 +2027,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..4c82bbb1ab07fdc6f9054ba87d28dc70
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1740,6 +2252,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1740,6 +2257,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
  	};
  };
  //#endregion

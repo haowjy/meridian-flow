@@ -86,7 +86,8 @@ and remain quarantined until their retryable destroy ledger succeeds.
   characters then sat in the wrong item order, and the Copy notice for unsent typing read them
   split and out of order (`Second\nunsent `). The sync plugin's `apply` records the range of a
   local transaction with one changed step inside a text-only block (`binding.edit`, with the block
-  node); `updateYText` uses it only for that node and only when it reproduces the new text. A split,
+  node); `updateYText` uses it only for that node and only when it reproduces the new text, after trimming the
+  characters the replacement shares at both ends so only the changed ones get new or deleted items. A split,
   a join or a multi-step transaction records nothing and the plain diff stands. To drop it,
   upstream's diff must take the steps' range.
 - The binding’s forced render replaces the editor’s document before restoring its selection.
