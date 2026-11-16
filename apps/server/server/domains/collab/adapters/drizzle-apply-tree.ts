@@ -139,6 +139,9 @@ export function createApplyTreeOperations(input: {
           for (const it of active) {
             if (listOf.get(it.node) !== lists[at] || !landing(it)) continue;
             const records = recordsOfItem(draft, pending, it.node);
+            // A text edit of a document live deleted keeps the Work's row with no record of
+            // its own: the restore below is all its tree half does.
+            if (records.length === 0 && restoring(it)) continue;
             if (records.length === 0) return "changed" as const;
             chosen.set(it.node, records);
           }

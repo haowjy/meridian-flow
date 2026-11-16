@@ -31,7 +31,7 @@ export function MobileChangeSheet({
       open={open}
       onOpenChange={onOpenChange}
       title={<Trans>Changes</Trans>}
-      description={<Trans>Tap a change to go to it in the manuscript.</Trans>}
+      description={<Trans>Tap a change to go to it in the document.</Trans>}
       closeLabel={t`Close the list`}
       data-phone-change-sheet
     >
