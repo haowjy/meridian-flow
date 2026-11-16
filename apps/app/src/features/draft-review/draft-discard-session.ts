@@ -78,13 +78,15 @@ export function startDraftDiscardSession(input: {
       return { kind: "change-refused", code: "read_only" };
     }
     // The room may have moved since the click (Live typing reaching the base, a remote edit):
-    // write the chosen changes as it names them now. One it has no name for is already gone.
+    // write the chosen changes as it names them now. One it can't name for certain stays in the draft.
     const current = binding.runtime.projectNow();
     if (!current) return { kind: "blocked" };
     const { going, stayed } = readChosen(target.frame, current, chosen);
     if (!going.length) {
-      input.setState({ failure: { code: "discard-refused", serverCode: "gone" } });
-      return { kind: "change-refused", code: "gone" };
+      input.setState({
+        failure: { code: "discard-refused", serverCode: "left_out_not_in_draft" },
+      });
+      return { kind: "change-refused", code: "left_out_not_in_draft" };
     }
     const ids = going.map((pair) => pair.read);
     const blocks = applySpanPatches(
@@ -98,7 +100,10 @@ export function startDraftDiscardSession(input: {
     } finally {
       history.removeTrackedOrigin(origin);
     }
-    if (stayed.length) input.setState({ failure: { code: "discard-refused", serverCode: "gone" } });
+    if (stayed.length)
+      input.setState({
+        failure: { code: "discard-refused", serverCode: "left_out_not_in_draft" },
+      });
     history.stopCapturing();
     item = history.undoStack.length > before ? (history.undoStack.at(-1) ?? null) : null;
     binding.runtime.projectNow();

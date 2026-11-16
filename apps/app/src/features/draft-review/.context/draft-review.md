@@ -41,8 +41,9 @@ authority to Discard.
   Where the two frames' draft blocks are equal (the base lag), an edit is the one over the same
   draft tokens; where their bases are equal, over the same base tokens; otherwise only an edit
   with no repeat in either frame is named. A chosen change with no name stays in the draft: an
-  Apply says `left_out_not_on_server`, a Discard says `gone` for it; a command never answers
-  silently.
+  Apply says `left_out_not_on_server`, a Discard says `left_out_not_in_draft` ("The draft didn't
+  have this change as you saw it, so it wasn't discarded. It's kept in the draft."); a command
+  never answers silently.
 - An absent attribution entry is explicitly unknown, so candidate chat rows stay visible
   without a byline. `room-attribution.ts` fetches on unresolved clock-range changes,
   Apply/restoration root revisions and reconnect, not text-frame identity. Local
