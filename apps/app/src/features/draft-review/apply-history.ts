@@ -1,19 +1,24 @@
-import type { EditorHistoryHandle } from "@/core/editor/editor-history";
+import type {
+  DocumentApplyEntry,
+  DocumentHistory,
+  EditorHistoryHandle,
+} from "@/core/editor/editor-history";
 import { type ApplyStep, undoApply } from "@/core/project-tree/tree-undo";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 
 type ApplyAction = Parameters<EditorHistoryHandle["captureApply"]>[0];
 /** The histories of the live sessions this tab holds for the Apply's documents, read now. */
-type LiveHistories = () => readonly (EditorHistoryHandle | null)[];
+type LiveHistories = () => readonly (DocumentHistory | null)[];
 
 /**
  * One Apply in the history of every live session of its documents while it is in force. Ctrl+Z
- * in any of them takes it back and the others let go of it: no second Un-Apply goes, and a later
- * press there takes that history's own step. Whenever it comes back into force (a Redo, an
- * Un-Apply that didn't happen), every live history without it gets it again.
+ * in any of them takes it back and the others hide it: no second Un-Apply goes, and a later press
+ * there takes that history's own step. Whenever it comes back into force (a Redo, an Un-Apply
+ * that didn't happen), every history shows it again at its place, and a live history that never
+ * had it gets it.
  */
 class SharedApply {
-  private readonly held = new Map<EditorHistoryHandle, () => void>();
+  private readonly held = new Map<DocumentHistory, DocumentApplyEntry>();
   private ended = false;
 
   constructor(
@@ -26,13 +31,17 @@ class SharedApply {
   enter(): void {
     if (this.ended) return;
     const live = new Set(this.histories().filter((history) => history !== null));
-    for (const [history, remove] of this.held) {
+    for (const [history, entry] of this.held) {
       if (live.has(history)) continue;
-      remove();
+      entry.remove();
       this.held.delete(history);
     }
     for (const history of live) {
-      if (this.held.has(history)) continue;
+      const held = this.held.get(history);
+      if (held) {
+        held.show();
+        continue;
+      }
       this.held.set(
         history,
         history.captureApply({
@@ -52,17 +61,14 @@ class SharedApply {
     }
   }
 
-  release(kept: EditorHistoryHandle | null = null): void {
-    for (const [history, remove] of this.held) {
-      if (history === kept) continue;
-      remove();
-      this.held.delete(history);
-    }
+  release(kept: DocumentHistory | null = null): void {
+    for (const [history, entry] of this.held) if (history !== kept) entry.hide();
   }
 
   end(): void {
     this.ended = true;
-    this.release();
+    for (const entry of this.held.values()) entry.remove();
+    this.held.clear();
   }
 }
 
@@ -71,7 +77,7 @@ export function sharedHistory(histories: LiveHistories): EditorHistoryHandle {
   return {
     captureApply(action) {
       const shared = new SharedApply(histories, action);
-      return () => shared.end();
+      return { remove: () => shared.end() };
     },
   };
 }
@@ -111,8 +117,8 @@ export class AppliedEntry {
   }
 
   /**
-   * The step's Un-Apply starts: while one sent from elsewhere (the card, the sidebar) is out, no
-   * history holds the entry.
+   * The step's Un-Apply starts: while one sent from elsewhere (the card, the sidebar) is out, every
+   * history hides the entry.
    */
   leaving(step: ApplyStep): void {
     if (this.pressed !== step) this.shared.release();

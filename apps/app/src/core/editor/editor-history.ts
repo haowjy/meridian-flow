@@ -27,9 +27,15 @@ type EditorHistoryAction = {
   undo(): Promise<boolean>;
   redo(): void;
 };
+/** An Apply boundary in a history. `remove` ends it when its action can no longer run. */
+type ApplyEntry = { remove(): void };
+/**
+ * `hide` takes the entry out of both sides and keeps its place; `show` puts a hidden entry back on
+ * the undo side at that place, below what was done after it, and leaves the redo side alone.
+ */
+export type DocumentApplyEntry = ApplyEntry & { hide(): void; show(): void };
 export type EditorHistoryHandle = {
-  /** Records an Apply boundary. The remover ends it when its action can no longer run. */
-  captureApply(action: EditorHistoryAction): () => void;
+  captureApply(action: EditorHistoryAction): ApplyEntry;
 };
 
 type Entry =
@@ -138,19 +144,34 @@ export class DocumentHistory implements EditorHistoryHandle {
     this.listeners.clear();
   }
 
-  captureApply(action: EditorHistoryAction): () => void {
-    if (!this.active) return noop;
+  captureApply(action: EditorHistoryAction): DocumentApplyEntry {
+    if (!this.active) return { remove: noop, hide: noop, show: noop };
     this.manager.stopCapturing();
     const entry: Entry = { kind: "apply", sequence: ++this.sequence, action, presses: 0 };
     this.undo.push(entry);
     this.clearRedo();
     this.changed();
-    return () => {
+    let hidden = false;
+    const take = () => {
       for (const entries of [this.undo, this.redo]) {
         const index = entries.indexOf(entry);
         if (index >= 0) entries.splice(index, 1);
       }
       this.changed();
+    };
+    return {
+      remove: take,
+      hide: () => {
+        if (hidden) return;
+        hidden = true;
+        take();
+      },
+      show: () => {
+        if (!hidden || !this.active) return;
+        hidden = false;
+        insert(this.undo, entry);
+        this.changed();
+      },
     };
   }
 
