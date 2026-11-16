@@ -75,6 +75,23 @@ export function standingIn(
   };
 }
 
+/**
+ * The document's standing in the project's list, or in the account's own (`user://`) when the
+ * project's doesn't have it: a document moved there is still the writer's. An account list not yet
+ * read cannot say the document is nowhere.
+ */
+export function standingAcross(
+  project: { snapshot: TreeListSnapshot; projection: TreeProjection },
+  account: { snapshot: TreeListSnapshot; projection: TreeProjection },
+  documentId: string,
+): DocumentStanding {
+  const answer = standingIn(project.snapshot, project.projection, documentId);
+  if (answer.kind !== "not-in-list") return answer;
+  const there = standingIn(account.snapshot, account.projection, documentId);
+  if (there.kind === "waiting") return there;
+  return there.kind === "not-in-list" ? answer : there;
+}
+
 /** The names of the folders above a node, top first, as the replay shows them. */
 function foldersAbove(projection: TreeProjection, node: TreeNode): string[] {
   const names: string[] = [];

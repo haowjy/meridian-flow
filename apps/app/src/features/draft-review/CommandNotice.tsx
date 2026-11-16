@@ -9,6 +9,7 @@ import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
+import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { RowWord } from "@/components/app/RowWord";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
@@ -18,6 +19,8 @@ import {
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { type Removal, removalSentence } from "@/features/project/context/RemovedDocumentNotice";
+import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { type AppliedFact, type DraftNotice, hasLine, type RestoreReturned } from "./draft-notices";
 
@@ -126,12 +129,22 @@ export function DraftNoticeLine({
   useLingui();
   const undo = useNoticeUndo();
   const openDocument = useOpenProjectDocument(notice.projectId);
+  const whereabouts = useWhereabouts(notice.projectId);
   if (!hasLine(notice)) return null;
   if (notice.kind === "applied") {
-    const landed = notice.facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
+    // A document gone since says so once, in place of what the Apply did to it.
+    const removed = new Map<string, Removal>();
+    const facts = notice.facts.flatMap((fact): AppliedFact[] => {
+      if (fact.kind === "applied") return [];
+      const now = whereabouts(fact.documentId, factName(fact));
+      if (now.kind !== "removed") return [factNow(fact, now)];
+      removed.set(fact.documentId, now.removal);
+      return [];
+    });
+    const landed = facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
     const named = (kind: "renamed" | "restored") =>
-      notice.facts.flatMap((fact) => (fact.kind === kind ? [fact.name] : []));
-    const also = notice.facts.flatMap((fact) =>
+      facts.flatMap((fact) => (fact.kind === kind ? [fact.name] : []));
+    const also = facts.flatMap((fact) =>
       fact.kind === "also" ? [`${fact.from} → ${fact.to}`] : [],
     );
     const [only] = landed;
@@ -142,6 +155,7 @@ export function DraftNoticeLine({
     const sentence = [
       ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
       appliedSentence(named("restored"), named("renamed"), also),
+      removalSentence([...removed.values()]),
     ]
       .filter(Boolean)
       .join(" ");
@@ -276,6 +290,7 @@ const takeOnce = (id: number) => !focused.has(id) && Boolean(focused.add(id));
 export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWords {
   useLingui();
   const undo = useNoticeUndo();
+  const whereabouts = useWhereabouts(notice?.projectId ?? "");
   if (!notice) return { held: () => false, word: () => null };
   if (notice.kind === "applied") {
     const factsOf = (id: string) => notice.facts.filter((fact) => fact.documentId === id);
@@ -283,11 +298,15 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
       held: (id) => factsOf(id).length > 0,
       word: (id) => {
         const facts = factsOf(id);
-        if (facts.length === 0) return null;
-        const renamed = facts.some((fact) => fact.kind === "renamed");
         const [first] = facts;
-        const name = first ? (first.kind === "also" ? first.to : first.name) : "";
-        const said = facts.map(factSentence).join(" ");
+        if (!first) return null;
+        const renamed = facts.some((fact) => fact.kind === "renamed");
+        const now = whereabouts(id, factName(first));
+        const name = now.kind === "placed" ? documentDisplayName(now.uri) : factName(first);
+        const said =
+          now.kind === "removed"
+            ? removalSentence([now.removal])
+            : facts.map((fact) => factSentence(factNow(fact, now))).join(" ");
         const step = facts.find((fact) => fact.step)?.step;
         if (step) {
           const count = step.count;
@@ -378,6 +397,42 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   };
 }
 
+/**
+ * Where a document an Apply took is now, by its id in the project's tree: `placed` where the tree
+ * has it, `removed` once it is in Trash or purged, and `unread` while the list can't say, when the
+ * notice says where the Apply left it.
+ */
+type Whereabouts =
+  | { kind: "placed"; uri: string }
+  | { kind: "removed"; removal: Removal }
+  | { kind: "unread" };
+
+function useWhereabouts(projectId: string): (documentId: string, name: string) => Whereabouts {
+  const trees = useProjectTrees(projectId);
+  return (documentId, name) => {
+    const place = trees.find(documentId);
+    if (place) return { kind: "placed", uri: place.file.uri };
+    const standing = trees.standing(documentId);
+    if (standing.kind !== "in-trash" && standing.kind !== "purged") return { kind: "unread" };
+    const answer = removalAnswer(standing);
+    const title = standing.kind === "in-trash" ? standing.node.displayName : name;
+    return {
+      kind: "removed",
+      removal: { title, record: answer?.kind === "removed" ? answer.record : null },
+    };
+  };
+}
+
+const factName = (fact: AppliedFact) => (fact.kind === "also" ? fact.to : fact.name);
+
+/** The fact as the document stands now: a landing names where it is, a return its name. */
+function factNow(fact: AppliedFact, now: Whereabouts): AppliedFact {
+  if (now.kind !== "placed") return fact;
+  if (fact.kind === "landed") return { ...fact, uri: now.uri, name: documentDisplayName(now.uri) };
+  if (fact.kind === "restored") return { ...fact, name: documentDisplayName(now.uri) };
+  return fact;
+}
+
 /** What one fact of an Apply says on its document's row. */
 function factSentence(fact: AppliedFact): string {
   switch (fact.kind) {
@@ -447,7 +502,7 @@ export function ApplyAllQuestion({
 }
 
 /** "‹title› is back in the manuscript.", with every name when an Apply all brought back several. */
-export function restoredSentence(titles: readonly string[]): string {
+function restoredSentence(titles: readonly string[]): string {
   const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
     titles,
   );
