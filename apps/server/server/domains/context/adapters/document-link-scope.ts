@@ -45,6 +45,8 @@ import type {
 } from "../../collab/index.js";
 import type { FileAccess } from "../../file-policy/index.js";
 import type { ProjectContextAvailabilityPort } from "../ports/project-context-availability.js";
+import type { TreeList } from "../ports/tree-list-store.js";
+import { ownedByRequest } from "../tree/source-owner.js";
 import {
   type DocumentAddressSelection,
   type DocumentCoordinates,
@@ -66,7 +68,8 @@ import { createDrizzleProjectContextAvailability } from "./project-context-avail
 
 type Row = {
   id: string;
-  projectId: string;
+  /** Who owns it: a project, or the account for a home document. */
+  list: TreeList;
   scheme: ContextUriScheme;
   owner: ResolvedContextOwner;
   /** Path inside its source, with extension, at the row's own location. */
@@ -92,7 +95,6 @@ type ViewIndex = {
 
 type Snapshot = {
   projectId: string | null;
-  personalProjectId: string | null;
   viewer: string | null;
   /** The reader's thread, used to join nested scopes with the same authority. */
   viewerThreadId: string | null;
@@ -115,6 +117,8 @@ type Snapshot = {
   /** View key → that view's identity statuses and address index. */
   views: Map<string, ViewIndex>;
 };
+
+const projectOf = (row: Row) => (row.list.kind === "project" ? row.list.projectId : null);
 
 const memberKey = (key: LinkScopeKey) =>
   "projectId" in key
@@ -140,33 +144,42 @@ export function createDrizzleDocumentLinkScopes(deps: {
   const tree = createTreeReader(db);
   const storage = new AsyncLocalStorage<Snapshot>();
 
-  async function resolveProject(key: LinkScopeKey, threadId: string | null) {
+  /**
+   * Who a scope reads as: the project it reads in (the key's, its thread's, or its document's
+   * owner) and the account reading. A home document has no project, so it reads in the viewer
+   * thread's, or the enclosing one's; with neither it reads in none, as its own account.
+   */
+  async function resolveReader(
+    key: LinkScopeKey,
+    threadId: string | null,
+  ): Promise<{ projectId: string | null; viewer: string | null } | null> {
     const id =
       "projectId" in key ? key.projectId : "threadId" in key ? key.threadId : key.documentId;
     if (!isUuid(id)) return null;
-    const threadUser =
-      threadId && isUuid(threadId)
-        ? sql`(SELECT t.created_by_user_id::text FROM threads t WHERE t.id = ${threadId}::uuid AND t.project_id = p.id)`
-        : sql`NULL::text`;
-    const project =
-      "projectId" in key
-        ? sql`${id}::uuid`
-        : "threadId" in key
-          ? sql`(SELECT t.project_id FROM threads t WHERE t.id = ${id}::uuid)`
-          : sql`(
-            SELECT ${await tree.projectOfDocument(id as DocumentId)}::uuid)`;
+    const viewerThread = threadId && isUuid(threadId) ? threadId : null;
+    const threadUser = viewerThread
+      ? sql`(SELECT t.created_by_user_id::text FROM threads t WHERE t.id = ${viewerThread}::uuid AND t.project_id = p.id)`
+      : sql`NULL::text`;
+    const threadProject = (thread: string) =>
+      sql`(SELECT t.project_id FROM threads t WHERE t.id = ${thread}::uuid)`;
+    let project: SQL;
+    if ("projectId" in key) project = sql`${id}::uuid`;
+    else if ("threadId" in key) project = threadProject(id);
+    else {
+      const owner = await tree.ownerOfDocument(id as DocumentId);
+      if (owner?.kind === "project") project = sql`${owner.projectId}::uuid`;
+      else if (owner && viewerThread) project = threadProject(viewerThread);
+      else if (owner) return { projectId: null, viewer: owner.userId };
+      else return null;
+    }
     const [row] = await currentDrizzleDb(db).execute<{
       project_id: string;
       owner: string;
       thread_user: string | null;
-      personal: string | null;
     }>(sql`
-      SELECT p.id::text AS project_id, p.user_id::text AS owner, ${threadUser} AS thread_user,
-        (SELECT pp.id::text FROM projects pp
-          WHERE pp.user_id = p.user_id AND pp.is_personal AND pp.deleted_at IS NULL
-          ORDER BY pp.created_at LIMIT 1) AS personal
+      SELECT p.id::text AS project_id, p.user_id::text AS owner, ${threadUser} AS thread_user
       FROM projects p WHERE p.id = ${project}`);
-    return row ?? null;
+    return row ? { projectId: row.project_id, viewer: row.thread_user ?? row.owner } : null;
   }
 
   async function prepare(request: ScopePrepareRequest): Promise<void> {
@@ -266,7 +279,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
             workId: coordinates.workId,
             rootThreadId: coordinates.rootThreadId,
             chatThreadId: coordinates.chatThreadId,
-            project: { id: coordinates.projectId },
+            owner: coordinates.owner,
           });
           const found = sourceId
             ? await tree.resolvePath(treeViewOf(view), {
@@ -370,10 +383,14 @@ export function createDrizzleDocumentLinkScopes(deps: {
       if (!parsed.ok || !parsed.value.path) continue;
       for (const name of documentPathCandidateNames(parsed.value.path)) names.add(name);
     }
-    const projects = [snapshot.projectId, snapshot.personalProjectId].filter(
-      (id): id is string => id !== null,
+    const rows = await loadRows(
+      {
+        names: [...names],
+        projectIds: snapshot.projectId ? [snapshot.projectId] : [],
+        ...(snapshot.viewer ? { accountId: snapshot.viewer } : {}),
+      },
+      views,
     );
-    const rows = await loadRows({ names: [...names], projectIds: projects }, views);
     for (const row of rows) if (!snapshot.rows.get(row.id)) remember(snapshot, row);
 
     const branches = views.filter((view) => view.kind === "branch");
@@ -424,7 +441,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
         if (found.has(address.documentId)) continue;
         found.set(address.documentId, {
           id: address.documentId,
-          projectId: address.projectId,
+          list: address.owner,
           scheme: address.scheme,
           owner: contextOwner(address.lockWorkId, address.rootThreadId, address.chatThreadId),
           path: address.path,
@@ -532,19 +549,26 @@ export function createDrizzleDocumentLinkScopes(deps: {
         for (const each of members) outer.members.add(each);
         return operation();
       }
-      const project = await resolveProject(key, threadId);
-      // One whose project can't be found has nothing of its own to load.
-      if (outer && project === null) return operation();
-      if (outer && outer.projectId === project?.project_id && joins(outer)) {
+      const reader = await resolveReader(key, threadId);
+      // One whose project can't be found has nothing of its own to load; a home document
+      // with none of its own reads in the enclosing project, when its account is reading.
+      if (outer && reader === null) return operation();
+      const fits = (snapshot: Snapshot) =>
+        reader?.projectId === null
+          ? snapshot.viewer === reader.viewer
+          : snapshot.projectId === reader?.projectId;
+      if (outer && fits(outer) && joins(outer)) {
         for (const each of members) outer.members.add(each);
         return operation();
       }
       const opened: Snapshot = {
-        projectId: project?.project_id ?? null,
-        personalProjectId: project?.personal ?? null,
-        viewer: key.viewer?.accountId ?? project?.thread_user ?? project?.owner ?? null,
+        projectId: reader?.projectId ?? null,
+        viewer: key.viewer?.accountId ?? reader?.viewer ?? null,
         viewerThreadId: threadId,
-        members: new Set([...members, ...(project ? [`project:${project.project_id}`] : [])]),
+        members: new Set([
+          ...members,
+          ...(reader?.projectId ? [`project:${reader.projectId}`] : []),
+        ]),
         open: true,
         prepared: false,
         rows: new Map(),
@@ -578,11 +602,12 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const holderRow = snapshot.rows.get(documentId);
       if (holderRow === undefined) miss(`holder:${documentId}`);
       const status = snapshot.views.get(viewKey(view))?.statuses.get(documentId as DocumentId);
-      // The holder's own row owns its project; a key that named no project leaves it empty.
+      // The holder's own row owns its project; a home document reads in the snapshot's, and a
+      // key that named no project leaves it empty.
       return createHolderLinkScope(
         {
           uri: status?.kind === "visible" ? status.address.uri : (holderRow?.uri ?? null),
-          projectId: holderRow?.projectId ?? snapshot.projectId ?? "",
+          projectId: (holderRow && projectOf(holderRow)) ?? snapshot.projectId ?? "",
           view,
         },
         snapshotCatalog(snapshot, view, miss),
@@ -686,6 +711,8 @@ function snapshotCatalog(
   miss: (key: string) => void,
 ): HolderCatalog & { branchCreatedAt(uri: string): CatalogDocument | null } {
   const key = viewKey(view);
+  const owned = (row: Row) =>
+    ownedByRequest(row.list, { projectId: snapshot.projectId, accountId: snapshot.viewer });
   /** This view's identity status for a row; a status it never loaded is a miss, never an absence. */
   const statusOf = (row: Row) => {
     const status = snapshot.views.get(key)?.statuses.get(row.id as DocumentId);
@@ -711,14 +738,12 @@ function snapshotCatalog(
     return {
       documentId: row.id,
       owner: row.owner,
-      projectId: row.projectId,
+      projectId: projectOf(row),
       uri: address?.uri ?? row.uri,
       presence: status.kind === "deleted" ? "deleted" : branch ? "branch" : "live",
       ...(branch ? { branch } : {}),
       readable: snapshot.readable.get(row.id) ?? false,
-      nameable:
-        row.projectId === snapshot.projectId ||
-        (row.projectId === snapshot.personalProjectId && row.scheme === "user"),
+      nameable: owned(row),
     };
   };
   const atAddress = (uri: string, stems: boolean) => {
@@ -822,8 +847,8 @@ function snapshotCatalog(
     assetAddress(id) {
       const row = snapshot.rows.get(id);
       if (row === undefined) return undefined;
-      // Never another project's address: its id names nothing this reader has.
-      if (!row?.image || row.projectId !== snapshot.projectId) return null;
+      // Never another owner's address: its id names nothing this reader has.
+      if (!row?.image || !owned(row)) return null;
       const status = statusOf(row);
       if (status === UNLOADED) return undefined;
       // "gone" is a document in no view, or one with no spellable address: it names nothing
@@ -842,11 +867,11 @@ function snapshotCatalog(
     assetFor(uri) {
       const live = liveImage(uri);
       if (live === UNLOADED) return undefined;
-      if (live && live.projectId === snapshot.projectId) return live.id;
+      if (live && owned(live)) return live.id;
       if (!snapshot.addresses.has(uri)) return undefined;
       const deleted = soleDeletedImage(uri);
       if (deleted === UNLOADED) return undefined;
-      return deleted && deleted.projectId === snapshot.projectId ? deleted.id : null;
+      return deleted && owned(deleted) ? deleted.id : null;
     },
   };
 }

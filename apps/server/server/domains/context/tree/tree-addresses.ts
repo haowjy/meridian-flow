@@ -27,13 +27,15 @@ import { and, eq, isNull, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import { sourceAuthority } from "../adapters/context-file-entry.js";
+import type { TreeList } from "../ports/tree-list-store.js";
+import { ownerFrom, ownerProjectIdSql } from "./source-owner.js";
 import { LIVE_TREE, type TreeView } from "./tree-relations.js";
 
 /** A decoded canonical address resolved to storage coordinates. */
 export type DocumentCoordinates = {
-  /** The project storing the source: the personal project for `user://`. */
-  projectId: ProjectId;
-  /** That project's owner; keys the `user://` namespace. */
+  /** Who owns the source: its project (a Work's source, its Work's project), or the account for `user://`. */
+  owner: TreeList;
+  /** The account the owner answers to (a project's owner, or the account); keys the `user://` namespace. */
   userId: string;
   scheme: ContextUriScheme;
   /** Address coordinate: null for project-scoped schemes and for No Work. */
@@ -83,8 +85,8 @@ export function placedNodesSql(view: TreeView): SQL {
 /** Which content documents to spell. */
 export type DocumentAddressSelection =
   | { ids: readonly string[] }
-  /** Every document whose name is one of these, in these projects. */
-  | { names: readonly string[]; projectIds: readonly string[] }
+  /** Every document whose name is one of these, in these projects or this account's home folder. */
+  | { names: readonly string[]; projectIds: readonly string[]; accountId?: string }
   /** Every document in this source whose rendered filename is exactly this. */
   | { sourceId: string; filename: string };
 
@@ -103,6 +105,7 @@ export async function loadDocumentAddresses(
   const rows = await currentDrizzleDb(db).execute<{
     id: string;
     project_id: string | null;
+    account_id: string | null;
     user_id: string | null;
     scheme: string;
     work_id: string | null;
@@ -129,8 +132,9 @@ export async function loadDocumentAddresses(
       ) f
     )
     SELECT c.id::text AS id,
-      COALESCE(cs.project_id, w.project_id)::text AS project_id,
-      p.user_id::text AS user_id,
+      ${ownerProjectIdSql("cs", "w")}::text AS project_id,
+      cs.user_id::text AS account_id,
+      COALESCE(cs.user_id, p.user_id)::text AS user_id,
       cs.slug AS scheme, cs.work_id::text AS work_id, w.handle AS work_handle,
       w.is_no_work AS is_no_work, cs.root_thread_id::text AS root_thread_id,
       cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref,
@@ -142,10 +146,10 @@ export async function loadDocumentAddresses(
     JOIN context_sources cs ON cs.id = c.context_source_id
     LEFT JOIN works w ON w.id = cs.work_id
     LEFT JOIN threads root ON root.id = COALESCE(cs.root_thread_id, cs.chat_thread_id)
-    LEFT JOIN projects p ON p.id = COALESCE(cs.project_id, w.project_id)
+    LEFT JOIN projects p ON p.id = ${ownerProjectIdSql("cs", "w")}
   `);
   return rows.flatMap((row): DocumentAddress[] => {
-    if (!row.project_id || !row.user_id || !isContextUriScheme(row.scheme)) return [];
+    if (!row.user_id || !isContextUriScheme(row.scheme)) return [];
     const scheme = row.scheme;
     let uri: string;
     try {
@@ -166,7 +170,7 @@ export async function loadDocumentAddresses(
     return [
       {
         documentId: row.id as DocumentId,
-        projectId: row.project_id as ProjectId,
+        owner: ownerFrom({ projectId: row.project_id, userId: row.account_id }),
         userId: row.user_id,
         scheme,
         workId: row.work_id && !row.is_no_work ? row.work_id : null,
@@ -195,22 +199,30 @@ function selectionFilter(selection: DocumentAddressSelection): SQL | null {
   }
   if ("names" in selection) {
     const projectIds = selection.projectIds.filter(isUuid);
-    if (selection.names.length === 0 || projectIds.length === 0) return null;
+    const accountId =
+      selection.accountId && isUuid(selection.accountId) ? selection.accountId : null;
+    if (selection.names.length === 0 || (projectIds.length === 0 && !accountId)) return null;
     // A node's name is its full filename; the candidates are stems, so match its stem too.
     const names = sql.join(
       selection.names.map((name) => sql`${name}`),
       sql`, `,
     );
+    const owned = [
+      ...(projectIds.length > 0
+        ? [sql`${ownerProjectIdSql("cs", "w")} IN (${uuidList(projectIds)})`]
+        : []),
+      ...(accountId ? [sql`cs.user_id = ${accountId}::uuid`] : []),
+    ];
     return sql`(d.name IN (${names}) OR d.stem IN (${names})) AND d.context_source_id IN (
       SELECT cs.id FROM context_sources cs LEFT JOIN works w ON w.id = cs.work_id
-      WHERE COALESCE(cs.project_id, w.project_id) IN (${uuidList(projectIds)}))`;
+      WHERE ${sql.join(owned, sql` OR `)})`;
   }
   return sql`d.context_source_id = ${selection.sourceId}::uuid AND d.name = ${selection.filename}`;
 }
 
 /**
- * The live source a scheme names: a project-scoped one in its project (or the owner's
- * personal project), a lineage Scratch by its first chat, a Work-scoped one in the named Work
+ * The live source a scheme names: a project-scoped one in its project (the home folder in its
+ * account), a lineage Scratch by its first chat, a Work-scoped one in the named Work
  * or No Work. A deleted Work's source stays until its purge removes it: its files read, and
  * file policy refuses the writes.
  */
@@ -219,13 +231,14 @@ export async function presentSourceId(
   input: {
     scheme: string;
     workId: string | null;
-    project: { id: string } | { personalOf: string };
+    /** Whose source: the project the scheme is read in, or the account for the home folder. */
+    owner: TreeList;
     rootThreadId?: string | null;
     chatThreadId?: string | null;
   },
 ): Promise<ContextSourceId | null> {
   const workScoped = !isProjectScopedScheme(input.scheme as ContextUriScheme);
-  const projectId = "id" in input.project ? input.project.id : null;
+  const projectId = input.owner.kind === "project" ? input.owner.projectId : null;
   const [source] = await currentDrizzleDb(db)
     .select({ id: contextSources.id })
     .from(contextSources)
@@ -252,16 +265,16 @@ export async function presentSourceId(
                   projectId === null ? sql`false` : eq(works.projectId, projectId),
                   input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
                 )
-              : and(
-                  isNull(contextSources.workId),
-                  isNull(projects.deletedAt),
-                  "personalOf" in input.project
-                    ? and(
-                        eq(projects.userId, input.project.personalOf),
-                        eq(projects.isPersonal, true),
-                      )
-                    : eq(projects.id, input.project.id),
-                ),
+              : input.owner.kind === "account"
+                ? and(
+                    eq(contextSources.scope, "account"),
+                    eq(contextSources.userId, input.owner.userId as UserId),
+                  )
+                : and(
+                    isNull(contextSources.workId),
+                    isNull(projects.deletedAt),
+                    eq(projects.id, input.owner.projectId as ProjectId),
+                  ),
       ),
     )
     .limit(1);
@@ -393,7 +406,9 @@ export type NodeLocation = {
 /** Where a node is, spelled as a canonical address. */
 export type NodeAddress = {
   documentId: DocumentId;
-  projectId: ProjectId;
+  /** As `DocumentCoordinates.owner`. */
+  owner: TreeList;
+  /** As `DocumentCoordinates.userId`. */
   userId: UserId;
   scheme: ContextUriScheme;
   workId: WorkId | null;
@@ -433,6 +448,7 @@ export async function spellNodeAddresses(
       : await currentDrizzleDb(db).execute<{
           id: string;
           project_id: string | null;
+          account_id: string | null;
           user_id: string | null;
           scheme: string;
           work_id: string | null;
@@ -442,20 +458,21 @@ export async function spellNodeAddresses(
           chat_thread_id: string | null;
           root_thread_ref: string | null;
         }>(sql`
-          SELECT cs.id::text AS id, COALESCE(cs.project_id, w.project_id)::text AS project_id,
-            p.user_id::text AS user_id, cs.slug AS scheme, cs.work_id::text AS work_id,
+          SELECT cs.id::text AS id, ${ownerProjectIdSql("cs", "w")}::text AS project_id,
+            cs.user_id::text AS account_id, COALESCE(cs.user_id, p.user_id)::text AS user_id,
+            cs.slug AS scheme, cs.work_id::text AS work_id,
             w.handle AS work_handle, w.is_no_work, cs.root_thread_id::text AS root_thread_id,
             cs.chat_thread_id::text AS chat_thread_id, root.ref AS root_thread_ref
           FROM context_sources cs
           LEFT JOIN works w ON w.id = cs.work_id
           LEFT JOIN threads root ON root.id = COALESCE(cs.root_thread_id, cs.chat_thread_id)
-          LEFT JOIN projects p ON p.id = COALESCE(cs.project_id, w.project_id)
+          LEFT JOIN projects p ON p.id = ${ownerProjectIdSql("cs", "w")}
           WHERE cs.id IN (${uuidList(sourceIds)})`)
     ).map((row) => [row.id, row]),
   );
   return locations.map((location) => {
     const source = sources.get(location.contextSourceId);
-    if (!source?.project_id || !source.user_id || !isContextUriScheme(source.scheme)) return null;
+    if (!source?.user_id || !isContextUriScheme(source.scheme)) return null;
     const chain = location.folderId === null ? [] : folderChains.get(location.folderId);
     if (!chain || chain.at(-1)?.parentId) return null;
     const path = chainPrefix(chain) + location.name;
@@ -479,7 +496,7 @@ export async function spellNodeAddresses(
     }
     return {
       documentId: location.documentId,
-      projectId: source.project_id as ProjectId,
+      owner: ownerFrom({ projectId: source.project_id, userId: source.account_id }),
       userId: source.user_id as UserId,
       scheme,
       workId: source.work_id && !source.is_no_work ? (source.work_id as WorkId) : null,
@@ -535,16 +552,17 @@ export async function loadDocumentPlacement(
   return (await loadDocumentPlacements(db, [documentId])).get(documentId) ?? null;
 }
 
-/** The project that owns a document, whether or not any view places it. */
-export async function projectOfDocument(
+/** Who owns a document, a project or an account, whether or not any view places it. */
+export async function ownerOfDocument(
   db: DrizzleDb,
   documentId: DocumentId,
-): Promise<ProjectId | null> {
+): Promise<TreeList | null> {
   if (!isUuid(documentId)) return null;
-  const [row] = await currentDrizzleDb(db).execute<{ project_id: string }>(
-    sql`SELECT project_id::text FROM documents WHERE id = ${documentId}::uuid`,
-  );
-  return (row?.project_id ?? null) as ProjectId | null;
+  const [row] = await currentDrizzleDb(db).execute<{
+    project_id: string | null;
+    user_id: string | null;
+  }>(sql`SELECT project_id::text, user_id::text FROM documents WHERE id = ${documentId}::uuid`);
+  return row ? ownerFrom({ projectId: row.project_id, userId: row.user_id }) : null;
 }
 
 function uuidList(ids: readonly string[]): SQL {

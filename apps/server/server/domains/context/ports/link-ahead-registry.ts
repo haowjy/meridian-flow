@@ -1,18 +1,21 @@
 /** Port for durable ahead-ref identities (contract §9.2). */
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 
-export type AheadRegistration = {
+export type AheadRegistration = AheadHolder & {
   /** The bare UUID of the `ahead:<uuid>` ref; the table key. */
   aheadId: string;
-  holderProjectId: ProjectId;
   /** Decoded canonical Context URI of the (extension-bearing) target. */
   address: string;
 };
 
-/** Which holders' index rows a registration recovery reads. */
-export type AheadRecoveryScope =
-  | { documentId: DocumentId }
-  | { projectId: ProjectId; personalOwnerId?: UserId };
+/**
+ * Who names the address: a holder read in a project, or a home document read in none, which
+ * can name only its account's home folder.
+ */
+export type AheadHolder = { holderProjectId: ProjectId } | { holderUserId: UserId };
+
+/** Which holders' index rows a registration recovery reads: one holder's. */
+export type AheadRecoveryScope = { documentId: DocumentId };
 
 /** One page of recovery, in ahead-id order, strictly after `after`. */
 export type AheadRecoveryPage = { after?: string; limit: number };

@@ -6,7 +6,6 @@ export interface Project {
   userId: UserId;
   name: string;
   slug: string;
-  isPersonal: boolean;
   systemPrompt: string | null;
   settings: ProjectSettings;
   lastActivityAt: string;

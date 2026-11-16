@@ -7,10 +7,10 @@
  * Only a chat's uploads and a lineage's notes are still made on first write.
  */
 
-import type { ProjectId, ThreadId } from "@meridian/contracts";
+import type { ProjectId, ThreadId, UserId } from "@meridian/contracts";
 import { contextRootUri } from "@meridian/contracts/context-uri";
 import type { Database } from "@meridian/database";
-import { contextSources, projects, works } from "@meridian/database/schema";
+import { contextSources, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -43,17 +43,6 @@ const CONTEXT_SOURCE_NAMES: Record<
   agents: "Agents",
 };
 
-async function findUserContextProject(db: Database, userId: string): Promise<string | null> {
-  const [existing] = await currentDrizzleDb(db)
-    .select({ id: projects.id })
-    .from(projects)
-    .where(
-      and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
-    )
-    .limit(1);
-  return existing?.id ?? null;
-}
-
 export async function findNoWorkId(db: Database, projectId: string): Promise<string | null> {
   const [row] = await currentDrizzleDb(db)
     .select({ id: works.id })
@@ -63,48 +52,25 @@ export async function findNoWorkId(db: Database, projectId: string): Promise<str
   return row?.id ?? null;
 }
 
-/**
- * Whether a project-scoped source is stored in the writer's personal project
- * rather than the project being browsed. Its documents belong to that
- * project's live tree, not this one's.
- */
-function storedInPersonalProject(scheme: ProjectContextFsScheme): boolean {
-  return scheme === "user";
-}
-
 type SourceHints = Pick<ProjectHintPort, "publishSourcesHint">;
 
 const PROJECT_SOURCE_SCHEMES = ["manuscript", "kb", "unfiled", "agents"] as const;
 
 /**
- * Makes a new project's sources inside its creating transaction. The account's personal project
- * also holds `user://`, the account's own list. Returns the Manuscript source's id.
+ * Makes a new project's sources inside its creating transaction. The home folder (`user://`) is
+ * the account's, made with the account. Returns the Manuscript source's id.
  */
-export async function provisionProjectSources(
-  db: Database,
-  projectId: string,
-  options: { personal: boolean },
-): Promise<string> {
-  const schemes: ProjectContextFsScheme[] = [
-    ...PROJECT_SOURCE_SCHEMES,
-    ...(options.personal ? (["user"] as const) : []),
-  ];
-  const tx = currentDrizzleDb(db);
-  // The default bootstrap runs again on a project it already made.
-  await tx
+export async function provisionProjectSources(db: Database, projectId: string): Promise<string> {
+  await currentDrizzleDb(db)
     .insert(contextSources)
     .values(
-      schemes.map((scheme) => ({
+      PROJECT_SOURCE_SCHEMES.map((scheme) => ({
         projectId,
         name: CONTEXT_SOURCE_NAMES[scheme],
         slug: scheme,
         scope: "project" as const,
       })),
-    )
-    .onConflictDoNothing({
-      target: [contextSources.projectId, contextSources.slug],
-      where: sql`${contextSources.workId} IS NULL AND ${contextSources.rootThreadId} IS NULL AND ${contextSources.chatThreadId} IS NULL AND ${contextSources.deletedAt} IS NULL`,
-    });
+    );
   const manuscript = await findProjectContextSource(db, projectId, "manuscript", "");
   if (!manuscript) throw new Error(`Failed to provision sources for project ${projectId}`);
   return manuscript;
@@ -135,19 +101,20 @@ async function findProjectContextSource(
   scheme: ProjectContextFsScheme,
   userId: string,
 ): Promise<string | null> {
-  const sourceProjectId = storedInPersonalProject(scheme)
-    ? await findUserContextProject(db, userId)
-    : projectId;
-  if (!sourceProjectId) return null;
   const [row] = await currentDrizzleDb(db)
     .select({ id: contextSources.id })
     .from(contextSources)
     .where(
       and(
-        eq(contextSources.projectId, sourceProjectId),
+        // The home folder is the account's, whichever project the reader is in.
+        scheme === "user"
+          ? and(eq(contextSources.scope, "account"), eq(contextSources.userId, userId as UserId))
+          : and(
+              eq(contextSources.projectId, projectId as ProjectId),
+              isNull(contextSources.workId),
+              isNull(contextSources.rootThreadId),
+            ),
         eq(contextSources.slug, scheme),
-        isNull(contextSources.workId),
-        isNull(contextSources.rootThreadId),
         isNull(contextSources.deletedAt),
       ),
     )

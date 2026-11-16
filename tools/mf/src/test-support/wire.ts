@@ -364,7 +364,17 @@ function staticRoute(route: string, path: string): [number, unknown, boolean?] {
   if (route === "GET /api/projects")
     return [
       200,
-      { projects: [{ id: PROJECT_ID, isPersonal: true, slug: "my-serial", title: "My Serial" }] },
+      {
+        projects: [
+          {
+            id: PROJECT_ID,
+            slug: "my-serial",
+            title: "My Serial",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            deletedAt: null,
+          },
+        ],
+      },
     ];
   if (route === "POST /api/threads") return [201, thread(), true];
   if (route === `GET /api/threads/${THREAD_ID}/skills`)

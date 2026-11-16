@@ -5,8 +5,8 @@
  * verbs, the link resolve route's answer among them, live in `branch-tree-commands.ts`.
  *
  * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
- * the other project sources, or `user://` for the account's personal source (in its
- * personal project, shared by every world of the account).
+ * the other project sources, or `user://` for the account's home folder (its own source,
+ * made with the account and shared by every world of the account).
  */
 
 import { randomUUID } from "node:crypto";
@@ -58,8 +58,6 @@ export interface BranchTreeWorld {
   project: {
     id: ProjectId;
     userId: UserId;
-    /** The account's personal project, where `user://` lives. */
-    personalId: ProjectId;
     sources: Record<ScenarioSource, ContextSourceId>;
   };
   /** The production branches resolver over this scenario's database. */
@@ -95,32 +93,15 @@ export function sourceOf(path: string): { scheme: ScenarioSource; rel: string } 
   return { scheme: parsed.value.scheme as ScenarioSource, rel: parsed.value.path };
 }
 
-/** The account's personal project and its `user://` source, made once per account. */
-export async function personalUserSource(db: Database, userId: UserId) {
-  const [existing] = await db
-    .select({ projectId: projects.id, sourceId: contextSources.id })
-    .from(projects)
-    .innerJoin(
-      contextSources,
-      and(eq(contextSources.projectId, projects.id), eq(contextSources.slug, "user")),
-    )
-    .where(and(eq(projects.userId, userId), eq(projects.isPersonal, true)))
-    .limit(1);
-  if (existing) return existing;
-  const personalId = randomUUID() as ProjectId;
-  await db.insert(projects).values({
-    id: personalId,
-    userId,
-    name: "User Files",
-    slug: `user-files-${personalId.slice(0, 8)}`,
-    isPersonal: true,
-  });
+/** The account's home folder (`user://`), which the account's insert made. */
+export async function accountUserSource(db: Database, userId: UserId): Promise<ContextSourceId> {
   const [source] = await db
-    .insert(contextSources)
-    .values({ projectId: personalId, name: "User Files", slug: "user" })
-    .returning({ id: contextSources.id });
-  if (!source) throw new Error("The user source was not inserted");
-  return { projectId: personalId, sourceId: source.id };
+    .select({ id: contextSources.id })
+    .from(contextSources)
+    .where(and(eq(contextSources.scope, "account"), eq(contextSources.userId, userId)))
+    .limit(1);
+  if (!source) throw new Error(`Account ${userId} has no home folder source`);
+  return source.id;
 }
 
 /** A world in a new account, or another project of `options.account`'s. */
@@ -165,12 +146,10 @@ export async function branchTreeWorld(
       }),
     ),
   ) as Record<(typeof SOURCES)[number], ContextSourceId>;
-  const personal = await personalUserSource(db, userId);
   return branchTreeWorldOver(db, {
     id: projectId,
     userId,
-    personalId: personal.projectId,
-    sources: { ...projectSources, user: personal.sourceId },
+    sources: { ...projectSources, user: await accountUserSource(db, userId) },
   });
 }
 
