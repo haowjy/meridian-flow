@@ -190,7 +190,20 @@ function keepsView(
 ): boolean {
   const draft = pending[0]?.draft ?? null;
   const rest = pending.filter((record) => !without.has(record.id));
-  const before = fingerprint(replay([...live, ...rest], { draft }), false);
+  const shown = replay([...live, ...rest], { draft });
+  // Landing a record of a node live deleted restores it (rule 9) with what its delete took, which
+  // the Work's view keeps in Trash: the view read here is the one after those restores.
+  const restores: TreeRecord[] = [
+    ...new Set(
+      rest.flatMap((record) =>
+        chosen.has(record.id) && shown.nodes.get(record.node)?.keptByPending ? [record.node] : [],
+      ),
+    ),
+  ].map((node) => ({ id: newId(), node, actor: pending[0]?.actor ?? "", draft, type: "restore" }));
+  const before = fingerprint(
+    restores.length > 0 ? replay([...live, ...restores, ...rest], { draft }) : shown,
+    false,
+  );
   const after = [
     ...live,
     ...rest

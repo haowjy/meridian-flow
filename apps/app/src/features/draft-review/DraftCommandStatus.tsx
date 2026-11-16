@@ -12,12 +12,8 @@ import { isDeletedFromManuscript } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
 import { isNote } from "./review-command-types";
-/**
- * Beside a drafted document's name when the manuscript no longer has it: Apply brings it back.
- * Nothing when it's still there.
- */
-export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem | undefined }) {
-  if (!isDeletedFromManuscript(item)) return null;
+/** Beside the name of a drafted document or folder the manuscript no longer has: Apply brings it back. */
+export function DeletedWord() {
   return (
     <span
       title={t`Deleted from the manuscript. Apply brings it back.`}
@@ -26,6 +22,11 @@ export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem |
       <Trans>Deleted</Trans>
     </span>
   );
+}
+
+/** `DeletedWord` for a drafted document the manuscript no longer has; nothing when it's still there. */
+export function DeletedFromManuscriptTag({ item }: { item: ThreadDraftListItem | undefined }) {
+  return isDeletedFromManuscript(item) ? <DeletedWord /> : null;
 }
 
 export function DraftCommandStatus({ itemKey }: { itemKey: string }) {

@@ -26,6 +26,7 @@ import {
 import { draftCopyView } from "@/features/draft-review/copy-view";
 import {
   DeletedFromManuscriptTag,
+  DeletedWord,
   DraftCommandStatus,
 } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
@@ -784,8 +785,11 @@ function FolderGroupRow({
         controlProps={files.length > 0 ? { "aria-expanded": open } : undefined}
         trailing={files.length > 0 ? <DisclosureMark open={open} /> : undefined}
         title={
-          <span className={cn("truncate", change.kind === "deleted" && "line-through")}>
-            {name}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className={cn("truncate", change.kind === "deleted" && "line-through")}>
+              {name}
+            </span>
+            {folder.deletedLive ? <DeletedWord /> : null}
           </span>
         }
         detail={folderSummary(folder)}

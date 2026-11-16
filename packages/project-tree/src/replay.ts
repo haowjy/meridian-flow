@@ -35,7 +35,7 @@ export type TreeNode = {
   keptByChild: boolean;
   /**
    * Deleted in live, but shown in this Work's view because the Work has a pending change to it
-   * (rule 7). Review marks it "deleted in live"; Apply leaves the change pending.
+   * (rule 7). Review marks it "Deleted"; Apply restores it and lands the change.
    */
   keptByPending: boolean;
   /** Trash emptied: gone for good, and in no Trash entry. */

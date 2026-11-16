@@ -1083,14 +1083,14 @@ describe("replay rules 9 to 13", () => {
 });
 
 describe("numbered names after a partial Apply", () => {
-  it("a copy is not numbered against a record the Apply leaves out", () => {
+  it("a move that puts a deleted folder back brings what is inside it back, as Trash does", () => {
     const t = start();
     const map = t.chapter("Map");
     const ch2 = t.folder("Ch2");
-    t.folder("Arc", ch2);
+    const arc = t.folder("Arc", ch2);
     t.w.delete(LIVE, WRITER, ch2);
     t.w.author(D, CHAT, { type: "rename", node: map, name: "Ch2", fromName: "Map" });
-    // Putting Ch2 back would bring Arc back too, which is not in the Work: it stays pending.
+    // Putting Ch2 back brings Arc back too, and the Work's view shows both standing.
     t.w.author(D, CHAT, {
       type: "move",
       node: ch2,
@@ -1099,9 +1099,9 @@ describe("numbered names after a partial Apply", () => {
       from: { parent: ROOT, rank: "a1" },
     });
     const { left } = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(left.map(({ record }) => record.node)).toEqual([ch2]);
-    // In live the folder is in Trash, so nothing is called Ch2 but this.
-    expect(t.at(map)?.displayName).toBe("Ch2");
+    expect(left).toEqual([]);
+    expect([t.at(ch2)?.trashed, t.at(arc)?.trashed]).toEqual([false, false]);
+    expect(t.at(map)?.displayName).toBe("Ch2 (2)");
   });
 
   it("a rename to the name a node has is not baked into a number", () => {

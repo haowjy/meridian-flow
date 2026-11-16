@@ -262,7 +262,28 @@ function runSeed(seed: number): {
       const some = random() < 0.5 ? [pick(pending).id] : undefined;
       if (action < 0.93) {
         const shownBefore = standing(replayView(writer.doc, view));
-        const shapeBefore = fingerprint(replayView(writer.doc, view), false);
+        // A kept node's Apply restores it with what its delete took, which the view keeps in Trash.
+        const shownBefore0 = replayView(writer.doc, view);
+        const keptRestores = pending
+          .filter(
+            (op) =>
+              (!some || some.includes(op.id)) && shownBefore0.nodes.get(op.node)?.keptByPending,
+          )
+          .map((op) => ({
+            id: `restore-${op.id}`,
+            node: op.node,
+            actor: op.actor,
+            draft: view.draft,
+            type: "restore",
+          }));
+        const shapeBefore = fingerprint(
+          keptRestores.length > 0
+            ? replay([...viewRecords(writer.doc, LIVE), ...keptRestores, ...pending], {
+                draft: view.draft,
+              })
+            : shownBefore0,
+          false,
+        );
         const liveBefore = standing(replayView(writer.doc, LIVE));
         // Apply lands what can land and leaves the rest pending.
         const viewBefore = viewRecords(writer.doc, view);

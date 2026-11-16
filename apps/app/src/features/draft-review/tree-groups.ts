@@ -29,6 +29,8 @@ export type ChangeGroup<T> = {
     name: string;
     change: FolderChange;
     fault: LandingFault | null;
+    /** Live deleted it, and the Work's change to it stands: Apply restores it first. */
+    deletedLive: boolean;
     /** Every changed folder the group takes: this one and the changed folders inside it. */
     folders: string[];
   } | null;
@@ -163,6 +165,7 @@ export function groupByChangedFolder<T extends { documentId: string }>(
         name: work.nodes.get(id)?.displayName ?? "",
         change: folderChange({ work, live }, records),
         fault: faults.get(id) ?? null,
+        deletedLive: work.nodes.get(id)?.keptByPending === true,
         folders: [id],
       },
       files: [],
@@ -199,7 +202,5 @@ export function landingFaultSentence(fault: LandingFault): string {
     }
     case "gone":
       return t`Can't land: the folder it goes to is gone.`;
-    case "deleted-live":
-      return t`Deleted in live. Restore it to keep this change.`;
   }
 }

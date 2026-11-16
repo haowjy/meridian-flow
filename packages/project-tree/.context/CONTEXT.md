@@ -32,6 +32,8 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 6. A drafted create whose folder was discarded shows at the top of its `source` (`rescued`).
 7. A Work's view keeps a live-deleted node standing while the Work has a pending change to it
    (`keptByPending`; `pendingText` carries documents with pending text, which the list cannot see).
+   Its Apply restores the node (rule 9) and what its delete took; the Work's view keeps those in
+   Trash, and `keepsView` reads them standing so that restore is not a refusal.
 8. A restore brings back the node and what its own delete took; `undoes` lifts one delete alone.
 9. A move or rename of a node in Trash restores it (a record with `undoes` never does). A live
    record lifts live deletes by list order; a drafted record lifts only its Work's own, so rule 7
