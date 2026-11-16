@@ -233,9 +233,14 @@ the Undo, so the chip costs a classification per document instead of a full inve
 a turn of large documents). A preview builds only a part a later part of the selection is
 classified on, since its receipt joins the history that one is judged against; the last part
 is accepted when it classifies active. It admits and normalizes nothing, so it cannot answer
-differently from `compute` unless the kernel's own checks would throw. Change `compute` and
+differently from `compute` in two cases: the kernel's own checks throw, or the last part
+classifies active but `executeUndo` would return no updates (never seen in 62k random rows).
+Change `compute` and
 `preview` together, and check them against each other on random documents and peer edits. `prepare`
-yields between documents, so a real Undo of many large documents does not hold the event loop.
+yields (`setImmediate`) between documents, so other requests get a turn between two documents'
+inverses. It does not shorten any one inverse: each large document's is about 300 ms of
+synchronous CPU, and a request with many sequential I/O waits queues behind a chunk at each
+one, so a real Undo of many large documents still slows concurrent reads (4–13 s measured).
 
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`, `nothing_to_redo`,

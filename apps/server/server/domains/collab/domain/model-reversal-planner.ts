@@ -57,7 +57,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     destination: InverseDestination,
     selection: readonly InverseSelection[],
     actionId: string,
-    preview = false,
+    { preview = false }: { preview?: boolean } = {},
   ) => {
     if (destination.kind === "draft" && destination.state === "gone")
       throw new Error("A gone destination cannot be selected");

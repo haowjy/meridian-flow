@@ -586,8 +586,7 @@ export function computeInverse(
 }
 
 /**
- * `preview` answers which selected edits an Undo would take, without building it: an edit
- * comes back with no parts. Only a part a later one is classified on is built, since its
+ * `preview` answers which selected edits an Undo would take, without building it. Only a part a later one is classified on is built, since its
  * receipt joins the history that one is judged against; the last is accepted when it classifies
  * active, and nothing is admitted or normalized.
  */
@@ -597,7 +596,7 @@ function computePreparedInverse(
   selection: readonly InverseSelection[],
   action: InverseAction,
   prepared?: Lineage,
-  preview = false,
+  { preview = false }: { preview?: boolean } = {},
 ): ComputedInverse {
   if (!action.actionId) throw new Error("Inverse requires an action ID");
   if (!selection.length) return { actionId: action.actionId, edits: [], skipped: [] };
@@ -713,7 +712,11 @@ export interface PreparedEditRoots {
   forView(doc: Y.Doc): PreparedEditRoots;
   classify(parts: readonly InversePart[]): PartClassification[];
   compute(selection: readonly InverseSelection[], action: InverseAction): ComputedInverse;
-  /** `compute` for a caller that only needs which edits would be taken: they carry no parts. */
+  /**
+   * `compute` for a caller that only needs which edits would be taken. Each accepted part but
+   * the last carries its receipt; the last is accepted without being built, so its edit may
+   * have no parts. Read only which edits come back, not their parts.
+   */
   preview(selection: readonly InverseSelection[], action: InverseAction): ComputedInverse;
   roots(effect: EditEffect): string[];
   inspect(roots: Iterable<string>): { root: string; identity: string | null }[];
@@ -731,7 +734,7 @@ function preparedRoots(index: Lineage): PreparedEditRoots {
       return computePreparedInverse(doc, history, selection, action, index);
     },
     preview(selection, action) {
-      return computePreparedInverse(doc, history, selection, action, index, true);
+      return computePreparedInverse(doc, history, selection, action, index, { preview: true });
     },
     roots(effect: EditEffect): string[] {
       return index.rootsFor(effect);

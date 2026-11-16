@@ -182,7 +182,7 @@ async function prepare(
   query: TurnInverseQuery,
   kind: "undo" | "redo",
   actionId: string,
-  preview = false,
+  { preview = false }: { preview?: boolean } = {},
 ): Promise<PreparedDocumentInverse[]> {
   const direction = kind;
   const keys = new Set(
@@ -285,7 +285,7 @@ async function prepare(
     // eligibility.
     const computed = new Map<InverseDestination, ReturnType<typeof entryPlanner.compute>>(
       [...selection].map(([destination, parts]) => {
-        return [destination, entryPlanner.compute(destination, parts, actionId, preview)];
+        return [destination, entryPlanner.compute(destination, parts, actionId, { preview })];
       }),
     );
     const classifiedKeys = new Set(
@@ -389,14 +389,18 @@ export function createTurnInverseService(store: TurnInverseStore) {
         const drafts = draftStates(documents, query, (document, part) =>
           store.describePart(document, part),
         );
-        const redo = await prepare(store, documents, query, "redo", randomUUID(), true);
+        const redo = await prepare(store, documents, query, "redo", randomUUID(), {
+          preview: true,
+        });
         if (hasSteps(redo) || treeRedo)
           return {
             state: "live-reversed",
             control: "redo",
             skips: redo.flatMap((plan) => plan.skips),
           };
-        const undo = await prepare(store, documents, query, "undo", randomUUID(), true);
+        const undo = await prepare(store, documents, query, "undo", randomUUID(), {
+          preview: true,
+        });
         // Text the writer discarded is gone: an Undo has nothing to take out, and its Redo
         // would bring the discarded text back.
         const allDiscarded =
