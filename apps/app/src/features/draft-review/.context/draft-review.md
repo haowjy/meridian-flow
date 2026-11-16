@@ -113,14 +113,18 @@ snapshot, reviewed base blocks, selected ids, the result of applying those group
 room-base-to-O delta. Its acknowledgement barrier waits for the server to acknowledge every
 local update in the cut before sending; a room that ends releases it, since it will deliver
 nothing more. A whole-draft target then goes as the whole cut below (`wholeCut`), the draft
-as the server holds it, and typing the room never delivered comes back through the hand-back.
+as the server holds it. Typing the room never delivered stays in this browser's copy of the
+draft room and replays into the draft, as a change by You, the next time that room opens. A
+whole cut leaves the draft with no changes, so nothing lists it and nothing opens its room: the
+typing shows again only when another change comes to that draft.
 A click on some changes is built again when it reaches the head of the queue (`rebuilder`): the
 draft is read as the server holds it into a fresh document (`readRoomOnce`, one sync, nothing sent),
 its review recomputed, and the chosen changes it finds go as an ordinary frozen click from that
-read, so the snapshot is the server's exactly. A chosen change goes only when the read has its id
-and its family has one member in both frames: identical edits are numbered `X`, `X~1` in document
-order, so the same id can name another edit in the other frame. Any other chosen change (typing
-the server never got, an edit changed since by another client, a repeated edit) stays in the
+read, so the snapshot is the server's exactly. A chosen change goes only when the read has the
+same change (`changeKey`): the same id up to its `~n`, over the same base tokens. Identical edits
+are numbered `X`, `X~1` in document order, so one id can name another edit in the other frame;
+both frames diff the same base, so the base range tells them apart. Any other chosen change
+(typing the server never got, an edit changed since by another client) stays in the
 draft, shown as `left_out_not_on_server`: a choice is never widened. Nothing left sends nothing.
 The read is a request like a send: unanswered in 10 seconds, it closes and is tried again, then
 the head stalls with Retry; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the

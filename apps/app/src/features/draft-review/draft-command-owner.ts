@@ -9,6 +9,7 @@ import {
   baseViewDelta,
   blocksEqual,
   composeGroups,
+  type ReviewGroup,
   readApplyRecord,
 } from "@meridian/agent-edit/diff";
 import { type BranchId, type DraftItemKey, draftItemKey } from "@meridian/contracts";
@@ -171,13 +172,12 @@ function refusalCode(answer: Exclude<ApplyClickOutcome, { status: "applied" }>):
   }
 }
 /**
- * Whether `id` is the only one of its family in `ids`: identical edits are numbered `X`, `X~1`
- * in document order, so the same id can name another edit in another frame.
+ * What names one change in two frames on the same base: identical edits share an id up to the
+ * `~n` they take in document order, so the same id can name another edit in another frame; the
+ * base tokens they replace tell them apart.
  */
-const unique = (ids: readonly string[], id: string) => {
-  const family = id.replace(/~\d+$/, "");
-  return ids.filter((other) => other.replace(/~\d+$/, "") === family).length === 1;
-};
+const changeKey = (group: ReviewGroup) =>
+  `${group.id.replace(/~\d+$/, "")}@${group.hunks.map((h) => `${h.baseTokens.from}-${h.baseTokens.to}`).join(",")}`;
 const inSchema = (schema: Schema, blocks: readonly PMNode[]) =>
   blocks.every((block) => block.type.schema === schema)
     ? blocks
@@ -948,7 +948,7 @@ export class DraftCommandOwner {
    * A text click again, for a room that ended before the server had its typing: the whole draft
    * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
    * server now. A choice is never widened: a chosen change goes only when the server's read has
-   * its id and its family (`unique`) has one member in both frames; any other stays (`stayed`).
+   * the same change (`changeKey`); any other stays (`stayed`).
    * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
    * it applies (the read's own blocks are another schema's). A room that
    * can't be read sends the click as it was frozen, and the server says why; `needsReload` when
@@ -986,29 +986,29 @@ export class DraftCommandOwner {
           const schema = content.doc.type.schema;
           const base = readBase(fresh, schema);
           const frame = buildFrame(fresh, base, content.doc);
-          const read = frame.groups.map((group) => group.id);
-          const kept = read.filter(
-            (id) =>
-              chosen.includes(id) &&
-              unique(
-                shown.groups.map((group) => group.id),
-                id,
-              ) &&
-              unique(read, id),
-          );
-          result.stayed = chosen.filter((id) => !kept.includes(id));
-          if (!kept.length) return null;
+          const readIds = new Map(frame.groups.map((group) => [changeKey(group), group.id]));
+          const going = shown.groups.flatMap((group) => {
+            const read = readIds.get(changeKey(group));
+            return chosen.includes(group.id) && read ? [{ shown: group.id, read }] : [];
+          });
+          result.stayed = chosen.filter((id) => !going.some((pair) => pair.shown === id));
+          if (!going.length) return null;
           return {
             body: {
               ...fields,
               snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
-              groupIds: kept,
+              groupIds: going.map((pair) => pair.read),
               baseViewDelta: [],
             },
             optimistic: shown.diff.base.blocks,
             patched: applySpanPatches(
               shown.diff.base.blocks,
-              composeGroups(shown.doc.type.schema, shown, kept, "apply"),
+              composeGroups(
+                shown.doc.type.schema,
+                shown,
+                going.map((pair) => pair.shown),
+                "apply",
+              ),
               "base",
             ),
           };
