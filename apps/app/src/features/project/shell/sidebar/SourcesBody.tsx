@@ -419,10 +419,25 @@ export function SourcesBody({
       TREE_SCHEMES.flatMap((scheme) => {
         const tree = catalogs[scheme].tree;
         return tree
-          ? [{ scheme, owner: { workId: editorWorkId }, tree, writable: writable[scheme] }]
+          ? [
+              {
+                scheme,
+                owner: { workId: editorWorkId },
+                tree,
+                writable: writable[scheme],
+                ...(drafting && shell
+                  ? {
+                      view: {
+                        kind: "draft" as const,
+                        owner: shell.ownerKey as import("@meridian/contracts").DraftOwnerKey,
+                      },
+                    }
+                  : {}),
+              },
+            ]
           : [];
       }),
-    [catalogs, editorWorkId, writable],
+    [catalogs, editorWorkId, writable, drafting, shell],
   );
   const list = useEntryList({ projectId, areas });
   const dropImport = useOptionalImports()?.drop;

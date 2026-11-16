@@ -647,6 +647,9 @@ export type DraftPeerShadowAccess = {
    * transaction under the list's key: the tree list store calls it for every create in a
    * Work's version, the writer's and the AI's alike (contract §6.2 step 5).
    */
+  writeCreatedDraftContent(
+    created: readonly { documentId: DocumentId; branchId: BranchId; content: BoundWrite }[],
+  ): Promise<void>;
   draftCreatedDocuments(
     created: readonly { documentId: DocumentId; branchId: BranchId }[],
   ): Promise<void>;

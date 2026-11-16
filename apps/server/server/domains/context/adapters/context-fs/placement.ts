@@ -41,10 +41,7 @@ export type ContextPlacement =
   | ({ kind: "draft" } & BranchPlacement);
 
 /** Commands only a live placement runs. */
-export type LiveOnlyCommand =
-  | "take a whole-file write"
-  | "create a file with text"
-  | "receive a copy";
+export type LiveOnlyCommand = "take a whole-file write" | "create a file with text";
 
 /** The branch a drafted tree command is made in: the owner, its thread and user. */
 export type BranchCommandOwner = { owner: DraftOwner; threadId: ThreadId; userId: UserId };

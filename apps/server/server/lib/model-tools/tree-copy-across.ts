@@ -58,6 +58,7 @@ export async function copyAcross(
   ctx: ToolHandlerContext,
   grants: FileGrant<"edit">[],
   command: { from: readonly string[]; path: string; many: boolean },
+  destination?: import("../../domains/file-policy/index.js").FileDestination,
 ): Promise<{ refused: unknown } | Copies> {
   const to = areaOfPath(command.path) as NonNullable<ReturnType<typeof areaOfPath>>;
   const shown = await shownNamesOf(ctx);
@@ -105,6 +106,9 @@ export async function copyAcross(
       sources: sources.map((source) => ({
         uri: source.uri,
         expected: { kind: source.kind, nodeId: source.nodeId },
+        ...(destination?.kind === "draft"
+          ? { view: { kind: "draft" as const, owner: destination.owner } }
+          : {}),
       })),
       destinationUri: joinContextUri(to.area, into),
     }),
@@ -153,10 +157,12 @@ export async function recordCopies(
   ctx: ToolHandlerContext,
   port: ContextPort,
   { area, roots, folders, notCopied, name }: Copies,
+  drafted: boolean,
 ): Promise<CopiedAcross> {
   // The copy's records: the folders it made, each root's create and every create below it, and
   // the rename to the name the path gave, which the same Undo takes back first.
   const made = await port.treeCommand(area, {
+    drafted,
     make: (scope) => {
       const creates = new Map(
         listRecords(scope.writer.doc).flatMap((record) =>
@@ -176,7 +182,7 @@ export async function recordCopies(
         if (renamed) records.push({ record: renamed, node: entry.id });
         return scope.writer.view(scope.view).nodes.get(entry.id)?.displayName;
       });
-      return { result: { records, names } };
+      return { result: { records, names, draftBranchId: scope.view.draft } };
     },
   });
   if (!made.ok) throw new Error(`The copy's tree did not write: ${made.error.code}`);
@@ -203,6 +209,9 @@ export async function recordCopies(
         })),
         records: made.value.records,
         op: "create",
+        ...(made.value.draftBranchId
+          ? { draftBranchId: made.value.draftBranchId as import("@meridian/contracts").BranchId }
+          : {}),
         threadId: ctx.threadId as ThreadId,
         ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
         ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),

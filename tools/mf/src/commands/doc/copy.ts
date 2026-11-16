@@ -32,7 +32,7 @@ export const docCopyCommand: CommandSpec = {
     "draft-work": {
       type: "string",
       description:
-        "Copy every tracked source's draft in this Work instead of its live text; a Work with no draft of a source refuses",
+        "Read each source in this Work's draft view, using live content where no draft exists",
     },
   },
   examples: [

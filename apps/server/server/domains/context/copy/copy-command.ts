@@ -113,12 +113,13 @@ export interface CopyDestinationHandoff {
   dir: readonly string[];
   /** The Work whose lifecycle and namespace this end belongs to; null for no Work. */
   workScopeId: string | null;
+  branch: import("../ports/context-command-transaction.js").ContextCommandBranch | null;
 }
 
 export interface ContextCopyCommandDeps {
   documentSync: Pick<
     CollabDomain,
-    "readEffectiveBlocks" | "bindCopiedBlocks" | "encodeSeed" | "refreshDocumentProjection"
+    "readEffectiveBlocks" | "bindCopiedBlocks" | "refreshDocumentProjection"
   >;
   branches: Pick<import("../../collab/domain/branches.js").Branches, "viewForOwner">;
   objectStore: ObjectStorePort;
@@ -209,9 +210,12 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             const { putKeys } = prepared.value;
             if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
             return commandTransaction.run(
-              () => write(selected, prepared.value),
+              (command) => write(selected, prepared.value, command.branch?.id ?? null),
               [scopeOf(input.destination)],
-              { sourceIds: prepared.value.sourceIds },
+              {
+                sourceIds: prepared.value.sourceIds,
+                ...(input.destination.branch ? { branch: input.destination.branch } : {}),
+              },
             );
           },
         );
@@ -275,7 +279,9 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     roots: readonly CopySourceEntry[],
     documents: ReadonlyMap<string, PreparedDocument>,
   ): Promise<Result<PlannedCopy, ContextError>> {
-    const planned = await destination.copy.planCopy({ dir: destination.dir, roots });
+    const owner = destination.branch;
+    const view = owner ? await deps.branches.viewForOwner(owner.owner) : { kind: "live" as const };
+    const planned = await destination.copy.planCopy({ dir: destination.dir, roots, view });
     if (!planned.ok) return Err(adapterFaultToContextError(planned.error, destination.uri));
     return Ok({ plan: planned.value, contents: await bind(planned.value, documents) });
   }
@@ -289,20 +295,17 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       const read = documents.get(file.documentId);
       if (!read) throw new Error(`No content was read for ${file.path}`);
       contents.set(file.documentId, {
-        state:
+        content:
           read.blocks.length === 0
             ? null
-            : deps.documentSync.encodeSeed(
-                deps.documentSync.bindCopiedBlocks({
-                  uri,
-                  filetype: file.filetype,
-                  sourceHolderUri: read.holderUri,
-                  blocks: read.blocks,
-                  aheadSettlements: read.aheadSettlements,
-                  map: plan.map,
-                }),
-                { type: "system" },
-              ),
+            : deps.documentSync.bindCopiedBlocks({
+                uri,
+                filetype: file.filetype,
+                sourceHolderUri: read.holderUri,
+                blocks: read.blocks,
+                aheadSettlements: read.aheadSettlements,
+                map: plan.map,
+              }),
         copiedFrom: { uri: read.uri, version: read.version, revision: read.revision },
       });
       // Binding is CPU the whole way; let other requests run between documents.
@@ -428,6 +431,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
+    branchId: import("@meridian/contracts").BranchId | null,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
     const destination = await resolvedDestination(input, prepared);
     if (!destination.ok) return destination;
@@ -442,6 +446,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         dir: dest.dir,
         plan: planned.value.plan,
         contents: planned.value.contents,
+        branchId,
         ...(input.request.position ? { position: input.request.position } : {}),
       });
       if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
@@ -454,13 +459,14 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       if (replans > 0) throw new Error("A copy planned under the namespace lock did not hold");
       planned = await planAndBind(dest, prepared.ready, prepared.documents);
     }
-    deriveAfterCommit(
-      entries.flatMap((entry) =>
-        entry.kind === "file" && prepared.documents.has(entry.copiedFrom)
-          ? [entry.id as DocumentId]
-          : [],
-      ),
-    );
+    if (!branchId)
+      deriveAfterCommit(
+        entries.flatMap((entry) =>
+          entry.kind === "file" && prepared.documents.has(entry.copiedFrom)
+            ? [entry.id as DocumentId]
+            : [],
+        ),
+      );
     return Ok({ status: "copied", entries: entries.map(toEntry), folders });
   }
 
@@ -584,6 +590,14 @@ function receiptCommand(input: ContextCopyInput): ContextOperationCommand {
       }),
     ),
     destinationUri: input.destination.uri,
+    ...(input.destination.branch
+      ? {
+          destinationView: {
+            kind: "draft" as const,
+            owner: draftOwnerKey(input.destination.branch.owner),
+          },
+        }
+      : {}),
     ...(input.request.destinationParent
       ? { destinationParent: input.request.destinationParent }
       : {}),

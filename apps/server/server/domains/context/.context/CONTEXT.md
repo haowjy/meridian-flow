@@ -248,7 +248,7 @@ one source's tree contributes.
   folder is gone, `permission_denied` when the writer cannot edit it), then the destination
   adapter inserts the plan (`copyInto`) as one `submit`.
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
-  against live occupants and the rest of the batch, from a lock-free read of the destination
+  against occupants in the destination view and the rest of the batch, from a lock-free read of the destination
   parent ([naming conflicts never
   block](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#naming-conflicts-never-block)).
   Only the roots meet existing occupants.
@@ -270,17 +270,13 @@ one source's tree contributes.
 - A copied folder's children arrive in source order, so its visible order survives. Roots
   arrive at the end of the destination parent. An explicit position places the roots as one
   run: the first there, each next one after the previous.
-- Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
-  so it lands only in an empty document) and encoded to its first Yjs state
-  (`encodeSeed`) outside the lock. The insert is one `submit` of `create` records
-  (`SourceTree.insertTree`, ranks from `generateNKeysBetween`); the creation aggregate
-  (`createDocumentsAtomically`) persists the identities, `InitialDocumentSeeds` writes the heads and
-  seed checkpoints, and every arrival settles once, so ahead refs pointing at a copy's new address
-  settle. Projections and link rows are derived after the transaction commits, four documents at a
-  time (`refreshDocumentProjection`), and the answer does not wait for them: a successful answer
-  means the rows are committed, not derived. A derivation that fails is logged and the stale sweep
-  recovers it. `metadata.copiedFrom` records the source URI, the version read and that version's
-  revision.
+- Content is bound for the address each copy will have (`bindCopiedBlocks`) before the lock.
+  The insert submits `create` records once. A live copy encodes each bound document as its
+  first Yjs state, then settles arrivals; projections and link rows derive after commit. A
+  draft copy creates an empty live authority and draft through admission, then appends the bound
+  blocks to that draft through the draft coordinator. It is not a live arrival. Binaries carry
+  the duplicated object in the selected tree view. `metadata.copiedFrom` records the source URI,
+  the version read and that version's revision.
 - Refusals are typed: `not_found` or `stale_source` for a gone or changed source,
   `destination_missing` for a destination that no longer exists, `stale_target` for one that
   moved, `permission_denied` for an identity destination the writer cannot edit,

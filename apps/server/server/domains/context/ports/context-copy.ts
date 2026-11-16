@@ -17,7 +17,7 @@ import type {
   Filetype,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
-import type { CopyIdentityMap } from "../../collab/index.js";
+import type { BoundWrite, CopyIdentityMap } from "../../collab/index.js";
 import type { CopiedFrom } from "../document-metadata.js";
 import type { TreeView } from "../tree/tree-view.js";
 import type { AdapterFault } from "./context-adapter.js";
@@ -63,8 +63,8 @@ export type CopySourceEntry = CopySourceFolder | CopySourceFile;
 
 /** Content for one copied document, bound for the address its copy lands at. */
 export interface CopiedContent {
-  /** The copy's first Yjs state; null for a source with no text, whose copy is empty. */
-  state: Uint8Array | null;
+  /** Bound blocks; null for a source with no text, whose copy is empty. */
+  content: BoundWrite | null;
   copiedFrom: CopiedFrom;
 }
 
@@ -136,6 +136,7 @@ export type CopyOutcome =
 export interface ContextCopyAdapter {
   /** This adapter's context source, provisioned; the copy command locks it. */
   sourceId(): Promise<string | null>;
+  branchOwner: import("./context-command-transaction.js").ContextCommandBranch | null;
   /**
    * The source subtree at `path`: the folder with every descendant in the folder's visible
    * order (empty folders included), or the one file there. Read once; the copy works from
@@ -145,13 +146,14 @@ export interface ContextCopyAdapter {
   /**
    * Plan `roots` under the scheme-relative folder `dir`: allocate every name and mint every
    * identity, writing nothing and holding no lock. A selected root that carries the device's
-   * `copyId` takes it; every descendant is minted here. Names are allocated against live
+   * `copyId` takes it; every descendant is minted here. Names are allocated against the destination view
    * occupants and the rest of the batch; a hidden node on a root's name yields at the insert. A copied folder
    * keeps its source ordering policy, and its children arrive in source order.
    */
   planCopy(input: {
     dir: readonly string[];
     roots: readonly CopySourceEntry[];
+    view: TreeView;
   }): Promise<Result<CopyPlan, AdapterFault>>;
   /**
    * Insert a plan, inside the caller's transaction and under its locks. `contents` has one
@@ -162,6 +164,7 @@ export interface ContextCopyAdapter {
     dir: readonly string[];
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
+    branchId: import("@meridian/contracts").BranchId | null;
     position?: ContextSiblingPosition;
   }): Promise<Result<CopyOutcome, AdapterFault>>;
 }

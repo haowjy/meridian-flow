@@ -25,8 +25,10 @@ import {
 import { LIVE } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import {
+  type BoundWrite,
   createCopyIdentityMap,
   type DocumentCreationAggregate,
+  type DraftPeerShadowAccess,
   type MarkdownDocumentStore,
 } from "../../../collab/index.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
@@ -41,15 +43,16 @@ import type {
 } from "../../ports/context-copy.js";
 import type { ContextDocumentStore } from "../../ports/context-document-store.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
-import { LIVE_TREE } from "../../tree/tree-view.js";
+import type { TreeView } from "../../tree/tree-view.js";
 import { NodeIdRefusedError } from "../tree-list-rows.js";
-import type { NewNode, SourceTree } from "./tree-writes.js";
+import { type NewNode, type SourceTree, viewOfBranch } from "./tree-writes.js";
 
 export interface CopyTreeDeps {
   store: ContextDocumentStore;
   writes: SourceTree;
   documentCreation: DocumentCreationAggregate;
-  documentSync: Pick<MarkdownDocumentStore, "installSeeds">;
+  documentSync: Pick<MarkdownDocumentStore, "installSeeds" | "encodeSeed"> &
+    Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
   arrivals?: Pick<DocumentArrivals, "lockNamespaces" | "settle">;
   /** Who made the copy: `user:<id>`. */
   actor: string;
@@ -62,13 +65,13 @@ export interface CopyTreeDeps {
 /** Plan `roots` under `dir`: read the destination parent, write nothing, hold no lock. */
 export async function planCopyTree(
   deps: CopyTreeDeps,
-  input: { dir: readonly string[]; roots: readonly CopySourceEntry[] },
+  input: { dir: readonly string[]; roots: readonly CopySourceEntry[]; view: TreeView },
 ): Promise<CopyPlan> {
-  const parent = await findDestinationParent(deps, input.dir);
+  const parent = await findDestinationParent(deps, input.dir, input.view);
   const planned = await planLevel(
     deps,
     [...input.dir],
-    parent.found ? await deps.store.namesAt(LIVE_TREE, parent.id) : new Set(),
+    parent.found ? await deps.store.namesAt(input.view, parent.id) : new Set(),
     input.roots,
   );
   const nodes = flatten(planned);
@@ -116,12 +119,48 @@ export async function insertCopiedTree(
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
     position?: ContextSiblingPosition;
+    branchId: import("@meridian/contracts").BranchId | null;
   },
 ): Promise<Result<CopyOutcome, AdapterFault>> {
   const { plan, contents } = input;
   if (plan.dir.join("/") !== input.dir.join("/")) return Ok({ kind: "replan" });
   const tree = toNewTree(plan.roots, contents);
   if (!tree.ok) return tree;
+  if (input.branchId) {
+    try {
+      const inserted = await deps.writes.insertTree(
+        { view: viewOfBranch(input.branchId), actor: deps.actor },
+        {
+          dir: input.dir,
+          roots: tree.value.roots,
+          ...(input.position ? { position: input.position } : {}),
+        },
+      );
+      if (!inserted.ok) return inserted;
+      if (inserted.value.kind === "replan") return Ok({ kind: "replan" });
+      await deps.documentSync.writeCreatedDraftContent(
+        [...tree.value.contents].flatMap(([documentId, content]) =>
+          content
+            ? [
+                {
+                  documentId: documentId as DocumentId,
+                  branchId: input.branchId as import("@meridian/contracts").BranchId,
+                  content,
+                },
+              ]
+            : [],
+        ),
+      );
+      return Ok({
+        kind: "copied",
+        entries: entriesOf(plan.roots),
+        folders: inserted.value.folders,
+      });
+    } catch (error) {
+      if (error instanceof NodeIdRefusedError) return Err({ code: "conflict" });
+      throw error;
+    }
+  }
   let refusal: AdapterFault | null = null;
   let replan = false;
   let folders: string[] = [];
@@ -157,7 +196,11 @@ export async function insertCopiedTree(
         deps.documentSync.installSeeds(
           documentIds.map((documentId) => ({
             documentId,
-            state: tree.value.states.get(documentId) ?? null,
+            state: tree.value.contents.get(documentId)
+              ? deps.documentSync.encodeSeed(tree.value.contents.get(documentId) as BoundWrite, {
+                  type: "system",
+                })
+              : null,
           })),
         ),
     });
@@ -182,10 +225,15 @@ function toNewTree(
   roots: readonly PlannedCopyNode[],
   contents: ReadonlyMap<string, CopiedContent>,
 ): Result<
-  { roots: NewNode[]; states: Map<string, Uint8Array | null>; ids: string[]; binaryIds: string[] },
+  {
+    roots: NewNode[];
+    contents: Map<string, BoundWrite | null>;
+    ids: string[];
+    binaryIds: string[];
+  },
   AdapterFault
 > {
-  const states = new Map<string, Uint8Array | null>();
+  const contentsById = new Map<string, BoundWrite | null>();
   const ids: string[] = [];
   const binaryIds: string[] = [];
   const convert = (node: PlannedCopyNode): Result<NewNode, AdapterFault> => {
@@ -225,7 +273,7 @@ function toNewTree(
     }
     const content = contents.get(source.documentId);
     if (!content) throw new Error(`No content was bound for ${source.path}`);
-    states.set(node.id, content.state);
+    contentsById.set(node.id, content.content);
     return Ok({
       kind: "document",
       id: node.id,
@@ -240,7 +288,7 @@ function toNewTree(
     if (!node.ok) return node;
     converted.push(node.value);
   }
-  return Ok({ roots: converted, states, ids, binaryIds });
+  return Ok({ roots: converted, contents: contentsById, ids, binaryIds });
 }
 
 /** The identities a copy created, each folder before what it holds. */
@@ -279,9 +327,10 @@ function flatten(nodes: readonly PlannedCopyNode[]): PlannedCopyNode[] {
 async function findDestinationParent(
   deps: CopyTreeDeps,
   dir: readonly string[],
+  view: TreeView,
 ): Promise<{ found: true; id: string | null } | { found: false }> {
   if (dir.length === 0) return { found: true, id: null };
-  const folder = await deps.store.resolveFolderAt(LIVE_TREE, dir.join("/"));
+  const folder = await deps.store.resolveFolderAt(view, dir.join("/"));
   return folder.kind === "found" && folder.node
     ? { found: true, id: folder.node.id }
     : { found: false };

@@ -305,6 +305,7 @@ export interface ContextCopyRequest {
   }[];
   /** Canonical address of the destination parent folder. */
   destinationUri: string;
+  destinationBranch?: import("./context-command-transaction.js").ContextCommandBranch;
   /** The identity-based destination, for the receipt and the in-transaction recheck. */
   destinationParent?: ContextDestinationParent;
   position?: ContextSiblingPosition;
@@ -377,7 +378,10 @@ export interface ContextPort {
   copy(request: ContextCopyRequest): Promise<Result<CopyContextEntriesResult, ContextError>>;
 
   /** The canonical address a folder identity has now; `destination_missing` when it is gone. */
-  resolveFolderUri(uri: string): Promise<Result<{ uri: string }, ContextError>>;
+  resolveFolderUri(
+    uri: string,
+    view?: CopySourceView,
+  ): Promise<Result<{ uri: string }, ContextError>>;
 
   /** Resolve metadata for one file by URI. `not_found` if it does not exist or names a directory. */
   stat(uri: string): Promise<Result<FileRef, ContextError>>;

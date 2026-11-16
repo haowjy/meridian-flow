@@ -59,6 +59,7 @@ export type ContextOperationCommand = {
   /** Ordered roots by canonical address; the read view travels with each. */
   sources: CopyContextEntryCommandSource[];
   destinationUri: string;
+  destinationView?: import("./http-types.js").CopyContextEntryView;
   destinationParent?: ContextDestinationParent;
   position?: ContextSiblingPosition;
 };

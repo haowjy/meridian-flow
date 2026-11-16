@@ -125,6 +125,7 @@ export function scopeDraftPeer(
     readEffectiveBlocks: (command) =>
       scopes.within(by(command), () => access.readEffectiveBlocks(command)),
     draftCreatedDocuments: access.draftCreatedDocuments,
+    writeCreatedDraftContent: access.writeCreatedDraftContent,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

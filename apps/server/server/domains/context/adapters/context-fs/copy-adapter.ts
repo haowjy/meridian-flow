@@ -21,8 +21,7 @@ import { type CopyTreeDeps, insertCopiedTree, planCopyTree } from "./copy-tree.j
 import { AMBIGUOUS_PATH_FAULT } from "./placement.js";
 
 export interface ContextFsCopyDeps extends CopyTreeDeps {
-  /** Why this placement cannot take a copy (a draft placement), or null. */
-  refuseReceive(): AdapterFault | null;
+  branchOwner: import("../../ports/context-command-transaction.js").ContextCommandBranch | null;
 }
 
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
@@ -116,11 +115,9 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
 
   return {
     sourceId: () => store.existingContextSourceId(),
+    branchOwner: deps.branchOwner,
     snapshotSource,
-    planCopy: async (input) => {
-      const refused = deps.refuseReceive();
-      return refused ? Err(refused) : Ok(await planCopyTree(deps, input));
-    },
+    planCopy: async (input) => Ok(await planCopyTree(deps, input)),
     copyInto: (input) => insertCopiedTree(deps, input),
   };
 }

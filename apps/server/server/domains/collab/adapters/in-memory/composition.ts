@@ -282,6 +282,9 @@ function createInMemoryDraftPeerStub(
         const verbatim = await isCodeDocument(resolveFiletype, input.documentId);
         return Ok(readHashlines(doc, scope, model, codec, verbatim));
       }),
+    async writeCreatedDraftContent() {
+      throw new Error("Drafts are not supported in memory");
+    },
     async draftCreatedDocuments() {
       throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
     },

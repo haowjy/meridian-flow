@@ -1,4 +1,5 @@
 /** Effective document reads for non-tool callers: the same room copy a model call would read. */
+import { writeBlocks } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodecFactory,
   type DocHandle,
@@ -7,9 +8,15 @@ import {
   unwrapDoc,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import type { DraftOwner, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { settledAheads } from "@meridian/markup/links";
+import {
+  buildDocumentSchema,
+  PROSEMIRROR_FRAGMENT_NAME,
+  withBlockIds,
+} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -38,7 +45,7 @@ type EffectiveReadInput = {
 
 export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
-  draftCoordinator: Pick<DraftCoordinator, "copyDraft">;
+  draftCoordinator: Pick<DraftCoordinator, "copyDraft" | "loadBase" | "prepareAppend">;
   blockText: BlockText;
   draftPulls: Pick<DraftPullService, "flushLivePull">;
   agentEdit: AgentEditRouter;
@@ -193,6 +200,33 @@ export function createEffectiveDocumentReader(input: {
         ]);
         return readHashlines(doc, scope, input.model, input.codec, verbatim);
       });
+    },
+    async writeCreatedDraftContent(created) {
+      const schema = buildDocumentSchema();
+      for (const { documentId, branchId, content } of created) {
+        const draft = await input.drafts.findBranchDraft(documentId, branchId);
+        if (!draft) throw new Error(`No created draft for ${documentId}`);
+        const base = await input.draftCoordinator.loadBase(draft.draftId);
+        const write = input.draftCoordinator.prepareAppend(base, [], {
+          async authorServerRows(doc) {
+            return captureMutationUpdates(doc, () =>
+              doc.transact(() => {
+                writeBlocks(
+                  doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+                  schema,
+                  content.blocks.map(withBlockIds),
+                );
+              }),
+            );
+          },
+        });
+        try {
+          await write.persist();
+          await write.transfer();
+        } finally {
+          write.dispose();
+        }
+      }
     },
     async draftCreatedDocuments(created) {
       for (const { documentId, branchId } of created) {

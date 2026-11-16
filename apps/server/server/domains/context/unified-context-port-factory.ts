@@ -243,7 +243,10 @@ function buildUnifiedContextPort(input: {
   treeLists: AdapterAssembly["treeLists"];
   db: Database;
   arrivals?: DocumentArrivals;
-  resolveDestinationFolder?: (folderId: string) => Promise<string | null>;
+  resolveDestinationFolder?: (
+    folderId: string,
+    view?: import("./ports/context-port.js").CopySourceView,
+  ) => Promise<string | null>;
   copyCommands?: CopyCommands;
   copy?: ContextCopyCommandDeps;
 }): ContextPort {
@@ -480,7 +483,14 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         links: options.links,
         documentCreation: options.documentSync,
-        resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        resolveDestinationFolder: async (id, view) =>
+          resolveActiveFolderUri(
+            options.db,
+            projectId,
+            userId,
+            id,
+            view?.kind === "draft" ? await options.branches.viewForOwner(view.owner) : undefined,
+          ),
         copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId),
         branches: options.branches,
@@ -497,7 +507,14 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         links: options.links,
         documentCreation: options.documentSync,
-        resolveDestinationFolder: (id) => resolveActiveFolderUri(options.db, projectId, userId, id),
+        resolveDestinationFolder: async (id, view) =>
+          resolveActiveFolderUri(
+            options.db,
+            projectId,
+            userId,
+            id,
+            view?.kind === "draft" ? await options.branches.viewForOwner(view.owner) : undefined,
+          ),
         copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(projectId),
         branches: options.branches,

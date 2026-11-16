@@ -35,14 +35,20 @@ export interface ContextCopyPortDeps {
   /** The router's one identity-destination resolver, re-run under the command's locks. */
   resolveIdentityDestination: (
     parent: { folderId: string; createFolders?: readonly string[] },
-    options: { authorize?: (uri: string) => Promise<boolean> },
+    options: {
+      authorize?: (uri: string) => Promise<boolean>;
+      view?: import("../ports/context-port.js").CopySourceView;
+    },
   ) => Promise<Result<CopyEnd, ContextError>>;
   resolve(uri: string): Promise<Result<CopyEnd, ContextError>>;
 }
 
 export function createContextCopyPort(deps: ContextCopyPortDeps) {
   /** A destination this scheme can copy into, or null when it has no copy capability. */
-  const handoff = (end: CopyEnd): CopyDestinationHandoff | null => {
+  const handoff = (
+    end: CopyEnd,
+    branch?: ContextCopyRequest["destinationBranch"],
+  ): CopyDestinationHandoff | null => {
     const copy = end.adapter.copy;
     return copy
       ? {
@@ -51,6 +57,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
           scheme: end.adapter.name as ContextScheme,
           dir: end.path.split("/").filter(Boolean),
           workScopeId: end.workScopeId,
+          branch: branch ?? copy.branchOwner,
         }
       : null;
   };
@@ -92,7 +99,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
 
     const destination = await deps.resolve(request.destinationUri);
     if (!destination.ok) return destination;
-    const destinationHandoff = handoff(destination.value);
+    const destinationHandoff = handoff(destination.value, request.destinationBranch);
     if (!destinationHandoff) {
       return Err({
         code: "invalid_operation",
@@ -112,12 +119,15 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
         ? {
             resolveDestination: async (): Promise<Result<CopyDestinationHandoff, ContextError>> => {
               const target = await deps.resolveIdentityDestination(folderParent, {
+                ...(destinationHandoff.branch
+                  ? { view: { kind: "draft" as const, owner: destinationHandoff.branch.owner } }
+                  : {}),
                 ...(request.authorizeDestination
                   ? { authorize: request.authorizeDestination }
                   : {}),
               });
               if (!target.ok) return target;
-              const current = handoff(target.value);
+              const current = handoff(target.value, request.destinationBranch);
               return current
                 ? Ok(current)
                 : Err({
