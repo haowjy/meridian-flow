@@ -70,8 +70,10 @@ is reused by text across schemas.
 
 The size cap guards one oversized unit; it is not the main performance mechanism.
 Disjoint paragraph probes took 18–29 ms around 1,000 words, versus up to 128 ms around
-1,500, which motivated it. A unit still over budget is one whole replacement, without
-later word-level refinement.
+1,500, which motivated it. A unit over budget skips word-level pairing: its token keys are
+diffed by `boundedDiff` (Myers, exact up to 1,000 changed tokens, cost bounded by that
+distance, not by size), so one typo in a 10,000-word paragraph is one small hunk. Past 1,000
+changed tokens it is one replacement of what its ends do not share.
 
 Evidence indexes live apart from classification. Only root writes invalidate the room
 indexes, before projection observers run; reads inside an open root transaction rebuild

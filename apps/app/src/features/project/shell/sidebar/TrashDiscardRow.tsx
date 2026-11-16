@@ -63,7 +63,10 @@ export function TrashDiscardRow({
         }
       />
     );
-  if (state?.kind === "restored")
+  if (state?.kind === "restored") {
+    // What stayed out is said beside what came back.
+    const said = (sentence: string) =>
+      state.leftOut > 0 ? `${sentence} ${leftOutSentence(state.leftOut)}` : sentence;
     return (
       <ListRow
         gone
@@ -81,16 +84,20 @@ export function TrashDiscardRow({
             />
           ) : !onUndo ? (
             // Restored elsewhere first: nothing here can put it back.
-            <RowWord tone="done" word={<Trans>Restored</Trans>} sentence={t`Restored just now.`} />
+            <RowWord
+              tone="done"
+              word={<Trans>Restored</Trans>}
+              sentence={said(t`Restored just now.`)}
+            />
           ) : (
             <RowWord
               word={<Trans>Undo</Trans>}
               label={t`Undo restore of ${title}`}
-              sentence={
+              sentence={said(
                 workName
                   ? t`Restored just now: the drafts are back in ${workName}. Undo puts them back in Trash.`
-                  : t`Restored just now: the drafts are back. Undo puts them back in Trash.`
-              }
+                  : t`Restored just now: the drafts are back. Undo puts them back in Trash.`,
+              )}
               pending={undo === "sending"}
               onAction={onUndo}
             />
@@ -98,6 +105,7 @@ export function TrashDiscardRow({
         }
       />
     );
+  }
   return (
     <ListRow
       icon={icon}

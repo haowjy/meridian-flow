@@ -235,12 +235,16 @@ is stored under the id: the day-30 purge took it, or it never was; or what the e
 purged), with `leftOut` counting purged nodes beside a partial restore. A restore reopens a draft only if
 Live's text has not overtaken it: `reopen` with `leaveOutEdited` compares, on the base the draft reopens with
 (its waiting Un-Applies replayed on a copy, since the check runs before the draft is open), the token ranges
-Live changed since that base with the ranges the draft changed, both uncleaned. One that overlaps the other, or
-is a pure insertion at its edge or inside it, leaves the whole draft out: the room Discard's rule
+Live changed since that base with the ranges the draft changed, both uncleaned and exact (a long paragraph's
+edits stay small hunks, `boundedDiff`). Live's edit that overlaps the change, or is a pure insertion at its edge
+or inside it, leaves the whole draft out (a neighbouring word's replacement sharing an endpoint does not, even
+when the change is itself an insertion): the room Discard's rule
 (`touchedSince`: an edit that deletes, or writes into or beside, what the change wrote or deleted ends that
 document's whole share), on stored rows and a journal instead of Yjs structs. An edit to the next or the
 previous word, to its marks, or a split of the block does not count. A join into the block before, or a new
-block type, does: Yjs's Undo cannot follow the text out of the removed block, so both paths leave it out. It
+block type, does: Yjs's Undo cannot follow the text out of the removed block, so both paths leave it out. The
+paths differ in one case: the writer types over the changed word and types the original back. The text is as
+the Discard left it, so the server restores; the room leaves it out, since its Undo would double the text. It
 counts as its review changes in `leftOut` and as `left_out changed_since` in `settled`, naming the documents.
 A left-out draft stays closed under its Discard (`closed_by` kept, so the day-30 purge still deletes it) with
 `closed_cause = left_out`: a restore that answered takes it out of Trash's entry and `closedBy()`, so no entry

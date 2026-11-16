@@ -12,7 +12,7 @@ import {
   documents,
 } from "@meridian/database/schema";
 import { discardedBy } from "@meridian/project-tree";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
@@ -74,6 +74,7 @@ export function createDrizzleCommandDocuments(
             eq(documentDrafts.closedBy, input.discardCommandId),
             eq(commands.accountId, input.accountId),
             eq(documentDrafts.branchId, input.branchId),
+            ne(documentDrafts.closedCause, "left_out"),
           ),
         );
       const nodes = await deps.treeLists.read({

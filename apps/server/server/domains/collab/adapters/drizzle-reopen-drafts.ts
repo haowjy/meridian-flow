@@ -99,10 +99,14 @@ export function reverseBaseHalf(
   return { rows: row ? [row] : [], rules: total.counts, overrode };
 }
 
-/** Two token ranges overlap, or one is a pure insertion at the other's edge or inside it. */
-const reaches = (a: Hunk, b: Hunk) =>
-  (a.from < b.to && b.from < a.to) ||
-  ((a.from === a.to || b.from === b.to) && a.from <= b.to && b.from <= a.to);
+/**
+ * Live's edit overlaps the change's tokens, or is a pure insertion at its edge or inside it. A
+ * neighbouring word's replacement shares an endpoint with the change and does not reach it, even
+ * when the change is itself a pure insertion.
+ */
+const reaches = (live: Hunk, change: Hunk) =>
+  (live.from < change.to && change.from < live.to) ||
+  (live.from === live.to && change.from <= live.from && live.from <= change.to);
 
 export type ReopenDrafts = ReturnType<typeof createReopenDrafts>;
 
@@ -145,7 +149,8 @@ export function createReopenDrafts(
        */
       leaveOutEdited?: boolean;
     }): Promise<{
-      reopened: number;
+      /** The documents whose draft came back. */
+      reopened: string[];
       swapped: number;
       leftOut: { documentId: string; changes: number }[];
     }> {
@@ -203,7 +208,8 @@ export function createReopenDrafts(
           .where(eq(documentDrafts.id, draft.draftId));
         deferUntilDrizzleCommit(() => deps.scheduleLivePull(draft.documentId as DocumentId));
       }
-      if (drafts.length === 0) return { reopened: 0, swapped, leftOut };
+      const reopened = drafts.map((draft) => draft.documentId);
+      if (drafts.length === 0) return { reopened, swapped, leftOut };
       await replay(drafts.map((draft) => draft.draftId));
       deps.workProjection.draftMembershipChanged(input.owner);
       const lists = new Map<string, Parameters<TreeListStore["resync"]>[0][number]>();
@@ -212,17 +218,20 @@ export function createReopenDrafts(
         if (list) lists.set(JSON.stringify(list), list);
       }
       await deps.treeLists.resync([...lists.values()]);
-      return { reopened: drafts.length, swapped, leftOut };
+      return { reopened, swapped, leftOut };
     },
   };
 
   /**
    * How many changes of the closed draft Live's text has since overtaken (all of them or none):
    * Live edited the text the draft changed, or wrote a pure insertion at its edge, since the base the
-   * draft last saw (a pull merges only into an open draft, so that base is stale). The same rule as
-   * the room Discard's `touchedSince` (`touched-since.ts`), on token ranges: a neighbouring word, or
-   * or a split of a block, is not an edit of it; a join into the block before, or a new block type, is, because the room's Undo cannot follow the text out. Live's diff and the
-   * draft's `raw` (uncleaned) hunks run over the same base tokens, so their ranges compare directly.
+   * draft last saw (a pull merges only into an open draft, so that base is stale). Token ranges of
+   * the uncleaned diffs, which stay exact on a long paragraph, over the same base tokens, so they
+   * compare directly. The room Discard's `touchedSince` (`touched-since.ts`) follows the same rule,
+   * with two differences. A join into the block before, or a new block type, counts on both: the
+   * room's Undo cannot follow the text out. And the rule here reads the text, not its history: Live
+   * that edited the changed word and typed the original back is as the Discard left it, so the
+   * draft reopens, while the room leaves it out because its Yjs Undo would double the text.
    */
   async function editedSince(draft: { draftId: string; documentId: string }): Promise<number> {
     // The base the draft reopens with: its waiting Un-Applies replayed on a copy.

@@ -253,6 +253,8 @@ export type DraftNotice =
        */
       status: "ready" | "undoing" | "failed" | "partial" | "returned" | "bounced";
       leftOut: number;
+      /** With `partial`: not one share came back, so the line reads "not restored". */
+      nothingBack: boolean;
       returned: RestoreReturned | null;
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
@@ -484,6 +486,7 @@ export class DraftNotices {
       left: null,
       status: "ready",
       leftOut: 0,
+      nothingBack: false,
       returned: null,
       appliedFirst: [],
       ...this.subjectOf(input.parts),
@@ -591,6 +594,7 @@ export class DraftNotices {
       left: null,
       status: "bounced",
       leftOut: 0,
+      nothingBack: false,
       returned: input.returned,
       undo: async () => "failed",
       dismiss: () => this.endIf(ownerKey, id),
@@ -718,6 +722,12 @@ export class DraftNotices {
       (this.expired.get(id) ?? []).reduce((sum, { leftOut }) => sum + leftOut, 0),
     );
     const out = this.outstanding(parts);
+    const expired = this.expiredParts(id);
+    const nothingBack = parts.every(
+      (part) =>
+        expired.includes(part) ||
+        (part.restore !== undefined && this.restores.state(part.restore)?.kind === "left_out"),
+    );
     const status: Discarded["status"] | null =
       pressed === "undoing" || restores.some((state) => state?.kind === "restoring")
         ? "undoing"
@@ -739,12 +749,14 @@ export class DraftNotices {
       ...notice,
       status,
       leftOut,
+      nothingBack,
       returned: returned?.kind === "returned" ? returned.why : null,
       ...(status === "failed" ? this.subjectOf(out) : {}),
     };
     if (
       next.status === notice.status &&
       next.leftOut === notice.leftOut &&
+      next.nothingBack === notice.nothingBack &&
       next.returned === notice.returned &&
       next.subject === notice.subject
     )

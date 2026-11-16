@@ -462,7 +462,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         return (
           <RowWord
             tone="warning"
-            word={<Trans>Partly restored</Trans>}
+            word={notice.nothingBack ? <Trans>Not restored</Trans> : <Trans>Partly restored</Trans>}
             sentence={leftOutSentence(left)}
           />
         );

@@ -33,7 +33,7 @@ import type { ReopenDrafts } from "./drizzle-reopen-drafts.js";
 
 const REOPENABLE: ReadonlySet<string> = new Set(ENTRY_KINDS);
 
-/** A restore of this command that brought something back: stored with the Discard it named. */
+/** A restore of this command that brought something back or left it out as edited: stored with the Discard it named. */
 async function restoredBefore(
   tx: ReturnType<typeof currentDrizzleDb>,
   projectId: ProjectId,
@@ -49,7 +49,7 @@ async function restoredBefore(
         eq(commands.kind, "undo_discard"),
         eq(commands.accountId, userId),
         sql`${commands.outcome} -> 'result' ->> 'status' = 'restored'`,
-        sql`(${commands.outcome} -> 'result' ->> 'restored')::int > 0`,
+        sql`((${commands.outcome} -> 'result' ->> 'restored')::int > 0 or (${commands.outcome} -> 'result' ->> 'leftOut')::int > 0)`,
         sql`${commands.outcome} -> 'result' ->> 'discardCommandId' = ${request.discardCommandId}`,
       ),
     )
@@ -187,7 +187,7 @@ export function createDrizzleUndoDiscard(
                 });
               // An entry with no member left: a restore took the members, or another Work holds
               // the records, or what it held left with its document's purge.
-              if (treeCopies + reopened === 0 && leftOut.length === 0 && edited.length === 0)
+              if (treeCopies + reopened.length === 0 && leftOut.length === 0 && edited.length === 0)
                 settled.push(
                   treeAlreadyRestored ||
                     foreignRecords ||
@@ -200,13 +200,11 @@ export function createDrizzleUndoDiscard(
                 commandId,
                 discardCommandId: request.discardCommandId,
                 branchId: target.id as BranchId,
-                restored: treeCopies + reopened,
+                restored: treeCopies + reopened.length,
                 swapped,
                 leftOut: leftOut.length + editedChanges,
                 brought: {
-                  text: drafts
-                    .filter((draft) => !edited.some((one) => one.documentId === draft.documentId))
-                    .map((draft) => draft.documentId),
+                  text: reopened,
                   tree: [
                     ...new Set(restoredTree.flatMap((one) => one.copies.map((copy) => copy.node))),
                   ],
