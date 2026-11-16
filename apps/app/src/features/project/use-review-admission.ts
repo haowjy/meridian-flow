@@ -96,7 +96,7 @@ export function useReviewAdmission({
         review.controller.focusReviewChange(
           { documentId: inline.documentId, itemKey: inline.itemKey },
           change,
-          { scroll: true },
+          { scroll: true, keepRestoredPlace: true },
         );
       return;
     }

@@ -10,7 +10,7 @@ import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import { type RefObject, useLayoutEffect, useMemo, useRef } from "react";
 import type { DocumentSession } from "./document-session";
 import { captureReadingPosition, restoreReadingPosition } from "./reading-position";
-import { mayRestoreReadingPosition } from "./reading-position-navigation";
+import { markRestoredPlace, mayRestoreReadingPosition } from "./reading-position-navigation";
 import { type ReadingPosition, ReadingPositionStore } from "./reading-position-store";
 
 export function useReadingPosition({
@@ -46,12 +46,13 @@ export function useReadingPosition({
       if (stop || !active || !scroller.clientHeight) return;
       if (initialized.current !== editor) {
         initialized.current = editor;
-        const place = mayRestoreReadingPosition(editor, documentId, window.location.href)
-          ? store.load(key)
-          : null;
+        const place = mayRestoreReadingPosition(editor, documentId) ? store.load(key) : null;
         // A frame later, past the commit: React's development double mount remounts the editor
         // content, which redraws the prose and drops any scroll set before it.
-        if (place) requestAnimationFrame(() => restoreReadingPosition(editor, scroller, place));
+        if (place) {
+          markRestoredPlace(editor);
+          requestAnimationFrame(() => restoreReadingPosition(editor, scroller, place));
+        }
       }
       stop = track(editor, scroller);
     };
