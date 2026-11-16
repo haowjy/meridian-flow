@@ -20,13 +20,13 @@ import { Button } from "@/components/ui/button";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useTryAgain } from "@/features/connections/ConnectionRow";
 import { connectionStanding } from "@/features/connections/connection-status";
+import { formatBytes } from "@/lib/format-size";
 import { BoundLine, ExpandableProse } from "./ClippedExpand";
 import { CommandTitle } from "./CommandTitle";
 import { descriptorFor, mcpToolLabel, toolActivityPhrase } from "./command-descriptor";
-import { DocumentName } from "./DocumentName";
 import { scriptPhrase } from "./script-copy";
 import { failureText } from "./tool-failure";
-import type { ToolExpand, ToolRenderer } from "./tool-renderers";
+import type { ToolRenderer } from "./tool-renderers";
 
 function phrase(tool: ToolView): ReactNode {
   const { verb, parameter } = toolActivityPhrase(tool);
@@ -168,13 +168,11 @@ function McpCallDetail({ tool }: { tool: ToolView }) {
           {reply.media?.length ? (
             <ul className="mt-1 space-y-0.5">
               {reply.media.map((part) => (
-                <li key={part.ref.documentId} className="text-compact">
-                  <DocumentName
-                    path={part.ref.uri}
-                    documentId={part.ref.documentId}
-                    name={part.name}
-                    label="open"
-                  />
+                <li key={part.ref.uri} className="text-compact text-foreground">
+                  {part.name}{" "}
+                  <span className="text-muted-foreground">
+                    ({mediaKind(part.mediaType)}, {formatBytes(part.sizeBytes)})
+                  </span>
                 </li>
               ))}
             </ul>
@@ -188,6 +186,15 @@ function McpCallDetail({ tool }: { tool: ToolView }) {
       ) : null}
     </div>
   );
+}
+
+/**
+ * "PNG", "JPEG", "SVG": what a reply's picture is. The bytes live only in the chat's own copy, which
+ * no route serves to the app, so the row names the picture rather than linking to it.
+ */
+function mediaKind(mediaType: string): string {
+  const subtype = mediaType.split("/")[1]?.split(/[+;]/)[0];
+  return subtype ? subtype.toUpperCase() : mediaType;
 }
 
 function Part({ label, children }: { label: ReactNode; children: ReactNode }) {
