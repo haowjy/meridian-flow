@@ -194,7 +194,7 @@ export function createDrizzleUploadIntakeRepository(
         const documentId = requester.kind === "source" ? input.intakeId : crypto.randomUUID();
         if (
           requester.kind === "source" &&
-          (await createTreeReader(db).projectOfDocument(documentId as never))
+          (await createTreeReader(db).ownerOfDocument(documentId as never))
         )
           return { kind: "conflict" };
         const [created] = await activeDb

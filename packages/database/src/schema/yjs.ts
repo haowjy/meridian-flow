@@ -314,8 +314,6 @@ export const documentBlockRooms = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    /** Derived: the document's source project, else its Work's. A move re-derives it. */
-    projectId: uuid("project_id").$type<ProjectId>().notNull(),
     /** Block ids ("<clientID>:<clock>" of the top-level element) in document order. */
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
@@ -337,8 +335,6 @@ export const documentBlocks = pgTable(
       .notNull()
       .references(() => documentBlockRooms.roomId, { onDelete: "cascade" }),
     blockId: text("block_id").notNull(),
-    /** The room's, copied so a later index can narrow by project. */
-    projectId: uuid("project_id").$type<ProjectId>().notNull(),
     /** What `grep` matches in this block (`grepBlockText` in agent-edit). */
     text: text("text").notNull(),
     /** Hash of the block's destination-free markdown: the diff key. */

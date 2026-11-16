@@ -193,7 +193,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
         },
         schedule: () => {},
         sweep: async () => 0,
-        flush: async () => {},
         stop: async () => {},
       },
     },

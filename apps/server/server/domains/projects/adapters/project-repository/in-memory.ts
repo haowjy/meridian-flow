@@ -35,7 +35,6 @@ export function createInMemoryProjectRepository(options?: {
           title,
           [...rows.values()].filter((row) => row.userId === input.userId).map((row) => row.slug),
         ),
-        isPersonal: false,
         systemPrompt: description,
         settings: {},
         lastActivityAt: timestamp,

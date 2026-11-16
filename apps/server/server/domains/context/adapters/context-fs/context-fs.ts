@@ -575,7 +575,7 @@ export class ContextFS implements ContextSchemeAdapter {
       );
       return new Map<string, string>(texts.flatMap((read) => [...read]));
     };
-    // One source has one project association, including personal and Work sources; its
+    // One source has one owner, a project or (the home folder) an account; its
     // chapters' reads join this snapshot, so it is read in their thread.
     return this.links.within(
       {

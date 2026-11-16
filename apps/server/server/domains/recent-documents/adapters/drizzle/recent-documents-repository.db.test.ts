@@ -12,6 +12,7 @@ import {
   works,
 } from "@meridian/database/schema";
 import { describe, expect, it } from "vitest";
+import { accountUserSource } from "../../../../test-support/branch-tree-seeds.js";
 import {
   deleteDrizzleRows,
   useRollbackTestDatabase,
@@ -31,13 +32,11 @@ const USER = id(0x1001);
 const OTHER = id(0x1002);
 const PROJECT = id(0x1003);
 const FOREIGN_PROJECT = id(0x1004);
-const PERSONAL = id(0x1005);
 const NO_WORK = id(0x1006);
 const WORK = id(0x1007);
 const MANUSCRIPT = id(0x1008);
 const WORK_SCRATCH = id(0x1009);
 const NO_WORK_SCRATCH = id(0x100a);
-const USER_SOURCE = id(0x100b);
 const FOREIGN_SOURCE = id(0x100c);
 const OWNED = id(0x1010);
 const SCRATCH = id(0x1011);
@@ -71,7 +70,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(projects).values([
         { id: PROJECT, userId: USER, name: "Serial", slug: "serial" },
         { id: FOREIGN_PROJECT, userId: OTHER, name: "Foreign", slug: "foreign" },
-        { id: PERSONAL, userId: USER, name: "Personal", slug: "personal", isPersonal: true },
       ]);
       await db.insert(works).values([
         {
@@ -101,14 +99,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           name: "Uploads",
           slug: "uploads",
         },
-        { id: USER_SOURCE, projectId: PERSONAL, name: "User", slug: "user" },
         { id: FOREIGN_SOURCE, projectId: FOREIGN_PROJECT, name: "Foreign", slug: "manuscript" },
       ]);
       const seed = treeSeeder(db);
       await seed.document(MANUSCRIPT, "chapter", { id: OWNED });
       await seed.document(WORK_SCRATCH, "scene", { id: SCRATCH });
       await seed.document(NO_WORK_SCRATCH, "aside", { id: NO_WORK_DOC });
-      await seed.document(USER_SOURCE, "notes", { id: PERSONAL_DOC });
+      await seed.document(await accountUserSource(db, USER as never), "notes", {
+        id: PERSONAL_DOC,
+      });
       await seed.document(FOREIGN_SOURCE, "secret", { id: FOREIGN_DOC });
       await seed.file(
         MANUSCRIPT,

@@ -72,7 +72,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: USER_ID,
         name: "Returned",
         slug: "returned",
-        isPersonal: true,
       });
       await db.insert(schema.works).values([
         { projectId: PROJECT_ID, createdByUserId: USER_ID, name: "No Work", isNoWork: true },
