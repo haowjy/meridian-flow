@@ -251,6 +251,10 @@ export function createReopenDrafts(
       const liveBlocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
       const changed = diffBlocks(baseBlocks, draftBlocks);
       const edits = diffBlocks(baseBlocks, liveBlocks, { cleanup: false });
+      // A hunk from a spent diff budget only bounds its edit: it is no evidence of overlap, on
+      // either side, and the draft reopens.
+      const changedRaw = changed.raw.filter((hunk) => !hunk.approx);
+      const editsRaw = edits.raw.filter((hunk) => !hunk.approx);
       const { toks, starts, blockOf } = edits.base;
       // A Live edit that removes a block's start (a join into the block before, or a new block
       // type) rewrites the text it holds, and an Undo in the room cannot follow the text out.
@@ -259,7 +263,7 @@ export function createReopenDrafts(
           if (tok.kind !== "block") return false;
           const block = blockOf[edit.from + i];
           const [first, end] = [starts[block], starts[block + 1]];
-          return changed.raw.some((hunk) =>
+          return changedRaw.some((hunk) =>
             hunk.from === hunk.to
               ? hunk.from > first && hunk.from <= end
               : hunk.from < end && hunk.to > first,
@@ -268,9 +272,9 @@ export function createReopenDrafts(
       // A split inserts block starts beside the change without touching its characters.
       const split = (edit: Hunk) =>
         edit.from === edit.to && edit.ins.every((tok) => tok.kind === "block");
-      const touched = edits.raw.some(
+      const touched = editsRaw.some(
         (edit) =>
-          holdsChange(edit) || (!split(edit) && changed.raw.some((hunk) => reaches(edit, hunk))),
+          holdsChange(edit) || (!split(edit) && changedRaw.some((hunk) => reaches(edit, hunk))),
       );
       return touched ? projectReview(changed).groups.length : 0;
     } finally {

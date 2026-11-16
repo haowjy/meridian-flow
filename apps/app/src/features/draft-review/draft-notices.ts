@@ -317,6 +317,8 @@ export class DraftNotices {
    * them, and says they couldn't come back.
    */
   private readonly expired = new Map<number, { part: DiscardPart; leftOut: number }[]>();
+  /** Notices where a room's share undid and left `parts`: something came back, whatever else stayed out. */
+  private readonly roomBack = new Set<number>();
   /**
    * The notice's own Undo: in flight, or a room's share that failed. A server share's progress is
    * `DiscardRestores`'.
@@ -674,6 +676,7 @@ export class DraftNotices {
     // A room's share answering `gone` stays written: the notice counts what it couldn't bring back.
     for (const { part, answer, leftOut } of answers)
       if (!part.restore && answer === "gone" && leftOut) this.expire(id, part, leftOut);
+    if (answers.some(({ part, answer }) => !part.restore && answer === "ok")) this.roomBack.add(id);
     if (this.parts.has(id)) {
       this.parts.set(
         id,
@@ -723,11 +726,13 @@ export class DraftNotices {
     );
     const out = this.outstanding(parts);
     const expired = this.expiredParts(id);
-    const nothingBack = parts.every(
-      (part) =>
-        expired.includes(part) ||
-        (part.restore !== undefined && this.restores.state(part.restore)?.kind === "left_out"),
-    );
+    const nothingBack =
+      !this.roomBack.has(id) &&
+      parts.every(
+        (part) =>
+          expired.includes(part) ||
+          (part.restore !== undefined && this.restores.state(part.restore)?.kind === "left_out"),
+      );
     const status: Discarded["status"] | null =
       pressed === "undoing" || restores.some((state) => state?.kind === "restoring")
         ? "undoing"
@@ -821,6 +826,7 @@ export class DraftNotices {
     this.notices.delete(notice.ownerKey);
     this.parts.delete(notice.id);
     this.expired.delete(notice.id);
+    this.roomBack.delete(notice.id);
     this.pressed.delete(notice.id);
     clearTimeout(this.bounceTimers.get(notice.id));
     this.bounceTimers.delete(notice.id);

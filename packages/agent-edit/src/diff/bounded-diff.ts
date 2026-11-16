@@ -2,15 +2,17 @@ import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 
 /**
  * Myers' greedy diff of two key sequences as `[op, count]` runs, exact while the edit distance
- * stays within `maxEdits`. Its cost is bounded by that distance, not by how dissimilar the inputs
- * are, so a long paragraph with a few edits diffs exactly while a rewrite ends as one delete and
- * one insert of what the two share at neither end (coarser, never wrong).
+ * stays within `maxEdits`. `maxEdits` counts edit operations: a replaced word is a delete and an
+ * insert, so it costs 2. Its cost is bounded by that distance, not by how dissimilar the inputs
+ * are. Past the budget the middle ends as one delete and one insert of what the two share at
+ * neither end (`exact: false`): it reconstructs both inputs but says nothing about where they
+ * differ, so a caller that reads the ranges as evidence must check `exact`.
  */
 export function boundedDiff(
   a: readonly string[],
   b: readonly string[],
   maxEdits: number,
-): Array<[number, number]> {
+): { runs: Array<[number, number]>; exact: boolean } {
   let lo = 0;
   while (lo < a.length && lo < b.length && a[lo] === b[lo]) lo++;
   let hi = 0;
@@ -18,7 +20,8 @@ export function boundedDiff(
     hi++;
   const n = a.length - lo - hi;
   const m = b.length - lo - hi;
-  const middle = myers(a, b, lo, n, m, maxEdits) ?? [
+  const found = myers(a, b, lo, n, m, maxEdits);
+  const middle = found ?? [
     [DIFF_DELETE, n],
     [DIFF_INSERT, m],
   ];
@@ -32,7 +35,7 @@ export function boundedDiff(
   push(DIFF_EQUAL, lo);
   for (const [op, count] of middle) push(op, count);
   push(DIFF_EQUAL, hi);
-  return out;
+  return { runs: out, exact: found !== null };
 }
 
 function myers(

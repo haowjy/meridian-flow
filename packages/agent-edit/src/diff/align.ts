@@ -86,8 +86,9 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
 
 // 1,000 tokens preserves ordinary split/join units while capping Myers' quadratic search.
 // Disjoint 1,000-word paragraphs measured 18–29 ms; 1,500 reached 128 ms (KF30 probe).
-// An oversized unit is diffed by token key alone, exact up to MAX_OVERSIZED_EDITS changed tokens
-// and one replacement past that: the cost follows the edits, not the size or how unlike they are.
+// An oversized unit is diffed by token key alone, exact up to MAX_OVERSIZED_EDITS edit operations
+// (a replaced word is two, so about 500 replaced words) and one replacement flagged `approx` past
+// that: the cost follows the edits, not the size or how unlike they are.
 const ANCHOR_GAP_TOKENS = 1000;
 const MAX_OVERSIZED_EDITS = 1000;
 
@@ -117,11 +118,14 @@ function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: num
     const base = buildSide(B.blocks.slice(b0, b1));
     const draft = buildSide(S.blocks.slice(s0, s1));
     const hunks: Hunk[] = [];
+    let exact = true;
     if (base.toks.length > ANCHOR_GAP_TOKENS || draft.toks.length > ANCHOR_GAP_TOKENS)
-      keyHunks(base, draft, hunks);
+      exact = keyHunks(base, draft, hunks);
     else tokenHunks(base, 0, base.toks.length, draft, 0, draft.toks.length, hunks);
     memo.hunks = separateBlocks(base, draft, refine(base.toks, hunks));
     canonicalize(base.toks, draft.toks, memo.hunks);
+    // Every hunk of a spent budget comes from the one replacement, however refine splits it.
+    if (!exact) for (const h of memo.hunks) h.approx = true;
   }
   const relocate = (h: Hunk): Hunk => ({
     ...h,
@@ -133,16 +137,20 @@ function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: num
   for (const h of memo.hunks) out.push(relocate(h));
 }
 
-/** An oversized unit's hunks: its token keys' diff, each deletion with the insertion beside it one hunk. */
-function keyHunks(B: Side, S: Side, out: Hunk[]) {
+/**
+ * An oversized unit's hunks: its token keys' diff, each deletion with the insertion beside it one
+ * hunk. False when the diff ran out of its budget and the hunk is one coarse replacement.
+ */
+function keyHunks(B: Side, S: Side, out: Hunk[]): boolean {
   let b = 0;
   let s = 0;
   let hunk: Hunk | undefined;
-  for (const [op, n] of boundedDiff(
+  const { runs, exact } = boundedDiff(
     B.toks.map((t) => t.key),
     S.toks.map((t) => t.key),
     MAX_OVERSIZED_EDITS,
-  )) {
+  );
+  for (const [op, n] of runs) {
     if (op === DIFF_EQUAL) {
       hunk = undefined;
       b += n;
@@ -162,6 +170,7 @@ function keyHunks(B: Side, S: Side, out: Hunk[]) {
       hunk.sto = s;
     }
   }
+  return exact;
 }
 
 /**
