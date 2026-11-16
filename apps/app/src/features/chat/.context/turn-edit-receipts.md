@@ -134,10 +134,14 @@ backstop for the case no surface can report: a stage whose surface never mounts.
 A stopped reply keeps the words streamed before Stop and ends with one plain line
 (`TurnStoppedLine`): "Stopped." and, when calls never ran, "Stopped. Didn't run: create
 Scene C." A call the run ended before it settled carries `TOOL_NOT_RUN_CODE` in its
-result (`didNotRunResult`, or any abort exit, read and write included), and its row reads as done, not failed. Edits that landed
-stay landed and keep their receipt. A crashed reply keeps its failure card and adds
-the "Didn't run" line when calls never ran. Replies stopped before this code have no
-code, so they read only "Stopped."
+result, and its row reads as done, not failed, titled by what it was going to do
+(`NotRunTitle`, for every tool). The server stores that result only for a document command;
+any other call a stopped or crashed run left without a result (a script, a connection call, a read)
+gets it from `viewAssistantTurn`, which reads every unanswered call of an `error` or
+`cancelled` turn that way. The model's own record of such a call is the request-time stub,
+which lists what a connection call sent ([recovery](../../../../../server/server/domains/runtime/.context/recovery.md)).
+Edits that landed stay landed and keep their receipt. A crashed reply keeps its failure card
+and adds the "Didn't run" line when calls never ran.
 
 The dock's Apply and Discard stay locked while a round runs. A mid-round Discard of a
 document the reply created would send the model "File not found"; the lock lifts when the

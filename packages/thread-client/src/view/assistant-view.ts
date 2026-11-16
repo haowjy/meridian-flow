@@ -4,7 +4,12 @@
  * counts, the hidden protocol halves and the turn's Work receipts decided here once.
  */
 import type { SaveOutcome } from "@meridian/contracts/agents";
-import { type Block, blockPlainText, type Turn } from "@meridian/contracts/protocol";
+import {
+  type Block,
+  blockPlainText,
+  TOOL_NOT_RUN_CODE,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import type { SavedReportContentValue } from "@meridian/contracts/spawn";
 import type { WorkReceipt } from "@meridian/contracts/works";
 import { sameJson } from "../turns/same-turn";
@@ -60,21 +65,22 @@ export type AssistantView = {
   agentsSaved: SaveOutcome[];
 };
 
-const cache = new WeakMap<readonly Block[], AssistantView>();
+const cache = new WeakMap<readonly Block[], { status: Turn["status"]; view: AssistantView }>();
 const itemCache = new WeakMap<Block, ViewItem>();
 
-/** Memoized by the turn's `blocks` array: an unchanged turn keeps its view, so React rows stay still. */
-export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
+/** Memoized by the turn's `blocks` array and status: an unchanged turn keeps its view, so React rows stay still. */
+export function viewAssistantTurn(turn: Pick<Turn, "blocks" | "status">): AssistantView {
   const cached = cache.get(turn.blocks);
-  if (cached) return cached;
+  if (cached?.status === turn.status) return cached.view;
   const blocks = [...turn.blocks].sort((a, b) => a.sequence - b.sequence);
   const direct = directResultsForTurn(blocks);
   const segments = groupDeliverySegments(blocks);
-  const hidden = hiddenToolCallIds(segments);
-  const items = partitionTurn(segments, hidden).map((item) => internItem(viewItem(item, direct)));
   const tools = segments.flatMap((segment) =>
     segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [],
   );
+  if (turn.status === "cancelled" || turn.status === "error") tools.forEach(settleUnanswered);
+  const hidden = hiddenToolCallIds(segments);
+  const items = partitionTurn(segments, hidden).map((item) => internItem(viewItem(item, direct)));
   const view: AssistantView = {
     blocks,
     items,
@@ -86,8 +92,22 @@ export function viewAssistantTurn(turn: Pick<Turn, "blocks">): AssistantView {
     }),
     agentsSaved: tools.flatMap(agentsSaved),
   };
-  cache.set(turn.blocks, view);
+  cache.set(turn.blocks, { status: turn.status, view });
   return view;
+}
+
+/**
+ * A stopped or failed reply has no running call: one that never got its result (the run was stopped
+ * before it started, or its process died) reads as a call the run ended, whatever the tool.
+ */
+function settleUnanswered(tool: ToolView): void {
+  if (tool.result !== null || tool.isError) return;
+  tool.result = {
+    code: TOOL_NOT_RUN_CODE,
+    message: "This call did not run: the reply ended first.",
+  };
+  tool.isError = true;
+  tool.status = "complete";
 }
 
 function internItem(item: ViewItem): ViewItem {
