@@ -227,14 +227,16 @@ job's duration before considering a custom balancer.
 - a middle dot (`·`) used to separate facts in a string, template text or JSX
   text. Use layout, weight or muted color in UI, and a sentence or parentheses
   in text.
-- in a `.tsx` file, an element with `text-xs` or `role.rowSecondary` written inside a menu row:
+- in a `.tsx` file, an element with `text-xs`, `role.rowSecondary` or an arbitrary size
+  (`text-[12px]`) written inside a menu row:
   the children of a menu item (`DropdownMenuItem` and its checkbox, radio and sub-trigger
   siblings, their `ContextMenu` and `EditorMenu` forms, `SelectItem`), of an element styled with
   `dropdownRowVariants(...)`, or of a `SuggestionMenu` row's `content`. It sits 1px above the
   label's baseline: pass the words as the row's `note`, or wrap them in `LabelNote`. A column
   (`flex-col`) or a baseline-aligned line (`items-baseline`) inside the row is skipped. The rule
   reads only what is written inside the row, so a small span inside a component the row renders
-  (`<SlashRow />`) or passed in through a prop isn't seen.
+  (`<SlashRow />`) or passed in through a prop isn't seen, and neither is a row drawn by a
+  component whose name isn't in the list (a wrapper or an alias of `DropdownMenuItem`).
 - in a `*.test.ts(x)` file, a fixed real-time wait (`setTimeout(resolve, 50)`,
   `await sleep(50)`) or an assertion on the wall clock (`expect(elapsed)
   .toBeLessThan(50)`). These pass or fail with the machine's load. Wait for the

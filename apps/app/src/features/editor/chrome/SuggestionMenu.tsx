@@ -18,12 +18,6 @@
  * announcement the caret's own element has to carry — is one behavior both
  * menus share, so neither lane can drift from the other on a Radix upgrade
  * (§5.7's height rule).
- *
- * A row a lane cannot take is shown greyed rather than hidden, with the reason
- * in the menu's `note` (law 5: absent beats disabled, disabled beats dead, and a writer
- * who cannot see why an entry refuses is left to wonder). It keeps the hover
- * and focus path — `aria-disabled`, never the `disabled` attribute — because
- * that is the path the reason travels.
  */
 
 import type { Editor } from "@tiptap/core";
@@ -43,8 +37,6 @@ export type SuggestionMenuRow = {
   key: string;
   /** A group heading or separator drawn above this row, when the lane wants one. */
   before?: ReactNode;
-  /** Visible, greyed, and not choosable. The menu's `note` says why. */
-  blocked?: boolean;
   content: ReactNode;
   /** Small words at the row's end (a hint, where a file lives), on the label's baseline. */
   note?: ReactNode;
@@ -69,11 +61,8 @@ export type SuggestionMenuProps = {
   onActivate: (index: number) => void;
   onChoose: (index: number) => void;
   onDismiss: () => void;
-  /**
-   * Why rows are greyed, above them rather than below: the menu opens under
-   * the caret, so its top edge is where the writer is already looking.
-   */
-  note?: ReactNode;
+  /** Above the rows (the @ menu's Back): the menu opens under the caret, so its top is where the writer looks. */
+  header?: ReactNode;
   /** What stands in for the rows when there are none: a `ListLine` or an `InlineErrorRow`. */
   empty?: ReactNode;
   className?: string;
@@ -96,7 +85,7 @@ export function SuggestionMenu({
   onActivate,
   onChoose,
   onDismiss,
-  note,
+  header,
   empty,
   className,
   side = "bottom",
@@ -171,9 +160,9 @@ export function SuggestionMenu({
       returnFocus={() => typingElement.focus()}
       className={cn(dropdownPanelClass, "meridian-suggestion-menu-shell min-w-64 p-0", className)}
     >
-      {note ? (
+      {header ? (
         <div className="border-border-subtle border-b px-2 py-1.5 text-muted-foreground text-xs">
-          {note}
+          {header}
         </div>
       ) : null}
       <div
@@ -196,7 +185,6 @@ export function SuggestionMenu({
                 role="option"
                 id={`${id}-${row.key}`}
                 aria-selected={active}
-                aria-disabled={row.blocked || undefined}
                 ref={active ? activeRef : undefined}
                 tabIndex={-1}
                 className={cn(
@@ -204,20 +192,18 @@ export function SuggestionMenu({
                   // The highlighted option is the pointer's or keyboard's place: the hover step.
                   active && "bg-ink-fill",
                   "cursor-default [&_svg]:text-muted-foreground",
-                  row.blocked && "text-muted-foreground",
                 )}
                 // The caret is the writer's place in the chapter; a menu row
                 // taking focus from it would end the filter mid-word.
                 onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => {
-                  if (!row.blocked) onActivate(index);
-                }}
-                onClick={() => {
-                  if (!row.blocked) onChoose(index);
-                }}
+                onMouseEnter={() => onActivate(index)}
+                onClick={() => onChoose(index)}
               >
-                {withRowNote(row.content, row.note)}
-                {row.opens ? <ChevronRight aria-hidden /> : null}
+                {withRowNote(
+                  row.content,
+                  row.note,
+                  row.opens ? <ChevronRight aria-hidden /> : null,
+                )}
               </button>
             </Fragment>
           );

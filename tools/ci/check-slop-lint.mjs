@@ -31,7 +31,7 @@ const CATEGORY_MESSAGES = {
   "middle-dot":
     "Separate UI facts with spacing, weight or muted color; use a sentence or parentheses in text.",
   "row-note":
-    "Pass the words as the row's `note` (or wrap them in LabelNote): a text-xs box centred in the row sits above the label's baseline.",
+    "Pass the words as the row's `note` (or wrap them in LabelNote): a smaller text box centred in the row sits above the label's baseline.",
 };
 const ALLOW_PATTERN =
   /slop-lint:\s*allow\s+(swallowed-error|suppression|decision-id|middle-dot|row-note|test-timing)\s+(.+?)\s*$/i;
@@ -308,7 +308,7 @@ const ROW_COMPONENTS = new Set([
   "EditorMenuRadioItem",
   "EditorMenuSubTrigger",
 ]);
-const SMALL_TEXT = /\btext-xs\b|\brole\.rowSecondary\b/;
+const SMALL_TEXT = /\btext-xs\b|\brole\.rowSecondary\b|\btext-\[(?:length:)?[\d.]+(?:px|r?em)\]/;
 // A column or a baseline-aligned line inside a row sets out its own lines.
 const OWN_LINES = /\bflex-col\b|\bitems-baseline\b/;
 
@@ -372,7 +372,7 @@ function collectRowNoteFindings(sourceFile, lines, findings) {
           lines,
           "row-note",
           node.getStart(sourceFile),
-          `text-xs <${jsxTag(node)}> beside a row's label`,
+          `small text <${jsxTag(node)}> beside a row's label`,
         );
       }
       if (OWN_LINES.test(className) || !ts.isJsxElement(node)) return;

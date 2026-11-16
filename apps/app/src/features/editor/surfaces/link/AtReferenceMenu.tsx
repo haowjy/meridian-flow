@@ -65,7 +65,7 @@ export function ReferenceSuggestionMenu({
       onChoose={(index) => menu.choose(index)}
       onDismiss={menu.dismiss}
       className="max-w-96"
-      note={
+      header={
         snapshot.meta?.canBacktrack ? (
           <Button
             type="button"

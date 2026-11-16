@@ -27,15 +27,21 @@ export function ChooserMark({ className }: { className?: string }) {
 
 /**
  * A menu or picker row's content with its `note`: small muted words at the row's end (a shortcut,
- * a hint, where a file lives), on the label's baseline.
+ * a hint, where a file lives), on the label's baseline. `end` is a mark after the note, such as
+ * the chevron on a row that opens a deeper list.
  */
-export function withRowNote(children: ReactNode, note: ReactNode): ReactNode {
-  // Without a note the children pass through as they are: an `asChild` row slots onto one child.
-  if (note === null || note === undefined || note === false || note === "") return children;
+export function withRowNote(children: ReactNode, note: ReactNode, end?: ReactNode): ReactNode {
+  const hasNote = !(note === null || note === undefined || note === false || note === "");
+  // Without a note or mark the children pass through as they are: an `asChild` row slots onto one child.
+  if (!hasNote && !end) return children;
   return (
     <>
       {children}
-      <LabelNote className="ml-auto shrink-0 pl-4">{note}</LabelNote>
+      {/* One group takes the free space, so the note stays beside the mark rather than splitting it. */}
+      <span className="ml-auto flex shrink-0 items-center gap-2 pl-4">
+        {hasNote ? <LabelNote>{note}</LabelNote> : null}
+        {end}
+      </span>
     </>
   );
 }
