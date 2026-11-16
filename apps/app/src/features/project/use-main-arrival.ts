@@ -10,6 +10,7 @@
  * diagrams with any change here.
  */
 import { useEffect, useRef } from "react";
+import { cleanDeletedChat } from "@/client/chat-submissions/deleted-chat";
 import { useDropGoneChatTabs } from "@/client/project-shell/gone-chat-tabs";
 import {
   arriveMainTab,
@@ -36,10 +37,12 @@ export function useMainArrival({
   document: OpenDocument | null;
   locationKey: string | undefined;
 }) {
-  // A chat deleted elsewhere goes as one deleted here does: its tab and slot, and main to a new chat.
+  // A chat deleted elsewhere goes as one deleted here does: its unsent words to New chat, its tab
+  // and slot, and main to a new chat.
   const navigation = useChatNavigation();
   useDropGoneChatTabs(accountId, projectId, (chatId) => {
     const { display } = navigation;
+    void cleanDeletedChat(accountId, chatId, projectId, "deleted").catch(reportError);
     navigation.forgetChat(chatId);
     if (display?.kind === "thread" && display.threadId === chatId)
       void navigation.openNewChat({ replace: true, focus: false });
