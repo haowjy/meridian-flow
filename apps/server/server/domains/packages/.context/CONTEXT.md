@@ -103,7 +103,10 @@ is in the [Agent definition][definitions] and [package][packages] pages.
   between preparation and application is replanned under the list lock.
   A package's state (`saved`, `unsaved`, `cant-save`, `not-saved`, `removed`) is computed in
   `files()` from the files and the latest Save and stored nowhere, so it is not a state machine
-  (`cant-save` is only a broken `mars.toml`).
+  (`cant-save` is only a broken `mars.toml`). `unsaved` means a Save would change what is used: it
+  compares the package as Save would install it (`keepLastGood`: an Agent or skill with a new
+  Error at its last good saved version) with the latest Save, so an edit Save would hold back reads
+  `saved`, with the file's own Not in use.
 - `list`, `resolvePrimary`, `userSkills` and `resolveSkill` read saved versions. A new chat binds the
   newest saved Agent of the selection's name; the selection's revision id is used only when that
   name is no longer saved, and then only if a Save of the account or the project (the caller has
