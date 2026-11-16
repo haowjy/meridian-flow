@@ -51,7 +51,7 @@ function ConnectionMark({
           </Trans>
         ) : standing.kind === "problem" && standing.status === "needs_sign_in" ? (
           <Trans>
-            <strong>{name}</strong> refused the token.
+            <strong>{name}</strong>: {standing.reason}
           </Trans>
         ) : (
           <Trans>
