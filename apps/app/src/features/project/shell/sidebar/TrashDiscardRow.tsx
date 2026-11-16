@@ -45,6 +45,23 @@ export function TrashDiscardRow({
       : t`Changes`;
   const icon = fileKindIcon(names[0] ?? "");
   const detail = <span className="truncate">{discardedFrom(entry, names.length, workName)}</span>;
+  // Answered with nothing back: the entry has left Trash, and the row says why until it goes.
+  if (state?.kind === "left_out")
+    return (
+      <ListRow
+        gone
+        icon={icon}
+        title={title}
+        detail={detail}
+        notice={
+          <RowWord
+            tone="warning"
+            word={<Trans>Not restored</Trans>}
+            sentence={leftOutSentence(state.leftOut)}
+          />
+        }
+      />
+    );
   if (state?.kind === "restored")
     return (
       <ListRow
@@ -109,12 +126,6 @@ export function TrashDiscardRow({
             tone="warning"
             word={<Trans>Not restored</Trans>}
             sentence={restoreReturnedSentence(state.why)}
-          />
-        ) : state?.kind === "left_out" ? (
-          <RowWord
-            tone="warning"
-            word={<Trans>Not restored</Trans>}
-            sentence={leftOutSentence(state.leftOut)}
           />
         ) : null
       }

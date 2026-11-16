@@ -33,7 +33,7 @@ import type { Database } from "@meridian/database";
 import { applyCommandEffects, documentDrafts } from "@meridian/database/schema";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
@@ -139,16 +139,28 @@ export function createReopenDrafts(
     }> {
       const tx = currentDrizzleDb(db);
       const { target, commandId } = input;
+      // Draft rows lock in id order: two reopens of overlapping drafts cannot deadlock.
+      const ordered = [...input.drafts].sort((a, b) => a.draftId.localeCompare(b.draftId));
       const leftOut: { documentId: string; changes: number }[] = [];
       const drafts: (typeof input.drafts)[number][] = [];
-      for (const draft of input.drafts) {
+      for (const draft of ordered) {
         const changes = input.leaveOutEdited ? await editedSince(draft) : 0;
         if (changes > 0) leftOut.push({ documentId: draft.documentId, changes });
         else drafts.push(draft);
       }
+      // A left-out draft stays closed and leaves the entry: Restore answered for it.
+      if (leftOut.length > 0)
+        await tx
+          .update(documentDrafts)
+          .set({ closedBy: null })
+          .where(
+            inArray(
+              documentDrafts.id,
+              ordered.filter((draft) => !drafts.includes(draft)).map((draft) => draft.draftId),
+            ),
+          );
       let swapped = 0;
-      // Draft rows lock in id order: two reopens of overlapping drafts cannot deadlock.
-      for (const draft of [...drafts].sort((a, b) => a.draftId.localeCompare(b.draftId))) {
+      for (const draft of drafts) {
         const [newer] = await tx
           .select({ id: documentDrafts.id })
           .from(documentDrafts)
@@ -195,100 +207,118 @@ export function createReopenDrafts(
 
   /**
    * How many changes of the closed draft Live's text has since overtaken: all of them when Live
-   * and the draft changed the same text since the base the draft last saw (a pull merges only into
-   * an open draft, so that base is stale), else 0. The draft's own change would otherwise come
-   * back over the writer's word.
+   * edited the text the draft changed, or right beside it, since the base the draft last saw (a
+   * pull merges only into an open draft, so that base is stale), else 0. The room path's
+   * `touchedSince` counts the same span: an edit that deletes, or writes into or beside, what the
+   * change wrote or deleted. The draft's change would otherwise come back over the writer's word.
    */
   async function editedSince(draft: { draftId: string; documentId: string }): Promise<number> {
-    const base = await deps.coordinator.loadBase(draft.draftId);
-    const doc = base.replica.doc;
+    // The base the draft reopens with: its waiting Un-Applies replayed on a copy.
+    const doc = new Y.Doc({ gc: false });
+    Y.applyUpdate(
+      doc,
+      Y.encodeStateAsUpdate((await deps.coordinator.loadBase(draft.draftId)).replica.doc),
+    );
+    const waiting = await waitingReversals(draft.draftId);
+    if (waiting.length > 0) reverseBaseHalf(doc, waiting);
     const baseBlocks = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
     const draftBlocks = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+    doc.destroy();
     const snapshot = await deps.live.read(draft.documentId as DocumentId);
     const live = storedDocument(snapshot);
     try {
       const liveBlocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-      const merge = contentMerge(schema, baseBlocks, liveBlocks, draftBlocks);
-      if (merge.conflicts.length === 0 && !merge.orderConflict) return 0;
-      return projectReview(diffBlocks(baseBlocks, draftBlocks)).groups.length;
+      const changed = diffBlocks(baseBlocks, draftBlocks);
+      // Both diffs run over the same base tokens, so their ranges compare directly.
+      const edits = diffBlocks(baseBlocks, liveBlocks, { cleanup: false }).hunks;
+      const touched = edits.some((edit) =>
+        changed.hunks.some((hunk) => edit.from <= hunk.to && hunk.from <= edit.to),
+      );
+      return touched ? projectReview(changed).groups.length : 0;
     } finally {
       live.destroy();
     }
   }
 
-  /** Each draft's waiting Un-Applies, applied to its base now that it is open. */
-  async function replay(draftIds: readonly string[]): Promise<void> {
+  /** The Un-Applies that met this draft closed, as reversals of its base, in the order to replay. */
+  async function waitingReversals(draftId: string): Promise<BaseReversal[]> {
     const tx = currentDrizzleDb(db);
-    const waiting = await tx
+    const mine = await tx
       .select({
         commandId: applyCommandEffects.commandId,
-        draftId: applyCommandEffects.draftId,
-        unappliedBy: applyCommandEffects.unappliedBy,
         unappliedSeq: applyCommandEffects.unappliedSeq,
         ordinal: applyCommandEffects.ordinal,
       })
       .from(applyCommandEffects)
       .where(
         and(
-          inArray(applyCommandEffects.draftId, [...draftIds]),
+          eq(applyCommandEffects.draftId, draftId),
           isNotNull(applyCommandEffects.unappliedBy),
           eq(applyCommandEffects.draftReversed, false),
         ),
       );
-    for (const draftId of new Set(waiting.map((row) => row.draftId))) {
-      const mine = waiting.filter((row) => row.draftId === draftId);
-      // A group's live update builds on the earlier groups' items: within one Un-Apply the later
-      // group goes first. Across Un-Applies, the order the Work lock gave them.
-      const order = [...mine].sort(
-        (a, b) => Number(a.unappliedSeq) - Number(b.unappliedSeq) || b.ordinal - a.ordinal,
-      );
-      const rows = await tx
-        .select({
-          commandId: applyCommandEffects.commandId,
-          documentId: applyCommandEffects.documentId,
-          ordinal: applyCommandEffects.ordinal,
-          groupId: applyCommandEffects.groupId,
-          liveUpdateSeq: applyCommandEffects.liveUpdateSeq,
-          baseStart: applyCommandEffects.baseStart,
-          baseDelta: applyCommandEffects.baseDelta,
-        })
-        .from(applyCommandEffects)
-        .where(
-          and(
-            eq(applyCommandEffects.draftId, draftId),
-            inArray(applyCommandEffects.commandId, [...new Set(order.map((row) => row.commandId))]),
-          ),
-        )
-        .orderBy(asc(applyCommandEffects.commandId), asc(applyCommandEffects.ordinal));
-      // Each Apply's base chain runs through all its rows, reversed ones included.
-      const bases = new Map<string, { baseBefore: unknown[]; baseAfter: unknown[] }>();
-      for (const commandId of new Set(rows.map((row) => row.commandId))) {
-        const chain = effectBases(rows.filter((row) => row.commandId === commandId));
-        if (!chain) throw new Error(`Apply ${commandId} stored no base start for draft ${draftId}`);
-        for (const { row, baseBefore, baseAfter } of chain)
-          bases.set(`${commandId}:${row.ordinal}`, { baseBefore, baseAfter });
-      }
-      const stored = new Map(rows.map((row) => [`${row.commandId}:${row.ordinal}`, row]));
-      const reversals: BaseReversal[] = [];
-      const bySeq = new Map<string, typeof order>();
-      for (const row of order) {
-        const key = `${row.unappliedSeq}:${row.commandId}`;
-        bySeq.set(key, [...(bySeq.get(key) ?? []), row]);
-      }
-      for (const group of bySeq.values()) {
-        const effects = group.flatMap((row) => {
-          const key = `${row.commandId}:${row.ordinal}`;
-          const effect = stored.get(key);
-          const base = bases.get(key);
-          return effect && base ? [{ effect, ...base }] : [];
-        });
-        reversals.push({
-          applyCommandId: group[0]?.commandId as string,
-          groupIds: new Set(effects.map(({ effect }) => effect.groupId)),
-          // `order` is latest first within an Un-Apply; the body wants oldest first.
-          merges: effects.filter(({ effect }) => effect.liveUpdateSeq !== null).reverse(),
-        });
-      }
+    if (mine.length === 0) return [];
+    // A group's live update builds on the earlier groups' items: within one Un-Apply the later
+    // group goes first. Across Un-Applies, the order the Work lock gave them.
+    const order = [...mine].sort(
+      (a, b) => Number(a.unappliedSeq) - Number(b.unappliedSeq) || b.ordinal - a.ordinal,
+    );
+    const rows = await tx
+      .select({
+        commandId: applyCommandEffects.commandId,
+        documentId: applyCommandEffects.documentId,
+        ordinal: applyCommandEffects.ordinal,
+        groupId: applyCommandEffects.groupId,
+        liveUpdateSeq: applyCommandEffects.liveUpdateSeq,
+        baseStart: applyCommandEffects.baseStart,
+        baseDelta: applyCommandEffects.baseDelta,
+      })
+      .from(applyCommandEffects)
+      .where(
+        and(
+          eq(applyCommandEffects.draftId, draftId),
+          inArray(applyCommandEffects.commandId, [...new Set(order.map((row) => row.commandId))]),
+        ),
+      )
+      .orderBy(asc(applyCommandEffects.commandId), asc(applyCommandEffects.ordinal));
+    // Each Apply's base chain runs through all its rows, reversed ones included.
+    const bases = new Map<string, { baseBefore: unknown[]; baseAfter: unknown[] }>();
+    for (const commandId of new Set(rows.map((row) => row.commandId))) {
+      const chain = effectBases(rows.filter((row) => row.commandId === commandId));
+      if (!chain) throw new Error(`Apply ${commandId} stored no base start for draft ${draftId}`);
+      for (const { row, baseBefore, baseAfter } of chain)
+        bases.set(`${commandId}:${row.ordinal}`, { baseBefore, baseAfter });
+    }
+    const stored = new Map(rows.map((row) => [`${row.commandId}:${row.ordinal}`, row]));
+    const reversals: BaseReversal[] = [];
+    const bySeq = new Map<string, typeof order>();
+    for (const row of order) {
+      const key = `${row.unappliedSeq}:${row.commandId}`;
+      bySeq.set(key, [...(bySeq.get(key) ?? []), row]);
+    }
+    for (const group of bySeq.values()) {
+      const effects = group.flatMap((row) => {
+        const key = `${row.commandId}:${row.ordinal}`;
+        const effect = stored.get(key);
+        const base = bases.get(key);
+        return effect && base ? [{ effect, ...base }] : [];
+      });
+      reversals.push({
+        applyCommandId: group[0]?.commandId as string,
+        groupIds: new Set(effects.map(({ effect }) => effect.groupId)),
+        // `order` is latest first within an Un-Apply; the body wants oldest first.
+        merges: effects.filter(({ effect }) => effect.liveUpdateSeq !== null).reverse(),
+      });
+    }
+    return reversals;
+  }
+
+  /** Each draft's waiting Un-Applies, applied to its base now that it is open. */
+  async function replay(draftIds: readonly string[]): Promise<void> {
+    const tx = currentDrizzleDb(db);
+    for (const draftId of draftIds) {
+      const reversals = await waitingReversals(draftId);
+      if (reversals.length === 0) continue;
       const base = await deps.coordinator.loadBase(draftId);
       const write = deps.coordinator.prepareAppend(base, [], {
         work: "any",

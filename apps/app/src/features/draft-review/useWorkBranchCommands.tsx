@@ -37,6 +37,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { useClosedOwners } from "@/features/project/context/closed-owners";
 import { AppliedCommand, type ApplyInit, type Seat, serverPort } from "./apply-history";
+import type { RestoreAnswer } from "./discard-restores";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import {
   type AppliedFact,
@@ -44,7 +45,6 @@ import {
   type ApplyHalves,
   type DiscardPart,
   type DiscardUndo,
-  type DiscardUndoAnswer,
   halvesOf,
   type NoticeSurface,
   returnedIn,
@@ -952,7 +952,7 @@ export async function restoreDiscard(
     discardCommandId: string;
     documentIds: readonly string[];
   },
-): Promise<Omit<DiscardUndoAnswer, "landed"> & { branchId?: string }> {
+): Promise<RestoreAnswer> {
   const { projectId } = input;
   try {
     const answer = await undoDiscard(projectId, input.branchId, {
@@ -977,11 +977,14 @@ export async function restoreDiscard(
         void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
       return { answer: "returned", why: closed };
     }
+    const edited = answer.settled?.find(
+      (one) => one.rule === "left_out" && one.why === "changed_since",
+    );
+    const leftOutDocuments = edited && "items" in edited ? edited.items : [];
     if (answer.restored > 0)
-      return { answer: "ok", leftOut: answer.leftOut, branchId: answer.branchId };
+      return { answer: "ok", leftOut: answer.leftOut, leftOutDocuments, branchId: answer.branchId };
     // Everything it held was edited in Live since: the notice says how many changes stayed out.
-    if (answer.settled?.some((one) => one.rule === "left_out" && one.why === "changed_since"))
-      return { answer: "gone", leftOut: answer.leftOut };
+    if (edited) return { answer: "gone", leftOut: answer.leftOut };
     return answer.settled?.some((one) => one.rule === "already")
       ? { answer: "gone" }
       : { answer: "returned", why: "gone-from-trash" };

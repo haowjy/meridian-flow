@@ -5,6 +5,8 @@ export type RestoreAnswer = {
   answer: "ok" | "failed" | "gone" | "returned";
   /** What the Discard held that could not come back. */
   leftOut?: number;
+  /** The documents whose drafts stayed closed, so an Undo of this restore leaves them alone. */
+  leftOutDocuments?: readonly string[];
   why?: RestoreReturned;
   /** The Work's current branch, where the drafts came back. */
   branchId?: string;
@@ -14,8 +16,13 @@ export type RestoreAnswer = {
 export type DiscardRestoreState =
   | { kind: "restoring" }
   /** `branchId` absent: it was already back. */
-  | { kind: "restored"; branchId?: string; leftOut: number }
-  /** Nothing came back: Live's text was edited over every change. The entry stays in Trash. */
+  | {
+      kind: "restored";
+      branchId?: string;
+      leftOut: number;
+      leftOutDocuments: readonly string[];
+    }
+  /** Nothing came back: Live's text was edited over every change. The entry has left Trash. */
   | { kind: "left_out"; leftOut: number }
   | { kind: "returned"; why: RestoreReturned }
   | { kind: "failed" };
@@ -70,6 +77,7 @@ const stateOf = (answer: RestoreAnswer): DiscardRestoreState =>
       ? {
           kind: "restored",
           leftOut: answer.leftOut ?? 0,
+          leftOutDocuments: answer.leftOutDocuments ?? [],
           ...(answer.branchId ? { branchId: answer.branchId } : {}),
         }
       : answer.answer === "returned" && answer.why
