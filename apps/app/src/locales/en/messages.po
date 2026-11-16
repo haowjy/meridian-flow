@@ -852,6 +852,10 @@ msgstr "{name}, applied"
 msgid "{name}, renamed"
 msgstr "{name}, renamed"
 
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{name}; {modelLabel} isn't available, so it runs on its own model"
+msgstr "{name}; {modelLabel} isn't available, so it runs on its own model"
+
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
 msgstr "{name}: changing position"
@@ -1312,8 +1316,8 @@ msgstr "Agent:"
 #~ msgstr "Agent: {0}"
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Agent: {name}"
-msgstr "Agent: {name}"
+#~ msgid "Agent: {name}"
+#~ msgstr "Agent: {name}"
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent: {value}"
@@ -3809,6 +3813,11 @@ msgstr "Hand off from here"
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to"
 msgstr "Hand off to"
+
+#. placeholder {0}: shown.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Hand off to {0}"
+msgstr "Hand off to {0}"
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to an Agent"
@@ -7050,6 +7059,10 @@ msgstr "This chat runs on"
 #~ msgstr "This chat uses {0}."
 
 #: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {name} on {modelLabel}."
+msgstr "This chat uses {name} on {modelLabel}."
+
+#: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat uses {name}."
 msgstr "This chat uses {name}."
 
@@ -7843,6 +7856,11 @@ msgstr "Uploads for {name}"
 #: src/features/billing/UsageCard.tsx
 msgid "Usage"
 msgstr "Usage"
+
+#. placeholder {0}: shown.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Use {0}"
+msgstr "Use {0}"
 
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Versions"

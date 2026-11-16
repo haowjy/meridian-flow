@@ -852,6 +852,10 @@ msgstr ""
 msgid "{name}, renamed"
 msgstr ""
 
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "{name}; {modelLabel} isn't available, so it runs on its own model"
+msgstr ""
+
 #: src/features/draft-review/tree-line.ts
 msgid "{name}: changing position"
 msgstr ""
@@ -1312,8 +1316,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Agent: {name}"
-msgstr ""
+#~ msgid "Agent: {name}"
+#~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent: {value}"
@@ -3808,6 +3812,11 @@ msgstr ""
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/derivation/DeriveTurnActions.tsx
 msgid "Hand off to"
+msgstr ""
+
+#. placeholder {0}: shown.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Hand off to {0}"
 msgstr ""
 
 #: src/features/chat/derivation/DeriveTurnActions.tsx
@@ -7050,6 +7059,10 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {name} on {modelLabel}."
+msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
 msgid "This chat uses {name}."
 msgstr ""
 
@@ -7842,6 +7855,11 @@ msgstr ""
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx
 msgid "Usage"
+msgstr ""
+
+#. placeholder {0}: shown.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Use {0}"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
