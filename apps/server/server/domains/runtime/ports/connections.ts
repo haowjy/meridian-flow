@@ -46,12 +46,12 @@ export interface ConnectionsPort {
    * Null when the name is no tool of this thread's connections.
    */
   ownNameRefusal(thread: Thread, name: string): Promise<string | null>;
-  /**
-   * The recorded calls of these turns, one line each, for the stub a call that did not finish
-   * leaves in the request: what was sent and how far it got.
-   */
   /** What opens the stub of a connection call that did not finish: the rule a failed script's list states too. */
   doNotRepeat: string;
+  /**
+   * The recorded calls of these turns, one line each, for the stub a call that did not finish
+   * leaves in the request: what was sent, how far it got, and the reply that was kept.
+   */
   recordedCalls(
     threadId: string,
     turnIds: readonly string[],

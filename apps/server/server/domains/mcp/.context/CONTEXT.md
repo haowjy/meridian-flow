@@ -42,7 +42,9 @@ of this ([design](https://github.com/haowjy/meridian-flow-docs/tree/main/work/sh
   (it listed another server) and, in the background, pins again what the new server lists of the
   tools the writer had chosen (read-only ones); a server that cannot be listed leaves no pin, and
   the screen offers Choose tools. Only read-only tools can be pinned
-  until the owner decides how calls with effects are held.
+  until the owner decides how calls with effects are held. A chat baked before an address edit
+  keeps its old pin, and a chat started before the background re-pin lands holds that
+  connection with no tools.
 - **Starting a chat never waits for a check**, and a check runs no tool.
 
 ## The tools and the bake
@@ -88,8 +90,10 @@ connections are prompt text, not tool definitions.
 - **Restart.** The request-time stub for a connection call with no stored result opens with
   `DO_NOT_REPEAT`, the text a failed script's list opens with too, and lists its records: each
   call as the id `mcp_call` takes (`<connection>/<tool>`, the name from the thread's bake), what
-  was sent, and whether it was answered (its reply is kept, not shown) or its end was not
-  recorded and it may have run. It is never sent again.
+  was sent, and how it ended with the kept reply read back from the chat's storage (cut as a
+  failed script's list cuts it, by the same line builder in `domain/call-list.ts`, and capped the
+  same way). A reply not kept, or one that cannot be read, says so on its line; an end not
+  recorded says it may have run. It is never sent again.
 - **`mcp_run`** (`domain/script-run.ts`) runs the model's JavaScript on the one QuickJS runner made
   in `createAppServices` and closed at shutdown; it throws at creation when the bundle lost the
   runner's worker or `.wasm`, so `pnpm smoke:prod-boot` proves the build (Nitro `traceDeps` holds

@@ -19,8 +19,8 @@ export interface RecordedCall extends OpenCall {
   id: string;
   /** Null while the call is open: its end is unknown. */
   outcomeKind: string | null;
-  /** The reply was stored beside the chat (the record's `replyRef` has a key). */
-  replyKept: boolean;
+  /** Where the reply is: its key in the chat's storage, or why it was not kept. Null when the call has no reply. */
+  reply: { key: string } | { notKept: string } | null;
   sentAt: Date;
 }
 

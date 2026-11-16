@@ -58,7 +58,10 @@ function build(order: string[], failing = false) {
       }),
       checks: { recordCall: failing ? fail("status") : async () => void order.push("status") },
     } as never,
-    replies: { put: failing ? fail("store") : async (_t, name) => ({ key: name }) },
+    replies: {
+      put: failing ? fail("store") : async (_t, name) => ({ key: name }),
+      get: fail("read"),
+    },
     warn: () => order.push("warned"),
   });
 }
