@@ -4398,6 +4398,10 @@ msgstr "Live has no version of this page: it is new in a chat's draft."
 msgid "Live view"
 msgstr "Live view"
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Load image"
+msgstr "Load image"
+
 #: src/features/draft-review/DraftImagePreview.tsx
 msgid "Loading"
 msgstr "Loading"
@@ -5305,6 +5309,10 @@ msgstr "Offline"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
 msgstr "ol"
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Only addresses on the standard web ports can be loaded."
+msgstr "Only addresses on the standard web ports can be loaded."
 
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
@@ -6786,6 +6794,14 @@ msgstr "Text alignment"
 msgid "Text size"
 msgstr "Text size"
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "That address is not allowed (private or local)."
+msgstr "That address is not allowed (private or local)."
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "That address is not an image."
+msgstr "That address is not an image."
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be made because this Work's drafts are archived."
 msgstr "That change can't be made because this Work's drafts are archived."
@@ -7082,6 +7098,10 @@ msgstr "The header row does not merge into the body."
 msgid "The header row stays first."
 msgstr "The header row stays first."
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The image could not be loaded."
+msgstr "The image could not be loaded."
+
 #: src/features/agents/AgentFileState.tsx
 msgid "The last Save left it out. Fix these and save again."
 msgstr "The last Save left it out. Fix these and save again."
@@ -7126,6 +7146,7 @@ msgstr "The server couldn't be reached."
 msgid "The server couldn't do that. Try again."
 msgstr "The server couldn't do that. Try again."
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
 #: src/features/connections/connection-status.ts
 msgid "The server didn't answer."
 msgstr "The server didn't answer."
@@ -7146,6 +7167,10 @@ msgstr "The server refused the token."
 #: src/features/connections/AddConnectionForm.tsx
 msgid "The server sees what the AI sends it and can steer what the AI does. Add only servers you trust."
 msgstr "The server sees what the AI sends it and can steer what the AI does. Add only servers you trust."
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The server took too long to answer."
+msgstr "The server took too long to answer."
 
 #: src/features/chat/ChatFilesMenu.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
@@ -7753,6 +7778,10 @@ msgstr "Tokens after"
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Tokens before"
 msgstr "Tokens before"
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Too large to load (the limit is {megabytes} MB)."
+msgstr "Too large to load (the limit is {megabytes} MB)."
 
 #: src/features/project/context/DocumentProperties.tsx
 msgid "Too large to show"

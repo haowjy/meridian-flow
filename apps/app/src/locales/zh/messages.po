@@ -4398,6 +4398,10 @@ msgstr ""
 msgid "Live view"
 msgstr ""
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Load image"
+msgstr ""
+
 #: src/features/draft-review/DraftImagePreview.tsx
 msgid "Loading"
 msgstr ""
@@ -5305,6 +5309,10 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ol"
 msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Only addresses on the standard web ports can be loaded."
+msgstr "只能加载标准网页端口上的地址。"
 
 #: src/features/project/context/IdentityChips.tsx
 msgid "Only on this device"
@@ -6786,6 +6794,14 @@ msgstr ""
 msgid "Text size"
 msgstr ""
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "That address is not allowed (private or local)."
+msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "That address is not an image."
+msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be made because this Work's drafts are archived."
 msgstr "此工作中的草稿已归档，无法进行该修改。"
@@ -7082,6 +7098,10 @@ msgstr ""
 msgid "The header row stays first."
 msgstr ""
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The image could not be loaded."
+msgstr ""
+
 #: src/features/agents/AgentFileState.tsx
 msgid "The last Save left it out. Fix these and save again."
 msgstr ""
@@ -7126,6 +7146,7 @@ msgstr ""
 msgid "The server couldn't do that. Try again."
 msgstr ""
 
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
 #: src/features/connections/connection-status.ts
 msgid "The server didn't answer."
 msgstr ""
@@ -7145,6 +7166,10 @@ msgstr ""
 
 #: src/features/connections/AddConnectionForm.tsx
 msgid "The server sees what the AI sends it and can steer what the AI does. Add only servers you trust."
+msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "The server took too long to answer."
 msgstr ""
 
 #: src/features/chat/ChatFilesMenu.tsx
@@ -7752,6 +7777,10 @@ msgstr ""
 
 #: src/features/chat/compaction/CompactionDivider.tsx
 msgid "Tokens before"
+msgstr ""
+
+#: src/core/editor/images/RemoteImagePlaceholder.tsx
+msgid "Too large to load (the limit is {megabytes} MB)."
 msgstr ""
 
 #: src/features/project/context/DocumentProperties.tsx

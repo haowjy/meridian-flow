@@ -17,7 +17,7 @@
     "@meridian/thread-client": "workspace:*",
     "@meridian/tree-list-sync": "workspace:*",
     "ws": "^8.21.0",
-    "yjs": "13.6.31"
+    "yjs": "13.6.33"
   },
   "devDependencies": {
     "@types/node": "catalog:",

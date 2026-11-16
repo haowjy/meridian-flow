@@ -14,6 +14,7 @@ import {
   resolveAnchorIn,
   resolveNodeHold,
 } from "../anchors";
+import { endUndoStep } from "../editor-history";
 import { snapOutOfUnits } from "../landing/inline-snap";
 import type { Landing } from "../landing/point-landing";
 
@@ -193,6 +194,9 @@ function openImageFileUpload(
   if (!host) return;
   const alt = imageAltFromFilename(file.name);
   const id = openUpload(editor, { file, alt, landing: "insert" });
+  // A picture is its own undo step, apart from the typing before it. The upload's meta-only
+  // message above does not close the capture window.
+  endUndoStep(editor.state);
   const at = place(editor, alt, id);
   if (at === null) {
     sendIngressMessage(editor, { drop: id });
