@@ -22,6 +22,7 @@ server, or a reused database, produces regressions that vanish on a clean
 stack.
 
 - [Agents through Mars](../../apps/server/server/domains/packages/.context/qa/agents-through-mars.md): an error in an Agent file leaves that Agent out of the saved version, and one in a package manifest fails the Save; a database probe and a server gate on the mock provider.
+- [Package fetch budgets](../../apps/server/server/domains/packages/.context/qa/package-fetch.md): each shared fetch budget aborts with its own name when lowered; a probe against live GitHub.
 - [Signed-out redirects](../../apps/www/.context/qa/signed-out-redirects.md): the circle between the landing page, sign-in, sign-up and log out, with the auth bypass off.
 - [Rich mock provider](../../apps/server/server/lib/gateway/.context/qa/mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
 - [The model's move and delete](../../apps/server/server/domains/collab/.context/qa/model-move-delete.md): tool rows, the turn card's lines and Undo at a free name, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.
