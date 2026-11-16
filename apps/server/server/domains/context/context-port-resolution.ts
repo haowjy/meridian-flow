@@ -127,7 +127,12 @@ async function resolvedAuthorities(
   );
 }
 
-/** Resolve one project-browse port whose Work authorities have all been proven. */
+/**
+ * Resolve one project-browse port whose Work authorities have all been proven. Without a
+ * primary Work the port is the project's, where a bare `scratch://` is No Work's Scratch; `workIds` are
+ * then only checked to exist, so a caller that merely reads a Work's files does not make it
+ * the port's own Work.
+ */
 export async function contextPortForProjectAuthorities(input: {
   deps: ProjectBrowseContextPortDeps;
   projectId: string;
@@ -135,14 +140,7 @@ export async function contextPortForProjectAuthorities(input: {
   workIds: ReadonlySet<string>;
   primaryWorkId?: string | null;
 }): Promise<ContextPort | null> {
-  if (input.workIds.size === 0) {
-    return input.deps.contextPorts.forProject(
-      input.projectId,
-      input.userId,
-      await resolvedAuthorities(input.deps, input.projectId),
-    );
-  }
-  if (!input.primaryWorkId || !input.workIds.has(input.primaryWorkId)) return null;
+  if (input.primaryWorkId && !input.workIds.has(input.primaryWorkId)) return null;
   const [resolved, workAuthorities] = await Promise.all([
     Promise.all(
       [...input.workIds].map(async (workId) => {
@@ -154,7 +152,9 @@ export async function contextPortForProjectAuthorities(input: {
   ]);
   if (resolved.some(([, authority]) => !authority)) return null;
   const primaryAuthority = resolved.find(([workId]) => workId === input.primaryWorkId)?.[1];
-  if (!primaryAuthority) return null;
+  if (!primaryAuthority) {
+    return input.deps.contextPorts.forProject(input.projectId, input.userId, workAuthorities);
+  }
   return input.deps.contextPorts.forWork(
     primaryAuthority,
     input.projectId,

@@ -4,6 +4,7 @@
  */
 
 import type { TurnContextPreview } from "@meridian/contracts/threads";
+import type { Gateway } from "@meridian-flow/runtime/gateway";
 import type { EventSink } from "../domains/observability/index.js";
 import type { AgentRevisionStore } from "../domains/packages/index.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
@@ -27,6 +28,7 @@ export interface TurnContextPreviewRouteDeps {
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
   workContext: WorkContextReader;
   connections?: ConnectionsPort;
+  gateway: Pick<Gateway, "getDefaultModel" | "listModels">;
   eventSink?: EventSink;
 }
 
@@ -66,6 +68,7 @@ export async function handleGetTurnContextPreview(
     turns: conversation.turns,
     blocks: conversation.blocks,
     agentRevisions: deps.agentRevisions,
+    gateway: deps.gateway,
     threads: deps.repos.threads,
     toolRegistry: deps.toolRegistry,
     baseTools: deps.toolExecutor.getDefinitions?.(),

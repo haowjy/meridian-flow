@@ -49,11 +49,14 @@ export function PackageSave({
   status,
   look = "package",
   before,
+  shownFile,
 }: {
   projectId: string;
   pkg: PackageRef;
   status: AgentPackageStatus | undefined;
   look?: PackageSaveLook;
+  /** A file whose own chip already says what keeps it out of use, left out of the package's count. */
+  shownFile?: string;
   /** Shown first, only when there is something to say: the package's name on a line of its own. */
   before?: ReactNode;
 }) {
@@ -63,7 +66,14 @@ export function PackageSave({
   const undo = saveId ? <UndoSave projectId={projectId} pkg={pkg} saveId={saveId} /> : null;
   const save = status ? () => void saves.save([status]) : undefined;
   const content = word ? (
-    <Word projectId={projectId} pkg={pkg} word={word} onSave={save} look={look} />
+    <Word
+      projectId={projectId}
+      pkg={pkg}
+      word={word}
+      onSave={save}
+      look={look}
+      shownFile={shownFile}
+    />
   ) : status && status.state !== "saved" ? (
     <StateAndSave projectId={projectId} pkg={pkg} status={status} look={look} onSave={save} />
   ) : null;
@@ -167,18 +177,22 @@ function Word({
   word,
   onSave,
   look,
+  shownFile,
 }: {
   projectId: string;
   pkg: PackageRef;
   word: PackageWord;
   onSave: (() => void) | undefined;
   look: PackageSaveLook;
+  shownFile: string | undefined;
 }) {
   const files = useAgentFiles(projectId);
   const label = packageLabel(pkg);
   switch (word.kind) {
     case "saved": {
-      const out = outOfUseAfterSave(files?.files ?? [], files?.packages ?? [], pkg);
+      const out = outOfUseAfterSave(files?.files ?? [], files?.packages ?? [], pkg).filter(
+        (item) => item.file.path !== shownFile,
+      );
       // Nothing new was saved: the edits kept out of use are all the Save has to say.
       const nothingNew = word.outcome.outcome === "unchanged";
       return (

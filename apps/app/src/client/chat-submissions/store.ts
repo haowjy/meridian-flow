@@ -15,7 +15,12 @@ import {
   type SubmittedReference,
   type UserMessageBlock,
 } from "@meridian/contracts/protocol";
-import type { RunState } from "@meridian/contracts/threads";
+import {
+  NO_OVERRIDES,
+  type RunState,
+  type ThreadOverrides,
+  threadOverridesSchema,
+} from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { Occurrence } from "@meridian/thread-client";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -94,6 +99,8 @@ export type ChatSubmission = {
     workAiWriteMode: AiWriteMode;
     /** The writer's explicit choice, sent with the creation request. */
     aiWriteMode?: AiWriteMode;
+    /** Sent with the creation request. */
+    overrides: ThreadOverrides;
     agentSelection: AgentSelection;
     agentName: string;
     agentSlug: string;
@@ -214,7 +221,15 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     ...(value.answer ? { answer: parseAnswer(value.answer) } : {}),
     ...(value.posted ? { posted: true as const } : {}),
     ...(draft ? { draft } : {}),
-    ...(creation ? { creation: creation as ChatSubmission["creation"] } : {}),
+    ...(creation
+      ? {
+          creation: {
+            ...(creation as Omit<NonNullable<ChatSubmission["creation"]>, "overrides">),
+            // A record from before the pair was one field parses to no overrides.
+            overrides: threadOverridesSchema.safeParse(creation.overrides).data ?? NO_OVERRIDES,
+          },
+        }
+      : {}),
   };
 }
 

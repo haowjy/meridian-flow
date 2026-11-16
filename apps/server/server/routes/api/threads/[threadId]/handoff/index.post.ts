@@ -42,6 +42,7 @@ export default defineEventHandler(async (event) => {
         threadId,
         userId: user.userId,
         agentSelection: body.agentSelection,
+        overrides: body.overrides,
       },
     );
     event.res.status = result.created ? 201 : 200;

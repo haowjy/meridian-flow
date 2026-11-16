@@ -57,11 +57,13 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     destination: InverseDestination,
     selection: readonly InverseSelection[],
     actionId: string,
+    { preview = false }: { preview?: boolean } = {},
   ) => {
     if (destination.kind === "draft" && destination.state === "gone")
       throw new Error("A gone destination cannot be selected");
     const index = destination.kind === "live" ? liveIndex : liveIndex.forView(destination.view);
-    return index.compute(selection, { actionId, allocateClient: allocateDocumentClient });
+    const action = { actionId, allocateClient: allocateDocumentClient };
+    return preview ? index.preview(selection, action) : index.compute(selection, action);
   };
   const version = (destination: InverseDestination) => {
     const draftId = draftIdOf(destination);

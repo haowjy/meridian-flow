@@ -5,7 +5,7 @@ import { draftRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import { type DetachedWorkTracker, processDetachedWork } from "../../shared/detached-work.js";
+import { processDetachedWork } from "../../shared/detached-work.js";
 import { ownerOfColumns } from "../../shared/draft-owner.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
@@ -49,7 +49,6 @@ type CheckpointSlot = {
 
 type HocuspocusPersistenceDeps = {
   journal: CheckpointJournal & LiveWriterJournal;
-  backgroundTasks?: DetachedWorkTracker;
   draftStore?: DraftStore;
   draftCoordinator?: DraftCoordinator;
   hocuspocus(): Hocuspocus | null;
@@ -93,7 +92,6 @@ export type HocuspocusPersistenceService = Pick<
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
 ): HocuspocusPersistenceService {
-  const backgroundTasks = deps.backgroundTasks ?? processDetachedWork;
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
@@ -183,7 +181,7 @@ export function createHocuspocusPersistenceService(
     }
     const created: CheckpointSlot = { next: pending, running: Promise.resolve() };
     checkpointSlots.set(documentId, created);
-    created.running = backgroundTasks.track(
+    created.running = processDetachedWork.track(
       (async () => {
         while (created.next) {
           const { document, authority } = created.next;

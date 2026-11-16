@@ -1,8 +1,7 @@
 /**
- * DraftChip — the version chip of a document, in its states, the same state as the sidebar's
- * Live/Draft toggle. Live: a document no Work has drafted. Pending: "Live", neutral like the
- * toggle on Live, with a small jade dot for the draft that waits. Reviewing: "Draft", jade like
- * the toggle on Draft. Each is the trigger of the same version menu (`DraftSwitcher`), in the same
+ * DraftChip — the version chip, in its states: a document's, and the sidebar's Live/Draft for
+ * its trees. Live: nothing drafted. Pending: "Live", neutral, with a small jade dot for the draft
+ * that waits. Reviewing: "Draft", jade. Each is the trigger of the same version menu (`DraftSwitcher`), in the same
  * box, so the control the writer clicked to get in is still where they look to get out.
  *
  * Presentational: `DraftChipFace` is the pill; the caller wraps it in the

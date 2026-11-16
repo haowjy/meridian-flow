@@ -9,6 +9,7 @@
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
 import { BlockList, isIP } from "node:net";
 import { Agent, buildConnector } from "undici";
+import { OUTBOUND_CONNECT_OPTIONS } from "./outbound-http1";
 
 // Only global unicast is public. IPv4 is everything outside the special-purpose blocks below. IPv6
 // is allowed only inside 2000::/3 (so NAT64, IPv4-mapped and IPv4-compatible forms, unique-local,
@@ -79,18 +80,11 @@ function publicLookup(hostname: string, options: LookupOptions, callback: Lookup
   });
 }
 
-/**
- * HTTP/1.1 only, and the connector is where that is decided: it offers the ALPN protocols, and an
- * Agent with its own `connect` speaks whatever the socket negotiated, whatever the Agent's own
- * `allowH2` says. undici 8.12.4 offers HTTP/2 by default, and aborting a request before its
- * response headers arrive (an MCP session closing its event stream, a deadline) can leave a
- * stream Node tracks but undici does not: when the server's reply lands after the abort Node
- * wraps it in a new stream that nothing listens to, and the idle-socket close four seconds later
- * throws its error as an uncaught exception that ends the process (nodejs/undici#6143, open;
- * fix proposed in #6147). Neither caller needs multiplexing. Remove `allowH2: false` once an
- * undici release has that fix.
- */
-const dial = buildConnector({ lookup: publicLookup as never, timeout: 10_000, allowH2: false });
+const dial = buildConnector({
+  ...OUTBOUND_CONNECT_OPTIONS,
+  lookup: publicLookup as never,
+  timeout: 10_000,
+});
 
 /** No proxy from the environment: this Agent reads none. */
 export const publicAddressDispatcher = new Agent({

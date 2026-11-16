@@ -17,7 +17,7 @@
 import type { ToolPolicy } from "@meridian/contracts/agents";
 import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, PromptBake, Thread, Turn } from "@meridian/contracts/threads";
+import type { Block, PromptBake, Thread, ThreadOverrides, Turn } from "@meridian/contracts/threads";
 import type { Gateway, GenerateRequest, ModelInfo, Tool } from "@meridian-flow/runtime/gateway";
 import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore } from "../../packages/index.js";
@@ -34,7 +34,7 @@ import type {
 } from "../../threads/ports/repositories.js";
 import type { ConnectionBake, ConnectionsPort } from "../ports/connections.js";
 import { type MediaResolverPort, unavailableMediaResolver } from "../ports/media-resolver.js";
-import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
+import { reasoningOfChoice, resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import {
   resolveThreadModelAvailableSkills,
   resolveThreadPreloadedSkills,
@@ -88,7 +88,7 @@ export interface AssembleNextTurnContextInput {
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
   threads: Parameters<typeof resolveAgentThreadTurnContext>[0]["threads"];
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
-  gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
+  gateway: Pick<Gateway, "getDefaultModel" | "listModels">;
   mediaResolver?: MediaResolverPort;
   /** Overrides the model's cache lifetime as the span a signed media link stays identical for. */
   mediaLinkWindowSeconds?: number;
@@ -219,12 +219,45 @@ interface PreparedNextTurnContext
   eventSink?: EventSink;
 }
 
+/**
+ * The chat's model override replaces the Agent's model while the gateway lists it. An id it no
+ * longer lists runs on the Agent's model, and the turn's recorded model says so. The chat's effort
+ * override replaces the Agent's effort always; the gateway clamps whichever runs to the nearest
+ * level the model accepts.
+ */
+function turnGatewayParams(
+  gateway: AssembleNextTurnContextInput["gateway"],
+  thread: Pick<Thread, "overrides">,
+  agentParams: Pick<GenerateRequest, "model" | "reasoning">,
+): Pick<GenerateRequest, "model" | "reasoning"> {
+  const model = threadModelId(gateway, thread.overrides, agentParams.model);
+  const effort = thread.overrides.effort;
+  return effort
+    ? { ...agentParams, model, reasoning: reasoningOfChoice(effort) }
+    : { ...agentParams, model };
+}
+
+/**
+ * The model a chat's turn runs on: its override while the gateway lists it, else its Agent's.
+ * Every reader of a chat's model goes through here, so none of them ignores the override.
+ */
+export function threadModelId(
+  gateway: Pick<Gateway, "listModels">,
+  overrides: ThreadOverrides,
+  agentModel: string | undefined,
+): string | undefined {
+  const override = overrides.model;
+  return override && gateway.listModels().some((model) => model.id === override)
+    ? override
+    : agentModel;
+}
+
 function modelOf(
   gateway: AssembleNextTurnContextInput["gateway"],
-  agentContext: Awaited<ReturnType<typeof resolveAgentThreadTurnContext>>,
+  params: Pick<GenerateRequest, "model">,
 ): ModelInfo | undefined {
-  const modelId = agentContext.gatewayParams.model ?? gateway?.getDefaultModel?.();
-  return gateway?.listModels().find((model) => model.id === modelId);
+  const modelId = params.model ?? gateway.getDefaultModel();
+  return gateway.listModels().find((model) => model.id === modelId);
 }
 
 /**
@@ -240,7 +273,11 @@ export function lazyThreadModel(
   let model: Promise<ModelInfo | undefined> | undefined;
   return () =>
     (model ??= resolveAgentThreadTurnContext({ ...input, baseTools: input.baseTools }).then(
-      (context) => modelOf(input.gateway, context),
+      (context) =>
+        modelOf(
+          input.gateway,
+          turnGatewayParams(input.gateway, input.thread, context.gatewayParams),
+        ),
     ));
 }
 
@@ -303,7 +340,8 @@ export async function prepareNextTurnContext(
     }
   }
 
-  const resolvedModel = modelOf(input.gateway, agentContext);
+  const gatewayParams = turnGatewayParams(input.gateway, thread, agentContext.gatewayParams);
+  const resolvedModel = modelOf(input.gateway, gatewayParams);
   const activeHistory = await projectActiveHistoryWithBakes(
     input.turns,
     input.blocks,
@@ -369,7 +407,7 @@ export async function prepareNextTurnContext(
     promptCacheKey: cacheKeyOwner,
     eventSink: input.eventSink,
     policy: agentContext.policy,
-    gatewayParams: agentContext.gatewayParams,
+    gatewayParams,
     resolvedModel: resolvedModel ?? null,
     baked,
     bakedConnections,

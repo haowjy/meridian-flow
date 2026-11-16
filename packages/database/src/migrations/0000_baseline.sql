@@ -252,6 +252,8 @@ CREATE TABLE "threads" (
 	"wake_fence_at" timestamp with time zone,
 	"next_seq" bigint DEFAULT 0 NOT NULL,
 	"ai_write_mode" text DEFAULT 'direct' NOT NULL,
+	"model_override" text,
+	"effort_override" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"deleted_at" timestamp with time zone,
@@ -913,7 +915,7 @@ CREATE TABLE "commands" (
 	"request_digest" text,
 	"outcome" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create'))
+	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides'))
 );
 --> statement-breakpoint
 CREATE TABLE "document_block_rooms" (

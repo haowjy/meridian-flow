@@ -187,16 +187,21 @@ export function createPackageSaver(input: {
         const pkg = here.get(folder);
         const save = saves[level].find((item) => item.folder === folder);
         const saved = save?.packageRevisionId ? save : undefined;
+        const savedPackage = await savedPackageOf(saved);
         const check = pkg ? checkPackage(pkg) : undefined;
-        const state: AgentPackageStatus["state"] = !pkg
+        const blocked = check !== undefined && check.blocking.length > 0;
+        // State and changes measure what a Save would install: an edit Save holds back at its last
+        // good version (an Agent with a new error) is not a change.
+        const effective = pkg && !blocked ? keepLastGood(pkg, savedPackage).effective : pkg;
+        const state: AgentPackageStatus["state"] = !effective
           ? saved
             ? "removed"
             : "saved"
-          : check && check.blocking.length > 0
+          : blocked
             ? "cant-save"
             : !saved
               ? "not-saved"
-              : filesDigest(pkg) === saved.contentDigest
+              : filesDigest(effective) === saved.contentDigest
                 ? "saved"
                 : "unsaved";
         result.push({
@@ -210,7 +215,7 @@ export function createPackageSaver(input: {
             save?.hasPrevious && !save.undoneSaveId
               ? { saveId: save.id, at: save.createdAt.toISOString(), by: save.savedBy }
               : null,
-          changes: changesOf(await savedFiles(saved), pkg?.files, level, folder),
+          changes: changesOf(savedPackage?.files, effective?.files, level, folder),
           findings: (check?.findings ?? []).map(findingOf),
         });
       }

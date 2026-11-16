@@ -14,6 +14,7 @@ import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import { projectDomain } from "@/client/query/project-commands";
+import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
 import { useMcpConnectionsAtOpen } from "@/client/query/useMcpConnections";
 import { workDomain } from "@/client/query/work-commands";
 import { bindAccountRecents } from "@/client/recents";
@@ -142,7 +143,9 @@ function AuthenticatedAccountProviderTree({
   return (
     <AccountFeatureComposition accountId={user.userId}>
       <CommandDriverProvider
-        domains={(client) => combineDomains(workDomain(client), projectDomain(client))}
+        domains={(client) =>
+          combineDomains(workDomain(client), projectDomain(client), threadOverridesDomain(client))
+        }
       >
         <AccountSettingsProvider
           serverValue={user.accountSettings}

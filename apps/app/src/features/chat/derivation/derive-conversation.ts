@@ -7,8 +7,10 @@
  * same request and lands on the same thread. A failure stays on the
  * destination with Retry; the writer is never sent back to the source.
  */
+
 import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
+import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { httpErrorStatus } from "@/client/api/http-client";
@@ -36,6 +38,8 @@ export type DerivationIntent = {
   /** The destination's Agent: the source's for a fork, the writer's pick for a handoff. */
   agent: CreationAgent | null;
   agentName: string | null;
+  /** What the destination runs on instead of its Agent's: the writer's pick for a handoff, the source's for a fork (the server copies it). */
+  overrides: ThreadOverrides;
   createdAt: string;
 };
 
@@ -143,6 +147,7 @@ function optimisticThread(intent: DerivationIntent, source: Thread | null): Thre
     timestamp: intent.createdAt,
     workId: intent.workId,
     aiWriteMode: intent.aiWriteMode,
+    overrides: intent.overrides,
     ...(intent.agent ? { agent: intent.agent } : {}),
   });
   return {
@@ -168,6 +173,7 @@ function request(intent: DerivationIntent): Promise<Thread> {
     id: intent.threadId,
     originTurnId: intent.originTurnId,
     agentSelection: intent.agent.selection,
+    overrides: intent.overrides,
   });
 }
 

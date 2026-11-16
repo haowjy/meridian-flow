@@ -1,3 +1,4 @@
+import { NO_OVERRIDES } from "@meridian/contracts/threads";
 /**
  * PostgreSQL contracts for fork cutoffs, idempotency, retained bindings, and provenance.
  *
@@ -641,6 +642,7 @@ else
             },
           },
           {
+            overrides: NO_OVERRIDES,
             id: crypto.randomUUID(),
             threadId: fixture.source.id,
             userId: ids.userId,
@@ -695,6 +697,7 @@ else
           },
         },
         {
+          overrides: NO_OVERRIDES,
           id: crypto.randomUUID(),
           threadId: fixture.source.id,
           userId: ids.userId,
@@ -753,6 +756,7 @@ else
         gateway,
         eventSink: runtime.deps.eventSink,
         agentRevisions: createTestAgentBinding(model.id, "", () => [fixture.source.id]),
+        threads: repos.threads,
         async prefixCacheStateFor() {
           return { state: "warm", reason: "reusable_prefix" };
         },
@@ -796,6 +800,7 @@ else
         userId: ids.userId,
         originTurnId: fixture.firstTurn.id,
         agentSelection: fixture.agent.selection,
+        overrides: NO_OVERRIDES,
       };
 
       const first = await handoffThreadAgent({ ...fixture.deps, handoffBriefs }, input);
@@ -833,6 +838,7 @@ else
             },
           },
           {
+            overrides: NO_OVERRIDES,
             id,
             threadId: fixture.source.id,
             userId: ids.userId,
@@ -879,6 +885,7 @@ else
             },
           },
           {
+            overrides: NO_OVERRIDES,
             id: destinationId,
             threadId: fixture.source.id,
             userId: ids.userId,
@@ -933,6 +940,7 @@ else
             },
           },
           {
+            overrides: NO_OVERRIDES,
             id,
             threadId: fixture.source.id,
             userId: ids.userId,

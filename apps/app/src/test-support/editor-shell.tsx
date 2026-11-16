@@ -30,6 +30,7 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
       sources: [],
       tree: () => null,
       find: () => null,
+      standing: () => ({ kind: "waiting" }),
     }),
     vi
       .spyOn(threads, "useProjectThreads")
