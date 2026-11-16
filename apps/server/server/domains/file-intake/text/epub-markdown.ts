@@ -5,13 +5,12 @@
  * Hostile input: the central directory's declared sizes are checked before anything inflates, and
  * fflate inflates into a buffer of exactly the declared size, so an entry that lies about it is
  * cut, not grown. Only XML and XHTML entries are inflated. XML with an entity declaration is
- * refused whole (an XXE or entity-expansion file); the XML and XHTML both go through an HTML5
- * parser, which has no DTD to process.
+ * refused whole (an XXE or entity-expansion file); the package files go through htmlparser2 in XML
+ * mode and the chapters through an HTML5 parser, and neither processes a DTD.
  */
 import path from "node:path";
 import { type Unzipped, unzipSync } from "fflate";
-import rehypeParse from "rehype-parse";
-import { unified } from "unified";
+import { DomUtils, parseDocument } from "htmlparser2";
 import { createHtmlToMarkdown } from "../html-markdown.js";
 import { CONVERSION_LIMITS, ConversionRefused, createTextBuilder } from "./limits.js";
 
@@ -68,38 +67,19 @@ function xmlText(data: Uint8Array): string {
   return text;
 }
 
-type XmlNode = {
-  tagName?: string;
-  properties?: Record<string, unknown>;
-  children?: XmlNode[];
-  value?: string;
-};
+type Xml = ReturnType<typeof parseDocument>;
 
 /**
- * The container and package files go through the same HTML5 parser as the chapters, which never
- * throws: a sloppy file (unclosed tag, duplicate attribute, mismatched end tag) still reads, as it
- * always has. Tag names come out lowercase and a self-closed `<item/>` nests what follows it, so
- * look elements up by name anywhere below the root, in document order.
+ * The container and package files go through a lenient XML parser: `<item/>` closes itself, CDATA
+ * is text, and an unclosed or mismatched tag, a duplicate attribute or an unquoted value still
+ * reads instead of throwing. Names keep their case, as XML does.
  */
-function parseXml(text: string): XmlNode {
-  return unified().use(rehypeParse, { fragment: true }).parse(text) as XmlNode;
-}
+const parseXml = (text: string): Xml => parseDocument(text, { xmlMode: true });
 
-function elementsNamed(node: XmlNode, name: string): XmlNode[] {
-  return (node.children ?? []).flatMap((child) => [
-    ...(child.tagName === name ? [child] : []),
-    ...elementsNamed(child, name),
-  ]);
-}
+const elementsNamed = (xml: Xml, name: string) => DomUtils.getElementsByTagName(name, xml);
 
-function textOf(node: XmlNode): string {
-  return node.value ?? (node.children ?? []).map(textOf).join("");
-}
-
-const attr = (element: XmlNode | undefined, name: string): string | undefined => {
-  const value = element?.properties?.[name];
-  return typeof value === "string" ? value : undefined;
-};
+const attr = (element: ReturnType<typeof elementsNamed>[number] | undefined, name: string) =>
+  element && DomUtils.getAttributeValue(element, name);
 
 function resolveEntry(from: string, href: string): string {
   const target = decodeURIComponent(href.split("#")[0] ?? "");
@@ -136,7 +116,7 @@ export async function epubToMarkdown(bytes: Uint8Array): Promise<string> {
   const htmlToMarkdown = createHtmlToMarkdown({ textOnly: true });
   const out = createTextBuilder();
   const titleElement = elementsNamed(pkg, "dc:title")[0];
-  const title = titleElement && textOf(titleElement).trim().replace(/\s+/g, " ");
+  const title = titleElement && DomUtils.textContent(titleElement).trim().replace(/\s+/g, " ");
   let titled = false;
   for (const [index, entry] of chapters.entries()) {
     const data = files[entry];
