@@ -395,7 +395,11 @@ async function insertUpdate(
       documentId: asDocumentId(documentId),
       actor: "human",
       actorUserId: origin.actorUserId,
-      receipts: captureReceiptRows(stored, [{ update, origin: { kind: "live", seq: row.id } }]),
+      receipts: captureReceiptRows(
+        stored,
+        [{ update, origin: { kind: "live", seq: row.id } }],
+        false,
+      ),
     });
   }
   return { seq: row.id };
@@ -1161,6 +1165,7 @@ async function captureLiveEdits(
             update,
             origin: { kind: "live", seq: rows[i].id },
           })),
+          !!entry.mutation,
         );
         if (!entry.mutation) continue;
         const key = entry.mutation.writeId ?? String(rows[i].id),
@@ -1178,7 +1183,10 @@ async function captureLiveEdits(
           actor: mutation.actorKind,
           wId: mutation.wId,
           actorUserId: mutation.userId ? asUserId(mutation.userId) : undefined,
-          receipts: captureEditParts(doc, receipts).map((p, i) => ({
+          receipts: captureEditParts(
+            doc,
+            receipts.map((r) => ({ ...r, replaced: r.effect.replaced })),
+          ).map((p, i) => ({
             ...p,
             origin: receipts[i].origin,
           })),

@@ -13,6 +13,7 @@ import {
   classifyEditParts,
   computeInverse,
   type InversePart,
+  pairEdit,
 } from "./forward-inverse.js";
 
 type View = { doc: Y.Doc; history: InversePart[]; nextClient: number };
@@ -64,7 +65,8 @@ function write(v: View, fns: ((v: View) => void)[]): InversePart[] {
     } finally {
       v.doc.off("update", collect);
     }
-    return { frontier, update: Y.mergeUpdates(updates) };
+    const receipt = { frontier, update: Y.mergeUpdates(updates) };
+    return { ...receipt, replaced: pairEdit(v.doc, receipt) };
   });
   const id = (v.history.at(-1)?.id ?? 0) + 1,
     parts = captureEditParts(v.doc, receipts).map((p, ordinal) => ({
@@ -305,8 +307,8 @@ describe("forward inverse on cold Yjs replicas", () => {
         },
       ]);
     expect(parts.map((p) => p.effect)).toEqual([
-      { inserted: [], deleted: [] },
-      { inserted: [{ client: v.nextClient - 1, clock: 0, len: 1 }], deleted: [] },
+      { inserted: [], deleted: [], replaced: [] },
+      { inserted: [{ client: v.nextClient - 1, clock: 0, len: 1 }], deleted: [], replaced: [] },
     ]);
     inverse(v, parts);
     expect(content(v)).toEqual(["abcdef"]);

@@ -103,7 +103,11 @@ async function fixture() {
       })
       .returning();
     const origin = { kind: "pending" as const, draftId, rowId: row.id };
-    const receipts = captureReceiptRows(before, [{ update: Y.mergeUpdates(updates), origin }]);
+    const receipts = captureReceiptRows(
+      before,
+      [{ update: Y.mergeUpdates(updates), origin }],
+      true,
+    );
     before.destroy();
     const editId = await recordDocumentEdit(db, {
       documentId: ALPHA_ID,
