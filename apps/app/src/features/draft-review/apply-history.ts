@@ -177,6 +177,8 @@ export class AppliedCommand implements ApplyStep {
       said?(said: PressSaid): () => void;
       /** Nothing is left for its Undo or Redo. */
       over?(): void;
+      /** It waited for a closed owner, and a press would take it again: an owner reopened. */
+      reopened?(): void;
     },
   ) {
     this.text = init.text;
@@ -274,9 +276,17 @@ export class AppliedCommand implements ApplyStep {
   private holding(held: readonly Held[]): void {
     this.held = held;
     this.stopHearing();
-    this.stopHearing = held.length
-      ? this.hooks.closed.subscribe(() => this.shared.restate())
-      : () => {};
+    if (!held.length) {
+      this.stopHearing = () => {};
+      return;
+    }
+    let waited = this.passedOver();
+    this.stopHearing = this.hooks.closed.subscribe(() => {
+      this.shared.restate();
+      const waits = this.passedOver();
+      if (waited && !waits) this.hooks.reopened?.();
+      waited = waits;
+    });
   }
 
   /** The Redo of the press that took it back: the same changes applied again as a new command. */

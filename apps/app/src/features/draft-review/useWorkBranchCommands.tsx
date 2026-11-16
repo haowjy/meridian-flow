@@ -272,6 +272,8 @@ export function useWorkBranchCommands({
       commandId: string,
       documentIds: readonly string[],
       again: () => Promise<void>,
+      /** The Apply's notice is about to give way to what its Un-Apply answered. */
+      givingWay: () => void,
     ): ApplyPort => {
       let unapplyId: string | null = null;
       return {
@@ -296,7 +298,10 @@ export function useWorkBranchCommands({
             if (unapplied.taken !== "nothing")
               for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
             // What became of it is said where it was pressed: the Apply's own words give way.
-            if (notices.appliedFacts(ownerKey)) endNotice();
+            if (notices.appliedFacts(ownerKey)) {
+              givingWay();
+              endNotice();
+            }
             return unapplied;
           } catch {
             return { taken: "failed" };
@@ -368,7 +373,20 @@ export function useWorkBranchCommands({
         text: halves.text,
         tree: halves.tree ? { command: commandId, restores: halves.restores } : null,
       };
-      const port = serverPort(branchId, commandId, documentIds, () => again(step));
+      // The rows' Undo this Apply's notice offered, kept while a closed owner holds it: it comes
+      // back on those rows once the owner reopens.
+      let offered: { surface: NoticeSurface; facts: AppliedFact[] } | null = null;
+      const port = serverPort(
+        branchId,
+        commandId,
+        documentIds,
+        () => again(step),
+        () => {
+          const notice = notices.appliedFacts(ownerKey);
+          const facts = notice?.facts.filter((fact) => fact.step === undo) ?? [];
+          offered = notice && facts.length ? { surface: notice.surface, facts } : null;
+        },
+      );
       let stopWatch = () => {};
       let watching = true;
       const leftStack = () => {
@@ -394,6 +412,9 @@ export function useWorkBranchCommands({
               answer,
             }),
           over: () => owner.applied.delete(step),
+          reopened: () => {
+            if (offered && watching) notices.showApplied({ projectId, ownerKey, ...offered });
+          },
         });
       if (redone) redone.reentered(init, port);
       step.leftStack = leftStack;

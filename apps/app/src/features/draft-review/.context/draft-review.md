@@ -439,8 +439,10 @@ deleted Work, a chat in Trash) leaves that part applied and names it in `held`. 
 force at its place, in the sidebar's stack and in every history, and a press passes over it while
 every owner it waits for is closed (`waitsForClosed`, `DocumentHistory`'s `passedOver`), then takes
 it once one reopens. Closed is read in the tab (`useClosedOwners`: the Works list, each lineage's
-`frozen`, the sources that ended), which tells the held Apply's histories when that changes, so the
-toolbar's Undo comes back without a keystroke. A band's Un-Apply that took the text back but held a
+`frozen`, the sources that ended; one reader per project, since an Apply outlives the component
+that applied it), which tells the held Apply when that changes. On a reopen the toolbar's Undo comes
+back without a keystroke, the line naming the owner ends, and the Changes rows whose "Undo applying"
+the held press replaced offer it again (`reopened`). A band's Un-Apply that took the text back but held a
 tree fact hands the fact to the sidebar's stack as its own step (`handOff`): tree changes are
 undone there. The press after an answer is a new Un-Apply; a resend after a lost answer is the
 same one.
