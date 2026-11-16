@@ -232,9 +232,10 @@ A model edit as a command records its own, in its transaction ([model edits](mod
 A write to a Work draft that a Discard or a restore closed after the model last read it lands in
 a new draft (`closedDraftSeen` in `model-edit-write.ts`), seeded from the document as it stands,
 and the result says the earlier draft closed and this edit opened a new one. The core plans on
-the current text, and finds a block only the closed draft held in the model's view of it
-(`supersededWorkDraftId`, `tool/gone-targets.ts`): its words land after the nearest block both
-hold, and a remove of it changes nothing. A removed document, an archived or deleted Work's draft
+the current text. The core resolves the write's selectors in the model's view of the closed draft
+(`supersededWorkDraftId`) and carries the result onto the new draft by block hash
+(`resolver/carry.ts`): blocks it lacks get their words after the nearest block both hold, and a
+remove of them changes nothing; the Discard's restored text is never in scope. A removed document, an archived or deleted Work's draft
 return the write instead: a `done` row with `settled: returned`, and the document as that chat
 reads it now, its evidence stored in the row so the model's next write plans on it. A block the
 writer deleted, merged or moved in a draft that is still open is returned too (`block_gone`, from

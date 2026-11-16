@@ -1,4 +1,4 @@
-import { CodecParseError, type ParsedContent, type ParsedContentWithSpans } from "@meridian/markup";
+import { CodecParseError, type ParsedContent } from "@meridian/markup";
 import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
@@ -10,6 +10,7 @@ import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
 import { alignBlocks } from "./block-alignment.js";
+import { carrySteps } from "./carry.js";
 import {
   cutTextWindows,
   documentBodies,
@@ -19,11 +20,11 @@ import {
   type SplicedGroup,
   spliceFindMatches,
   type TextFindMatch,
-  type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
 import { landCopies } from "./land-copies.js";
 import { lowerBlock } from "./lower-block.js";
+import type { CutWindows, PlainEdit, PlannedStep } from "./planned-step.js";
 import {
   type BlockScope,
   resolveScope,
@@ -105,14 +106,25 @@ export type WritePlan =
   | {
       ok: true;
       written: readonly Block[];
+      /** Where the words landed, when that is not where the model aimed. */
+      note?: string;
       /** Ref assignment, then block alignment and no-op detection. */
       assign(links: WriteLinks): ResolveWriteResult;
     }
   | ResolveWriteFailure;
 
+/**
+ * A write whose selectors the model chose in `view`, its own earlier cut of a document that
+ * has since been replaced by the one being written (`view` is null when that cut can't be read).
+ */
+export interface CarryFrom {
+  view: DocHandle | null;
+}
+
 export function planWrite(
   ctx: Omit<ResolveWriteContext, "links">,
   params: ResolveWriteParams,
+  carry?: CarryFrom,
 ): WritePlan {
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
@@ -128,18 +140,9 @@ export function planWrite(
   };
   const normalized = normalizeParams(concreteCtx, params);
 
-  let planned: PlannedWrite | ResolveWriteFailure;
-  switch (normalized.command) {
-    case "insert":
-      planned = planInsert(concreteCtx, normalized);
-      break;
-    case "replace":
-      planned = planReplace(concreteCtx, normalized);
-      break;
-    case "remove":
-      planned = planRemove(concreteCtx, normalized);
-      break;
-  }
+  const planned = carry
+    ? planCarried(concreteCtx, normalized, carry)
+    : planCommand(concreteCtx, normalized);
   if (!("steps" in planned)) return planned;
   const steps = planned.steps;
   return {
@@ -151,6 +154,7 @@ export function planWrite(
           ? []
           : step.blocks,
     ),
+    ...(planned.note ? { note: planned.note } : {}),
     assign(links) {
       const resolved = assignPlannedWrite(concreteCtx, normalized, steps, links);
       if (!resolved.ok) return resolved;
@@ -163,6 +167,65 @@ export function planWrite(
   };
 }
 
+function planCommand(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+): PlannedWrite | ResolveWriteFailure {
+  switch (params.command) {
+    case "insert":
+      return planInsert(ctx, params);
+    case "replace":
+      return planReplace(ctx, params);
+    case "remove":
+      return planRemove(ctx, params);
+  }
+}
+
+/**
+ * Plans the write where the model chose its selectors, in its view, then carries the result
+ * onto the current document by block identity. Resolving on the current document would count,
+ * span and match against text the model never saw, and so delete it.
+ */
+function planCarried(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+  { view }: CarryFrom,
+): PlannedWrite | ResolveWriteFailure {
+  if (!view) {
+    // Nothing says where the model aimed: its words land at the end, and nothing is removed.
+    if (params.command === "remove") return { steps: [] };
+    const landed = planInsert(ctx, {
+      ...params,
+      command: "insert",
+      after: undefined,
+      before: undefined,
+      find: undefined,
+      in: undefined,
+      around: undefined,
+    });
+    return "steps" in landed
+      ? {
+          ...landed,
+          note: "Your earlier view of this file was not available, so your text landed at the end.",
+        }
+      : landed;
+  }
+  const seen = hashLocateContext(ctx.model, ctx.model.projectBlocks(view));
+  const viewCtx: ConcreteResolveContext = {
+    ...ctx,
+    doc: view,
+    projected: seen.projected,
+    blocks: seen.blocks,
+  };
+  const planned = planCommand(viewCtx, params);
+  if (!("steps" in planned)) return planned;
+  const { documentId, filePath } = params.documentAddress;
+  return carrySteps(viewCtx.projected, ctx.projected, planned.steps, {
+    documentId,
+    file: filePath,
+  });
+}
+
 /** Plan and assign in one go, for callers whose written content is known up front. */
 export function resolveWrite(
   ctx: ResolveWriteContext,
@@ -172,34 +235,9 @@ export function resolveWrite(
   return plan.ok ? plan.assign(ctx.links) : plan;
 }
 
-/** One planned piece of a write, in edit order. */
-type PlannedStep =
-  /** Edits that need no ref assignment: removes and copies. */
-  | { kind: "edits"; edits: ResolvedEdit[] }
-  | { kind: "insert"; after: BlockRef | undefined; blocks: Block[]; assign: boolean }
-  /** Rewrite `scope` as `blocks`, assigned against the scope's old nodes. */
-  | { kind: "replace"; scope: BlockScope; blocks: Block[] }
-  /** A find's reconstructed group: only the splice's occurrences are assigned. */
-  | {
-      kind: "spliced";
-      scope: BlockScope;
-      oldGroup: Block[];
-      oldText: string;
-      oldSpans: ParsedContentWithSpans["spans"];
-      newText: string;
-      parsed: ParsedContentWithSpans;
-      splice: SplicedGroup["splice"];
-      /** Each block's text windows the find's cuts cover, old and new; null when unmappable. */
-      windows: CutWindows | null;
-    };
-
-interface CutWindows {
-  old: TextWindow[][];
-  new: TextWindow[][];
-}
-
 interface PlannedWrite {
   steps: PlannedStep[];
+  note?: string;
 }
 
 function assignPlannedWrite(
@@ -512,7 +550,7 @@ function lowerInsertPosition(
   return last ? { ok: true, after: last, beside: blocks.length - 1 } : { ok: true, beside: null };
 }
 
-function deleteEdits(params: NormalizedParams, scope: BlockScope): ResolvedEdit[] {
+function deleteEdits(params: NormalizedParams, scope: BlockScope): PlainEdit[] {
   return scope.blocks.map((element) => ({
     documentId: params.documentAddress.documentId,
     file: params.documentAddress.filePath,
