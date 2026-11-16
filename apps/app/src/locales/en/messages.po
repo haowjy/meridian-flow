@@ -8506,8 +8506,8 @@ msgstr "You discarded the draft this change was made on, so it wasn't kept. The 
 #~ msgstr "You don't have access to change this."
 
 #: src/features/connections/ConnectionsSection.tsx
-msgid "You have {MCP_CONNECTIONS_PER_ACCOUNT} connections, the most you can have. Remove one to add another."
-msgstr "You have {MCP_CONNECTIONS_PER_ACCOUNT} connections, the most you can have. Remove one to add another."
+#~ msgid "You have {MCP_CONNECTIONS_PER_ACCOUNT} connections, the most you can have. Remove one to add another."
+#~ msgstr "You have {MCP_CONNECTIONS_PER_ACCOUNT} connections, the most you can have. Remove one to add another."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."

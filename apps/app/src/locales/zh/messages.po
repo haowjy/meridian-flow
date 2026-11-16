@@ -8506,8 +8506,8 @@ msgstr ""
 #~ msgstr "你没有修改此内容的权限。"
 
 #: src/features/connections/ConnectionsSection.tsx
-msgid "You have {MCP_CONNECTIONS_PER_ACCOUNT} connections, the most you can have. Remove one to add another."
-msgstr ""
+#~ msgid "You have {MCP_CONNECTIONS_PER_ACCOUNT} connections, the most you can have. Remove one to add another."
+#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
