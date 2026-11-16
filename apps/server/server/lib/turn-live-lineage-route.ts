@@ -22,7 +22,7 @@ import { isFileAccessDenied } from "../domains/file-policy/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
 import { requireRequestId } from "./request-id.js";
-import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
+import { getTurnReceiptChip } from "./work-receipt-reversal.js";
 
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
@@ -51,7 +51,7 @@ export async function handleTurnLiveLineageRequest(
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId") as TurnId;
   await requireThreadOwner({ threads: deps.threads }, threadId, input.userId);
-  const [visibleDocuments, folders, receipt, workAvailability] = await Promise.all([
+  const [visibleDocuments, folders, receipt] = await Promise.all([
     deps.documentSync.listEditedDocumentsForTurn(threadId, turnId).then((documents) =>
       filterAccessibleLiveLineageDocuments(deps, {
         documents,
@@ -59,22 +59,8 @@ export async function handleTurnLiveLineageRequest(
       }),
     ),
     deps.documentSync.listFoldersForTurn(threadId, turnId),
-    deps.documentSync.getTurnReceiptChip(threadId, turnId),
-    getWorkReceiptReversalAvailability(
-      {
-        blocks: deps.blocks,
-        turns: deps.turns,
-        works: deps.works,
-        threads: deps.threads,
-      },
-      { threadId, turnId },
-    ),
+    getTurnReceiptChip(deps, { threadId, turnId }),
   ]);
-  const workReceipt = workAvailability.undo
-    ? ({ state: "live-active", control: "undo" } as const)
-    : workAvailability.redo
-      ? ({ state: "undone", control: "view_change" } as const)
-      : null;
   return {
     documents: inTreeOrder<TurnEditedDocument | TurnTreeFolder>([
       ...visibleDocuments,
@@ -83,7 +69,7 @@ export async function handleTurnLiveLineageRequest(
     ]).map((row) =>
       "nodeId" in row ? serializeLiveLineageFolder(row) : serializeLiveLineageDocument(row),
     ),
-    receipt: receipt ?? workReceipt,
+    receipt,
   };
 }
 

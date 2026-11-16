@@ -516,7 +516,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId: OTHER.threadId as never,
             turnId: OTHER.turnId as never,
             userId: USER_ID as never,
-            direction: "undo",
             commandId: randomUUID() as never,
           },
         );
@@ -800,7 +799,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadId: THREAD.threadId as never,
               turnId: THREAD.turnId as never,
               userId: USER_ID as never,
-              direction: "undo",
               commandId: commandId as never,
             },
           );
@@ -938,7 +936,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       const card = (
         script: Awaited<ReturnType<typeof start>>,
-        direction: "undo",
         commandId = randomUUID(),
         thread = THREAD,
       ) =>
@@ -952,7 +949,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId: thread.threadId as never,
             turnId: thread.turnId as never,
             userId: USER_ID as never,
-            direction,
             commandId: commandId as never,
           },
         );
@@ -972,7 +968,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const script = await madeWorkAndEdited();
         expect(await ch1(script)).toContain("ONE");
         const id = randomUUID();
-        const undone = await card(script, "undo", id);
+        const undone = await card(script, id);
         expect(undone.workReceipts, JSON.stringify(undone)).toEqual([
           expect.objectContaining({ workId: NEW_WORK_ID, status: "reversed" }),
         ]);
@@ -981,7 +977,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ch1(script)).toContain("one");
         expect(await claims()).toBe(1);
         // The same click again: the stored answer, nothing done twice.
-        expect(await card(script, "undo", id)).toEqual(undone);
+        expect(await card(script, id)).toEqual(undone);
         expect(await claims()).toBe(1);
       });
 
@@ -992,7 +988,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           throw new Error("crash between the halves");
         });
         try {
-          await expect(card(script, "undo", id)).rejects.toThrow("crash between the halves");
+          await expect(card(script, id)).rejects.toThrow("crash between the halves");
         } finally {
           remove();
         }
@@ -1000,7 +996,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ch1(script)).toContain("ONE");
         expect(await claims()).toBe(0);
         // The id is free: the same click, sent again, takes effect once.
-        const undone = await card(script, "undo", id);
+        const undone = await card(script, id);
         expect(undone.workReceipts?.[0]?.status).toBe("reversed");
         expect(await workDeleted()).toBe(true);
         expect(await ch1(script)).toContain("one");
@@ -1012,7 +1008,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const raced = await race<"undo" | "delete">(
           db,
           {
-            undo: () => card(script, "undo"),
+            undo: () => card(script),
             delete: () =>
               runWorkLifecycleCommand(app.works.transaction, () =>
                 app.works.softDelete(NEW_WORK_ID as never, app.stopThreads),
@@ -1034,7 +1030,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const raced = await race<"undo" | "inbox">(
           db,
           {
-            undo: () => card(script, "undo"),
+            undo: () => card(script),
             inbox: () => threadLock.withThreadLock(NEW_WORK_THREAD as never, async () => "held"),
           },
           "undo",
@@ -1050,7 +1046,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const script = await madeWorkAndEdited();
         const raced = await race<"first" | "second">(
           db,
-          { first: () => card(script, "undo"), second: () => card(script, "undo") },
+          { first: () => card(script), second: () => card(script) },
           "first",
           "inverse.beforeCommitScope",
         );
@@ -1073,7 +1069,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           const raced = await race<"undo" | "draft">(
             db,
             {
-              undo: () => card(script, "undo"),
+              undo: () => card(script),
               draft: () =>
                 other.reply(async (edit) => {
                   await edit("write", {

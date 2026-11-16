@@ -266,8 +266,15 @@ asks with `undoAnswer`, which writes nothing, inside its one read of each list:
 - `changed_since` or `purged`: the receipt stays, a skip with that cause, in the chip's skips
   and the Undo's alike. A reply whose only parts stayed answers `not_undone`.
 
-The Work half of a card Undo doesn't depend on the documents' fate: it runs on every status but
-a command refused whole (a denied grant).
+The Work half (`lib/work-receipt-reversal.ts`) has fates of its own, one per Work, from where
+the turn started and ended it: `taken` when the Work stands as the turn found it (the writer
+deleted the Work the model made, or an earlier Undo did), `acts` when it stands as the turn left
+it, and `stayed` anywhere else (the writer renamed it since). A taken Work counts as reversed, so
+a second Undo answers `reversed`; a stayed one is a part the Undo left (`partial`, or `expired`
+when nothing else was taken back); only a Work step that throws is `partial_failure`. It runs
+after every document outcome. The reply's chip is composed once (`getTurnReceiptChip` there):
+Undo while any part acts, Undone when every part is taken, `partly` when some stayed, with the
+documents' and tree's skips; a Work has no skip kind of its own.
 
 A released closed draft has no bytes from which to describe a receipt's prose.
 Live has unrelated Yjs identity, so skipped inverse parts can retain their cause

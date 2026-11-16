@@ -44,7 +44,6 @@ export default defineEventHandler(async (event) => {
     const outcome = await reverseTurnCard(app, {
       threadId,
       userId: user.userId,
-      direction: "undo",
       turnId,
       commandId: body.commandId,
     });

@@ -148,15 +148,10 @@ export function TurnEditsReceipt({
         outcome.status === "partial" && outcome.acceptedParts
           ? null
           : refusedReversalStatus(outcome.status);
-      // A Work-only turn has no document half, so its "nothing to undo" is a
-      // fact about documents that were never part of the claim. With a Work
-      // restored, repeating it would report a successful restore as refusal.
-      const documentHalfEmpty =
-        !hasEditedDocuments && restored.length > 0 && status === "nothing_to_undo";
       // A part a closed Work kept as it was is listed below with its reason; it isn't a refusal.
       const onlyReturned =
         !!outcome.skips?.length && outcome.skips.every((skip) => skip.cause === "returned");
-      const refusal = status && !documentHalfEmpty && !onlyReturned ? status : null;
+      const refusal = status && !onlyReturned ? status : null;
       // Several tree changes that stayed are listed, each with why, under the list's heading.
       const stayed = outcome.skips?.length === 1 ? outcome.skips[0] : undefined;
       setCommandRefusal(

@@ -57,7 +57,7 @@ export interface WorkReversalResult {
   projectId: string;
   workId: string;
   name: string;
-  status: "reversed" | "redone" | "unavailable" | "already_applied" | "failed";
+  status: "reversed" | "unavailable" | "failed";
   message?: string;
 }
 

@@ -108,7 +108,8 @@ surface.
 Work mutation rows consume the shared structured receipt contract. The server
 supplies operation, identity, before/after facts, and a typed inverse; this
 surface maps those facts through the active Lingui catalog. Idempotent receipts
-do not claim a change.
+do not claim a change. The chip's `state` covers the Work part too: a reply that made a Work
+offers Undo while that Work still stands as the reply left it, whatever its documents did.
 
 ## Reveal staging
 
