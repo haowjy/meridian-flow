@@ -40,7 +40,7 @@ authority to Discard.
   numbered `X`, `X~1` in document order, so one id can name another edit in the other frame.
   Where the two frames' draft blocks are equal (the base lag), an edit is the one over the same
   draft tokens; where their bases are equal, over the same base tokens; otherwise only an edit
-  with no repeat in either frame is named. A chosen change with no name stays in the draft: an
+  with no repeat in either frame, and the same three base tokens on each side of it in both, is named. A chosen change with no name stays in the draft: an
   Apply says `left_out_not_on_server`, a Discard says `left_out_not_in_draft` ("The draft didn't
   have this change as you saw it, so it wasn't discarded. It's kept in the draft."); a command
   never answers silently.
