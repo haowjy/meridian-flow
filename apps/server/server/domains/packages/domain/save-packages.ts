@@ -346,7 +346,15 @@ export function createPackageSaver(input: {
               .map((path) => [`${folder}${path}`, { base: was[path], target: to[path] }]),
           );
           if (Object.keys(files).length > 0) {
-            await levelFiles.mergeFiles({ level, userId, projectId, files });
+            const prepared = await levelFiles.prepareFiles({
+              level,
+              userId,
+              projectId,
+              files,
+              create: false,
+              delete: false,
+            });
+            await prepared.applyFiles();
           }
         }));
       if (result?.undone) input.onSaved?.(userId, projectId, level);

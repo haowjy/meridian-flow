@@ -246,6 +246,10 @@ one source's tree contributes.
   identity destination through the router's one resolver (`destination_missing` when the
   folder is gone, `permission_denied` when the writer cannot edit it), then the destination
   adapter inserts the plan (`copyInto`) as one `submit`.
+  Copy and Agent files share `copy/bind-tree.ts` and `adapters/context-fs/copy-tree.ts`:
+  Copy binds document blocks; Agent files bind plain code text for the planned address. The
+  insertion accepts several destination folders in one submission, installs their initial
+  states atomically, and schedules projections after commit. A failed plan creates no folders.
 - Names are the destination namespace's, so its adapter plans them (`planCopy`): allocated
   against live occupants and the rest of the batch, from a lock-free read of the destination
   parent ([naming conflicts never

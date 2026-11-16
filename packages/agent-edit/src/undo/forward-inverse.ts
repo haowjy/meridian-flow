@@ -374,46 +374,8 @@ function planInverse(
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
-  // A replacement is a deleted run with the part's insertion beside it. Bringing the deleted run back
-  // alone doubles the text only when that insertion is gone and someone wrote there after the part
-  // (a replacement by the writer or a pull); a plain deletion of the insertion leaves the gap empty.
-  const removingItems = new Set<Y.Item>();
-  for (const { original } of removing) {
-    const item = find(index.doc, original);
-    if (item) removingItems.add(item);
-  }
-  const strandedItems = new Map<Y.Item, boolean>();
-  const strandedByRemoval = (original: Key): boolean => {
-    const item = find(index.doc, original);
-    if (!item) return false;
-    const known = strandedItems.get(item);
-    if (known !== undefined) return known;
-    let paired = false,
-      standing = false,
-      newer = false;
-    for (const step of ["left", "right"] as const) {
-      let near = item[step];
-      for (; near?.deleted; near = near[step]) paired ||= removingItems.has(near);
-      if (!near) continue;
-      // The character touching the gap, followed back to its original: an Undo- or Redo-restored
-      // copy has a client the part's frontier never saw, but it is not newer writing.
-      const edge = key({
-        client: near.id.client,
-        clock: near.id.clock + (step === "left" ? near.length - 1 : 0),
-      });
-      if (removingSet.has(edge)) standing = true;
-      else {
-        const origin = parse(index.root(edge));
-        newer ||= origin.clock >= (part.frontier[origin.client] ?? 0);
-      }
-    }
-    const stranded = paired && !standing && newer;
-    strandedItems.set(item, stranded);
-    return stranded;
-  };
   const candidates = new Set(
     returning
-      .filter(({ original }) => !strandedByRemoval(original))
       .map((pair) => pair.effective)
       .filter((k) => !!find(index.doc, k) && !index.isVisible(k) && authorized(k)),
   );
@@ -479,88 +441,6 @@ function classify(index: Lineage, part: InversePart): PartClassification {
   } catch (error) {
     return changed(error instanceof Error ? error.message : String(error));
   }
-}
-type Unit = { k: Key; ch: string } | null;
-/** A text block's visible characters in reading order; `null` is an inline atom. */
-function blockUnits(block: Y.AbstractType<unknown>): Unit[] {
-  const out: Unit[] = [];
-  for (let child = block._start; child; child = child.right) {
-    if (child.deleted) continue;
-    const text = child.content instanceof Y.ContentType ? child.content.type : null;
-    if (!(text instanceof Y.XmlText)) {
-      out.push(null);
-      continue;
-    }
-    for (let item = text._start; item; item = item.right) {
-      if (item.deleted) continue;
-      if (item.content instanceof Y.ContentString)
-        for (let n = 0; n < item.length; n++)
-          out.push({
-            k: key({ client: item.id.client, clock: item.id.clock + n }),
-            ch: item.content.str[n],
-          });
-      else if (!(item.content instanceof Y.ContentFormat)) out.push(null);
-    }
-  }
-  return out;
-}
-/** Each word (a run with no whitespace and no atom) that holds a character `later` accepts, by that character. */
-function laterWords(units: readonly Unit[], later: (k: Key) => boolean): Map<Key, string> {
-  const out = new Map<Key, string>();
-  let word: { k: Key; ch: string }[] = [];
-  const close = () => {
-    const held = word.filter((unit) => later(unit.k));
-    if (held.length) {
-      const str = word.map((unit) => unit.ch).join("");
-      for (const unit of held) out.set(unit.k, str);
-    }
-    word = [];
-  };
-  for (const unit of units) {
-    if (unit && !/\s/.test(unit.ch)) word.push(unit);
-    else close();
-  }
-  close();
-  return out;
-}
-/**
- * Whether the inverse that took `before` to `after` changed a word holding later writing: a
- * visible character written after `part` (a clock at or past its frontier, read on the original
- * of an Undo- or Redo-restored copy) that is not the part's own.
- */
-function changesLaterWord(
-  index: Lineage,
-  part: InversePart,
-  before: Y.Doc,
-  after: Y.Doc,
-  receipt: CapturedPart,
-): boolean {
-  const own = new Set(index.rootsFor(part.effect));
-  const later = (k: Key) => {
-    const root = index.root(k);
-    if (own.has(root)) return false;
-    const origin = parse(root);
-    return origin.clock >= (part.frontier[origin.client] ?? 0);
-  };
-  const blocks = new Map<Key, Y.Item>();
-  for (const range of [...receipt.effect.inserted, ...receipt.effect.deleted])
-    for (const { item } of itemsInRange(after, range)) {
-      const parent = item.parent instanceof Y.XmlText ? item.parent._item?.parent : item.parent;
-      const block = parent instanceof Y.AbstractType ? parent._item : null;
-      if (block) blocks.set(key(block.id), block);
-    }
-  for (const [k, block] of blocks) {
-    const was = find(before, k);
-    if (!was || !(was.content instanceof Y.ContentType)) continue;
-    const words = laterWords(blockUnits(was.content.type), later);
-    if (!words.size) continue;
-    const now = laterWords(
-      block.deleted ? [] : blockUnits((block.content as Y.ContentType).type),
-      (unit) => words.has(unit),
-    );
-    for (const [unit, word] of words) if (now.get(unit) !== word) return true;
-  }
-  return false;
 }
 /** Dry run only. Policy decides selection, destination, locking and partial acceptance. */
 export function classifyEditParts(
@@ -662,8 +542,6 @@ function admitPreparedInverseReceipt(
 export interface InverseAction {
   actionId: string;
   allocateClient: (doc: Y.Doc) => number;
-  /** Leave a part standing (`changed`) when its inverse would change a word holding later writing. */
-  keepLaterWords?: boolean;
 }
 /** Compute on an owned cold replica. The caller admits/persists the deltas under its lock. */
 export function computeInverse(
@@ -684,7 +562,7 @@ function computePreparedInverse(
 ): ComputedInverse {
   if (!action.actionId) throw new Error("Inverse requires an action ID");
   if (!selection.length) return { actionId: action.actionId, edits: [], skipped: [] };
-  let scratch = new Y.Doc({ gc: false });
+  const scratch = new Y.Doc({ gc: false });
   Y.applyUpdate(scratch, Y.encodeStateAsUpdate(doc));
   const local = [...history],
     result: ComputedInverse = { actionId: action.actionId, edits: [], skipped: [] };
@@ -721,7 +599,7 @@ function computePreparedInverse(
         snapshot = snapshotRedone(scratch);
       const client = action.allocateClient(scratch);
       if (frontier[client] !== undefined) throw new Error("Inverse client is not fresh");
-      let before = new Y.Doc({ gc: false });
+      const before = new Y.Doc({ gc: false });
       Y.applyUpdate(before, Y.encodeStateAsUpdate(scratch));
       let updates: Uint8Array[];
       try {
@@ -737,11 +615,6 @@ function computePreparedInverse(
         const update = Y.mergeUpdates(updates),
           receipt = captureEditParts(scratch, [{ update, frontier }])[0];
         receipt.aliases = captureAliases(scratch, snapshot);
-        if (action.keepLaterWords && changesLaterWord(index, part, before, scratch, receipt)) {
-          result.skipped.push({ part, state: "changed", reasons: ["later writing in its word"] });
-          [scratch, before] = [before, scratch];
-          continue;
-        }
         admitPreparedInverseReceipt(before, local, [part], receipt, index);
         const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal, direction }];
         let edit = groups.get(part.editId);

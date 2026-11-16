@@ -221,6 +221,16 @@ function runSeed(seed: number): {
         const liveBefore = standing(replayView(writer.doc, LIVE));
         // Apply lands what can land and leaves the rest pending.
         const viewBefore = viewRecords(writer.doc, view);
+        // A drafted record the view skips cannot land, chosen or not.
+        const skippedBefore = replayView(writer.doc, view).skipped.map(({ record }) => record);
+        // Records of which a live copy is in force: an earlier Apply's, back by an Undo of its
+        // Un-Apply's Undo. One Undo takes out every copy, so Un-Apply of this Apply takes it too.
+        const liveInForce = replayView(writer.doc, LIVE).inForce;
+        const inLive = new Set(
+          viewRecords(writer.doc, LIVE).flatMap((op) =>
+            op.carries !== undefined && liveInForce.has(op.id) ? [op.carries] : [],
+          ),
+        );
         const landed = applyDraft(writer, view.draft, "user:w", cmd(), some);
         const landing = landed.left.length > 0;
         if (landed.left.length > 0) leftPending += 1;
@@ -230,7 +240,8 @@ function runSeed(seed: number): {
           // Undo took back) answers `changed_since` and stays; everything else goes back.
           const result = undoApply(writer, landed.command, "user:w", cmd());
           undone += 1;
-          if (result.left.length === 0) {
+          const doubled = landed.copies.some((op) => inLive.has(op.carries as string));
+          if (result.left.length === 0 && !doubled) {
             expect(standing(replayView(writer.doc, LIVE)), `seed ${seed} undo apply live`).toBe(
               liveBefore,
             );
@@ -244,11 +255,12 @@ function runSeed(seed: number): {
           continue;
         }
         // An Apply leaves the draft reading as it did. A record that cannot land may start
-        // to take effect once the rest has landed, so with such records the views are compared
-        // without them.
+        // to take effect once the rest has landed (a skipped move whose cycle a landed move
+        // ended), so with such records the views are compared without them.
         // (Why a deleted folder still stands may change: a pending change kept it, and now
         // what landed inside it does. The shape is what must not change.)
-        if (landed.left.length === 0 && landed.superseded.length === 0)
+        const cannotLand = landed.left.length > 0 || skippedBefore.length > 0;
+        if (!cannotLand && landed.superseded.length === 0)
           expect(
             fingerprint(replayView(writer.doc, view), false),
             `seed ${seed} partial apply`,
@@ -256,14 +268,17 @@ function runSeed(seed: number): {
         else {
           // A record settled as superseded was already overridden in the draft, so the whole
           // view must read the same once the rest that could land has landed.
-          if (landed.left.length === 0)
+          if (!cannotLand)
             expect(
               fingerprint(replayView(writer.doc, view), false),
               `seed ${seed} apply with superseded`,
             ).toBe(shapeBefore);
-          const cannot = new Set(
-            [...landed.left.map(({ record }) => record), ...landed.superseded].map((op) => op.id),
-          );
+          const cannot = new Set([
+            ...[...landed.left.map(({ record }) => record), ...landed.superseded].map(
+              (op) => op.id,
+            ),
+            ...skippedBefore,
+          ]);
           const without = (ops: readonly TreeRecord[]) =>
             fingerprint(
               replay(
