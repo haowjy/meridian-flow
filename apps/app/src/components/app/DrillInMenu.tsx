@@ -174,12 +174,18 @@ export function useDrill({
   /** The focusable rows inside `scopeRef`. */
   rowSelector?: string;
 }): Drill {
-  const [trail, setTrail] = useState<readonly DrillNode[]>(openAt);
+  const [stepped, setTrail] = useState<readonly DrillNode[]>(openAt);
   const [exitedId, setExitedId] = useState<string | null>(null);
   const scopeRef = useRef<HTMLDivElement>(null);
   const focusFirstRow = useCallback(() => {
     requestAnimationFrame(() => scopeRef.current?.querySelector<HTMLElement>(rowSelector)?.focus());
   }, [rowSelector]);
+  // The trail remembers which folders were entered; each is read again from the live tree, so a
+  // folder renamed or moved while the menu is open shows its current name.
+  const trail = stepped.map((node, depth) => {
+    const parentId = depth === 0 ? null : stepped[depth - 1].id;
+    return tree.children(parentId).find((live) => live.id === node.id) ?? node;
+  });
   // Drilling unmounts the focused row, so every drill moves focus to the new level.
   const drillTo = (next: readonly DrillNode[]) => {
     setExitedId(next.length < trail.length ? (trail.at(-1)?.id ?? null) : null);
