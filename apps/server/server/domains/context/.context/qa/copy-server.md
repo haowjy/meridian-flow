@@ -49,9 +49,14 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    `live`. A folder with a draft view copies each document as the Work shows it: the draft text
    where the Work holds a draft, otherwise the live text. The draft is the
    Work's, whichever chat wrote it: rebind the chat to another Work, and `--draft-work w1`
-   still copies Work w1's draft. Discard the draft (Discard all) and copy again with the
-   draft view: the closed draft's text, not the live one. A Work that never drafted the
-   document reads the live text (its draft view showed live).
+   still copies Work w1's draft. Close the draft with a Discard all that ends it
+   (`./mf api POST /api/projects/<id>/branches/<branchId>/discard --data
+   '{"commandId":"<uuid>","all":true}'`; the branch id is in `GET .../drafts?owner=work:<workId>`)
+   and copy again with the draft view: the closed draft's text, not the live one, also for a
+   folder's documents. A Work that never drafted the document reads the live text (its draft
+   view showed live). The strip's Discard in a browser tab is not this case: for a live chat it
+   reverts the text in the room and leaves the draft open and equal to live, so the copy is the
+   live text, which is what Draft view shows.
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
    in one transaction (about 4 s here, most of it reading the sources before any
    lock), the ring closes inside the copy, and concurrent copies into one folder get
