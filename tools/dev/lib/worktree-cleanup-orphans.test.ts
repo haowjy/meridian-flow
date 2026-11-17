@@ -48,7 +48,7 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
     return result.stdout.trim();
   }
 
-  function session(root: string, name?: string, command = "sleep 60"): string {
+  async function session(root: string, name?: string, command = "sleep 60"): Promise<string> {
     fs.mkdirSync(root, { recursive: true });
     const sessionName =
       name ??
@@ -57,6 +57,11 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
         repoRootRealpath: root,
       }).sessionName;
     tmux("new-session", "-d", "-s", sessionName, "-c", root, command);
+    // tmux 3.6 (Ubuntu 26.04) asks systemd for a cgroup before the pane enters `-c`; deleting the
+    // checkout sooner leaves the pane in $HOME, which correctly proves no ownership.
+    await expect
+      .poll(() => tmux("display-message", "-p", "-t", `=${sessionName}:`, "#{pane_current_path}"))
+      .toBe(fs.realpathSync(root));
     return sessionName;
   }
 
@@ -64,7 +69,7 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
     return run("bun", [cli, "--orphans", ...args]);
   }
 
-  function stubbornSession(root: string, spawnChildOnTerm = false): string {
+  function stubbornSession(root: string, spawnChildOnTerm = false): Promise<string> {
     const script = path.join(temp, "stubborn.mjs");
     fs.writeFileSync(
       script,
@@ -143,9 +148,9 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
     fs.rmSync(temp, { recursive: true, force: true });
   });
 
-  it("previews and cancels without mutation, then reclaims a deleted worktree container", () => {
+  it("previews and cancels without mutation, then reclaims a deleted worktree container", async () => {
     const root = `${repo}.worktrees/gone`;
-    const name = session(root);
+    const name = await session(root);
     fs.rmSync(`${repo}.worktrees`, { recursive: true });
     const preview = prune("--dry-run");
     expect(preview.status, preview.stderr).toBe(0);
@@ -159,30 +164,30 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
     expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${name}`])).status).not.toBe(0);
   });
 
-  it("preserves live, foreign, unowned, locked and ambiguous sessions despite inherited Git overrides", () => {
-    const live = session(`${repo}.worktrees/live`);
+  it("preserves live, foreign, unowned, locked and ambiguous sessions despite inherited Git overrides", async () => {
+    const live = await session(`${repo}.worktrees/live`);
     const foreignRepo = path.join(temp, "foreign");
     initRepo(foreignRepo);
     const foreignRoot = `${foreignRepo}.worktrees/gone`;
-    const foreign = session(foreignRoot);
+    const foreign = await session(foreignRoot);
     fs.rmSync(foreignRoot, { recursive: true });
     const userRoot = `${repo}.worktrees/user`;
-    const user = session(userRoot, "user-session");
+    const user = await session(userRoot, "user-session");
     fs.rmSync(userRoot, { recursive: true });
     const wrongRoot = `${repo}.worktrees/wrong-hash`;
-    const wrong = session(wrongRoot, "meridian-gone-deadbeef");
+    const wrong = await session(wrongRoot, "meridian-gone-deadbeef");
     fs.rmSync(wrongRoot, { recursive: true });
     const movedRoot = `${repo}.worktrees/moved`;
-    const moved = session(movedRoot);
+    const moved = await session(movedRoot);
     tmux("split-window", "-d", "-t", `=${moved}:0`, "-c", repo, "sleep 60");
     fs.rmSync(movedRoot, { recursive: true });
     const symlinkRoot = `${repo}.worktrees/link`;
-    const symlink = session(symlinkRoot);
+    const symlink = await session(symlinkRoot);
     fs.rmSync(symlinkRoot, { recursive: true });
     fs.symlinkSync(path.join(temp, "absent"), symlinkRoot);
     const lockedRoot = `${repo}.worktrees/locked`;
     expect(run("git", ["worktree", "add", "--quiet", "-b", "locked", lockedRoot]).status).toBe(0);
-    const locked = session(lockedRoot);
+    const locked = await session(lockedRoot);
     expect(run("git", ["worktree", "lock", lockedRoot]).status).toBe(0);
     fs.rmSync(lockedRoot, { recursive: true });
     env.GIT_DIR = path.join(foreignRepo, ".git");
@@ -194,9 +199,9 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
     }
   });
 
-  it("refuses a stale plan when the checkout reappears before execution", () => {
+  it("refuses a stale plan when the checkout reappears before execution", async () => {
     const root = `${repo}.worktrees/reappeared`;
-    const name = session(root);
+    const name = await session(root);
     fs.rmSync(root, { recursive: true });
     const result = stopScript(`
       fs.mkdirSync(${JSON.stringify(root)});
@@ -208,7 +213,7 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
 
   it("preserves a live-checkout pane added during shutdown", async () => {
     const root = `${repo}.worktrees/changed-panes`;
-    const name = stubbornSession(root);
+    const name = await stubbornSession(root);
     await expect.poll(() => fs.existsSync(path.join(temp, "child.pid"))).toBe(true);
     fs.rmSync(root, { recursive: true });
     const livePidFile = path.join(temp, "live.pid");
@@ -246,7 +251,7 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
       setInterval(() => {}, 1000);
     `,
     );
-    const name = session(root, undefined, `${process.execPath} ${script}`);
+    const name = await session(root, undefined, `${process.execPath} ${script}`);
     await expect.poll(() => fs.existsSync(path.join(temp, "parent.pid"))).toBe(true);
     const pid = fs.readFileSync(path.join(temp, "parent.pid"), "utf8").trim();
     fs.rmSync(root, { recursive: true });
@@ -265,8 +270,8 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
 
   it("reclaims initial and TERM-spawned detached children without touching a live session", async () => {
     const root = `${repo}.worktrees/stubborn`;
-    const name = stubbornSession(root, true);
-    const live = session(`${repo}.worktrees/live`);
+    const name = await stubbornSession(root, true);
+    const live = await session(`${repo}.worktrees/live`);
     await expect.poll(() => fs.existsSync(path.join(temp, "child.pid"))).toBe(true);
     fs.rmSync(root, { recursive: true });
     const result = prune("--yes");
@@ -281,9 +286,9 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
     expect(run("tmux", devTmuxArgs(["has-session", "-t", `=${live}`])).status).toBe(0);
   });
 
-  it("tolerates route contention, retries with zero orphans and leaves dry-run non-mutating", () => {
+  it("tolerates route contention, retries with zero orphans and leaves dry-run non-mutating", async () => {
     const root = `${repo}.worktrees/route-lock`;
-    const name = session(root);
+    const name = await session(root);
     const called = path.join(temp, "route-prune.called");
     fs.writeFileSync(
       path.join(temp, "bin/pnpm"),
@@ -306,7 +311,7 @@ describe.skipIf(!hasTmux)("orphan cleanup (isolated tmux)", { timeout: 15_000 },
 
   it("resumes its paused parent on refusal but leaves an externally stopped child alone", async () => {
     const root = `${repo}.worktrees/resume-on-refusal`;
-    stubbornSession(root);
+    await stubbornSession(root);
     await expect.poll(() => fs.existsSync(path.join(temp, "child.pid"))).toBe(true);
     process.kill(Number(fs.readFileSync(path.join(temp, "child.pid"), "utf8")), "SIGSTOP");
     fs.rmSync(root, { recursive: true });
