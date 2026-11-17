@@ -233,9 +233,7 @@ clock; a restore that brings nothing back is `done` with `restored: 0` and says 
 named this command), `left_out purged` (no command of kind `discard`, `undo_discard` or `unapply`
 is stored under the id: the day-30 purge took it, or it never was; or what the entry held was
 purged), with `leftOut` counting purged nodes beside a partial restore. A restore reopens a draft only if
-Live's text has not overtaken it. A document that is in Trash or not in Live has no writer typing into it,
-so its draft always reopens: after the Un-Apply of a create, Live holds no blocks while the base holds an empty one, and
-comparing them would read as an edit. For a document in Live, `reopen` with `leaveOutEdited` compares, on the base the draft reopens with
+Live's text has not overtaken it: `reopen` with `leaveOutEdited` reads an empty document as no blocks (as `blocksEqual` does: after the Un-Apply of a create, Live holds none while the base keeps an empty paragraph, and nobody edited that) and compares, on the base the draft reopens with
 (its waiting Un-Applies replayed on a copy, since the check runs before the draft is open), the token ranges
 Live changed since that base with the ranges the draft changed, both uncleaned (a long paragraph's
 edits stay small hunks, `boundedDiff`, up to 1,000 edit operations; past that its hunks are `approx` and
