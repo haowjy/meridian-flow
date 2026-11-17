@@ -2,7 +2,11 @@
 
 import { t } from "@lingui/core/macro";
 import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
-import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
+import type {
+  ThreadDraftListItem,
+  ThreadDraftListResponse,
+  UnapplyClickResult,
+} from "@meridian/contracts/branches";
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -36,7 +40,7 @@ import {
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { useClosedOwners } from "@/features/project/context/closed-owners";
-import { AppliedCommand, type ApplyInit, type Seat, serverPort } from "./apply-history";
+import { AppliedCommand, type ApplyInit, againOf, type Seat, serverPort } from "./apply-history";
 import type { RestoreAnswer } from "./discard-restores";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import {
@@ -51,7 +55,7 @@ import {
   unappliedOf,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
-import type { ChangeTarget } from "./review-model";
+import type { ApplyTarget, ChangeTarget } from "./review-model";
 
 export type BranchCommandOutcome = CommandOutcome;
 /** What an Apply that landed landed, which its Undo step is made of. */
@@ -153,11 +157,16 @@ export function useWorkBranchCommands({
     /** A Discard's item left review, taken here or before: all but one an Apply took first. */
     const leftReview = (answer: CommandOutcome, itemKey: string) =>
       (answer.kind === "done" || answer.kind === "settled") && !owner.state(itemKey).failure;
+    /**
+     * Whether an Apply asks for the item's tree records: a Redo's when its Un-Apply took them back,
+     * any other's when the target names them and the row has one pending.
+     */
+    const treeAsked = (target: ApplyTarget, item: ThreadDraftListItem | undefined) =>
+      target.kind === "again"
+        ? target.tree
+        : Boolean((target.kind === "tree" || target.kind === "draft" || target.tree) && item?.tree);
     /** The list item's draft, which an Apply of the whole draft names when no room is open. */
-    const withDraft = (
-      target: ChangeTarget,
-      item: ThreadDraftListItem | undefined,
-    ): ChangeTarget =>
+    const withDraft = (target: ApplyTarget, item: ThreadDraftListItem | undefined): ApplyTarget =>
       target.kind === "draft" && item?.draftId ? { kind: "draft", draftId: item.draftId } : target;
     const blocked = (): CommandStart => ({
       sent: false,
@@ -344,13 +353,18 @@ export function useWorkBranchCommands({
      * An Apply goes on the sidebar's Undo stack as one step (`AppliedCommand`): its Undo is the
      * server's Un-Apply of the whole command, fact by fact: what changed since stays, what a closed
      * owner holds waits in its place, and otherwise the step is spent once pressed. The editors
-     * open on its documents show the same step, and their Redo is `again`, whose Apply the step
-     * becomes. A band's Apply has its editor's Undo instead, and comes onto the stack only when it
-     * holds a tree change (`joinStack`).
+     * open on its documents show the same step, and their Redo is `again`: what the Un-Apply took
+     * back (`answer`), applied again from `drafts`, whose Apply the step becomes. A band's Apply has
+     * its editor's Undo instead, and comes onto the stack only when it holds a tree change
+     * (`joinStack`).
      */
     const rememberApply = (
       data: StepData,
-      again: (step: AppliedCommand) => Promise<StepData | null>,
+      again: (
+        step: AppliedCommand,
+        answer: UnapplyClickResult,
+        drafts: StepData["drafts"],
+      ) => Promise<StepData | null>,
     ): AppliedCommand | null => {
       const made = stepOf(data);
       if (!made) return null;
@@ -377,8 +391,8 @@ export function useWorkBranchCommands({
           if (unappliedOf(answer).taken !== "nothing")
             for (const documentId of documentIds) owner.forgetApplyFacts(projectId, documentId);
         },
-        again: async () => {
-          const landed = await again(step);
+        again: async (answer) => {
+          const landed = await again(step, answer, drafts);
           const next = landed && stepOf(landed);
           if (!landed || !next) return null;
           ({ documentIds, account, branchId, drafts } = {
@@ -420,18 +434,18 @@ export function useWorkBranchCommands({
      */
     const applyOne = (
       draft: DraftReviewSelection,
-      target: ChangeTarget,
+      target: ApplyTarget,
       redone?: AppliedCommand,
     ): CommandStart & { landed: Promise<StepData | null> } => {
       endNotice();
       const item = row(draft);
-      const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
+      const tree = treeAsked(target, item);
       const started = locked
         ? null
         : owner.apply(
             ref(draft),
             withDraft(target, item),
-            Boolean(tree && item?.tree),
+            tree,
             sawNow(),
             surface === "band"
               ? {
@@ -447,7 +461,7 @@ export function useWorkBranchCommands({
       const landed = started.outcome.then((outcome) => {
         if (outcome.kind === "done" && item)
           dropTaken(item, {
-            tree: Boolean(outcome.treeWhole && tree && item.tree),
+            tree: Boolean(outcome.treeWhole && tree),
             text: target.kind === "draft" && (outcome.halves?.text ?? true),
           });
         const name = titleOf(item) ?? t`Untitled document`;
@@ -488,7 +502,12 @@ export function useWorkBranchCommands({
               }
             : null;
         const step =
-          redone ?? (data && rememberApply(data, (step) => applyOne(draft, target, step).landed));
+          redone ??
+          (data &&
+            rememberApply(data, (step, answer, drafts) => {
+              const again = againOf(answer, draft.documentId, drafts[draft.documentId]);
+              return again ? applyOne(draft, again, step).landed : Promise.resolve(null);
+            }));
         if (outcome.kind === "done") applied(draft, [{ item, outcome }], undoOf(step, data));
         if (!owner.state(draft.itemKey).pending) refresh([draft.documentId]);
         return data;
@@ -502,7 +521,7 @@ export function useWorkBranchCommands({
      * command landed, once its Undo step is kept, or null when nothing landed.
      */
     const applyGroup = (
-      items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
+      items: readonly { draft: DraftReviewSelection; target: ApplyTarget }[],
       folders: readonly string[] = [],
       name?: string,
       redone?: AppliedCommand,
@@ -519,8 +538,7 @@ export function useWorkBranchCommands({
         };
       const members = items.map(({ draft, target }) => {
         const item = row(draft);
-        const tree = target.kind === "tree" || target.kind === "draft" || target.tree;
-        return { draft, item, target: withDraft(target, item), tree: Boolean(tree && item?.tree) };
+        return { draft, item, target: withDraft(target, item), tree: treeAsked(target, item) };
       });
       const started = owner.applyGroup({
         projectId,
@@ -584,7 +602,17 @@ export function useWorkBranchCommands({
               : null;
           const step =
             redone ??
-            (data && rememberApply(data, (step) => applyGroup(items, folders, name, step).landed));
+            (data &&
+              rememberApply(data, (step, answer, drafts) => {
+                const again = items.flatMap(({ draft }) => {
+                  const target = againOf(answer, draft.documentId, drafts[draft.documentId]);
+                  return target ? [{ draft, target }] : [];
+                });
+                const back = folders.filter((folder) => answer.treeUndone.includes(folder));
+                return again.length || back.length
+                  ? applyGroup(again, back, name, step).landed
+                  : Promise.resolve(null);
+              }));
           if (first)
             applied(
               first.draft,

@@ -9,7 +9,7 @@ import type {
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { itemOf } from "./draft-notices";
+import { itemLanded, itemOf, textUndoneOf } from "./draft-notices";
 
 export type FrozenApply = {
   body: ApplyClick;
@@ -105,11 +105,8 @@ export type ApplyCommandHandle = {
   undo(): Promise<UnapplyClickOutcome>;
   /** Queues the Redo at once; resolves with what became of it. */
   redo(): Promise<ApplyClickOutcome>;
-  /**
-   * The Apply in force, which a Redo replaces only once it lands, and the click a Redo sends
-   * again (a new command id to fill).
-   */
-  replay(): { applyCommandId: string; again: ApplyClick };
+  /** The Apply in force: its command id, which a Redo replaces only once it lands. */
+  applyInForce(): string;
 };
 type ScheduledApplyHandle = ApplyCommandHandle & {
   /** The latest Apply queued: the one an Un-Apply names, or cancels before it is sent. */
@@ -196,10 +193,7 @@ export class ApplyClickQueue {
     // Either half landing gives the Apply something to take back; a Redo replays text alone.
     const landed = (answer: ApplyClickOutcome) => {
       if (answer.status === "landed") return true;
-      if (answer.status !== "applied") return false;
-      return (
-        itemOf(answer, this.port.node)?.tree?.landed === true || textLanded(answer, this.port.node)
-      );
+      return answer.status === "applied" && itemLanded(answer, this.port.node);
     };
     let handle!: ScheduledApplyHandle;
     handle = {
@@ -294,10 +288,7 @@ export class ApplyClickQueue {
           return answer;
         });
       },
-      replay: () => ({
-        applyCommandId: handle.inForce.body.commandId,
-        again: { ...handle.inForce.body, groupIds: [...handle.replaySelection], tree: undefined },
-      }),
+      applyInForce: () => handle.inForce.body.commandId,
     };
 
     return {
@@ -629,10 +620,11 @@ export class ApplyClickQueue {
     if (this.commands[0] !== command) return;
     if (answer?.status === "unapplied") {
       command.answer = answer;
-      command.groupIds = new Set(answer.reversedGroupIds);
-      command.patched = command.patchFor(answer.reversedGroupIds);
+      const undone = textUndoneOf(answer, this.port.node);
+      command.groupIds = new Set(undone);
+      command.patched = command.patchFor(undone);
       command.selectionChanged(
-        answer.reversedGroupIds,
+        undone,
         answer.treeUndone.includes(this.port.node),
         (answer.held ?? []).length > 0,
       );

@@ -193,8 +193,19 @@ synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. T
 schedule retries the targeted Apply before the inverse when its delivery is unknown and
 withholds later commands behind any stalled intent. The Un-Apply goes when either half of
 the Apply landed: a landed rename with settled text still has something to take back. Redo
-queues a new Apply for the text groups the server actually reversed, and the tree cut when
-the Un-Apply's `treeUndone` names the item.
+queues a new Apply for the text groups the server actually reversed in this document
+(`textUndoneOf`), and the tree cut when the Un-Apply's `treeUndone` names the item.
+
+Every other Redo is the same rule on the server's port: the Un-Apply's answer is the Redo's whole
+selection (`againOf`), never the Apply's original choice, so a partial Ctrl+Z redoes only what it
+took back. Text is read per document (`textUndone`): one change made in two documents has one
+group id, and an Un-Apply that took it back in only one of them redoes it there alone. It is a whole cut that names those groups (`ApplyTextCut` with `groupIds`), cut on
+receipt from the draft as the server holds it, plus the tree cut of each node in `treeUndone`: a
+group the draft no longer holds (a card's Undo took the proposal away) is passed over, and a Redo
+that lands nothing is lost and ends, applying nothing else. Every port reads the same landed rule
+(`itemLanded`: the item's text or tree landed): an `applied` answer only says the command finished. The strip's and sidebar's Applies send
+it as `again` targets through the item queues (`rememberApply`), a band's once its review let go
+of the room through `serverBandPort`.
 
 Existence of a deleted document is its own fact, never read from a name conflict.
 An Apply brings a deleted document back to land what the click carries for it: the click
@@ -497,7 +508,8 @@ port carries the requests and their data and decides nothing: the server's by th
 draft's room, its item queue's, so the review shows both at once. When the review lets go of the
 room (Draft view to Live) the band's Apply switches to the server's port (`serverBandPort`): the
 queue settles an Un-Apply only by watching that room. `owner.applied` (`AppliedCommands`) holds every Apply of the tab, found by its
-command in force, and tells readers when any of them changes.
+command in force while the tab answers for its Undo (not once an editor's press took it back: what
+the server still keeps of it is the server's to answer), and tells readers when any of them changes.
 
 **Redo during an Un-Apply** chains on that attempt's answer: it goes on only when the answer took the
 Apply back (`takenBack`: something went, nothing held), and otherwise the Apply still in force is the

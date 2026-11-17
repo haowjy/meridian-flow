@@ -16,6 +16,7 @@ import {
   type DraftedFate,
   draftedFates,
   LIVE,
+  newestDrafted,
   type TakenBack,
   type TreeWriter,
   takeBackAll,
@@ -55,6 +56,7 @@ function stayedSkip(receipt: TreeReceipt, cause: Stayed, closed?: ClosedSource):
     uri: receipt.shownAt ?? receipt.subject,
     at: receipt.shownAt,
     op: receipt.op,
+    ...(receipt.draftBranchId ? { drafted: true as const } : {}),
   };
   return cause === "closed"
     ? {
@@ -203,8 +205,53 @@ export function createTurnTreeInverse(deps: {
         ),
       );
     const createdDocuments = creates.map((row) => row.id as string);
-    const { open, undoneByCard } = await deps.history().turnSteps(threadId, turnId);
-    if (open.length === 0) return { ...NO_TREE_STEPS, undoneByCard, createdDocuments };
+    const { open: recorded, undoneByCard } = await deps.history().turnSteps(threadId, turnId);
+    if (recorded.length === 0) return { ...NO_TREE_STEPS, undoneByCard, createdDocuments };
+    const ids = recorded.map((step) => step.subject);
+    const listOf = await treeListsOfNodes(deps.db, [...new Set(ids)]);
+    const draftedBy = new Map<string, { list: TreeList; steps: TreeReceipt[] }>();
+    for (const step of recorded) {
+      const list = listOf.get(step.subject);
+      if (!list || !step.draftBranchId) continue;
+      const key = JSON.stringify(list);
+      const entry = draftedBy.get(key) ?? { list, steps: [] };
+      entry.steps.push(step);
+      draftedBy.set(key, entry);
+    }
+    // A drafted change an Apply took is the Apply's to take back (its Un-Apply, which the card
+    // sends): the card's own Undo leaves it, and says nothing of it. A restored Discard put a copy
+    // of a drafted change in the Work's branch as it is now, which may be a new one: the change is
+    // judged and taken back there.
+    const tookIt = new Set<TreeReceipt>();
+    const branchNow = new Map<TreeReceipt, string>();
+    for (const { list, steps } of draftedBy.values()) {
+      const records = steps.flatMap((step) => step.records.map((entry) => entry.record));
+      const read = await deps.treeLists.read({
+        lists: [list],
+        view: ([end]) =>
+          end
+            ? {
+                by: appliedBy(end.writer.doc, records),
+                copies: newestDrafted(end.writer.doc, records),
+              }
+            : {
+                by: new Map<string, string>(),
+                copies: new Map<string, { draft: string | null }>(),
+              },
+      });
+      for (const step of steps) {
+        if (step.records.every((entry) => read.by.has(entry.record))) tookIt.add(step);
+        const branch = step.records
+          .map((entry) => read.copies.get(entry.record)?.draft)
+          .find(Boolean);
+        if (branch) branchNow.set(step, branch);
+      }
+    }
+    const open = recorded.map((step) => {
+      const draftBranchId = branchNow.get(step) ?? step.draftBranchId;
+      return { ...step, draftBranchId };
+    });
+    const applied = new Set(open.filter((_, at) => tookIt.has(recorded[at] as TreeReceipt)));
     // A drafted Undo is applicable while its branch still places the node; once a Discard took it
     // out there is no file to ask a grant about and nothing to reverse.
     const held = new Set<string>();
@@ -215,37 +262,14 @@ export function createTurnTreeInverse(deps: {
           ...(draftedIn.get(step.draftBranchId) ?? []),
           step.subject,
         ]);
-    for (const [branchId, ids] of draftedIn)
+    for (const [branchId, nodes] of draftedIn)
       for (const row of await db().execute<{ id: string }>(sql`
         SELECT n.id::text AS id FROM ${placedNodesSql({ kind: "branch", branchId: branchId as BranchId })} n
         WHERE n.id IN (${sql.join(
-          ids.map((id) => sql`${id}::uuid`),
+          nodes.map((id) => sql`${id}::uuid`),
           sql`, `,
         )})`))
         held.add(`${branchId}:${row.id}`);
-    const ids = open.map((step) => step.subject);
-    const listOf = await treeListsOfNodes(deps.db, [...new Set(ids)]);
-    // A drafted change an Apply took is the Apply's to take back (its Un-Apply, which the card
-    // sends): the card's own Undo leaves it, and says nothing of it.
-    const applied = new Set<TreeReceipt>();
-    const draftedBy = new Map<string, { list: TreeList; steps: TreeReceipt[] }>();
-    for (const step of open) {
-      const list = listOf.get(step.subject);
-      if (!list || !step.draftBranchId) continue;
-      const key = JSON.stringify(list);
-      const entry = draftedBy.get(key) ?? { list, steps: [] };
-      entry.steps.push(step);
-      draftedBy.set(key, entry);
-    }
-    for (const { list, steps } of draftedBy.values()) {
-      const records = steps.flatMap((step) => step.records.map((entry) => entry.record));
-      const by = await deps.treeLists.read({
-        lists: [list],
-        view: ([end]) => (end ? appliedBy(end.writer.doc, records) : new Map<string, string>()),
-      });
-      for (const step of steps)
-        if (step.records.every((entry) => by.has(entry.record))) applied.add(step);
-    }
     const subjects = new Set(
       (
         await db().select({ id: documents.id }).from(documents).where(inArray(documents.id, ids))

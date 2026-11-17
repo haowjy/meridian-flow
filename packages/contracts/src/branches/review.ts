@@ -35,8 +35,9 @@ export type ApplyClick = {
   /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted for a tree cut alone and a whole cut. */
   snapshot?: string;
   /**
-   * Apply every group the server's replica of `draftId` holds on receipt (`ApplyTextCut`'s whole
-   * cut), with no snapshot and empty `groupIds` and `baseViewDelta`.
+   * Cut on receipt from the server's replica of `draftId` (`ApplyTextCut`'s whole cut), with no
+   * snapshot and an empty `baseViewDelta`: every group it holds when `groupIds` is empty, else the
+   * named ones it holds.
    */
   whole?: true;
   baseViewDelta: ApplySpanPatch[];
@@ -120,14 +121,16 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
  * A tree fact something changed since stays (`left_out changed_since`), as does a created
  * document with text written since (`has_text`); a text group whose reversal would change a
- * word that holds writing made after the Apply stays applied and is named in `skippedGroupIds`.
+ * word that holds writing made after the Apply stays applied: it is named in `textSkipped`,
+ * its document in a `left_out changed_since` line with `tree: false`. Each press judges the text as
+ * it stands, so a later press takes the group if its words came back (another Undo restored them).
  * A source whose Work was purged takes nothing back: `left_out purged`.
  *
  * Nothing that would change the notes of a closed owner (an archived or deleted Work, a chat in
  * Trash) is taken back: it is in `held`. Everything of the Apply still applied before this press
- * is in exactly one place: taken back (`reversedGroupIds`, `treeUndone`), left for a reason that
- * will not change (`left_out`, `skippedGroupIds`), or held. A text group an earlier Un-Apply took
- * back is in none. It took something back when `reversedGroupIds` or `treeUndone` is not empty.
+ * is in exactly one place: taken back (`textUndone`, `treeUndone`), left as it stands now
+ * (`left_out`, `textSkipped`), or held. A text group an earlier Un-Apply took
+ * back is in none. It took something back when `textUndone` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
   commandId: CommandId;
@@ -140,8 +143,12 @@ export type UnapplyClickResult = {
   branchId: BranchId;
   /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
   draftHalfWaits: boolean;
-  reversedGroupIds: string[];
-  skippedGroupIds: string[];
+  /**
+   * The text groups taken back, and those left applied, per document: one change made in two
+   * documents has one group id, and a press may take it back in one of them only.
+   */
+  textUndone: Array<{ node: string; groupIds: string[] }>;
+  textSkipped: Array<{ node: string; groupIds: string[] }>;
   /** The nodes with a tree fact this command took back (a restore it undid included). */
   treeUndone: string[];
   /**
@@ -162,9 +169,9 @@ export type UnapplyClickResult = {
     ownerKey: DraftOwnerKey;
   }>;
   /**
-   * `left_out` (what could not come back, one line per reason), `returned` (what stayed for a
-   * closed owner, with `items`), or `already` (nothing was taken back and nothing was left:
-   * everything was taken back before).
+   * `left_out` (what could not come back, one line per reason and half, `tree` saying which),
+   * `returned` (what stayed for a closed owner, with `items`), or `already` (nothing was taken
+   * back, left or held: everything was taken back before).
    */
   settled?: Settlement[];
 };
@@ -174,7 +181,9 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
  * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
- * is skipped, not refused.
+ * is skipped, not refused. A whole cut with `groupIds` takes only the named groups the replica
+ * holds and passes over the rest: a Redo names what its Un-Apply took back, so it never applies
+ * a change its Undo didn't take.
  */
 export type ApplyTextCut =
   | {
@@ -184,7 +193,7 @@ export type ApplyTextCut =
       baseViewDelta: ApplySpanPatch[];
       groupIds: string[];
     }
-  | { draftId: string; whole: true };
+  | { draftId: string; whole: true; groupIds?: string[] };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree

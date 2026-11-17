@@ -60,8 +60,11 @@ gives no control once every drafted document is discarded, where nothing is left
 The card shows no failure line for these: "can't reverse" is never read as "went wrong". An old
 tab that still posts a Redo gets 200 `expired`. What
 became of each part shows as plain facts after expansion, worded from the typed
-causes ("Taken out", "Stayed as you edited it"); a drafted document's apply or
-discard is on its row instead. A deleted document's row stays as a record without
+causes ("Taken out", "Stayed as you edited it"); a drafted document's apply,
+discard, or draft waiting in a closed Work is on its row and the Work's review instead
+(a skip says it is `drafted`; a direct part on the same document keeps its line).
+A part a closed owner holds names its document ("The change to Notes stayed: …"), as does
+the line an Un-Apply leaves, since a card lists several documents apart from their rows. A deleted document's row stays as a record without
 being a door.
 
 A reversal command can race the projected receipt and return a semantic
@@ -91,8 +94,15 @@ Undo reverses the turn's remaining edits where they are now: pending in the
 Work's document drafts, or live. Draft and live writes remain one atomic command. A change an
 Apply took is that Apply's: the card lists each Apply in force (`applied`, text and tree alike)
 and its Undo sends their Un-Applies after the reversal, through the tab's one owner of each Apply
-(`AppliedCommand`, [draft review](../../draft-review/.context/draft-review.md)), whose state every
-card listing the Apply reads. The receipt immediately shows Undoing while the command runs;
+(`AppliedCommand`, [draft review](../../draft-review/.context/draft-review.md)). The card offers
+Undo for every Apply the server lists: that owner's state only blocks the press while a request
+of it is out, and passes over it while it waits for a closed owner. An editor's Ctrl+Z that took
+part of it back keeps that editor's Redo, and the card's press asks the server for the rest
+through an owner of its own. An Apply stays listed while any of its text is not taken back,
+including text an Un-Apply left because it was changed since: each press judges the text as it
+stands and says why it stayed ("Not undone. The change to Second stayed: it was changed since."),
+and a later Undo that restores those words lets the next press take them. The line is that
+press's answer, never stored. The receipt immediately shows Undoing while the command runs;
 Yjs publishes the edit after durable commit and failures stay on the card.
 Inverse eligibility comes from the inverse kernel's identity classification.
 The derived applied/pending/discarded disposition chooses a skipped part's copy,

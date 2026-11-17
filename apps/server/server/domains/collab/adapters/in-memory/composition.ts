@@ -326,8 +326,8 @@ function createInMemoryBranchStub(): CollabBranches {
           branchId: branchId as BranchId,
           draftHalfWaits: false,
           held: [],
-          reversedGroupIds: [],
-          skippedGroupIds: [],
+          textUndone: [],
+          textSkipped: [],
           treeUndone: [],
         };
       },

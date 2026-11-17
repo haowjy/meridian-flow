@@ -90,16 +90,32 @@ export function settledRecords(doc: Y.Doc): ReadonlyMap<string, RecordSettled> {
 }
 
 /**
- * The fate of each drafted record `ids` names, following its family to the newest drafted copy:
- * a Discard's restore makes a new pending copy and leaves the original discarded, so the copy's
- * settlement is the family's. An id the list doesn't hold reads `discarded`.
+ * The newest drafted copy of each record `ids` names, following its family: a Discard's restore
+ * makes a new pending copy, in the Work's branch as it is now, and leaves the original discarded,
+ * so the copy stands for the family. A live record, or an id the list doesn't hold, is absent.
  */
-export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, DraftedFate> {
-  const { records, drafted, settled, standing } = indexOf(doc);
-  const fates = new Map<string, DraftedFate>();
+export function newestDrafted(doc: Y.Doc, ids: readonly string[]): Map<string, TreeRecord> {
+  const { records, drafted } = indexOf(doc);
+  const newest = new Map<string, TreeRecord>();
   for (const id of ids) {
     const record = records.get(id);
-    const newest = record && drafted.get(record.carries ?? record.id)?.at(-1);
+    const copy = record && drafted.get(record.carries ?? record.id)?.at(-1);
+    const found = copy && records.get(copy);
+    if (found) newest.set(id, found);
+  }
+  return newest;
+}
+
+/**
+ * The fate of each drafted record `ids` names, read from its family's newest drafted copy
+ * (`newestDrafted`). An id the list doesn't hold reads `discarded`.
+ */
+export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, DraftedFate> {
+  const { settled, standing } = indexOf(doc);
+  const copies = newestDrafted(doc, ids);
+  const fates = new Map<string, DraftedFate>();
+  for (const id of ids) {
+    const newest = copies.get(id)?.id;
     const fate = !newest
       ? "discarded"
       : (settled.get(newest)?.fate ?? (standing.has(newest) ? "pending" : "discarded"));
@@ -113,12 +129,10 @@ export function draftedFates(doc: Y.Doc, ids: readonly string[]): Map<string, Dr
  * `draftedFates` does; a record no Apply took is absent.
  */
 export function appliedBy(doc: Y.Doc, ids: readonly string[]): Map<string, string> {
-  const { records, drafted, settled } = indexOf(doc);
+  const { settled } = indexOf(doc);
   const by = new Map<string, string>();
-  for (const id of ids) {
-    const record = records.get(id);
-    const newest = record && drafted.get(record.carries ?? record.id)?.at(-1);
-    const settlement = newest ? settled.get(newest) : undefined;
+  for (const [id, newest] of newestDrafted(doc, ids)) {
+    const settlement = settled.get(newest.id);
     if (settlement?.fate === "applied" && settlement.command) by.set(id, settlement.command);
   }
   return by;

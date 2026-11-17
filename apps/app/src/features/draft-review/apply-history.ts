@@ -16,7 +16,8 @@ import {
 } from "@/core/project-tree/tree-undo";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import type { ApplyClickOutcome, ApplyCommandHandle } from "./apply-click-queue";
-import { itemOf, unappliedOf } from "./draft-notices";
+import { itemLanded, textUndoneOf, unappliedOf } from "./draft-notices";
+import type { AgainTarget } from "./review-model";
 
 /**
  * The histories this tab holds for the Apply's documents, read now: each one's live session, and
@@ -97,7 +98,7 @@ export type PressSaid = { from: DocumentHistory; answer: Answer; step: AppliedCo
 export const takenBack = (answer: Answer): boolean =>
   (answer.taken === "all" || answer.taken === "partly") && answer.held.length === 0;
 
-const SPENT: Unapplied = { taken: "already", treeLeft: [], held: [] };
+const SPENT: Unapplied = { taken: "already", leftOut: [], held: [] };
 const CANCELLED: Reapplied = { kind: "cancelled" };
 const LOST: Reapplied = { kind: "lost" };
 const noop = () => {};
@@ -259,11 +260,6 @@ export class AppliedCommand implements ApplyStep {
     return kind === "in_force" || kind === "failed" || kind === "held";
   }
 
-  /** Its Undo would act now: in force and not passed over. */
-  offersUndo(): boolean {
-    return this.inForce() && !this.waits();
-  }
-
   /**
    * An editor's Ctrl+Z passed over it for an older step: the first time for what it waits for
    * now, that editor's document says who it waits for (`firstPassOver`).
@@ -271,7 +267,7 @@ export class AppliedCommand implements ApplyStep {
   passedBy(from: DocumentHistory): void {
     this.reread();
     if (!firstPassOver(this)) return;
-    this.say({ from, answer: { taken: "nothing", treeLeft: [], held: this.held }, step: this });
+    this.say({ from, answer: { taken: "nothing", leftOut: [], held: this.held }, step: this });
   }
 
   /** A session of one of its documents opened since it was applied: in force, it shows there. */
@@ -299,7 +295,7 @@ export class AppliedCommand implements ApplyStep {
   press(from: DocumentHistory | null): Promise<Answer> {
     const state = this.current;
     if (state.kind === "reapplying") return state.done.then(() => this.press(from));
-    const sends = this.offersUndo();
+    const sends = this.inForce() && !this.waits();
     const answer = this.ask(from);
     if (sends && this.seat) void sayUnapplied(this.seat.session, this, answer, this.hooks.closed);
     return answer;
@@ -317,7 +313,7 @@ export class AppliedCommand implements ApplyStep {
     if (state.kind === "taken" || state.kind === "ended") return Promise.resolve(SPENT);
     if (this.waits()) {
       this.reread();
-      return Promise.resolve({ taken: "nothing", treeLeft: [], held: this.held });
+      return Promise.resolve({ taken: "nothing", leftOut: [], held: this.held });
     }
     return this.unapply(from);
   }
@@ -517,9 +513,15 @@ export class AppliedCommands {
     this.changed();
   }
 
-  /** The Apply whose command in force is `commandId`. */
+  /**
+   * The Apply whose command in force is `commandId`, while this tab answers for its Undo. Once an
+   * editor's press took it back (`taken`), the tab holds only that editor's Redo: what the server
+   * still keeps of it (a group changed since) is the server's to answer, so none is found and a
+   * card's press asks the server through an owner of its own.
+   */
   find(commandId: string): AppliedCommand | undefined {
-    for (const command of this.all.keys()) if (command.commandId === commandId) return command;
+    for (const command of this.all.keys())
+      if (command.commandId === commandId && command.state.kind !== "taken") return command;
     return undefined;
   }
 
@@ -546,9 +548,7 @@ export class AppliedCommands {
 /** A Redo the queue answered: landed when its item's text or tree landed. */
 const replayLanded = (outcome: ApplyClickOutcome, node: string): Reapplied => {
   if (outcome.status === "landed") return { kind: "landed" };
-  if (outcome.status !== "applied") return LOST;
-  const item = itemOf(outcome, node);
-  return item?.text?.landed || item?.tree?.landed ? { kind: "landed" } : LOST;
+  return outcome.status === "applied" && itemLanded(outcome, node) ? { kind: "landed" } : LOST;
 };
 
 /**
@@ -559,7 +559,7 @@ const replayLanded = (outcome: ApplyClickOutcome, node: string): Reapplied => {
  */
 export function queuePort(handle: ApplyCommandHandle, node: string): ApplyPort {
   return {
-    commandId: () => handle.replay().applyCommandId,
+    commandId: () => handle.applyInForce(),
     unapply: () =>
       handle
         .undo()
@@ -628,28 +628,52 @@ export function serverPort(input: {
 }
 
 /**
+ * What a Redo applies again of one item (`node`, applied from `draftId`): what the Un-Apply whose
+ * answer is `answer` took back of that document, null when it took nothing of it.
+ */
+export function againOf(
+  answer: UnapplyClickResult,
+  node: string,
+  draftId: string | undefined,
+): AgainTarget | null {
+  const groupIds = draftId ? textUndoneOf(answer, node) : [];
+  const tree = answer.treeUndone.includes(node);
+  return groupIds.length || tree ? { kind: "again", draftId, groupIds, tree } : null;
+}
+
+/**
  * A band's Apply once its review let go of the room: the queue settles an Un-Apply only by
- * watching that room, so from here the server's answer alone settles it. `replay` is what the
- * queue last held: the Apply in force and the click a Redo sends again, with what the last
- * Un-Apply took back.
+ * watching that room, so from here the server's answer alone settles it. `applyCommandId`: the
+ * Apply in force; `node` and `draftId`: the document and the draft it applied from.
  */
 export function serverBandPort(
   port: BandPort,
-  replay: { applyCommandId: string; again: ApplyClick },
+  applyCommandId: string,
+  { node, draftId }: { node: string; draftId: string },
 ): ApplyPort {
-  let { again } = replay;
   return serverPort({
-    commandId: replay.applyCommandId,
+    commandId: applyCommandId,
     unapply: port.unapply,
     again: async (answer) => {
-      if (answer.reversedGroupIds.length) again = { ...again, groupIds: answer.reversedGroupIds };
-      const body = { ...again, commandId: crypto.randomUUID() };
+      const again = againOf(answer, node, draftId);
+      if (!again) return null;
+      const body: ApplyClick = {
+        commandId: crypto.randomUUID(),
+        ...(again.draftId && again.groupIds.length
+          ? { draftId: again.draftId, whole: true as const }
+          : {}),
+        groupIds: [...again.groupIds],
+        baseViewDelta: [],
+        ...(again.tree ? { tree: true as const } : {}),
+      };
       // Lost on the way (null): the next Un-Apply asks the server, which answers for one never applied.
       const sent = await port.send(body).then(
-        (answer) => answer.status,
+        (answer) => answer,
         () => null,
       );
-      return sent === null || sent === "applied" ? { commandId: body.commandId } : null;
+      return sent === null || (sent.status === "applied" && itemLanded(sent, node))
+        ? { commandId: body.commandId }
+        : null;
     },
   });
 }

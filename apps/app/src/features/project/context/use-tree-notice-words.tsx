@@ -358,4 +358,4 @@ function SaidWord({
 
 /** Whether anything of `node`'s change stayed: a row taken back whole says nothing. */
 const leftOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
-  said.treeLeft.some((one) => one.node === node) || said.held.some((one) => one.node === node);
+  said.leftOut.some((one) => one.node === node) || said.held.some((one) => one.node === node);

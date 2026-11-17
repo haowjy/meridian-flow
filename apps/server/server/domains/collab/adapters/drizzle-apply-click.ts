@@ -515,7 +515,7 @@ export function createDrizzleApplyClick(
                 for (const id of [...documentIds].sort())
                   await lockDocumentMutation(tx, id as DocumentId);
                 const backFromDelete = new Set<string>();
-                const left: { node: string; why: LeftOutWhy }[] = [];
+                const left: { node: string; why: LeftOutWhy; tree: boolean }[] = [];
                 const treeUndone = new Set<string>();
                 const alreadyUndone = new Set<string>();
                 if (lists.length > 0) {
@@ -554,12 +554,13 @@ export function createDrizzleApplyClick(
                           if (why === "closed") {
                             const fate = source === undefined ? null : judge.fate(source);
                             if (fate?.kind === "closed") hold(record.node, fate).tree = true;
-                            else left.push({ node: record.node, why: "purged" });
+                            else left.push({ node: record.node, why: "purged", tree: true });
                           } else if (why === "already") alreadyUndone.add(record.node);
                           else
                             left.push({
                               node: record.node,
                               why: why === "unknown" ? "purged" : why,
+                              tree: true,
                             });
                       }
                     },
@@ -625,7 +626,7 @@ export function createDrizzleApplyClick(
                   }
                   // Its row was purged with its Work, and the document's effects went with it.
                   if (fate) {
-                    left.push({ node: text.documentId, why: "purged" });
+                    left.push({ node: text.documentId, why: "purged", tree: false });
                     continue;
                   }
                   const [draft] = await tx
@@ -785,24 +786,35 @@ export function createDrizzleApplyClick(
                     await deps.onCommitted(documentId);
                   });
                 }
-                const reversedGroupIds = plans.flatMap((plan) =>
-                  plan.reversed.map((effect) => effect.groupId),
-                );
-                const skippedGroupIds = plans.flatMap((plan) =>
-                  plan.skipped.map((effect) => effect.groupId),
-                );
-                const settled: Settlement[] = [];
-                const byWhy = new Map<LeftOutWhy, Set<string>>();
-                for (const { node, why } of left)
-                  byWhy.set(why, (byWhy.get(why) ?? new Set()).add(node));
+                // One change made in two documents has one group id: each is named with its document.
+                const textOf = (pick: (plan: (typeof plans)[number]) => { groupId: string }[]) =>
+                  plans.flatMap((plan) => {
+                    const groupIds = [...new Set(pick(plan).map((effect) => effect.groupId))];
+                    return groupIds.length ? [{ node: plan.documentId, groupIds }] : [];
+                  });
+                const textUndone = textOf((plan) => plan.reversed);
+                const textSkipped = textOf((plan) => plan.skipped);
+                // A skipped group holds writing made since, judged on this press: a later one may
+                // find its words back (another Undo restored them) and take it.
+                for (const plan of plans)
+                  if (plan.skipped.length)
+                    left.push({ node: plan.documentId, why: "changed_since", tree: false });
                 // The Work's purge took the rows that said what the tree half was.
-                if (prepared.treeLost.length)
-                  byWhy.set(
-                    "purged",
-                    new Set([...(byWhy.get("purged") ?? []), ...prepared.treeLost]),
-                  );
-                for (const [why, nodes] of byWhy)
-                  settled.push({ rule: "left_out", items: [...nodes], why });
+                for (const node of prepared.treeLost)
+                  left.push({ node, why: "purged", tree: true });
+                const settled: Settlement[] = [];
+                const lines = new Map<
+                  string,
+                  { why: LeftOutWhy; tree: boolean; items: Set<string> }
+                >();
+                for (const { node, why, tree } of left) {
+                  const key = `${tree}:${why}`;
+                  const line = lines.get(key) ?? { why, tree, items: new Set<string>() };
+                  line.items.add(node);
+                  lines.set(key, line);
+                }
+                for (const { why, tree, items } of lines.values())
+                  settled.push({ rule: "left_out", items: [...items], why, tree });
                 for (const node of alreadyUndone)
                   settled.push({ rule: "already", state: "unapplied", item: node });
                 // One `returned` line per owner and reason, naming the nodes it held.
@@ -815,13 +827,8 @@ export function createDrizzleApplyClick(
                 }
                 for (const { owner, nodes } of returned.values())
                   settled.push(returnedFor(owner, nodes));
-                // Everything this Apply did was taken back before, or it left nothing to take back.
-                if (
-                  settled.length === 0 &&
-                  treeUndone.size === 0 &&
-                  reversedGroupIds.length === 0 &&
-                  skippedGroupIds.length === 0
-                )
+                // Everything this Apply did was taken back before: nothing taken, left or held now.
+                if (settled.length === 0 && treeUndone.size === 0 && textUndone.length === 0)
                   settled.push({ rule: "already", state: "unapplied" });
                 return {
                   status: "unapplied",
@@ -830,8 +837,8 @@ export function createDrizzleApplyClick(
                   draftHalfWaits: plans.some(
                     (plan) => plan.reversed.length > 0 && !plan.currentBase && !plan.draftGone,
                   ),
-                  reversedGroupIds,
-                  skippedGroupIds,
+                  textUndone,
+                  textSkipped,
                   treeUndone: [...treeUndone],
                   held: [...held].map(([node, { owner, tree, groupIds }]) => ({
                     node,

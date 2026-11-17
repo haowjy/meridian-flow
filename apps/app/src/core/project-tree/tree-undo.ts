@@ -125,20 +125,24 @@ export type Held = ClosedOwner & {
 
 /**
  * What an Un-Apply took back of its Apply: `all` of what stood, `partly`, `nothing`, or `already`
- * (an earlier Un-Apply, here or in another tab, took it all). `treeLeft` names each node whose tree
- * change stayed for good, with why; `held`, what stayed for a closed owner and comes back to Undo
- * once it reopens.
+ * (an earlier Un-Apply, here or in another tab, took it all). `leftOut` names each node whose
+ * change this press left, with why, and whether its tree fact stayed (`tree`) or its text;
+ * `held`, what stayed for a closed owner and comes back to Undo once it reopens.
  */
 export type Unapplied = {
   taken: "all" | "partly" | "nothing" | "already";
-  treeLeft: readonly { node: string; why: LeftOutWhy }[];
+  leftOut: readonly { node: string; why: LeftOutWhy; tree: boolean }[];
   held: readonly Held[];
 };
 
-/** What an Apply's tree half did to a node, for what an Un-Apply that left it says. */
+/**
+ * What an Apply's tree half did to a node, for what an Un-Apply that left it says, and the node's
+ * name where that is said apart from its row.
+ */
 export type TreeFact = {
   did: "moved" | "renamed" | "restored" | "deleted" | "created" | null;
   folder: boolean;
+  name?: string;
 };
 
 /** What an Un-Apply left standing, said on the rows of the Apply it took back. */
@@ -401,7 +405,7 @@ function passedOverLeft(step: UndoStep, closed: ClosedOwners): Left | null {
   return step.kind === "apply"
     ? {
         taken: "nothing",
-        treeLeft: [],
+        leftOut: [],
         held: step.held,
         name: step.name,
         nodes: step.nodes,
@@ -607,7 +611,7 @@ function treeHeld(step: TreeStep, sources: readonly string[], closed: ClosedOwne
   );
   return {
     taken: "nothing",
-    treeLeft: [],
+    leftOut: [],
     held: step.nodes.map((node) => ({ node, tree: true, groupIds: [], ownerKey: "", ...owner })),
     name: step.was.get(step.nodes[0] ?? "")?.name ?? "",
     nodes: step.nodes,

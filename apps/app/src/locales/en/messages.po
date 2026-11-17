@@ -7598,6 +7598,11 @@ msgstr "The change could not be confirmed. Try again."
 #~ msgid "The change didn't fit the current draft. The AI will read it again."
 #~ msgstr "The change didn't fit the current draft. The AI will read it again."
 
+#. placeholder {0}: fact.name
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The change to {0}"
+msgstr "The change to {0}"
+
 #: src/core/project-tree/tree-left-sentence.ts
 msgid "The change to this document"
 msgstr "The change to this document"

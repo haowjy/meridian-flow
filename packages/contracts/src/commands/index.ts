@@ -65,8 +65,11 @@ export type Settlement =
     }
   /** Another command settled the item first (`by`), so this one left it as that left it. */
   | { rule: "overtaken"; state: string; by: CommandId; item?: string }
-  /** Part of the command could not land: `items` name what was left out. */
-  | { rule: "left_out"; items: string[]; why: LeftOutWhy }
+  /**
+   * Part of the command could not land: `items` name what was left out. On an Un-Apply, `tree`
+   * says whether the items' tree facts stayed or their text.
+   */
+  | { rule: "left_out"; items: string[]; why: LeftOutWhy; tree?: boolean }
   /** A deleted document came back (it was in Trash) so the command could land. */
   | { rule: "restored"; documentId: string };
 

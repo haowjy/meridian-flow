@@ -522,7 +522,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     async applyCommands(commandIds) {
       const found = new Map<
         string,
-        { branchId: string; nodes: readonly string[]; changes: number }
+        { branchId: string; nodes: readonly string[]; changes: number; textTakenBack: boolean }
       >();
       if (commandIds.length === 0) return found;
       const ids = commandIds as CommandId[];
@@ -548,13 +548,19 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           .innerJoin(documentDrafts, eq(documentDrafts.id, applyCommandEffects.draftId))
           .where(inArray(applyCommandEffects.commandId, textOnly)))
           branchOf.set(row.id, row.branchId);
-      // One effect row per text group the Apply landed.
+      // One effect row per text group the Apply landed, and the Applies with one not taken back.
       const groups = new Map<string, number>();
+      const open = new Set<string>();
       for (const row of await db()
-        .select({ id: applyCommandEffects.commandId })
+        .select({
+          id: applyCommandEffects.commandId,
+          unappliedBy: applyCommandEffects.unappliedBy,
+        })
         .from(applyCommandEffects)
-        .where(inArray(applyCommandEffects.commandId, ids)))
+        .where(inArray(applyCommandEffects.commandId, ids))) {
         groups.set(row.id, (groups.get(row.id) ?? 0) + 1);
+        if (row.unappliedBy === null) open.add(row.id);
+      }
       for (const { id, outcome } of outcomes) {
         const branchId = branchOf.get(id);
         const result =
@@ -565,7 +571,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           item.tree?.landed || item.text?.landed ? [item.node] : [],
         );
         const changes = (groups.get(id) ?? 0) + items.filter((item) => item.tree?.landed).length;
-        found.set(id, { branchId, nodes, changes });
+        found.set(id, { branchId, nodes, changes, textTakenBack: groups.has(id) && !open.has(id) });
       }
       return found;
     },
