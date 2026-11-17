@@ -153,6 +153,7 @@ export type PreparedDraftWrite = {
   /** The content the write was prepared as, before any lock; read it, never mutate it. */
   readonly candidate: Y.Doc;
   persist(): Promise<boolean>;
+  /** Installation waits for the surrounding transaction's commit, so a later rollback installs nothing. */
   transfer(): void;
   dispose(): void;
 };

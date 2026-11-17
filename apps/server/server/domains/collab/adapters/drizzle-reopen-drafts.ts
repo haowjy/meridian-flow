@@ -40,11 +40,7 @@ import {
 import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
-import {
-  currentDrizzleDb,
-  deferUntilDrizzleCommit,
-  deferUntilDrizzleRollback,
-} from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -386,14 +382,10 @@ export function createReopenDrafts(
       });
       try {
         await write.persist();
-      } catch (cause) {
+        write.transfer();
+      } finally {
         write.dispose();
-        throw cause;
       }
-      // The replica installs only once the Restore commits; a later throw would otherwise leave
-      // the cache holding a version the database rolled back.
-      if (!deferUntilDrizzleCommit(() => write.transfer())) write.transfer();
-      deferUntilDrizzleRollback(() => write.dispose());
       await tx
         .update(applyCommandEffects)
         .set({ draftReversed: true })

@@ -247,8 +247,8 @@ export type AppendCommitted = {
  * Shape A's storage half, inside the caller's savepoint. The `UPDATE` is the sequence point:
  * it bumps `revision` at whatever value it holds (no revision predicate, no retry) and holds
  * the row lock to `COMMIT`, so journal ids are allocated in commit order per draft (tail
- * order). It still refuses a closed or frozen draft unless the caller says `draft: "any"`. After the lock, one separate
- * statement reads the committed prefix `since` the caller's base (a fresh READ COMMITTED
+ * order). It still refuses a closed or frozen draft unless the caller says `draft: "any"`. After
+ * the lock, one separate statement reads the committed prefix `since` the caller's base (a fresh READ COMMITTED
  * snapshot, so every row committed before this lock), and `finalize` decides what to insert.
  * Any outcome but `appended` throws `DraftWriteRollback` so the savepoint undoes the bump.
  */
