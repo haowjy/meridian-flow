@@ -7,8 +7,8 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
     () => composerSessionDraft(accountId, scope),
     [accountId, scope.kind, scope.id],
   );
-  // Only lifecycle transfers publish. Ordinary typing never remounts the editor.
-  const version = useSyncExternalStore(owner.subscribe, owner.getVersion, owner.getVersion);
+  // Re-reads the notices and the outside document change when the store changes; typing never publishes.
+  useSyncExternalStore(owner.subscribe, owner.getVersion, owner.getVersion);
   useEffect(() => {
     window.addEventListener("pagehide", owner.flush);
     return () => {
@@ -17,10 +17,11 @@ export function useComposerSessionDraft(accountId: string, scope: ComposerDraftS
     };
   }, [owner]);
   return {
-    key: `${owner.key}:${version}`,
+    key: owner.key,
     notices: owner.notices,
     dismissNotice: owner.dismissNotice,
     initialDraft: owner.initialDraft,
+    externalChange: owner.externalChange(),
     chatId: owner.chatId,
     attachedAbout: owner.attachedAbout,
     setAttachedAbout: owner.setAttachedAbout,

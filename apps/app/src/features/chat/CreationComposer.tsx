@@ -156,6 +156,7 @@ export function CreationComposer({
         }
         key={creation.draft.key}
         initialDraft={creation.draft.initialDraft}
+        externalChange={creation.draft.externalChange}
         ref={composerRef}
         autoFocus={false}
         onSubmit={async (envelope) =>

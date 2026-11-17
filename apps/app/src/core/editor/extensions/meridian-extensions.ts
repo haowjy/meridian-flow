@@ -27,7 +27,7 @@ import {
   type ResolvedPos,
   Slice,
 } from "@tiptap/pm/model";
-import { Plugin, Selection, type Transaction } from "@tiptap/pm/state";
+import { Plugin, Selection } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { CodeBlockNodeView } from "../CodeBlockNodeView";
 import { FigureNodeView } from "../FigureNodeView";
@@ -53,10 +53,10 @@ import {
   linkTargetHref,
   normalizeLinkHref,
 } from "../links/link-target";
-import { objectSelectedInDecorations } from "../objects";
+import { exitFence, objectSelectedInDecorations } from "../objects";
 import { tableSweepPastePlugin } from "../table-sweep-paste";
 import { blockTypeInputRule, setBlockType } from "./block-type";
-import { landAt, landSlice } from "./nesting";
+import { landSlice } from "./nesting";
 
 type RenderAttrs = Record<string, unknown>;
 type JsonRecord = Record<string, unknown>;
@@ -388,20 +388,6 @@ export const MeridianCodeBlockLowlight = CodeBlockLowlight.extend({
     return [];
   },
 });
-
-/** A new line after the fence the caret is in, where Enter would put one beside it. */
-function exitFence(tr: Transaction): boolean {
-  const { $head } = tr.selection;
-  const fence = $head.parent;
-  const above = $head.node(-1);
-  const after = $head.indexAfter(-1);
-  const line = above.contentMatchAt(after).defaultType?.createAndFill();
-  if (!line || !above.canReplaceWith(after, after, line.type)) return false;
-  const pos = $head.after();
-  tr.insert(pos, landAt([line], fence));
-  tr.setSelection(Selection.near(tr.doc.resolve(pos + 1))).scrollIntoView();
-  return true;
-}
 
 /** Keeps block alignment live when the resize plugin takes over table rendering. */
 class MeridianTableView extends TableView {

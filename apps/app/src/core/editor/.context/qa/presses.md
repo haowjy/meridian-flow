@@ -30,7 +30,11 @@ which line a caret is on).
 4. **Cell padding.** Click the padding and borders of each cell, including the
    cell with two paragraphs, at its edges. The caret stays in the pressed cell
    every time. In a table wider than the pane, click the margin beside the
-   clipped part: the caret goes to the last visible cell.
+   clipped part: the caret goes to the last visible cell. In a 2×2 table with
+   a rendered diagram in the top-right cell, ArrowDown from the middle of the
+   top-left cell's word goes to the cell below, not onto the diagram; ArrowUp
+   from the bottom-right cell selects the diagram (its source stays hidden),
+   and ArrowDown from the selected diagram goes to the cell below it.
 5. **Diagram and component block.** Click beside the rendered diagram, above
    and below its middle. The caret goes to the neighbouring paragraph's line
    (prose beats the diagram), the diagram stays rendered, and no source opens.
@@ -38,15 +42,17 @@ which line a caret is on).
    before or after it, and is never inside the block. (No writer path makes a component block yet;
    check this in a test document.)
 6. **Below each ending.** Click in the space below the last block of the first
-   document: the caret goes to the end of the final paragraph. In the second,
-   the caret goes to the fence's end. In the third, a gap cursor stands after
-   the table. In the fourth (a closing diagram), an empty paragraph appears
-   after it with the caret in it, the diagram stays rendered, and typing goes
-   into the new line; one undo removes the line. Click below it again: no
-   second blank line. A figure or a horizontal rule at the end gets a gap
-   cursor and no paragraph. In the other cases the document is unchanged: a
-   press makes a paragraph only past a closing diagram. Do not expect the same
-   below a diagram that ends a cell.
+   document: the caret goes to the end of the final paragraph. In the third, a
+   gap cursor stands after the table. In the second (a fence) and the fourth (a
+   closing diagram), an empty paragraph appears after it with the caret in it,
+   the diagram stays rendered, and typing goes into the new line; one undo
+   removes the line. Click below it again: no second blank line. A figure or a
+   horizontal rule at the end gets a gap cursor and no paragraph. In each
+   document, Ctrl/Cmd+End from the top and ArrowDown off the last block land in
+   the same place as the click, and typing there (keys, and text inserted with
+   no keypress) lands in the same place too. ArrowDown from the middle of the
+   paragraph above a diagram selects the diagram. Do not expect the same below a diagram that ends
+   a cell.
 7. **Read-only.** Repeat 1 in a read-only view: no caret appears and nothing
    changes. Click a task box there: it does not change.
 8. **Task box and list gutter.** Click a task's box: it checks, the caret does not
