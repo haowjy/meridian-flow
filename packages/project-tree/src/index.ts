@@ -27,6 +27,7 @@ export {
   appliedBy,
   type DraftedFate,
   draftedFates,
+  newestDrafted,
   type RecordSettled,
   settledRecords,
 } from "./drafted-fate.js";

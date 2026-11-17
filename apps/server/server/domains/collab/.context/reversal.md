@@ -197,7 +197,9 @@ words after the card's Undo (a change leaves the card only when the newest rever
 is the model's own undo). A drafted change says each half: `drafts` the text, from the turn's
 parts, and `trees` the tree, from `draftedFates` in `@meridian/project-tree` over the receipt's
 records (it follows a restored Discard's copies, and a record a later change landed over reads
-`replaced`); per node, pending, else applied, else replaced, else discarded. The card's label and
+`replaced`); per node, pending, else applied, else replaced, else discarded. A restored Discard may
+put its copies in a new branch of the Work, so the card's tree plan judges and takes back each
+drafted receipt in the branch of its newest copy (`newestDrafted`), not the branch it was written in. The card's label and
 row word read both. Its lists' keys are taken before the documents' (in
 `acquireMutationScope`), and its edit grants are the documents' own, a live restore its own grant.
 A turn's text on a document the same turn deleted is not a card target while the document is in

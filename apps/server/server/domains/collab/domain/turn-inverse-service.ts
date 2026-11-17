@@ -137,11 +137,17 @@ export interface TurnInverseStore {
   }>;
   /**
    * Each Apply command's branch, the nodes it landed on, and how many changes it made (text groups
-   * and tree moves), read by its id; an id with no stored Apply is absent.
+   * and tree moves), read by its id; an id with no stored Apply is absent. `textSettled`: every
+   * text group it landed was taken back or left for good by an Un-Apply.
    */
   applyCommands(
     commandIds: readonly string[],
-  ): Promise<Map<string, { branchId: string; nodes: readonly string[]; changes: number }>>;
+  ): Promise<
+    Map<
+      string,
+      { branchId: string; nodes: readonly string[]; changes: number; textSettled: boolean }
+    >
+  >;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -399,8 +405,10 @@ function draftStates(
 
 /**
  * The Applies in force that took the reply's drafted changes, text and tree, each read once by
- * its id. One holds only this reply's changes when every node it landed on is the reply's and no
- * other reply's part it took sits in the reply's documents.
+ * its id. One whose tree half is taken back and whose text an Un-Apply settled has nothing left
+ * for the card's Undo, though the draft still reads its text applied. One holds only this reply's
+ * changes when every node it landed on is the reply's and no other reply's part it took sits in
+ * the reply's documents.
  */
 async function appliedCommandsOf(
   store: TurnInverseStore,
@@ -408,7 +416,8 @@ async function appliedCommandsOf(
   query: TurnInverseQuery,
   treeAppliedBy: Record<string, readonly string[]>,
 ): Promise<TurnAppliedCommand[]> {
-  const ours = new Set<string>(Object.values(treeAppliedBy).flat());
+  const treeInForce = new Set<string>(Object.values(treeAppliedBy).flat());
+  const ours = new Set(treeInForce);
   const others = new Set<string>();
   for (const document of documents)
     for (const part of document.history)
@@ -421,7 +430,7 @@ async function appliedCommandsOf(
   const stored = await store.applyCommands([...ours]);
   return [...ours].flatMap((commandId) => {
     const command = stored.get(commandId);
-    if (!command) return [];
+    if (!command || (command.textSettled && !treeInForce.has(commandId))) return [];
     return [
       {
         commandId,

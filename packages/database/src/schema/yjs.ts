@@ -446,6 +446,12 @@ export const applyCommandEffects = pgTable(
     /** This group's bounded change to the preceding committed base. */
     baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
     unappliedBy: uuid("unapplied_by").$type<CommandId>(),
+    /**
+     * The Un-Apply that left this group applied for good: taking it back would change a word that
+     * holds writing made after the Apply. No later Un-Apply takes it, so the Apply is not offered
+     * again for it.
+     */
+    leftBy: uuid("left_by").$type<CommandId>(),
     /** Orders Un-Applies of one draft: taken from `unapplySequence` under the Work lock, since `commands.created_at` is the transaction start. */
     unappliedSeq: bigint("unapplied_seq", { mode: "number" }),
     /** True once this effect's base change has been taken back out of the draft; a closed draft's Un-Apply leaves it false until a reopen replays it. */

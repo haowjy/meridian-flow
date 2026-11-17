@@ -15,9 +15,11 @@ function changeWords(fact: TreeFact): string {
             ? fact.folder
               ? t`The new folder`
               : t`The new document`
-            : fact.folder
-              ? t`The change to this folder`
-              : t`The change to this document`;
+            : fact.name
+              ? t`The change to ${fact.name}`
+              : fact.folder
+                ? t`The change to this folder`
+                : t`The change to this document`;
 }
 
 /**
@@ -71,16 +73,17 @@ export function heldSentence(
 }
 
 /**
- * Why `node`'s change stayed after an Un-Apply: for good (`treeLeft`), or held for a closed owner,
+ * Why `node`'s change stayed after an Un-Apply: for good (`leftOut`), or held for a closed owner,
  * its tree fact or, when only its text is held, the change to the document. Empty when it went.
  */
 export function stayedSentence(left: Left, node: string): string {
   const fact = left.facts.get(node) ?? { did: null, folder: false };
-  const tree = left.treeLeft.find((one) => one.node === node);
-  if (tree) return treeLeftSentence(fact, tree.why);
+  const text = { did: null, folder: fact.folder, name: fact.name };
+  const stayed = left.leftOut.find((one) => one.node === node);
+  if (stayed) return treeLeftSentence(stayed.tree ? fact : text, stayed.why);
   const held = left.held.find((one) => one.node === node);
   if (!held) return "";
-  return heldSentence(held.tree ? fact : { did: null, folder: fact.folder }, held.why, held.owner);
+  return heldSentence(held.tree ? fact : text, held.why, held.owner);
 }
 
 /** What an Un-Apply that left something says on one line, away from its rows. */

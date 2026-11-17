@@ -103,13 +103,14 @@ export function TurnEditsReceipt({
   const drafts = receipt?.drafts;
   const trees = receipt?.trees;
   // The tree change the refusal line already names isn't listed a second time, nor is a
-  // drafted document's apply or discard: its row says what became of it.
+  // drafted document's apply or discard, or its draft waiting in a closed Work: its row and the
+  // Work's review say what became of it.
   const skips = (actionSkips ?? receipt?.skips ?? []).filter(
     (skip) =>
       !(commandRefusal?.status === "not_undone" && skip === commandRefusal.stayed) &&
       !(
         (drafts?.[skip.documentId] || trees?.[skip.documentId]) &&
-        (skip.cause === "applied" || skip.cause === "discarded")
+        (skip.cause === "applied" || skip.cause === "discarded" || skip.cause === "returned")
       ),
   );
   const names = useOwnerNames();
@@ -151,7 +152,7 @@ export function TurnEditsReceipt({
   const said = heldParts.length
     ? {
         taken: "nothing" as const,
-        treeLeft: left?.treeLeft ?? [],
+        leftOut: left?.leftOut ?? [],
         held: heldParts,
         count: listed.reduce((sum, { apply }) => sum + apply.count, 0),
         facts: factsNow(),
@@ -210,7 +211,7 @@ export function TurnEditsReceipt({
         setCommandRefusal({ status: "request_failed" });
         setExpanded(true);
       } else if (taken && (taken.taken === "partly" || taken.taken === "nothing")) {
-        setLeft(taken.treeLeft.length ? { ...taken, held: [], count: appliedCount, facts } : null);
+        setLeft(taken.leftOut.length ? { ...taken, held: [], count: appliedCount, facts } : null);
         setExpanded(true);
       }
     } catch {
@@ -306,13 +307,14 @@ export function TurnEditsReceipt({
             >
               {unappliedSentence({
                 ...said,
+                facts: namedFacts(documents, said.facts),
                 name:
                   documents.length === 1 && documents[0]
                     ? documentDisplayName(documents[0].uri)
                     : changeCount(said.count),
                 nodes: [
                   ...new Set([
-                    ...said.treeLeft.map((one) => one.node),
+                    ...said.leftOut.map((one) => one.node),
                     ...said.held.map((one) => one.node),
                   ]),
                 ],
@@ -505,6 +507,23 @@ function treeFactsOf(
         : [],
     ),
   );
+}
+
+/** The facts a line says, each naming its document: a card lists several apart from their rows. */
+function namedFacts(
+  documents: readonly TurnEditDocument[],
+  facts: ReadonlyMap<string, TreeFact>,
+): Map<string, TreeFact> {
+  const named = new Map(facts);
+  for (const document of documents) {
+    const fact = facts.get(document.documentId);
+    named.set(document.documentId, {
+      did: fact?.did ?? null,
+      folder: fact?.folder ?? !!document.folder,
+      name: (document.folder ? folderDisplayName : documentDisplayName)(document.uri),
+    });
+  }
+  return named;
 }
 
 function didOf(line: TurnTreeLine | undefined): TreeFact["did"] {

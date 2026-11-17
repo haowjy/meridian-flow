@@ -8,6 +8,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { heldSentence, treeLeftSentence } from "@/core/project-tree/tree-left-sentence";
 import { GESTURE_DID } from "@/core/project-tree/tree-undo";
+import { documentDisplayName } from "./document-display-name";
 
 type TreeSkip = Extract<TurnInverseSkip, { kind: "tree" }>;
 
@@ -96,7 +97,11 @@ export function textSkipCauseCopy(skip: Extract<TurnInverseSkip, { kind: "text" 
     case "document_discarded":
       return t`This document was discarded from the draft`;
     case "returned":
-      return heldSentence({ did: null, folder: false }, skip.why, undefined);
+      return heldSentence(
+        { did: null, folder: false, name: documentDisplayName(skip.uri) },
+        skip.why,
+        undefined,
+      );
     case "paragraph_removed":
       return t`Its paragraph was removed`;
     case "edited_since":

@@ -583,6 +583,7 @@ export function createDrizzleApplyClick(
                     and(
                       eq(applyCommandEffects.commandId, applyCommandId),
                       isNull(applyCommandEffects.unappliedBy),
+                      isNull(applyCommandEffects.leftBy),
                     ),
                   );
                 const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
@@ -791,6 +792,23 @@ export function createDrizzleApplyClick(
                 const skippedGroupIds = plans.flatMap((plan) =>
                   plan.skipped.map((effect) => effect.groupId),
                 );
+                // A skipped group holds writing made since: it stays for good, said and recorded.
+                for (const plan of plans) {
+                  if (!plan.skipped.length) continue;
+                  left.push({ node: plan.documentId, why: "changed_since" });
+                  await tx
+                    .update(applyCommandEffects)
+                    .set({ leftBy: commandId })
+                    .where(
+                      and(
+                        eq(applyCommandEffects.commandId, applyCommandId),
+                        inArray(
+                          applyCommandEffects.ordinal,
+                          plan.skipped.map((effect) => effect.ordinal),
+                        ),
+                      ),
+                    );
+                }
                 const settled: Settlement[] = [];
                 const byWhy = new Map<LeftOutWhy, Set<string>>();
                 for (const { node, why } of left)
@@ -816,12 +834,7 @@ export function createDrizzleApplyClick(
                 for (const { owner, nodes } of returned.values())
                   settled.push(returnedFor(owner, nodes));
                 // Everything this Apply did was taken back before, or it left nothing to take back.
-                if (
-                  settled.length === 0 &&
-                  treeUndone.size === 0 &&
-                  reversedGroupIds.length === 0 &&
-                  skippedGroupIds.length === 0
-                )
+                if (settled.length === 0 && treeUndone.size === 0 && reversedGroupIds.length === 0)
                   settled.push({ rule: "already", state: "unapplied" });
                 return {
                   status: "unapplied",

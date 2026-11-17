@@ -60,8 +60,10 @@ gives no control once every drafted document is discarded, where nothing is left
 The card shows no failure line for these: "can't reverse" is never read as "went wrong". An old
 tab that still posts a Redo gets 200 `expired`. What
 became of each part shows as plain facts after expansion, worded from the typed
-causes ("Taken out", "Stayed as you edited it"); a drafted document's apply or
-discard is on its row instead. A deleted document's row stays as a record without
+causes ("Taken out", "Stayed as you edited it"); a drafted document's apply,
+discard, or draft waiting in a closed Work is on its row and the Work's review instead.
+A part a closed owner holds names its document ("The change to Notes stayed: …"), as does
+the line an Un-Apply leaves, since a card lists several documents apart from their rows. A deleted document's row stays as a record without
 being a door.
 
 A reversal command can race the projected receipt and return a semantic

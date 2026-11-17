@@ -120,7 +120,8 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
  * A tree fact something changed since stays (`left_out changed_since`), as does a created
  * document with text written since (`has_text`); a text group whose reversal would change a
- * word that holds writing made after the Apply stays applied and is named in `skippedGroupIds`.
+ * word that holds writing made after the Apply stays applied for good: it is named in
+ * `skippedGroupIds`, its document in a `left_out changed_since` line, and no later Un-Apply takes it.
  * A source whose Work was purged takes nothing back: `left_out purged`.
  *
  * Nothing that would change the notes of a closed owner (an archived or deleted Work, a chat in

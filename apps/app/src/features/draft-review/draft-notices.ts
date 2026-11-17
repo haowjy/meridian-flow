@@ -143,21 +143,23 @@ export function halvesOf(answer: ApplyClickResult): ApplyHalves {
  * What an Un-Apply took back, the one place its answer becomes what every surface says. Something
  * taken back with nothing left or held is `all`; with something left or held, `partly`; nothing
  * taken back but something left or held, `nothing`; neither, `already` (the server's `already
- * unapplied`). Each node a `left_out` line names keeps that line's reason (`treeLeft`), read here,
+ * unapplied`). Each node a `left_out` line names keeps that line's reason (`leftOut`), read here,
  * not through `settledOf`, whose views drop the nodes they name. `held` is what stayed for a closed
  * owner, as the answer says it; an answer stored before it had one holds nothing.
  */
 export function unappliedOf(answer: UnapplyClickResult): Unapplied {
   const took = answer.reversedGroupIds.length > 0 || answer.treeUndone.length > 0;
-  const treeLeft = new Map<string, LeftOutWhy>();
+  const leftOut = new Map<string, LeftOutWhy>();
   for (const one of answer.settled ?? [])
     if (one.rule === "left_out")
-      for (const node of one.items) if (!treeLeft.has(node)) treeLeft.set(node, one.why);
+      for (const node of one.items) if (!leftOut.has(node)) leftOut.set(node, one.why);
+  // A node whose tree fact went back and that is left out stayed by its text.
+  const treeWent = new Set(answer.treeUndone);
   const held = answer.held ?? [];
-  const stayed = treeLeft.size > 0 || held.length > 0;
+  const stayed = leftOut.size > 0 || held.length > 0;
   return {
     taken: took ? (stayed ? "partly" : "all") : stayed ? "nothing" : "already",
-    treeLeft: [...treeLeft].map(([node, why]) => ({ node, why })),
+    leftOut: [...leftOut].map(([node, why]) => ({ node, why, tree: !treeWent.has(node) })),
     held,
   };
 }

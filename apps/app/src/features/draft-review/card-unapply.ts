@@ -59,12 +59,12 @@ function joined(answers: readonly Answer[]): Answer {
   const read = answers.filter((answer): answer is Unapplied => answer.taken !== "failed");
   if (read.length < answers.length) return { taken: "failed" };
   const took = read.some((answer) => answer.taken === "all" || answer.taken === "partly");
-  const treeLeft = read.flatMap((answer) => answer.treeLeft);
+  const leftOut = read.flatMap((answer) => answer.leftOut);
   const held = read.flatMap((answer) => answer.held);
-  const stayed = treeLeft.length > 0 || held.length > 0;
+  const stayed = leftOut.length > 0 || held.length > 0;
   return {
     taken: took ? (stayed ? "partly" : "all") : stayed ? "nothing" : "already",
-    treeLeft,
+    leftOut,
     held,
   };
 }

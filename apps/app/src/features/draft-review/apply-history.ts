@@ -97,7 +97,7 @@ export type PressSaid = { from: DocumentHistory; answer: Answer; step: AppliedCo
 export const takenBack = (answer: Answer): boolean =>
   (answer.taken === "all" || answer.taken === "partly") && answer.held.length === 0;
 
-const SPENT: Unapplied = { taken: "already", treeLeft: [], held: [] };
+const SPENT: Unapplied = { taken: "already", leftOut: [], held: [] };
 const CANCELLED: Reapplied = { kind: "cancelled" };
 const LOST: Reapplied = { kind: "lost" };
 const noop = () => {};
@@ -271,7 +271,7 @@ export class AppliedCommand implements ApplyStep {
   passedBy(from: DocumentHistory): void {
     this.reread();
     if (!firstPassOver(this)) return;
-    this.say({ from, answer: { taken: "nothing", treeLeft: [], held: this.held }, step: this });
+    this.say({ from, answer: { taken: "nothing", leftOut: [], held: this.held }, step: this });
   }
 
   /** A session of one of its documents opened since it was applied: in force, it shows there. */
@@ -317,7 +317,7 @@ export class AppliedCommand implements ApplyStep {
     if (state.kind === "taken" || state.kind === "ended") return Promise.resolve(SPENT);
     if (this.waits()) {
       this.reread();
-      return Promise.resolve({ taken: "nothing", treeLeft: [], held: this.held });
+      return Promise.resolve({ taken: "nothing", leftOut: [], held: this.held });
     }
     return this.unapply(from);
   }
