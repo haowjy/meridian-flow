@@ -155,6 +155,8 @@ export type AppendRowsInput = {
   documentId: DocumentId;
   /** Background rebases keep archived drafts current; incoming edits require active Work. */
   work?: "active" | "any";
+  /** `any` appends to a closed draft too: a Restore finishing the Un-Applies of a draft it leaves out. */
+  draft?: "open" | "any";
   /** The checkpoint and highest row the caller's base replica holds. */
   base: DraftReadSince;
   /**

@@ -40,7 +40,11 @@ import {
 import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
-import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  deferUntilDrizzleCommit,
+  deferUntilDrizzleRollback,
+} from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -175,23 +179,13 @@ export function createReopenDrafts(
       }
       // A left-out draft stays closed under its Discard, which the purge still reaches, and leaves
       // the entry: Restore answered for it. Its waiting Un-Applies still finish, so its base stops
-      // holding their text and its Apply records stop claiming an Apply that was taken back; an
-      // append needs an active draft, so it is active for the replay inside this transaction.
+      // holding their text and its Apply records stop claiming an Apply that was taken back.
       if (leftOut.length > 0) {
-        const closed = await tx
-          .select({ id: documentDrafts.id, closedBy: documentDrafts.closedBy })
-          .from(documentDrafts)
-          .where(inArray(documentDrafts.id, leftOutIds));
         await tx
           .update(documentDrafts)
-          .set({ status: "active", closedCause: null, closedBy: null })
+          .set({ closedCause: "left_out" })
           .where(inArray(documentDrafts.id, leftOutIds));
         await replay(leftOutIds);
-        for (const { id, closedBy } of closed)
-          await tx
-            .update(documentDrafts)
-            .set({ status: "closed", closedCause: "left_out", closedBy })
-            .where(eq(documentDrafts.id, id));
       }
       let swapped = 0;
       for (const draft of drafts) {
@@ -387,14 +381,19 @@ export function createReopenDrafts(
       const base = await deps.coordinator.loadBase(draftId);
       const write = deps.coordinator.prepareAppend(base, [], {
         work: "any",
+        draft: "any",
         authorServerRows: (prefix) => reverseBaseHalf(prefix, reversals).rows,
       });
       try {
         await write.persist();
-        write.transfer();
-      } finally {
+      } catch (cause) {
         write.dispose();
+        throw cause;
       }
+      // The replica installs only once the Restore commits; a later throw would otherwise leave
+      // the cache holding a version the database rolled back.
+      if (!deferUntilDrizzleCommit(() => write.transfer())) write.transfer();
+      deferUntilDrizzleRollback(() => write.dispose());
       await tx
         .update(applyCommandEffects)
         .set({ draftReversed: true })

@@ -456,6 +456,7 @@ export function createDrizzleDraftStore(
         const committed = await appendRowsWithinTx(tx, {
           draftId: input.draftId,
           work: input.work,
+          draft: input.draft,
           base: input.base,
           async finalize(read) {
             prefix = { rows: read.tail.length, moved: read.checkpoint !== null };
