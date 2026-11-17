@@ -49,6 +49,14 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
   between authorize and confirm (`confirmEdit` re-checks the level at the grant's destination, not the
   destination: that waits for the executor's rerun of a failed effect).
 
+**A moved owner restarts the write; it never refuses.** The seam passes `confirmEdit` what it locked.
+A document whose owner (or branch owner) is outside that set, because it moved after the grants were
+minted, throws `TreeOwnersMoved` naming the owners. `runWithEditGrants` runs the write again from its
+transaction's start with them added to its locks (`untilOwnersHold`, the one restart rule). Each
+restart adds an owner and a project has finitely many, so it ends; no restart waits on a lock, since
+the locks of the failed attempt are released by its rollback and the next attempt takes them in the
+usual id order. A missing document or a denied level still answers `not_found` or the denial.
+
 A branch move changes the document's presented `scheme`, not its physical
 `contentScheme`. File policy routes content writes from the physical scheme
 until Apply moves the live identity: Scratch content stays live behind a
