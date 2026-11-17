@@ -1,6 +1,7 @@
 # CI checks
 
-[CI](../../.github/workflows/ci.yml) runs four parallel quality jobs:
+[CI](../../.github/workflows/ci.yml) runs on manual dispatch, or when Deploy Staging calls it,
+and its four parallel quality jobs are:
 
 - `quality-static`: lint, debug probes, negative space, tree visibility, i18n and the Nx graph.
 - `quality-typecheck`: typecheck, with runner-local Nx caching only.
@@ -11,11 +12,10 @@ Each job installs Node (pinned in the workflow), pnpm, and Bun (`oven-sh/setup-b
 `.tool-versions`): Bun runs the TypeScript scripts the checks invoke.
 
 Lint and the small checks share a runner because together they take seconds,
-not minutes. The `quality` required status depends on all four jobs, runs
+not minutes. The `quality` aggregate depends on all four jobs, runs
 under `always()`, and fails unless every dependency succeeded. The jobs are explicit rather
 than matrix children so the aggregate checks each result directly, including
-after partial reruns. A failing group does not cancel the others. All jobs, including
-the aggregate, skip draft PRs.
+after partial reruns. A failing group does not cancel the others.
 
 `package.json`'s `scripts.check` remains the local full gate and the source of
 truth. `run-check-group.mjs` reads its `pnpm <script> && ...` chain and invokes

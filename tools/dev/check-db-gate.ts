@@ -6,9 +6,10 @@
  * Vitest resolves related tests through its module graph. Changes that the
  * graph cannot model safely (DB config, migrations, test support, DB-test
  * lifecycle helpers, and dependency resolution) run the full suite, as does
- * DB_GATE_FULL=1. A missing or unreachable local database and a change with no
- * related DB tests skip loudly.
- * CI's db-tests job and `pnpm test:db` always run the full suite.
+ * DB_GATE_FULL=1. A change with no related DB tests skips; a missing or
+ * unreachable local database fails, so `pnpm check` cannot pass with related
+ * tests unrun.
+ * The manual CI db-tests job and `pnpm test:db` always run the full suite.
  *
  *   pnpm check:db
  *   DB_GATE_FULL=1 pnpm check:db
@@ -184,16 +185,20 @@ async function main(): Promise<void> {
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
-    console.warn(
-      "db-gate: skipped — DATABASE_URL is not set. Start Postgres with `pnpm dev:infra` and set it in .env to run the gate locally; CI runs the full suite in the db-tests job.",
+    console.error(
+      "db-gate: failed — DATABASE_URL is not set, so the related DB tests cannot run. " +
+        "Start Postgres with `pnpm dev:infra` and set DATABASE_URL in .env, then run `pnpm check` again.",
     );
+    process.exitCode = 1;
     return;
   }
 
   if (!(await isReachable(databaseUrl))) {
-    console.warn(
-      "db-gate: skipped — Postgres is not reachable at the configured DATABASE_URL. Run `pnpm dev:infra` to start it. Force the gate with `pnpm test:db`.",
+    console.error(
+      "db-gate: failed — Postgres is not reachable at the configured DATABASE_URL, so the " +
+        "related DB tests cannot run. Run `pnpm dev:infra` to start it, then run `pnpm check` again.",
     );
+    process.exitCode = 1;
     return;
   }
 
