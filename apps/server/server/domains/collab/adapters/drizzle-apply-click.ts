@@ -786,12 +786,14 @@ export function createDrizzleApplyClick(
                     await deps.onCommitted(documentId);
                   });
                 }
-                const reversedGroupIds = plans.flatMap((plan) =>
-                  plan.reversed.map((effect) => effect.groupId),
-                );
-                const skippedGroupIds = plans.flatMap((plan) =>
-                  plan.skipped.map((effect) => effect.groupId),
-                );
+                // One change made in two documents has one group id: each is named with its document.
+                const textOf = (pick: (plan: (typeof plans)[number]) => { groupId: string }[]) =>
+                  plans.flatMap((plan) => {
+                    const groupIds = [...new Set(pick(plan).map((effect) => effect.groupId))];
+                    return groupIds.length ? [{ node: plan.documentId, groupIds }] : [];
+                  });
+                const textUndone = textOf((plan) => plan.reversed);
+                const textSkipped = textOf((plan) => plan.skipped);
                 // A skipped group holds writing made since, judged on this press: a later one may
                 // find its words back (another Undo restored them) and take it.
                 for (const plan of plans)
@@ -826,7 +828,7 @@ export function createDrizzleApplyClick(
                 for (const { owner, nodes } of returned.values())
                   settled.push(returnedFor(owner, nodes));
                 // Everything this Apply did was taken back before: nothing taken, left or held now.
-                if (settled.length === 0 && treeUndone.size === 0 && reversedGroupIds.length === 0)
+                if (settled.length === 0 && treeUndone.size === 0 && textUndone.length === 0)
                   settled.push({ rule: "already", state: "unapplied" });
                 return {
                   status: "unapplied",
@@ -835,8 +837,8 @@ export function createDrizzleApplyClick(
                   draftHalfWaits: plans.some(
                     (plan) => plan.reversed.length > 0 && !plan.currentBase && !plan.draftGone,
                   ),
-                  reversedGroupIds,
-                  skippedGroupIds,
+                  textUndone,
+                  textSkipped,
                   treeUndone: [...treeUndone],
                   held: [...held].map(([node, { owner, tree, groupIds }]) => ({
                     node,

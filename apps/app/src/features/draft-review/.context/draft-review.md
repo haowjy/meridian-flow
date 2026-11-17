@@ -193,15 +193,17 @@ synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. T
 schedule retries the targeted Apply before the inverse when its delivery is unknown and
 withholds later commands behind any stalled intent. The Un-Apply goes when either half of
 the Apply landed: a landed rename with settled text still has something to take back. Redo
-queues a new Apply for the text groups the server actually reversed, and the tree cut when
-the Un-Apply's `treeUndone` names the item.
+queues a new Apply for the text groups the server actually reversed in this document
+(`textUndoneOf`), and the tree cut when the Un-Apply's `treeUndone` names the item.
 
 Every other Redo is the same rule on the server's port: the Un-Apply's answer is the Redo's whole
 selection (`againOf`), never the Apply's original choice, so a partial Ctrl+Z redoes only what it
-took back. It is a whole cut that names those groups (`ApplyTextCut` with `groupIds`), cut on
+took back. Text is read per document (`textUndone`): one change made in two documents has one
+group id, and an Un-Apply that took it back in only one of them redoes it there alone. It is a whole cut that names those groups (`ApplyTextCut` with `groupIds`), cut on
 receipt from the draft as the server holds it, plus the tree cut of each node in `treeUndone`: a
 group the draft no longer holds (a card's Undo took the proposal away) is passed over, and a Redo
-that lands nothing is lost and ends, applying nothing else. The strip's and sidebar's Applies send
+that lands nothing is lost and ends, applying nothing else. Every port reads the same landed rule
+(`itemLanded`: the item's text or tree landed): an `applied` answer only says the command finished. The strip's and sidebar's Applies send
 it as `again` targets through the item queues (`rememberApply`), a band's once its review let go
 of the room through `serverBandPort`.
 

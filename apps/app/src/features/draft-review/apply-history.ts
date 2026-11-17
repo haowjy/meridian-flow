@@ -16,7 +16,7 @@ import {
 } from "@/core/project-tree/tree-undo";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import type { ApplyClickOutcome, ApplyCommandHandle } from "./apply-click-queue";
-import { itemOf, unappliedOf } from "./draft-notices";
+import { itemLanded, textUndoneOf, unappliedOf } from "./draft-notices";
 import type { AgainTarget } from "./review-model";
 
 /**
@@ -548,9 +548,7 @@ export class AppliedCommands {
 /** A Redo the queue answered: landed when its item's text or tree landed. */
 const replayLanded = (outcome: ApplyClickOutcome, node: string): Reapplied => {
   if (outcome.status === "landed") return { kind: "landed" };
-  if (outcome.status !== "applied") return LOST;
-  const item = itemOf(outcome, node);
-  return item?.text?.landed || item?.tree?.landed ? { kind: "landed" } : LOST;
+  return outcome.status === "applied" && itemLanded(outcome, node) ? { kind: "landed" } : LOST;
 };
 
 /**
@@ -631,16 +629,14 @@ export function serverPort(input: {
 
 /**
  * What a Redo applies again of one item (`node`, applied from `draftId`): what the Un-Apply whose
- * answer is `answer` took back, null when it took nothing of it. The answer names its groups for
- * the whole command, so each document's cut names them all and takes the ones its draft holds; one
- * change made in two documents has one id, named once.
+ * answer is `answer` took back of that document, null when it took nothing of it.
  */
 export function againOf(
   answer: UnapplyClickResult,
   node: string,
   draftId: string | undefined,
 ): AgainTarget | null {
-  const groupIds = draftId ? [...new Set(answer.reversedGroupIds)] : [];
+  const groupIds = draftId ? textUndoneOf(answer, node) : [];
   const tree = answer.treeUndone.includes(node);
   return groupIds.length || tree ? { kind: "again", draftId, groupIds, tree } : null;
 }
@@ -671,11 +667,10 @@ export function serverBandPort(
         ...(again.tree ? { tree: true as const } : {}),
       };
       // Lost on the way (null): the next Un-Apply asks the server, which answers for one never applied.
-      const sent = await port.send(body).then(
-        (answer) => answer.status,
-        () => null,
-      );
-      return sent === null || sent === "applied" ? { commandId: body.commandId } : null;
+      const sent = await port.send(body).catch(() => null);
+      return sent === null || (sent.status === "applied" && itemLanded(sent, node))
+        ? { commandId: body.commandId }
+        : null;
     },
   });
 }

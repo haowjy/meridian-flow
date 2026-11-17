@@ -163,13 +163,13 @@ its heads, `purged`) stays and is named in `settled` as `left_out`, one line per
 (`tree: true` for tree facts, `false` for text), so the app never guesses which half stayed. One
 something else already took back (a chat card's Undo of a rename: the copy is no longer in force)
 is `already { unapplied }` with the item. `treeUndone` names the nodes with a fact it took back, so it took something
-back when that or `reversedGroupIds` is not empty. When nothing was taken back, left or held, the
+back when that or `textUndone` is not empty. When nothing was taken back, left or held, the
 answer is `already { unapplied }`, and so is a second Un-Apply of a delete. When the tree rows of
 the Apply are gone (`treeHalfLostWithBranch`, read from the stored answer's `applied`), the document
 it moved or deleted is `left_out purged`; the route answers 404 for a purged Work before the command
 runs, so that path is reached only when a chat's lineage branch goes while its Work lives on. A text
 group with nothing left to reverse (a word in it holds writing made since) stays: it is named in
-`skippedGroupIds` and its document in a `left_out changed_since` line, on every press. Nothing
+`textSkipped` and its document in a `left_out changed_since` line, on every press. Nothing
 records the skip: it is a judgement of the text as it stands, and another Undo can bring the words
 back with their lineage (a later turn's card Undo), after which the same Un-Apply takes the group.
 So the chat card keeps listing an Apply until every group is taken back (`applyCommands`'
@@ -315,11 +315,14 @@ whose folder's create is in archived notes says so and not `needs`. Apply answer
 text can land (`restoredByApply`) is made only for a document whose source is open.
 
 **Un-Apply's answer is a partition.** Everything of the Apply still applied before the press is in
-exactly one place: taken back (`reversedGroupIds`, `treeUndone`), left as the text and tree stand
-now (`left_out`, `skippedGroupIds`), or held (`UnapplyClickResult.held`, one entry per node: `tree`
+exactly one place: taken back (`textUndone`, `treeUndone`), left as the text and tree stand
+now (`left_out`, `textSkipped`), or held (`UnapplyClickResult.held`, one entry per node: `tree`
 when a tree fact of it is held, `groupIds` the text groups of it that are, `why`, `owner` and
 `ownerKey`). Something already taken back is in none; a text group an earlier Un-Apply took back is
-never held. In `drizzle-apply-click.ts` `unapply`, under the locks:
+never held. Text is named per document (`{ node, groupIds }`): one change made in two documents
+has one group id, and a press can take it back in one of them and leave it in the other, so a
+Redo replays `(document, group)`, never the id alone. In `drizzle-apply-click.ts` `unapply`, under
+the locks:
 
 1. The tree half runs first (`undoApply` with the judge). `left` for `closed` asks the judge again:
    `closed` is a held entry with `tree`; `gone` is `left_out purged`. `already` is in no list.
@@ -327,7 +330,7 @@ never held. In `drizzle-apply-click.ts` `unapply`, under the locks:
    is skipped. For the rest, where the document stands *after* the tree half is read, and a closed
    source holds every remaining group in that node's entry. Otherwise the inverse runs as before.
    A node whose move back is held while its text, now in an open source, goes back is in
-   `reversedGroupIds` and in `held` with `tree: true` and no groups.
+   `textUndone` and in `held` with `tree: true` and no groups.
 
 The `returned` lines in `settled` (one per owner and reason, with `owner` and `items`) are derived
 from `held`, for the words and for a tab opened before. `already { unapplied }` with no item is the

@@ -115,6 +115,17 @@ export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult 
   return answer.items.find((item) => item.node === node);
 }
 
+/** Whether something of `node` landed, text or tree: `applied` alone says the command finished. */
+export function itemLanded(answer: ApplyClickResult, node: string): boolean {
+  const item = itemOf(answer, node);
+  return item?.text?.landed === true || item?.tree?.landed === true;
+}
+
+/** The text groups of `node` an Un-Apply took back. */
+export function textUndoneOf(answer: UnapplyClickResult, node: string): string[] {
+  return answer.textUndone.find((text) => text.node === node)?.groupIds ?? [];
+}
+
 /**
  * What of an Apply landed, command-wide: its Undo step's two halves, and what the tree half did
  * to each node it landed on, from where live had it before and after (`did`).
@@ -148,7 +159,7 @@ export function halvesOf(answer: ApplyClickResult): ApplyHalves {
  * owner, as the answer says it; an answer stored before it had one holds nothing.
  */
 export function unappliedOf(answer: UnapplyClickResult): Unapplied {
-  const took = answer.reversedGroupIds.length > 0 || answer.treeUndone.length > 0;
+  const took = answer.textUndone.length > 0 || answer.treeUndone.length > 0;
   const leftOut = new Map<string, { node: string; why: LeftOutWhy; tree: boolean }>();
   for (const one of answer.settled ?? [])
     if (one.rule === "left_out")

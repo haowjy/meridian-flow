@@ -1019,8 +1019,11 @@ try {
     const answer = await f.unapply(click, commandId);
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));
     if (answer.status === "unapplied") {
-      assert.deepEqual(answer.reversedGroupIds, click.request.groupIds);
-      assert.deepEqual(answer.skippedGroupIds, []);
+      assert.deepEqual(
+        answer.textUndone.flatMap((text) => text.groupIds),
+        click.request.groupIds,
+      );
+      assert.deepEqual(answer.textSkipped, []);
     }
     assert.deepEqual(await f.liveText(), ["The cat sat."]);
     const durable = await f.durable();
@@ -1048,7 +1051,7 @@ try {
     ]);
     const answer = await f.unapply(click);
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));
-    if (answer.status === "unapplied") assert.equal(answer.reversedGroupIds.length, 2);
+    if (answer.status === "unapplied") assert.equal(answer.textUndone[0]?.groupIds.length, 2);
     assert.deepEqual(await f.liveText(), [
       "She turned away",
       "She waited by",
@@ -1072,8 +1075,8 @@ try {
       const answer = await f.unapply(click);
       assert.equal(answer.status, "unapplied", JSON.stringify(answer));
       if (answer.status === "unapplied") {
-        assert.equal(answer.reversedGroupIds.length, 2);
-        assert.equal(answer.skippedGroupIds.length, 0);
+        assert.equal(answer.textUndone[0]?.groupIds.length, 2);
+        assert.deepEqual(answer.textSkipped, []);
       }
       assert.deepEqual(await f.liveText(), ["The very cat sat.", "The dog slept."]);
       const durable = await f.durable();
@@ -1142,7 +1145,7 @@ try {
       request: { commandId: randomUUID(), applyCommandId: commandId },
     });
     assert.equal(undone.status, "unapplied", JSON.stringify(undone));
-    if (undone.status === "unapplied") assert.equal(undone.reversedGroupIds.length, 2);
+    if (undone.status === "unapplied") assert.equal(undone.textUndone.length, 2);
     assert.deepEqual(await a.liveText(), ["Alpha."]);
     assert.deepEqual(await b.liveText(), ["Beta."]);
     for (const f of [a, b]) {

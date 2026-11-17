@@ -121,16 +121,16 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
  * A tree fact something changed since stays (`left_out changed_since`), as does a created
  * document with text written since (`has_text`); a text group whose reversal would change a
- * word that holds writing made after the Apply stays applied: it is named in `skippedGroupIds`,
+ * word that holds writing made after the Apply stays applied: it is named in `textSkipped`,
  * its document in a `left_out changed_since` line with `tree: false`. Each press judges the text as
  * it stands, so a later press takes the group if its words came back (another Undo restored them).
  * A source whose Work was purged takes nothing back: `left_out purged`.
  *
  * Nothing that would change the notes of a closed owner (an archived or deleted Work, a chat in
  * Trash) is taken back: it is in `held`. Everything of the Apply still applied before this press
- * is in exactly one place: taken back (`reversedGroupIds`, `treeUndone`), left as it stands now
- * (`left_out`, `skippedGroupIds`), or held. A text group an earlier Un-Apply took
- * back is in none. It took something back when `reversedGroupIds` or `treeUndone` is not empty.
+ * is in exactly one place: taken back (`textUndone`, `treeUndone`), left as it stands now
+ * (`left_out`, `textSkipped`), or held. A text group an earlier Un-Apply took
+ * back is in none. It took something back when `textUndone` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
   commandId: CommandId;
@@ -143,8 +143,12 @@ export type UnapplyClickResult = {
   branchId: BranchId;
   /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
   draftHalfWaits: boolean;
-  reversedGroupIds: string[];
-  skippedGroupIds: string[];
+  /**
+   * The text groups taken back, and those left applied, per document: one change made in two
+   * documents has one group id, and a press may take it back in one of them only.
+   */
+  textUndone: Array<{ node: string; groupIds: string[] }>;
+  textSkipped: Array<{ node: string; groupIds: string[] }>;
   /** The nodes with a tree fact this command took back (a restore it undid included). */
   treeUndone: string[];
   /**
