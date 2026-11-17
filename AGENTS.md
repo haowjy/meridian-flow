@@ -130,14 +130,22 @@ it, instead of PRs stacked on each other, and the piece's worktree, stack and pr
 soon as it's in. One PR carries the integration branch into `main`.
 
 Once a PR is complete and a reviewer (another model, or the owner) has approved it, its author
-merges it at once. Before the merge, CI is green, the prober's browser run is done
-where "Debug with `./mf`" asks for one, the regressions the change could cause are exercised on
-the real system (`/testing`), and the PR body is reread against the final diff, with evidence
-from the commit being merged. Don't hold a finished PR for the owner to try first: he uses the
-app, and what he finds wrong becomes a follow-up PR.
+merges it at once. Before the merge, `pnpm check` is green on the final commit, the prober's
+browser run is done where "Debug with `./mf`" asks for one, the regressions the change could
+cause are exercised on the real system (`/testing`), and the PR body is reread against the final
+diff, with evidence from the commit being merged. Changes to the database, to prompt text that
+DB tests pin, or to the boot path also run `pnpm test:db`, `pnpm test:probes` and the relevant
+`pnpm smoke:*` command; `pnpm check` covers only the DB tests related to the change. The CI
+workflow is manual: dispatch it for a release or when the full net is wanted. When a check is added, removed or renamed,
+update this paragraph and the PR template's Verification section in the same change. Don't hold a
+finished PR for the owner to try first: he uses the app, and what he finds wrong becomes a
+follow-up PR.
 
 Open a draft PR as soon as a branch has its first commit, and update its body with each push,
-so anyone can see the work's state from the PR. Mark it ready when it's complete.
+so anyone can see the work's state from the PR. Run `pnpm check` on the draft as you work and
+again before marking it ready: PR and push events no longer start CI. Lefthook still checks
+staged files on commit, and on push runs debug probes and the database package's tests.
+Mark it ready when it's complete.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with

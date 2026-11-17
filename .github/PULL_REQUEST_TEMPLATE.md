@@ -131,7 +131,8 @@
      - Tests: each test added, changed or deleted, with the risk it protects or
        why deleting it is safe (AGENTS.md, Build and test).
      - Not exercised: what you didn't run, and why.
-     - Gates: the commands, in one line. -->
+     - Gates: the commands, in one line. Name the manual CI dispatch and the full
+       `test:db` / `test:probes` / smoke commands when the change needed them. -->
 
 - Browser:
 - Model:
