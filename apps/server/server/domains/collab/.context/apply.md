@@ -252,7 +252,7 @@ counts as its review changes in `leftOut` and as `left_out changed_since` in `se
 A left-out draft stays closed under its Discard (`closed_by` kept, so the day-30 purge still deletes it) with
 `closed_cause = left_out`: a restore that answered takes it out of Trash's entry and `closedBy()`, so no entry
 leaves the same thing out on every Restore. Every other reader (the model's write path, receipts, the purge)
-reads it as the Discard's draft. `brought` names the documents whose text came back and whose tree changes did;
+reads it as the Discard's draft. The restore still replays the draft's waiting Un-Applies (the draft is active for that one step, inside the command's transaction), so its base and Apply records no longer hold an Apply that was taken back. `brought` names the documents whose text came back and whose tree changes did;
 Trash's Undo of the restore discards exactly those halves. An Un-Apply's reopen does not ask
 (its own Apply wrote that text). A purged Work's branch is a 404
 at the route. A branch of another project is a 404 too. A Work or
