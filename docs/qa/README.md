@@ -87,8 +87,7 @@ A probe is current when it has been run against the change; any other recipe is 
 claim that it passed on the current commit. `pnpm test:probes` runs every
 `tools/qa/probes/<name>/run.mts` in turn, and the manually dispatched CI `db-tests` job runs
 it after the DB suite. Run it before marking a PR ready when the change touches what the
-probes cover. `test:probes` runs every `run.mts` in turn, so such a file must be
-self-contained: it makes and drops any database it uses
+probes cover. So a file named `run.mts` there must be self-contained: it makes and drops any database it uses
 (`lfd_probe_*`), needs no browser, model or running stack, and exits nonzero
 on failure. A probe that needs any of those is not named `run.mts` (see
 `draft-generations/live.mts`) and stays a manual recipe. A probe whose subject no

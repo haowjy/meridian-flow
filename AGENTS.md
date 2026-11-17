@@ -144,7 +144,8 @@ follow-up PR.
 Open a draft PR as soon as a branch has its first commit, and update its body with each push,
 so anyone can see the work's state from the PR. Run `pnpm check` on the draft as you work and
 again before marking it ready: PR and push events no longer start CI. Lefthook still checks
-staged files on commit and debug probes on push. Mark it ready when it's complete.
+staged files on commit, and on push runs debug probes and the database package's tests.
+Mark it ready when it's complete.
 
 Write a PR body for a reader who knows nothing about the area, from the
 [template](.github/PULL_REQUEST_TEMPLATE.md), and check it with

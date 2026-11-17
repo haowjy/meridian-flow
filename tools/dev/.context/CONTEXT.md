@@ -71,11 +71,12 @@ worktree-slug prefixes, so a worktree database can't pass for a managed one.
 
 `pnpm check` ends with `check-db-gate.ts`: Vitest's module graph selects DB test
 files related to changes since `origin/main`, including staged, unstaged and
-untracked files. No related DB files, or an absent or unreachable configured
-Postgres server, skips loudly. DB config, migrations, shared DB test support and
-DB-test lifecycle or dependency-resolution inputs bypass selection and run the
-full suite, as does `DB_GATE_FULL=1`. The gate provisions the same owned test
-databases as `pnpm test:db`; `pnpm test:db` and CI's `db-tests` job always run
+untracked files. No related DB files skips; an absent or unreachable configured
+Postgres server fails, so `pnpm check` cannot pass with related tests unrun. DB
+config, migrations, shared DB test support and DB-test lifecycle or
+dependency-resolution inputs bypass selection and run the full suite, as does
+`DB_GATE_FULL=1`. The gate provisions the same owned test databases as `pnpm
+test:db`; `pnpm test:db` and the manually dispatched CI `db-tests` job always run
 every DB file.
 
 ## Session and readiness
