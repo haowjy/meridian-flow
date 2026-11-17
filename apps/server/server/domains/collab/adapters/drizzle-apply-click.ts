@@ -562,7 +562,6 @@ export function createDrizzleApplyClick(
                               why: why === "unknown" ? "purged" : why,
                             });
                       }
-                      judge.assertLocked();
                     },
                   });
                 }

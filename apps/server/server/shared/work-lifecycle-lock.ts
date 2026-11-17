@@ -116,8 +116,9 @@ export async function lockSeamWorks(
 ): Promise<LockedOwners> {
   const works = await lockWorksInIdOrder(db, [...workIds, ...scopedEditWorkIds()]);
   const lineages = await lockLineageOwners(db, [...lineageRootIds, ...scopedEditLineageRoots()]);
-  await confirmScopedEdits();
-  return { works, lineages };
+  const locked = { works, lineages };
+  await confirmScopedEdits(locked);
+  return locked;
 }
 
 /** Seam locks, then each of the seam's own Works and lineages must still be active. */

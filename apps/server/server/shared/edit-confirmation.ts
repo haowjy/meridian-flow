@@ -19,14 +19,18 @@ import {
   isInDrizzleTransaction,
   setDrizzleTransactionLocal,
 } from "./drizzle-transaction.js";
+import type { LockedOwners } from "./work-lifecycle-lock.js";
 
 export interface EditConfirmation {
   /** Named Works the grants lock, so a seam sorts them with its own Work locks. */
   readonly workIds: readonly string[];
   /** Lineages whose drafts the grants write into: locked after the Works, before the seam's branch and namespace locks. */
   readonly lineageRootIds: readonly string[];
-  /** Re-checks the grants under the seam's Work locks, in its transaction; throws on a refusal. */
-  confirm(): Promise<void>;
+  /**
+   * Re-checks the grants under the seam's Work locks, in its transaction; throws on a refusal, or
+   * `TreeOwnersMoved` when a document's owner moved outside what the seam `locked`.
+   */
+  confirm(locked: LockedOwners): Promise<void>;
   /** The grants name each document, or it lies in a container they grant. */
   covers(documentIds: readonly string[]): Promise<boolean>;
 }
@@ -65,14 +69,14 @@ export function scopedEditLineageRoots(): readonly string[] {
  * Confirms the bound grants once per transaction. Call it after the seam's
  * Work-row locks and before its advisory locks.
  */
-export async function confirmScopedEdits(): Promise<void> {
+export async function confirmScopedEdits(locked: LockedOwners): Promise<void> {
   const confirmation = scope.getStore();
   if (!confirmation) return;
   if (!isInDrizzleTransaction()) {
     throw new Error("Edit grants are confirmed inside the write's own transaction");
   }
   if (getDrizzleTransactionLocal<boolean>(confirmation)) return;
-  await confirmation.confirm();
+  await confirmation.confirm(locked);
   setDrizzleTransactionLocal(confirmation, true);
 }
 
