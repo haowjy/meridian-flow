@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts";
 import type { ClosedOwnerWhy, Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
@@ -30,20 +31,30 @@ const MAX_UNNAMED_RESTARTS = 4;
 /** What the commands that ran before have found they need. */
 export type Learned = { sources: ReadonlySet<string>; owners: OwnerLocks };
 
+const enclosing = new AsyncLocalStorage<{ learned: Learned }>();
+
 /**
  * Runs `run` again, from its transaction's start, while it throws `TreeOwnersMoved`, with all it
  * has learned. Each restart that names something adds a source or an owner and a project has
  * finitely many, so it ends; one that names only what is known already is a bug in what it
  * asked, and escapes. A restart that names nothing learns nothing, so only a few are allowed.
+ *
+ * A command has one restart loop: a call made inside another's `run` is not a loop. It runs
+ * once with what the outer one has learned and lets `TreeOwnersMoved` reach it, so the owner
+ * any layer finds is locked by every layer on the next attempt, and a layer that committed
+ * is never run again.
  */
 export async function untilOwnersHold<T>(run: (learned: Learned) => Promise<T>): Promise<T> {
-  let learned: Learned = { sources: new Set(), owners: mergeOwnerLocks() };
+  const outer = enclosing.getStore();
+  if (outer) return run(outer.learned);
+  const state = { learned: { sources: new Set<string>(), owners: mergeOwnerLocks() } as Learned };
   let unnamed = 0;
   for (;;) {
     try {
-      return await run(learned);
+      return await enclosing.run(state, () => run(state.learned));
     } catch (cause) {
       if (!(cause instanceof TreeOwnersMoved)) throw cause;
+      const { learned } = state;
       const sources = new Set([...learned.sources, ...cause.sources]);
       const owners = mergeOwnerLocks(learned.owners, cause.owners);
       const named =
@@ -53,7 +64,7 @@ export async function untilOwnersHold<T>(run: (learned: Learned) => Promise<T>):
         owners.workIds.length > learned.owners.workIds.length ||
         owners.lineageRootIds.length > learned.owners.lineageRootIds.length;
       if ((named && !grew) || (!named && ++unnamed > MAX_UNNAMED_RESTARTS)) throw cause;
-      learned = { sources, owners };
+      state.learned = { sources, owners };
     }
   }
 }

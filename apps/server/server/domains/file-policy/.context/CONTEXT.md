@@ -52,7 +52,9 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
 **A moved owner restarts the write; it never refuses.** The seam passes `confirmEdit` what it locked.
 A document whose owner (or branch owner) is outside that set, because it moved after the grants were
 minted, throws `TreeOwnersMoved` naming the owners. `runWithEditGrants` runs the write again from its
-transaction's start with them added to its locks (`untilOwnersHold`, the one restart rule). Each
+transaction's start with them added to its locks (`untilOwnersHold`, the one restart rule). A command has one restart loop: a call made inside
+another's loop (an operation's `withTreeOwners`) runs once with what the outer one learned and lets
+`TreeOwnersMoved` reach it, so a committed command never runs again. Each
 restart adds an owner and a project has finitely many, so it ends; no restart waits on a lock, since
 the locks of the failed attempt are released by its rollback and the next attempt takes them in the
 usual id order. A missing document or a denied level still answers `not_found` or the denial.

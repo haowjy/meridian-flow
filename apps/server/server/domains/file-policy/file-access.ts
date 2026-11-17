@@ -63,13 +63,12 @@ export interface FileAccess {
    * id-ordered select with its own (`locked`). Re-reads facts and each agent chain, and
    * re-runs the policy at each grant's destination. A file whose owner or
    * branch Work moved outside `locked` throws `TreeOwnersMoved` naming the new owners: locking
-   * them now would break the id order, so the caller runs again with them in its set. With no
-   * `locked` (a reader that locks nothing) there is no set to be outside of. Refused grants are
+   * them now would break the id order, so the caller runs again with them in its set. Refused grants are
    * returned, not thrown, so the rest of the reply can commit.
    */
   confirmEdit(
     grants: readonly FileGrant<"edit" | "command">[],
-    locked?: LockedOwners,
+    locked: LockedOwners,
   ): Promise<FileAccessDenied[]>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
@@ -154,17 +153,15 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         }
         return chain;
       };
-      if (locked) {
-        const needed = mergeOwnerLocks(
-          ...fresh.flatMap((facts) => (facts ? [grantOwnerLocks(facts)] : [])),
-        );
-        const outside = {
-          workIds: needed.workIds.filter((id) => !locked.works.has(id)),
-          lineageRootIds: needed.lineageRootIds.filter((id) => !locked.lineages.has(id)),
-        };
-        if (outside.workIds.length + outside.lineageRootIds.length > 0)
-          throw new TreeOwnersMoved([], outside);
-      }
+      const needed = mergeOwnerLocks(
+        ...fresh.flatMap((facts) => (facts ? [grantOwnerLocks(facts)] : [])),
+      );
+      const outside = {
+        workIds: needed.workIds.filter((id) => !locked.works.has(id)),
+        lineageRootIds: needed.lineageRootIds.filter((id) => !locked.lineages.has(id)),
+      };
+      if (outside.workIds.length + outside.lineageRootIds.length > 0)
+        throw new TreeOwnersMoved([], outside);
       const refused: FileAccessDenied[] = [];
       for (const [index, grant] of grants.entries()) {
         const facts = fresh[index];

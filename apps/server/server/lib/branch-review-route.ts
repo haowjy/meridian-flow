@@ -767,7 +767,8 @@ async function applyItems(
     ),
   );
   if (result.ok) return result.value;
-  // The grants were refused at the seam: a document moved to another Work after they were minted.
+  // The grants were refused at the seam: a level dropped, or a document is gone. A move of its
+  // owner restarts the write instead.
   // The command settled nothing, so a removed room has nothing to settle here either.
   throw createError({ statusCode: 404, message: "Not found" });
 }

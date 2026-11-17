@@ -194,7 +194,7 @@ export async function containerOfUri(
  * inside its locks. A closed Work answers yes here; the lock decides.
  */
 export function canCommandContextUri(
-  deps: LocatorDeps & { fileAccess: Pick<FileAccess, "authorize" | "confirmEdit"> },
+  deps: LocatorDeps & { fileAccess: Pick<FileAccess, "authorize"> },
   input: { projectId: string; userId: string },
 ): (uri: string) => Promise<boolean> {
   return async (uri) => {
@@ -205,7 +205,7 @@ export function canCommandContextUri(
       target,
       "command",
     );
-    return !isFileAccessDenied(grant) && (await deps.fileAccess.confirmEdit([grant])).length === 0;
+    return !isFileAccessDenied(grant);
   };
 }
 
