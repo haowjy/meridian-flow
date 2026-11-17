@@ -8,8 +8,9 @@ room: snapshot, `baseViewDelta`, `groupIds`; the server refuses `unsynced` when 
 lacks the snapshot, and `malformed` for a group the cut's projection doesn't have. A whole cut
 (`{draftId, whole: true}`) is what a tab with no room open sends (Changes rows, folders, Apply
 all): `compileClick` cuts at the replica `loadBase` returned, with an empty `baseViewDelta`, and
-takes every group of that projection. A whole cut with no group compiles to an empty click; the
-adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and
+takes every group of that projection, or, with `groupIds` (a Redo naming what its Un-Apply took
+back), the named groups the projection holds, passing over the rest. A whole cut with no group
+compiles to an empty click; the adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and
 the Un-Apply records are the same for both.
 
 The projection job (`domain/draft-projection.ts`) stores `text_changes`, the review groups of

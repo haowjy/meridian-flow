@@ -131,7 +131,13 @@ function itemOf(documentId: string, body: ApplyClick): Item {
     node: documentId,
     ...(body.tree ? { tree: true as const } : {}),
     ...(body.draftId && body.whole
-      ? { text: { draftId: body.draftId, whole: true as const } }
+      ? {
+          text: {
+            draftId: body.draftId,
+            whole: true as const,
+            ...(body.groupIds.length ? { groupIds: body.groupIds } : {}),
+          },
+        }
       : body.draftId && body.snapshot
         ? {
             text: {

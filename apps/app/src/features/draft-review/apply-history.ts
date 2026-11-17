@@ -17,6 +17,7 @@ import {
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import type { ApplyClickOutcome, ApplyCommandHandle } from "./apply-click-queue";
 import { itemOf, unappliedOf } from "./draft-notices";
+import type { AgainTarget } from "./review-model";
 
 /**
  * The histories this tab holds for the Apply's documents, read now: each one's live session, and
@@ -560,7 +561,7 @@ const replayLanded = (outcome: ApplyClickOutcome, node: string): Reapplied => {
  */
 export function queuePort(handle: ApplyCommandHandle, node: string): ApplyPort {
   return {
-    commandId: () => handle.replay().applyCommandId,
+    commandId: () => handle.applyInForce(),
     unapply: () =>
       handle
         .undo()
@@ -629,22 +630,46 @@ export function serverPort(input: {
 }
 
 /**
+ * What a Redo applies again of one item (`node`, applied from `draftId`): what the Un-Apply whose
+ * answer is `answer` took back, null when it took nothing of it. The answer names its groups for
+ * the whole command, so each document's cut names them all and takes the ones its draft holds; one
+ * change made in two documents has one id, named once.
+ */
+export function againOf(
+  answer: UnapplyClickResult,
+  node: string,
+  draftId: string | undefined,
+): AgainTarget | null {
+  const groupIds = draftId ? [...new Set(answer.reversedGroupIds)] : [];
+  const tree = answer.treeUndone.includes(node);
+  return groupIds.length || tree ? { kind: "again", draftId, groupIds, tree } : null;
+}
+
+/**
  * A band's Apply once its review let go of the room: the queue settles an Un-Apply only by
- * watching that room, so from here the server's answer alone settles it. `replay` is what the
- * queue last held: the Apply in force and the click a Redo sends again, with what the last
- * Un-Apply took back.
+ * watching that room, so from here the server's answer alone settles it. `applyCommandId`: the
+ * Apply in force; `node` and `draftId`: the document and the draft it applied from.
  */
 export function serverBandPort(
   port: BandPort,
-  replay: { applyCommandId: string; again: ApplyClick },
+  applyCommandId: string,
+  { node, draftId }: { node: string; draftId: string },
 ): ApplyPort {
-  let { again } = replay;
   return serverPort({
-    commandId: replay.applyCommandId,
+    commandId: applyCommandId,
     unapply: port.unapply,
     again: async (answer) => {
-      if (answer.reversedGroupIds.length) again = { ...again, groupIds: answer.reversedGroupIds };
-      const body = { ...again, commandId: crypto.randomUUID() };
+      const again = againOf(answer, node, draftId);
+      if (!again) return null;
+      const body: ApplyClick = {
+        commandId: crypto.randomUUID(),
+        ...(again.draftId && again.groupIds.length
+          ? { draftId: again.draftId, whole: true as const }
+          : {}),
+        groupIds: [...again.groupIds],
+        baseViewDelta: [],
+        ...(again.tree ? { tree: true as const } : {}),
+      };
       // Lost on the way (null): the next Un-Apply asks the server, which answers for one never applied.
       const sent = await port.send(body).then(
         (answer) => answer.status,

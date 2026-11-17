@@ -102,7 +102,7 @@ stateDiagram-v2
   (`takenBack`), and otherwise is cancelled and the answer decides.
 - **The command in force keeps its id until the Redo's command lands.** The queue's handle names
   its latest click for the next Un-Apply (`current`) and publishes the Apply in force
-  (`inForce`, which `replay()` and the port's `commandId` read) only once a replay lands, so
+  (`inForce`, which the port's `commandId` reads through `applyInForce()`) only once a replay lands, so
   `AppliedCommands.find` reaches the same owner throughout and a card can't make a second one.
 - **`taken` is the editor's Redo, not the Apply's last word.** An answer that took part and left
   a group changed since still leaves that group in force on the server, which keeps listing the

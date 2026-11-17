@@ -88,7 +88,7 @@ import {
   readChosen,
   roomContent,
 } from "./review-frame";
-import type { ChangeTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
+import type { ApplyTarget, GroupsTarget, ReviewChange, TextTarget } from "./review-model";
 import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 
 export type DraftCommandState = {
@@ -757,7 +757,12 @@ export class DraftCommandOwner {
     };
     for (const [band, held] of this.bandApplies) {
       if (held.draftId !== entry.draftId || !held.handle) continue;
-      band.switchPort(serverBandPort(port, held.handle.replay()));
+      band.switchPort(
+        serverBandPort(port, held.handle.applyInForce(), {
+          node: entry.ref.documentId,
+          draftId: entry.draftId,
+        }),
+      );
       held.handle = null;
     }
     this.releaseItem(entry.item);
@@ -834,7 +839,7 @@ export class DraftCommandOwner {
    */
   apply(
     ref: DraftRef,
-    target: ChangeTarget,
+    target: ApplyTarget,
     /**
      * Whether the click includes the item's tree records, its move, delete or creation: the
      * tree line, a whole-item Apply, or text groups chosen with the tree line.
@@ -849,6 +854,12 @@ export class DraftCommandOwner {
     // A tree cut already on its way is not sent twice.
     const tree =
       requested && !this.items.get(ref.itemKey)?.queue.clicks.some((click) => click.body.tree);
+    if (target.kind === "again") {
+      const draftId = target.groupIds.length ? target.draftId : undefined;
+      return draftId || tree
+        ? this.captureOnReceipt(ref, { draftId, groupIds: target.groupIds, tree }, saw, joint)
+        : null;
+    }
     const binding = this.byItem.get(ref.itemKey)?.binding;
     const room = binding?.runtime.state().ready ? binding : null;
     // No room open here: the server cuts the whole draft on receipt.
@@ -868,12 +879,12 @@ export class DraftCommandOwner {
   /**
    * A click the server resolves on receipt, so it needs no room: a tree cut alone (design-v2
    * §4), or every change of `draftId` as the server holds it then, with the item's tree cut when
-   * given. Text an agent writes before the server receives it is included. The row hides until
-   * the answer.
+   * given; `groupIds`, only those of its changes. Text an agent writes before the server receives
+   * it is included. The row hides until the answer.
    */
   private captureOnReceipt(
     ref: DraftRef,
-    cut: { draftId?: string; tree?: boolean },
+    cut: { draftId?: string; groupIds?: readonly string[]; tree?: boolean },
     saw: TreeSaw | undefined,
     joint?: Joint,
   ): StartedApply | null {
@@ -884,7 +895,7 @@ export class DraftCommandOwner {
       body: {
         commandId: joint?.commandId ?? crypto.randomUUID(),
         ...(cut.draftId ? { draftId: cut.draftId, whole: true as const } : {}),
-        groupIds: [],
+        groupIds: cut.draftId ? [...(cut.groupIds ?? [])] : [],
         baseViewDelta: [],
         ...(cut.tree ? { tree: true as const } : {}),
         ...(saw ? { saw } : {}),
@@ -1199,7 +1210,7 @@ export class DraftCommandOwner {
     branchId: string;
     members: readonly {
       ref: DraftRef;
-      target: ChangeTarget;
+      target: ApplyTarget;
       tree: boolean;
     }[];
     folders: readonly string[];

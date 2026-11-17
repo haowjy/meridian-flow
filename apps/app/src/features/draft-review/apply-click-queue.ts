@@ -105,11 +105,8 @@ export type ApplyCommandHandle = {
   undo(): Promise<UnapplyClickOutcome>;
   /** Queues the Redo at once; resolves with what became of it. */
   redo(): Promise<ApplyClickOutcome>;
-  /**
-   * The Apply in force, which a Redo replaces only once it lands, and the click a Redo sends
-   * again (a new command id to fill).
-   */
-  replay(): { applyCommandId: string; again: ApplyClick };
+  /** The Apply in force: its command id, which a Redo replaces only once it lands. */
+  applyInForce(): string;
 };
 type ScheduledApplyHandle = ApplyCommandHandle & {
   /** The latest Apply queued: the one an Un-Apply names, or cancels before it is sent. */
@@ -294,10 +291,7 @@ export class ApplyClickQueue {
           return answer;
         });
       },
-      replay: () => ({
-        applyCommandId: handle.inForce.body.commandId,
-        again: { ...handle.inForce.body, groupIds: [...handle.replaySelection], tree: undefined },
-      }),
+      applyInForce: () => handle.inForce.body.commandId,
     };
 
     return {

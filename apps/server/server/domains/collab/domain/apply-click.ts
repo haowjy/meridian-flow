@@ -190,9 +190,14 @@ export function compileClick(
     const projection = projectReview(
       diffBlocks(optimistic, readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema)),
     );
-    if ("whole" in request && projection.groups.length === 0) return { schema, groups: [] };
-    const groupIds =
-      "whole" in request ? projection.groups.map((group) => group.id) : request.groupIds;
+    let groupIds: readonly string[];
+    if ("whole" in request) {
+      const named = request.groupIds && new Set(request.groupIds);
+      groupIds = projection.groups.flatMap((group) =>
+        !named || named.has(group.id) ? [group.id] : [],
+      );
+      if (groupIds.length === 0) return { schema, groups: [] };
+    } else groupIds = request.groupIds;
     const known = new Set(projection.groups.map((group) => group.id));
     if (
       !groupIds.length ||

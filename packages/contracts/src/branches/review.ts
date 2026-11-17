@@ -35,8 +35,9 @@ export type ApplyClick = {
   /** Base64 of Y.encodeSnapshotV2(room snapshot). Omitted for a tree cut alone and a whole cut. */
   snapshot?: string;
   /**
-   * Apply every group the server's replica of `draftId` holds on receipt (`ApplyTextCut`'s whole
-   * cut), with no snapshot and empty `groupIds` and `baseViewDelta`.
+   * Cut on receipt from the server's replica of `draftId` (`ApplyTextCut`'s whole cut), with no
+   * snapshot and an empty `baseViewDelta`: every group it holds when `groupIds` is empty, else the
+   * named ones it holds.
    */
   whole?: true;
   baseViewDelta: ApplySpanPatch[];
@@ -176,7 +177,9 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
  * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
- * is skipped, not refused.
+ * is skipped, not refused. A whole cut with `groupIds` takes only the named groups the replica
+ * holds and passes over the rest: a Redo names what its Un-Apply took back, so it never applies
+ * a change its Undo didn't take.
  */
 export type ApplyTextCut =
   | {
@@ -186,7 +189,7 @@ export type ApplyTextCut =
       baseViewDelta: ApplySpanPatch[];
       groupIds: string[];
     }
-  | { draftId: string; whole: true };
+  | { draftId: string; whole: true; groupIds?: string[] };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree

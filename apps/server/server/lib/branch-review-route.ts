@@ -226,10 +226,7 @@ const ApplyClickBody = z
   })
   .refine((body) =>
     body.whole
-      ? Boolean(body.draftId) &&
-        !body.snapshot &&
-        body.groupIds.length === 0 &&
-        body.baseViewDelta.length === 0
+      ? Boolean(body.draftId) && !body.snapshot && body.baseViewDelta.length === 0
       : Boolean(body.snapshot) === Boolean(body.draftId),
   );
 type ApplyClickRequest = z.infer<typeof ApplyClickBody>;
@@ -247,7 +244,15 @@ const ApplyTextBody = z.union([
       .min(1)
       .refine((ids) => new Set(ids).size === ids.length),
   }),
-  z.strictObject({ draftId: z.string().min(1).max(128), whole: z.literal(true) }),
+  z.strictObject({
+    draftId: z.string().min(1).max(128),
+    whole: z.literal(true),
+    groupIds: z
+      .array(z.string().min(1))
+      .min(1)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
+  }),
 ]);
 const ApplyItemsBody = z.strictObject({
   commandId: CommandIdSchema,
@@ -643,14 +648,19 @@ async function commandIngress(
  */
 function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ParsedApply {
   const frozen =
-    click.snapshot !== undefined || click.groupIds.length > 0 || click.baseViewDelta.length > 0;
+    !click.whole &&
+    (click.snapshot !== undefined || click.groupIds.length > 0 || click.baseViewDelta.length > 0);
   if (
     (!frozen && !click.whole && !click.tree) ||
     (frozen && (!click.draftId || !click.snapshot || click.groupIds.length === 0))
   )
     throw createError({ statusCode: 400, message: "Invalid Apply request" });
   const text: ApplyTextCut | null = click.whole
-    ? { draftId: click.draftId as string, whole: true }
+    ? {
+        draftId: click.draftId as string,
+        whole: true,
+        ...(click.groupIds.length ? { groupIds: click.groupIds } : {}),
+      }
     : frozen
       ? {
           draftId: click.draftId as string,
