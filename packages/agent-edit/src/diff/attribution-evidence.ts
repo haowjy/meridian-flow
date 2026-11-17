@@ -180,7 +180,8 @@ export class AttributionEvidence {
       const [part, partLength] = this.inserted.run(c, k);
       available = Math.min(available, partLength);
       if (part >= 0) return [part, available];
-      if (c === DRAFT_SERVER_CLIENT_ID) return [BASE, available];
+      // A pull's copy of an item names that item through its link; only text with no link is base.
+      if (c === DRAFT_SERVER_CLIENT_ID && linkAt < 0) return [BASE, available];
       if (linkAt < 0) {
         const seen = this.provenance.snapshot.sv.get(c) ?? 0;
         if (c === this.provenance.localClientId) return [USER, available];

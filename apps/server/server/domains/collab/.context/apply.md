@@ -190,7 +190,14 @@ and `draft_reversed` false, orders them by `unapplied_seq` and, within one Un-Ap
 ordinal, rebuilds each effect's base from the Apply's rows (reversed ones included: `baseStart` is
 stored once), and runs the same body as the open path (`reverseBaseHalf`): merge the group's text
 out of the base, remove its Apply records. Without it the base keeps text the Un-Apply took out of
-live, and a pull merges that deletion into the draft's own text. `draft_reversed` is what stops a
+live, and a pull merges that deletion into the draft's own text. The body also **relinks**: a pull
+may have re-created the applied text under new ids (Live changed it and changed it back), leaving the
+AI's items as tombstones, so each dead item the Apply record names is linked in the draft's restoration
+root to the equal whole words beside it that the draft shows as a change against the base after the
+take-back (`relinkReturned`). The reason it is not guessing from text: Live's kernel has just
+certified, by item identity, that the Apply's own text stood and took it out. A word the draft shares
+with the base is never handed to the part. It judges "against Live" by the base, which is Live as the
+last pull saw it; inside a pull's debounce it can miss. `draft_reversed` is what stops a
 second replay of an effect the open path already reversed. Un-Apply runs its tree half first, reopens
 only the drafts whose closing delete that half took back, a folder's cascade included (a document the
 writer restored by hand and deleted again keeps its draft closed), then reads the bases, so the draft half of its own text

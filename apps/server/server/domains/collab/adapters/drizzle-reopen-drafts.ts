@@ -20,11 +20,14 @@ import {
   ruleCounter,
 } from "@meridian/agent-edit/content-merge";
 import {
+  appendLinks,
   diffBlocks,
   type Hunk,
   projectReview,
   REVIEW_BASE_FRAGMENT,
+  readApplyRecord,
   readBlocks,
+  relinkReturned,
   removeApplyRecords,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
@@ -94,6 +97,24 @@ export function reverseBaseHalf(
         }
       }
       writeBlocks(fragment, schema, current);
+      const entries = readApplyRecord(prefix).filter((entry) =>
+        reversals.some(
+          (reversal) =>
+            entry.commandId === reversal.applyCommandId &&
+            entry.groupId !== undefined &&
+            reversal.groupIds.has(entry.groupId),
+        ),
+      );
+      appendLinks(
+        prefix,
+        relinkReturned(
+          prefix,
+          schema,
+          prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+          current,
+          entries,
+        ),
+      );
       for (const reversal of reversals)
         removeApplyRecords(prefix, reversal.applyCommandId, reversal.groupIds);
     }, "unapply");

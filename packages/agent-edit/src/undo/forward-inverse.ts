@@ -1,6 +1,8 @@
 // Forward inverse receipts, cold lineage tracing, classification and admission.
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { DRAFT_SERVER_CLIENT_ID } from "../diff/draft-base.js";
+import { type RestorationLink, readRestorations } from "../diff/restorations.js";
 import {
   intersectLineageRanges,
   type LineageRange,
@@ -209,14 +211,14 @@ export function captureEditParts(
 
 /** An invocation-local index, never a persisted-state cache. All alias branches remain evidence. */
 class Lineage {
-  readonly forward = new Map<Key, Key[]>();
-  readonly backward = new Map<Key, Key>();
-  readonly owners = new Map<Key, InversePart>();
+  forward = new Map<Key, Key[]>();
+  backward = new Map<Key, Key>();
+  owners = new Map<Key, InversePart>();
   readonly ordered: InversePart[];
-  private readonly roots = new Map<Key, Key>();
-  private readonly families = new Map<Key, Key[]>();
+  private roots = new Map<Key, Key>();
+  private families = new Map<Key, Key[]>();
   private readonly effectRoots = new WeakMap<EditEffect, Key[]>();
-  private readonly identities = new Map<Key, Key>();
+  private identities = new Map<Key, Key>();
   private readonly itemVisibility = new WeakMap<Y.Item, boolean>();
   isVisible(k: Key): boolean {
     const item = find(this.doc, k);
@@ -246,6 +248,7 @@ class Lineage {
       this.roots = base.roots;
       this.families = base.families;
       this.effectRoots = base.effectRoots;
+      if (base.doc !== doc) this.adoptLinks();
       return;
     }
     this.ordered = [...history].sort((a, b) => a.id - b.id);
@@ -272,6 +275,88 @@ class Lineage {
           links.push(target);
           this.forward.set(source, links);
         }
+    }
+    this.adoptLinks();
+  }
+  /**
+   * The draft's restoration links are lineage too: browser Undo and Redo, and a pull that made text
+   * again, say which item is which there. Only links that reach a part are read, since a pull adds
+   * one for every word it re-creates, for the life of the draft. Skipped: a link Discard wrote (its
+   * copies are base text, and an equal word of the AI's it matched would hand that text to the part), one
+   * whose copy already has a source (the server inverse records its pairs in both places, and clients
+   * write the root), and one whose source is still visible: Yjs never undeletes, so it was never restored.
+   */
+  private adoptLinks(): void {
+    const { links: all, discarded } = readRestorations(this.doc);
+    const links = all.filter((link) => !discarded.has(link));
+    if (!links.length) return;
+    const bySource = new Map<number, RestorationLink[]>();
+    for (const link of links) {
+      const list = bySource.get(link[3]);
+      if (list) list.push(link);
+      else bySource.set(link[3], [link]);
+    }
+    const widest = new Map<number, number>();
+    for (const [client, list] of bySource) {
+      list.sort((a, b) => a[4] - b[4]);
+      widest.set(client, Math.max(...list.map((link) => link[2])));
+    }
+    const covering = (k: Key) => {
+      const { client, clock } = parse(k);
+      const list = bySource.get(client);
+      if (!list) return [];
+      let lo = 0,
+        hi = list.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (list[mid][4] <= clock) lo = mid + 1;
+        else hi = mid;
+      }
+      const out: RestorationLink[] = [];
+      for (let at = lo - 1; at >= 0 && list[at][4] + (widest.get(client) ?? 0) > clock; at--)
+        if (clock < list[at][4] + list[at][2]) out.push(list[at]);
+      return out;
+    };
+    const fresh: [Key, Key][] = [];
+    const seen = new Set<Key>();
+    const copied = new Set<Key>();
+    const stack = [...this.ordered].flatMap((p) =>
+      clocks([...p.effect.inserted, ...p.effect.deleted]),
+    );
+    while (stack.length) {
+      const k = stack.pop() as Key;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      stack.push(...(this.forward.get(k) ?? []));
+      for (const link of covering(k)) {
+        const at = parse(k).clock - link[4];
+        const target = key({ client: link[0], clock: link[1] + at });
+        if (this.backward.has(target) || copied.has(target) || this.isVisible(k)) continue;
+        copied.add(target);
+        fresh.push([k, target]);
+        stack.push(target);
+      }
+    }
+    if (!fresh.length) return;
+    this.forward = new Map(this.forward);
+    this.backward = new Map(this.backward);
+    this.roots = new Map();
+    this.families = new Map();
+    this.identities = new Map();
+    this.owners = new Map(this.owners);
+    for (const [source, target] of fresh) {
+      this.backward.set(target, source);
+      this.forward.set(source, [...(this.forward.get(source) ?? []), target]);
+      // A tombstone the pull re-created dead stands for the deleted item it copies, so it is the
+      // same part's to restore. A copy anyone else deleted is not: that deletion stands.
+      const owner = this.owners.get(source);
+      if (
+        owner &&
+        !this.owners.has(target) &&
+        parse(target).client === DRAFT_SERVER_CLIENT_ID &&
+        !this.isVisible(target)
+      )
+        this.owners.set(target, owner);
     }
   }
   descendants(k: Key): Key[] {

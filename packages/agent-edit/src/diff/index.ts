@@ -40,7 +40,9 @@ export {
   recoverLatePeerEdits,
   retainLateTypingDeletions,
 } from "./late-peer-recovery.js";
+export { relinkReturned } from "./relink-returned.js";
 export {
+  appendLinks,
   appendRestorationLinks,
   RESTORED_ROOT,
   type RestorationLink,
@@ -59,4 +61,4 @@ export {
 } from "./review.js";
 export { diffKeys, type Tok, wordDiff } from "./tokens.js";
 export { countWords } from "./word-count.js";
-export { type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";
+export { type WriteLinks, type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";

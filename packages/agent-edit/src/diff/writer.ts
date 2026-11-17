@@ -23,6 +23,17 @@ import { readBlocks } from "./fragments.js";
 import { type RestorationLink, recordWriteBack } from "./restorations.js";
 import { diffKeys, splitWords } from "./tokens.js";
 
+/**
+ * Where a write reports the text it makes again, as links from the new item to the old one.
+ * `gap` (Discard) links only equal words inside a gap that had to be rebuilt. `write` (a pull) links
+ * across the whole write: blocks of one id first, then the words left over, in document order, so
+ * a block that was split or joined still names its words' old items.
+ */
+export interface WriteLinks {
+  scope: "gap" | "write";
+  copies: RestorationLink[];
+}
+
 export interface WriteStats {
   kept: number;
   edited: number; // written in place: operations on the existing element
@@ -38,12 +49,12 @@ export function writeBlocks(
   frag: Y.XmlFragment,
   schema: Schema,
   target: readonly PMNode[],
-  copies?: RestorationLink[],
+  links?: WriteLinks,
 ): WriteStats {
   // Every door that makes blocks gives them ids first, so one without is a bug at that door.
   for (const block of target) assertBlockIds(block);
   const stats: WriteStats = { kept: 0, edited: 0, inserted: 0, deleted: 0 };
-  writeChildren(frag, readBlocks(frag, schema), target, stats, copies);
+  writeChildren(frag, readBlocks(frag, schema), target, stats, links);
   return stats;
 }
 
@@ -57,7 +68,7 @@ function writeChildren(
   current: readonly PMNode[],
   target: readonly PMNode[],
   stats: WriteStats,
-  copies: RestorationLink[] | undefined,
+  links: WriteLinks | undefined,
 ): void {
   // An id match is final; blocks with no id (the model's write) pair by guess. A block that moved,
   // or whose id now names another type of element, is deleted where it was and inserted where it is.
@@ -79,6 +90,9 @@ function writeChildren(
   });
   close(current.length, target.length);
   const doc = parent.doc as Y.Doc;
+  const writeClock = Y.getState(doc.store, doc.clientID);
+  const gone: BlockUnits[] = [];
+  const made: BlockUnits[] = [];
   // Right to left, so earlier element indexes stay valid.
   for (const [c0, c1, t0, t1] of gaps.reverse()) {
     const pairs: Array<[number, number]> = [];
@@ -86,7 +100,7 @@ function writeChildren(
     // Operations address each block as it is now, so they are lowered before anything is written.
     const ops = new Map(pairs.map(([c, t]) => [c, lowerBlock(current[c], target[t])]));
     const rebuilt =
-      copies !== undefined &&
+      links?.scope === "gap" &&
       (pairs.length !== c1 - c0 ||
         pairs.length !== t1 - t0 ||
         [...ops.values()].some((list) =>
@@ -95,6 +109,8 @@ function writeChildren(
     // Only a structural gap needs a source map; capture it before deleting containers can
     // collect their descendants.
     const before = rebuilt ? copyUnits(parent.toArray().slice(c0, c1) as Y.XmlElement[]) : null;
+    // A pull's links are made across gaps (a moved block leaves one and arrives in another).
+    if (links?.scope === "write") gone.unshift(...blockUnits(parent.toArray().slice(c0, c1)));
     // Yjs splits with Array.splice. Pre-splitting in clock order keeps a full rewrite from
     // shifting all later paragraphs' new word items at each boundary; no clocks are allocated.
     const runs: Array<{ text: Y.XmlText; offsets: number[] }> = [];
@@ -138,8 +154,8 @@ function writeChildren(
       if (!applied.ok) throw new Error(applied.message);
       stats.edited++;
     }
-    if (before && copies)
-      copies.push(
+    if (before && links)
+      links.copies.push(
         ...copiedUnits(
           before,
           copyUnits(parent.toArray().slice(c0, c0 + t1 - t0) as Y.XmlElement[]),
@@ -147,7 +163,154 @@ function writeChildren(
           clock,
         ),
       );
+    if (links?.scope === "write")
+      made.unshift(...blockUnits(parent.toArray().slice(c0, c0 + t1 - t0)));
   }
+  if (links?.scope === "write") links.copies.push(...linkRecreated(doc, gone, made, writeClock));
+}
+
+interface BlockUnits {
+  id: unknown;
+  units: CopyUnit[];
+}
+
+function blockUnits(blocks: unknown[]): BlockUnits[] {
+  return (blocks as Y.XmlElement[]).map((block) => ({
+    id: block.getAttribute("id"),
+    units: copyUnits([block]),
+  }));
+}
+
+/**
+ * The words a pull's write made again, each linked to the item it replaced. Blocks that kept one
+ * id pair first (a move, a rebuilt container, a run written whole). The words that deleted blocks
+ * lost and new blocks gained are then matched in document order, so a block split in two or two
+ * joined into one still names its words' old items. Whole equal words only.
+ */
+function linkRecreated(
+  doc: Y.Doc,
+  gone: BlockUnits[],
+  made: BlockUnits[],
+  clock: number,
+): RestorationLink[] {
+  const links: RestorationLink[] = [];
+  const oldById = new Map(gone.map((block) => [block.id, block]));
+  const linked = new Set<string>();
+  const run = (before: CopyUnit[], after: CopyUnit[]) => {
+    for (const link of copiedUnits(before, after, doc.clientID, clock)) {
+      links.push(link);
+      for (let n = 0; n < link[2]; n++) {
+        linked.add(`${link[0]}:${link[1] + n}`);
+        linked.add(`${link[3]}:${link[4] + n}`);
+      }
+    }
+  };
+  for (const block of made) {
+    const old = block.id === null ? undefined : oldById.get(block.id);
+    if (old) run(old.units, block.units);
+  }
+  // Closing markers stay on both sides: they keep the last word of one block from gluing to the first of the next.
+  const dead = (unit: CopyUnit) =>
+    unit.client < 0 ||
+    ((Y.getItem(doc.store, Y.createID(unit.client, unit.clock)) as Y.Item).deleted &&
+      !linked.has(`${unit.client}:${unit.clock}`));
+  const fresh = (unit: CopyUnit) =>
+    unit.client < 0 ||
+    (unit.client === doc.clientID &&
+      unit.clock >= clock &&
+      !linked.has(`${unit.client}:${unit.clock}`));
+  run(
+    gone.flatMap((block) => block.units).filter(dead),
+    made.flatMap((block) => block.units).filter(fresh),
+  );
+  links.push(...twinTombstones(doc, links));
+  return links;
+}
+
+/**
+ * Undo restores a deleted word with Yjs's own redo, which puts it back in the text node it was deleted
+ * from. Once a split or a join has put the neighbours in another node, that is the wrong place, so the
+ * tombstones between re-created words are re-created too, dead, beside their copies, and linked: the
+ * restore then lands among the words that stand now. Only tombstones from before this write, next to a
+ * linked word.
+ */
+function twinTombstones(doc: Y.Doc, links: readonly RestorationLink[]): RestorationLink[] {
+  const copyOf = new Map<string, Y.ID>();
+  const nodes = new Set<Y.XmlText>();
+  for (const [client, clock, len, from, at] of links)
+    for (let n = 0; n < len; n++) {
+      copyOf.set(`${from}:${at + n}`, Y.createID(client, clock + n));
+      const parent = (Y.getItem(doc.store, Y.createID(from, at + n)) as Y.Item).parent;
+      if (parent instanceof Y.XmlText) nodes.add(parent);
+    }
+  const writeDeleted = (doc._transaction as Y.Transaction).deleteSet;
+  const copyAt = (item: Y.Item | undefined, last: boolean) =>
+    item?.content instanceof Y.ContentString
+      ? copyOf.get(`${item.id.client}:${item.id.clock + (last ? item.length - 1 : 0)}`)
+      : undefined;
+  const textIndex = (id: Y.ID) => {
+    const node = (Y.getItem(doc.store, id) as Y.Item).parent as Y.XmlText;
+    let index = 0;
+    for (let item = node._start; item; item = item.right) {
+      if (
+        item.id.client === id.client &&
+        id.clock >= item.id.clock &&
+        id.clock < item.id.clock + item.length
+      )
+        return { node, index: index + id.clock - item.id.clock };
+      if (!item.deleted && item.countable) index += item.length;
+    }
+    throw new Error("A linked copy is not in its text node");
+  };
+  const tomb = (item: Y.Item) =>
+    item.deleted && item.content instanceof Y.ContentString && !Y.isDeleted(writeDeleted, item.id);
+  const twins: RestorationLink[] = [];
+  for (const node of nodes) {
+    const items: Y.Item[] = [];
+    for (let item = node._start; item; item = item.right) items.push(item);
+    for (let i = 0; i < items.length; ) {
+      if (!tomb(items[i])) {
+        i++;
+        continue;
+      }
+      let end = i;
+      while (end < items.length && tomb(items[end])) end++;
+      const run = items.slice(i, end);
+      const after = copyAt(items[i - 1], true);
+      const anchor = after ?? copyAt(items[end], false);
+      i = end;
+      if (!anchor) continue;
+      const { node: host, index } = textIndex(anchor);
+      const at = index + (after ? 1 : 0);
+      const text = run.map((item) => (item.content as Y.ContentString).str).join("");
+      const start = Y.getState(doc.store, doc.clientID);
+      host.insert(at, text);
+      host.delete(at, text.length);
+      let twin: Y.Item | undefined;
+      for (let item = host._start; item && !twin; item = item.right)
+        if (
+          item.id.client === doc.clientID &&
+          item.id.clock >= start &&
+          item.deleted &&
+          item.content instanceof Y.ContentString &&
+          item.content.str === text
+        )
+          twin = item;
+      if (!twin) throw new Error("A twin tombstone was not created");
+      let offset = 0;
+      for (const item of run) {
+        twins.push([
+          twin.id.client,
+          twin.id.clock + offset,
+          item.length,
+          item.id.client,
+          item.id.clock,
+        ]);
+        offset += item.length;
+      }
+    }
+  }
+  return twins;
 }
 
 interface CopyUnit {
@@ -262,6 +425,6 @@ export function writeDiscardBlocks(
   const doc = frag.doc as Y.Doc;
   const clock = Y.getState(doc.store, doc.clientID);
   const copies: RestorationLink[] = [];
-  writeBlocks(frag, schema, target, copies);
+  writeBlocks(frag, schema, target, { scope: "gap", copies });
   recordWriteBack(doc, clock, copies);
 }

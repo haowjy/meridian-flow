@@ -28,6 +28,11 @@ export type RestorationLink = readonly [
   toClock: number,
 ];
 
+/** Persist links the server computed into the draft's restoration root, in the caller's transaction. */
+export function appendLinks(doc: Y.Doc, links: readonly RestorationLink[]): void {
+  if (links.length) doc.getArray<RestorationLink>(RESTORED_ROOT).push([...links]);
+}
+
 /** Persist server-computed inverse aliases in the same room evidence browser Undo uses. */
 export function appendRestorationLinks(
   doc: Y.Doc,
@@ -37,15 +42,13 @@ export function appendRestorationLinks(
     len: number;
   }[],
 ): void {
-  if (!aliases.length) return;
-  doc
-    .getArray<RestorationLink>(RESTORED_ROOT)
-    .push(
-      aliases.map(
-        ({ source, target, len }) =>
-          [target.client, target.clock, len, source.client, source.clock] as const,
-      ),
-    );
+  appendLinks(
+    doc,
+    aliases.map(
+      ({ source, target, len }) =>
+        [target.client, target.clock, len, source.client, source.clock] as const,
+    ),
+  );
 }
 
 /**
@@ -158,36 +161,60 @@ function sound(
   return known(doc, client, clock + len, missing) && known(doc, toClient, toClock + len, missing);
 }
 
-/** The draft's write-backs and Undo evidence, validated without reading tombstone text. */
+/**
+ * The draft's write-backs and Undo evidence, validated without reading tombstone text. `discarded` holds the
+ * links a Discard wrote: its batch is the only one that records base ranges beside its links, and its copies
+ * are base text, never the restoration of an edit.
+ */
 export function readRestorations(
   doc: Y.Doc,
   missing?: (client: number, end: number) => void,
 ): {
   base: ItemRange[];
   links: RestorationLink[];
+  discarded: ReadonlySet<RestorationLink>;
   undone: ItemRange[];
 } {
   const root = doc.share.get(RESTORED_ROOT);
-  const out: { base: ItemRange[]; links: RestorationLink[]; undone: ItemRange[] } = {
+  const out: {
+    base: ItemRange[];
+    links: RestorationLink[];
+    discarded: Set<RestorationLink>;
+    undone: ItemRange[];
+  } = {
     base: [],
     links: [],
+    discarded: new Set(),
     undone: [],
   };
   if (!root) return out;
   for (let item = (root as Y.Array<unknown>)._start; item; item = item.right) {
     if (item.deleted || !(item.content instanceof Y.ContentAny)) continue;
+    const batch: RestorationLink[] = [];
+    let writeBack = false;
     for (const raw of item.content.getContent() as unknown[]) {
       if (!Array.isArray(raw) || !raw.every(Number.isSafeInteger)) continue;
       if (raw.length === 5) {
         const link = raw as unknown as RestorationLink;
-        if (sound(doc, link, missing)) out.links.push(link);
+        if (sound(doc, link, missing)) {
+          out.links.push(link);
+          batch.push(link);
+        }
       } else if (raw.length === 3 || (raw.length === 4 && raw[3] === 0)) {
         const range = raw.slice(0, 3) as unknown as ItemRange;
         const [client, clock, length] = range;
-        if (client >= 0 && clock >= 0 && length > 0 && known(doc, client, clock + length, missing))
+        if (
+          client >= 0 &&
+          clock >= 0 &&
+          length > 0 &&
+          known(doc, client, clock + length, missing)
+        ) {
           (raw.length === 3 ? out.base : out.undone).push(range);
+          writeBack ||= raw.length === 3;
+        }
       }
     }
+    if (writeBack) for (const link of batch) out.discarded.add(link);
   }
   return out;
 }

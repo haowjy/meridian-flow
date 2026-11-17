@@ -2,8 +2,10 @@
 
 import { contentMerge, type RuleCounts } from "@meridian/agent-edit/content-merge";
 import {
+  appendLinks,
   blocksEqual,
   REVIEW_BASE_FRAGMENT,
+  type RestorationLink,
   readBlocks,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
@@ -109,7 +111,10 @@ export function createDraftPullService(input: {
               });
               return captureMutationUpdates(prefix, () =>
                 prefix.transact(() => {
-                  writeBlocks(fragment, schema, merged.blocks);
+                  // The restoration root lets the kernel and attribution see a re-created word as the one it replaced.
+                  const copies: RestorationLink[] = [];
+                  writeBlocks(fragment, schema, merged.blocks, { scope: "write", copies });
+                  appendLinks(prefix, copies);
                   writeBlocks(reviewBase, schema, nextBase);
                 }),
               );

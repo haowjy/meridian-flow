@@ -231,6 +231,13 @@ failed visibly.
 
 ## Other writes that are not merges
 
+- **A pull records what it re-creates.** Where the pull's block write has to make a word again (a
+  moved, split or joined block, a rebuilt container, a run written whole), it links each new word to
+  the item it replaced, and the tombstones between them as dead twins, in the draft's restoration
+  root and in the same transaction (`writeBlocks` with scope `write`, `linkRecreated` in
+  `diff/writer.ts`). That is what keeps an AI change a card can still act on through a pull. Discard
+  keeps its narrower scope (equal words in a rebuilt gap).
+
 - **The empty-document convention**: an empty fragment and one empty paragraph are one document,
   because the editor cannot show zero blocks (`diff/equal.ts`, `buildBlocks`).
 

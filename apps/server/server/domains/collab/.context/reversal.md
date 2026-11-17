@@ -134,8 +134,21 @@ location it was deleted at. Live-scoped targets authorize live.
 Card authorization and change-viewer discovery share immutable edit and
 origin targets with inverse admission; mutation and draft transport
 journals are never authorization lineage. Card inverse rows are writer rows
-with no turn, and restoration correspondence comes from certified aliases on
-immutable parts, never equal text. A model write carries a
+with no turn. Restoration correspondence has two sources, never a reader that
+compares text afterwards: the certified aliases on immutable parts, and the draft's restoration
+links (`__meridian_review_restored_v1`), which the kernel's `Lineage` reads for a draft view
+(only links that reach a part; a link whose copy already has a source, whose source is still
+visible, or that a Discard wrote is skipped). A link is written by the browser's Undo and Redo, by
+the server's inverse, and by the two server writes that make AI text again: a pull's block write and
+Un-Apply's base reversal. A pull's link rests on equal whole words inside one write: blocks of one id
+pair first, then the words left over match in document order (a split, a join), the same judgement
+the writer's minimal diff makes when an equal word keeps its item. It also re-creates, dead, the
+tombstones between those words and links them, because Yjs restores a word into the text node it
+was deleted from, which is the wrong node once a split or join put its neighbours elsewhere. Past
+the diff bound (4,000 keys in one changed run) nothing is linked, so a part in a paragraph written
+whole that large still reads as changed. Un-Apply's relink is weaker (it lines words up across two
+pulls) and rests on Live's kernel having certified the Apply's text by item identity.
+Attribution follows a link from server-written text before calling it base. A model write carries a
 `ResponseAuthorship`: `response_id` keeps provider authorship. The command's id
 (`document_edits.command_id`) joins the text and tree receipts of one call.
 
