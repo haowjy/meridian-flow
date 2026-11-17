@@ -104,6 +104,12 @@ stateDiagram-v2
   its latest click for the next Un-Apply (`current`) and publishes the Apply in force
   (`inForce`, which `replay()` and the port's `commandId` read) only once a replay lands, so
   `AppliedCommands.find` reaches the same owner throughout and a card can't make a second one.
+- **`taken` is the editor's Redo, not the Apply's last word.** An answer that took part and left
+  a group changed since still leaves that group in force on the server, which keeps listing the
+  Apply on its cards. `AppliedCommands.find` returns no owner for a `taken` Apply, so a card's
+  press asks the server through an owner of its own while the editor keeps its Redo. A card lists
+  every Apply its receipt lists; the tab's owner only blocks the press while a request of it is
+  out, and passes over it while it waits for a closed owner.
 - **The state places it on the sidebar's stack** (`Seat`): it sits there from in force until it
   is taken back or ends, and through an Un-Apply of it that is out, which a sidebar press goes
   past. Leaving ends every registration with it: the step, the watch on its tree half, the

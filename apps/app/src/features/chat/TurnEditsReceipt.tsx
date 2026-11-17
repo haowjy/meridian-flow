@@ -122,17 +122,16 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  // The Applies in force that took this reply's changes, as the server listed them and as this
-  // tab's owner of each (`AppliedCommand`) has them now: the Undo takes each back whole. One that
-  // waits for a closed owner says so, on every card that lists it, until the owner reopens.
+  // The Applies that took this reply's changes, as the server lists them: the Undo takes each
+  // back whole. This tab's owner of one (`AppliedCommand`) only blocks the press while a request
+  // of it is out (`asking`), or passes it over while it waits for a closed owner, which every card
+  // listing it says until the owner reopens.
   const listed = (receipt?.applied ?? []).map((apply) => ({
     apply,
     command: appliedCommands.find(apply.commandId),
   }));
   const waiting = listed.flatMap(({ command }) => (command?.waits() ? [command] : []));
-  const applies = listed.flatMap(({ apply, command }) =>
-    !command || command.offersUndo() ? [apply] : [],
-  );
+  const applies = listed.flatMap(({ apply, command }) => (command?.waits() ? [] : [apply]));
   const asking = listed.some(
     ({ command }) => command?.state.kind === "unapplying" || command?.state.kind === "reapplying",
   );

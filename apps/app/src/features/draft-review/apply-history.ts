@@ -259,11 +259,6 @@ export class AppliedCommand implements ApplyStep {
     return kind === "in_force" || kind === "failed" || kind === "held";
   }
 
-  /** Its Undo would act now: in force and not passed over. */
-  offersUndo(): boolean {
-    return this.inForce() && !this.waits();
-  }
-
   /**
    * An editor's Ctrl+Z passed over it for an older step: the first time for what it waits for
    * now, that editor's document says who it waits for (`firstPassOver`).
@@ -299,7 +294,7 @@ export class AppliedCommand implements ApplyStep {
   press(from: DocumentHistory | null): Promise<Answer> {
     const state = this.current;
     if (state.kind === "reapplying") return state.done.then(() => this.press(from));
-    const sends = this.offersUndo();
+    const sends = this.inForce() && !this.waits();
     const answer = this.ask(from);
     if (sends && this.seat) void sayUnapplied(this.seat.session, this, answer, this.hooks.closed);
     return answer;
@@ -517,9 +512,15 @@ export class AppliedCommands {
     this.changed();
   }
 
-  /** The Apply whose command in force is `commandId`. */
+  /**
+   * The Apply whose command in force is `commandId`, while this tab answers for its Undo. Once an
+   * editor's press took it back (`taken`), the tab holds only that editor's Redo: what the server
+   * still keeps of it (a group changed since) is the server's to answer, so none is found and a
+   * card's press asks the server through an owner of its own.
+   */
   find(commandId: string): AppliedCommand | undefined {
-    for (const command of this.all.keys()) if (command.commandId === commandId) return command;
+    for (const command of this.all.keys())
+      if (command.commandId === commandId && command.state.kind !== "taken") return command;
     return undefined;
   }
 

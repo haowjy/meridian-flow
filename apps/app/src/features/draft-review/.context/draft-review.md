@@ -497,7 +497,8 @@ port carries the requests and their data and decides nothing: the server's by th
 draft's room, its item queue's, so the review shows both at once. When the review lets go of the
 room (Draft view to Live) the band's Apply switches to the server's port (`serverBandPort`): the
 queue settles an Un-Apply only by watching that room. `owner.applied` (`AppliedCommands`) holds every Apply of the tab, found by its
-command in force, and tells readers when any of them changes.
+command in force while the tab answers for its Undo (not once an editor's press took it back: what
+the server still keeps of it is the server's to answer), and tells readers when any of them changes.
 
 **Redo during an Un-Apply** chains on that attempt's answer: it goes on only when the answer took the
 Apply back (`takenBack`: something went, nothing held), and otherwise the Apply still in force is the

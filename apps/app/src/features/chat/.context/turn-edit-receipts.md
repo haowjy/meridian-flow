@@ -94,8 +94,11 @@ Undo reverses the turn's remaining edits where they are now: pending in the
 Work's document drafts, or live. Draft and live writes remain one atomic command. A change an
 Apply took is that Apply's: the card lists each Apply in force (`applied`, text and tree alike)
 and its Undo sends their Un-Applies after the reversal, through the tab's one owner of each Apply
-(`AppliedCommand`, [draft review](../../draft-review/.context/draft-review.md)), whose state every
-card listing the Apply reads. An Apply stays listed while any of its text is not taken back,
+(`AppliedCommand`, [draft review](../../draft-review/.context/draft-review.md)). The card offers
+Undo for every Apply the server lists: that owner's state only blocks the press while a request
+of it is out, and passes over it while it waits for a closed owner. An editor's Ctrl+Z that took
+part of it back keeps that editor's Redo, and the card's press asks the server for the rest
+through an owner of its own. An Apply stays listed while any of its text is not taken back,
 including text an Un-Apply left because it was changed since: each press judges the text as it
 stands and says why it stayed ("Not undone. The change to Second stayed: it was changed since."),
 and a later Undo that restores those words lets the next press take them. The line is that
