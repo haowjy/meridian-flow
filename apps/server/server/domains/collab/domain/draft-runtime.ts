@@ -116,6 +116,7 @@ export type DraftRuntime = {
       admitted?: Y.Doc;
       authorServerRows?: AuthorServerRows;
       work?: "active" | "any";
+      draft?: "open" | "any";
       precondition?: SavePrecondition;
     },
   ): PreparedDraftAppend;
@@ -152,6 +153,7 @@ export type PreparedDraftWrite = {
   /** The content the write was prepared as, before any lock; read it, never mutate it. */
   readonly candidate: Y.Doc;
   persist(): Promise<boolean>;
+  /** Installation waits for the surrounding transaction's commit, so a later rollback installs nothing. */
   transfer(): void;
   dispose(): void;
 };
@@ -436,11 +438,12 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       admitted?: Y.Doc;
       authorServerRows?: AuthorServerRows;
       work?: "active" | "any";
+      draft?: "open" | "any";
       precondition?: SavePrecondition;
     },
   ): PreparedDraftAppend {
     const { snapshot, replica } = base;
-    const { admitted, authorServerRows, work = "active", precondition } = options ?? {};
+    const { admitted, authorServerRows, work = "active", draft, precondition } = options ?? {};
     let prefix: Y.Doc;
     try {
       prefix = cloneReplica(replica);
@@ -486,6 +489,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           draftId: snapshot.draftId,
           documentId: snapshot.documentId,
           work,
+          draft,
           base: { checkpointRevision: replica.checkpointRevision, seq: replica.seq },
           async finalize(read) {
             const judged = await finalizeAppend(read, {

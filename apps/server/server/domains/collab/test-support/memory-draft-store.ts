@@ -139,7 +139,8 @@ export class MemoryDraftStore implements DraftStore {
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const documentDraft = this.drafts.get(input.draftId);
     if (
-      documentDraft?.status !== "active" ||
+      !documentDraft ||
+      (input.draft !== "any" && documentDraft.status !== "active") ||
       (input.work !== "any" && documentDraft.lifecycle !== "active")
     )
       return { status: "refused" };

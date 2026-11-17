@@ -32,8 +32,13 @@ import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId, CommandId, DocumentId, DraftOwner } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, documentDrafts } from "@meridian/database/schema";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import {
+  buildDocumentSchema,
+  isEmptyDocument,
+  PROSEMIRROR_FRAGMENT_NAME,
+} from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
@@ -169,12 +174,15 @@ export function createReopenDrafts(
         } else drafts.push(draft);
       }
       // A left-out draft stays closed under its Discard, which the purge still reaches, and leaves
-      // the entry: Restore answered for it.
-      if (leftOut.length > 0)
+      // the entry: Restore answered for it. Its waiting Un-Applies still finish, so its base stops
+      // holding their text and its Apply records stop claiming an Apply that was taken back.
+      if (leftOut.length > 0) {
         await tx
           .update(documentDrafts)
           .set({ closedCause: "left_out" })
           .where(inArray(documentDrafts.id, leftOutIds));
+        await replay(leftOutIds);
+      }
       let swapped = 0;
       for (const draft of drafts) {
         const [newer] = await tx
@@ -223,7 +231,7 @@ export function createReopenDrafts(
   };
 
   /**
-   * How many changes of the closed draft Live's text has since overtaken (all of them or none):
+   * How many changes of the closed draft Live's text has since overtaken (all of them or none),
    * Live edited the text the draft changed, or wrote a pure insertion at its edge, since the base the
    * draft last saw (a pull merges only into an open draft, so that base is stale). Token ranges of
    * the uncleaned diffs, which stay exact on a long paragraph, over the same base tokens, so they
@@ -242,13 +250,18 @@ export function createReopenDrafts(
     );
     const waiting = await waitingReversals(draft.draftId);
     if (waiting.length > 0) reverseBaseHalf(doc, waiting);
-    const baseBlocks = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+    // An empty document is no blocks, as `blocksEqual` reads it: the Un-Apply of a create leaves
+    // Live with none while the base keeps its empty paragraph, and nobody edited that.
+    const emptyAsNone = (blocks: PMNode[]) => (isEmptyDocument(blocks) ? [] : blocks);
+    const baseBlocks = emptyAsNone(readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema));
     const draftBlocks = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
     doc.destroy();
     const snapshot = await deps.live.read(draft.documentId as DocumentId);
     const live = storedDocument(snapshot);
     try {
-      const liveBlocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+      const liveBlocks = emptyAsNone(
+        readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+      );
       const changed = diffBlocks(baseBlocks, draftBlocks);
       const edits = diffBlocks(baseBlocks, liveBlocks, { cleanup: false });
       // A hunk from a spent diff budget only bounds its edit: it is no evidence of overlap, on
@@ -364,6 +377,7 @@ export function createReopenDrafts(
       const base = await deps.coordinator.loadBase(draftId);
       const write = deps.coordinator.prepareAppend(base, [], {
         work: "any",
+        draft: "any",
         authorServerRows: (prefix) => reverseBaseHalf(prefix, reversals).rows,
       });
       try {

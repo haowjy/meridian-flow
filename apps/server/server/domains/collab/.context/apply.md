@@ -233,7 +233,7 @@ clock; a restore that brings nothing back is `done` with `restored: 0` and says 
 named this command), `left_out purged` (no command of kind `discard`, `undo_discard` or `unapply`
 is stored under the id: the day-30 purge took it, or it never was; or what the entry held was
 purged), with `leftOut` counting purged nodes beside a partial restore. A restore reopens a draft only if
-Live's text has not overtaken it: `reopen` with `leaveOutEdited` compares, on the base the draft reopens with
+Live's text has not overtaken it: `reopen` with `leaveOutEdited` reads an empty document as no blocks (as `blocksEqual` does: after the Un-Apply of a create, Live holds none while the base keeps an empty paragraph, and nobody edited that) and compares, on the base the draft reopens with
 (its waiting Un-Applies replayed on a copy, since the check runs before the draft is open), the token ranges
 Live changed since that base with the ranges the draft changed, both uncleaned (a long paragraph's
 edits stay small hunks, `boundedDiff`, up to 1,000 edit operations; past that its hunks are `approx` and
@@ -252,7 +252,7 @@ counts as its review changes in `leftOut` and as `left_out changed_since` in `se
 A left-out draft stays closed under its Discard (`closed_by` kept, so the day-30 purge still deletes it) with
 `closed_cause = left_out`: a restore that answered takes it out of Trash's entry and `closedBy()`, so no entry
 leaves the same thing out on every Restore. Every other reader (the model's write path, receipts, the purge)
-reads it as the Discard's draft. `brought` names the documents whose text came back and whose tree changes did;
+reads it as the Discard's draft. The restore still replays the draft's waiting Un-Applies onto the closed draft (`appendRows` with `draft: "any"`), so its base and Apply records no longer hold an Apply that was taken back. `brought` names the documents whose text came back and whose tree changes did;
 Trash's Undo of the restore discards exactly those halves. An Un-Apply's reopen does not ask
 (its own Apply wrote that text). A purged Work's branch is a 404
 at the route. A branch of another project is a 404 too. A Work or
