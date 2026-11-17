@@ -33,7 +33,7 @@
     "models:refresh": "tsx apps/server/scripts/models-refresh.ts",
     "check:graph": "node tools/ci/check-graph.mjs",
     "check:architecture": "node tools/architecture-map/check.mjs .context/system-architecture/map.config.mjs",
-    "check:pr-body": "node tools/ci/check-pr-body.mjs --local",
+    "check:pr-body": "node tools/ci/check-pr-body.mjs",
     "check:db": "bun tools/dev/check-db-gate.ts",
     "check:negative-space": "bash tools/ci/check-negative-space.sh",
     "check:slop-lint": "node tools/ci/check-slop-lint.mjs",

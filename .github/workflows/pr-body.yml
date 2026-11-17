@@ -26,4 +26,4 @@ jobs:
       - name: Check body against the template
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node tools/ci/check-pr-body.mjs --local
+        run: node tools/ci/check-pr-body.mjs --strict
