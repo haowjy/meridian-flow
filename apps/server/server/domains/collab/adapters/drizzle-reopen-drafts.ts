@@ -31,7 +31,7 @@ import {
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import type { BranchId, CommandId, DocumentId, DraftOwner } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { applyCommandEffects, documentDrafts } from "@meridian/database/schema";
+import { applyCommandEffects, documentDrafts, treeNodes } from "@meridian/database/schema";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, asc, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -223,7 +223,8 @@ export function createReopenDrafts(
   };
 
   /**
-   * How many changes of the closed draft Live's text has since overtaken (all of them or none):
+   * How many changes of the closed draft Live's text has since overtaken (all of them or none),
+   * for a document that stands in Live:
    * Live edited the text the draft changed, or wrote a pure insertion at its edge, since the base the
    * draft last saw (a pull merges only into an open draft, so that base is stale). Token ranges of
    * the uncleaned diffs, which stay exact on a long paragraph, over the same base tokens, so they
@@ -234,6 +235,14 @@ export function createReopenDrafts(
    * draft reopens, while the room leaves it out because its Yjs Undo would double the text.
    */
   async function editedSince(draft: { draftId: string; documentId: string }): Promise<number> {
+    // Nobody types into a document that is in Trash or not in Live yet, so its text holds no
+    // edit to conflict with. What Live holds there is the Un-Apply's own reversal or a delete's
+    // aftermath, and it reads as an edit only because it left the base's empty block behind.
+    const [node] = await currentDrizzleDb(db)
+      .select({ trashRecord: treeNodes.trashRecord })
+      .from(treeNodes)
+      .where(eq(treeNodes.id, draft.documentId));
+    if (!node || node.trashRecord !== null) return 0;
     // The base the draft reopens with: its waiting Un-Applies replayed on a copy.
     const doc = new Y.Doc({ gc: false });
     Y.applyUpdate(
