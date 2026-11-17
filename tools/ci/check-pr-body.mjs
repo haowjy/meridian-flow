@@ -9,13 +9,11 @@
  * when they contain at least one line the template didn't ship. Changelog is
  * also parsed as structured input for the changelog generator.
  *
- * Usage: node tools/ci/check-pr-body.mjs <changed-files.txt> [body.md]
- *   PR_BODY — the body in CI (env, so attacker-controlled markdown never
- *             reaches the shell); the body.md argument checks a file.
- *        node tools/ci/check-pr-body.mjs --local [body.md]
- *   `pnpm check:pr-body` and the last step of `pnpm check`: the draft, else this
- *   branch's open PR body, against `git diff origin/main...HEAD`. Skips when
- *   there is neither, so `pnpm check` passes before a PR exists.
+ * Usage: node tools/ci/check-pr-body.mjs [--strict] [body.md]
+ *   Reads this branch's open PR body with `gh`, or body.md when given, and
+ *   checks it against `git diff origin/main...HEAD`. `pnpm check:pr-body` and
+ *   the last step of `pnpm check` call it without a body file; it skips before
+ *   a PR exists. --strict fails instead of skipping, for the manual workflow.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -63,13 +61,9 @@ function hasAuthoredLine(content) {
     .some((line) => line && !scaffoldLines.has(line));
 }
 
-const local = process.argv[2] === "--local";
-if (!local && (!process.argv[2] || (process.env.PR_BODY === undefined && !process.argv[3]))) {
-  console.error("usage: node tools/ci/check-pr-body.mjs <changed-files.txt> [body.md]");
-  console.error("       node tools/ci/check-pr-body.mjs --local [body.md]");
-  console.error("       (PR_BODY env replaces body.md in CI)");
-  process.exit(1);
-}
+const args = process.argv.slice(2);
+const strict = args.includes("--strict");
+const bodyPath = args.find((arg) => arg !== "--strict");
 
 /** The branch's open PR body, or null when `gh` is missing or the branch has no PR. */
 function currentPrBody() {
@@ -83,25 +77,20 @@ function currentPrBody() {
   }
 }
 
-let body;
-let changedFileText;
-if (local) {
-  // `pnpm check:pr-body [draft.md]`: the draft, else this branch's open PR, against
-  // the same file set CI reads (the PR's commits since it left main).
-  body = process.argv[3] ? readFileSync(process.argv[3], "utf8") : currentPrBody();
-  if (body === null) {
-    console.log(
-      "check:pr-body: no PR for this branch yet; skipped. Keep a draft body as you work, so its required sections shape the work: start from .github/PULL_REQUEST_TEMPLATE.md and check it with `pnpm check:pr-body <body.md>`.",
-    );
-    process.exit(0);
+const body = bodyPath ? readFileSync(bodyPath, "utf8") : currentPrBody();
+if (body === null) {
+  const reason =
+    "no PR for this branch; start a draft from .github/PULL_REQUEST_TEMPLATE.md and check it with `pnpm check:pr-body <body.md>`";
+  if (strict) {
+    console.error(`check:pr-body: failed — ${reason}.`);
+    process.exit(1);
   }
-  changedFileText = execFileSync("git", ["diff", "--name-only", "origin/main...HEAD"], {
-    encoding: "utf8",
-  });
-} else {
-  body = process.env.PR_BODY ?? readFileSync(process.argv[3], "utf8");
-  changedFileText = readFileSync(process.argv[2], "utf8");
+  console.log(`check:pr-body: skipped — ${reason}.`);
+  process.exit(0);
 }
+const changedFileText = execFileSync("git", ["diff", "--name-only", "origin/main...HEAD"], {
+  encoding: "utf8",
+});
 // Trimmed like the body lines: a CRLF or copy-pasted entry must not slip past
 // the anchored PRODUCT_FILE match and silently skip the browser-evidence rule.
 const changedFiles = changedFileText

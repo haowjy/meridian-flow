@@ -1,15 +1,11 @@
 name: CI
 
+# Manual only. The local gate is the default: `pnpm check` runs the checks that
+# mirror the quality jobs, and `check:db` runs the DB tests related to a change.
+# Run this workflow for a release, or for a change that needs the full DB, probe
+# and boot net. Deploy Staging still calls it with `workflow_call`.
 on:
-  # Any non-draft PR gets verified, regardless of base branch. `on:` can't
-  # filter by draft state, so the draft gate lives on the jobs below.
-  # `ready_for_review` is included so marking a draft ready triggers a run.
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  # Push CI on main verifies the post-merge result. Staging invokes this workflow
-  # from Deploy Staging, so listing it here would run the full workflow twice.
-  push:
-    branches: [main]
+  workflow_dispatch:
   workflow_call:
 
 # Supersede in-flight runs for the same ref so rapid re-pushes don't pile up.
@@ -18,13 +14,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Every job sets timeout-minutes (several times its usual run) so a hang fails the PR instead of
+  # Every job sets timeout-minutes (several times its usual run) so a hang fails the run instead of
   # holding it for GitHub's six-hour default.
-  # scripts.check remains the inventory; keep explicit jobs so the required
-  # aggregate checks each result directly, including after partial reruns.
+  # scripts.check remains the inventory; keep explicit jobs so the aggregate
+  # check reports each result directly, including after partial reruns.
   quality-static:
     name: quality-static
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -42,7 +37,6 @@ jobs:
 
   quality-typecheck:
     name: quality-typecheck
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -62,7 +56,6 @@ jobs:
   # Vitest partitions the same default projects into disjoint file sets.
   quality-test-1:
     name: quality-test-1
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -84,7 +77,6 @@ jobs:
 
   quality-test-2:
     name: quality-test-2
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -107,9 +99,9 @@ jobs:
   quality:
     name: quality
     needs: [quality-static, quality-typecheck, quality-test-1, quality-test-2]
-    # A skipped required job counts as passing. Run even after a dependency
-    # fails/cancels/skips, but retain the workflow's deliberate draft-PR skip.
-    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    # Run even after a dependency fails or is cancelled, so the aggregate
+    # reports which group broke instead of leaving the run without a result.
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -122,8 +114,6 @@ jobs:
 
   migration-checks:
     name: migration-checks
-    # Skip draft PRs; every non-PR caller runs.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -152,7 +142,6 @@ jobs:
 
   db-tests:
     name: db-tests
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # Pinned: Postgres comes preinstalled with the runner image (16 on 24.04), so
     # the major version changes only when this label does. `ubuntu-latest` moves
     # to a newer Ubuntu that ships a different major.
@@ -215,8 +204,6 @@ jobs:
 
   app-dev-transform:
     name: app-dev-transform
-    # Skip draft PRs; pushes and workflow_call always run.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -238,8 +225,6 @@ jobs:
 
   prod-boot:
     name: prod-boot
-    # Skip draft PRs; pushes and workflow_call always run.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # Pinned like db-tests: the API server connects to the runner's own Postgres at startup.
     runs-on: ubuntu-24.04
     timeout-minutes: 15

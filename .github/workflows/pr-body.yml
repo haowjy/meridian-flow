@@ -1,39 +1,29 @@
-# Gates PR bodies on the sections of .github/PULL_REQUEST_TEMPLATE.md.
-# Separate from ci.yml because it must also run on `edited` (a body fix has to
-# clear the X without re-running the full build-and-test matrix).
+# Checks the branch's open PR body against .github/PULL_REQUEST_TEMPLATE.md.
+# `pnpm check:pr-body` runs the same check locally as the last step of `pnpm check`;
+# this workflow is for running it from a clean checkout.
 name: PR body
 
 on:
-  pull_request:
-    types: [opened, edited, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: read
 
-# No concurrency group: a push, a body edit and "ready for review" often arrive together,
-# and a cancelled run of this required check blocks the merge even when another run passed.
-
 jobs:
   pr-body-lint:
     name: pr-body-lint
-    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The check diffs the branch against origin/main.
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 26.13.1
       - name: Check body against the template
         env:
-          # Env, not inline interpolation: the body is attacker-controlled
-          # markdown and must never reach the shell as script text.
-          PR_BODY: ${{ github.event.pull_request.body }}
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
-            --jq '.[].filename' > /tmp/changed-files.txt
-          node tools/ci/check-pr-body.mjs /tmp/changed-files.txt
+        run: node tools/ci/check-pr-body.mjs --strict
