@@ -13,6 +13,7 @@ import {
   sqlState,
 } from "../drizzle-transaction.js";
 import { testHook } from "../test-hooks.js";
+import { untilOwnersHold } from "../tree-owners.js";
 import {
   type CommandEnvelope,
   CommandExistsError,
@@ -115,43 +116,47 @@ export async function runCommand<R>(
   settling: CommandSettling<R>,
 ): Promise<R> {
   await testHook("command.beforeClaim");
-  const result = await runInCommandTransaction(db, async () => {
-    settling.beforeClaim?.();
-    const tx = currentDrizzleDb(db);
-    const [claimed] = await tx
-      .insert(commands)
-      .values({
-        id: envelope.commandId,
-        kind: envelope.kind,
-        accountId: envelope.accountId,
-        projectId: envelope.projectId,
-        threadId: envelope.threadId,
-        requestDigest: envelope.digest,
-        // Replaced below, before this transaction can commit.
-        outcome: { status: "never" },
-      })
-      .onConflictDoNothing()
-      .returning({ id: commands.id });
-    if (!claimed) throw new CommandExistsError(envelope.commandId);
-    let settled: R;
-    try {
-      settled = await runInDrizzleSavepoint(db, async () => {
-        await testHook("command.afterClaim");
-        return effect();
-      });
-    } catch (cause) {
-      const refused = settling.refusal?.(cause);
-      if (refused === undefined) throw cause;
-      settled = refused;
-    }
-    const outcome: CommandOutcome<R> = { status: settling.outcomeOf(settled), result: settled };
-    await tx
-      .update(commands)
-      .set({ outcome: outcome as CommandOutcome })
-      .where(eq(commands.id, envelope.commandId));
-    await testHook("command.beforeCommit");
-    return settled;
-  });
+  // The transaction's owner restarts it: a moved owner (`TreeOwnersMoved`, thrown by a seam
+  // under its locks) rolls the whole attempt back, and the next one locks it first.
+  const result = await untilOwnersHold(() =>
+    runInCommandTransaction(db, async () => {
+      settling.beforeClaim?.();
+      const tx = currentDrizzleDb(db);
+      const [claimed] = await tx
+        .insert(commands)
+        .values({
+          id: envelope.commandId,
+          kind: envelope.kind,
+          accountId: envelope.accountId,
+          projectId: envelope.projectId,
+          threadId: envelope.threadId,
+          requestDigest: envelope.digest,
+          // Replaced below, before this transaction can commit.
+          outcome: { status: "never" },
+        })
+        .onConflictDoNothing()
+        .returning({ id: commands.id });
+      if (!claimed) throw new CommandExistsError(envelope.commandId);
+      let settled: R;
+      try {
+        settled = await runInDrizzleSavepoint(db, async () => {
+          await testHook("command.afterClaim");
+          return effect();
+        });
+      } catch (cause) {
+        const refused = settling.refusal?.(cause);
+        if (refused === undefined) throw cause;
+        settled = refused;
+      }
+      const outcome: CommandOutcome<R> = { status: settling.outcomeOf(settled), result: settled };
+      await tx
+        .update(commands)
+        .set({ outcome: outcome as CommandOutcome })
+        .where(eq(commands.id, envelope.commandId));
+      await testHook("command.beforeCommit");
+      return settled;
+    }),
+  );
   await testHook("command.afterCommit");
   return result;
 }

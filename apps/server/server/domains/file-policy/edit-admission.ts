@@ -11,9 +11,8 @@ export type EditAdmissionResult<T> =
 
 /**
  * Binds grants before entering the caller's commit scope, then locks the Work seam before the
- * caller's mutation scope. The command's one restart loop is `untilOwnersHold`: `runWithEditGrants`
- * and the operation's own `withTreeOwners` share it, so a moved owner any of them finds restarts
- * the whole command.
+ * caller's mutation scope. The command's one restart loop is `untilOwnersHold`, owned by the transaction's
+ * owner (`runCommand`): a moved owner any layer finds restarts the whole command.
  */
 export async function runEditAdmission<T>(input: {
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;

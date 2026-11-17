@@ -6,7 +6,7 @@ import { contextSources } from "@meridian/database/schema";
 import type { UndoAnswer, UndoReport } from "@meridian/project-tree";
 import { inArray } from "drizzle-orm";
 import { closedOwnerOf, mergeOwnerLocks, type OwnerLocks, ownerNames } from "./draft-owner.js";
-import { currentDrizzleDb } from "./drizzle-transaction.js";
+import { currentDrizzleDb, isInDrizzleTransaction } from "./drizzle-transaction.js";
 import { type LockedOwners, readOwners } from "./work-lifecycle-lock.js";
 
 /**
@@ -39,14 +39,18 @@ const enclosing = new AsyncLocalStorage<{ learned: Learned }>();
  * finitely many, so it ends; one that names only what is known already is a bug in what it
  * asked, and escapes. A restart that names nothing learns nothing, so only a few are allowed.
  *
- * A command has one restart loop: a call made inside another's `run` is not a loop. It runs
- * once with what the outer one has learned and lets `TreeOwnersMoved` reach it, so the owner
- * any layer finds is locked by every layer on the next attempt, and a layer that committed
- * is never run again.
+ * A command has one restart loop, and it belongs to whoever owns the transaction (`runCommand`):
+ * a restart rolls the transaction back before the next attempt takes its first lock. A call made
+ * inside another's `run`, or inside a transaction nobody here owns, is not a loop. It runs once
+ * with what the outer one has learned (nothing, without one) and lets `TreeOwnersMoved` reach
+ * the owner, so the owner any layer finds is locked by every layer on the next attempt, and a
+ * layer that committed is never run again.
  */
 export async function untilOwnersHold<T>(run: (learned: Learned) => Promise<T>): Promise<T> {
   const outer = enclosing.getStore();
   if (outer) return run(outer.learned);
+  if (isInDrizzleTransaction())
+    return run({ sources: new Set<string>(), owners: mergeOwnerLocks() });
   const state = { learned: { sources: new Set<string>(), owners: mergeOwnerLocks() } as Learned };
   let unnamed = 0;
   for (;;) {
