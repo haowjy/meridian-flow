@@ -515,7 +515,7 @@ export function createDrizzleApplyClick(
                 for (const id of [...documentIds].sort())
                   await lockDocumentMutation(tx, id as DocumentId);
                 const backFromDelete = new Set<string>();
-                const left: { node: string; why: LeftOutWhy }[] = [];
+                const left: { node: string; why: LeftOutWhy; tree: boolean }[] = [];
                 const treeUndone = new Set<string>();
                 const alreadyUndone = new Set<string>();
                 if (lists.length > 0) {
@@ -554,12 +554,13 @@ export function createDrizzleApplyClick(
                           if (why === "closed") {
                             const fate = source === undefined ? null : judge.fate(source);
                             if (fate?.kind === "closed") hold(record.node, fate).tree = true;
-                            else left.push({ node: record.node, why: "purged" });
+                            else left.push({ node: record.node, why: "purged", tree: true });
                           } else if (why === "already") alreadyUndone.add(record.node);
                           else
                             left.push({
                               node: record.node,
                               why: why === "unknown" ? "purged" : why,
+                              tree: true,
                             });
                       }
                     },
@@ -583,7 +584,6 @@ export function createDrizzleApplyClick(
                     and(
                       eq(applyCommandEffects.commandId, applyCommandId),
                       isNull(applyCommandEffects.unappliedBy),
-                      isNull(applyCommandEffects.leftBy),
                     ),
                   );
                 const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
@@ -626,7 +626,7 @@ export function createDrizzleApplyClick(
                   }
                   // Its row was purged with its Work, and the document's effects went with it.
                   if (fate) {
-                    left.push({ node: text.documentId, why: "purged" });
+                    left.push({ node: text.documentId, why: "purged", tree: false });
                     continue;
                   }
                   const [draft] = await tx
@@ -792,35 +792,27 @@ export function createDrizzleApplyClick(
                 const skippedGroupIds = plans.flatMap((plan) =>
                   plan.skipped.map((effect) => effect.groupId),
                 );
-                // A skipped group holds writing made since: it stays for good, said and recorded.
-                for (const plan of plans) {
-                  if (!plan.skipped.length) continue;
-                  left.push({ node: plan.documentId, why: "changed_since" });
-                  await tx
-                    .update(applyCommandEffects)
-                    .set({ leftBy: commandId })
-                    .where(
-                      and(
-                        eq(applyCommandEffects.commandId, applyCommandId),
-                        inArray(
-                          applyCommandEffects.ordinal,
-                          plan.skipped.map((effect) => effect.ordinal),
-                        ),
-                      ),
-                    );
-                }
-                const settled: Settlement[] = [];
-                const byWhy = new Map<LeftOutWhy, Set<string>>();
-                for (const { node, why } of left)
-                  byWhy.set(why, (byWhy.get(why) ?? new Set()).add(node));
+                // A skipped group holds writing made since, judged on this press: a later one may
+                // find its words back (another Undo restored them) and take it.
+                for (const plan of plans)
+                  if (plan.skipped.length)
+                    left.push({ node: plan.documentId, why: "changed_since", tree: false });
                 // The Work's purge took the rows that said what the tree half was.
-                if (prepared.treeLost.length)
-                  byWhy.set(
-                    "purged",
-                    new Set([...(byWhy.get("purged") ?? []), ...prepared.treeLost]),
-                  );
-                for (const [why, nodes] of byWhy)
-                  settled.push({ rule: "left_out", items: [...nodes], why });
+                for (const node of prepared.treeLost)
+                  left.push({ node, why: "purged", tree: true });
+                const settled: Settlement[] = [];
+                const lines = new Map<
+                  string,
+                  { why: LeftOutWhy; tree: boolean; items: Set<string> }
+                >();
+                for (const { node, why, tree } of left) {
+                  const key = `${tree}:${why}`;
+                  const line = lines.get(key) ?? { why, tree, items: new Set<string>() };
+                  line.items.add(node);
+                  lines.set(key, line);
+                }
+                for (const { why, tree, items } of lines.values())
+                  settled.push({ rule: "left_out", items: [...items], why, tree });
                 for (const node of alreadyUndone)
                   settled.push({ rule: "already", state: "unapplied", item: node });
                 // One `returned` line per owner and reason, naming the nodes it held.
@@ -833,7 +825,7 @@ export function createDrizzleApplyClick(
                 }
                 for (const { owner, nodes } of returned.values())
                   settled.push(returnedFor(owner, nodes));
-                // Everything this Apply did was taken back before, or it left nothing to take back.
+                // Everything this Apply did was taken back before: nothing taken, left or held now.
                 if (settled.length === 0 && treeUndone.size === 0 && reversedGroupIds.length === 0)
                   settled.push({ rule: "already", state: "unapplied" });
                 return {

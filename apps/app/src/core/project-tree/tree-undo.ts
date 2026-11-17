@@ -126,7 +126,7 @@ export type Held = ClosedOwner & {
 /**
  * What an Un-Apply took back of its Apply: `all` of what stood, `partly`, `nothing`, or `already`
  * (an earlier Un-Apply, here or in another tab, took it all). `leftOut` names each node whose
- * change stayed for good, with why, and whether its tree fact stayed (`tree`) or only its text;
+ * change this press left, with why, and whether its tree fact stayed (`tree`) or its text;
  * `held`, what stayed for a closed owner and comes back to Undo once it reopens.
  */
 export type Unapplied = {

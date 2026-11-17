@@ -901,7 +901,6 @@ CREATE TABLE "apply_command_effects" (
 	"base_start" jsonb,
 	"base_delta" jsonb NOT NULL,
 	"unapplied_by" uuid,
-	"left_by" uuid,
 	"unapplied_seq" bigint,
 	"draft_reversed" boolean DEFAULT false NOT NULL,
 	CONSTRAINT "apply_command_effects_command_id_ordinal_pk" PRIMARY KEY("command_id","ordinal")

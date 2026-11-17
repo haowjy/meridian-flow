@@ -91,7 +91,12 @@ export type TurnInverseSkipCause =
  * taking it back would change a closed owner's notes (`returned`: `why` says which owner state,
  * `owner` names it).
  */
-export type TurnInverseSkip = { documentId: string; uri: string } & (
+export type TurnInverseSkip = {
+  documentId: string;
+  uri: string;
+  /** The part waits in or came from a draft: its row and its Work's review say what became of it. */
+  drafted?: true;
+} & (
   | {
       kind: "text";
       before: string;

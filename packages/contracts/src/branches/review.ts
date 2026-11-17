@@ -120,14 +120,15 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
  * A tree fact something changed since stays (`left_out changed_since`), as does a created
  * document with text written since (`has_text`); a text group whose reversal would change a
- * word that holds writing made after the Apply stays applied for good: it is named in
- * `skippedGroupIds`, its document in a `left_out changed_since` line, and no later Un-Apply takes it.
+ * word that holds writing made after the Apply stays applied: it is named in `skippedGroupIds`,
+ * its document in a `left_out changed_since` line with `tree: false`. Each press judges the text as
+ * it stands, so a later press takes the group if its words came back (another Undo restored them).
  * A source whose Work was purged takes nothing back: `left_out purged`.
  *
  * Nothing that would change the notes of a closed owner (an archived or deleted Work, a chat in
  * Trash) is taken back: it is in `held`. Everything of the Apply still applied before this press
- * is in exactly one place: taken back (`reversedGroupIds`, `treeUndone`), left for a reason that
- * will not change (`left_out`, `skippedGroupIds`), or held. A text group an earlier Un-Apply took
+ * is in exactly one place: taken back (`reversedGroupIds`, `treeUndone`), left as it stands now
+ * (`left_out`, `skippedGroupIds`), or held. A text group an earlier Un-Apply took
  * back is in none. It took something back when `reversedGroupIds` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
@@ -163,9 +164,9 @@ export type UnapplyClickResult = {
     ownerKey: DraftOwnerKey;
   }>;
   /**
-   * `left_out` (what could not come back, one line per reason), `returned` (what stayed for a
-   * closed owner, with `items`), or `already` (nothing was taken back and nothing was left:
-   * everything was taken back before).
+   * `left_out` (what could not come back, one line per reason and half, `tree` saying which),
+   * `returned` (what stayed for a closed owner, with `items`), or `already` (nothing was taken
+   * back, left or held: everything was taken back before).
    */
   settled?: Settlement[];
 };

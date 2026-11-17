@@ -73,7 +73,7 @@ export function heldSentence(
 }
 
 /**
- * Why `node`'s change stayed after an Un-Apply: for good (`leftOut`), or held for a closed owner,
+ * Why `node`'s change stayed after an Un-Apply: left as it stands (`leftOut`), or held for a closed owner,
  * its tree fact or, when only its text is held, the change to the document. Empty when it went.
  */
 export function stayedSentence(left: Left, node: string): string {

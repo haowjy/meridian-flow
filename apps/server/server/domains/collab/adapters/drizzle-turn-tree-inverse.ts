@@ -56,6 +56,7 @@ function stayedSkip(receipt: TreeReceipt, cause: Stayed, closed?: ClosedSource):
     uri: receipt.shownAt ?? receipt.subject,
     at: receipt.shownAt,
     op: receipt.op,
+    ...(receipt.draftBranchId ? { drafted: true as const } : {}),
   };
   return cause === "closed"
     ? {

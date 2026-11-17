@@ -95,7 +95,7 @@ export function TurnEditsReceipt({
   const projectId = useProjectDocumentNavigationProjectId();
   const unapply = useCardUnapply(projectId);
   const appliedCommands = useAppliedCommands();
-  // What the card's last Undo of its applied changes left standing for good, said where pressed.
+  // What the card's last Undo of its applied changes left standing, said where pressed.
   const [left, setLeft] = useState<
     (Unapplied & { count: number; facts: ReadonlyMap<string, TreeFact> }) | null
   >(null);
@@ -109,7 +109,7 @@ export function TurnEditsReceipt({
     (skip) =>
       !(commandRefusal?.status === "not_undone" && skip === commandRefusal.stayed) &&
       !(
-        (drafts?.[skip.documentId] || trees?.[skip.documentId]) &&
+        skip.drafted &&
         (skip.cause === "applied" || skip.cause === "discarded" || skip.cause === "returned")
       ),
   );

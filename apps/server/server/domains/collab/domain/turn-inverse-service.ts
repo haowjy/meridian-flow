@@ -137,15 +137,15 @@ export interface TurnInverseStore {
   }>;
   /**
    * Each Apply command's branch, the nodes it landed on, and how many changes it made (text groups
-   * and tree moves), read by its id; an id with no stored Apply is absent. `textSettled`: every
-   * text group it landed was taken back or left for good by an Un-Apply.
+   * and tree moves), read by its id; an id with no stored Apply is absent. `textTakenBack`: it
+   * landed text, and an Un-Apply took back every group of it.
    */
   applyCommands(
     commandIds: readonly string[],
   ): Promise<
     Map<
       string,
-      { branchId: string; nodes: readonly string[]; changes: number; textSettled: boolean }
+      { branchId: string; nodes: readonly string[]; changes: number; textTakenBack: boolean }
     >
   >;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
@@ -219,12 +219,13 @@ async function prepare(
     });
     const skips: TurnInverseSkip[] = [];
     const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) => {
-      const { closed } = document.destinationOf(part.origin);
+      const { closed, kind } = document.destinationOf(part.origin);
       skips.push({
         kind: "text",
         ...store.describePart(document, part),
         documentId: document.documentId,
         uri: document.uri,
+        ...(kind === "draft" ? { drafted: true as const } : {}),
         cause,
         ...(cause === "returned" && closed ? { why: closed } : {}),
       });
@@ -405,8 +406,9 @@ function draftStates(
 
 /**
  * The Applies in force that took the reply's drafted changes, text and tree, each read once by
- * its id. One whose tree half is taken back and whose text an Un-Apply settled has nothing left
- * for the card's Undo, though the draft still reads its text applied. One holds only this reply's
+ * its id. One whose tree half is taken back and whose every text group an Un-Apply took back has
+ * nothing left for the card's Undo, though the draft still reads its text applied. A group an
+ * Un-Apply left because its words changed since keeps the Apply listed: each press judges it anew. One holds only this reply's
  * changes when every node it landed on is the reply's and no other reply's part it took sits in
  * the reply's documents.
  */
@@ -430,7 +432,7 @@ async function appliedCommandsOf(
   const stored = await store.applyCommands([...ours]);
   return [...ours].flatMap((commandId) => {
     const command = stored.get(commandId);
-    if (!command || (command.textSettled && !treeInForce.has(commandId))) return [];
+    if (!command || (command.textTakenBack && !treeInForce.has(commandId))) return [];
     return [
       {
         commandId,

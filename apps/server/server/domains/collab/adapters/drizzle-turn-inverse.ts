@@ -26,7 +26,7 @@ import {
   commands as commandRows,
 } from "@meridian/database/schema";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -522,7 +522,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     async applyCommands(commandIds) {
       const found = new Map<
         string,
-        { branchId: string; nodes: readonly string[]; changes: number; textSettled: boolean }
+        { branchId: string; nodes: readonly string[]; changes: number; textTakenBack: boolean }
       >();
       if (commandIds.length === 0) return found;
       const ids = commandIds as CommandId[];
@@ -548,18 +548,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           .innerJoin(documentDrafts, eq(documentDrafts.id, applyCommandEffects.draftId))
           .where(inArray(applyCommandEffects.commandId, textOnly)))
           branchOf.set(row.id, row.branchId);
-      // One effect row per text group the Apply landed, and those still to take back.
+      // One effect row per text group the Apply landed, and the Applies with one not taken back.
       const groups = new Map<string, number>();
       const open = new Set<string>();
       for (const row of await db()
         .select({
           id: applyCommandEffects.commandId,
-          settled: sql<boolean>`${applyCommandEffects.unappliedBy} is not null or ${applyCommandEffects.leftBy} is not null`,
+          unappliedBy: applyCommandEffects.unappliedBy,
         })
         .from(applyCommandEffects)
         .where(inArray(applyCommandEffects.commandId, ids))) {
         groups.set(row.id, (groups.get(row.id) ?? 0) + 1);
-        if (!row.settled) open.add(row.id);
+        if (row.unappliedBy === null) open.add(row.id);
       }
       for (const { id, outcome } of outcomes) {
         const branchId = branchOf.get(id);
@@ -571,7 +571,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           item.tree?.landed || item.text?.landed ? [item.node] : [],
         );
         const changes = (groups.get(id) ?? 0) + items.filter((item) => item.tree?.landed).length;
-        found.set(id, { branchId, nodes, changes, textSettled: groups.has(id) && !open.has(id) });
+        found.set(id, { branchId, nodes, changes, textTakenBack: groups.has(id) && !open.has(id) });
       }
       return found;
     },
