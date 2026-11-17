@@ -667,7 +667,10 @@ export function serverBandPort(
         ...(again.tree ? { tree: true as const } : {}),
       };
       // Lost on the way (null): the next Un-Apply asks the server, which answers for one never applied.
-      const sent = await port.send(body).catch(() => null);
+      const sent = await port.send(body).then(
+        (answer) => answer,
+        () => null,
+      );
       return sent === null || (sent.status === "applied" && itemLanded(sent, node))
         ? { commandId: body.commandId }
         : null;
