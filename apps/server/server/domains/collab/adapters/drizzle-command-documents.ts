@@ -12,7 +12,7 @@ import {
   documents,
 } from "@meridian/database/schema";
 import { discardedBy } from "@meridian/project-tree";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
@@ -33,11 +33,7 @@ export function createDrizzleCommandDocuments(
 
   return {
     /** The documents an Apply command wrote text in or copied tree records of. */
-    async ofApply(input: {
-      applyCommandId: CommandId;
-      accountId: UserId;
-      branchId: BranchId;
-    }): Promise<DocumentId[]> {
+    async ofApply(input: { applyCommandId: CommandId; accountId: UserId }): Promise<DocumentId[]> {
       const tx = currentDrizzleDb(db);
       const text = await tx
         .select({ id: applyCommandEffects.documentId })
@@ -56,7 +52,6 @@ export function createDrizzleCommandDocuments(
         .where(
           and(
             eq(applyCommandTrees.commandId, input.applyCommandId),
-            eq(applyCommandTrees.branchId, input.branchId),
             eq(commands.accountId, input.accountId),
           ),
         );
@@ -79,6 +74,7 @@ export function createDrizzleCommandDocuments(
             eq(documentDrafts.closedBy, input.discardCommandId),
             eq(commands.accountId, input.accountId),
             eq(documentDrafts.branchId, input.branchId),
+            ne(documentDrafts.closedCause, "left_out"),
           ),
         );
       const nodes = await deps.treeLists.read({

@@ -78,7 +78,7 @@ const INVERSE_COUNT = z
   .min(1)
   .max(20)
   .optional()
-  .describe("How many edits to undo or redo, all or nothing. Default 1.");
+  .describe("How many edits to undo, all or nothing. Default 1.");
 
 /**
  * Which version of a document to read. It has no default: omitted
@@ -176,18 +176,13 @@ const MUTATION_BRANCHES = {
   },
   undo: {
     description:
-      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. Each edit can be redone separately. An applied edit, text or tree, is reverted in live; discarded parts stay unchanged.",
+      "Undo count edits (default 1) to this document, newest first. The requested count is all or nothing, but each selected edit reverses every content part that still applies. Creation, move, and delete are edits too; name a moved or deleted document by its old path. To redo an edit, write it again. An applied edit, text or tree, is reverted in live; discarded parts stay unchanged.",
     fields: { count: INVERSE_COUNT },
   },
   revert: {
     description:
       'Make a new edit reversing an earlier edit, named by handle from read(format: "edits") or a write result. Parts edited since stay. In draft mode it waits for review.',
     fields: { edit: WRITE_HANDLE },
-  },
-  redo: {
-    description:
-      "Redo count edits (default 1), last undone first. The requested count is all or nothing, but each selected edit restores every content part that still applies, including a document creation. Not after you edit this document again.",
-    fields: { count: INVERSE_COUNT },
   },
 } as const;
 
@@ -333,7 +328,6 @@ function mutationBranches<Target extends z.ZodRawShape>(target: Target) {
     of("replace"),
     of("remove"),
     of("undo"),
-    of("redo"),
     of("revert"),
   ] as const;
 }
@@ -431,7 +425,6 @@ export function writeCommandName(input: unknown): WriteToolInput["command"] | un
     case "replace":
     case "remove":
     case "undo":
-    case "redo":
     case "revert":
     case "move":
     case "delete":

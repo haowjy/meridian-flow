@@ -5,10 +5,12 @@ import {
   captureEditParts,
   type EditTarget,
   heldDeletes,
+  pairEdit,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
+  documentDrafts,
   documentEditParts,
   documentEdits,
   documentYjsUpdates,
@@ -36,7 +38,6 @@ export interface ReceiptWrite {
   actorUserId?: UserId | null;
   kind?: typeof documentEdits.$inferInsert.kind;
   actionId?: string;
-  consumes?: string[];
   receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
 }
 
@@ -75,7 +76,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       kind: input.kind ?? "write",
       wId,
       actionId: input.actionId,
-      consumes: input.consumes,
     })
     .returning({ id: documentEdits.id });
   if (!edit) throw new Error("Edit receipt was not inserted");
@@ -90,6 +90,10 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       aliases: p.aliases,
       targets: p.targets ?? [],
       origin: p.origin,
+      draftBranchId:
+        p.origin.kind === "pending"
+          ? sql`(select ${documentDrafts.branchId} from ${documentDrafts} where ${documentDrafts.id} = ${p.origin.draftId})`
+          : null,
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {
@@ -116,17 +120,20 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
 /**
  * Authoritative pre-write state plus transaction deltas, never a state-vector diff. A delete of
  * an item the room had already deleted when the row applied is not the row's effect, whether the
- * author read a stale view or the writer's delete landed after the call.
+ * author read a stale view or the writer's delete landed after the call. `pair` records each
+ * row's replaces right after the row applied, for a receipt that can be undone.
  */
 export function captureReceiptRows(
   doc: Y.Doc,
   rows: readonly { update: Uint8Array; origin: EditOrigin }[],
+  pair: boolean,
 ): (ReceiptWrite["receipts"][number] & { held: ReadonlySet<string> })[] {
   const receipts = rows.map((row) => {
     const frontier = captureEditFrontier(doc);
     const held = heldDeletes(doc, row.update, Y.decodeStateVector(Y.encodeStateVector(doc)));
     Y.applyUpdate(doc, row.update);
-    return { ...row, frontier, held };
+    const replaced = pair ? pairEdit(doc, { update: row.update, frontier, held }) : undefined;
+    return { ...row, frontier, held, replaced };
   });
   return receipts.map((receipt, i) => ({
     ...captureEditParts(doc, [receipt])[0],

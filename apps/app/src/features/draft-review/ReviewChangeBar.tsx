@@ -10,16 +10,21 @@ import { t } from "@lingui/core/macro";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
+import { BounceChip, useCardNotice } from "./CommandNotice";
+import { useDraftReview } from "./DraftReviewProvider";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewActions } from "./ReviewActions";
 import { ChangeAuthor } from "./ReviewChangeParts";
 import { ReviewMessageText } from "./ReviewMessageText";
 import type { BranchCommandFailure } from "./review-command-types";
+import { isNote } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeBarProps = {
   change: ReviewChange;
   itemKey: string;
+  /** The draft's document: where a bounced Discard's chip is read from. */
+  documentId: string | null;
   disabled: boolean;
 
   draftFailure?: BranchCommandFailure | null;
@@ -36,6 +41,7 @@ export type ReviewChangeBarProps = {
 export function ReviewChangeBar({
   change,
   itemKey,
+  documentId,
   disabled,
 
   draftFailure,
@@ -48,9 +54,11 @@ export function ReviewChangeBar({
 }: ReviewChangeBarProps) {
   const owner = useDraftCommandOwner();
   const state = useDraftCommandState(itemKey);
+  const bounce = useCardNotice(useDraftReview().controller.projectId, documentId);
   const failure = draftFailure ? (
     <InlineErrorRow
       message={<ReviewMessageText failure={draftFailure} />}
+      note={isNote(draftFailure)}
       onRetry={
         draftFailure.code === "unapply-refused" && state.stalled
           ? () => owner.retry(itemKey)
@@ -89,6 +97,7 @@ export function ReviewChangeBar({
             />
           )}
         </div>
+        <BounceChip notice={bounce} />
         {!disabled ? (
           <ReviewActions
             scope="change"

@@ -49,11 +49,30 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
   between authorize and confirm (`confirmEdit` re-checks the level at the grant's destination, not the
   destination: that waits for the executor's rerun of a failed effect).
 
+**A moved owner restarts the write; it never refuses.** The seam passes `confirmEdit` what it locked.
+A document whose owner (or branch owner) is outside that set, because it moved after the grants were
+minted, throws `TreeOwnersMoved` naming the owners. The restart belongs to whoever owns the transaction
+(`untilOwnersHold`, the one restart rule): `runCommand` wraps its whole transaction in it, so the
+attempt rolls back, releasing every lock it took, before the next one starts with the learned owners
+in its first lock set; no restart waits on a lock while holding another. A command has one loop: a
+call made inside it (`runWithEditGrants`, an operation's `withTreeOwners`), or inside a transaction
+nobody there owns, runs once and lets `TreeOwnersMoved` reach the owner, so a committed command never
+runs again. `runWithEditGrants` restarts only when it has no transaction around it (a write whose
+seam opens its own). Each restart adds an owner and a project has finitely many, so it ends.
+A missing document or a denied level still answers `not_found` or the denial.
+
 A branch move changes the document's presented `scheme`, not its physical
 `contentScheme`. File policy routes content writes from the physical scheme
 until Apply moves the live identity: Scratch content stays live behind a
 proposed project path, while project content stays drafted behind a proposed
 Scratch path. The physical Scratch owner continues to cap delegation.
+
+The decision also carries `command`: whether the person may run a document command (Apply,
+Un-Apply, Discard, Undo of a Discard) there, or Copy into or out of a closed Work (a Copy's
+destination asks `command`; a source in Trash asks it too, since a deleted file's `read` is none). It is `edit` by grants and agent terms and ignores the
+lifecycle terms, so a closed Work, a chat in Trash or a deleted document passes: the command itself
+answers a closed owner (`returned`, under the Work lock) instead of the route refusing it. `level` is
+unchanged, so words stay read-only.
 
 A `restore` target reads through Trash, so an undo by an old path is authorized where the
 document actually returns, not at the path it was shown at. A document in no view has no

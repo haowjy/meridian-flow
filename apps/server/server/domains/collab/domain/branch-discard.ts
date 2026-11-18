@@ -1,27 +1,31 @@
 /** Settle a Work's drafted tree records discarded, for chosen items or the whole branch, and close the drafts they end. */
 import type { BranchId, UserId } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
+import type { Settlement } from "@meridian/contracts/commands";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { testHook } from "../../../shared/test-hooks.js";
-import type { Branches } from "./branches.js";
 import { type Attempt, NO_ATTEMPT_SCOPE, runBoundedAttempts } from "./draft-attempts.js";
 import { DraftCasConflictError } from "./draft-store.js";
 
 export type DiscardSelection = { kind: "items"; items: readonly DiscardItem[] } | { kind: "whole" };
 
-export type DiscardResult =
-  | { status: "discarded"; branchId: BranchId; branchClosed: true }
-  /** `closed`: the selected documents whose item left review (the kernel closed all it held). */
-  | { status: "discarded"; branchId: BranchId; branchClosed: false; closed: readonly DocumentId[] }
-  | { status: "gone"; branchId: BranchId }
-  /** An item's Discard the branch's state no longer allows: nothing ended. */
-  | { status: "refused"; branchId: BranchId; reason: DiscardRefusal["refused"] };
+/**
+ * What a Discard ended with, whatever it found: `closed` the selected documents whose item left
+ * review (the kernel closed all it held, or an earlier command already had), `settled` what
+ * became of the items this command did not take, and `branchClosed` for Discard all.
+ */
+export type DiscardResult = {
+  branchId: BranchId;
+  branchClosed: boolean;
+  closed: readonly DocumentId[];
+  settled: Settlement[];
+};
 
 export interface BranchDiscard {
   /**
-   * The public command: writer and model. Refuses archived and deleted Works; a lineage
-   * with no live member can still be discarded, so the writer can always clear it.
+   * The public command: writer and model. On drafts whose owner is closed (an archived or
+   * deleted Work, a chat in Trash) it stores a `returned` bounce and ends nothing.
    */
   discardItems(input: {
     branchId: BranchId;
@@ -46,11 +50,6 @@ export type DiscardItem = {
    * creation only the Work shows always ends whole.
    */
   ends: "tree" | "item";
-  /**
-   * For `item`: the text draft's `updated_at` as the writer saw it (ISO; null, no text draft).
-   * A draft that moved on refuses the Discard (`BranchDiscardDraftChangedError`). Absent: no fence.
-   */
-  draftSeenAt?: string | null;
 };
 
 export type DiscardKernelInput = {
@@ -61,46 +60,39 @@ export type DiscardKernelInput = {
   selection: DiscardSelection;
 };
 
-export class BranchDiscardApplicableStateChangedError extends Error {
-  constructor() {
-    super("The Work has nothing left to discard on this document");
-    this.name = "BranchDiscardApplicableStateChangedError";
-  }
-}
-
-/** The item's text draft is not the one the writer saw: nothing ended. */
-export class BranchDiscardDraftChangedError extends Error {
-  constructor() {
-    super("This draft changed since the writer saw it");
-    this.name = "BranchDiscardDraftChangedError";
-  }
-}
-
 export type DiscardKernelResult = {
   /** The selected documents whose item left review: nothing of the branch remains on them. */
   closed: readonly DocumentId[];
+  /**
+   * One line per item this command did not take, from the settlement reader: `already
+   * discarded`, or `overtaken` by an Apply. Discard all on a closed branch: one `already`.
+   */
+  settled: Settlement[];
 };
 
-/** A final answer from the kernel: the branch's state no longer allows this Discard. */
-export type DiscardRefusal = { refused: "stale" | "draft_changed" };
+/** A final answer from the Work lock: the drafts' owner is closed, and nothing ended. */
+export type DiscardReturned = { returned: Settlement[] };
 
-/** The writer's command, settled in the kernel's transaction; null: the branch is not active. */
+/** What a Discard transaction ended with. */
+export type DiscardEnded = DiscardKernelResult | DiscardReturned;
+
+/** The writer's command, settled in the kernel's transaction. */
 export type DiscardCommandClaim = {
   envelope: CommandEnvelope;
-  result(ended: DiscardKernelResult | DiscardRefusal | null): DiscardCommandResult;
+  result(ended: DiscardEnded): DiscardCommandResult;
 };
 
 export interface BranchDiscardStore {
   /**
    * `discardItems`' command transaction (§12.2): the claim; the branch's owner, refusing an
-   * archived or deleted Work; the branch (null: not active any more); the lists and
-   * documents; the kernel inside the Work's pending projection. The kernel's refusals are
-   * stored with the command and returned, not thrown.
+   * archived or deleted Work, which stores a `returned` bounce; the branch; the lists and
+   * documents; the kernel inside the Work's pending projection. A branch no longer active
+   * takes nothing, and its items are answered by the settlement reader all the same.
    */
   discardLocked(input: {
     kernel: DiscardKernelInput;
     command: DiscardCommandClaim;
-  }): Promise<DiscardKernelResult | DiscardRefusal | null>;
+  }): Promise<DiscardEnded>;
 }
 
 const ATTEMPTS = 4;
@@ -110,17 +102,19 @@ type CommandClaim = NonNullable<Parameters<BranchDiscard["discardItems"]>[0]["co
 function discardResult(
   branchId: BranchId,
   selection: DiscardSelection,
-  ended: DiscardKernelResult | DiscardRefusal | null,
+  ended: DiscardEnded,
 ): DiscardResult {
-  if (!ended) return { status: "gone", branchId };
-  if ("refused" in ended) return { status: "refused", branchId, reason: ended.refused };
-  return selection.kind === "whole"
-    ? { status: "discarded", branchId, branchClosed: true }
-    : { status: "discarded", branchId, branchClosed: false, closed: ended.closed };
+  if ("returned" in ended)
+    return { branchId, branchClosed: false, closed: [], settled: ended.returned };
+  return {
+    branchId,
+    branchClosed: selection.kind === "whole",
+    closed: ended.closed,
+    settled: ended.settled,
+  };
 }
 
 export function createBranchDiscard(deps: {
-  branches: Pick<Branches, "byIds">;
   store: BranchDiscardStore;
   /**
    * Runs the Discard, holding back the retirement of the drafts its commit closed until it
@@ -133,9 +127,7 @@ export function createBranchDiscard(deps: {
    * The locked kernel again when the branch moved: each attempt is one command transaction,
    * and a miss rolls it back past its claim before the next attempt.
    */
-  function attempts(
-    run: (attempt: Attempt) => Promise<DiscardKernelResult | DiscardRefusal | null>,
-  ): Promise<DiscardKernelResult | DiscardRefusal | null> {
+  function attempts(run: (attempt: Attempt) => Promise<DiscardEnded>): Promise<DiscardEnded> {
     return runBoundedAttempts({
       bound: ATTEMPTS,
       scope: NO_ATTEMPT_SCOPE,
@@ -152,7 +144,7 @@ export function createBranchDiscard(deps: {
     attempt: Attempt,
     kernel: DiscardKernelInput,
     command: CommandClaim,
-  ): Promise<DiscardKernelResult | DiscardRefusal | null> {
+  ): Promise<DiscardEnded> {
     await testHook("discard.beforeCommitScope");
     return attempt.commit(() =>
       deps.store.discardLocked({
@@ -168,14 +160,9 @@ export function createBranchDiscard(deps: {
 
   return {
     async discardItems(input) {
-      const { branchId } = input;
-      const gone = { status: "gone" as const, branchId };
-      const [branch] = await deps.branches.byIds([branchId]);
-      if (branch?.status !== "active") return gone;
-
-      const { selection } = input;
+      const { branchId, selection } = input;
       if (selection.kind === "items" && selection.items.length === 0)
-        return { status: "discarded", branchId, branchClosed: false, closed: [] };
+        return discardResult(branchId, selection, { closed: [], settled: [] });
       const kernel = {
         userId: input.userId,
         branchId,

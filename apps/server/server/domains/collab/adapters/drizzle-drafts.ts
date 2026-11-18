@@ -35,7 +35,7 @@ import {
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { chatOwner } from "../../../shared/draft-owner.js";
+import { branchOwnedBy, chatOwner } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -200,6 +200,24 @@ export function createDrizzleDraftStore(
     const branch = await branches.activeForOwner(owner);
     const row = branch ? await activeDocumentDraft(documentId, branch.id) : null;
     return row ? resolved(row) : null;
+  }
+
+  async function findClosedOwnerDraft(
+    documentId: DocumentId,
+    owner: DraftOwner,
+  ): Promise<ResolvedDraft | null> {
+    const [row] = await selectDraft(currentDrizzleDb(db))
+      .where(
+        and(
+          eq(documentDrafts.documentId, documentId),
+          eq(documentDrafts.kind, "work_draft"),
+          eq(documentDrafts.status, "closed"),
+          branchOwnedBy(owner),
+        ),
+      )
+      .orderBy(desc(documentDrafts.updatedAt))
+      .limit(1);
+    return row ? resolved(mapDraft(row)) : null;
   }
 
   async function activeDocumentDraft(
@@ -438,6 +456,7 @@ export function createDrizzleDraftStore(
         const committed = await appendRowsWithinTx(tx, {
           draftId: input.draftId,
           work: input.work,
+          draft: input.draft,
           base: input.base,
           async finalize(read) {
             prefix = { rows: read.tail.length, moved: read.checkpoint !== null };
@@ -627,7 +646,7 @@ export function createDrizzleDraftStore(
       const states: Record<string, DraftState> = {};
       for (const row of rows) {
         if (row.status === "active") states[row.id] = "open";
-        else if (row.cause) states[row.id] = row.cause;
+        else if (row.cause) states[row.id] = row.cause === "left_out" ? "discarded" : row.cause;
       }
       return states;
     },
@@ -698,6 +717,7 @@ export function createDrizzleDraftStore(
     },
 
     findOwnerDraft,
+    findClosedOwnerDraft,
 
     async listActiveWorkDraftIds(documentId) {
       const rows = await currentDrizzleDb(db)
@@ -731,9 +751,10 @@ export function createDrizzleDraftStore(
         closedAs:
           cause === null
             ? null
-            : cause === "discarded" && closedBy === "discard"
+            : cause !== "document_removed" && closedBy === "discard"
               ? ("discarded" as const)
-              : cause === "discarded" && closedBy === "undo_discard"
+              : cause !== "document_removed" &&
+                  (closedBy === "undo_discard" || closedBy === "unapply")
                 ? ("replaced" as const)
                 : ("document_removed" as const),
       }));

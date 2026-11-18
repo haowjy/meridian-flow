@@ -62,8 +62,12 @@ export type DraftSnapshot = {
   rootThreadId: ThreadId | null;
   projectId: ProjectId;
   status: DraftStatus;
-  /** Why a closed draft closed; null while active. A `document_removed` close outlives a restore. */
-  closedCause: ClosedDraftCause | null;
+  /**
+   * Why a closed draft closed; null while active. A `document_removed` close outlives a restore.
+   * `left_out`: a Restore of the Discard that closed it answered for it and left it closed (Live
+   * was edited since). It is still the Discard's draft for the purge, no longer its Trash member.
+   */
+  closedCause: ClosedDraftCause | "left_out" | null;
   /** Bumped by every committed write to the draft; the fence of exact rewrites. */
   revision: number;
   /** The revision the checkpoint was written at. */
@@ -151,6 +155,8 @@ export type AppendRowsInput = {
   documentId: DocumentId;
   /** Background rebases keep archived drafts current; incoming edits require active Work. */
   work?: "active" | "any";
+  /** `any` appends to a closed draft too: a Restore finishing the Un-Applies of a draft it leaves out. */
+  draft?: "open" | "any";
   /** The checkpoint and highest row the caller's base replica holds. */
   base: DraftReadSince;
   /**

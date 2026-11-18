@@ -119,6 +119,7 @@ try {
     },
   );
   const discard = createDrizzleBranchDiscard(h.db, {
+    coordinator: h.coordinator,
     close,
     branches: h.branches,
     workProjection: h.projection,

@@ -81,7 +81,8 @@ export function contextErrorToHttp(error: ContextError): never {
           ...meridianErrorFromSystem("io_error", error.message, true),
           ...(error.reason ? { details: { reason: error.reason } } : {}),
         },
-        502,
+        // A source that has not caught up is "not yet", not a fault: the driver resends.
+        error.reason === "source_behind" ? 503 : 502,
       );
   }
 }

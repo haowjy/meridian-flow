@@ -93,9 +93,11 @@ try {
       turnId: work.turnId as never,
       actor: "agent",
       wId,
-      receipts: captureReceiptRows(before, [
-        { update, origin: { kind: "pending", draftId, rowId: Number(row.id) } },
-      ]),
+      receipts: captureReceiptRows(
+        before,
+        [{ update, origin: { kind: "pending", draftId, rowId: Number(row.id) } }],
+        true,
+      ),
     });
     before.destroy();
     async function save() {
@@ -184,6 +186,7 @@ try {
   const journalBefore = await h.raw`select id from draft_write_journal order by id`;
   const close = createTestRemovalDeps(h.db).draftClose;
   const discard = createDrizzleBranchDiscard(h.db, {
+    coordinator: h.coordinator,
     close,
     branches: h.branches,
     workProjection: h.projection,

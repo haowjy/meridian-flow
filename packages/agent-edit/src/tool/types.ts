@@ -22,13 +22,12 @@ export type {
   WriteCommandName,
 } from "./command-schema.js";
 export type {
-  UndoRedoOutcome,
+  UndoOutcome,
   WriteErrorStatus,
   WriteStatus,
   WriteSuccessPhase,
 } from "./model-result.js";
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
-export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export type WriteOutcome = WriteOutcomeBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });
@@ -99,6 +98,13 @@ export interface WriteContext {
   responseIdentity?: ResponseAuthorship;
   /** Host-routed: the Work draft a draft call reads and saves (`DocumentAccess.workDraftId`). */
   workDraftId?: string;
+  /**
+   * Host-routed: the closed Work draft the model's latest view of this document came from, when
+   * `workDraftId` is the new draft opened after it. A block the model names that the new draft
+   * lacks is found in that view, and its words land at the nearest block both hold. Null when
+   * that draft was purged: there is no view, and the words land with nothing deleted.
+   */
+  supersededWorkDraftId?: string | null;
   /** Version requested at the routing boundary, independent of the view used to render links. */
   documentVersion?: "live" | "draft";
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */

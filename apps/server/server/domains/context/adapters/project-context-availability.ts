@@ -500,6 +500,7 @@ export function createDrizzleProjectContextAvailability(
         projectId: input.projectId,
         userId: actor.userId,
         node: input.node,
+        ...(input.inTrash ? { inTrash: true } : {}),
       });
     },
 
@@ -515,44 +516,26 @@ export function createDrizzleProjectContextAvailability(
   };
 }
 
-/** Resolve an active live folder inside the caller's transaction, without a new snapshot. */
-export async function resolveActiveFolderUri(
+/**
+ * The address a folder identity holds now, followed by id: where it moved to, or the last
+ * address it held in Trash, in a closed Work too. Null once the project no longer holds it.
+ */
+export async function resolveHeldFolderUri(
   db: Database,
   projectId: string,
   userId: string,
   folderId: string,
   view: TreeView = LIVE_TREE,
 ): Promise<string | null> {
-  const tx = currentDrizzleDb(db) as Database;
-  const [row] = (await loadPlacedRows(tx, view, [folderId])).folders;
-  if (
-    !row?.source ||
-    row.folder.deleted ||
-    row.source.deletedAt ||
-    row.sourceProject?.deletedAt ||
-    row.work?.deletedAt ||
-    row.work?.archivedAt
-  )
-    return null;
-  const ancestors = await loadIdentityFolderClosure(tx, view, [folderId]);
-  const classification = classifySourceIdentity({
-    row: { ...row, node: { parentId: row.folder.parentId, deleted: false } },
-    requestProjectId: projectId,
-    actorUserId: userId,
-    foldersById: new Map(ancestors.map((folder) => [folder.id, folder])),
+  const held = await resolveHeldContextNode({
+    db,
+    projectId: projectId as ProjectId,
+    userId,
+    node: { kind: "folder", id: folderId },
+    inTrash: true,
+    view,
   });
-  if (classification.kind !== "valid") return null;
-  return canonicalContextUri(
-    classification.identity.scheme,
-    [...classification.identity.parentPath, row.folder.segment].join("/"),
-    sourceAuthority(
-      classification.identity.scheme,
-      row.work?.id ?? null,
-      row.work && !row.work.isNoWork ? row.work.handle : null,
-      row.ownerThreadRef,
-      row.source.scope === "chat",
-    ),
-  );
+  return held?.kind === "held" ? held.address.uri : null;
 }
 
 /**
@@ -566,10 +549,15 @@ async function resolveHeldContextNode(input: {
   projectId: ProjectId;
   userId: string;
   node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
+  /** A node in Trash answers its last address (`inTrash`) instead of `unreachable`. */
+  inTrash?: boolean;
+  /** The tree the node is placed in: live, or a Work's draft tree. */
+  view?: TreeView;
 }): Promise<HeldContextNode | null> {
+  const view = input.view ?? LIVE_TREE;
   if (!isUuid(input.node.id)) return null;
   const tx = currentDrizzleDb(input.db) as Database;
-  const placed = await loadPlacedRows(tx, LIVE_TREE, [input.node.id]);
+  const placed = await loadPlacedRows(tx, view, [input.node.id]);
   const found =
     input.node.kind === "document"
       ? placed.documents.map((row) => ({
@@ -588,7 +576,7 @@ async function resolveHeldContextNode(input: {
         }))[0];
   if (!found) return null;
   const foldersById = new Map(
-    (await loadIdentityFolderClosure(tx, LIVE_TREE, found.parentId ? [found.parentId] : [])).map(
+    (await loadIdentityFolderClosure(tx, view, found.parentId ? [found.parentId] : [])).map(
       (folder) => [folder.id, folder],
     ),
   );
@@ -606,7 +594,11 @@ async function resolveHeldContextNode(input: {
   });
   if (classification.kind === "not-visible") return null;
   // Only after the fence: another project's deleted node must not read as `unreachable`.
-  if (found.deleted || found.source.deletedAt || found.sourceProject?.deletedAt) {
+  if (
+    (found.deleted && !input.inTrash) ||
+    found.source.deletedAt ||
+    found.sourceProject?.deletedAt
+  ) {
     return { kind: "unreachable" };
   }
   if (classification.kind !== "valid") return { kind: "unreachable" };
@@ -614,6 +606,7 @@ async function resolveHeldContextNode(input: {
   const path = [...parentPath, found.segment].join("/");
   return {
     kind: "held",
+    ...(found.deleted ? { inTrash: true as const } : {}),
     address: {
       id: input.node.id,
       scheme,

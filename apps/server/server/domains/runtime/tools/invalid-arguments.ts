@@ -92,9 +92,10 @@ function issueMessage(issue: Issue): string {
           input && typeof input === "object" && !Array.isArray(input)
             ? (input as Record<string, unknown>)[discriminator]
             : undefined;
-        return value === undefined
-          ? `required; expected ${oneOf(options)}`
-          : `expected ${oneOf(options)}, got ${quote(value)}`;
+        if (value === undefined) return `required; expected ${oneOf(options)}`;
+        // A transcript from before `redo` was removed can still send it.
+        const gone = value === "redo" ? "; there is no redo, write the edit again" : "";
+        return `expected ${oneOf(options)}, got ${quote(value)}${gone}`;
       }
       return issue.message;
     }

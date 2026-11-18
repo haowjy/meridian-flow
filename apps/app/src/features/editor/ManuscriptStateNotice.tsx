@@ -15,6 +15,7 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Info, X } from "lucide-react";
 import { useEffect, useSyncExternalStore } from "react";
+import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { OpenDocument } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
@@ -58,6 +59,7 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedLive(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
+  const chats = useCachedChatTitles();
   const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
   // The page's notice says what the toggle's Work does to it on Live, and on Draft the page is that
@@ -71,6 +73,7 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
       title,
       from,
       removal?.kind === "removed" ? removal.record : null,
+      chats,
     );
     return { kind: "deleted", sentence, label: from ? t`Deleted from ${from}` : t`Deleted` };
   }

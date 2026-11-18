@@ -1,21 +1,24 @@
 /**
  * The document half of Trash's Discard entries (design section 7): every Discard, and every
- * restore that swapped a newer draft out, that ran in the project within the retention, with the
- * text drafts it closed that are still closed. A restore reopens a draft by clearing `closed_by`,
- * so a taken member leaves the entry by itself. A deleted Work's entries are hidden until it is
- * restored, and a purged Work's branches (and so its entries) are gone.
+ * restore or Un-Apply that swapped a newer draft out, that the day-30 purge hasn't removed, with the
+ * text drafts it closed that are still closed. A restore reopens a draft by clearing `closed_by`;
+ * one it left out (`left_out`) keeps it, for the purge, and leaves the entry. A Work in Trash keeps its entries, as an archived
+ * Work does (a Restore answers `returned` until the Work is restored); a purged Work's branches
+ * (and so its entries) are gone.
  */
 import type { BranchId, CommandId, ProjectId } from "@meridian/contracts";
 import type { DiscardEntry } from "@meridian/contracts/branches";
-import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { branches, commands, documentDrafts } from "@meridian/database/schema";
+import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+
+/** The commands whose id can name closed drafts that Trash lists and Restore reopens. */
+export const ENTRY_KINDS = ["discard", "undo_discard", "unapply"] as const;
 
 export function createDrizzleDiscardEntries(db: Database) {
   return {
-    async list(projectId: ProjectId, now: Date = new Date()): Promise<DiscardEntry[]> {
+    async list(projectId: ProjectId): Promise<DiscardEntry[]> {
       const tx = currentDrizzleDb(db);
       const rows = await tx
         .select({
@@ -28,8 +31,25 @@ export function createDrizzleDiscardEntries(db: Database) {
         .where(
           and(
             eq(commands.projectId, projectId),
-            inArray(commands.kind, ["discard", "undo_discard"]),
-            gt(commands.createdAt, deletionPurgeCutoff(now)),
+            // An Un-Apply is an entry only through a draft it swapped out, still closed.
+            or(
+              inArray(commands.kind, ["discard", "undo_discard"]),
+              and(
+                eq(commands.kind, "unapply"),
+                inArray(
+                  commands.id,
+                  tx
+                    .select({ id: documentDrafts.closedBy })
+                    .from(documentDrafts)
+                    .where(
+                      and(
+                        eq(documentDrafts.status, "closed"),
+                        ne(documentDrafts.closedCause, "left_out"),
+                      ),
+                    ),
+                ),
+              ),
+            ),
             sql`${commands.outcome}->>'status' = 'done'`,
           ),
         )
@@ -46,13 +66,7 @@ export function createDrizzleDiscardEntries(db: Database) {
           await tx
             .select({ id: branches.id, workId: branches.originWorkId })
             .from(branches)
-            .leftJoin(works, eq(works.id, branches.originWorkId))
-            .where(
-              and(
-                inArray(branches.id, [...new Set(ran.map((command) => command.branchId))]),
-                isNull(works.deletedAt),
-              ),
-            )
+            .where(inArray(branches.id, [...new Set(ran.map((command) => command.branchId))]))
         ).map((row) => [row.id, row.workId]),
       );
       const drafts = await tx
@@ -69,6 +83,7 @@ export function createDrizzleDiscardEntries(db: Database) {
               ran.map((command) => command.id),
             ),
             eq(documentDrafts.status, "closed"),
+            ne(documentDrafts.closedCause, "left_out"),
           ),
         );
       return ran.flatMap((command): DiscardEntry[] =>

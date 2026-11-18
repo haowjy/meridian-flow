@@ -101,7 +101,12 @@ export function treePlan(dir: readonly string[], planned: readonly PlannedCopyNo
 
 export async function insertPlannedTrees(
   deps: CopyTreeDeps,
-  inputs: readonly { plan: CopyPlan; contents: ReadonlyMap<string, CopiedContent> }[],
+  inputs: readonly {
+    plan: CopyPlan;
+    contents: ReadonlyMap<string, CopiedContent>;
+    /** The folder to start from, by id, instead of walking the plan's `dir` by name. */
+    parent?: { folderId: string; createFolders: readonly string[] };
+  }[],
   position?: ContextSiblingPosition,
   draft?: {
     branchId: BranchId;
@@ -110,14 +115,14 @@ export async function insertPlannedTrees(
 ): Promise<Result<CopyOutcome, AdapterFault>> {
   if (draft) {
     const { branchId } = draft;
-    const { plan, contents } = inputs[0];
+    const { plan, contents, parent } = inputs[0];
     const tree = toNewTree(plan.roots, contents);
     if (!tree.ok) return tree;
     try {
       const inserted = await deps.writes.insertTree(
         { view: viewOfBranch(branchId), actor: deps.actor },
         {
-          trees: [{ dir: plan.dir, roots: tree.value.roots }],
+          trees: [{ dir: plan.dir, ...(parent ? { parent } : {}), roots: tree.value.roots }],
           ...(position ? { position: position } : {}),
         },
       );
@@ -145,15 +150,19 @@ export async function insertPlannedTrees(
       throw error;
     }
   }
-  const trees: { dir: readonly string[]; roots: readonly NewNode[] }[] = [];
+  const trees: {
+    dir: readonly string[];
+    parent?: { folderId: string; createFolders: readonly string[] };
+    roots: readonly NewNode[];
+  }[] = [];
   const states = new Map<string, Uint8Array | null>();
   const ids: string[] = [];
   const binaryIds: string[] = [];
   const documents = inputs.flatMap(({ plan }) => [...plan.documents]);
-  for (const { plan, contents } of inputs) {
+  for (const { plan, contents, parent } of inputs) {
     const tree = toNewTree(plan.roots, contents);
     if (!tree.ok) return tree;
-    trees.push({ dir: plan.dir, roots: tree.value.roots });
+    trees.push({ dir: plan.dir, ...(parent ? { parent } : {}), roots: tree.value.roots });
     for (const [id, content] of tree.value.contents) states.set(id, content.state);
     ids.push(...tree.value.ids);
     binaryIds.push(...tree.value.binaryIds);

@@ -36,7 +36,7 @@ Intent and outcome are told apart by material, not a label.
 
 ## Contents
 
-A copy, `move`, `delete`, `remove`, `undo` and `redo` have no expand; the title carries
+A copy, `move`, `delete`, `remove` and `undo` have no expand; the title carries
 the source. `delete`'s title has no door, since the old address may hold another document.
 `read` shows the passage that came back, `create`/`insert`/`replace` the submitted
 content, and `ls` a record of what the model received: the tree panel already browses, so

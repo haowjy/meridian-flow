@@ -12,6 +12,7 @@ import type {
   ParsedDocumentFilename,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
+import type { TreeJudge, TreeOwners } from "../../../shared/tree-owners.js";
 import type { BoundWrite } from "../../collab/index.js";
 import type { ContextCopyAdapter } from "./context-copy.js";
 import type {
@@ -152,8 +153,17 @@ export type TreeScope = {
 export type TreeCommandInput<T> = {
   origin?: WriteProvenance;
   drafted?: boolean;
+  /**
+   * The owners of the sources `make` may change, whose locks come with the caller's grants
+   * (`runWithEditGrants`): `make` is given the judge of them, read under those locks, and
+   * throws `TreeOwnersMoved` from `assertLocked` when it met a source they did not cover.
+   */
+  owners?: TreeOwners;
   /** A refused result stores nothing of what `make` wrote. */
-  make: (scope: TreeScope) => { result: T; arrived?: readonly string[]; refused?: boolean };
+  make: (
+    scope: TreeScope,
+    judge: TreeJudge,
+  ) => { result: T; arrived?: readonly string[]; refused?: boolean };
   afterWrite?: (result: T, scope: Pick<TreeScope, "view">) => Promise<void>;
 };
 

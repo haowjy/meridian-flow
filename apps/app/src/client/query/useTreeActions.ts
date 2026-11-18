@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { TreeActions } from "@/core/project-tree/tree-actions";
 import { type TreeVersion, useTreeVersion } from "@/core/project-tree/tree-version";
 import { useAccountId } from "@/features/project/context/account-feature-context";
+import { useClosedOwners } from "@/features/project/context/closed-owners";
 import { useTreeList } from "./useProjectTree";
 
 /**
@@ -26,13 +27,15 @@ export function useTreeActions(
     [list.kind, accountId, list.kind === "project" ? list.projectId : null],
   );
   const { session } = useTreeList(ref);
+  const closed = useClosedOwners(list.kind === "project" ? (list.projectId ?? "") : "");
   return useMemo(
     () =>
       new TreeActions(
         () => session,
         `user:${accountId}`,
         () => acting,
+        closed,
       ),
-    [session, accountId, acting],
+    [session, accountId, acting, closed],
   );
 }

@@ -5,8 +5,21 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
+import type {
+  ApplyClickResult,
+  ApplyItemResult,
+  UnapplyClickResult,
+} from "@meridian/contracts/branches";
+import {
+  CLOSED_OWNER_WHYS,
+  type ClosedOwnerWhy,
+  type LeftOutWhy,
+  type Settlement,
+} from "@meridian/contracts/commands";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ApplyStep, Left, TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
+import type { AppliedCommand } from "./apply-history";
 import type { DiscardRestores } from "./discard-restores";
 
 export type NoticeSurface =
@@ -14,6 +27,8 @@ export type NoticeSurface =
   | { kind: "strip"; threadId: string | null }
   /** A document's review band: the notice shows in that document's identity row. */
   | { kind: "band"; documentId: string }
+  /** One change's card in a document: a Discard pressed there answers on the card, not the band. */
+  | { kind: "card"; documentId: string }
   /** Where a delete made on main's Recently opened shows; the sidebar's rows carry their own. */
   | { kind: "landing" };
 
@@ -31,6 +46,156 @@ export type NoticeSubject =
  * Trash), or Trash no longer holds what the Discard took.
  */
 export type RestoreReturned = "work-closed" | "chat-in-trash" | "gone-from-trash";
+
+/**
+ * What one settlement line says, for the screen. `already` and `restored` paint the result
+ * quietly; `overtaken` names the command that settled the item first (the screen offers its
+ * reverse); `left_out` says why part of it stayed out; `returned`: a closed owner answered and
+ * changed nothing.
+ */
+export type SettledView =
+  | { kind: "already"; state: string }
+  | { kind: "restored" }
+  | { kind: "overtaken"; state: string; by: string }
+  | { kind: "left_out"; why: string }
+  | { kind: "returned"; why: RestoreReturned };
+
+/**
+ * The one place a settlement becomes what is shown. Null: a `returned` whose reason names no
+ * closed owner (a model's edit), which no command surface says.
+ */
+export function viewOf(one: Settlement): SettledView | null {
+  switch (one.rule) {
+    case "already":
+      return { kind: "already", state: one.state };
+    case "restored":
+      return { kind: "restored" };
+    case "overtaken":
+      return { kind: "overtaken", state: one.state, by: one.by };
+    case "left_out":
+      return { kind: "left_out", why: one.why };
+    case "returned":
+      return (CLOSED_OWNER_WHYS as readonly string[]).includes(one.why)
+        ? { kind: "returned", why: closedOwnerWord(one.why as ClosedOwnerWhy) }
+        : null;
+  }
+}
+
+/**
+ * Every line of a flat answer (Discard, Restore, Un-Apply) that names `itemId`, or every line
+ * when it is left out. A line that names no item is about the whole command and always counts.
+ */
+export function settledOf(
+  settled: readonly Settlement[] | undefined,
+  itemId?: string,
+): SettledView[] {
+  return (settled ?? []).flatMap((one) => {
+    if (itemId !== undefined && !names(one, itemId)) return [];
+    const view = viewOf(one);
+    return view ? [view] : [];
+  });
+}
+
+function names(one: Settlement, itemId: string): boolean {
+  if (one.rule === "already" || one.rule === "overtaken")
+    return one.item === undefined || one.item === itemId;
+  if (one.rule === "restored") return one.documentId === itemId;
+  if (one.rule === "left_out") return one.items.includes(itemId);
+  return true;
+}
+
+/** Why a command was answered by a closed owner, from its lines; null when it wasn't. */
+export function returnedIn(settled: readonly Settlement[] | undefined): RestoreReturned | null {
+  for (const view of settledOf(settled)) if (view.kind === "returned") return view.why;
+  return null;
+}
+
+/** An Apply's answer for one item: each half landed or settled. */
+export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult | undefined {
+  return answer.items.find((item) => item.node === node);
+}
+
+/** Whether something of `node` landed, text or tree: `applied` alone says the command finished. */
+export function itemLanded(answer: ApplyClickResult, node: string): boolean {
+  const item = itemOf(answer, node);
+  return item?.text?.landed === true || item?.tree?.landed === true;
+}
+
+/** The text groups of `node` an Un-Apply took back. */
+export function textUndoneOf(answer: UnapplyClickResult, node: string): string[] {
+  return answer.textUndone.find((text) => text.node === node)?.groupIds ?? [];
+}
+
+/**
+ * What of an Apply landed, command-wide: its Undo step's two halves, and what the tree half did
+ * to each node it landed on, from where live had it before and after (`did`).
+ */
+export type ApplyHalves = {
+  text: boolean;
+  tree: boolean;
+  restores: string[];
+  did: Record<string, TreeFact["did"]>;
+};
+
+export function halvesOf(answer: ApplyClickResult): ApplyHalves {
+  return {
+    did: Object.fromEntries(
+      answer.items.flatMap((item) => (item.tree?.landed ? [[item.node, didOf(item)]] : [])),
+    ),
+    text: answer.items.some((item) => item.text?.landed),
+    tree: answer.items.some((item) => item.tree?.landed),
+    restores: answer.items.flatMap((item) =>
+      item.tree?.landed && item.tree.restore ? [item.tree.restore] : [],
+    ),
+  };
+}
+
+/**
+ * What an Un-Apply took back, the one place its answer becomes what every surface says. Something
+ * taken back with nothing left or held is `all`; with something left or held, `partly`; nothing
+ * taken back but something left or held, `nothing`; neither, `already` (the server's `already
+ * unapplied`). Each node a `left_out` line names keeps that line's reason and half (`leftOut`),
+ * read here, not through `settledOf`, whose views drop the nodes they name. `held` is what stayed for a closed
+ * owner, as the answer says it; an answer stored before it had one holds nothing.
+ */
+export function unappliedOf(answer: UnapplyClickResult): Unapplied {
+  const took = answer.textUndone.length > 0 || answer.treeUndone.length > 0;
+  const leftOut = new Map<string, { node: string; why: LeftOutWhy; tree: boolean }>();
+  for (const one of answer.settled ?? [])
+    if (one.rule === "left_out")
+      for (const node of one.items)
+        if (!leftOut.has(node)) leftOut.set(node, { node, why: one.why, tree: one.tree === true });
+  const held = answer.held ?? [];
+  const stayed = leftOut.size > 0 || held.length > 0;
+  return {
+    taken: took ? (stayed ? "partly" : "all") : stayed ? "nothing" : "already",
+    leftOut: [...leftOut.values()],
+    held,
+  };
+}
+
+function didOf(item: ApplyItemResult): TreeFact["did"] {
+  const tree = item.tree;
+  if (tree?.restore || tree?.settled?.some((one) => one.rule === "restored")) return "restored";
+  const { from, to } = tree?.transition ?? { from: undefined, to: undefined };
+  if (from === undefined) return null;
+  if (from === null) return "created";
+  if (to === null || to === undefined) return "deleted";
+  const parent = (uri: string) => uri.replace(/\/?[^/]*\/?$/, "");
+  return parent(from) === parent(to) && from !== to ? "renamed" : "moved";
+}
+
+/** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */
+export function closedOwnerWord(why: ClosedOwnerWhy): RestoreReturned {
+  return why === "chat_frozen" ? "chat-in-trash" : "work-closed";
+}
+
+/**
+ * What a Discard's answer says of the documents and folders it was sent: `untaken`, the ones it
+ * found settled already (an earlier Discard's, quietly, or an Apply's), and of those
+ * `appliedFirst`, the ones an Apply took before it. A notice lists only what it took.
+ */
+export type DiscardTook = { untaken: readonly string[]; appliedFirst: readonly string[] };
 
 export type DiscardUndoAnswer = {
   /** `returned`: the restore was answered and did nothing, for `why`. */
@@ -50,7 +215,8 @@ export type DiscardUndo = {
    * Takes the share back now. `ok` once the prose is back in the room (or the server made its
    * copies), with `landed` settling when the server holds it; `gone`: nothing is left to take
    * back (the room ended or turned read-only, the write never landed, or it was taken back).
-   * A room's answer is known at once; the server's comes back.
+   * A room's answer comes once the server has pulled Live's typing into the room; the server's
+   * share answers with its restore.
    */
   undo(): DiscardUndoAnswer | Promise<DiscardUndoAnswer>;
   end(): void;
@@ -86,15 +252,22 @@ export type DraftNotice =
   | (Base & {
       kind: "discarded";
       subject: NoticeSubject;
+      /** What the Discard took (its answer's word, once it came): the rows its Undo brings back. */
       documentIds: readonly string[];
+      /** What it was sent that an Apply took first: each says so where the writer pressed. */
+      appliedFirst: readonly string[];
       /** A single draft's review, which an Undo may return main to. */
       review: ReviewFileTarget | null;
       /**
        * `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back.
-       * `returned`: the Undo was answered with nothing done, for `returned`.
+       * `returned`: the Undo was answered with nothing done, for `returned`. `bounced`: the
+       * Discard itself discarded nothing, because a closed owner returned it (`returned`) or an
+       * Apply took all of it first (`appliedFirst`); no Undo, and it ends after `BOUNCE_SHOWN_MS`.
        */
-      status: "ready" | "undoing" | "failed" | "partial" | "returned";
+      status: "ready" | "undoing" | "failed" | "partial" | "returned" | "bounced";
       leftOut: number;
+      /** With `partial`: not one share came back, so the line reads "not restored". */
+      nothingBack: boolean;
       returned: RestoreReturned | null;
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
@@ -107,10 +280,22 @@ export type DraftNotice =
       /** What the Apply did that the writer can't see from the rows alone, each on its document. */
       facts: readonly AppliedFact[];
       dismiss(): void;
+    })
+  | (Base & {
+      /**
+       * What Ctrl+Z on an Apply in an editor said, on that document: what stayed (`left`), or that
+       * the Un-Apply didn't reach the server, with its Retry.
+       */
+      kind: "unapplied";
+      said: { kind: "left"; left: Left } | { kind: "failed"; name: string; retry(): void };
+      dismiss(): void;
     });
 
-/** An Apply's Undo: its step on the sidebar's Undo stack (`undoApply`), over `count` changes. */
-export type AppliedUndo = { undo: () => void; count: number };
+/**
+ * An Apply's Undo: the Apply (`AppliedCommand`), whose state says whether its Undo is offered, over
+ * `count` changes.
+ */
+export type AppliedUndo = { command: AppliedCommand; count: number };
 
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
@@ -126,8 +311,12 @@ export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
 );
 
 /** A notice with something to say on a line: a plain Apply's is said only on its rows. */
-export const hasLine = (notice: DraftNotice) =>
-  notice.kind !== "applied" || notice.facts.some((fact) => fact.kind !== "applied");
+export const hasLine = (notice: DraftNotice): boolean =>
+  notice.kind === "applied"
+    ? notice.facts.some((fact) => fact.kind !== "applied")
+    : notice.kind === "unapplied" || notice.status !== "bounced";
+
+const BOUNCE_SHOWN_MS = 6_000;
 
 type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
 
@@ -141,11 +330,16 @@ export class DraftNotices {
    * them, and says they couldn't come back.
    */
   private readonly expired = new Map<number, { part: DiscardPart; leftOut: number }[]>();
+  /** Notices where a room's share undid and left `parts`: something came back, whatever else stayed out. */
+  private readonly roomBack = new Set<number>();
   /**
    * The notice's own Undo: in flight, or a room's share that failed. A server share's progress is
    * `DiscardRestores`'.
    */
   private readonly pressed = new Map<number, "undoing" | "failed">();
+  private readonly bounceTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  /** Where a Discard notice says it discarded nothing, when not where it shows (`bounceSurface`). */
+  private readonly bounceTo = new Map<number, NoticeSurface>();
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
   private revision = 0;
@@ -178,11 +372,31 @@ export class DraftNotices {
   forDocument(projectId: string, documentId: string | null): DraftNotice | null {
     for (const notice of this.notices.values())
       if (
+        notice.kind === "unapplied" &&
+        notice.projectId === projectId &&
+        notice.surface.kind === "band" &&
+        notice.surface.documentId === documentId
+      )
+        return notice;
+      else if (
         notice.kind === "discarded" &&
         notice.projectId === projectId &&
         (notice.surface.kind === "band"
           ? (notice.left ? notice.left.landed : notice.surface.documentId) === documentId
           : notice.surface.kind === "landing" && documentId === null)
+      )
+        return notice;
+    return null;
+  }
+
+  /** The Discard notice on one change card of `documentId` (`NoticeSurface` `card`). */
+  forCard(projectId: string, documentId: string): DraftNotice | null {
+    for (const notice of this.notices.values())
+      if (
+        notice.kind === "discarded" &&
+        notice.projectId === projectId &&
+        notice.surface.kind === "card" &&
+        notice.surface.documentId === documentId
       )
         return notice;
     return null;
@@ -219,6 +433,41 @@ export class DraftNotices {
     this.publish();
   }
 
+  /**
+   * What Ctrl+Z on an Apply in `documentId`'s editor answered, on that document's identity row:
+   * what stayed, or that it didn't go through. Taken back whole, the text says it.
+   */
+  showPress(input: {
+    projectId: string;
+    ownerKey: string;
+    documentId: string;
+    step: ApplyStep & { press(from: null): Promise<unknown> };
+    answer: Unapplied | { taken: "failed" };
+  }): () => void {
+    const { step, answer } = input;
+    if (this.closed || answer.taken === "all" || answer.taken === "already") return () => {};
+    const held = this.notices.get(input.ownerKey);
+    if (held) this.drop(held);
+    const id = this.nextId++;
+    this.notices.set(input.ownerKey, {
+      kind: "unapplied",
+      id,
+      projectId: input.projectId,
+      ownerKey: input.ownerKey,
+      surface: { kind: "band", documentId: input.documentId },
+      said:
+        answer.taken === "failed"
+          ? { kind: "failed", name: step.name, retry: () => void step.press(null) }
+          : {
+              kind: "left",
+              left: { ...answer, name: step.name, nodes: step.nodes, facts: step.facts },
+            },
+      dismiss: () => this.endIf(input.ownerKey, id),
+    });
+    this.publish();
+    return () => this.endIf(input.ownerKey, id);
+  }
+
   /** The facts an Apply adds to the owner's applied notice, if it is the one showing. */
   appliedFacts(ownerKey: string) {
     const held = this.notices.get(ownerKey);
@@ -229,6 +478,8 @@ export class DraftNotices {
     projectId: string;
     ownerKey: string;
     surface: NoticeSurface;
+    /** Where it says it discarded nothing, as a closed owner's bounce would (a change card's). */
+    bounceSurface?: NoticeSurface;
     parts: readonly DiscardPart[];
   }): number | null {
     if (this.closed || input.parts.length === 0) {
@@ -239,6 +490,7 @@ export class DraftNotices {
     if (held) this.drop(held);
     const id = this.nextId++;
     this.parts.set(id, [...input.parts]);
+    if (input.bounceSurface) this.bounceTo.set(id, input.bounceSurface);
     const { ownerKey } = input;
     this.notices.set(ownerKey, {
       kind: "discarded",
@@ -249,13 +501,124 @@ export class DraftNotices {
       left: null,
       status: "ready",
       leftOut: 0,
+      nothingBack: false,
       returned: null,
+      appliedFirst: [],
       ...this.subjectOf(input.parts),
       undo: () => this.undo(ownerKey, id),
       dismiss: () => this.endIf(ownerKey, id),
     });
     this.publish();
     return id;
+  }
+
+  /**
+   * A Discard that came back with nothing changed, for `why`: the chip on the control pressed,
+   * for a few seconds. `documentIds` are the rows the press named.
+   */
+  showBounce(input: {
+    projectId: string;
+    ownerKey: string;
+    surface: NoticeSurface;
+    documentIds: readonly string[];
+    why: RestoreReturned;
+  }): void {
+    if (this.closed) return;
+    const held = this.notices.get(input.ownerKey);
+    if (held) this.drop(held);
+    this.bounce({
+      id: this.nextId++,
+      projectId: input.projectId,
+      ownerKey: input.ownerKey,
+      surface: input.surface,
+      documentIds: input.documentIds,
+      appliedFirst: [],
+      returned: input.why,
+    });
+  }
+
+  /**
+   * What a Discard's answer says it took (`DiscardTook`): the share's rows it didn't take leave
+   * the notice, and the ones an Apply took first say so. A notice left with nothing to bring back
+   * but something applied first says only that, as a bounce does.
+   */
+  answered(handle: DiscardUndo, took: DiscardTook) {
+    const untaken = new Set(took.untaken);
+    for (const [id, parts] of this.parts) {
+      const index = parts.findIndex((part) => part.handle === handle);
+      const part = parts[index];
+      if (!part) continue;
+      const notice = [...this.notices.values()].find((candidate) => candidate.id === id);
+      // An Undo in flight owns the notice until it answers, as `partEnded` leaves it.
+      if (notice?.kind !== "discarded" || notice.status === "undoing") return;
+      const covers = (part.covers ?? [part.documentId]).filter((node) => !untaken.has(node));
+      if (covers.length === 0) {
+        parts.splice(index, 1);
+        part.handle.end();
+      } else
+        parts[index] = {
+          ...part,
+          covers,
+          ...(part.count !== undefined ? { count: covers.length } : {}),
+        };
+      const appliedFirst = [...new Set([...notice.appliedFirst, ...took.appliedFirst])];
+      // Expired shares are still discarded: they keep the notice and its sentence.
+      const standing = [...parts, ...this.expiredParts(id)];
+      if (standing.length === 0) {
+        const surface = this.bounceTo.get(id) ?? notice.surface;
+        this.forget(notice);
+        if (appliedFirst.length > 0)
+          this.bounce({
+            id,
+            projectId: notice.projectId,
+            ownerKey: notice.ownerKey,
+            surface,
+            documentIds: [],
+            appliedFirst,
+            returned: null,
+          });
+      } else {
+        this.notices.set(notice.ownerKey, { ...notice, appliedFirst, ...this.subjectOf(standing) });
+        this.settle(notice.ownerKey, id);
+      }
+      this.publish();
+      return;
+    }
+  }
+
+  private bounce(input: {
+    id: number;
+    projectId: string;
+    ownerKey: string;
+    surface: NoticeSurface;
+    documentIds: readonly string[];
+    appliedFirst: readonly string[];
+    returned: RestoreReturned | null;
+  }) {
+    const { id, ownerKey } = input;
+    this.notices.set(ownerKey, {
+      kind: "discarded",
+      id,
+      projectId: input.projectId,
+      ownerKey,
+      surface: input.surface,
+      subject: { kind: "drafts", count: input.documentIds.length },
+      documentIds: input.documentIds,
+      appliedFirst: input.appliedFirst,
+      review: null,
+      left: null,
+      status: "bounced",
+      leftOut: 0,
+      nothingBack: false,
+      returned: input.returned,
+      undo: async () => "failed",
+      dismiss: () => this.endIf(ownerKey, id),
+    });
+    this.bounceTimers.set(
+      id,
+      setTimeout(() => this.endIf(ownerKey, id), BOUNCE_SHOWN_MS),
+    );
+    this.publish();
   }
 
   /**
@@ -314,8 +677,7 @@ export class DraftNotices {
     this.pressed.set(id, "undoing");
     this.settle(ownerKey, id);
     // Retry takes back only the shares still out: a room's share that undid leaves the list, and a
-    // server's is done once its restore is. Every room's share is taken back in this event turn;
-    // the server's answers come back.
+    // server's is done once its restore is.
     const answers = await Promise.all(
       this.outstanding(parts).map(async (part) => ({ part, ...(await part.handle.undo()) })),
     );
@@ -326,6 +688,7 @@ export class DraftNotices {
     // A room's share answering `gone` stays written: the notice counts what it couldn't bring back.
     for (const { part, answer, leftOut } of answers)
       if (!part.restore && answer === "gone" && leftOut) this.expire(id, part, leftOut);
+    if (answers.some(({ part, answer }) => !part.restore && answer === "ok")) this.roomBack.add(id);
     if (this.parts.has(id)) {
       this.parts.set(
         id,
@@ -350,7 +713,8 @@ export class DraftNotices {
   private outstanding(parts: readonly DiscardPart[]) {
     return parts.filter((part) => {
       const state = part.restore ? this.restores.state(part.restore) : undefined;
-      return state?.kind !== "restored" && state?.kind !== "returned";
+      // A fully left-out restore is as settled as a restored one: its entry has left Trash.
+      return state?.kind !== "restored" && state?.kind !== "left_out" && state?.kind !== "returned";
     });
   }
 
@@ -368,10 +732,19 @@ export class DraftNotices {
     const pressed = this.pressed.get(id);
     const returned = restores.find((state) => state?.kind === "returned");
     const leftOut = restores.reduce(
-      (sum, state) => sum + (state?.kind === "restored" ? state.leftOut : 0),
+      (sum, state) =>
+        sum + (state?.kind === "restored" || state?.kind === "left_out" ? state.leftOut : 0),
       (this.expired.get(id) ?? []).reduce((sum, { leftOut }) => sum + leftOut, 0),
     );
     const out = this.outstanding(parts);
+    const expired = this.expiredParts(id);
+    const nothingBack =
+      !this.roomBack.has(id) &&
+      parts.every(
+        (part) =>
+          expired.includes(part) ||
+          (part.restore !== undefined && this.restores.state(part.restore)?.kind === "left_out"),
+      );
     const status: Discarded["status"] | null =
       pressed === "undoing" || restores.some((state) => state?.kind === "restoring")
         ? "undoing"
@@ -393,12 +766,14 @@ export class DraftNotices {
       ...notice,
       status,
       leftOut,
+      nothingBack,
       returned: returned?.kind === "returned" ? returned.why : null,
       ...(status === "failed" ? this.subjectOf(out) : {}),
     };
     if (
       next.status === notice.status &&
       next.leftOut === notice.leftOut &&
+      next.nothingBack === notice.nothingBack &&
       next.returned === notice.returned &&
       next.subject === notice.subject
     )
@@ -417,7 +792,14 @@ export class DraftNotices {
 
   private subjectOf(parts: readonly DiscardPart[]) {
     const [only] = parts;
-    const count = parts.reduce((sum, part) => sum + (part.count ?? 1), 0);
+    // A document's text and its move are two shares of one change: it counts once.
+    const counted = new Set<string>();
+    const count = parts.reduce((sum, part) => {
+      if (part.count !== undefined) return sum + part.count;
+      if (counted.has(part.documentId)) return sum;
+      counted.add(part.documentId);
+      return sum + 1;
+    }, 0);
     return {
       subject:
         count === 1 && only
@@ -456,7 +838,11 @@ export class DraftNotices {
     this.notices.delete(notice.ownerKey);
     this.parts.delete(notice.id);
     this.expired.delete(notice.id);
+    this.roomBack.delete(notice.id);
     this.pressed.delete(notice.id);
+    clearTimeout(this.bounceTimers.get(notice.id));
+    this.bounceTimers.delete(notice.id);
+    this.bounceTo.delete(notice.id);
   }
 
   private publish() {

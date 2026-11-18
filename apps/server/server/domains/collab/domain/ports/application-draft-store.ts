@@ -60,4 +60,9 @@ export type ApplicationDraftStore = DraftStore & {
    * when the owner has no active branch or no draft of the document.
    */
   findOwnerDraft(documentId: DocumentId, owner: DraftOwner): Promise<ResolvedDraft | null>;
+  /**
+   * The latest draft of the document this owner had that a Discard or a delete closed, as
+   * metadata: a closed draft keeps its bytes, and a Copy of what the writer saw reads them.
+   */
+  findClosedOwnerDraft(documentId: DocumentId, owner: DraftOwner): Promise<ResolvedDraft | null>;
 };

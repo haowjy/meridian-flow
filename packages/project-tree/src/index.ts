@@ -12,13 +12,25 @@ export {
   appliedCreates,
   appliedNodes,
   applyDraft,
+  covers,
   type DiscardedBy,
   discardDraft,
   discardedBy,
+  type LeftRecord,
+  madeBy,
+  recordsAdmittedAfter,
   restoreDiscard,
   undoApply,
 } from "./apply.js";
 export { changedFolders, type LandingFault, landingFaults } from "./changes.js";
+export {
+  appliedBy,
+  type DraftedFate,
+  draftedFates,
+  newestDrafted,
+  type RecordSettled,
+  settledRecords,
+} from "./drafted-fate.js";
 export { shownName } from "./names.js";
 export {
   type Actor,
@@ -45,6 +57,7 @@ export {
 export {
   type DroppedRecord,
   deleteCovering,
+  deletesCovering,
   placeIn,
   recordsOfItem,
   replay,
@@ -77,7 +90,19 @@ export {
   type DefaultSiblingOrderEntry,
   type RankedSibling,
 } from "./siblings.js";
-export { deleteStands, undoChange } from "./undo.js";
+export {
+  type ClosedUndo,
+  changeUndone,
+  deleteHides,
+  deleteStands,
+  type TakenBack,
+  takeBackAll,
+  type UndoAnswer,
+  type UndoReport,
+  type UndoStep,
+  undoChange,
+  undoReports,
+} from "./undo.js";
 export type { ReadRecord } from "./validate.js";
 export {
   droppedRecords,

@@ -17,8 +17,17 @@ export const UNNAMED_RELEASES: readonly string[] = ["dev", "0.0.0"];
 /** Response header: `current;min=<minimum>`, the protocol the server speaks and the oldest it still understands. */
 export const PROTOCOL_HEADER = "x-meridian-protocol";
 
-/** The wire contract this code speaks. Bump on a contract change an older tab would misread. */
-export const PROTOCOL_VERSION = 5;
+/**
+ * The wire contract this code speaks. Bump on a contract change an older tab would misread.
+ * 2: a move between a project and the account's files became a Copy (#1598). 3: the home folder
+ * belongs to the account, so a source's owner has a new shape (#1599). 4: the Changes list reads
+ * its rows' facts from the owner list (#1675). 5: names repeat (#1643). 6: Redo is gone from the chat card and from the AI's
+ * commands, each document command answers with what happened to its items (PR B), and a chat
+ * card's Undo that left every tree change answers `not_undone`, each tree part saying why it stayed
+ * (`changed_since`, `purged`) where it said `superseded` (#1636); a tab built below 6 still sends Redo
+ * and expects the old statuses.
+ */
+export const PROTOCOL_VERSION = 6;
 
 /**
  * The oldest protocol a tab may keep running against this server. Raise it, with
@@ -29,7 +38,7 @@ export const PROTOCOL_VERSION = 5;
  * sends remains a literal name, and an old stored move's retired name field is ignored when
  * replaying it.
  */
-export const MIN_PROTOCOL_VERSION = 5;
+export const MIN_PROTOCOL_VERSION = 6;
 
 export const serverProtocolSchema = z.object({
   current: z.number().int().nonnegative(),

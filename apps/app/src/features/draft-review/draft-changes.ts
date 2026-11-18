@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import type { BranchCommandFailure } from "./review-command-types";
+import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeItem = {
@@ -35,8 +35,6 @@ export type DraftChangesView = DraftChangesData & {
 export function isWholeDocumentChange(view: Pick<DraftChangesData, "status" | "items">): boolean {
   return view.status === "ready" && view.items.length === 1 && view.items[0]?.change.frame === null;
 }
-
-type DraftRef = { projectId: string; ownerKey: string; documentId: string; itemKey: string };
 
 /** Subscribe to this item's record, not another draft's command activity. */
 export function useDraftCommandState(itemKey: string) {

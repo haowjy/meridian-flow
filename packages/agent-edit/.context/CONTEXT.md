@@ -81,16 +81,30 @@ holding a live descendant outside the receipt stays (`delete-filter.ts`) with al
 (`id` first: an element without one is not a block); only the AI's own text inside it goes. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
 leaves a writer's later attribute value.
 
-A replacement undoes as plain Yjs does: the deleted run comes back wherever it was, beside whatever
-the writer put there. Over "One big cat." (the AI replaced `small` with `big`), a writer who typed
-"huge" over "big" gets "One smallhuge cat." on Undo, and one who typed before the word gets
-"One smallvery  cat.". Undo never drops an original word to avoid doubling or joining text.
-The result equals a plain `Y.UndoManager`'s replacement restoration, with no stranded rule and no
-word rule, except the descendant protection above: Flow keeps the writer's text inside a block the
-AI created, where plain Yjs deletes it, so no writer text is lost.
+A replacement is judged per change, not per part: one `replace` that touches two places in a
+paragraph is one part with several changes. `pairEdit` pairs each deleted run with the
+inserted text that took its place (`pairChanges`, from the immutable items: the inserted run's
+`origin` or `rightOrigin` sits on the deleted run, consecutive deleted siblings are one run, and
+text deleted before the write is stepped over, since every backspace leaves some) and stores the
+pairs in `effect.replaced`. Each write is paired right after it applied, before the next write in
+the same call or batch changes the document, so a later write's deletions never count as earlier
+ones; `captureEditParts` only drops cross-part transients from the pairs. Only a receipt that can
+be undone is paired (an agent write, a Revert, an Undo), never a writer's frame. The walk itself
+can still pair wrongly at the write (a restore receipt whose neighbours the writer deleted).
+`replacedGone` pairs a receipt written before this from the document as it stands, up to
+restoration lineage, the one place a later deletion can still change the answer. A deleted run comes back while any visible text of its replacement still
+stands: beside whatever the writer put there, so a writer who typed before the word gets "One
+smallvery  cat.", and a partly overtyped word joins ("kneltkn"). Once none of the replacement's text
+is visible (a Discard took it out, or the writer typed over every letter), that run stays deleted
+and the old word returns only with the writer's own text, never as a second copy beside it. A
+deleted run with no replacement always restores, and a part with nothing left to remove or restore
+reads `changed`. Only text counts as a replacement standing: attributes, containers and formats
+(a heading level, a list marker) are reversed by their own item, and never authorize bringing text
+back. Apart from this and the descendant protection above (Flow keeps the writer's text inside a
+block the AI created, where plain Yjs deletes it), an inverse equals a plain `Y.UndoManager`'s.
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
 Any other change, a deletion inside a word or a letter swap, writes the run whole, so a replaced
 word never has letters of two authors. A writer's letter swap or deletion inside the AI's word
-therefore lands as a replacement, and Undo restores the original beside the writer's letters.
+therefore lands as a replacement, and Undo leaves it alone.

@@ -26,9 +26,20 @@ export interface EditRange {
   clock: number;
   len: number;
 }
+/** One replace: the deleted runs and the inserted text that took their place. */
+export interface EditChange {
+  deleted: EditRange[];
+  inserted: EditRange[];
+}
 export interface EditEffect {
   inserted: EditRange[];
   deleted: EditRange[];
+  /**
+   * The replaces of the write, paired from the document right after that write. A deleted item
+   * in none of them is a pure deletion. Absent on a receipt written before it was recorded and on
+   * one that can't be undone.
+   */
+  replaced?: EditChange[];
 }
 export interface EditAlias {
   source: { client: number; clock: number };
@@ -39,9 +50,8 @@ export type EditFrontier = Record<string, number>;
 export interface EditTarget {
   editId: string;
   ordinal: number;
-  direction: "invert" | "reapply";
 }
-export type EditKind = "write" | "undo" | "redo" | "revert";
+export type EditKind = "write" | "undo" | "revert";
 export interface InversePart {
   id: number;
   editId: string;
@@ -54,7 +64,7 @@ export interface InversePart {
   aliases: EditAlias[];
   targets: EditTarget[];
 }
-export type PartState = "active" | "undone" | "changed" | "excluded";
+export type PartState = "active" | "changed" | "excluded";
 export interface PartClassification {
   part: InversePart;
   state: PartState;
@@ -65,10 +75,6 @@ export interface CapturedPart {
   effect: EditEffect;
   frontier: EditFrontier;
   aliases: EditAlias[];
-}
-export interface InverseSelection {
-  part: InversePart;
-  direction: "invert" | "reapply";
 }
 export interface ComputedInverseEdit {
   /** Host policy may give an edit its own stack action within an atomic command. */
@@ -148,35 +154,56 @@ export function captureEditFrontier(doc: Y.Doc): EditFrontier {
   return Object.fromEntries(Y.decodeStateVector(Y.encodeStateVector(doc)));
 }
 /**
+ * The replaces of one write, from the item structure. Call it right after `update` applied to
+ * `doc`, before any later write changes the document: a deletion made by a later write would
+ * otherwise read as one from before this write. Only a receipt that can be undone needs it.
+ */
+export function pairEdit(
+  doc: Y.Doc,
+  receipt: { update: Uint8Array; frontier: EditFrontier; held?: ReadonlySet<string> },
+): EditChange[] {
+  const raw = rawEffect(receipt.update, receipt.held);
+  const effect = {
+    inserted: proseRanges(doc, raw.inserted),
+    deleted: proseRanges(doc, raw.deleted),
+  };
+  return effect.inserted.length && effect.deleted.length
+    ? pairChanges(doc, receipt.frontier, effect, (k) => k)
+    : [];
+}
+/**
  * Normalize the whole write together, excluding cross-part transients and non-prose roots.
  * `held` is `heldDeletes` taken before the update applied: a delete of an item the room had
- * already deleted is not the update's effect, so Undo never restores it.
+ * already deleted is not the update's effect, so Undo never restores it. `replaced` is the
+ * receipt's `pairEdit`, taken at its own write; the transients are dropped from it, never
+ * paired again here.
  */
 export function captureEditParts(
   doc: Y.Doc,
-  receipts: readonly { update: Uint8Array; frontier: EditFrontier; held?: ReadonlySet<string> }[],
+  receipts: readonly {
+    update: Uint8Array;
+    frontier: EditFrontier;
+    held?: ReadonlySet<string>;
+    replaced?: readonly EditChange[];
+  }[],
 ): CapturedPart[] {
   const raw = receipts.map((r) => rawEffect(r.update, r.held));
   const inserted = normalizedRanges(raw.flatMap((effect) => effect.inserted)),
     deleted = normalizedRanges(raw.flatMap((effect) => effect.deleted)),
     transient = intersectLineageRanges(inserted.map(lineageRange), deleted.map(lineageRange));
+  const outside = (input: readonly EditRange[]) =>
+    subtractLineageRanges(input.map(lineageRange), transient).map(editRange);
   return receipts.map((receipt, i) => {
     if (!receipt.frontier) throw new Error("Missing edit frontier");
-    return {
-      update: receipt.update,
-      frontier: receipt.frontier,
-      effect: {
-        inserted: subtractLineageRanges(
-          proseRanges(doc, raw[i].inserted).map(lineageRange),
-          transient,
-        ).map(editRange),
-        deleted: subtractLineageRanges(
-          proseRanges(doc, raw[i].deleted).map(lineageRange),
-          transient,
-        ).map(editRange),
-      },
-      aliases: [],
+    const effect: EditEffect = {
+      inserted: outside(proseRanges(doc, raw[i].inserted)),
+      deleted: outside(proseRanges(doc, raw[i].deleted)),
     };
+    if (receipt.replaced)
+      effect.replaced = receipt.replaced
+        .map((change) => ({ deleted: outside(change.deleted), inserted: outside(change.inserted) }))
+        .filter((change) => change.deleted.length && change.inserted.length);
+    return { update: receipt.update, frontier: receipt.frontier, effect, aliases: [] };
   });
 }
 
@@ -185,7 +212,6 @@ class Lineage {
   readonly forward = new Map<Key, Key[]>();
   readonly backward = new Map<Key, Key>();
   readonly owners = new Map<Key, InversePart>();
-  readonly inverseRestorations = new Set<Key>();
   readonly ordered: InversePart[];
   private readonly roots = new Map<Key, Key>();
   private readonly families = new Map<Key, Key[]>();
@@ -217,7 +243,6 @@ class Lineage {
       this.forward = base.forward;
       this.backward = base.backward;
       this.owners = base.owners;
-      this.inverseRestorations = base.inverseRestorations;
       this.roots = base.roots;
       this.families = base.families;
       this.effectRoots = base.effectRoots;
@@ -228,7 +253,6 @@ class Lineage {
       this.forward = new Map(base.forward);
       this.backward = new Map(base.backward);
       this.owners = new Map(base.owners);
-      this.inverseRestorations = new Set(base.inverseRestorations);
       this.roots = new Map(base.roots);
     }
     for (const p of added ? [added] : this.ordered) {
@@ -239,7 +263,6 @@ class Lineage {
             target = key({ client: alias.target.client, clock: alias.target.clock + n });
           if (this.backward.has(target) && this.backward.get(target) !== source)
             throw new Error("Conflicting restoration aliases");
-          if (p.kind !== "write") this.inverseRestorations.add(source);
           this.backward.set(target, source);
           const links = this.forward.get(source) ?? [];
           if (base) {
@@ -303,9 +326,6 @@ class Lineage {
     this.identities.set(root, effective);
     return effective;
   }
-  restored(k: Key): boolean {
-    return this.descendants(this.root(k)).some((source) => this.inverseRestorations.has(source));
-  }
   hydrate(): void {
     const summaries = new Map<Key, { shown?: Key; last?: Key }>();
     const visiting = new Set<Key>();
@@ -344,13 +364,12 @@ class Lineage {
 }
 
 /**
- * What Undo (`invert`) or Redo (`reapply`) of one part does now, item by item: remove the items
- * it would take away, restore the ones it would bring back, leave everything else, including
- * every other peer's typing. An item that is already gone, or whose parent or newer map value
+ * What Undo of one part does now, item by item: remove the items its edit inserted, restore the
+ * ones it deleted, leave everything else, including every other peer's typing. An item that is already gone, or whose parent or newer map value
  * belongs to someone else, is skipped rather than refusing the part.
  */
 interface InversePlan {
-  /** Every item the direction would remove, still visible or not: the stack item's insertions. */
+  /** Every item the Undo would remove, still visible or not: the stack item's insertions. */
   removing: Key[];
   /** Only the items that can come back now: Yjs copies an item it is told to restore. */
   restoring: Key[];
@@ -358,16 +377,11 @@ interface InversePlan {
   /** A restore skipped because its parent is gone. */
   blocked: boolean;
 }
-function planInverse(
-  index: Lineage,
-  part: InversePart,
-  direction: "invert" | "reapply",
-): InversePlan {
-  const forward = direction === "invert";
+function planInverse(index: Lineage, part: InversePart): InversePlan {
   const pairs = (list: readonly EditRange[]) =>
     clocks(list).map((original) => ({ original, effective: index.effective(original) }));
-  const removingRanges = forward ? part.effect.inserted : part.effect.deleted;
-  const returning = pairs(forward ? part.effect.deleted : part.effect.inserted);
+  const removingRanges = part.effect.inserted;
+  const returning = pairs(part.effect.deleted);
   // Classifying only asks whether the plan acts, which the first visible item usually answers,
   // so the effective identity of every removed item is resolved only when the plan is used.
   const removing = lazy(() => pairs(removingRanges));
@@ -378,8 +392,11 @@ function planInverse(
     const owner = index.owners.get(k);
     return !!owner && (owner.kind !== "write" || owner.editId === part.editId);
   };
+  const gone = replacedGone(index, part);
   const candidates = new Set(
     returning
+      // A change whose new text is gone has nothing to undo.
+      .filter((pair) => !gone(pair.original))
       .map((pair) => pair.effective)
       .filter((k) => !!find(index.doc, k) && !index.isVisible(k) && authorized(k)),
   );
@@ -417,12 +434,7 @@ function planInverse(
   const removes = (original: Key) => {
     const effective = index.effective(original);
     const item = find(index.doc, effective);
-    return (
-      !!item &&
-      index.isVisible(effective) &&
-      (forward || index.restored(original)) &&
-      shouldDeleteUndoItem(item, stackItem)
-    );
+    return !!item && index.isVisible(effective) && shouldDeleteUndoItem(item, stackItem);
   };
   let removable = false;
   for (const range of removingRanges) {
@@ -443,6 +455,171 @@ function planInverse(
     acts: removable || restoring.length > 0,
     blocked: verdicts.some((v) => v.verdict === "parent"),
   };
+}
+/**
+ * Whether a deleted item belongs to a change whose new text is gone (discarded, deleted or typed
+ * over), so restoring it would put the old text next to what the writer has now. A deleted item
+ * in no change replaced nothing and always comes back. A receipt written before the changes were
+ * recorded is paired from the document as it stands: that can't tell an old backspace from text
+ * the writer deleted after the write, so it is the one place the doubling can still happen.
+ */
+function replacedGone(index: Lineage, part: InversePart): (deleted: Key) => boolean {
+  const { inserted, deleted, replaced } = part.effect;
+  if (!inserted.length || !deleted.length) return () => false;
+  const changes =
+    replaced ?? pairChanges(index.doc, part.frontier, part.effect, (k) => index.root(k));
+  const changeOf = new Map<Key, EditChange>();
+  for (const change of changes) for (const k of clocks(change.deleted)) changeOf.set(k, change);
+  const gone = new Map<EditChange, boolean>();
+  return (k) => {
+    const change = changeOf.get(k);
+    if (!change) return false;
+    let known = gone.get(change);
+    if (known === undefined) {
+      known = !clocks(change.inserted).some((n) => index.isVisible(index.effective(n)));
+      gone.set(change, known);
+    }
+    return known;
+  };
+}
+/**
+ * Pairs the replaces of a write from the item structure: an inserted run takes the place of the
+ * deleted run its `origin` or `rightOrigin` reaches, and deleted siblings are one run. A deleted
+ * item of the part's text that existed before the write is not a boundary, whenever it was
+ * deleted, since every backspace leaves one. Called at the write, "deleted" is exact; called later
+ * on an old receipt, it also counts text the writer deleted since. Only text counts as
+ * replacement: attributes, containers and formats come and go with the text they belong to. A
+ * deleted run with no inserted text beside it is not a change. `root` maps an item to its
+ * restoration lineage, so a change still pairs after Undo and Redo gave its items new clocks.
+ * Every step is memoized so the work is linear in the part's items.
+ */
+function pairChanges(
+  doc: Y.Doc,
+  frontier: EditFrontier,
+  effect: EditEffect,
+  root: (k: Key) => Key,
+): EditChange[] {
+  const inserted = new Set(clocks(effect.inserted)),
+    deleted = new Set(clocks(effect.deleted));
+  const itemAt = (k: Key) => find(doc, k);
+  const stepBack = (k: Key, item: Y.Item): Key | undefined => {
+    const id = parse(k);
+    if (id.clock > item.id.clock) return key({ client: id.client, clock: id.clock - 1 });
+    return undefined;
+  };
+  const originOf = (k: Key): Key | undefined => {
+    const item = itemAt(k);
+    return item && (stepBack(k, item) ?? (item.origin ? key(item.origin) : undefined));
+  };
+  const leftOf = (k: Key): Key | undefined => {
+    const item = itemAt(k);
+    return item && (stepBack(k, item) ?? (item.left ? key(item.left.lastId) : undefined));
+  };
+  const rightOf = (k: Key): Key | undefined => {
+    const item = itemAt(k),
+      id = parse(k);
+    if (!item) return undefined;
+    if (id.clock < item.id.clock + item.length - 1)
+      return key({ client: id.client, clock: id.clock + 1 });
+    return item.right ? key(item.right.id) : undefined;
+  };
+  const rightOriginOf = (k: Key): Key | undefined => {
+    const item = itemAt(k);
+    return item?.rightOrigin ? key(item.rightOrigin) : undefined;
+  };
+  // Deleted before this write, so the writer's backspaces and earlier edits are not boundaries.
+  // Anything newer is: an item the writer deletes after the write still separates two changes.
+  const transparent = (k: Key) => {
+    const id = parse(k);
+    return !!itemAt(k)?.deleted && !deleted.has(k) && id.clock < (frontier[id.client] ?? 0);
+  };
+  const top = (k: Key, set: ReadonlySet<Key>): Key => {
+    const item = itemAt(k);
+    let root = k;
+    for (const ancestor of item ? ancestorItems(item) : []) {
+      if (!set.has(key(ancestor.id))) break;
+      root = key(ancestor.id);
+    }
+    return root;
+  };
+  /** The first item reached from `from` that `through` doesn't pass. Each key is walked once. */
+  const reach = (
+    from: Key | undefined,
+    next: (k: Key) => Key | undefined,
+    through: (k: Key) => boolean,
+    seen: Map<Key, Key | undefined>,
+  ): Key | undefined => {
+    const path: Key[] = [];
+    let cur = from,
+      found: Key | undefined;
+    while (cur) {
+      if (seen.has(cur)) {
+        found = seen.get(cur);
+        break;
+      }
+      if (!through(cur)) {
+        found = cur;
+        break;
+      }
+      path.push(cur);
+      cur = next(cur);
+    }
+    for (const k of path) seen.set(k, found);
+    return found;
+  };
+  // A deleted run is named by the item to its left that it doesn't pass; a run that starts its
+  // parent has no such item and is named by the parent.
+  const leftBoundary = new Map<Key, Key | undefined>();
+  const runOfElement = (element: Key): Key => {
+    const found = reach(
+      leftOf(element),
+      leftOf,
+      (k) => deleted.has(k) || transparent(k),
+      leftBoundary,
+    );
+    if (found) return found;
+    const parent = itemAt(element)?.parent as Y.AbstractType<unknown> | undefined;
+    return `^${parent?._item ? key(parent._item.id) : ""}`;
+  };
+  // A restored copy keeps its source's lineage root, so a change still pairs after Undo and Redo
+  // gave its items new clocks.
+  const runOfRoot = new Map<Key, Key>();
+  const deletedIn = new Map<Key, Key[]>();
+  for (const k of deleted) {
+    const run = runOfElement(top(k, deleted));
+    runOfRoot.set(root(k), run);
+    const members = deletedIn.get(run);
+    if (members) members.push(k);
+    else deletedIn.set(run, [k]);
+  }
+  const insertedIn = new Map<Key, Key[]>();
+  const originBoundary = new Map<Key, Key | undefined>(),
+    rightBoundary = new Map<Key, Key | undefined>();
+  for (const k of inserted) {
+    const content = itemAt(k)?.content;
+    if (!(content instanceof Y.ContentString || content instanceof Y.ContentEmbed)) continue;
+    const container = top(k, inserted);
+    const sides = [
+      reach(
+        originOf(container),
+        (n) => (inserted.has(n) ? originOf(n) : leftOf(n)),
+        (n) => inserted.has(n) || transparent(n),
+        originBoundary,
+      ),
+      reach(rightOriginOf(container), rightOf, transparent, rightBoundary),
+    ];
+    for (const side of sides) {
+      const run = side && runOfRoot.get(root(side));
+      if (!run) continue;
+      const members = insertedIn.get(run);
+      if (members) members.push(k);
+      else insertedIn.set(run, [k]);
+    }
+  }
+  return [...insertedIn].map(([run, keys]) => ({
+    deleted: ranges(deletedIn.get(run) ?? []),
+    inserted: ranges(keys),
+  }));
 }
 const lazy = <T>(compute: () => T) => {
   let value: { v: T } | undefined;
@@ -467,9 +644,8 @@ function classify(index: Lineage, part: InversePart): PartClassification {
   if (!part.effect.inserted.length && !part.effect.deleted.length)
     return { part, state: "excluded", reasons: [] };
   try {
-    const undo = planInverse(index, part, "invert");
+    const undo = planInverse(index, part);
     if (undo.acts) return { part, state: "active", reasons: [] };
-    if (planInverse(index, part, "reapply").acts) return { part, state: "undone", reasons: [] };
     return changed(undo.blocked ? "inaccessible ancestor" : "nothing left to undo");
   } catch (error) {
     return changed(error instanceof Error ? error.message : String(error));
@@ -580,7 +756,7 @@ export interface InverseAction {
 export function computeInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
-  selection: readonly InverseSelection[],
+  selection: readonly InversePart[],
   action: InverseAction,
 ): ComputedInverse {
   return computePreparedInverse(doc, history, selection, action);
@@ -594,7 +770,7 @@ export function computeInverse(
 function computePreparedInverse(
   doc: Y.Doc,
   history: readonly InversePart[],
-  selection: readonly InverseSelection[],
+  selection: readonly InversePart[],
   action: InverseAction,
   prepared?: Lineage,
   { preview = false }: { preview?: boolean } = {},
@@ -611,7 +787,6 @@ function computePreparedInverse(
   const local = [...history],
     result: ComputedInverse = { actionId: action.actionId, edits: [], skipped: [] };
   const groups = new Map<string, ComputedInverseEdit>();
-  const directions = new Map<string, string>();
   const groupFor = (editId: string) => {
     let edit = groups.get(editId);
     if (!edit) {
@@ -622,13 +797,7 @@ function computePreparedInverse(
     return edit;
   };
   try {
-    for (const chosen of selection) {
-      const prior = directions.get(chosen.part.editId);
-      if (prior && prior !== chosen.direction)
-        throw new Error("One target edit cannot transition both ways");
-      directions.set(chosen.part.editId, chosen.direction);
-    }
-    for (const [at, { part, direction }] of selection.entries()) {
+    for (const [at, part] of selection.entries()) {
       const lineageOn = (view: Y.Doc) =>
         new Lineage(
           view,
@@ -639,7 +808,7 @@ function computePreparedInverse(
         );
       let index = lineageOn(scratch ?? doc);
       const state = classify(index, part);
-      if (state.state !== (direction === "invert" ? "active" : "undone")) {
+      if (state.state !== "active") {
         result.skipped.push(state);
         continue;
       }
@@ -651,7 +820,7 @@ function computePreparedInverse(
       // Hydrating and undoing change the view, so they run on the replica, never on `doc`.
       if (index.doc !== working) index = lineageOn(working);
       index.hydrate();
-      const plan = planInverse(index, part, direction);
+      const plan = planInverse(index, part);
       const stack = {
         insertions: deleteSet(plan.removing),
         deletions: deleteSet(plan.restoring),
@@ -675,10 +844,12 @@ function computePreparedInverse(
       try {
         if (!updates.length) continue;
         const update = Y.mergeUpdates(updates),
-          receipt = captureEditParts(working, [{ update, frontier }])[0];
+          receipt = captureEditParts(working, [
+            { update, frontier, replaced: pairEdit(working, { update, frontier }) },
+          ])[0];
         receipt.aliases = captureAliases(working, snapshot);
         if (before) admitPreparedInverseReceipt(before, local, [part], receipt, index);
-        const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal, direction }];
+        const targets: EditTarget[] = [{ editId: part.editId, ordinal: part.ordinal }];
         const edit = groupFor(part.editId);
         edit.parts.push({ ...receipt, targets });
         local.push({
@@ -687,7 +858,7 @@ function computePreparedInverse(
           id: Math.max(0, ...local.map((p) => p.id)) + 1,
           editId: `computed:${result.edits.indexOf(edit)}`,
           ordinal: edit.parts.length - 1,
-          kind: direction === "invert" ? "undo" : "redo",
+          kind: "undo",
           actionId: action.actionId,
         });
       } finally {
@@ -696,7 +867,10 @@ function computePreparedInverse(
     }
     if (!preview)
       for (const edit of result.edits) {
-        const normalized = captureEditParts(scratch as Y.Doc, edit.parts);
+        const normalized = captureEditParts(
+          scratch as Y.Doc,
+          edit.parts.map((p) => ({ ...p, replaced: p.effect.replaced })),
+        );
         edit.parts = edit.parts.map((p, i) => ({ ...p, effect: normalized[i].effect }));
       }
     return result;
@@ -714,7 +888,7 @@ export interface InverseJob {
   live: Uint8Array;
   view: Uint8Array | null;
   history: readonly InversePart[];
-  selection: readonly InverseSelection[];
+  selection: readonly InversePart[];
   actionId: string;
 }
 export function runInverseJob(
@@ -762,13 +936,13 @@ function once<T>(make: () => T): () => T {
 export interface PreparedEditRoots {
   forView(doc: Y.Doc): PreparedEditRoots;
   classify(parts: readonly InversePart[]): PartClassification[];
-  compute(selection: readonly InverseSelection[], action: InverseAction): ComputedInverse;
+  compute(selection: readonly InversePart[], action: InverseAction): ComputedInverse;
   /**
    * `compute` for a caller that only needs which edits would be taken. Each accepted part but
    * the last carries its receipt; the last is accepted without being built, so its edit may
    * have no parts. Read only which edits come back, not their parts.
    */
-  preview(selection: readonly InverseSelection[], action: InverseAction): ComputedInverse;
+  preview(selection: readonly InversePart[], action: InverseAction): ComputedInverse;
   roots(effect: EditEffect): string[];
   inspect(roots: Iterable<string>): { root: string; identity: string | null }[];
 }

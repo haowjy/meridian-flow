@@ -11,7 +11,7 @@ import { createInMemoryWorkRepository } from "../domains/projects/index.js";
 import { rebindThreadWork } from "../domains/threads/index.js";
 import {
   combineWorkReversalOutcome,
-  getWorkReceiptReversalAvailability,
+  getTurnReceiptChip,
   reverseWorkReceipts,
 } from "./work-receipt-reversal.js";
 
@@ -37,6 +37,7 @@ function harness(receipts: WorkReceipt[]) {
       workContextNotices: { workChanged: vi.fn(async () => {}) },
       transaction: works.transaction,
       stopThreads: vi.fn(async () => {}),
+      documentSync: { getDocumentAndTreeChip: async () => null },
       blocks: {
         listByTurn: async () =>
           receipts.map((workReceipt) => ({
@@ -68,25 +69,21 @@ function persistedState(name: string, status: "active" | "archived" = "active") 
 describe("Work receipt reversal", () => {
   it("aggregates successful and failed Work parts truthfully", () => {
     expect(
-      combineWorkReversalOutcome(
-        { status: "nothing_to_undo", documents: [] },
-        [
-          {
-            command: "restore",
-            projectId: "project-1",
-            workId: "w1" as never,
-            name: "Arc",
-            status: "reversed",
-          },
-        ],
-        "undo",
-      ).status,
+      combineWorkReversalOutcome({ status: "nothing_to_undo", documents: [] }, [
+        {
+          command: "restore",
+          projectId: "project-1",
+          workId: "w1" as never,
+          name: "Arc",
+          status: "reversed",
+        },
+      ]).status,
     ).toBe("reversed");
     expect(
       combineWorkReversalOutcome(
         {
-          status: "reconciled",
-          documents: [{ documentId: "document-a", uri: "manuscript://a", status: "reconciled" }],
+          status: "reversed",
+          documents: [{ documentId: "document-a", uri: "manuscript://a", status: "reversed" }],
         },
         [
           {
@@ -97,12 +94,11 @@ describe("Work receipt reversal", () => {
             status: "failed",
           },
         ],
-        "undo",
       ).status,
     ).toBe("partial_failure");
   });
 
-  it("undoes and redoes update/archive to exact captured states", async () => {
+  it("undoes update/archive to the exact captured state", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "Arc" });
     await h.works.update(work.id, { name: "Arc revised" });
@@ -121,12 +117,8 @@ describe("Work receipt reversal", () => {
     });
     // Names may repeat: another Work holding the old name doesn't block the rename's Undo.
     await h.works.create({ projectId: "project-1", name: "Arc" });
-    await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" });
+    await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID });
     await expect(h.works.findById(work.id)).resolves.toMatchObject(persistedState("Arc"));
-    await reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "redo" });
-    await expect(h.works.findById(work.id)).resolves.toMatchObject(
-      persistedState("Arc revised", "archived"),
-    );
   });
 
   it("enqueues context inside the reversal transaction and returns the committed outcome", async () => {
@@ -162,7 +154,6 @@ describe("Work receipt reversal", () => {
     const result = await reverseWorkReceipts(h.deps, {
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      direction: "undo",
     });
     expect(result).toEqual([
       expect.objectContaining({ projectId: "project-1", status: "reversed" }),
@@ -193,7 +184,6 @@ describe("Work receipt reversal", () => {
       reverseWorkReceipts(h.deps, {
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        direction: "undo",
       }),
     ).resolves.toEqual([expect.objectContaining({ status: "reversed" })]);
     await expect(h.works.findById(work.id)).resolves.toMatchObject({ deletedAt: null });
@@ -236,7 +226,7 @@ describe("Work receipt reversal", () => {
     });
 
     await expect(
-      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
+      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
     ).resolves.toEqual([expect.objectContaining({ command: "delete", status: "reversed" })]);
     await expect(h.works.findById(created.id)).resolves.toMatchObject({
       deletedAt: expect.any(String),
@@ -256,14 +246,14 @@ describe("Work receipt reversal", () => {
       listByTurn: async () => [{ content: { metadata: { workReceipt: receipt } } }] as never,
     });
     await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: false, redo: false });
+      getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
+    ).resolves.toBeNull();
     await expect(
-      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
+      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
     ).resolves.toEqual([]);
   });
 
-  it("plans A to B to C updates in reverse and forward order", async () => {
+  it("undoes A to B to C updates in reverse order, then reads Undone", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "A" });
     await h.works.update(work.id, { name: "C" });
@@ -277,24 +267,18 @@ describe("Work receipt reversal", () => {
     });
 
     await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: true, redo: false });
+      getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
+    ).resolves.toMatchObject({ control: "undo" });
     await expect(
-      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
+      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
     ).resolves.toEqual([
       expect.objectContaining({ status: "reversed" }),
       expect.objectContaining({ status: "reversed" }),
     ]);
     await expect(h.works.findById(work.id)).resolves.toMatchObject({ name: "A" });
     await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: false, redo: true });
-    await reverseWorkReceipts(h.deps, {
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      direction: "redo",
-    });
-    await expect(h.works.findById(work.id)).resolves.toMatchObject({ name: "C" });
+      getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
+    ).resolves.toMatchObject({ state: "undone", control: "view_change" });
   });
 
   it("reports external C to D divergence without overwriting it", async () => {
@@ -308,11 +292,11 @@ describe("Work receipt reversal", () => {
     });
 
     await expect(
-      getWorkReceiptReversalAvailability(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toEqual({ undo: true, redo: false });
+      getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
+    ).resolves.toMatchObject({ control: "undo" });
     await h.works.update(work.id, { name: "D" });
     await expect(
-      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID, direction: "undo" }),
+      reverseWorkReceipts(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
     ).resolves.toEqual([
       expect.objectContaining({ status: "unavailable" }),
       expect.objectContaining({ status: "unavailable" }),
@@ -320,7 +304,7 @@ describe("Work receipt reversal", () => {
     await expect(h.works.findById(work.id)).resolves.toMatchObject({ name: "D" });
   });
 
-  it("undoes and redoes a mixed update then delete sequence", async () => {
+  it("undoes a mixed update then delete sequence", async () => {
     const h = harness([]);
     const work = await h.works.create({ projectId: "project-1", name: "A" });
     await h.works.update(work.id, { name: "B" });
@@ -345,18 +329,8 @@ describe("Work receipt reversal", () => {
     await reverseWorkReceipts(h.deps, {
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      direction: "undo",
     });
     await expect(h.works.findById(work.id)).resolves.toMatchObject({ name: "A", deletedAt: null });
-    await reverseWorkReceipts(h.deps, {
-      threadId: THREAD_ID,
-      turnId: TURN_ID,
-      direction: "redo",
-    });
-    await expect(h.works.findById(work.id)).resolves.toMatchObject({
-      name: "B",
-      deletedAt: expect.any(String),
-    });
   });
 });
 

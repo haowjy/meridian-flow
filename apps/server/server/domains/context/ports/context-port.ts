@@ -377,6 +377,10 @@ export interface ContextPort {
    * durable receipt. File policy is the caller's: this only moves context.
    */
   copy(request: ContextCopyRequest): Promise<Result<CopyContextEntriesResult, ContextError>>;
+  /** A Copy into a folder the project no longer holds: stored under the operation ID as `left_out`. */
+  leftOutForMissingFolder(
+    request: ContextCopyRequest,
+  ): Promise<Result<CopyContextEntriesResult, ContextError>>;
 
   /** The canonical address a folder identity has now; `destination_missing` when it is gone. */
   resolveFolderUri(

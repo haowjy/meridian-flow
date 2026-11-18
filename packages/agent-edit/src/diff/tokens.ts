@@ -284,9 +284,10 @@ function encodeKeys(keys: readonly string[], codes: Map<string, string>): string
 }
 
 /**
- * Diffs two key sequences as `[op, count]` runs, the one entry point every diff caller uses. The common
- * prefix and suffix are trimmed first; if the middle is still past `MAX_DIFF_KEYS`, or has more distinct
- * keys than a code can name, it is one delete and one insert (coarser, never wrong).
+ * Diffs two key sequences as `[op, count]` runs. An oversized unit in `align.ts` uses `boundedDiff`
+ * instead, which stays exact longer. The common prefix and suffix are trimmed first; if the middle
+ * is still past `MAX_DIFF_KEYS`, or has more distinct keys than a code can name, it is one delete
+ * and one insert (coarser, never wrong).
  */
 export function diffKeys(a: readonly string[], b: readonly string[]): Array<[number, number]> {
   let lo = 0;

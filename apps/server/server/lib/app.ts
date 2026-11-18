@@ -76,6 +76,11 @@ async function createAppServices(): Promise<AppServices> {
         run: app.recovery.purgeDocuments,
       },
       {
+        name: "discard-purge",
+        delayMs: RETENTION_PURGE_INTERVAL_MS,
+        run: app.recovery.purgeDiscards,
+      },
+      {
         name: "report-publication",
         delayMs: WAKE_SWEEP_INTERVAL_MS,
         run: app.recovery.publishReports,

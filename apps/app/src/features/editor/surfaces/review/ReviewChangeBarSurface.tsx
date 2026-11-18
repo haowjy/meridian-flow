@@ -60,6 +60,7 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
     <ReviewChangeBar
       change={focusedItem.change}
       itemKey={view.itemKey ?? ""}
+      documentId={view.documentId}
       disabled={view.locked}
       touch={touch}
       inFlow={placement.kind === "below"}

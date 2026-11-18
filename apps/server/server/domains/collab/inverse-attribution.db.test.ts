@@ -20,7 +20,7 @@ const fixture = () => inverseFixture(db);
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 
-it("records model undo, redo and revert with model provenance", async () => {
+it("records model undo and revert with model provenance", async () => {
   const { harness, view, responseId, context } = await fixture();
   try {
     const core = view.collab.agentEdit();
@@ -32,13 +32,20 @@ it("records model undo, redo and revert with model provenance", async () => {
       ),
     ).toMatchObject({ status: "success" });
 
-    for (const command of ["undo", "redo"] as const)
-      expect(await core.write({ ...address, command }, context)).toMatchObject({
-        status: "success",
-      });
-    expect(await core.write({ ...address, command: "revert", edit: "e1" }, context)).toMatchObject({
+    expect(await core.write({ ...address, command: "undo" }, context)).toMatchObject({
       status: "success",
     });
+    const again = await core.write(
+      { ...address, command: "replace", find: "Beta", content: "Gamma", tool_use_id: "again" },
+      context,
+    );
+    expect(again).toMatchObject({ status: "success" });
+    expect(
+      await core.write(
+        { ...address, command: "revert", edit: (again as { writeId: string }).writeId },
+        context,
+      ),
+    ).toMatchObject({ status: "success" });
 
     const rows = await db
       .select({
@@ -54,11 +61,11 @@ it("records model undo, redo and revert with model provenance", async () => {
         and(
           eq(schema.documentEdits.documentId, ALPHA_ID),
           eq(schema.documentEdits.actor, "agent"),
-          inArray(schema.documentEdits.kind, ["undo", "redo", "revert"]),
+          inArray(schema.documentEdits.kind, ["undo", "revert"]),
         ),
       )
       .orderBy(schema.documentEdits.id);
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(2);
     expect(rows).toEqual(
       expect.arrayContaining([
         {
@@ -68,14 +75,6 @@ it("records model undo, redo and revert with model provenance", async () => {
           turnId: TURN_ID,
           responseId,
           kind: "undo",
-        },
-        {
-          actor: "agent",
-          actorUserId: null,
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          responseId,
-          kind: "redo",
         },
         {
           actor: "agent",
@@ -92,7 +91,7 @@ it("records model undo, redo and revert with model provenance", async () => {
   }
 });
 
-it("records writer card undo and redo with the writer's user identity", async () => {
+it("records writer card undo with the writer's user identity", async () => {
   const { harness, view, context } = await fixture();
   try {
     expect(
@@ -108,15 +107,13 @@ it("records writer card undo and redo with the writer's user identity", async ()
         context,
       ),
     ).toMatchObject({ status: "success" });
-    for (const direction of ["undo", "redo"] as const)
-      expect(
-        await view.collab.reverseTurn({
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          direction,
-          actor: { type: "user", userId: USER_ID },
-        }),
-      ).toMatchObject({ status: "reversed", acceptedParts: 1 });
+    expect(
+      await view.collab.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        actor: { type: "user", userId: USER_ID },
+      }),
+    ).toMatchObject({ status: "reversed", acceptedParts: 1 });
 
     const rows = await db
       .select({
@@ -132,11 +129,11 @@ it("records writer card undo and redo with the writer's user identity", async ()
         and(
           eq(schema.documentEdits.documentId, ALPHA_ID),
           eq(schema.documentEdits.actor, "human"),
-          inArray(schema.documentEdits.kind, ["undo", "redo"]),
+          inArray(schema.documentEdits.kind, ["undo"]),
         ),
       )
       .orderBy(schema.documentEdits.id);
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(1);
     expect(rows).toEqual(
       expect.arrayContaining([
         {
@@ -147,14 +144,6 @@ it("records writer card undo and redo with the writer's user identity", async ()
           responseId: null,
           kind: "undo",
         },
-        {
-          actor: "human",
-          actorUserId: USER_ID,
-          threadId: null,
-          turnId: null,
-          responseId: null,
-          kind: "redo",
-        },
       ]),
     );
   } finally {
@@ -162,7 +151,7 @@ it("records writer card undo and redo with the writer's user identity", async ()
   }
 });
 
-it("an already-connected live room sees Undo and Redo without a repairing read", async () => {
+it("an already-connected live room sees Undo without a repairing read", async () => {
   const { harness, view, responseId, context } = await fixture();
   const peer = new Y.Doc({ gc: false });
   try {
@@ -220,23 +209,16 @@ it("an already-connected live room sees Undo and Redo without a repairing read",
       );
     expect(await view.draftStore.listActiveWorkDraftIds(ALPHA_ID)).toEqual([]);
     await vi.waitFor(() => expect(prose()).toBe("Alpha Gamma.\n\nBlue."));
-    for (const direction of ["undo", "redo"] as const) {
-      const broadcasts = view.hocuspocus.broadcasts.length;
-      expect(
-        await view.collab.reverseTurn({
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          direction,
-          actor: { type: "user", userId: USER_ID },
-        }),
-      ).toMatchObject({ status: "reversed", acceptedParts: 1 });
-      expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
-      await vi.waitFor(() =>
-        expect(prose()).toBe(
-          direction === "undo" ? "Alpha Beta.\n\nBlue." : "Alpha Gamma.\n\nBlue.",
-        ),
-      );
-    }
+    const broadcasts = view.hocuspocus.broadcasts.length;
+    expect(
+      await view.collab.reverseTurn({
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        actor: { type: "user", userId: USER_ID },
+      }),
+    ).toMatchObject({ status: "reversed", acceptedParts: 1 });
+    expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
+    await vi.waitFor(() => expect(prose()).toBe("Alpha Beta.\n\nBlue."));
   } finally {
     peer.destroy();
     await harness.dispose();

@@ -14,6 +14,7 @@ import {
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { compareCatalogSiblings, LIVE } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
+import { NO_OWNERS } from "../../../../shared/tree-owners.js";
 import type {
   BoundWrite,
   CollabDomain,
@@ -694,8 +695,10 @@ export class ContextFS implements ContextSchemeAdapter {
     const fromSourceId = await this.store.contextSourceId();
     return this.inTreeCommand({ ...input, fromSourceId }, async (target) => {
       let arrived: readonly string[] = [];
+      // Under the transaction's locks, so the owners' lifecycles read now are the ones that commit.
+      const judge = await (input.owners ?? NO_OWNERS).judge();
       const result = await this.writes.run(target, (scope) => {
-        const made = input.make(scope);
+        const made = input.make(scope, judge);
         arrived = made.arrived ?? [];
         return made;
       });

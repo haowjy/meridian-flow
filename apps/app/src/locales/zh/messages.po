@@ -459,8 +459,64 @@ msgstr "{answered, plural, other {# 个已回答}}"
 #~ msgid "{applied} applied"
 #~ msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{appliedCount, plural, one {# change} other {# changes}}"
+#~ msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "{appliedCount} changes"
+#~ msgstr ""
+
 #: src/features/chat/tool-renderers.tsx
 msgid "{binary} is a binary file."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} can no longer be taken back."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is archived. Unarchive it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+#~ msgid "{change} stayed: {owner} is deleted."
+#~ msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is deleted. Restore it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: {owner} is in Trash. Restore it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: it has writing in it since."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: it was changed since."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its chat is in Trash. Restore it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its Work is archived. Unarchive it to undo this."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its Work is closed."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+#~ msgid "{change} stayed: its Work is deleted."
+#~ msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "{change} stayed: its Work is deleted. Restore it to undo this."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -501,7 +557,12 @@ msgstr ""
 msgid "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
 msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
+msgstr ""
+
 #: src/features/chat/DraftDock.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
@@ -569,17 +630,21 @@ msgstr ""
 #~ msgid "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
 #~ msgstr ""
 
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{count, plural, one {Applied before your Discard reached it, so it stays applied.} other {# changes were applied before your Discard reached them, so they stay applied.}}"
+msgstr ""
+
 #: src/features/agents/PackageSave.tsx
 #~ msgid "{count, plural, one {Not saved: # problem} other {Not saved: # problems}}"
 #~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
-msgstr ""
+#~ msgid "{count, plural, one {Redo leaves # part as it is} other {Redo leaves # parts as they are}}"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{count, plural, one {Redo left # part as it was} other {Redo left # parts as they were}}"
-msgstr ""
+#~ msgid "{count, plural, one {Redo left # part as it was} other {Redo left # parts as they were}}"
+#~ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {Undo leaves # part as it is} other {Undo leaves # parts as they are}}"
@@ -876,15 +941,11 @@ msgstr ""
 msgid "{name} refused the request."
 msgstr ""
 
-#: src/features/chat/tool-failure.tsx
-#~ msgid "{name} refused the token."
-#~ msgstr ""
-
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "{name} source"
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} was deleted before this change could be made."
 msgstr ""
 
@@ -896,7 +957,7 @@ msgstr ""
 #~ msgid "{name} was deleted with the Work {work} before this change could be made."
 #~ msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} was discarded from the draft before this change could be made."
 msgstr ""
 
@@ -977,6 +1038,10 @@ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{names} is back."
+msgstr ""
+
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "{names} is gone for good, so it wasn't copied."
 msgstr ""
 
 #: src/features/import/import-presentation.ts
@@ -1108,20 +1173,24 @@ msgstr ""
 #~ msgid "{waiting} still a draft"
 #~ msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} deleted {name} before this change could be made."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} deleted this document before this change could be made."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} discarded {name} from the draft before this change could be made."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{who} discarded this document from the draft before this change could be made."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
 msgstr ""
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
@@ -1179,10 +1248,6 @@ msgstr ""
 #: src/features/connections/NewChatConnectionMarks.tsx
 msgid "<0>{name}</0> has no tools chosen, so this chat won't have it."
 msgstr ""
-
-#: src/features/connections/NewChatConnectionMarks.tsx
-#~ msgid "<0>{name}</0> refused the token."
-#~ msgstr ""
 
 #. placeholder {0}: standing.reason
 #: src/features/connections/NewChatConnectionMarks.tsx
@@ -1252,12 +1317,12 @@ msgid "A chat you had open was deleted."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "A document blocks its folder path"
-msgstr ""
+#~ msgid "A document blocks its folder path"
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "A document blocks part of this location. Move or rename it, then apply again."
-msgstr ""
+#~ msgid "A document blocks part of this location. Move or rename it, then apply again."
+#~ msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
 msgid "A file can’t go there."
@@ -1269,6 +1334,10 @@ msgstr "文件不能放在那里。"
 
 #: src/features/import/reason-copy.ts
 msgid "A file path in this selection is too long to import."
+msgstr ""
+
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "A folder can't be copied into itself."
 msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
@@ -1293,8 +1362,8 @@ msgid "A picture cannot go there."
 msgstr "图片不能放在这里。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
-msgstr ""
+#~ msgid "A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "A skill named {name} is already here."
@@ -1338,7 +1407,7 @@ msgstr ""
 msgid "Account: {label}"
 msgstr ""
 
-#. placeholder {0}: nameWithHandle(work.name, handle)
+#. placeholder {0}: work.name
 #: src/features/project/work/WorkActionsMenu.tsx
 #~ msgid "Actions for {0}"
 #~ msgstr ""
@@ -1600,6 +1669,10 @@ msgid "Appearance and behavior settings."
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
+msgid "applied"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied"
 msgstr ""
@@ -1611,6 +1684,10 @@ msgstr ""
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "Applied as {name}: the name was taken."
 #~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Applied first"
+msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applied just now: its changes are in {area}."
@@ -1660,6 +1737,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply changes in {name}"
+msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "Apply couldn't be sent. Try again."
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
@@ -1972,24 +2053,24 @@ msgid "Can’t put that inside code"
 msgstr "无法将其放入代码中"
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: {place} was moved or deleted after you undid this change."
-msgstr ""
+#~ msgid "Can't redo: {place} was moved or deleted after you undid this change."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: a document blocks its folder path. Move it, then try again."
-msgstr ""
+#~ msgid "Can't redo: a document blocks its folder path. Move it, then try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: a document blocks the folder path to {place}. Move it, then try again."
-msgstr ""
+#~ msgid "Can't redo: a document blocks the folder path to {place}. Move it, then try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: the document was moved or deleted after you undid this change."
-msgstr ""
+#~ msgid "Can't redo: the document was moved or deleted after you undid this change."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't redo: the folder it would move to is gone."
-msgstr ""
+#~ msgid "Can't redo: the folder it would move to is gone."
+#~ msgstr ""
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Can't restore all of these"
@@ -2004,24 +2085,24 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: {place} was moved or deleted after this change."
-msgstr ""
+#~ msgid "Can't undo: {place} was moved or deleted after this change."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: a document blocks its folder path. Move it, then try again."
-msgstr ""
+#~ msgid "Can't undo: a document blocks its folder path. Move it, then try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: a document blocks the folder path to {place}. Move it, then try again."
-msgstr ""
+#~ msgid "Can't undo: a document blocks the folder path to {place}. Move it, then try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: the document was moved or deleted after this change."
-msgstr ""
+#~ msgid "Can't undo: the document was moved or deleted after this change."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Can't undo: the folder it would return to is gone."
-msgstr ""
+#~ msgid "Can't undo: the folder it would return to is gone."
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/connections/AddConnectionForm.tsx
@@ -2136,8 +2217,8 @@ msgid "Changed after you picked it."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Changed since"
-msgstr ""
+#~ msgid "Changed since"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -2557,6 +2638,10 @@ msgstr ""
 msgid "Copied from {source} into"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "copy"
+msgstr ""
+
 #: src/features/chat/AssistantTurnActions.tsx
 #: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -2665,46 +2750,46 @@ msgid "Couldn't be read"
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Couldn't be reversed"
-msgstr ""
+#~ msgid "Couldn't be reversed"
+#~ msgstr ""
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back {0} drafts."
-msgstr ""
+#~ msgid "Couldn't bring back {0} drafts."
+#~ msgstr ""
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back {0} items."
-msgstr ""
+#~ msgid "Couldn't bring back {0} items."
+#~ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back {0}."
-msgstr ""
+#~ msgid "Couldn't bring back {0}."
+#~ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back the change to {0}."
-msgstr ""
+#~ msgid "Couldn't bring back the change to {0}."
+#~ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back the changes in {0}."
-msgstr ""
+#~ msgid "Couldn't bring back the changes in {0}."
+#~ msgstr ""
 
 #. placeholder {0}: subject.name
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring back the draft of {0}."
-msgstr ""
+#~ msgid "Couldn't bring back the draft of {0}."
+#~ msgstr ""
 
 #: src/features/connections/ConnectionsSection.tsx
 msgid "Couldn't bring it back."
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't bring it back. Retry tries again."
-msgstr ""
+#~ msgid "Couldn't bring it back. Retry tries again."
+#~ msgstr ""
 
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Couldn't check how this question ended."
@@ -2980,8 +3065,8 @@ msgid "Couldn’t pin {title}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Couldn't put them back in Trash. Retry tries again."
-msgstr ""
+#~ msgid "Couldn't put them back in Trash. Retry tries again."
+#~ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
 msgid "Couldn't queue the compaction."
@@ -3020,8 +3105,8 @@ msgid "Couldn't read report from {line}"
 msgstr "无法读取来自 {line} 的报告"
 
 #: src/features/chat/command-descriptor.ts
-msgid "Couldn't redo"
-msgstr ""
+#~ msgid "Couldn't redo"
+#~ msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
@@ -3213,20 +3298,20 @@ msgid "Couldn't undo"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Couldn't undo applying {name}. Retry tries again."
-msgstr ""
+#~ msgid "Couldn't undo applying {name}. Retry tries again."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/use-sidebar-undo.ts
 #~ msgid "Couldn't undo applying {name}. Try again."
 #~ msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
-msgid "Couldn't undo the switch."
-msgstr ""
+#~ msgid "Couldn't undo the switch."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't undo this Apply. Try again."
-msgstr ""
+#~ msgid "Couldn't undo this Apply. Try again."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn’t unpin {title}"
@@ -3331,6 +3416,10 @@ msgstr ""
 msgid "Default alignment"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "delete"
+msgstr ""
+
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
@@ -3401,8 +3490,9 @@ msgstr ""
 msgid "Deleted a Work"
 msgstr ""
 
-#: src/features/editor/ManuscriptStateNotice.tsx
-#~ msgid "Deleted from {area}"
+#. placeholder {0}: schemeLabel(scheme)
+#: src/features/draft-review/DraftCommandStatus.tsx
+#~ msgid "Deleted from {0}. Apply brings it back."
 #~ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
@@ -3474,8 +3564,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/draft-review/tree-groups.ts
-msgid "Deleted in live. Restore it to keep this change."
-msgstr ""
+#~ msgid "Deleted in live. Restore it to keep this change."
+#~ msgstr ""
 
 #: src/features/draft-review/DraftedDeleteNotice.tsx
 msgid "Deleted in this draft"
@@ -3488,8 +3578,8 @@ msgid "Deleted just now. Undo puts it back."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Deleted since"
-msgstr ""
+#~ msgid "Deleted since"
+#~ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
@@ -3616,6 +3706,10 @@ msgstr ""
 #: src/features/draft-review/ReviewActions.tsx
 #~ msgid "Discard this draft? This can't be undone."
 #~ msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "discarded"
+msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -3762,11 +3856,43 @@ msgid "Drafted {what}: {applied} applied, {discarded} discarded, {waiting} still
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {replaced} replaced by a later change"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {replaced} replaced by a later change, {discarded} discarded"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {replaced} replaced by a later change, {discarded} discarded, {waiting} still a draft"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {applied} applied, {replaced} replaced by a later change, {waiting} still a draft"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Drafted {what}: {applied} applied, {waiting} still a draft"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Drafted {what}: {discarded} discarded, {waiting} still a draft"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {replaced} replaced by a later change"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {replaced} replaced by a later change, {discarded} discarded"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {replaced} replaced by a later change, {discarded} discarded, {waiting} still a draft"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Drafted {what}: {replaced} replaced by a later change, {waiting} still a draft"
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -4457,6 +4583,18 @@ msgid "Italic"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash"
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
+msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Its chat is in Trash, so this stayed as it is"
+#~ msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Its chat is in Trash."
 msgstr ""
 
@@ -4469,8 +4607,8 @@ msgid "Its document wasn't restored"
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Its folder is gone"
-msgstr ""
+#~ msgid "Its folder is gone"
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "Its paragraph was removed"
@@ -4479,6 +4617,10 @@ msgstr ""
 #: src/features/agents/findings.ts
 msgid "Its subagent {name} is unavailable."
 msgstr ""
+
+#: src/features/chat/turn-receipt-copy.ts
+#~ msgid "Its Work was closed, so this stayed as it is"
+#~ msgstr ""
 
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Jump to in chat"
@@ -4876,6 +5018,10 @@ msgstr ""
 msgid "More composer controls"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "move"
+msgstr ""
+
 #: src/features/project/context/entry-drag/drop-choice.ts
 #: src/features/project/context/EntryDestinationPicker.tsx
 msgid "Move after {sibling}"
@@ -4970,12 +5116,12 @@ msgid "Moved just now. Undo puts it back."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Moved or deleted after this change"
-msgstr ""
+#~ msgid "Moved or deleted after this change"
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Moved since"
-msgstr ""
+#~ msgid "Moved since"
+#~ msgstr ""
 
 #. placeholder {0}: documentLocationName(landing.landedAt, names)
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -5112,6 +5258,10 @@ msgstr ""
 
 #: src/features/agents/PackageChanges.tsx
 msgid "New chats use the saved version until you save."
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "new document"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -5452,9 +5602,20 @@ msgstr ""
 msgid "Not sent: {0}"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone"
+msgstr ""
+
 #: src/features/agents/AgentSavesReceipt.tsx
 #~ msgid "Not undone: {label} was saved again since."
 #~ msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+#: src/features/chat/turn-receipt-copy.ts
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not undone."
+msgstr ""
 
 #. placeholder {0}: shadowName ?? connection.name
 #: src/features/connections/ConnectionPanel.tsx
@@ -5775,9 +5936,10 @@ msgstr ""
 msgid "Partly restored"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
-#~ msgid "Partly undone"
-#~ msgstr ""
+msgid "Partly undone"
+msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
@@ -5906,8 +6068,8 @@ msgid "Purchase confirmed."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Put back"
-msgstr ""
+#~ msgid "Put back"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
@@ -6030,30 +6192,21 @@ msgid "Reconnecting…"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-msgid "Redid"
-msgstr ""
+#~ msgid "Redid"
+#~ msgstr ""
 
 #. placeholder {0}: work.name
 #: src/features/chat/TurnEditsReceipt.tsx
 #~ msgid "Redid change to Work {0}."
 #~ msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
-msgid "Redid change to Work {name}."
-msgstr ""
-
-#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Redo"
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "Redo didn't go through. Try again."
-msgstr ""
-
-#: src/features/chat/turn-receipt-copy.ts
-msgid "Redo is no longer available because the documents changed."
-msgstr ""
+#~ msgid "Redo didn't go through. Try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 #~ msgid "Redo is no longer available because the manuscript changed."
@@ -6061,8 +6214,8 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Redoing…"
-msgstr ""
+#~ msgid "Redoing…"
+#~ msgstr ""
 
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/CreationComposer.tsx
@@ -6182,6 +6335,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Replace image"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Replaced by a later change"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "replaced by a later one"
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
@@ -6917,6 +7078,10 @@ msgstr "状态未知"
 msgid "Stayed as you edited it"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "still a draft"
+msgstr ""
+
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "Still loading. Try again in a moment."
 #~ msgstr "仍在加载，请稍后再试。"
@@ -7106,6 +7271,10 @@ msgstr ""
 msgid "Taken out"
 msgstr ""
 
+#: src/features/chat/TurnEditsReceipt.tsx
+#~ msgid "Takes back the whole Apply, all {wholeApply} changes."
+#~ msgstr ""
+
 #: src/components/app/composer/placeholders.ts
 msgid "Talk it out"
 msgstr "说出来理一理"
@@ -7125,6 +7294,13 @@ msgstr ""
 #: src/features/chat/chat-upload-display.ts
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
+msgstr ""
+
+#. placeholder {0}: halfState(text)
+#. placeholder {1}: treeNoun(op)
+#. placeholder {2}: halfState(tree)
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Text {0}, {1} {2}"
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -7148,20 +7324,20 @@ msgid "That change can't be made because this Work's drafts are archived."
 msgstr "此工作中的草稿已归档，无法进行该修改。"
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because it was discarded."
-msgstr ""
+#~ msgid "That change can't be redone because it was discarded."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because the text changed afterwards."
-msgstr ""
+#~ msgid "That change can't be redone because the text changed afterwards."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone because you undid it."
-msgstr ""
+#~ msgid "That change can't be redone because you undid it."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That change can't be redone here because it was already applied to your manuscript."
-msgstr ""
+#~ msgid "That change can't be redone here because it was already applied to your manuscript."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone because it was discarded."
@@ -7176,6 +7352,10 @@ msgid "That change can't be undone because the text changed afterwards."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
+msgid "That change can't be undone because what it changed is gone."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
 msgid "That change can't be undone here because it was already applied to your manuscript."
 msgstr ""
 
@@ -7187,7 +7367,6 @@ msgstr ""
 msgid "That change couldn't be made."
 msgstr ""
 
-#: src/features/draft-review/ReviewMessageText.tsx
 #: src/features/draft-review/ReviewToast.tsx
 msgid "That change is no longer in the draft."
 msgstr ""
@@ -7269,6 +7448,10 @@ msgstr ""
 #~ msgid "That rename couldn't be completed. Choose another name or try again."
 #~ msgstr ""
 
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "That Work is closed, so nothing was copied."
+msgstr ""
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "That Work is no longer available. Choose another Work."
@@ -7310,7 +7493,7 @@ msgstr ""
 msgid "The AI in {chat} deleted {count} documents ({names})."
 msgstr "{chat} 中的 AI 删除了 {count} 份文档（{names}）。"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted {name} before this change could be made."
 msgstr ""
 
@@ -7330,7 +7513,7 @@ msgstr "{chat} 中的 AI 删除了{title}。"
 msgid "The AI in {chat} deleted {title}. Applying brings it back."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in {chat} deleted this document before this change could be made."
 msgstr ""
 
@@ -7342,7 +7525,7 @@ msgstr "{chat} 中的 AI 删除了这份文档。"
 msgid "The AI in a chat deleted {count} documents ({names})."
 msgstr "某个对话中的 AI 删除了 {count} 份文档（{names}）。"
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted {name} before this change could be made."
 msgstr ""
 
@@ -7362,7 +7545,7 @@ msgstr "某个对话中的 AI 删除了{title}。"
 msgid "The AI in a chat deleted {title}. Applying brings it back."
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "The AI in a chat deleted this document before this change could be made."
 msgstr ""
 
@@ -7415,8 +7598,25 @@ msgstr ""
 #~ msgid "The change didn't fit the current draft. The AI will read it again."
 #~ msgstr ""
 
+#. placeholder {0}: fact.name
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The change to {0}"
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The change to this document"
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The change to this folder"
+msgstr ""
+
 #: src/features/agents/AgentPicker.tsx
 msgid "the default model"
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The delete"
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
@@ -7475,12 +7675,28 @@ msgstr ""
 msgid "The latest edits hadn't reached the server."
 msgstr ""
 
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The move"
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The new document"
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The new folder"
+msgstr ""
+
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "The project could not be reached. The link itself is fine."
 msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "the project's"
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The rename"
 msgstr ""
 
 #: src/features/chat/mcp-renderers.tsx
@@ -7497,6 +7713,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The requested passage wasn't specific enough."
+msgstr ""
+
+#: src/core/project-tree/tree-left-sentence.ts
+msgid "The restore from Trash"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
@@ -7536,11 +7756,6 @@ msgstr ""
 #: src/features/chat/tool-failure.tsx
 msgid "The server refused the request."
 msgstr ""
-
-#: src/features/chat/tool-failure.tsx
-#: src/features/connections/connection-status.ts
-#~ msgid "The server refused the token."
-#~ msgstr ""
 
 #: src/features/connections/AddConnectionForm.tsx
 msgid "The server sees what the AI sends it and can steer what the AI does. Add only servers you trust."
@@ -7613,8 +7828,8 @@ msgid "There is nowhere left to put that picture."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "There isn't enough left to redo."
-msgstr ""
+#~ msgid "There isn't enough left to redo."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "There isn't enough left to undo."
@@ -7685,8 +7900,8 @@ msgid "This cell is not merged."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This change belongs with others. Select all of them and try again."
-msgstr ""
+#~ msgid "This change belongs with others. Select all of them and try again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This change is no longer reversible."
@@ -7697,7 +7912,11 @@ msgid "This change no longer matches the document's text, so it can't be reverse
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This change only applies together with the rest of the document. Apply the whole document instead."
+#~ msgid "This change only applies together with the rest of the document. Apply the whole document instead."
+#~ msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This changed after you pressed Apply, so it wasn't applied. Check it, then apply again."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
@@ -7780,6 +7999,10 @@ msgstr ""
 msgid "This conversation couldn't be compacted."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This depends on a change that wasn't applied, so it was left out."
+msgstr ""
+
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
 msgstr ""
@@ -7817,8 +8040,8 @@ msgid "This document can't be edited now, so this change can't be reversed."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
-msgstr ""
+#~ msgid "This document changed since you opened the review. The review now shows the latest, so look again before you apply."
+#~ msgstr ""
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "This document couldn't be created where you put it."
@@ -7845,7 +8068,11 @@ msgstr ""
 msgid "This document was deleted"
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This document was deleted before its changes could be applied."
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted before this change could be made."
 msgstr ""
 
@@ -7865,15 +8092,11 @@ msgstr ""
 msgid "This document was deleted."
 msgstr ""
 
-#: src/features/draft-review/ReviewMessageText.tsx
-msgid "This document was deleted. Apply again to bring it back."
-msgstr ""
-
 #: src/features/chat/turn-receipt-copy.ts
 msgid "This document was discarded from the draft"
 msgstr ""
 
-#: src/features/chat/tool-renderers.tsx
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was discarded from the draft before this change could be made."
 msgstr ""
 
@@ -7898,12 +8121,12 @@ msgid "This document's Work was deleted, so this change can't be reversed."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This draft changed since you looked. Check it, then discard again."
-msgstr ""
+#~ msgid "This draft changed since you looked. Check it, then discard again."
+#~ msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "This draft is archived"
-msgstr ""
+#~ msgid "This draft is archived"
+#~ msgstr ""
 
 #: src/features/editor/InTrashStatus.tsx
 msgid "This draft is gone from Trash"
@@ -7922,8 +8145,8 @@ msgid "This draft just became read-only, so nothing was discarded. Check it, the
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-#~ msgid "This draft moved on since you pressed Apply, so it wasn't applied."
-#~ msgstr ""
+msgid "This draft moved on since you pressed Apply, so it wasn't applied."
+msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
@@ -7977,6 +8200,10 @@ msgstr ""
 msgid "This image never finished uploading."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This is no longer in the draft, so it wasn't applied."
+msgstr ""
+
 #: src/features/import/reason-copy.ts
 msgid "This isn't the same selection as the one already started."
 msgstr ""
@@ -7994,7 +8221,11 @@ msgid "This Meridian export can't be read. Import its folders one at a time."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This move or delete changed since you looked. Check it, then apply again."
+#~ msgid "This move or delete changed since you looked. Check it, then apply again."
+#~ msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This move would put a folder inside itself, so it wasn't applied."
 msgstr ""
 
 #: src/features/project/context/use-create-entry-form.ts
@@ -8089,6 +8320,10 @@ msgstr "耗时太久，已停止。"
 msgid "This version of Meridian can't display it."
 msgstr ""
 
+#: src/features/draft-review/ReviewMessageText.tsx
+msgid "This was discarded before Apply reached it. Restore it to apply it."
+msgstr ""
+
 #: src/features/chat/tool-failure.tsx
 msgid "This was stopped before it finished."
 msgstr ""
@@ -8102,8 +8337,8 @@ msgid "This Work is archived."
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This Work is archived. Unarchive it to apply or discard its changes."
-msgstr ""
+#~ msgid "This Work is archived. Unarchive it to apply or discard its changes."
+#~ msgstr ""
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "This Work is archived. Unarchive it to change its tree."
@@ -8122,8 +8357,8 @@ msgid "This Work is deleted."
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This Work is deleted. Restore it to apply or discard its changes."
-msgstr ""
+#~ msgid "This Work is deleted. Restore it to apply or discard its changes."
+#~ msgstr ""
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "This Work is deleted. Restore it to change its tree."
@@ -8341,6 +8576,11 @@ msgstr ""
 msgid "Undid change to Work {name}."
 msgstr ""
 
+#: src/core/project-tree/tree-left-sentence.ts
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Undid part of applying {name}."
+msgstr ""
+
 #: src/features/agents/UndoSave.tsx
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -8353,6 +8593,10 @@ msgstr ""
 #: src/features/project/work/WorkCollection.tsx
 msgid "Undo"
 msgstr "撤销"
+
+#: src/features/chat/TurnEditsReceipt.tsx
+msgid "Undo Apply"
+msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Undo applying {name}"
@@ -8367,7 +8611,12 @@ msgstr ""
 msgid "Undo delete of {title}"
 msgstr ""
 
+#: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/turn-receipt-copy.ts
+#: src/features/draft-review/CommandNotice.tsx
+#: src/features/draft-review/ReviewMessageText.tsx
+#: src/features/project/context/use-tree-notice-words.tsx
+#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Undo didn't go through. Try again."
 msgstr ""
 
@@ -8417,8 +8666,8 @@ msgid "Undo save of {label}"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Undo skipped applying {name}: the tree changed since."
-msgstr ""
+#~ msgid "Undo skipped applying {name}: the tree changed since."
+#~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo skipped your change to {name}: it was changed again since."
@@ -8455,6 +8704,7 @@ msgstr ""
 
 #: src/features/agents/PackageSave.tsx
 #: src/features/agents/UndoSave.tsx
+#: src/features/chat/TurnEditsReceipt.tsx
 msgid "Undone"
 msgstr ""
 
@@ -8770,6 +9020,10 @@ msgid "Work was closed"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
+msgid "Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes."
+msgstr ""
+
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Work was closed."
 msgstr ""
 
@@ -8848,8 +9102,8 @@ msgid "You can't open these files."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
-msgstr ""
+#~ msgid "You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands."
+#~ msgstr ""
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "You don't have access to change this."

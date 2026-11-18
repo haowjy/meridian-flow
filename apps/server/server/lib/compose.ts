@@ -379,6 +379,7 @@ export type AppServices = {
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
     purgeDocuments(): Promise<number>;
+    purgeDiscards(): Promise<number>;
     expireAsks(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
@@ -1148,6 +1149,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
     purgeDocuments: () => ports.documentTrash.purge(),
+    purgeDiscards: () => ports.documentSync.draftReview.purgeDiscards(),
     expireAsks: () => asks.expireDue(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
@@ -1539,6 +1541,9 @@ export function createInMemoryAppServices(
       return 0;
     },
     async purgeDocuments() {
+      return 0;
+    },
+    async purgeDiscards() {
       return 0;
     },
     expireAsks: () => asks.expireDue(),

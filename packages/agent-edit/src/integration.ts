@@ -134,6 +134,7 @@ export type {
   ComputedInverse,
   ComputedInverseEdit,
   EditAlias,
+  EditChange,
   EditEffect,
   EditFrontier,
   EditKind,
@@ -141,7 +142,6 @@ export type {
   EditTarget,
   InverseJob,
   InversePart,
-  InverseSelection,
   PartClassification,
   PartState,
   PreparedEditRoots,
@@ -153,6 +153,7 @@ export {
   classifyEditParts,
   computeInverse,
   inspectEditRoots,
+  pairEdit,
   prepareEditRoots,
   runInverseJob,
 } from "./undo/forward-inverse.js";

@@ -120,6 +120,7 @@ function readOnlyStore(documents: ContextDocument[]): ContextDocumentStore {
       const document = documents.find((candidate) => candidate.id === id);
       return document ? { contextSourceId: "source", document, path: document.name } : null;
     },
+    readSubtree: async () => null,
     listTree: async () => ({ folders: [], documents }),
     listFolders: async () => [],
     listDocuments: async () => documents,

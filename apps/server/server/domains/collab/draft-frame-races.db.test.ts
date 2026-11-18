@@ -374,7 +374,6 @@ describe("writer frames racing rewrites (postgres)", () => {
     fixture.view.collab.reverseTurn({
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      direction: "undo",
       actor: { type: "user", userId: USER_ID },
     });
 

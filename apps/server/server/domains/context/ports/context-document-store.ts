@@ -38,6 +38,15 @@ export interface ContextDocument {
   rank?: string | null;
 }
 
+/** One node and what is under it, read by id from live or from the Trash entry that holds it. */
+export interface ContextSubtree {
+  root: { kind: "folder"; folder: ContextFolder } | { kind: "document"; document: ContextDocument };
+  /** Every folder under the root (the root excluded), parents named by `parentId`. */
+  folders: ContextFolder[];
+  /** Every document under the root (the root excluded). */
+  documents: ContextDocument[];
+}
+
 export interface LocatedContextDocument {
   contextSourceId: string;
   document: ContextDocument;
@@ -60,6 +69,12 @@ export interface ContextDocumentStore {
   resolveFolderAt(view: TreeView, path: string): Promise<PathResolution<ContextFolder | null>>;
   /** A document visible in the view, by id, with its path there. */
   findDocumentById(view: TreeView, documentId: string): Promise<LocatedContextDocument | null>;
+  /**
+   * The node `id` and everything under it, wherever it stands now in this source: live, or in
+   * Trash with what its delete took. Null when this source holds no such node (purged, or
+   * moved to another source).
+   */
+  readSubtree(id: string): Promise<ContextSubtree | null>;
   /** Every folder and document the view shows in this source, in one pass. */
   listTree(view: TreeView): Promise<{ folders: ContextFolder[]; documents: ContextDocument[] }>;
   listFolders(view: TreeView, parentId: string | null): Promise<ContextFolder[]>;

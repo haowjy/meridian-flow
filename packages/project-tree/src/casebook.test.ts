@@ -30,11 +30,11 @@ import {
   TreeWriter,
   treeViolations,
   undoApply,
-  undoChange,
   type View,
   viewRecords,
 } from "./index.js";
 import { branchRows, projectedRows } from "./rows.js";
+import { undoChange } from "./undo-open.js";
 
 const ROOT = sourceRoot("manuscript");
 
@@ -464,6 +464,24 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     expect(t.at(a)).toMatchObject({ trashed: false, keptByChild: true });
   });
 
+  it("25b. undoes a reorder among siblings rescued from a purged folder: it lands and shows", () => {
+    const t = start();
+    const p = t.folder("P");
+    const n1 = t.chapter("N1", p);
+    t.chapter("N2", p);
+    t.chapter("N3", p);
+    const reorder = t.w.move(LIVE, CHAT, n1, p);
+    // The purge lists only P, so the three under it are rescued to the top, ordered by rank.
+    t.w.purge("system", t.w.delete(LIVE, WRITER, p), [p]);
+    expect(t.names(ROOT)).toEqual(["N2", "N3", "N1"]);
+    expect(undoChange(t.w, LIVE, WRITER, reorder.id)).toMatchObject({
+      type: "move",
+      undoes: reorder.id,
+    });
+    expect(t.names(ROOT)).toEqual(["N1", "N2", "N3"]);
+    t.valid();
+  });
+
   it("26. undoes a folder delete: the folder and its contents come back", () => {
     const t = start();
     const f = t.folder("Arc 2");
@@ -789,13 +807,13 @@ function reorganisedOnce() {
 describe("an Apply's copy that a later record undid is no longer in force", () => {
   const inLive = (t: ReturnType<typeof start>, command: string) => appliedNodes(t.doc, command, []);
 
-  it("a card's Undo of the drafted rename ends the Apply's copy; a Redo brings it back", () => {
+  it("a card's Undo of the drafted rename ends the Apply's copy", () => {
     const t = start();
     const n = t.chapter("Hall");
     const drafted = t.w.rename(D, CHAT, n, "Lobby");
     const { command, copies } = applyDraft(t.w, "work-1", WRITER, cmd());
     expect(inLive(t, command)).toEqual([n]);
-    const undid = undoChange(t.w, D, CHAT, drafted.id) as TreeRecord;
+    undoChange(t.w, D, CHAT, drafted.id);
     expect(t.at(n)?.name).toBe("Hall");
     expect(inLive(t, command)).toEqual([]);
     expect(undoChange(t.w, LIVE, WRITER, (copies[0] as TreeRecord).id)).toBe("already");
@@ -803,18 +821,9 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
       undone: [],
       left: [{ why: "already" }],
     });
-    const redo = undoChange(t.w, LIVE, CHAT, undid.id) as TreeRecord;
-    expect(t.at(n)?.name).toBe("Lobby");
-    expect(inLive(t, command)).toEqual([n]);
-    expect(undoChange(t.w, LIVE, CHAT, undid.id)).toBe("already");
-    expect(redo.undoes).toBe(undid.id);
-    const result = undoApply(t.w, command, WRITER, cmd());
-    expect(result.left).toEqual([]);
-    expect(t.at(n)?.name).toBe("Hall");
-    expect(inLive(t, command)).toEqual([]);
   });
 
-  it("an Apply that only restores lists the node until Un-Apply or a card's Undo takes the restore back", () => {
+  it("an Apply that only restores lists the node until Un-Apply or an Undo of the restore takes it back", () => {
     for (const how of ["unapply", "undo"] as const) {
       const t = start();
       const n = t.chapter("Hall");
@@ -1255,14 +1264,66 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     applyDraft(t.w, "work-1", WRITER, cmd());
     expect(shown()).toEqual([undefined, idHex(second).slice(0, 4)]);
   });
+
+  it("a move that puts a deleted folder back brings what is inside it back, as Trash does", () => {
+    const t = start();
+    const map = t.chapter("Map");
+    const ch2 = t.folder("Ch2");
+    const arc = t.folder("Arc", ch2);
+    t.w.delete(LIVE, WRITER, ch2);
+    t.w.rename(D, CHAT, map, "Ch2");
+    // Putting Ch2 back brings Arc back too, and the Work's view shows both standing.
+    t.w.author(D, CHAT, {
+      type: "move",
+      node: ch2,
+      parent: ROOT,
+      rank: "a1",
+      from: { parent: ROOT, rank: "a1" },
+    });
+    const { left } = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(left).toEqual([]);
+    expect([t.at(ch2)?.trashed, t.at(arc)?.trashed]).toEqual([false, false]);
+    expect(t.at(map)).toMatchObject({ name: "Ch2" });
+    expect(t.at(ch2)?.suffix).toBeUndefined();
+    expect(t.at(map)?.suffix).toBe(idHex(map).slice(0, 4));
+    t.valid();
+  });
+
+  it("an Apply's restore leaves the twins as the Work showed them; a Trash restore does not", () => {
+    const clash = () => {
+      const t = start();
+      const doc = t.chapter("Doc");
+      t.w.author(D, CHAT, {
+        type: "move",
+        node: doc,
+        parent: ROOT,
+        rank: "Zz",
+        from: { parent: ROOT, rank: t.at(doc)?.rank as string },
+      });
+      t.w.delete(LIVE, WRITER, doc);
+      const other = t.chapter("Doc");
+      const carries = (view: View = LIVE) => [
+        t.at(doc, view)?.suffix !== undefined,
+        t.at(other, view)?.suffix !== undefined,
+      ];
+      return { t, doc, carries };
+    };
+    const a = clash();
+    expect(a.carries(D)).toEqual([false, true]);
+    expect(applyDraft(a.t.w, "work-1", WRITER, cmd()).left).toEqual([]);
+    expect(a.carries()).toEqual([false, true]);
+    const b = clash();
+    b.t.w.restore(LIVE, WRITER, b.doc);
+    expect(b.carries()).toEqual([true, false]);
+  });
 });
 
 /**
  * Two copies of the list out of step: each case is a list two or three writers built offline and
  * merged. A move or rename is in force unless the last record about it is an Undo; a node's name
- * and place are what the last move or rename in force says; an Undo or Redo sets nothing itself.
+ * and place are what the last move or rename in force says; an Undo sets nothing itself.
  */
-describe("Undo and Redo of names and places read the changes in force", () => {
+describe("Undo of names and places reads the changes in force", () => {
   const W = WRITER;
   const replica = (client: number, from?: TreeWriter) => {
     const doc = new Y.Doc({ gc: false });

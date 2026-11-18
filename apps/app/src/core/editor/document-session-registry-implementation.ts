@@ -107,6 +107,7 @@ export class DocumentSessionRegistry {
   /** Sessions no host holds, kept while their history has something to undo or redo. */
   private readonly keptForUndo = new Map<string, { changed: number; stop: () => void }>();
   private undoClock = 0;
+  private readonly historyObservers = new Set<() => void>();
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
     string,
@@ -239,8 +240,31 @@ export class DocumentSessionRegistry {
     return this.getOrCreateLiveSession(lease, state, true);
   }
 
-  liveHistory(documentId: DocumentId): DocumentHistory | null {
-    return this.liveRooms.get(documentId)?.session?.history ?? null;
+  openStateVector(documentId: DocumentId, view: "live" | "draft" = "live"): Uint8Array | null {
+    const session =
+      view === "draft"
+        ? this.draftRooms.roomOf(documentId)
+        : this.liveRooms.get(documentId)?.session;
+    return session ? Y.encodeStateVector(session.document) : null;
+  }
+
+  whenLiveHeld(documentId: DocumentId): Promise<void> {
+    return (
+      this.liveRooms.get(documentId)?.session?.whenServerHoldsLocalChanges() ?? Promise.resolve()
+    );
+  }
+
+  history(roomKey: string): DocumentHistory | null {
+    return (
+      this.liveRooms.get(roomKey as DocumentId)?.session?.history ??
+      this.draftRooms.peek(roomKey)?.history ??
+      null
+    );
+  }
+
+  observeHistories(observer: () => void): () => void {
+    this.historyObservers.add(observer);
+    return () => this.historyObservers.delete(observer);
   }
 
   async restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean> {
@@ -548,6 +572,10 @@ export class DocumentSessionRegistry {
       replaced?.session.getSnapshot().access ?? null,
     );
     this.copyOf.set(session, { key: copyKey, incarnation });
+    // Each caller files the session under its room after this returns, where `history` finds it.
+    queueMicrotask(() => {
+      for (const observer of [...this.historyObservers]) observer();
+    });
     if (replaced) {
       void this.teardownOwner
         .retireReplaced(replaced.session.room.kind === "live" ? "live" : "draft", replaced.session)

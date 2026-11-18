@@ -14,6 +14,7 @@ import type {
   ContextSiblingPosition,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import {
   ArrowDownToLine,
   ArrowDownUp,
@@ -28,6 +29,7 @@ import type { OpenDocumentOwner } from "@/client/stores";
 import { DrillInMenu, type DrillNode } from "@/components/app/DrillInMenu";
 import { Button } from "@/components/ui/button";
 import { useShellTreeVersion } from "../tree-version";
+import { useOptionalLiveDocumentSessionRegistry } from "./account-feature-context";
 import { schemeLabel } from "./context-schemes";
 import { type DragEntry, type EntryRef, LIVE_VIEW } from "./entry-drag/entry";
 import { useEntryActions } from "./entry-drag/entry-actions";
@@ -81,6 +83,7 @@ function OpenPicker({
   const shell = useShellTreeVersion();
   const actions = useEntryActions(projectId);
   const selection = useOptionalEntrySelection();
+  const registry = useOptionalLiveDocumentSessionRegistry();
   const [error, setError] = useState<string | null>(null);
   // Placed rows take focus where they land, not the row the picker opened from.
   const placedRows = useRef(false);
@@ -232,7 +235,16 @@ function OpenPicker({
     if (!folder || !destination?.writable || refusalAt(destination)) return;
     const plan = copyPlan(destination, folder.name);
     if (!plan) return setError(unavailable);
-    void runCopy({ actions, projectId }, plan, selection);
+    void runCopy(
+      {
+        actions,
+        projectId,
+        stateVectorOf: (documentId, view) =>
+          registry?.openStateVector(documentId as DocumentId, view) ?? null,
+      },
+      plan,
+      selection,
+    );
     placedRows.current = true;
     onOpenChange(false);
   }

@@ -14,7 +14,7 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useDraftReview } from "./DraftReviewProvider";
-import type { BranchCommandFailure } from "./review-command-types";
+import { type BranchCommandFailure, isNote } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
@@ -97,7 +97,10 @@ export function useReviewFailures(input: {
     commandError: barCarries || (own && view.finished) ? null : owner.state(input.itemKey).failure,
     failedElsewhere: files.flatMap((row) => {
       const failure = owner.state(row.draft.itemKey).failure;
-      return row.draft.itemKey !== input.itemKey && failure ? [{ row, failure }] : [];
+      // Another document's note beside what landed stays on that document.
+      return row.draft.itemKey !== input.itemKey && failure && !isNote(failure)
+        ? [{ row, failure }]
+        : [];
     }),
   };
 }

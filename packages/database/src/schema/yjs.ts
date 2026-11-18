@@ -21,6 +21,7 @@ import {
   index,
   integer,
   jsonb,
+  pgSequence,
   pgTable,
   primaryKey,
   text,
@@ -54,10 +55,11 @@ export const documentDrafts = pgTable(
       .notNull()
       .references(() => branches.id, { onDelete: "cascade" }),
     status: text("status").$type<DocumentDraftStatus>().notNull().default("active"),
-    closedCause: text("closed_cause").$type<"discarded" | "document_removed">(),
+    closedCause: text("closed_cause").$type<"discarded" | "document_removed" | "left_out">(),
     /**
      * The Discard or restore command that closed the draft, null for any other close. A restore
-     * reopens the same row and clears it; a retirement acts on the draft only while it still
+     * reopens the same row and clears it (a `left_out` draft keeps it, so the retention purge still
+     * finds it); a retirement acts on the draft only while it still
      * names the command it retires for. A command id, no foreign key: purging a command must not
      * touch the draft.
      */
@@ -115,7 +117,7 @@ export const documentDrafts = pgTable(
     ),
     check(
       "document_drafts_closed_cause_valid",
-      sql`${table.closedCause} IN ('discarded', 'document_removed')`,
+      sql`${table.closedCause} IN ('discarded', 'document_removed', 'left_out')`,
     ),
     check("document_drafts_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(
@@ -374,10 +376,11 @@ export const commands = pgTable(
   },
   (table) => [
     index("commands_thread").on(table.threadId),
-    // Trash lists a project's Discards, and a restore looks for an earlier one of the same Discard.
+    // Trash lists a project's reopenable commands (a Discard, a Restore, an Un-Apply that swapped a
+    // draft out), and a restore looks for an earlier one of the same Discard.
     index("commands_discard_project")
       .on(table.projectId, table.createdAt)
-      .where(sql`${table.kind} IN ('discard', 'undo_discard')`),
+      .where(sql`${table.kind} IN ('discard', 'undo_discard', 'unapply')`),
     check(
       "commands_kind_valid",
       sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides')`,
@@ -420,6 +423,8 @@ export const applyCommandTrees = pgTable(
 );
 
 /** The actual text effect of each frozen Apply group, independent of compactable journals. */
+export const unapplySequence = pgSequence("apply_command_effects_unapplied_seq");
+
 export const applyCommandEffects = pgTable(
   "apply_command_effects",
   {
@@ -441,9 +446,17 @@ export const applyCommandEffects = pgTable(
     /** This group's bounded change to the preceding committed base. */
     baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
     unappliedBy: uuid("unapplied_by").$type<CommandId>(),
+    /** Orders Un-Applies of one draft: taken from `unapplySequence` under the Work lock, since `commands.created_at` is the transaction start. */
+    unappliedSeq: bigint("unapplied_seq", { mode: "number" }),
+    /** True once this effect's base change has been taken back out of the draft; a closed draft's Un-Apply leaves it false until a reopen replays it. */
+    draftReversed: boolean("draft_reversed").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),
     uniqueIndex("apply_command_effects_group").on(table.commandId, table.documentId, table.groupId),
+    // A reopen finds the Un-Applies its draft waited on without scanning every effect stored.
+    index("apply_command_effects_unreplayed")
+      .on(table.draftId)
+      .where(sql`${table.unappliedBy} is not null and not ${table.draftReversed}`),
   ],
 );

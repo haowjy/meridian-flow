@@ -8,6 +8,7 @@ import { t } from "@lingui/core/macro";
 import type { DocumentDraftHint, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { describeMove, type ParsedContextLocation } from "@/features/chat/document-display-name";
+import { isDeletedLive } from "./deleted-drafts";
 import type { ReviewChange } from "./review-model";
 
 export type TreeLine =
@@ -34,6 +35,20 @@ export function hasTreeLine(
   item: Pick<ThreadDraftListItem, "tree" | "contextLocation" | "documentName" | "isNew">,
 ): boolean {
   return !item.isNew && treeLineOf(item) !== null;
+}
+
+/**
+ * Whether Apply lands something of the item: its text, its creation, its tree line, or a document
+ * live deleted, which Apply brings back with the Work's change to it (a reorder in place has no
+ * tree line).
+ */
+export function hasApply(
+  item: Pick<
+    ThreadDraftListItem,
+    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft" | "deletedLive"
+  >,
+): boolean {
+  return item.hasDraft || item.isNew || hasTreeLine(item) || isDeletedLive(item);
 }
 
 /**

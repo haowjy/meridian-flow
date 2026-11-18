@@ -9,16 +9,19 @@ import {
   type DocumentFileType,
   type Filetype,
 } from "@meridian/contracts/protocol";
+import type { JsonObject } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
+import { isUuid } from "../../../../shared/uuid.js";
 import type {
   ContextDocument,
   ContextDocumentStore,
   ContextFolder,
+  ContextSubtree,
   LocatedContextDocument,
 } from "../../ports/context-document-store.js";
 import {
@@ -151,6 +154,80 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async findDocumentById(view: TreeView, documentId: string) {
     return locateDocumentById(this.deps.db, view, documentId);
+  }
+
+  async readSubtree(id: string): Promise<ContextSubtree | null> {
+    if (!isUuid(id)) return null;
+    // A Trash entry's members share one `trash_record`; what was in Trash before it has its own.
+    const rows = await this.db.execute<{
+      id: string;
+      kind: "folder" | "document";
+      parent_id: string | null;
+      name: string;
+      segment: string;
+      extension: string;
+      file_type: string;
+      rank: string;
+      storage_url: string | null;
+      mime_type: string | null;
+      size_bytes: string | null;
+      has_preview: boolean | null;
+      metadata: JsonObject | null;
+      updated_at: string | Date | null;
+    }>(sql`
+      WITH RECURSIVE sub AS (
+        SELECT t.id, t.kind, t.parent_id, t.name, t.segment, t.extension, t.file_type, t.rank, t.trash_record
+        FROM tree_nodes t WHERE t.id = ${id}::uuid AND t.context_source_id = ${this.sourceId}::uuid
+        UNION ALL
+        SELECT c.id, c.kind, c.parent_id, c.name, c.segment, c.extension, c.file_type, c.rank, c.trash_record
+        FROM tree_nodes c JOIN sub s ON c.parent_id = s.id
+        WHERE c.context_source_id = ${this.sourceId}::uuid
+          AND c.trash_record IS NOT DISTINCT FROM s.trash_record
+      )
+      SELECT sub.id::text AS id, sub.kind, sub.parent_id::text AS parent_id, sub.name, sub.segment, sub.extension,
+        sub.file_type, sub.rank, d.storage_url, d.mime_type, d.size_bytes::text AS size_bytes,
+        d.has_preview, d.metadata, d.updated_at
+      FROM sub LEFT JOIN documents d ON d.id = sub.id`);
+    const folders: ContextFolder[] = [];
+    const documents: ContextDocument[] = [];
+    for (const row of rows) {
+      if (row.kind === "folder") {
+        folders.push({
+          id: row.id,
+          parentId: row.parent_id,
+          name: row.name,
+          segment: row.segment,
+          rank: row.rank,
+        });
+        continue;
+      }
+      documents.push(
+        mapDocument({
+          id: row.id as DocumentId,
+          folderId: row.parent_id as FolderId | null,
+          name: row.name,
+          segment: row.segment,
+          extension: row.extension,
+          fileType: row.file_type,
+          storageUrl: row.storage_url,
+          mimeType: row.mime_type,
+          sizeBytes: row.size_bytes === null ? null : Number(row.size_bytes),
+          hasPreview: row.has_preview ?? false,
+          updatedAt: new Date(row.updated_at ?? 0),
+          metadata: row.metadata ?? {},
+          rank: row.rank,
+        }),
+      );
+    }
+    const folder = folders.find((candidate) => candidate.id === id);
+    const document = documents.find((candidate) => candidate.id === id);
+    if (folder)
+      return {
+        root: { kind: "folder", folder },
+        folders: folders.filter((candidate) => candidate.id !== id),
+        documents,
+      };
+    return document ? { root: { kind: "document", document }, folders: [], documents: [] } : null;
   }
 
   async listTree(

@@ -20,30 +20,25 @@ export type WriteErrorStatus =
   | "internal_error";
 
 /**
- * What an undo, redo or revert came to: it changed what it could and says what it left and why
+ * What an undo or revert came to: it changed what it could and says what it left and why
  * (the writer applied it, discarded it, or changed the text since). None of these is an error:
  * the call settled.
  */
-export type UndoRedoOutcome =
+export type UndoOutcome =
   | "reversed"
   | "reconciled"
   | "partial"
   | "nothing_to_undo"
-  | "nothing_to_redo"
   | "expired"
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
-  | "cant_redo_applied"
-  | "cant_redo_discarded"
-  | "cant_redo_changed"
-  | "cant_redo_users_undo"
+  | "purged"
   | "insufficient_undo"
-  | "insufficient_redo"
   | "nothing_to_revert";
 
 // Keep in sync with @meridian/contracts/protocol WriteStatus; agent-edit must stay host-agnostic.
-export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoRedoOutcome;
+export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoOutcome;
 export type WriteSuccessPhase = "committed";
 
 export interface AgentEditBlockItem {
@@ -173,7 +168,7 @@ export interface AgentEditTreeFacts {
   already?: "deleted" | "at_destination" | "live";
   /** Nodes the call left alone, each with the one reason. */
   leftOut?: Array<{ path: string; why: "would_loop" | "purged" }>;
-  /** A drafted change to a node live deleted: it waits until it is restored. */
+  /** A drafted change to a node live deleted: applying it restores the node. */
   deletedInLive?: true;
   /** The Works whose drafts of a deleted document survive it. */
   survivingWorks?: string[];
@@ -267,17 +262,12 @@ export function isWriteStatus(status: unknown): status is WriteStatus {
     case "cant_undo_applied":
     case "cant_undo_discarded":
     case "cant_undo_changed":
-    case "cant_redo_applied":
-    case "cant_redo_discarded":
-    case "cant_redo_changed":
-    case "cant_redo_users_undo":
+    case "purged":
     case "insufficient_undo":
-    case "insufficient_redo":
     case "nothing_to_revert":
     case "reconciled":
     case "partial":
     case "nothing_to_undo":
-    case "nothing_to_redo":
     case "expired":
       return true;
     default:

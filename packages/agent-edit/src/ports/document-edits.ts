@@ -3,7 +3,7 @@
 import type { BlockOriginMap } from "../model/block-hash.js";
 import type { ReadCommand, WriteCommand, WriteContext, WriteStatus } from "../tool/types.js";
 
-export type ModelInverseCommand = Extract<WriteCommand, { command: "undo" | "redo" | "revert" }>;
+export type ModelInverseCommand = Extract<WriteCommand, { command: "undo" | "revert" }>;
 export interface DocumentEditRequest {
   documentId: string;
   threadId: string;

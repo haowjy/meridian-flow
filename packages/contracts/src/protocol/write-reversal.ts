@@ -1,5 +1,6 @@
-// Shared write reversal response contracts for context undo/redo APIs.
+// Shared write reversal response contracts for context undo APIs.
 
+import type { ClosedOwnerWhy } from "../commands/index.js";
 import type { FileAccessDenial } from "./file-access.js";
 
 export type WriteErrorStatus =
@@ -14,32 +15,27 @@ export type WriteErrorStatus =
   | "internal_error";
 
 /**
- * What an undo, redo or revert came to: it changed what it could and says what it left and why
+ * What an undo or revert came to: it changed what it could and says what it left and why
  * (the writer applied it, discarded it, or changed the text since). None of these is an error:
  * the call settled.
  */
-export type UndoRedoOutcome =
+export type UndoOutcome =
   | "reversed"
   | "reconciled"
   | "partial"
   | "nothing_to_undo"
-  | "nothing_to_redo"
   | "expired"
   | "cant_undo_applied"
   | "cant_undo_discarded"
   | "cant_undo_changed"
-  | "cant_redo_applied"
-  | "cant_redo_discarded"
-  | "cant_redo_changed"
-  | "cant_redo_users_undo"
+  | "purged"
   | "insufficient_undo"
-  | "insufficient_redo"
   | "nothing_to_revert";
 
 // Keep in sync with @meridian/agent-edit WriteStatus; do not couple the extractable package to wire contracts.
-export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoRedoOutcome;
+export type WriteStatus = "success" | "returned" | WriteErrorStatus | UndoOutcome;
 
-/** The statuses of a write that did what it was asked: an undo or redo that took the change back included. */
+/** The statuses of a write that did what it was asked: an undo that took the change back included. */
 export const DONE_WRITE_STATUSES = ["success", "reversed", "reconciled"] as const;
 export type DoneWriteStatus = (typeof DONE_WRITE_STATUSES)[number];
 export const isDoneWriteStatus = (status: string): status is DoneWriteStatus =>
@@ -48,11 +44,9 @@ export const isDoneWriteStatus = (status: string): status is DoneWriteStatus =>
 export interface DocumentReversalResult {
   documentId: string;
   uri: string;
-  /** This reversal removed or restored the document's creation. */
-  created?: boolean;
   /** Where it was reversed: live, or a branch's proposal (its text draft or its moves and deletes). */
   destination?: { kind: "live" } | { kind: "draft"; branchId: string };
-  status: WriteStatus | TreeReversalFault;
+  status: WriteStatus;
   text?: string;
 }
 
@@ -61,16 +55,12 @@ export interface WorkReversalResult {
   projectId: string;
   workId: string;
   name: string;
-  status: "reversed" | "redone" | "unavailable" | "already_applied" | "failed";
+  status: "reversed" | "unavailable" | "failed";
   message?: string;
 }
 
-/**
- * Why a move or delete couldn't be reversed where it stands now: a document blocks an ancestor
- * folder, its folder is gone, or it was moved or deleted again since. A turn reversal that
- * reversed nothing else answers with it as its status.
- */
-export type TreeReversalFault = "ancestor_taken" | "folder_missing" | "superseded";
+/** A turn reversal that took nothing back: every part it held is a tree change that stayed. */
+export type TurnReversalStatus = WriteStatus | "not_undone";
 
 /** A move or restore that committed somewhere other than the recorded destination. */
 export type TreeReversalLanding = {
@@ -82,38 +72,56 @@ export type TreeReversalLanding = {
 
 /** Why one part of a turn reversal stayed, for the app to word. */
 export type TurnInverseSkipCause =
-  | TreeReversalFault
-  /** The destination refused a restore for another reason. */
-  | "refused"
   | "applied"
   | "discarded"
   | "already_undone"
-  | "already_redone"
-  /** A move or delete whose document was deleted, moved or changed since. */
-  | "deleted_since"
-  | "moved_since"
-  | "changed_since"
   /** Text in a document that is deleted (or discarded) now. */
   | "document_deleted"
   | "document_discarded"
-  | "draft_archived"
+  /** The document's owner is closed (Work archived or deleted, chat in Trash): nothing changed; `why` says which. */
+  | "returned"
   | "paragraph_removed"
   | "edited_since"
   /** Text in a document whose restore in the same reversal couldn't run. */
   | "not_restored";
 
-/** A text part, by its excerpts; a move or delete, by the path it was shown at. */
+/**
+ * A text part, by its excerpts; a tree change, by the path it was shown at and what it did. A
+ * tree change stayed because a later change holds it (`changed_since`), its node is purged, or
+ * taking it back would change a closed owner's notes (`returned`: `why` says which owner state,
+ * `owner` names it).
+ */
 export type TurnInverseSkip = {
   documentId: string;
   uri: string;
-  cause: TurnInverseSkipCause;
-} & ({ kind: "text"; before: string; after: string } | { kind: "tree"; at: string | null });
+  /** The part waits in or came from a draft: its row and its Work's review say what became of it. */
+  drafted?: true;
+} & (
+  | {
+      kind: "text";
+      before: string;
+      after: string;
+      cause: TurnInverseSkipCause;
+      /** Set when `cause` is `returned`. */
+      why?: ClosedOwnerWhy;
+    }
+  | {
+      kind: "tree";
+      at: string | null;
+      op: "create" | "move" | "delete" | "restore";
+      cause: "changed_since" | "purged" | "returned";
+      /** Set when `cause` is `returned`. */
+      why?: ClosedOwnerWhy;
+      /** Set when `cause` is `returned`: the Work or chat whose notes the change is in, by name. */
+      owner?: string;
+    }
+);
 
 export interface ReversalOutcome {
   skips?: TurnInverseSkip[];
   landings?: TreeReversalLanding[];
   acceptedParts?: number;
-  status: WriteStatus | TreeReversalFault;
+  status: TurnReversalStatus;
   /** Why the file policy refused a `permission_denied` reversal, for the app to word. */
   denial?: FileAccessDenial;
   documents: DocumentReversalResult[];

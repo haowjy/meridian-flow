@@ -5,6 +5,7 @@ import {
   recordRestorations,
   writeDiscardBlocks,
 } from "@meridian/agent-edit/diff";
+import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Editor } from "@tiptap/core";
 import * as Y from "yjs";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -13,7 +14,7 @@ import { readDraftRoom } from "@/core/editor/draft-room-read";
 import { endUndoStep } from "@/core/editor/editor-history";
 import { markStepDone, touchedSince } from "@/core/editor/touched-since";
 import type { CommandOutcome, DraftCommandState } from "./draft-command-owner";
-import type { DiscardUndo } from "./draft-notices";
+import { closedOwnerWord, type DiscardUndo } from "./draft-notices";
 import { readChosen } from "./review-frame";
 import type { GroupsTarget } from "./review-model";
 import type { ReviewRuntime } from "./review-runtime";
@@ -77,8 +78,12 @@ export function startDraftDiscardSession(input: {
   const write = (): CommandOutcome => {
     if (!input.active() || entry.binding !== binding || input.state().ended)
       return { kind: "blocked" };
-    // A read room drops the writer's text: a revert written here would show, then never land.
-    if (binding.session.getSnapshot().access === "read") {
+    // A settled read room drops the writer's text: a revert written here would show, then never land.
+    // While its reason is pending the write goes in, as an offline press does: the next admission decides.
+    const room = binding.session.getSnapshot();
+    if (room.access === "read" && !room.reasonPending) {
+      const { closedWhy } = room;
+      if (closedWhy) return { kind: "returned", why: closedOwnerWord(closedWhy) };
       input.setState({ failure: { code: "discard-refused", serverCode: "read_only" } });
       return { kind: "change-refused", code: "read_only" };
     }
@@ -190,7 +195,7 @@ export function startDraftDiscardSession(input: {
   };
   const handle: DiscardUndo = {
     end: () => end(),
-    undo: () => {
+    undo: async () => {
       const none = Promise.resolve();
       if (!active) return { answer: "gone", landed: none };
       if (pending) {
@@ -201,6 +206,13 @@ export function startDraftDiscardSession(input: {
         end();
         return { answer: "ok", landed: none };
       }
+      // Live typing reaches the draft on the server's debounced pull, so `touchedSince` would miss
+      // typing over the Discard's text in Live pressed within it. The server takes this tab's Live
+      // typing and pulls it into the room first, so the answer doesn't depend on when Undo is pressed.
+      await input.registry.whenLiveHeld(entry.ref.documentId as DocumentId);
+      await binding.session.catchUpWithLive();
+      // Meanwhile Ctrl+Z may have taken it back, or the notice ended.
+      if (!active) return { answer: "gone", landed: none };
       if (
         !item ||
         !input.active() ||

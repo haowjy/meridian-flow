@@ -13,8 +13,11 @@ export function childrenOf(
   return includeTrashed ? kids : kids.filter((node) => !node.trashed);
 }
 
-/** Every node below `node`, trashed ones included. */
-export function descendantsOf(projection: TreeProjection, node: string): string[] {
+/** Every node below `node`, trashed ones included: depth first, each folder's children in `children` order. */
+export function descendantsOf(
+  projection: { children: { get(parent: string): readonly { id: string }[] | undefined } },
+  node: string,
+): string[] {
   const out: string[] = [];
   const stack = [node];
   while (stack.length > 0) {

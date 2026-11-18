@@ -189,11 +189,12 @@ export async function containerOfUri(
 }
 
 /**
- * Whether the writer can still edit the address `uri` names: the recheck a move, a copy or a
- * create runs on a destination it resolved again inside its locks.
+ * Whether the writer may run a command against the address `uri` names (`command`: who may act,
+ * whatever state the Work is in): the recheck a Copy runs on a destination it resolved again
+ * inside its locks. A closed Work answers yes here; the lock decides.
  */
-export function canEditContextUri(
-  deps: LocatorDeps & { fileAccess: Pick<FileAccess, "authorize" | "confirmEdit"> },
+export function canCommandContextUri(
+  deps: LocatorDeps & { fileAccess: Pick<FileAccess, "authorize"> },
   input: { projectId: string; userId: string },
 ): (uri: string) => Promise<boolean> {
   return async (uri) => {
@@ -202,9 +203,9 @@ export function canEditContextUri(
     const grant = await deps.fileAccess.authorize(
       { accountId: input.userId as UserId },
       target,
-      "edit",
+      "command",
     );
-    return !isFileAccessDenied(grant) && (await deps.fileAccess.confirmEdit([grant])).length === 0;
+    return !isFileAccessDenied(grant);
   };
 }
 

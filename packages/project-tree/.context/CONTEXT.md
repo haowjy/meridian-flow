@@ -13,7 +13,7 @@ page says where each part lives and what the code decided where the design left 
 | `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`) |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
-| `replay.ts` | `replay`: rules 1 to 13, then one pass over the nodes for Trash, kept folders and names |
+| `replay.ts` | `startReplay`, an open replay (`push`, `wouldTake`, `standing`, `finish`); `replay` is `startReplay(values).finish()`: rules 1 to 13, then one pass over the nodes for Trash and kept folders (`stand`), then the twin suffixes (rule 14, in `derive`) |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
 | `writer.ts` | `TreeWriter`: makes records in one copy of the list |
 | `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
@@ -32,6 +32,10 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
 6. A drafted create whose folder was discarded shows at the top of its `source` (`rescued`).
 7. A Work's view keeps a live-deleted node standing while the Work has a pending change to it
    (`keptByPending`; `pendingText` carries documents with pending text, which the list cannot see).
+   Its Apply writes a live `restore` of the node, before the copies, with what its delete took (the
+   Work's view keeps those in Trash); `keepsView` reads the same restores, so the check and the
+   Apply see one view. The restore carries `fromDraft`: it lifts the delete but keeps the node's
+   arrival (a Trash restore moves it), so a name clash reads as the Work showed it.
 8. A restore brings back the node and what its own delete took; `undoes` lifts one delete alone.
 9. A move or rename of a node in Trash restores it (a record with `undoes` never does). A live
    record lifts live deletes by list order; a drafted record lifts only its Work's own, so rule 7
@@ -55,6 +59,9 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
     and where the name it shows last changed (`stoodAt`, `placedAt`, `namedAt`), or a purge's
     rehoming. An Undo of a move or rename settles those from the changes still in force, and a
     restore that `undoes` a delete leaves them alone, so an Undo leaves the twins as they were.
+    What an Apply's restore brings back keeps its own arrival, so a returning twin may take the
+    plain name and the twin the writer applied may then read suffixed (the property test's seed 137
+    pins it).
 
 A row that differs from live only in a suffix is no change the Work made: `BranchRow.changed`
 is false, and the count and the Changes list skip it (`changedFolders`, the server's
@@ -77,6 +84,8 @@ the replay uses them (package `AGENTS.md`).
 - **A node can be acted on only if `placeIn` finds it in the view** (its create is in force, and it
   is not purged). The replay skips a record on any other node, Undo answers `purged` and
   appends nothing, and restoring a Discard leaves the record out and returns it.
+  A rank-only move under a purged parent is taken, since only a change of parent is checked
+  against the folder: its Undo lands and reorders the rescued siblings.
 - **Nothing is refused for what it says.** A client's record that the replay cannot place
   (a node that is not there, a folder inside itself, a name already taken) is skipped, or stands
   as a twin, by the rules, the same in every replay; the writer keeps it in the list. The server writes one
@@ -141,11 +150,35 @@ the replay uses them (package `AGENTS.md`).
   still taken out by the Apply. The record is a move when the place turns, a rename when only the
   name does (the replay's Trash reads that: a rename leaves the deletes a move lifted lifted), and
   otherwise of the base change's type.
+  Every Undo is one walk (`takeBack` in `undo.ts`; `undoChange` is a walk of one step, `takeBackAll`
+  the press of many, `undoReports` the estimate): the steps (`{ id, view }`) are taken back in the
+  order given, each against the tree the earlier ones left. Per view one replay stays open
+  (`startReplay`). A step's opposite record is made from `replay.standing()`, `replay.wouldTake`
+  says whether the replay would skip it (`purged`, `changed_since`) or the sources it would change
+  (`Change.sources`), and only a record that lands is `push`ed. `closed(source)` is asked of those
+  sources: a record into a closed source is never pushed or written and answers `{ closed: source }`,
+  so what the steps after it read is the tree without it, and a held Undo leaves no trace in the
+  list, which has no deletions and no server writes but real records. Never append and take back:
+  the Yjs delete set it leaves is journaled and broadcast, and admission refuses a copy that has
+  one. The records that landed are written at the end in one transaction (`appendAll`), and the open
+  replays are kept as the writer's views. The estimate is the same walk with nothing written, so it
+  equals its press only on the same steps in the same order: each caller builds both from one list
+  of steps. A Work's view is live then its pending records, so the Work's replay is started again
+  when a record landed in live since (a card's reply that alternates applied and drafted receipts);
+  `pendingText` is the text a Work's view holds pending, which the list cannot show. An id given
+  twice is walked once. A step costs one pass over the nodes (`standing`), about 5 ms per 25,000.
+  `push` and `wouldTake` refuse a purge (rule 10 reads purges before the fold starts), and `push`
+  after `finish` throws. `step` in `replay.ts` is the loop body for both: every check that skips a
+  record comes before anything it changes, which is what makes `wouldTake` change nothing.
 - **Creates, deletes and restores** follow the same in-force rule, but Trash keeps its own
   record-order account: it counts each delete of a node, and a restore lifts deletes outside any
-  Undo chain (a plain restore, rule 9). `undoChange` on them takes back the last record in force
-  of the chain that undid and redid them (`redoneAs`). Undo of a delete is allowed while that
-  delete is a Trash entry in force. The opposite record of a
+  Undo chain (a plain restore, rule 9). `undoChange` on them takes back the record in force
+  named by the caller. Undo of a delete is allowed while that
+  delete is in force (`standingDeletes`, `deleteStands`). Trash lists only the deletes in force
+  that hide something (`hidingDeletes`, `deleteHides`): one whose node and cascade all show (an
+  Apply brought back what it took, or a create keeps its folder standing) leaves Trash and comes
+  back once what keeps it standing leaves. Being in force is the fact that ends; hiding something
+  turns back and forth, so no caller may treat "hides nothing" as the end of a delete. The opposite record of a
   restore puts back the deletes that restore lifted, under their own ids, with what each took (the
   replay keeps what each restore lifted): the entry is the original delete again, so its Undo and
   `restoreEntry` reach it, and a restore that takes that Undo back lifts them again. That
@@ -169,7 +202,9 @@ the replay uses them (package `AGENTS.md`).
   stands: the nodes whose live copies are in force, and the nodes whose Apply-made `restore` (the
   ids `undoApply` takes back) is in force. An Apply that only brought a document back from Trash
   lists it until Un-Apply or a card's Undo takes the restore back. A tab can tell the Apply's tree
-  half has ended (a card's Undo of the drafted change took the copy back). `appliedBy` keeps
+  half has ended (a card's Undo of the drafted change took the copy back). `madeBy` is the one reader
+  of the records themselves, standing or not (restores first, then copies): `appliedNodes` filters it, and
+  the server's Un-Apply estimate reads `Change.sources` of each. `appliedBy` keeps
   copies not in force, so `undoApply` reports them `already`. One Undo takes out every copy of a
   record: when a record applied, Un-Applied and applied again has its first copy back in force (an
   Undo of the Un-Apply's Undo), Un-Apply of the second Apply takes out both. After a copy of
@@ -190,13 +225,15 @@ the replay uses them (package `AGENTS.md`).
   land with `would_loop` or `purged`, `lifted` the copies that lifted a delete (rule 9).
   `covers(doc, saw)` says whether a copy holds the state the writer saw.
 - **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { writtenSince,
-  restoredByApply })` writes each landed copy's opposite record through `undoChange` (a create's
+  restoredByApply, closed })` writes each landed copy's opposite record through `takeBackAll` (a create's
   opposite is a delete that keeps what others put inside standing), then puts back to pending the
   records this Apply settled whose copies went back, matched by root (`carries ?? id`): a restored
   Discard's record is itself a copy, so its id is not its live copy's `carries`. It answers
   `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
-  `purged`, `already`, `has_text`). `undoChange` answers
-  `changed_since | purged | already | unknown`.
+  `purged`, `already`, `has_text`, `closed` with the source). `undoChange` answers
+  `changed_since | purged | already | unknown`, or `{ closed }`. `changeUndone` reads a change's
+  records together: `acts`, `changed_since`, `purged`, `closed` (the one that can pass, so last),
+  or `taken`.
 - **A Discard is final.** `restoreDiscard` appends fresh pending copies of what the command
   settled, on the branch the caller names (the Work's current one, which may differ from the one the
   Discard closed): new record ids, the same node ids, `carries` naming the

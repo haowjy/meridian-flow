@@ -11,10 +11,10 @@ import {
   replay,
 } from "../../../shared/commands/command-record.js";
 import { mergeOwnerLocks, type OwnerLocks } from "../../../shared/draft-owner.js";
+import { type Learned, TreeOwnersMoved, untilOwnersHold } from "../../../shared/tree-owners.js";
 import { FileEditRefusedError, targetDocumentId } from "../../file-policy/index.js";
 import type { ReverseThreadContextInput, TurnReversalAccess } from "../contracts.js";
 import type { DocumentCommands } from "./document-commands.js";
-import { ReversalOwnersMoved } from "./reversal-conflict.js";
 import type { TurnEditedDocumentId } from "./turn-live-lineage.js";
 
 export type ThreadContextReversalResolver = {
@@ -47,19 +47,6 @@ export type TurnReversalServiceDeps = {
   threadContext: ThreadContextReversalResolver;
   commands: DocumentCommands;
 };
-
-/** Whether the reversal changed anything: a document's parts, or a Work the caller put back. */
-function changedSomething(outcome: ReversalOutcome): boolean {
-  return (
-    (outcome.acceptedParts ?? 0) > 0 ||
-    (outcome.workReceipts ?? []).some(
-      (work) => work.status === "reversed" || work.status === "redone",
-    )
-  );
-}
-
-/** A reversal declares its owners, locks them, and finds the commit wants more: runs again. */
-const OWNER_ATTEMPTS = 4;
 
 export function createTurnReversalService(input: TurnReversalServiceDeps): TurnReversalAccess {
   const reverseTurn = input.turnInverse.reverseTurn;
@@ -97,18 +84,18 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
   /**
    * The click, in one transaction under its claim: the owners it locks, declared and locked
    * first, then the turn's documents, then the Work receipts, so that both halves hold or
-   * neither does. `learned` is what an earlier attempt's commit found it needed.
+   * neither does. `learned` is what an earlier attempt's commit found it needed
+   * (`untilOwnersHold`).
    */
   async function reverse(
     command: ReverseThreadContextInput,
     projectId: ProjectId,
-    learned: OwnerLocks,
+    learned: Learned,
   ): Promise<ReverseTurnCommandResult> {
     const targets = await input.listTurnTargets(command.threadId, command.turnId);
     const query = {
       threadId: command.threadId,
       turnId: command.turnId,
-      direction: command.direction,
       actor: { type: "user" as const, userId: command.userId },
       // A reply of tree changes alone has no target: its receipts are reversed all the same.
       ...(targets.length
@@ -116,27 +103,28 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         : {}),
     };
     const { alongside } = command;
-    const owners = mergeOwnerLocks(await input.turnInverse.reversalOwners(query), learned, {
-      workIds: [...(alongside?.workIds ?? [])],
-      lineageRootIds: [],
-    });
+    const owners = mergeOwnerLocks(
+      await input.turnInverse.reversalOwners({ ...query, learned }),
+      learned.owners,
+      { workIds: [...(alongside?.workIds ?? [])], lineageRootIds: [] },
+    );
     const { changed } = await input.lockOwners({
       owners,
       receiptWorkIds: alongside?.workIds ?? [],
       threadId: command.threadId,
       treeListProjectId: alongside?.workIds.length ? projectId : null,
     });
-    if (changed) throw new ReversalOwnersMoved(owners);
+    if (changed) throw new TreeOwnersMoved();
     await alongside?.lockNamespaces();
     const documents = await reverseDocuments({ ...query, declared: owners }, targets);
     const outcome = alongside ? await alongside.run(documents) : documents;
-    return { status: changedSomething(outcome) ? "reversed" : "refused", outcome };
+    return { status: "reversed", outcome };
   }
 
   /** One `reverse_turn` command: its stored outcome, or `effect` run under its claim. */
   async function settle(
     envelope: CommandEnvelope,
-    effect: (learned: OwnerLocks) => Promise<ReverseTurnCommandResult>,
+    effect: (learned: Learned) => Promise<ReverseTurnCommandResult>,
   ): Promise<ReversalOutcome> {
     const stored = async (): Promise<ReversalOutcome | null> => {
       const found = replay<ReverseTurnCommandResult>(
@@ -149,21 +137,16 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
     };
     const first = await stored();
     if (first) return first;
-    let learned = mergeOwnerLocks();
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        return (await input.commands.run(envelope, () => effect(learned))).outcome;
-      } catch (cause) {
-        if (cause instanceof ReversalOwnersMoved && attempt < OWNER_ATTEMPTS) {
-          learned = mergeOwnerLocks(learned, cause.owners);
-          continue;
-        }
-        if (cause instanceof CommandExistsError) {
-          const winner = await stored();
-          if (winner) return winner;
-        }
-        throw cause;
+    try {
+      return (
+        await untilOwnersHold((learned) => input.commands.run(envelope, () => effect(learned)))
+      ).outcome;
+    } catch (cause) {
+      if (cause instanceof CommandExistsError) {
+        const winner = await stored();
+        if (winner) return winner;
       }
+      throw cause;
     }
   }
 
@@ -182,7 +165,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
             projectId,
             kind: "reverse_turn",
             selectors: { threadId: command.threadId, turnId: command.turnId },
-            body: { direction: command.direction },
+            body: {},
           }),
         },
         (learned) => reverse(command, projectId, learned),

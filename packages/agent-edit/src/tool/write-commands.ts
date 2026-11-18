@@ -18,7 +18,12 @@ import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
 import { landCopies } from "../resolver/land-copies.js";
-import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
+import {
+  type CarryFrom,
+  documentRevision,
+  planWrite,
+  type ResolveWriteResult,
+} from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { copySummary } from "./copy-receipt.js";
@@ -362,90 +367,140 @@ export function createWriteCommands(deps: {
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const actor = mutationActor(session, address.documentId, context);
     return withRoom({ docId: address.documentId, commandName: command.command, context }, (room) =>
-      withPlanDoc(room, address.documentId, context, actor, async (planDoc) => {
-        const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
-        const links = await openCommandLinks(options, {
-          documentId: address.documentId,
-          docs: planDocs(planDoc, room),
-          ...(copiedNodes ? { stored: copiedNodes } : {}),
-          shown,
-          context,
-        });
-        // Planning fixes scope, matches and a find's reconstructed groups; what
-        // ref assignment will see is only known then, so it loads before assignment runs.
-        const plan = planWrite(
-          {
-            doc: toDocHandle(planDoc),
-            model: options.model,
-            codec: links.codec,
-          },
-          {
-            ...selectors,
-            documentAddress: address,
-            ...(copiedNodes ? { blocks: copiedNodes } : {}),
-          },
-        );
-        if (plan.ok && plan.written.length > 0) {
-          await options.links.prepare({
+      withPlanDoc(room, address.documentId, context, actor, (planDoc) =>
+        withSupersededView(context, address.documentId, async (carry) => {
+          const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
+          const links = await openCommandLinks(options, {
             documentId: address.documentId,
-            docs: [],
-            written: plan.written,
+            docs: planDocs(planDoc, room),
+            ...(copiedNodes ? { stored: copiedNodes } : {}),
+            shown,
             context,
           });
-        }
-        let assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
-        let resolved = plan.ok ? plan.assign(assigner) : plan;
-        let appliedPlanDoc = planDoc;
-        if (
-          resolved.ok &&
-          planDoc !== room.doc &&
-          hasMissingTarget(resolved.edits, room.doc) &&
-          "find" in command &&
-          command.in === undefined
-        ) {
-          const currentPlan = planWrite(
-            { doc: toDocHandle(room.doc), model: options.model, codec: links.codec },
+          // Planning fixes scope, matches and a find's reconstructed groups; what
+          // ref assignment will see is only known then, so it loads before assignment runs.
+          const plan = planWrite(
+            {
+              doc: toDocHandle(planDoc),
+              model: options.model,
+              codec: links.codec,
+            },
             {
               ...selectors,
               documentAddress: address,
               ...(copiedNodes ? { blocks: copiedNodes } : {}),
             },
+            carry,
           );
-          assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
-          resolved = currentPlan.ok ? currentPlan.assign(assigner) : currentPlan;
-          appliedPlanDoc = room.doc;
-        }
-        if (!resolved.ok) {
-          const failed = errorResponse(
-            resolved.error.code,
-            resolved.error.message,
-            address.filePath,
-            documentBlocksDetail(resolved.error.details),
-          );
-          // A hash or number the view does not hold: the model may have lost its view, so the
-          // answer shows the document and the next write plans on it.
-          return resolved.error.code === "not_found"
-            ? withCurrentText(failed, room, links, address, context)
-            : failed;
-        }
-        validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
-        if (resolved.edits.length === 0) return formatUnchangedSuccess();
-        return finishPreparedEdit({
-          command,
-          session,
-          context,
-          room,
-          planDoc: appliedPlanDoc,
-          assigner,
-          links,
-          actor,
-          docId: address.documentId,
-          filePath: address.filePath,
-          plan: { edits: resolved.edits, ir: resolved.ir },
-          ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
-        });
-      }),
+          if (plan.ok && plan.written.length > 0) {
+            await options.links.prepare({
+              documentId: address.documentId,
+              docs: [],
+              written: plan.written,
+              context,
+            });
+          }
+          let assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
+          let resolved = plan.ok ? plan.assign(assigner) : plan;
+          let appliedPlanDoc = planDoc;
+          if (
+            resolved.ok &&
+            planDoc !== room.doc &&
+            hasMissingTarget(resolved.edits, room.doc) &&
+            "find" in command &&
+            command.in === undefined
+          ) {
+            const currentPlan = planWrite(
+              { doc: toDocHandle(room.doc), model: options.model, codec: links.codec },
+              {
+                ...selectors,
+                documentAddress: address,
+                ...(copiedNodes ? { blocks: copiedNodes } : {}),
+              },
+              carry,
+            );
+            assigner = linkAssigner(address.documentId, links.scope, shown, context.uploadsChat);
+            resolved = currentPlan.ok ? currentPlan.assign(assigner) : currentPlan;
+            appliedPlanDoc = room.doc;
+          }
+          if (!resolved.ok) {
+            const failed = errorResponse(
+              resolved.error.code,
+              resolved.error.message,
+              address.filePath,
+              documentBlocksDetail(resolved.error.details),
+            );
+            // A hash or number the view does not hold: the model may have lost its view, so the
+            // answer shows the document and the next write plans on it.
+            return resolved.error.code === "not_found"
+              ? withCurrentText(failed, room, links, address, context)
+              : failed;
+          }
+          validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
+          if (resolved.edits.length === 0) return formatUnchangedSuccess();
+          const finished = await finishPreparedEdit({
+            command,
+            session,
+            context,
+            room,
+            planDoc: appliedPlanDoc,
+            assigner,
+            links,
+            actor,
+            docId: address.documentId,
+            filePath: address.filePath,
+            plan: { edits: resolved.edits, ir: resolved.ir },
+            ...(from && copiedNodes ? { copy: { from: from.path, edges: true } } : {}),
+          });
+          const note = plan.ok ? plan.note : undefined;
+          return note
+            ? {
+                ...finished,
+                model: {
+                  ...finished.model,
+                  message: [note, finished.model?.message].filter(Boolean).join("\n"),
+                },
+              }
+            : finished;
+        }),
+      ),
     );
+  }
+
+  /**
+   * `use` with what carries a write's selectors from the model's view of the draft it closed onto
+   * this write's new draft: none when no draft closed, a view of none when the model's cut of
+   * it can't be read (a purged draft, or a caller that records no frontiers).
+   */
+  async function withSupersededView<T>(
+    context: WriteContext,
+    docId: string,
+    use: (carry: CarryFrom | undefined) => Promise<T>,
+  ): Promise<T> {
+    const prior = context.supersededWorkDraftId;
+    if (prior === undefined) return use(undefined);
+    if (prior === null) return use({ view: null });
+    const planning = context.frontiers?.planning;
+    const opened = planning
+      ? await openRoom(options.coordinator, { docId, commandName: "replace", workDraftId: prior })
+      : null;
+    if (!opened || isInternalWriteResult(opened)) return use({ view: null });
+    let view: Y.Doc | null = null;
+    try {
+      const snapshot =
+        opened.room && planning
+          ? planningSnapshot(opened.doc, opened.room, await planning(opened.room))
+          : null;
+      view =
+        snapshot &&
+        createPlanningView(opened.doc, snapshot, [
+          ...(context.frontiers?.reply?.updates(docId) ?? []),
+        ]);
+      return await use({ view: view && toDocHandle(view) });
+    } finally {
+      view?.destroy();
+      opened.dispose();
+    }
   }
 
   interface PreparedEdit {

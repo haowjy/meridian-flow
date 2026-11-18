@@ -1,6 +1,7 @@
 /** Resolves immutable origins to one captured live, active-draft, or gone destination. */
 
 import type { BranchId, EditOrigin } from "@meridian/contracts";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type * as Y from "yjs";
 import type { DraftSnapshot } from "./draft-store.js";
 import type { InverseDocument } from "./turn-inverse-service.js";
@@ -8,14 +9,14 @@ import type { InverseDocument } from "./turn-inverse-service.js";
 export type LiveInverseDestination = {
   kind: "live";
   view: Y.Doc;
-  /** A live file owned by an archived or deleted Work is not writable. */
-  frozen: boolean;
+  /** A live file owned by an archived or deleted Work is not writable: why, else null. */
+  closed: ClosedOwnerWhy | null;
   /** Live removal does not close an active draft that survived it. */
   removed: boolean;
 };
 export type ActiveInverseDestination = {
   kind: "draft";
-  frozen: boolean;
+  closed: ClosedOwnerWhy | null;
   branchId: BranchId;
   draftId: string;
   revision: number;
@@ -24,8 +25,9 @@ export type ActiveInverseDestination = {
 };
 export type GoneInverseDestination = {
   kind: "draft";
-  frozen: boolean;
-  branchId: BranchId;
+  closed: ClosedOwnerWhy | null;
+  /** Null: the draft's row is gone (its entry or its Work was purged), and with it its branch. */
+  branchId: BranchId | null;
   state: "gone";
 };
 export type InverseDestination =
@@ -37,12 +39,12 @@ export type CapturedDraft = {
   documentDraft: DraftSnapshot;
   doc: Y.Doc;
   name: string;
-  frozen: boolean;
+  closed: ClosedOwnerWhy | null;
 };
 
 export function createInverseDestinationResolver(
   document: InverseDocument,
-  liveAvailability: { frozen: boolean; removed: boolean },
+  liveAvailability: { closed: ClosedOwnerWhy | null; removed: boolean },
 ): Pick<InverseDocument, "destinationOf"> {
   const drafts = new Map<string, InverseDestination>();
   const live: LiveInverseDestination = { kind: "live", view: document.live, ...liveAvailability };
@@ -50,23 +52,30 @@ export function createInverseDestinationResolver(
     const cached = drafts.get(draftId);
     if (cached) return cached;
     const captured = document.drafts.get(draftId);
-    if (!captured)
-      throw new Error(
-        `Inverse origin draft ${draftId} was not captured for ${document.documentId}`,
-      );
+    // Capture skips a draft with no row: purged with its entry or its Work, which is gone for good.
+    if (!captured) {
+      const purged: InverseDestination = {
+        kind: "draft",
+        closed: null,
+        branchId: null,
+        state: "gone",
+      };
+      drafts.set(draftId, purged);
+      return purged;
+    }
     const row = captured.documentDraft;
     const destination: InverseDestination =
       row.status === "active"
         ? {
             kind: "draft",
-            frozen: captured.frozen,
+            closed: captured.closed,
             branchId: row.branchId,
             draftId: row.draftId,
             revision: row.revision,
             view: captured.doc,
             state: "active",
           }
-        : { kind: "draft", frozen: captured.frozen, branchId: row.branchId, state: "gone" };
+        : { kind: "draft", closed: captured.closed, branchId: row.branchId, state: "gone" };
     drafts.set(draftId, destination);
     return destination;
   };

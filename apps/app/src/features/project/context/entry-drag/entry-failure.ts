@@ -3,7 +3,9 @@
  * cannot fail; the server's later `dropped` comes back as a settlement and shows on the row it
  * concerns. A Copy is a route, and its failure is a toast with Retry.
  */
+import { i18n } from "@lingui/core";
 import { plural, t } from "@lingui/core/macro";
+import type { Settlement } from "@meridian/contracts/commands";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -18,7 +20,7 @@ import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
 import { revealPlaced } from "../tree-reveal";
 import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";
-import { copyRows } from "./execute-copy";
+import { copyRows, type StateVectorOf } from "./execute-copy";
 import { moveRows } from "./execute-move";
 import type { ReadyCopy, ReadyMove } from "./move-plan";
 import { type EntrySelection, leaveSelections } from "./selection";
@@ -32,6 +34,11 @@ export type EntryContext = {
    * the document main shows follows main to where it goes back to. None: no notice.
    */
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
+};
+
+/** What a Copy needs beyond a Move: the state vector of a document's open session in this tab. */
+export type CopyContext = EntryContext & {
+  stateVectorOf: StateVectorOf;
 };
 
 /** A Copy the route refused: it has its own key, and Retry runs it again unless it is final. */
@@ -118,7 +125,7 @@ function copyFailureTitle(
 
 /** Toasts a refused Copy; Retry, offered unless the refusal is final, runs it again. */
 function showCopyFailure(
-  context: EntryContext,
+  context: CopyContext,
   failure: CopyFailure,
   selection: EntrySelection | null,
 ): void {
@@ -131,15 +138,44 @@ function showCopyFailure(
   });
 }
 
+/** What a Copy that left something undone says, in the writer's words; null when it left nothing. */
+export function copySettledNotice(settled: readonly Settlement[], copy: ReadyCopy): string | null {
+  const returned = settled.find((one) => one.rule === "returned");
+  if (returned) return t`That Work is closed, so nothing was copied.`;
+  const left = settled.find((one) => one.rule === "left_out");
+  if (left?.why === "would_loop") return t`A folder can't be copied into itself.`;
+  if (left) {
+    const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
+      left.items.map((item) => leftOutName(item, copy)),
+    );
+    return t`${names} is gone for good, so it wasn't copied.`;
+  }
+  return null;
+}
+
+/** The writer's name for a left-out source: the selected row at that address, else the address's last segment. */
+function leftOutName(item: string, copy: ReadyCopy): string {
+  const row = copy.copies.find((one) => item.endsWith(one.place.path.replace(/^\/+/, "")));
+  return row?.name ?? decodeURIComponent(item.replace(/\/+$/, "").split("/").pop() ?? item);
+}
+
 export async function runCopy(
-  context: EntryContext,
+  context: CopyContext,
   copy: ReadyCopy,
   selection: EntrySelection | null,
 ): Promise<void> {
-  const { copies, answered } = copyRows(context.projectId, copy);
+  const { copies, answered } = copyRows(context.projectId, copy, context.stateVectorOf);
   revealPlaced(copy.into, copies, selection);
   try {
-    await answered;
+    const settled = await answered;
+    const notice = copySettledNotice(settled, copy);
+    if (notice) {
+      leaveSelections(copies);
+      notifyFailure({
+        key: entryToast(context.projectId, crypto.randomUUID()),
+        title: notice,
+      });
+    }
   } catch (error) {
     leaveSelections(copies);
     showCopyFailure(
@@ -217,7 +253,9 @@ export async function runDelete(
 
 /**
  * The delete's notice, with an Undo that takes back the sidebar's own Undo step for it: whichever
- * runs first, the other has nothing left (a press ends the notice).
+ * runs first, the other has nothing left (a press ends the notice). It also ends when its steps
+ * rest (an Apply or a create shows what they took again): it can't hide its Undo for now as the
+ * rows do, and the rows and Ctrl+Z keep it.
  */
 function showDeleteNotice(
   { notices }: NonNullable<EntryContext["notice"]>,
@@ -239,15 +277,17 @@ function showDeleteNotice(
     }),
     end: () => {},
   };
-  // The notice's one Undo covers every list's step: it ends with the last of them.
+  // The notice's one Undo covers every list's step: it ends when the last of them ends or rests.
   const standing = new Set(taken.map(({ step }) => step));
-  for (const { step } of taken)
-    step.ended = () => {
-      standing.delete(step);
-      if (standing.size > 0) return;
+  for (const { step } of taken) {
+    const leave = () => {
+      if (!standing.delete(step) || standing.size > 0) return;
       handle.end();
       notices.partEnded(handle);
     };
+    step.ended = leave;
+    step.rested = leave;
+  }
   const id = notices.showDiscard({
     projectId,
     ownerKey: deleteNoticeKey(projectId),

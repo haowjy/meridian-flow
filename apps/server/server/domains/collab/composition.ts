@@ -54,8 +54,9 @@ import {
   createDrizzleWorkBranchDisposal,
 } from "./adapters/drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./adapters/drizzle-branch-tree-actors.js";
+import { treeCutOf } from "./adapters/drizzle-branch-tree-lists.js";
 import {
-  branchFolderRevisions,
+  branchFolderIds,
   createDrizzleBranchTreeState,
 } from "./adapters/drizzle-branch-tree-state.js";
 import {
@@ -66,6 +67,7 @@ import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js
 import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
 import { createDrizzleCreatedDrafts } from "./adapters/drizzle-created-drafts.js";
 import { createDrizzleDiscardEntries } from "./adapters/drizzle-discard-entries.js";
+import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
@@ -81,6 +83,7 @@ import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence, enterLiveWriteSeam } from "./adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "./adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "./adapters/drizzle-model-evidence.js";
+import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
@@ -120,6 +123,7 @@ import {
 import { createDraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { AttemptScope } from "./domain/draft-attempts.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
+import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createDraftProjection } from "./domain/draft-projection.js";
 import { createDraftProvenanceReader } from "./domain/draft-provenance.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
@@ -493,18 +497,26 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
   );
   const discardStore = createDrizzleBranchDiscard(deps.db, {
+    coordinator: draftCoordinator,
     close: deps.draftClose,
     branches: workBranches,
     workProjection: deps.workProjectionMutation,
     treeLists: deps.treeLists,
   });
   const discard = createBranchDiscard({
-    branches: workBranches,
     store: discardStore,
     holdRetirement: deps.draftClose.holdRetirement,
   });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
+  const reopen = createReopenDrafts(deps.db, {
+    coordinator: draftCoordinator,
+    close: deps.draftClose,
+    treeLists: deps.treeLists,
+    workProjection: deps.workProjectionMutation,
+    live: persistence.journal,
+    scheduleLivePull: (documentId) => draftPulls.scheduleLivePull(documentId),
+  });
   const applyCommands = createApplyClickService({
     commands,
     evidence: createDrizzleDraftDispositionStore(deps.db),
@@ -512,12 +524,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       coordinator: draftCoordinator,
+      reopen,
       live: persistence.journal,
       liveCoordinator,
       arrivals: deps.arrivals,
       treeLists: deps.treeLists,
       tree: treeReader,
-      branchTree: branchTreeState,
       close: deps.draftClose,
       onCommitted: async (documentId) => {
         await draftPulls.flushLivePull(documentId);
@@ -530,6 +542,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
             source: "collab.draft_review",
             name: `${kind}.merge.counted`,
             payload: { commandId, rules, overrode },
+          });
+      },
+      answeredWithoutLanding: ({ commandId, settled }) => {
+        if (deps.eventSink)
+          emitEvent(deps.eventSink, {
+            level: "info",
+            source: "collab.draft_review",
+            name: "apply.answered_without_landing",
+            payload: { commandId, settled },
           });
       },
       measured: (measurement) => {
@@ -545,13 +566,19 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
   });
   const discardEntries = createDrizzleDiscardEntries(deps.db);
+  const discardPurge = createDrizzleDiscardPurge(deps.db, {
+    workProjection: deps.workProjectionMutation,
+    treeLists: deps.treeLists,
+    ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
+    readDisposition: createDraftDispositionReader(createDrizzleDraftDispositionStore(deps.db)),
+  });
   const undoDiscard = createUndoDiscardService({
     commands,
     store: createDrizzleUndoDiscard(deps.db, {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       treeLists: deps.treeLists,
-      close: deps.draftClose,
+      reopen,
     }),
   });
   const branches = createWorkBranchReviewService({
@@ -560,13 +587,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     unapplyClick: applyCommands.unapply,
     undoDiscard,
     listDiscards: (projectId) => discardEntries.list(projectId),
+    purgeDiscards: () => discardPurge.purge(),
     branches: workBranches,
     reviewItems,
     identity,
     discard,
     commands,
     resolveThreadTitles: lookups.resolveThreadTitles,
-    folderRevisions: (branchId) => branchFolderRevisions(deps.db, branchId),
+    folderIds: (branchId) => branchFolderIds(deps.db, branchId),
+    treeCut: (branchId) => treeCutOf(deps.db, deps.treeLists, branchId),
     pending: workBranchPendingStore,
   });
   const draftPeers = scopeDraftPeer(

@@ -32,15 +32,13 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    to `/context/copy`: the server refuses it, the rows never appear, and a toast at the top right
    says "Couldn't copy Prologue to Templates." with the route's reason when it gave one. Retry
    sends the Copy again as a new Copy and the rows appear.
-5. **Unsynced edits. Blocked until Stage C fixes Copy.** The browser never sends
-   `sources[].stateVector` (`execute-copy.ts`), and the server checks for missing edits only when
-   that vector is present (`copy-command.ts`), so the `source_behind` refusal below can't happen
-   yet and the Copy lands without the unsynced edit. Run this step once Copy sends the vector.
+5. **Unsynced edits.** `execute-copy.ts` sends the state vector of each open live document
+   (`sources[].stateVector`), so the server never copies less than the tab saw.
 
-   Open a document, patch `WebSocket.prototype.send` to drop frames,
-   type an edit, copy the document. The server answers `source_behind`: the toast says "The latest
-   edits hadn't reached the server." with Retry. Restore the send and close the sockets, then
-   Retry: the Copy lands and the server copy holds the edit.
+   Open a document, patch `WebSocket.prototype.send` to drop frames, type an edit, copy the
+   document. The server waits about 2 s and answers a 503 `source_behind`; the browser sends the same
+   Copy again under the same id, backing off to every 5 s, and no toast shows. Restore the send and close the sockets: the
+   next send lands and the server copy holds the edit.
 6. **A hidden draft at the target name.** With the mock model and a draft-mode Work, have a
    chat create `kb://Hidden/Sheet` and `kb://Hidden/Vault/Note`. Create the live folder
    `kb://Hidden`, a live `kb://Sheet` and a live `kb://Vault/Item`, and Copy to… both into

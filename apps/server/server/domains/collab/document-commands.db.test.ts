@@ -58,11 +58,11 @@ describeBranchTreeDb("review commands (postgres)", (start) => {
     "12b: a twin that lost the race to its own command's effect answers the stored outcome when its grant is refused ($name)",
     async ({ refuse }) => {
       const c = await twoChanges(start);
-      const { itemKey, branchId } = await c.item();
+      const { itemKey } = await c.item();
       const request = {
-        branchId,
         itemKey,
         commandId: randomUUID(),
+        ends: "item",
       } as Parameters<typeof handleDiscardWorkDraftRequest>[1]["request"];
       let twin: Awaited<ReturnType<typeof handleDiscardWorkDraftRequest>> | undefined;
       const authorize = c.deps.fileAccess.authorize.bind(c.deps.fileAccess);

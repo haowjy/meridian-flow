@@ -33,25 +33,50 @@ export type TurnLiveLineageDocumentItem = {
   | { scope: "draft"; owner: DraftOwnerKey }
 );
 
-export type TurnReceiptState =
-  | "live-active"
-  | "live-reversed"
-  | "work-active"
-  | "work-reversed"
-  | "expired";
+/**
+ * `live-active` offers Undo. The rest offer none: `undone` and `partly` say the card's Undo ran
+ * (`partly` when some parts stayed), `expired` that nothing is left for it to act on.
+ */
+export type TurnReceiptState = "live-active" | "undone" | "partly" | "expired";
 
-export type TurnReceiptControl = "undo" | "redo" | "view_change";
+export type TurnReceiptControl = "undo" | "view_change";
 
-/** What became of a document's draft text from a turn: still waiting, applied, or discarded. */
+/** What became of one half of a turn's drafted change to a node: still waiting, applied, or discarded. */
 export type TurnDraftState = "pending" | "applied" | "discarded";
 
+/**
+ * What became of a turn's drafted tree change to a node: as a text half's, or `replaced` when a
+ * later change to the same fact landed in its place.
+ */
+export type TurnTreeState = TurnDraftState | "replaced";
+
 export interface TurnReceiptChip {
-  /** Each drafted document's current state, by document id; absent for documents the turn wrote live. */
+  /** Each drafted document's text, by document id; absent for documents the turn wrote live. */
   drafts?: Record<string, TurnDraftState>;
+  /**
+   * Each node's drafted tree change (a move, rename, delete or create, a folder's included), by
+   * node id. Beside `drafts`, which says the text half.
+   */
+  trees?: Record<string, TurnTreeState>;
   skips?: import("./write-reversal.js").TurnInverseSkip[];
+  /**
+   * The Applies in force that took this reply's drafted changes. The card's Undo takes each back
+   * whole by its Un-Apply, beside the reversal of the reply's other changes (`control`). `count`:
+   * the changes the Apply took; `onlyThisTurn`: every one of them is this reply's.
+   */
+  applied?: TurnAppliedCommand[];
   state: TurnReceiptState;
+  /** `undo`: the reply has changes besides its applied ones for the card's Undo to reverse. */
   control: TurnReceiptControl;
 }
+
+/** An Apply holding a reply's drafted changes, which the card's Undo takes back by its Un-Apply. */
+export type TurnAppliedCommand = {
+  commandId: string;
+  branchId: string;
+  count: number;
+  onlyThisTurn: boolean;
+};
 
 export interface ListTurnLiveLineageResponse {
   documents: TurnLiveLineageDocumentItem[];

@@ -16,7 +16,7 @@ and names its owner: the chat's Work, or for a chat with no Work
 its lineage (the first chat, its forks and subagents; a handoff starts a new one).
 `shared/draft-owner.ts` is the one reader of a branch's owner and lifecycle
 (`branchOwnerSql`). A lineage is writable while some chat in it is live; with none,
-writes and Apply are refused and Discard still works. Scratch and upload content is always live.
+writes are refused; Apply, Un-Apply and Discard still work (Apply and Un-Apply land in a closed branch owner; an item whose file's own Work is closed bounces `returned`). Scratch and upload content is always live.
 
 Nothing holds a write: each lands in its command's transaction, so a read always shows
 the writes before it. Rebinding is resolved again for each query; a read-only draft query
@@ -65,14 +65,21 @@ and immutable origin draft, so human typing history need not be scanned. Edited-
 The per-document HTTP Discard says what it ends. `tree` ends only the branch's move or
 delete: a live chat's Discard, whose text the writer reverts in the room. `item` ends
 everything the branch holds on the document: a creation only the Work shows (always ended
-whole), or a frozen lineage's draft, whose room drops the writer's text. An `item`
-Discard may carry `draftSeenAt`, the text draft's `updated_at` the writer decided on;
-the kernel compares it under the draft's row lock and refuses `draft_changed` when the
-draft moved on (a chat restored elsewhere, then written to). `updated_at` and not
-`revision` is the fence because content-free folds keep it. The answer's `itemClosed`
-is what the kernel ended. Its command row is claimed first in the kernel's transaction and
-holds the answer when it commits; `stale` and `draft_changed` are stored answers too. Nothing
-left to end answers `stale` without changing text. The tree half of every Discard is the
+whole), or a frozen lineage's draft, whose room drops the writer's text. The URL names the
+branch; the body names the item and what ends. A draft that moved on since the writer saw it is
+discarded all the same, and Undo brings it back. The answer's `itemClosed` is what the kernel
+ended. Its command row is claimed first
+in the kernel's transaction and holds the answer when it commits, and so is the bounce on an
+archived or deleted Work or a chat in Trash (`settled: [returned]`, nothing ended). A Discard
+never refuses: an item with no pending record and no changed text draft is answered from
+`settlementOf` (`already discarded` when a Discard, or nothing, settled it; `overtaken` by the
+Apply that did, which wins when the halves differ), and the others in the selection still
+discard. A branch that is no longer active takes nothing, and its selected items are answered by
+the same reader; only Discard all on a closed branch answers one `already`. Whether a draft holds
+text is decided under its row lock from the draft itself (`draftHoldsText`, the projection's own
+judgement): `has_effect` stands in only when its watermark is the draft's revision, so a
+projection lagging an Apply never makes a Discard close text that is live. No cut is sent: a Discard takes the records the Work holds when it runs, and Undo
+brings them back. The tree half of every Discard is the
 package's `discardDraft`, run with `treeListStore.submit` in each list the Work spans
 (`adapters/drizzle-branch-discard.ts`): the pending records are settled `discarded` with the
 command's id. A discarded drafted create is in no view, and its `documents` row and text stay
@@ -96,7 +103,7 @@ Every draft ends through one close, `DraftClose.closeDrafts(tx, selection,
 cause, by?)` (`adapters/drizzle-draft-close.ts`), with `cause` one of
 `branch_closed`, `document_discarded`, `edit_discarded` or
 `{ documentRemoved: record }`. It prelocks the drafts in ID order, derives the durable
-`closed_cause` (`document_removed` for a removal, else `discarded`) and, when a Discard or restore
+`closed_cause` (`document_removed` for a removal, else `discarded`; a Restore that left the draft out sets `left_out`, which `apply.md` describes) and, when a Discard or restore
 command (or an Apply of the document's delete) closes it, `closed_by` (that command's id), and joins the root transaction's
 retirement batch (a transaction participant: a rolled-back savepoint's closes
 leave with it). After the root commits the batch retires once
@@ -218,17 +225,24 @@ A call whose caller passes `frontiers` (the read and write tools, and
 reference reads, which pass `recording` only) records an observation frontier
 in the room its result rendered from. A write plans on the `planning` lookup
 when usable, otherwise on the current room; neither path refuses concurrent text.
-An undo, redo or revert records in the room its inverse committed into
+An undo or revert records in the room its inverse committed into
 (`DocumentEditResult.room`). `format: "edits"` reads record none.
 A model edit as a command records its own, in its transaction ([model edits](model-edits.md#what-the-model-was-shown)). See [runtime document text](../../runtime/.context/document-text.md#observation-frontiers).
 
-A write to a Work draft that closed after the model last read it is returned by the
-closed-draft rule in `model-edit-write.ts` (`closedDraftSeen`), before a branch or draft opens:
-a `done` row with `settled: returned`, and the document as that chat reads it now, its evidence
-stored in the row so the model's next write plans on it. The same answer covers an archived or
-deleted Work's draft, a removed document and a block the writer deleted, merged or moved
-(`block_gone`, from the write core). An insert whose anchor block the writer deleted lands where
-the anchor was: it is new words, and the anchor's tombstone still places them.
+A write to a Work draft that a Discard or a restore closed after the model last read it lands in
+a new draft (`closedDraftSeen` in `model-edit-write.ts`), seeded from the document as it stands,
+and the result says the earlier draft closed and this edit opened a new one. The core resolves the write's selectors in the model's view of the closed draft
+(`supersededWorkDraftId`) and carries the result onto the new draft by block hash
+(`resolver/carry.ts`): blocks it lacks get their words after the nearest block both hold, and a
+remove of them changes nothing; the Discard's restored text is never in scope. The day-30 purge
+rewrites the draft's frontier rows to `superseded:<documentId>` with the cut dropped, so a write
+planned on a purged draft still finds it superseded, has no view, and lands its words at the end
+with nothing deleted. A removed document, an archived or deleted Work's draft
+return the write instead: a `done` row with `settled: returned`, and the document as that chat
+reads it now, its evidence stored in the row so the model's next write plans on it. A block the
+writer deleted, merged or moved in a draft that is still open is returned too (`block_gone`, from
+the write core). An insert whose anchor block the writer deleted lands where the anchor was: it is
+new words, and the anchor's tombstone still places them.
 
 Replay treats ordinary concurrent chat edits and writer deletions as Yjs peers. A
 planning-visible item disappearing is not by itself evidence against a write. Only
@@ -329,7 +343,7 @@ either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
-Work of the set is active. No other collab code locks a Work for a write; the
+Work of the set is active, and `allowFrozenLineage` lets a chat in Trash pass it. Discard and Restore keep `requireActive` (a closed owner bounces them); Apply and Un-Apply pass `requireActive: false` and `work: "any"` at their `prepareAppend`, so they land on a closed branch owner; each item's file owner is locked beside it and judged on its own (`apply.md`). `ensureActiveForWrite` takes the caller's `WorkWriteOptions` the same way. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. Creating a document draft
 runs inside `mutate`: a draft made while its Work archives waits on
 the Work row and is read as archived once the archive commits. No append enters the boundary: no
@@ -364,7 +378,8 @@ A sweep (the `draft-effects` recovery lane, every 30 s)
 pages the stale set by `(updated_at, id)` and marks what no entry tracks, so a
 crash inside the debounce converges without another key. Review readers
 (`isEdited` and the Works badge) may lag a key by that second;
-the draft editor and Undo read the replica and receipts, never `has_effect`.
+the draft editor and Undo read the replica and receipts, never `has_effect`, and a Discard
+trusts it only at a matching watermark.
 Tests that assert membership right after a write read through
 `test-support/converged-review.ts`, which flushes the job first.
 
@@ -381,7 +396,8 @@ never a second judgement. It first checks its room holds the committed replica,
 and a room that does not has missed a delivery: it is reconciled to the replica
 (`reconcileRoom`, logged as a `room_reconciled` warning) and the frame goes on.
 A closed draft refuses with terminal `4205` (`discarded`), or removal `4208`.
-An inactive Work refuses without ending the draft (`4409`).
+An inactive Work refuses without ending the draft (`4409 access-changed:<why>`, `why` being
+`work_archived`, `work_deleted` or `chat_frozen`, read from the owner as it is now).
 
 Room delivery has one owner: `install` in
 `domain/draft-runtime.ts`, the only place a replica becomes the draft's
@@ -461,7 +477,7 @@ append under its row hold, like a frame's, never missing on a revision. Its conf
 runs once, and its Work rows and branch-row and live advisory locks are taken first
 (`enterDraftSeam`, `approveBranchWriteJoin`).
 
-An inverse (Undo, Redo, revert, and the model's `undo`/`redo`)
+An inverse (the card's Undo, revert, and the model's `undo`)
 captures without any lock: each document's live state, each committed draft at
 its revision without merging live identity, the history and each draft's
 lifecycle. Those reads need not agree with each other. It plans on that capture,
@@ -561,6 +577,23 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    certification takes a document key and then locks that document's `tree_nodes` row, so a path
    that holds a document key writes its rows after it, and one that writes first never takes that
    document's key afterwards.
+
+Restore and Un-Apply reopen closed drafts (`reopenDrafts`, `apply.md`) within this list, each in
+its own order.
+
+- **Restore:** the Work lock (`mutate`); `ensureActiveForWrite`, always; the branch; the lists; a
+  plain read of the drafts the Discard closed; the documents of the Discard's records and of those
+  drafts; then the draft rows. The selection is read once, before the document keys: the Work
+  lock keeps another command from taking those drafts.
+- **Un-Apply:** the Work lock; a plain read of the drafts the Apply's delete closed; only when that
+  selection is not empty, `ensureActiveForWrite` (it joins the command's transaction only while it
+  has locked nothing but Works, so no list or document key comes before it, and an Un-Apply with
+  nothing to reopen creates no branch); the branch; the lists; the documents of the Apply's text
+  and of the selected drafts; the tree half; then the draft rows of only those drafts whose
+  documents the tree half restored. The tree half goes before the reopen so a refusal (a throw)
+  rolls the reopen back with the command's savepoint.
+
+`reopen` writes the draft rows in ID order.
 
 `submit` and `resync` take the list keys themselves when a path holds no document key, as the
 tree tools do. `resync` (and so `DraftClose.closeDrafts`, which resyncs the list that holds each
@@ -704,10 +737,8 @@ the extractor bumps its version, and no second post-write writer exists.
 ## Selective disposition and response retirement
 
 Discard takes a selection: the whole branch, or items each naming a document,
-its origin, what it ends, and optionally `draftSeenAt`. What the kernel ended
-decides the answer: nothing left to end is `gone`, an applicable state that
-changed since the writer looked is `stale`, and a text draft that moved on is
-`draft_changed` (`work-branch-review-service.ts`).
+its origin and what it ends. What the kernel ended decides the answer, and every answer is
+`discarded` with its `settled` lines (`work-branch-review-service.ts`).
 
 A draft write never regenerates durable rows from a raw state-vector diff, which
 would reintroduce cumulative tombstones. An unresolved sync dependency is an
@@ -717,7 +748,7 @@ mutations still journal cumulative sync bytes
 
 Forward inverses append ordinary immutable journal parts with restoration
 aliases. They do not rewrite target rows, mark them reversed, or use a reserved
-undo client. Card actions and model undo/redo share immutable edit origins and captured
+undo client. Card actions and model undo share immutable edit origins and captured
 text-derived disposition, but retain their own authorization and stack policy.
 Draft-origin Revert never targets live. Applied parts revert in an active draft
 as pending changes; closed drafts supply disposition but never write admission.

@@ -25,6 +25,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
+import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { parseDocumentFilename, readSegment } from "@meridian/contracts/protocol";
 import type { ModelInfo } from "@meridian-flow/runtime/gateway";
@@ -226,7 +227,7 @@ function withDestination(
   if (outcome.isError) return outcome;
   // Inverses can follow an edit away from the chat's current destination. Their owner reports
   // the version actually changed, or deliberately leaves it unnamed when one command spans views.
-  if (command === "undo" || command === "redo" || command === "revert") return outcome;
+  if (command === "undo" || command === "revert") return outcome;
   return {
     ...outcome,
     result: {
@@ -239,9 +240,8 @@ function withDestination(
 
 const isTextEdit = (command: string) =>
   command === "insert" || command === "replace" || command === "remove";
-const isInverseCommand = (command: string) =>
-  command === "undo" || command === "redo" || command === "revert";
-/** What a call to a removed document is answered for: a text edit, or an undo, redo or revert. */
+const isInverseCommand = (command: string) => command === "undo" || command === "revert";
+/** What a call to a removed document is answered for: a text edit, or an undo or revert. */
 const settlesOnRemoval = (command: string) => isTextEdit(command) || isInverseCommand(command);
 
 /**
@@ -542,10 +542,12 @@ export async function readTrackedDocument(
     address.uri,
   );
   // Only a draft that outlived a live delete reads a deleted document.
+  const parsedUri = parseContextUri(address.uri);
   const surviving =
-    grant.destination.kind === "draft" && grant.facts.deleted
+    parsedUri.ok && grant.destination.kind === "draft" && grant.facts.deleted
       ? survivingDraftNotice(
           (await deps.documentRemovals.lookup([address.documentId])).get(address.documentId),
+          parsedUri.value.scheme,
         )
       : null;
   const notice = [owner && "notice" in owner ? owner.notice : null, surviving]

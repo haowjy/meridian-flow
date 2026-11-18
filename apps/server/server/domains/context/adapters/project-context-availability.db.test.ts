@@ -14,7 +14,7 @@ import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-suppor
 import { treeSeeder } from "../../../test-support/tree-seed.js";
 import {
   createDrizzleProjectContextAvailability,
-  resolveActiveFolderUri,
+  resolveHeldFolderUri,
 } from "./project-context-availability.js";
 
 const enabled = !!process.env.DATABASE_URL && process.env.RUN_DB_TESTS === "1";
@@ -119,8 +119,8 @@ describe.skipIf(!enabled)("project context placement privacy", () => {
     for (const foreign of [theirs.doc, theirs.userDoc, theirs.workDoc]) {
       expect(await held(foreign)).toBeNull();
     }
-    expect(await resolveActiveFolderUri(database.current, myProject, me, theirs.folder)).toBeNull();
-    expect(await resolveActiveFolderUri(database.current, myProject, me, mine.folder)).toEqual(
+    expect(await resolveHeldFolderUri(database.current, myProject, me, theirs.folder)).toBeNull();
+    expect(await resolveHeldFolderUri(database.current, myProject, me, mine.folder)).toEqual(
       expect.any(String),
     );
 

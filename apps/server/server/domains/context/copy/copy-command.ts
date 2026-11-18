@@ -24,12 +24,16 @@ import type { ContextCommandBranch } from "../ports/context-command-transaction.
  *    lock that every root's name is still free. If a concurrent write took one since the plan,
  *    nothing is inserted and the command plans and binds again, now under the lock.
  *
- * A refusal is typed and stored with the command, so a resend reads the same answer; another
- * request under the id answers `command_conflict`. An infrastructure failure, or a source whose
- * room has not yet received the client's edits, stores nothing and stays retryable under the
- * same operation ID. A duplicate that arrives while the first attempt is preparing waits for it
- * in this process instead of reading every source again. A resend that does reach the insert
- * (another process) finds its copies' ids taken and answers `conflict`.
+ * Every source and the destination folder are followed by id: a source that moved is copied from
+ * where it is, one in Trash from where it was, one whose draft closed from the closed draft. A
+ * source that is purged, or a root that would land inside itself, is left out and named in
+ * `settled`. A destination in a closed Work stores a `returned` answer and makes nothing. The
+ * answer is stored with the command, so a resend reads the same one; another request under the id
+ * answers `command_conflict`. An error, or a source whose room has not yet received the client's
+ * edits, stores nothing and stays sendable under the same operation ID. A duplicate that arrives
+ * while the first attempt is preparing waits for it in this process instead of reading every
+ * source again. A resend that does reach the insert (another process) finds its copies' ids taken
+ * and answers `conflict`.
  *
  * The answer returns when the rows commit; their projections and link rows are derived after
  * commit without holding the answer. There is no Undo command: Copy's Undo is ordinary
@@ -38,6 +42,7 @@ import type { ContextCommandBranch } from "../ports/context-command-transaction.
 
 import { setTimeout as delay } from "node:timers/promises";
 import { draftOwnerKey } from "@meridian/contracts";
+import type { Settlement } from "@meridian/contracts/commands";
 import type {
   ContextOperationCommand,
   CopyContextEntriesResult,
@@ -49,6 +54,7 @@ import type { PMNode } from "@meridian/markup";
 import { decodeStateVector } from "yjs";
 import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { closedOwnerBounce } from "../../collab/adapters/closed-owner-bounce.js";
 import type { CollabDomain } from "../../collab/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import { prepareBinaryCopy } from "../binary-copy.js";
@@ -109,6 +115,9 @@ export interface CopyDestinationHandoff {
   dir: readonly string[];
   /** The Work whose lifecycle and namespace this end belongs to; null for no Work. */
   workScopeId: string | null;
+  /** The folder the writer named by id, and the folders to make under it; `dir` spells where it stands. */
+  parent?: { folderId: string; createFolders: readonly string[] };
+  /** The Work's draft this copy lands in, when the destination is a drafted scheme's draft view. */
   branch: ContextCommandBranch | null;
 }
 
@@ -192,7 +201,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       try {
         return await commands.execute(
           input.request.operationId,
-          receiptCommand(input),
+          receiptCommand(input.sources, input.destination.uri, input.request),
           input.destination.uri,
           async () => {
             claimed = true;
@@ -202,14 +211,23 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             // The rows name these objects only if this operation commits.
             const { putKeys } = prepared.value;
             if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
-            return commandTransaction.run(
-              (command) => write(selected, prepared.value, command.branch?.id ?? null),
-              [scopeOf(input.destination)],
-              {
-                sourceIds: prepared.value.sourceIds,
-                ...(input.destination.branch ? { branch: input.destination.branch } : {}),
-              },
-            );
+            try {
+              return await commandTransaction.run(
+                (command) => write(selected, prepared.value, command.branch?.id ?? null),
+                [scopeOf(input.destination)],
+                {
+                  sourceIds: prepared.value.sourceIds,
+                  ...(input.destination.branch ? { branch: input.destination.branch } : {}),
+                },
+              );
+            } catch (cause) {
+              // The Work lock found the destination's Work closed before anything was written. This
+              // command commits, so the objects the plan duplicated are released here.
+              const returned = closedOwnerBounce(cause);
+              if (!returned) throw cause;
+              await deps.release.keys(putKeys);
+              return Ok({ status: "copied", entries: [], folders: [], settled: returned });
+            }
           },
         );
       } finally {
@@ -227,27 +245,48 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
    */
   async function prepare(input: ContextCopyInput): Promise<Result<PreparedCopy, ContextError>> {
     const roots: PreparedRoot[] = [];
+    const purged: string[] = [];
+    const looping: string[] = [];
     for (const source of input.sources) {
+      if (encloses(source, input.destination.uri)) {
+        looping.push(source.uri);
+        continue;
+      }
       const view =
         source.view.kind === "draft"
           ? await deps.branches.viewForOwner(source.view.owner)
           : { kind: "live" as const };
-      const snapshot = await source.copy.snapshotSource(source.path, view);
-      if (!snapshot.ok) return Err(adapterFaultToContextError(snapshot.error, source.uri));
-      if (snapshot.value.kind !== source.expected.kind) {
-        return Err({ code: "not_found", uri: source.uri });
-      }
-      if (identityOf(snapshot.value) !== source.expected.nodeId) {
-        return Err({ code: "stale_source", uri: source.uri });
+      const snapshot = await source.copy.snapshotSource({
+        id: source.expected.nodeId,
+        path: source.path,
+        view,
+      });
+      if (!snapshot.ok) {
+        if (snapshot.error.code !== "not_found")
+          return Err(adapterFaultToContextError(snapshot.error, source.uri));
+        purged.push(source.uri);
+        continue;
       }
       const documents = await prepareDocuments(source, snapshot.value);
-      if (!documents.ok) return documents;
+      if (!documents.ok) {
+        if (documents.error.code !== "not_found") return documents;
+        purged.push(source.uri);
+        continue;
+      }
       roots.push({
         uri: source.uri,
         snapshot: source.copyId ? { ...snapshot.value, copyId: source.copyId } : snapshot.value,
         documents: documents.value,
       });
     }
+    const settled: Settlement[] = [
+      ...(purged.length
+        ? [{ rule: "left_out" as const, items: purged, why: "purged" as const }]
+        : []),
+      ...(looping.length
+        ? [{ rule: "left_out" as const, items: looping, why: "would_loop" as const }]
+        : []),
+    ];
 
     const duplicated = await duplicateBinaries(binariesOf(roots));
     if (!duplicated.ok) return duplicated;
@@ -260,9 +299,9 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       putKeys: duplicated.value.putKeys,
       ready,
       documents,
-      // A destination that cannot take a copy is refused where the destination is rechecked,
-      // after the stale-destination and inside-itself answers.
-      plan: await planAndBind(input.destination, ready, documents),
+      settled,
+      // A destination that cannot take a copy is refused where the destination is rechecked.
+      plan: roots.length ? await planAndBind(input.destination, ready, documents) : null,
     });
   }
 
@@ -367,17 +406,15 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     clientVector?: Uint8Array,
   ): Promise<Result<PreparedDocument, ContextError>> {
     const draft = source.view.kind === "draft" ? source.view : null;
-    const command = draft
-      ? {
-          documentId: file.documentId as DocumentId,
-          destination: "draft" as const,
-          owner: draft.owner,
-        }
-      : { documentId: file.documentId as DocumentId, destination: "live" as const };
+    const documentId = file.documentId as DocumentId;
     const client = clientVector ? decodeStateVector(clientVector) : null;
     const deadline = Date.now() + SOURCE_CATCH_UP_MS;
     for (;;) {
-      const read = await deps.documentSync.readEffectiveBlocks(command);
+      const read = await deps.documentSync.readEffectiveBlocks(
+        draft
+          ? { documentId, destination: "draft", owner: draft.owner }
+          : { documentId, destination: "live" },
+      );
       if (!read.ok) {
         switch (read.error.code) {
           case "not_found":
@@ -413,23 +450,30 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     }
   }
 
-  /** Under the destination's lock: recheck the destination, then insert the plan. */
+  /** Under the destination's lock: find the destination again by id, then insert the plan. */
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
     branchId: BranchId | null,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
-    const destination = await resolvedDestination(input, prepared);
+    const destination = await resolvedDestination(input);
     if (!destination.ok) return destination;
     const dest = destination.value;
+    const settled = prepared.settled.length ? { settled: prepared.settled } : {};
+    if (!prepared.plan) return Ok({ status: "copied", entries: [], folders: [], ...settled });
 
-    let planned = prepared.plan;
+    // The folder moved after the route found it: the plan was made for its old address.
+    let planned =
+      dest.uri === input.destination.uri
+        ? prepared.plan
+        : await planAndBind(dest, prepared.ready, prepared.documents);
     let entries: CopyCreatedEntry[] | null = null;
     let folders: string[] = [];
     for (let replans = 0; !entries; replans++) {
       if (!planned.ok) return planned;
       const inserted = await dest.copy.copyInto({
         dir: dest.dir,
+        ...(dest.parent ? { parent: dest.parent } : {}),
         plan: planned.value.plan,
         contents: planned.value.contents,
         branchId,
@@ -445,26 +489,34 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       if (replans > 0) throw new Error("A copy planned under the namespace lock did not hold");
       planned = await planAndBind(dest, prepared.ready, prepared.documents);
     }
-    return Ok({ status: "copied", entries: entries.map(toEntry), folders });
+    return Ok({ status: "copied", entries: entries.map(toEntry), folders, ...settled });
   }
 
+  /**
+   * The destination as it stands under the lock. A folder named by id may have moved since the
+   * route found it, which only changes its address; the lock this command holds is the old Work's
+   * namespace, so one that moved to another Work or scheme is sent again (nothing is stored).
+   */
   async function resolvedDestination(
     input: ContextCopyInput,
-    prepared: PreparedCopy,
   ): Promise<Result<CopyDestinationHandoff, ContextError>> {
     const resolved = input.resolveDestination
       ? await input.resolveDestination(input.destination.uri)
       : Ok(input.destination);
     if (!resolved.ok) return resolved;
     if (
-      resolved.value.uri !== input.destination.uri ||
       resolved.value.scheme !== input.destination.scheme ||
-      resolved.value.workScopeId !== input.destination.workScopeId
+      resolved.value.workScopeId !== input.destination.workScopeId ||
+      (resolved.value.uri !== input.destination.uri &&
+        input.sources.some((source) => encloses(source, resolved.value.uri)))
     ) {
-      return Err({ code: "stale_target", uri: input.destination.uri });
+      return Err({
+        code: "io_error",
+        uri: input.destination.uri,
+        message: "The destination moved while the copy was being made",
+      });
     }
-    const inside = refuseInsideItself(prepared.roots, resolved.value.uri);
-    return inside.ok ? Ok(resolved.value) : inside;
+    return resolved;
   }
   return { copy };
 }
@@ -499,8 +551,10 @@ interface PreparedCopy {
   ready: CopySourceEntry[];
   /** Every tracked document's read, by source document id. */
   documents: Map<string, PreparedDocument>;
-  /** The destination's plan and the content bound to it; an error is answered once the destination is rechecked. */
-  plan: Result<PlannedCopy, ContextError>;
+  /** What the copy left out, named for `settled`. */
+  settled: Settlement[];
+  /** The destination's plan and the content bound to it; null when no source is left to copy. An error is answered once the destination is rechecked. */
+  plan: Result<PlannedCopy, ContextError> | null;
 }
 
 /**
@@ -525,10 +579,14 @@ function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
   return { scheme: destination.scheme, workId: destination.workScopeId };
 }
 
-function receiptCommand(input: ContextCopyInput): ContextOperationCommand {
+export function receiptCommand(
+  sources: readonly Pick<CopySourceHandoff, "uri" | "view" | "expected" | "copyId">[],
+  destinationUri: string,
+  request: Pick<ContextCopyRequest, "destinationParent" | "destinationBranch" | "position">,
+): ContextOperationCommand {
   return {
     kind: "copy",
-    sources: input.sources.map(
+    sources: sources.map(
       (source): CopyContextEntryCommandSource => ({
         uri: source.uri,
         view:
@@ -539,25 +597,18 @@ function receiptCommand(input: ContextCopyInput): ContextOperationCommand {
         ...(source.copyId ? { copyId: source.copyId } : {}),
       }),
     ),
-    destinationUri: input.destination.uri,
-    ...(input.destination.branch
+    destinationUri,
+    ...(request.destinationBranch
       ? {
           destinationView: {
             kind: "draft" as const,
-            owner: draftOwnerKey(input.destination.branch.owner),
+            owner: draftOwnerKey(request.destinationBranch.owner),
           },
         }
       : {}),
-    ...(input.request.destinationParent
-      ? { destinationParent: input.request.destinationParent }
-      : {}),
-    ...(input.request.position ? { position: input.request.position } : {}),
+    ...(request.destinationParent ? { destinationParent: request.destinationParent } : {}),
+    ...(request.position ? { position: request.position } : {}),
   };
-}
-
-/** The source's identity for the expected-identity check. */
-function identityOf(entry: CopySourceEntry): string {
-  return entry.kind === "folder" ? entry.folderId : entry.documentId;
 }
 
 function filesOf(folder: CopySourceFolder): CopySourceFile[] {
@@ -602,24 +653,12 @@ function toEntry(entry: CopyCreatedEntry): CopyContextEntryCreated {
   };
 }
 
-/** Nothing can land inside a folder it is copying, whichever system either is in. */
-function refuseInsideItself(
-  roots: readonly PreparedRoot[],
-  destinationUri: string,
-): Result<void, ContextError> {
+/** Whether the destination is the source folder or inside it: nothing can land inside what it copies. */
+function encloses(source: CopySourceHandoff, destinationUri: string): boolean {
+  if (source.expected.kind !== "folder") return false;
   const target = trimTrailingSlash(destinationUri);
-  for (const root of roots) {
-    if (root.snapshot.kind !== "folder") continue;
-    const source = trimTrailingSlash(root.uri);
-    if (target === source || target.startsWith(`${source}/`)) {
-      return Err({
-        code: "invalid_operation",
-        uri: root.uri,
-        message: "Can't go inside itself",
-      });
-    }
-  }
-  return Ok(undefined);
+  const folder = trimTrailingSlash(source.uri);
+  return target === folder || target.startsWith(`${folder}/`);
 }
 
 function trimTrailingSlash(uri: string): string {

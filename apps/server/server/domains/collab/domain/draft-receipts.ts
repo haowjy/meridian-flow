@@ -15,8 +15,10 @@ import {
 } from "@meridian/agent-edit/diff";
 import {
   captureEditParts,
+  type EditChange,
   type EditFrontier,
   heldDeletes,
+  pairEdit,
   type SaveCut,
   type SavePrecondition,
 } from "@meridian/agent-edit/integration";
@@ -133,7 +135,12 @@ export async function finalizeAppend(
 
     let lateTyping = input.recovery?.memory() ?? NO_LATE_TYPING;
     const recovered: string[] = [];
-    const kept: { row: AppendDraftJournalInput; frontier: EditFrontier; held: Set<string> }[] = [];
+    const kept: {
+      row: AppendDraftJournalInput;
+      frontier: EditFrontier;
+      held: Set<string>;
+      replaced?: EditChange[];
+    }[] = [];
     function admit(row: AppendDraftJournalInput): AppendFinalization | undefined {
       if (input.containment.contains(doc, row.updateData)) return;
       const stateVector = Y.encodeStateVector(doc);
@@ -149,10 +156,16 @@ export async function finalizeAppend(
       const missing = pendingClocks(doc);
       if (missing.length) return { status: "prefixMissing", clocks: missing };
       if (row.source !== "server") validateRestorationRanges(doc, novel);
+      const entryFrontier = Object.fromEntries(frontier);
       kept.push({
         row: { ...row, updateData: novel },
-        frontier: Object.fromEntries(frontier),
+        frontier: entryFrontier,
         held,
+        // Paired now, before a later row changes the document; a writer's frame is never undone.
+        replaced:
+          row.source === "writer"
+            ? undefined
+            : pairEdit(doc, { update: novel, frontier: entryFrontier, held }),
       });
     }
     /** Typing a frame's deletion removed unseen counts only when a writer or an earlier recovery wrote it. */
@@ -268,6 +281,7 @@ export async function finalizeAppend(
           update: kept[index].row.updateData,
           frontier: kept[index].frontier,
           held: kept[index].held,
+          replaced: kept[index].replaced,
         })),
       ),
     }));

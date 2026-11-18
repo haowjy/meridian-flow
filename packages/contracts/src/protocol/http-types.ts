@@ -7,6 +7,7 @@
 import { z } from "zod";
 import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import type { DraftOwnerKey } from "../branches/owner.js";
+import type { StoredResult } from "../commands/index.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
@@ -168,8 +169,9 @@ export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */
   | { kind: "live" }
   /**
-   * The owner's draft of the document, the one its active branch holds. An owner with no draft
-   * of it copies the live document, as its view shows it.
+   * The owner's draft of the document: the one its active branch holds, else the latest one a
+   * Discard closed. An owner that never drafted it reads the live document, which is what the
+   * draft would have held.
    */
   | { kind: "draft"; owner: DraftOwnerKey };
 
@@ -199,8 +201,8 @@ export type CopyContextEntrySource = {
    * room is: the live room for a live view, the draft room for a draft view. A folder has no
    * room of its own, and a vector on one is a 400, as is one that does not decode. The server
    * waits about two seconds for the room to hold those updates; if it still does not, the
-   * answer is `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
-   * and the same operation ID may be sent again.
+   * answer is a 503 `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
+   * and the client sends the same operation ID again until the room has them.
    */
   stateVector?: string;
 };
@@ -251,7 +253,12 @@ export const copyContextEntriesResultSchema = z.object({
   /** The ids of the folders the copy made to reach its destination, outermost first. */
   folders: z.array(z.string().min(1)),
 });
-export type CopyContextEntriesResult = z.infer<typeof copyContextEntriesResultSchema>;
+/**
+ * `settled` says what the Copy left undone: `returned` when the destination's Work is closed (no
+ * entries are made), and `left_out` for a source or destination that is purged.
+ */
+export type CopyContextEntriesResult = z.infer<typeof copyContextEntriesResultSchema> &
+  StoredResult;
 
 export function isProjectContextTreeScheme(value: unknown): value is ProjectContextTreeScheme {
   return (

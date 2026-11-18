@@ -1,7 +1,7 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
 import {
-  type InverseSelection,
+  type InversePart,
   type PartClassification,
   prepareEditRoots,
 } from "@meridian/agent-edit/integration";
@@ -9,6 +9,7 @@ import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { settledCause } from "./draft-disposition.js";
+import { partKey as key } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import { planInverseOffThread } from "./inverse-worker.js";
 import {
@@ -56,7 +57,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   };
   const compute = async (
     destination: InverseDestination,
-    selection: readonly InverseSelection[],
+    selection: readonly InversePart[],
     actionId: string,
     { preview = false }: { preview?: boolean } = {},
   ) => {
@@ -100,70 +101,57 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       | "draft_archived"
       | "discarded";
   };
-  function refusal(
-    part: StoredInversePart,
-    direction: "undo" | "redo",
-    inspection: Inspection,
-  ): TextFailure | null {
+  /**
+   * A part an Undo took (the writer's card, the writer's revert, or the model's own undo) is done
+   * with, whatever the kernel finds it could still restore: an Undo is never reversed, and a
+   * later inverse can leave the part's text restorable again.
+   */
+  const takenBy = (part: StoredInversePart, inspection: Inspection = inspect()) =>
+    inspection.actions.byPart.get(key(part));
+  const taken = (part: StoredInversePart, inspection?: Inspection) =>
+    takenBy(part, inspection) !== undefined;
+  function refusal(part: StoredInversePart, inspection: Inspection): TextFailure | null {
     const destination = document.destinationOf(part.origin);
-    if (destination.frozen) return "draft_archived";
+    if (destination.closed) return "draft_archived";
     if (destination.kind === "draft" && destination.state === "gone") return closedPartCause(part);
+    if (taken(part, inspection)) return "changed";
     const state = inspection.states([part])[0];
-    if (state.state !== (direction === "undo" ? "active" : "undone")) {
+    if (state.state !== "active") {
       return settledCause(part.disposition) ?? "changed";
     }
     return null;
   }
-  const inverseOf = (original: StoredInversePart, inverseParts: readonly StoredInversePart[]) =>
-    inverseParts.find((part) =>
-      part.targets.some((target) =>
-        target.ordinal === original.ordinal ? target.editId === original.editId : false,
-      ),
-    );
-  // What the kernel found, as a cause: a part the kernel cannot reach reads from the first
-  // reason it gives. The writer's apply or discard outranks this (`settledCause`).
-  const kernelCause = (kernel: PartClassification | null | undefined) =>
-    kernel?.reasons.includes("inaccessible ancestor")
-      ? ("paragraph_removed" as const)
-      : kernel?.state === "undone"
-        ? ("already_removed" as const)
+  // Why a part is not reversible, as a cause: one an Undo took reads as removed, else the
+  // kernel's first reason. The writer's apply or discard outranks this (`settledCause`).
+  const kernelCause = (
+    part: StoredInversePart,
+    kernel: PartClassification | null | undefined,
+    inspection: Inspection = inspect(),
+  ) =>
+    taken(part, inspection)
+      ? ("already_removed" as const)
+      : kernel?.reasons.includes("inaccessible ancestor")
+        ? ("paragraph_removed" as const)
         : ("edited_since" as const);
-  /** The per-turn skip cause, in the turn protocol's words, for a part found `kernel` after `direction`. */
+  /** The per-turn skip cause, in the turn protocol's words, for a part found `kernel`. */
   function turnSkipCause(
     part: StoredInversePart,
-    direction: "undo" | "redo",
-    inverseParts: readonly StoredInversePart[],
     kernel: PartClassification | null,
   ): TurnInverseSkipCause {
-    const settledBy = direction === "redo" ? (inverseOf(part, inverseParts) ?? part) : part;
-    const cause = settledCause(settledBy.disposition) ?? kernelCause(kernel);
+    const cause = settledCause(part.disposition) ?? kernelCause(part, kernel);
     return cause === "already_removed" ? "already_undone" : cause;
   }
 
-  function textSelection(
-    entry: Entry,
-    direction: "undo" | "redo",
-    inspection: Inspection,
-    inverseParts: readonly StoredInversePart[] = [],
-  ) {
-    const selection: InverseSelection[] = [];
+  function textSelection(entry: Entry, inspection: Inspection) {
+    const selection: InversePart[] = [];
     const partial: TextOmission[] = [];
-    for (const original of direction === "undo"
-      ? [...entry.parts].sort((a, b) => b.id - a.id)
-      : entry.parts) {
-      const inverse = direction === "redo" ? inverseOf(original, inverseParts) : undefined;
-      if (direction === "redo" && !inverse)
-        throw new Error("Undo action has no inverse for its target");
-      const candidate = inverse
-        ? { ...original, origin: inverse.origin, disposition: inverse.disposition }
-        : original;
-      const refused = refusal(candidate, direction, inspection);
-      if (!refused)
-        selection.push({ part: original, direction: direction === "undo" ? "invert" : "reapply" });
+    for (const original of [...entry.parts].sort((a, b) => b.id - a.id)) {
+      const refused = refusal(original, inspection);
+      if (!refused) selection.push(original);
       else if (refused === "changed")
         partial.push({
           ordinal: original.ordinal,
-          cause: kernelCause(inspection.states([original])[0]),
+          cause: kernelCause(original, inspection.states([original])[0], inspection),
         });
       else return { selection, partial, refusal: refused };
     }
@@ -171,17 +159,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   }
   function textPlan(
     entry: Entry,
-    direction: "undo" | "redo" | "revert",
+    direction: "undo" | "revert",
     inspectAt: (destination: InverseDestination) => Inspection,
-    options: {
-      inverseParts?: readonly StoredInversePart[];
-      actionKind?: "undo" | "redo" | "revert";
-    } = {},
   ) {
-    const destinationParts = direction === "redo" ? (options.inverseParts ?? []) : entry.parts;
-    const destinations = new Set(
-      destinationParts.map((part) => document.destinationOf(part.origin)),
-    );
+    const destinations = new Set(entry.parts.map((part) => document.destinationOf(part.origin)));
     if (destinations.size !== 1) throw new Error("One model edit spans multiple versions");
     const [destination] = destinations;
     if (!destination) throw new Error("One model edit has no destination");
@@ -196,26 +177,20 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
               : ("discarded" as const),
       };
     }
-    if (destination.frozen) return { failure: "draft_archived" as const };
+    if (destination.closed) return { failure: "draft_archived" as const };
     if (destination.kind === "live" && destination.removed)
       return { failure: "document_deleted" as const };
     const actionKind =
-      options.actionKind ??
-      (direction === "undo" &&
+      direction === "undo" &&
       entry.parts.some((part) => part.origin.kind === "pending" && part.disposition === "applied")
         ? "revert"
-        : direction);
+        : direction;
     const inspection = inspectAt(destination);
     inspection.states(entry.parts);
     const selected =
       actionKind === "revert"
         ? revertSelection(entry, inspection)
-        : textSelection(
-            entry,
-            direction === "revert" ? "undo" : direction,
-            inspection,
-            options.inverseParts,
-          );
+        : textSelection(entry, inspection);
     if ("refusal" in selected && selected.refusal) return { failure: selected.refusal };
     return {
       destination,
@@ -224,39 +199,28 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       omissions: "partial" in selected ? selected.partial : selected.skipped,
     };
   }
-  function turnTextPlan(
-    entry: Entry,
-    direction: "undo" | "redo",
-    turn: TurnInverseQuery,
-    inverseParts: readonly StoredInversePart[] = [],
-  ) {
-    const destinationParts = direction === "redo" ? inverseParts : entry.parts;
-    const destinations = new Set(
-      destinationParts.map((part) => document.destinationOf(part.origin)),
-    );
+  function turnTextPlan(entry: Entry, turn: TurnInverseQuery) {
+    const destinations = new Set(entry.parts.map((part) => document.destinationOf(part.origin)));
     if (destinations.size !== 1) throw new Error("One edit spans multiple versions");
     const [destination] = destinations;
     if (!destination) throw new Error("One edit has no destination");
     const every = (cause: TurnInverseSkipCause) => ({ causes: entry.parts.map(() => cause) });
-    if (destination.frozen) return every("draft_archived");
+    if (destination.closed) return every("returned");
     if (destination.kind === "draft" && destination.state === "gone")
-      return {
-        causes: entry.parts.map((part) =>
-          closedPartCause(direction === "redo" ? (inverseOf(part, inverseParts) ?? part) : part),
-        ),
-      };
+      return { causes: entry.parts.map(closedPartCause) };
     if (destination.kind === "live" && destination.removed) return every("document_deleted");
-    const actionKind =
-      direction === "redo" ? "redo" : poppableForTurn(turn).has(entry.id) ? "undo" : "revert";
+    const actionKind = poppableForTurn(turn).has(entry.id)
+      ? ("undo" as const)
+      : ("revert" as const);
+    // A part of an open draft that no change waits on and that was not applied was discarded:
+    // its text is not there for an Undo to take out.
+    const settled = (part: StoredInversePart) =>
+      destination.kind === "draft" && !part.waiting && part.disposition !== "applied";
     return {
       destination,
       actionKind,
-      selection: entry.parts.map(
-        (part): InverseSelection => ({
-          part,
-          direction: direction === "redo" ? "reapply" : "invert",
-        }),
-      ),
+      selection: entry.parts.filter((part) => !settled(part)),
+      discarded: entry.parts.filter(settled),
     };
   }
   function poppableForTurn(turn: TurnInverseQuery) {
@@ -277,22 +241,22 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   }
   function revertSelection(entry: Entry, inspection = inspect()) {
     const skipped: TextOmission[] = [];
-    const selection: InverseSelection[] = [];
+    const selection: InversePart[] = [];
     const states = inspection.states(entry.parts);
     for (const [i, part] of entry.parts.entries()) {
       const state = states[i];
       const originDestination = document.destinationOf(part.origin);
-      const reason = originDestination.frozen
+      const reason = originDestination.closed
         ? "draft_archived"
         : originDestination.kind === "draft" && originDestination.state === "gone"
           ? "discarded"
-          : state?.state === "active"
+          : state?.state === "active" && !taken(part, inspection)
             ? null
             : part.disposition === "discarded"
               ? "discarded"
-              : kernelCause(state);
+              : kernelCause(part, state, inspection);
       if (reason) skipped.push({ ordinal: part.ordinal, cause: reason });
-      else selection.push({ part, direction: "invert" });
+      else selection.push(part);
     }
     return { selection, skipped };
   }
@@ -304,6 +268,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     textPlan,
     turnTextPlan,
     turnSkipCause,
+    takenBy,
     version,
     queryDestination,
     draftIdOf,

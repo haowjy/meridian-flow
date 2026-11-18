@@ -81,7 +81,12 @@ stateDiagram-v2
   without reaching the store.
 - **Access has a lifecycle.** The connection registers under the room's name with the gateway's
   access index; a project's deletion publishes a file-access change that closes it with `4409`,
-  and the reconnect is refused (`4403`). A change between the first check and the registration
+  and the reconnect is refused (`4403`). A Work's archive or delete, or a chat's move to Trash that
+  leaves its lineage with no live chat, closes its rooms with `4409 access-changed:<why>`
+  (`work_archived`, `work_deleted`, `chat_frozen`, carried on the file-access change); an unarchive,
+  a restore to an open Work, or a thaw sends plain `4409`; a restore of a Work that is still archived
+  sends `access-changed:work_archived`. A draft frame turned away by a closed owner gets the same
+  reason, read from the owner's facts. A change between the first check and the registration
   is caught by asking again.
 - **Admissions are rate limited per connection** (a burst of 60, 30 a second). Each admission
   spends one token at once and the balance may go below zero; the debt is the wait, and the

@@ -12,7 +12,8 @@
  */
 
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
-import type { QueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useSyncExternalStore } from "react";
 
 import { defaultThreadTitle } from "@/lib/thread-title";
 import { patchChatRow } from "./chat-projections";
@@ -25,16 +26,40 @@ export function readProjectThreadList(
   return client.getQueryData<ThreadListItem[] | null>(projectQueryKeys.threads(projectId)) ?? null;
 }
 
+function chatLists(client: QueryClient) {
+  return client
+    .getQueryCache()
+    .findAll({ queryKey: projectQueryKeys.all })
+    .filter((query) => query.queryKey[2] === "threads");
+}
+
 /** A chat's name as any cached project list holds it; null when it has none yet. */
 export function cachedChatTitle(client: QueryClient, threadId: string): string | null {
-  for (const query of client.getQueryCache().findAll({ queryKey: projectQueryKeys.all })) {
-    if (query.queryKey[2] !== "threads") continue;
+  for (const query of chatLists(client)) {
     const title = (query.state.data as ThreadListItem[] | null | undefined)
       ?.find((thread) => thread.id === threadId)
       ?.title?.trim();
     if (title && title !== defaultThreadTitle()) return title;
   }
   return null;
+}
+
+/** `cachedChatTitle` for a render: the caller renders again when a cached chat list changes. */
+export function useCachedChatTitles(): (threadId: string) => string | null {
+  const client = useQueryClient();
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      client.getQueryCache().subscribe((event) => {
+        if (event.type === "updated" && event.query.queryKey[2] === "threads") listener();
+      }),
+    [client],
+  );
+  const version = useSyncExternalStore(subscribe, () =>
+    chatLists(client)
+      .map((query) => query.state.dataUpdatedAt)
+      .join(),
+  );
+  return useCallback((threadId: string) => cachedChatTitle(client, threadId), [client, version]);
 }
 
 /**

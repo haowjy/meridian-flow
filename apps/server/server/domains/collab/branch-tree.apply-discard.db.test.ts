@@ -31,6 +31,7 @@ import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { accountUserSource } from "../../test-support/branch-tree-seeds.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
+import { createTestDraftCoordinator } from "../../test-support/draft-coordinator.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
@@ -38,19 +39,18 @@ import { createTreeReader } from "../context/tree/tree-view.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
 import { createDrizzleApplyClick } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleBranchDiscard } from "./adapters/drizzle-branch-discard.js";
-import {
-  branchRowRevisions,
-  createDrizzleBranchTreeState,
-} from "./adapters/drizzle-branch-tree-state.js";
+import { createDrizzleBranchTreeState } from "./adapters/drizzle-branch-tree-state.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
+import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
+import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
-import { createApplyClickService } from "./domain/apply-click.js";
+import { createApplyClickService, type TreeCut } from "./domain/apply-click.js";
 import { createBranchDiscard } from "./domain/branch-discard.js";
 import { createBranches } from "./domain/branches.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
@@ -92,32 +92,48 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       },
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
     });
+    const branchStore = createDrizzleBranchStore(db);
     const workBranches = createBranches({
-      store: createDrizzleBranchStore(db),
+      store: branchStore,
       boundary: createDrizzleBranchWriteBoundary(db, workProjection),
+    });
+    const coordinator = createTestDraftCoordinator(db, {
+      close: draftClose,
+      treeLists,
+      workProjection,
+      branches: branchStore,
     });
     const tree = createTreeReader(db);
     const branchTree = createDrizzleBranchTreeState(db, tree);
     const seed = treeSeeder(db);
     const pending = createDrizzleWorkBranchPendingStore(db);
+    // A tree-only click reads no text: no text base is read or replayed.
+    const reopen = createReopenDrafts(db, {
+      coordinator,
+      close: draftClose,
+      treeLists,
+      workProjection,
+      live: createDrizzleCollabPersistence(db).journal,
+      scheduleLivePull: () => {},
+    });
     const apply = createDrizzleApplyClick(db, {
       workProjection,
       branches: workBranches,
-      // A tree-only click reads no text: nothing below the tree half is reached.
-      coordinator: {} as never,
+      coordinator,
+      reopen,
       live: {} as never,
       liveCoordinator: {} as never,
       treeLists,
       tree,
-      branchTree,
       close: draftClose,
       onCommitted: async () => {},
       merged: () => {},
       measured: () => {},
+      answeredWithoutLanding: () => {},
     });
     const discard = createBranchDiscard({
-      branches: workBranches,
       store: createDrizzleBranchDiscard(db, {
+        coordinator,
         close: draftClose,
         branches: workBranches,
         workProjection,
@@ -138,7 +154,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection,
         branches: workBranches,
         treeLists,
-        close: draftClose,
+        reopen,
       }),
     });
 
@@ -201,15 +217,16 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       };
     }
 
-    async function click(documentId: DocumentId, revision: string | null, restore = false) {
-      return applyNodes([[documentId, revision]], randomUUID(), restore);
+    async function click(documentId: DocumentId) {
+      return applyNodes([documentId], randomUUID());
     }
 
-    /** Apply of nodes at the revisions given, as one command; no text cut reaches the text half. */
+    /** Apply of nodes, as one command; no text cut reaches the text half. */
     async function applyNodes(
-      nodes: readonly (readonly [string, string | null | undefined])[],
+      nodes: readonly string[],
       commandId: string,
-      restore = false,
+      saw?: TreeCut,
+      tree = true,
     ) {
       return apply.apply(
         {
@@ -217,21 +234,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           envelope: envelope(commandId),
           request: {
             commandId: commandId as CommandId,
-            items: nodes.map(([node, revision]) => ({ node, tree: { revision } })),
-            ...(restore ? { restore: true as const } : {}),
+            items: nodes.map((node) => ({ node, ...(tree ? { tree: true as const } : {}) })),
           },
         } as never,
-        nodes.map(([node, revision]) => ({
-          node,
-          tree: revision === undefined ? null : { revision },
-          text: null,
-        })),
+        nodes.map((node) => ({ node, tree, text: null })),
+        saw,
       );
-    }
-
-    async function revisionOf(documentId: DocumentId) {
-      const [item] = await branchTree.read(branchId, [], [documentId]);
-      return item?.revision ?? null;
     }
 
     const liveRow = async (id: string) =>
@@ -263,7 +271,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         pending: true,
       });
 
-      const answer = await click(id, item?.revision ?? null);
+      const answer = await click(id);
       expect(answer.status).toBe("applied");
       expect(await liveRow(id)).toMatchObject({ name: "chapter", trashRecord: null });
       expect(await branchRow(id)).toBeUndefined();
@@ -283,38 +291,49 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       expect(await liveRow(a)).toMatchObject({ name: "alpha" });
       expect(await branchRow(c)).toMatchObject({ deleted: true });
 
-      expect((await click(a, await revisionOf(a))).status).toBe("applied");
+      expect((await click(a)).status).toBe("applied");
       expect(await liveRow(a)).toMatchObject({ name: "alpha two" });
 
-      expect((await click(b, await revisionOf(b))).status).toBe("applied");
+      expect((await click(b)).status).toBe("applied");
       expect(await liveRow(b)).toMatchObject({ parentId: folder });
       expect(await liveRow(folder)).toMatchObject({ kind: "folder", name: "Arc" });
 
-      expect((await click(c, await revisionOf(c))).status).toBe("applied");
+      expect((await click(c)).status).toBe("applied");
       expect((await liveRow(c))?.trashRecord).not.toBeNull();
       expect(await branchRow(c)).toBeUndefined();
     });
 
-    it("answers `changed` for a revision the writer did not see, and lands nothing", async () => {
+    it("answers a second press `already`, and lands nothing twice", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "first"));
-      const seen = await revisionOf(a);
-      await submit((writer) => writer.rename(viewOf(), AGENT, a, "second"));
-      expect((await click(a, seen)).status).toBe("changed");
-      expect(await liveRow(a)).toMatchObject({ name: "alpha" });
-      expect(await branchRow(a)).toMatchObject({ name: "second" });
+      expect((await click(a)).status).toBe("applied");
+      const second = await click(a);
+      expect(second).toMatchObject({
+        status: "applied",
+        applied: [],
+        items: [
+          {
+            node: a,
+            tree: { landed: false, settled: [{ rule: "already", state: "applied", item: a }] },
+          },
+        ],
+      });
+      expect(await liveRow(a)).toMatchObject({ name: "first" });
     });
 
-    it("asks before bringing back a document live deleted, and restores it on `restore`", async () => {
+    it("brings back a document live deleted, and says so", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "kept"));
       await submit((writer) => writer.delete(LIVE, "system", a));
-      const revision = await revisionOf(a);
-      expect((await click(a, revision)).status).toBe("needs_restore");
       expect((await liveRow(a))?.trashRecord).not.toBeNull();
 
-      const answer = await click(a, revision, true);
-      expect(answer).toMatchObject({ status: "applied", restored: true });
+      const answer = await click(a);
+      expect(answer).toMatchObject({
+        status: "applied",
+        items: [
+          { node: a, tree: { landed: true, settled: [{ rule: "restored", documentId: a }] } },
+        ],
+      });
       expect(await liveRow(a)).toMatchObject({ name: "kept", trashRecord: null });
     });
 
@@ -336,7 +355,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         },
         command: asCommand(),
       });
-      expect(result).toMatchObject({ status: "discarded", closed: [made] });
+      expect(result).toMatchObject({ closed: [made], settled: [] });
       // The discarded create is in no view and keeps its document row for retention.
       expect(await liveRow(made)).toBeUndefined();
       expect(await branchRow(made)).toBeUndefined();
@@ -380,8 +399,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         actor: AGENT,
       })) as DocumentId;
       expect(await branchRow(id)).toMatchObject({ existsOnlyInDraft: true });
-      const [item] = await branchTree.read(branchId, [], [id]);
-      expect((await click(id, item?.revision ?? null)).status).toBe("applied");
+      expect((await click(id)).status).toBe("applied");
       const [account] = await db
         .select({ listId: users.treeListId })
         .from(users)
@@ -403,7 +421,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         selection: { kind: "whole" },
         command: asCommand(),
       });
-      expect(result).toMatchObject({ status: "discarded", branchClosed: true });
+      expect(result).toMatchObject({ branchClosed: true });
       expect(await liveRow(a)).toMatchObject({ trashRecord: null });
       expect(await liveRow(made)).toBeUndefined();
       expect((await db.select().from(documents).where(eq(documents.id, made)))[0]).toBeDefined();
@@ -422,7 +440,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         stateVector: Buffer.alloc(0),
       });
       await submit((writer) => writer.delete(viewOf(), AGENT, a));
-      const revision = await revisionOf(a);
       const otherWork = randomUUID();
       await db.insert(works).values({
         id: otherWork,
@@ -445,7 +462,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         bWaited,
       } = await interleave(
         db,
-        () => click(a, revision),
+        () => click(a),
         "treeList.afterRows",
         () =>
           discard.discardItems({
@@ -463,7 +480,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     it("Apply writes the list's rows only under the document's key, which derivation takes first", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
-      const revision = await revisionOf(a);
       // Derivation's certification (`certifyDocumentDerivation`): the document's key, then the
       // location row of the document.
       const certify = () =>
@@ -480,13 +496,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         a: applied,
         b: certified,
         bWaited,
-      } = await interleave(db, () => click(a, revision), "treeList.afterRows", certify);
+      } = await interleave(db, () => click(a), "treeList.afterRows", certify);
       expect(bWaited).toBe(true);
       expect(applied).toMatchObject({ ok: true, value: { status: "applied" } });
       expect(certified).toMatchObject({ ok: true });
     });
 
-    it("refuses a Discard of an item the Work has nothing left on", async () => {
+    it("answers `already` for a Discard of an item the Work has nothing left on", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await expect(
         discard.discardItems({
@@ -495,7 +511,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           selection: { kind: "items", items: [{ documentId: a, origin: "edited", ends: "tree" }] },
           command: asCommand(),
         }),
-      ).resolves.toMatchObject({ status: "refused", reason: "stale" });
+      ).resolves.toMatchObject({
+        closed: [a],
+        settled: [{ rule: "already", state: "discarded", item: a }],
+      });
     });
 
     describe("commands over the tree half", () => {
@@ -508,13 +527,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       });
       /** Apply of several nodes, as the group route sends it, at the revisions now on screen. */
       async function applyGroup(nodes: readonly string[], commandId: string = randomUUID()) {
-        const revisions = await branchRowRevisions(db, branchId, nodes);
         return service.apply({
           branchId,
           envelope: envelopeOf("apply", commandId),
           request: {
             commandId: commandId as CommandId,
-            items: nodes.map((node) => ({ node, tree: { revision: revisions.get(node) ?? null } })),
+            items: nodes.map((node) => ({ node, tree: true as const })),
           },
         });
       }
@@ -540,6 +558,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           branchId,
           state: Buffer.from(Y.encodeStateAsUpdate(doc)),
           stateVector: Buffer.from(Y.encodeStateVector(doc)),
+          // Judged at its revision: it holds a change, as the effect projection would say.
+          hasEffect: true,
+          hasEffectRevision: 0,
         });
         return id;
       }
@@ -593,7 +614,10 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await branchRow(folder)).toMatchObject({ name: "Arc two" });
         expect(await unapply(commandId, undo)).toMatchObject({ status: "unapplied" });
         // Taken back already: nothing of it is left to take back.
-        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
+        expect(await unapply(commandId)).toMatchObject({
+          status: "unapplied",
+          settled: [{ rule: "already", state: "unapplied" }],
+        });
       });
 
       it("applies a folder and what is under it as one command, and one Un-Apply takes both", async () => {
@@ -656,8 +680,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await branchRow(made)).toMatchObject({ existsOnlyInDraft: true, deleted: false });
         expect(await branchRow(a)).toMatchObject({ name: "renamed" });
         expect(await undo(part.envelope.commandId)).toMatchObject({
-          status: "refused",
-          reason: "already_restored",
+          status: "restored",
+          restored: 0,
+          settled: [{ rule: "already", state: "restored" }],
         });
 
         // A whole Discard closes the branch; its Undo lands on the Work's new one.
@@ -725,8 +750,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         // Nothing is left to take from the entry, and a retirement of the Discard that runs now
         // finds the draft reopened and closes no room.
         expect(await undo(part.envelope.commandId)).toMatchObject({
-          status: "refused",
-          reason: "already_restored",
+          status: "restored",
+          restored: 0,
+          settled: [{ rule: "already", state: "restored" }],
         });
         const closedRooms: string[] = [];
         await createDraftRetirement({
@@ -757,19 +783,20 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(back).toMatchObject({ status: "restored", restored: 1, swapped: 1 });
         expect((await draftsOn(a, branchId, "active")).map((row) => row.id)).toEqual([newer]);
 
-        // A restore turned away by the Work's state is a final answer: stored, and replayed
-        // after the Work is unarchived.
+        // A restore on an archived Work bounces: stored as done with nothing changed, and
+        // replayed after the Work is unarchived.
+        const bounced = {
+          status: "restored",
+          restored: 0,
+          settled: [{ rule: "returned", why: "work_archived" }],
+        };
         await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
         const turnedAway = randomUUID();
-        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject({
-          status: "refused",
-          reason: "work_archived",
-        });
+        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject(bounced);
         await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
-        expect(await undo((first as { commandId: string }).commandId, turnedAway)).toMatchObject({
-          status: "refused",
-          reason: "work_archived",
-        });
+        expect(await undo((first as { commandId: string }).commandId, turnedAway)).toMatchObject(
+          bounced,
+        );
 
         // A whole Discard with a tree record and a text draft: both come back on the new branch.
         const b = (await seed.document(SOURCE, "beta.md")) as DocumentId;
@@ -808,11 +835,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
         await submit((writer) => writer.rename(viewOf(), AGENT, a, "kept"));
         await submit((writer) => writer.delete(LIVE, "system", a));
-        const revision = await revisionOf(a);
         const commandId = randomUUID();
-        expect(await applyNodes([[a, revision]], commandId, true)).toMatchObject({
+        expect(await applyNodes([a], commandId)).toMatchObject({
           status: "applied",
-          restored: true,
+          items: [
+            { node: a, tree: { landed: true, settled: [{ rule: "restored", documentId: a }] } },
+          ],
         });
         expect(await liveRow(a)).toMatchObject({ name: "kept", trashRecord: null });
 
@@ -820,20 +848,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         // The restore left with the copies: the document is in Trash again, its rename pending.
         expect((await liveRow(a))?.trashRecord).not.toBeNull();
         expect(await branchRow(a)).toMatchObject({ name: "kept" });
-      });
-
-      it("Un-Apply of a restore with nothing else to apply takes the restore back", async () => {
-        const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
-        await draftOf(a, "only text");
-        await submit((writer) => writer.delete(LIVE, "system", a));
-        const commandId = randomUUID();
-        // A click with a text cut only has no tree cut: the restore is all it does in the tree.
-        expect(await applyNodes([[a, undefined]], commandId, true)).toMatchObject({
-          status: "applied",
-        });
-        expect(await liveRow(a)).toMatchObject({ trashRecord: null });
-        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
-        expect((await liveRow(a))?.trashRecord).not.toBeNull();
       });
     });
   },

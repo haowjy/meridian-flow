@@ -262,7 +262,7 @@ export async function createProjectThread(
 
 /**
  * One Copy: every selected root into one destination, atomically. The answer is the receipt's
- * result; a refusal is a typed 4xx and a source that has not caught up is a retryable 502 whose
+ * result; a refusal is a typed 4xx and a source that has not caught up is a retryable 503 whose
  * details name `source_behind`.
  */
 export async function copyContextEntries(

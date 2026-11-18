@@ -25,6 +25,7 @@ import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { BounceChip, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
@@ -84,6 +85,9 @@ export function DraftReviewBand({
   });
   const focusInControls = () => controlsRef.current?.contains(document.activeElement) ?? false;
   const { controller, view, locked, finished } = header;
+  // A Discard that discarded nothing (the closed Work returned it, or an Apply took it first),
+  // from this band or its change bar.
+  const bounce = useDocumentNotice(controller.projectId, props.documentId);
   const { status } = view;
   // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
   const count = view.items.filter(({ change }) => !change.tree).length;
@@ -190,6 +194,9 @@ export function DraftReviewBand({
         onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
+      {/* A Discard that discarded nothing says why, even once an Apply that took it first
+          finished the draft. */}
+      <BounceChip notice={bounce} />
       {finished ? null : (
         <ReviewActions
           scope="document"

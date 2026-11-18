@@ -1,6 +1,10 @@
 /** Route core for authenticated live-lineage document reads for one thread turn. */
 
-import { draftOwnerKey } from "@meridian/contracts";
+import {
+  type ContextUriScheme,
+  draftOwnerKey,
+  PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+} from "@meridian/contracts";
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
@@ -8,6 +12,7 @@ import type {
 import type { ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import {
+  type TreePlacement,
   type TurnEditedDocument,
   type TurnTreeFolder,
   turnEditDestination,
@@ -17,7 +22,7 @@ import { isFileAccessDenied } from "../domains/file-policy/index.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { AppServices } from "./app.js";
 import { requireRequestId } from "./request-id.js";
-import { getWorkReceiptReversalAvailability } from "./work-receipt-reversal.js";
+import { getTurnReceiptChip } from "./work-receipt-reversal.js";
 
 type TurnLiveLineageRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
@@ -46,7 +51,7 @@ export async function handleTurnLiveLineageRequest(
   const threadId = requireRequestId(input.threadId, "threadId") as ThreadId;
   const turnId = requireRequestId(input.turnId, "turnId") as TurnId;
   await requireThreadOwner({ threads: deps.threads }, threadId, input.userId);
-  const [visibleDocuments, folders, receipt, workAvailability] = await Promise.all([
+  const [visibleDocuments, folders, receipt] = await Promise.all([
     deps.documentSync.listEditedDocumentsForTurn(threadId, turnId).then((documents) =>
       filterAccessibleLiveLineageDocuments(deps, {
         documents,
@@ -54,29 +59,17 @@ export async function handleTurnLiveLineageRequest(
       }),
     ),
     deps.documentSync.listFoldersForTurn(threadId, turnId),
-    deps.documentSync.getTurnReceiptChip(threadId, turnId),
-    getWorkReceiptReversalAvailability(
-      {
-        blocks: deps.blocks,
-        turns: deps.turns,
-        works: deps.works,
-        threads: deps.threads,
-      },
-      { threadId, turnId },
-    ),
+    getTurnReceiptChip(deps, { threadId, turnId }),
   ]);
-  const workReceipt = workAvailability.undo
-    ? ({ state: "work-active", control: "undo" } as const)
-    : workAvailability.redo
-      ? ({ state: "work-reversed", control: "redo" } as const)
-      : null;
   return {
-    documents: [
-      ...visibleDocuments.map(serializeLiveLineageDocument),
+    documents: inTreeOrder<TurnEditedDocument | TurnTreeFolder>([
+      ...visibleDocuments,
       // The thread's owner has proven the turn is theirs; a folder has no file grant of its own.
-      ...folders.map(serializeLiveLineageFolder),
-    ],
-    receipt: receipt ?? workReceipt,
+      ...folders,
+    ]).map((row) =>
+      "nodeId" in row ? serializeLiveLineageFolder(row) : serializeLiveLineageDocument(row),
+    ),
+    receipt,
   };
 }
 
@@ -121,7 +114,7 @@ async function filterAccessibleLiveLineageDocuments(
 }
 
 function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocumentItem {
-  const parsed = parseContextUri(folder.shownAt);
+  const parsed = parseContextUri(folder.at);
   if (!parsed.ok) {
     throw createError({ statusCode: 500, message: "Live-lineage folder URI is invalid" });
   }
@@ -151,4 +144,35 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
       : { scope: "live" as const }),
     ...(document.tree ? { tree: document.tree } : {}),
   };
+}
+
+/** The file tree's sections, in the sidebar's order. */
+const SECTIONS: readonly ContextUriScheme[] = [
+  ...PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+  "scratch",
+  "uploads",
+];
+
+/**
+ * The file tree's order: its sections in their order, then within a source rank, then id, at
+ * each level (`placement`). A row its view no longer places goes last, in the order it came.
+ */
+function inTreeOrder<Row extends { placement?: TreePlacement; uri?: string; at?: string }>(
+  rows: Row[],
+): Row[] {
+  const section = (row: Row) => {
+    const parsed = parseContextUri(row.uri ?? row.at ?? "");
+    return parsed.ok ? SECTIONS.indexOf(parsed.value.scheme) : SECTIONS.length;
+  };
+  return [...rows].sort((a, b) => {
+    if (!a.placement || !b.placement) return a.placement ? -1 : b.placement ? 1 : 0;
+    if (section(a) !== section(b)) return section(a) - section(b);
+    const depth = Math.min(a.placement.length, b.placement.length);
+    for (let at = 0; at < depth; at++) {
+      const left = a.placement[at] ?? "";
+      const right = b.placement[at] ?? "";
+      if (left !== right) return left < right ? -1 : 1;
+    }
+    return a.placement.length - b.placement.length;
+  });
 }

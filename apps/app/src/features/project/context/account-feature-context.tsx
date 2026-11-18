@@ -171,6 +171,12 @@ export function useLiveDocumentSessionRegistry(): AccountFeatureLifetime["regist
   return registry;
 }
 
+export function useOptionalLiveDocumentSessionRegistry():
+  | AccountFeatureLifetime["registry"]
+  | null {
+  return useContext(LiveDocumentRegistryAccountContext);
+}
+
 export function useOptionalProjectStandings(): ProjectStandings | null {
   return useContext(ProjectStandingsAccountContext);
 }

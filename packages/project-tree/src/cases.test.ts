@@ -15,11 +15,10 @@ import {
   restoreDiscard,
   segmentOf,
   sourceRoot,
-  type TreeRecord,
   TreeWriter,
   treeViolations,
-  undoChange,
 } from "./index.js";
+import { undoChange } from "./undo-open.js";
 
 const ROOT = sourceRoot("manuscript");
 
@@ -316,54 +315,6 @@ describe("file tree as a Yjs operation log", () => {
     const live = replayView(a.doc, LIVE);
     expect(live.nodes.get(f)?.trashed).toBe(false);
     expect(live.nodes.get(ch)?.trashed).toBe(false);
-  });
-
-  it("Undo then Redo of a change that made a folder and filled it works every time round", () => {
-    const a = replica(1);
-    const arc1 = a.create(LIVE, W, { kind: "folder", name: "Arc 1", parent: ROOT }).node;
-    const ch = a.create(LIVE, W, {
-      kind: "document",
-      filetype: "markdown",
-      name: "Ch",
-      parent: arc1,
-    }).node;
-    const made = a.create(LIVE, A, { kind: "folder", name: "Arc 2", parent: ROOT });
-    const moved = a.move(LIVE, A, ch, made.node);
-    // A card's Undo takes its records back newest first; its Redo takes those back in turn.
-    const reverse = (records: TreeRecord[]) =>
-      [...records].reverse().map((record) => {
-        const back = undoChange(a, LIVE, W, record.id);
-        expect(typeof back).toBe("object");
-        return back as TreeRecord;
-      });
-    let records: TreeRecord[] = [made, moved];
-    for (let round = 0; round < 3; round++) {
-      records = reverse(records);
-      expect(replayView(a.doc, LIVE).nodes.get(ch)?.parent).toBe(arc1);
-      expect(replayView(a.doc, LIVE).nodes.get(made.node)?.trashed).toBe(true);
-      records = reverse(records);
-      expect(replayView(a.doc, LIVE).nodes.get(ch)?.parent).toBe(made.node);
-      expect(replayView(a.doc, LIVE).nodes.get(made.node)?.trashed).toBe(false);
-    }
-  });
-
-  it("Redo of the Undo of a restore that lifted one chapter out of a deleted folder works", () => {
-    const a = replica(1);
-    const folder = a.create(LIVE, W, { kind: "folder", name: "Arc", parent: ROOT }).node;
-    const ch = a.create(LIVE, W, {
-      kind: "document",
-      filetype: "markdown",
-      name: "Ch",
-      parent: folder,
-    }).node;
-    a.delete(LIVE, W, folder);
-    const restored = a.restore(LIVE, W, ch);
-    const undone = undoChange(a, LIVE, W, restored.id);
-    expect(typeof undone).toBe("object");
-    expect(replayView(a.doc, LIVE).nodes.get(ch)?.trashed).toBe(true);
-    const redone = undoChange(a, LIVE, W, (undone as TreeRecord).id);
-    expect(typeof redone).toBe("object");
-    expect(replayView(a.doc, LIVE).nodes.get(ch)?.trashed).toBe(false);
   });
 
   it("a binary file is a node with a pointer to its bytes", () => {

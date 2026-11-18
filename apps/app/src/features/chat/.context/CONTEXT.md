@@ -6,7 +6,7 @@
 - [Turn rhythm and actions](turn-rhythm-and-actions.md): spacing ownership and the
   action row.
 - [Tool expands](tool-expands.md): what opens behind a tool row.
-- [Turn edit receipts](turn-edit-receipts.md): committed change records, Undo/Redo
+- [Turn edit receipts](turn-edit-receipts.md): committed change records, Undo
   and conversation reveal.
 - [Composer write mode](composer-write-mode.md): the Work-scoped write-mode
   control and composer sizing.

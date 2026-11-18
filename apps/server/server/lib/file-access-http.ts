@@ -96,7 +96,7 @@ export async function requireFileGrant<N extends FileNeed>(
 /** Runs a write with its grants bound; a seam's refusal becomes the route's. */
 export async function withEditGrants<T>(
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">,
-  grants: readonly FileGrant<"edit" | "discard">[],
+  grants: readonly FileGrant<"edit" | "command">[],
   operation: () => Promise<T>,
 ): Promise<T> {
   const result = await runWithEditGrants(fileAccess, grants, operation);

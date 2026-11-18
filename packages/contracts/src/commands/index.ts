@@ -54,20 +54,46 @@ export type CommandOutcome<R = StoredResult> =
  * carries the subject as it stands and `why` names how it is closed.
  */
 export type Settlement =
-  | { rule: "already"; state: string }
-  | { rule: "returned"; why: ReturnedWhy };
+  | { rule: "already"; state: string; item?: string }
+  | {
+      rule: "returned";
+      why: ReturnedWhy;
+      /** For a closed owner of notes the command would change: the name it goes by. */
+      owner?: string;
+      /** On an Un-Apply: the nodes it left as the Apply left them, for `why`. */
+      items?: string[];
+    }
+  /** Another command settled the item first (`by`), so this one left it as that left it. */
+  | { rule: "overtaken"; state: string; by: CommandId; item?: string }
+  /**
+   * Part of the command could not land: `items` name what was left out. On an Un-Apply, `tree`
+   * says whether the items' tree facts stayed or their text.
+   */
+  | { rule: "left_out"; items: string[]; why: LeftOutWhy; tree?: boolean }
+  /** A deleted document came back (it was in Trash) so the command could land. */
+  | { rule: "restored"; documentId: string };
+
+/** Why items were left out of a command (the tree package's `LeftWhy` and `UndoLeftWhy`, and a purge). */
+export type LeftOutWhy =
+  | "would_loop"
+  | "purged"
+  | "after_press"
+  | "needs"
+  | "changed_since"
+  | "has_text"
+  | "closed"
+  | "already";
 
 /**
- * Why an act was returned. The first two close a Work; the rest are a model's edit that cannot
- * land: the draft it edited was discarded or replaced by a restore, its document was removed, or the block it named is gone.
+ * Why an act was returned. The first three close the owner of the drafts (a Work, or a chat in
+ * Trash); the rest are a model's edit that cannot
+ * land: its document was removed, or the block it named is gone.
  */
-export type ReturnedWhy =
-  | "work_archived"
-  | "work_deleted"
-  | "draft_discarded"
-  | "draft_replaced"
-  | "document_removed"
-  | "block_gone";
+export type ReturnedWhy = ClosedOwnerWhy | "document_removed" | "block_gone";
+
+/** The reasons that name a closed owner of drafts: in a `returned` act, a 4409 close and a read-only room's scope. */
+export const CLOSED_OWNER_WHYS = ["work_archived", "work_deleted", "chat_frozen"] as const;
+export type ClosedOwnerWhy = (typeof CLOSED_OWNER_WHYS)[number];
 
 /** What a stored command result may carry beyond its own fields. */
 export type StoredResult = { settled?: Settlement[] };

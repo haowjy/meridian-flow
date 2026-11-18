@@ -86,7 +86,7 @@ const { createDrizzleWorkBranchPendingStore } = await import(
 );
 const { createBranchReviewItems } = await import("../domain/branch-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
-const { branchFolderRevisions, createDrizzleBranchTreeState } = await import(
+const { branchFolderIds, createDrizzleBranchTreeState } = await import(
   "../adapters/drizzle-branch-tree-state.js"
 );
 const { createDrizzleBranchTreeActors } = await import("../adapters/drizzle-branch-tree-actors.js");
@@ -495,18 +495,21 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       ofDiscard: async () => [],
     },
     listDiscards: async () => [],
+    purgeDiscards: async () => 0,
     undoDiscard: async () => {
       throw new Error("Undo of a Discard is not configured in the collab fixture");
     },
     branches: workBranches,
     reviewItems,
-    folderRevisions: (branchId) => branchFolderRevisions(db, branchId),
+    folderIds: (branchId) => branchFolderIds(db, branchId),
+    // No tree lists in this fixture: a list read without a cut.
+    treeCut: async () => ({}),
     pending: durableWorkBranchPendingStore,
     identity,
     discard: createBranchDiscard({
-      branches: workBranches,
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
+        coordinator: draftCoordinator,
         close: draftClose,
         branches: workBranches,
         workProjection: createTestWorkProjectionMutation(db),
@@ -543,7 +546,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     agentEdit: () => testAgentEdit,
     reverseTurn: turnReversal.reverseTurn,
     reversalOwners: turnInverse.reversalOwners,
-    getTurnReceiptChip: turnInverse.getTurnReceiptChip,
+    getDocumentAndTreeChip: turnInverse.getDocumentAndTreeChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
     mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
@@ -640,13 +643,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     },
     /** Waits for every draft-effect judgement the test's writes scheduled. */
     settleDraftEffects: () => draftEffects.flush(),
-    reverseTurn: (direction: "undo" | "redo") =>
-      collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction,
-        actor: { type: "user", userId: USER_ID },
-      }),
     liveMarkdown: (documentId: DocumentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,

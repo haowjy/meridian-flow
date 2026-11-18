@@ -49,8 +49,14 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    `live`. A folder with a draft view copies each document as the Work shows it: the draft text
    where the Work holds a draft, otherwise the live text. The draft is the
    Work's, whichever chat wrote it: rebind the chat to another Work, and `--draft-work w1`
-   still copies Work w1's draft. A Work that holds no draft of the document (`--draft-work`
-   a second Work) copies the live text: `copiedFrom.version` `live`.
+   still copies Work w1's draft. Close the draft with a Discard all that ends it
+   (`./mf api POST /api/projects/<id>/branches/<branchId>/discard --data
+   '{"commandId":"<uuid>","all":true}'`; the branch id is in `GET .../drafts?owner=work:<workId>`)
+   and copy again with the draft view: the closed draft's text, not the live one, also for a
+   folder's documents. A Work that never drafted the document reads the live text (its draft
+   view showed live). The strip's Discard in a browser tab is not this case: for a live chat it
+   reverts the text in the room and leaves the draft open and equal to live, so the copy is the
+   live text, which is what Draft view shows.
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
    in one transaction (about 4 s here, most of it reading the sources before any
    lock), the ring closes inside the copy, and concurrent copies into one folder get
@@ -60,61 +66,67 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    copy the folder. The answer is `io_error` (retryable), no folder or document row
    was written, and the object the first binary duplicated is released (the
    `copies/` count is unchanged).
-6. **Replay.** Not available: a Copy keeps no operation receipt, so a second POST of one
-   `operationId` copies again. The replay answer returns with document commands.
+6. **Replay.** A second POST of one `operationId` answers the stored receipt, a
+   `returned` or `left_out` answer included; another body under the id is `command_conflict`.
 7. **Source not caught up.** POST a source with `stateVector` one client edit ahead of
    the room: after a wait of about 2 s, `io_error` ("The source has edits the server has
-   not received yet") with `details.reason: "source_behind"`, `retryable: true`, and no
+   not received yet") as a 503 with `details.reason: "source_behind"`, `retryable: true`, and no
    `commands` row. Resend the same `operationId` with the room's own
    vector: it copies and the row appears. A vector that arrives within the wait (a
-   client reconnecting 800 ms after the request) copies on the first send. With
+   client reconnecting 800 ms after the request) copies on the first send, with the
+   typing in the copy. With
    `view: draft` the vector is compared with the draft room. A `stateVector` on a folder
    source and one that does not decode (`////////`) are `bad_request`.
 8. **Position and order.** Copy two roots with `--position after:<P1>` into a
    parent holding `P1 P2 P3`: the order is `P1 root-1 root-2 P2 P3` and the parent
    shows that order. Copy a root with no position into that parent: it lands last.
    Copy a hand-ordered folder into another parent: the copy keeps the source's child order.
-9. **Refusals.** Uploads as the destination (`bad_request`), a folder into its own
-   subtree and into itself ("Can't go inside itself"), a path nothing holds and an
-   identity another entry holds (`not_found`), a destination folder identity that was
-   deleted or never existed (`destination_missing`), a destination path that is a
-   document (`conflict`), a path with `..` (`bad_request`), an uploads folder named by
+9. **Settled answers.** A source moved after the writer saw it copies from where it is; one
+   in Trash (a document, or a folder with its documents) copies from Trash; an id the project
+   does not hold is left out (`settled: left_out`, `purged`) and the rest lands. A
+   destination folder that moved is followed; one in Trash stands again around the copy;
+   one that never existed copies nothing (`left_out`). A folder copied into itself is left out
+   (`would_loop`). A destination in an archived or deleted Work answers `returned`
+   (`work_archived`, `work_deleted`) with no entries and creates nothing; a source in an
+   archived Work copies out. All answers are `done` and stored.
+10. **Refusals.** Uploads as the destination (`bad_request`), a destination path that is a
+    document (`conflict`), a path with `..` (`bad_request`), an uploads folder named by
    identity as the destination (`bad_request`, the same out-only answer as by path),
    and a draft view whose Work belongs to another project or does not exist
    (`context_unavailable`, `work_missing`). Each answer is typed and non-retryable.
-10. **Other owners.** Copy a Work's Scratch folder into a project area, a project
+11. **Other owners.** Copy a Work's Scratch folder into a project area, a project
     document into a Work's Scratch and into a chat's Scratch, an upload out into a
     Work's Scratch, and a chat lineage Scratch note out. A Work note's link to the
     project keeps its target; its link to a sibling copied with it names the sibling's
     copy.
-11. **The model's copy.** Send `write` `{command: "copy", path, from: {path}}` on the
+12. **The model's copy.** Send `write` `{command: "copy", path, from: {path}}` on the
     mock model for a document that links to itself: the copy's own link names the
     copy, and its other links keep their targets. The turn's live lineage gives the
     copy `tree: {op: "copy", from, to}`, which the chat receipt reads as
     `Copied <source> to <name>`. The model names the exact path, so a path another
     entry holds with text makes a twin there, and the result prints its `~id` path; one
     that holds an empty document fills it.
-12. **Arrival.** Write a link to an address that does not exist yet, then copy a
+13. **Arrival.** Write a link to an address that does not exist yet, then copy a
     document to that address: `link_ahead_refs.settled_document_id` is the copy.
-13. **Nested selection.** `./mf doc copy "manuscript://Book" "manuscript://Book/Ch1"
+14. **Nested selection.** `./mf doc copy "manuscript://Book" "manuscript://Book/Ch1"
     --to kb://Nested` (and the child first, and a root named twice): one `Book` copy
     holds `Ch1`, no stray `Nested/Ch1` exists, and a sibling's link to `Ch1` names the
     copy inside the folder. Two roots that do not nest still copy separately.
-14. **The model's excerpt.** Send `write` `{command: "copy", path: "…/Excerpt", from:
+15. **The model's excerpt.** Send `write` `{command: "copy", path: "…/Excerpt", from:
     {path: "…/Src#part-a"}}` for a source that links to itself: the excerpt's links
     still name `Src`. Copying the whole document names the copy (step 11).
-15. **A big tree.** Copy 200 chapters of about 1,500 words, each linked to its
+16. **A big tree.** Copy 200 chapters of about 1,500 words, each linked to its
     neighbours, into a new folder while a script puts a document into the destination
     tree and into an unrelated source folder every second. Each of those puts waits
     about a second at most (an idle put takes 0.1-0.3 s); on the previous code every
     put waited as long as the copy took, 40 s or more. The 200 rows show one
     transaction start, and `document_links` holds the copies' links when the copy
     returns.
-16. **Cold rooms.** Restart the server and copy 40 documents that were never opened at
+17. **Cold rooms.** Restart the server and copy 40 documents that were never opened at
     once into distinct folders: all 40 answer 200. (Before the reads moved out of the
     transaction, ten or more of them held every pool connection and waited for one
     more.)
-17. **A taken name.** While a `./mf doc copy` prepares, create the folder or file it
+18. **A taken name.** While a `./mf doc copy` prepares, create the folder or file it
     would take in the destination: the copy lands as its twin (`Book~…`) and its internal
     links name the copy. Only a temporary sleep between the plan and
     the lock makes the race reproducible, so no step here reaches it without one. The

@@ -57,6 +57,12 @@ export class DraftRoomPool {
     return [...this.rooms.values()];
   }
 
+  /** The one open room drafting `documentId`; undefined when none is open or several are (the owner isn't known here). */
+  roomOf(documentId: string): DocumentSession | undefined {
+    const open = [...this.rooms].filter(([roomKey]) => this.documents.get(roomKey) === documentId);
+    return open.length === 1 ? open[0]?.[1] : undefined;
+  }
+
   peek(roomKey: string): DocumentSession | undefined {
     return this.rooms.get(roomKey);
   }

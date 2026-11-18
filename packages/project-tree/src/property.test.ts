@@ -25,10 +25,10 @@ import {
   TreeWriter,
   treeViolations,
   undoApply,
-  undoChange,
   type View,
   viewRecords,
 } from "./index.js";
+import { undoChange } from "./undo-open.js";
 
 // Reference admission, deliberately replaying one record at a time.
 function walk(doc: Y.Doc, added: readonly TreeRecord[], connection: Connection): string[] {
@@ -262,7 +262,8 @@ function runSeed(seed: number): {
       const some = random() < 0.5 ? [pick(pending).id] : undefined;
       if (action < 0.93) {
         const shownBefore = standing(replayView(writer.doc, view));
-        const shapeBefore = fingerprint(replayView(writer.doc, view), false);
+        const shownTree = replayView(writer.doc, view);
+        const liveRecords = viewRecords(writer.doc, LIVE);
         const liveBefore = standing(replayView(writer.doc, LIVE));
         // Apply lands what can land and leaves the rest pending.
         const viewBefore = viewRecords(writer.doc, view);
@@ -277,14 +278,23 @@ function runSeed(seed: number): {
           ),
         );
         const landed = applyDraft(writer, view.draft, "user:w", cmd(), some);
+        // The tree the Apply keeps: the Work's view behind the restores the Apply wrote.
+        const shapeBefore = fingerprint(
+          landed.restored.length > 0
+            ? replay([...liveRecords, ...landed.restored, ...pending], { draft: view.draft })
+            : shownTree,
+          false,
+        );
         const landing = landed.left.length > 0;
         if (landed.left.length > 0) leftPending += 1;
         if (random() < 0.3) {
           // Undo of an Apply at once: live and the draft both read as before it.
-          // A redo of an Undo with a later move on the node (including the one this very
-          // Undo took back) answers `changed_since` and stays; everything else goes back.
-          const result = undoApply(writer, landed.command, "user:w", cmd());
+          const result = undoApply(writer, landed.command, "user:w", cmd(), {
+            restoredByApply: landed.restored.map((record) => record.id),
+          });
           undone += 1;
+          // No writer path doubles a live copy (it takes a live Undo of an Un-Apply's Undo record):
+          // seed 400084 fails without this exemption. Keep it (#1610).
           const doubled = landed.copies.some((op) => inLive.has(op.carries as string));
           if (result.left.length === 0 && !doubled) {
             expect(standing(replayView(writer.doc, LIVE)), `seed ${seed} undo apply live`).toBe(
@@ -333,7 +343,11 @@ function runSeed(seed: number): {
               false,
             );
           expect(without(viewRecords(writer.doc, view)), `seed ${seed} landing apply`).toBe(
-            without(viewBefore),
+            without(
+              landed.restored.length > 0
+                ? [...liveRecords, ...landed.restored, ...pending]
+                : viewBefore,
+            ),
           );
         }
         if (!some && !landing)

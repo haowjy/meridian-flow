@@ -4,7 +4,7 @@
  * question an Apply all asks first in the notice's place while it is open.
  */
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -13,6 +13,8 @@ import { setDocumentView } from "@/client/project-shell/document-views";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { RowWord } from "@/components/app/RowWord";
+import { WorkClosedChip } from "@/components/app/WorkClosedChip";
+import { unappliedSentence } from "@/core/project-tree/tree-left-sentence";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
   useAccountId,
@@ -21,7 +23,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { type Removal, removalSentence } from "@/features/project/context/RemovedDocumentNotice";
+import { type Removal, useRemovalSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { type AppliedFact, type DraftNotice, hasLine, type RestoreReturned } from "./draft-notices";
@@ -37,6 +39,17 @@ export type CommandQuestion = {
   onConfirm(): void;
   disabled?: boolean;
 };
+
+/** Reads again whenever an Apply this tab holds changes state. */
+export function useAppliedCommands() {
+  const { applied } = useDraftCommandOwner();
+  useSyncExternalStore(
+    applied.subscribe,
+    () => applied.revision,
+    () => 0,
+  );
+  return applied;
+}
 
 /** The owner's notice, wherever it was made; the caller shows it if it was made there. */
 export function useDraftNotice(ownerKey: string): DraftNotice | null {
@@ -60,6 +73,16 @@ export function useDocumentNotice(
   return useSyncExternalStore(
     notices.subscribe,
     () => notices.forDocument(projectId, documentId),
+    () => null,
+  );
+}
+
+/** The notice on one change card of a document (`DraftNotices.forCard`). */
+export function useCardNotice(projectId: string, documentId: string | null): DraftNotice | null {
+  const { notices } = useDraftCommandOwner();
+  return useSyncExternalStore(
+    notices.subscribe,
+    () => (documentId ? notices.forCard(projectId, documentId) : null),
     () => null,
   );
 }
@@ -130,10 +153,34 @@ export function DraftNoticeLine({
   className?: string;
 }) {
   useLingui();
+  const sayRemoval = useRemovalSentence();
   const undo = useNoticeUndo();
   const openDocument = useOpenProjectDocument(notice.projectId);
   const whereabouts = useWhereabouts(notice.projectId);
   if (!hasLine(notice)) return null;
+  if (notice.kind === "unapplied") {
+    const { said } = notice;
+    return said.kind === "failed" ? (
+      <ActionNotice
+        data-command-notice="unapply-failed"
+        sentence={t`Undo didn't go through. Try again.`}
+        onDismiss={notice.dismiss}
+        failure={{
+          message: t`Undo didn't go through. Try again.`,
+          onRetry: said.retry,
+          onDismiss: notice.dismiss,
+        }}
+        className={className}
+      />
+    ) : (
+      <ActionNotice
+        data-command-notice="unapplied"
+        sentence={unappliedSentence(said.left)}
+        onDismiss={notice.dismiss}
+        className={className}
+      />
+    );
+  }
   if (notice.kind === "applied") {
     // A document gone since says so once, in place of what the Apply did to it.
     const removed = new Map<string, Removal>();
@@ -158,7 +205,7 @@ export function DraftNoticeLine({
     const sentence = [
       ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
       appliedSentence(restored, also),
-      removalSentence([...removed.values()]),
+      sayRemoval([...removed.values()]),
     ]
       .filter(Boolean)
       .join(" ");
@@ -181,36 +228,18 @@ export function DraftNoticeLine({
   }
   const { subject } = notice;
   const onUndo = () => undo(notice);
-  const { sentence, failedUndo } =
+  const sentence =
     subject.kind === "drafts"
-      ? {
-          sentence: t`${subject.count} drafts discarded.`,
-          failedUndo: t`Couldn't bring back ${subject.count} drafts.`,
-        }
+      ? t`${subject.count} drafts discarded.`
       : subject.kind === "deletes"
-        ? {
-            sentence: t`${subject.count} items deleted.`,
-            failedUndo: t`Couldn't bring back ${subject.count} items.`,
-          }
+        ? t`${subject.count} items deleted.`
         : subject.kind === "deleted"
-          ? {
-              sentence: (name: string) => t`${name} deleted.`,
-              failedUndo: t`Couldn't bring back ${subject.name}.`,
-            }
+          ? (name: string) => t`${name} deleted.`
           : subject.kind === "draft"
-            ? {
-                sentence: (name: string) => t`Draft of ${name} discarded.`,
-                failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
-              }
+            ? (name: string) => t`Draft of ${name} discarded.`
             : subject.kind === "folder"
-              ? {
-                  sentence: (name: string) => t`Changes in ${name} discarded.`,
-                  failedUndo: t`Couldn't bring back the changes in ${subject.name}.`,
-                }
-              : {
-                  sentence: (name: string) => t`Change to ${name} discarded.`,
-                  failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
-                };
+              ? (name: string) => t`Changes in ${name} discarded.`
+              : (name: string) => t`Change to ${name} discarded.`;
   const failed = notice.status === "failed";
   if (notice.status === "returned") {
     return (
@@ -223,24 +252,43 @@ export function DraftNoticeLine({
     );
   }
   if (notice.status === "partial") {
-    const count = notice.leftOut;
+    const first = notice.appliedFirst.length;
+    const left = leftOutSentence(notice.leftOut);
     return (
       <ActionNotice
         data-command-notice="undo-partial"
-        sentence={leftOutSentence(count)}
+        sentence={first === 0 ? left : `${left} ${appliedFirstLine(first)}`}
         onDismiss={notice.dismiss}
         className={className}
       />
     );
   }
+  const first = notice.appliedFirst.length;
+  const named = "name" in subject ? subject.name : "";
+  const said = typeof sentence === "function" ? sentence(named) : sentence;
   return (
     <ActionNotice
       data-command-notice={failed ? "undo-failed" : "discarded"}
-      sentence={sentence}
+      sentence={
+        first === 0
+          ? sentence
+          : typeof sentence === "function"
+            ? (name: string) => `${sentence(name)} ${appliedFirstLine(first)}`
+            : `${sentence} ${appliedFirstLine(first)}`
+      }
       name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: onUndo, pending: notice.status === "undoing" }}
       onDismiss={notice.dismiss}
-      failure={failed ? { message: failedUndo, onRetry: onUndo, onDismiss: notice.dismiss } : null}
+      failure={
+        failed
+          ? {
+              // Away from the rows, the line still says which Undo failed.
+              message: `${said} ${t`Undo didn't go through. Try again.`}`,
+              onRetry: onUndo,
+              onDismiss: notice.dismiss,
+            }
+          : null
+      }
       className={className}
     />
   );
@@ -273,6 +321,49 @@ function useNoticeUndo() {
   };
 }
 
+/** What a Discard says of the changes an Apply took before it reached them. */
+function appliedFirstSentence(count: number): string {
+  return plural(count, {
+    one: "Applied before your Discard reached it, so it stays applied.",
+    other: "# changes were applied before your Discard reached them, so they stay applied.",
+  });
+}
+
+/** The same said on a notice's line, beside what the Discard took: it names how many. */
+function appliedFirstLine(count: number): string {
+  return plural(count, {
+    one: "# change was applied before your Discard reached it.",
+    other: "# changes were applied before your Discard reached them.",
+  });
+}
+
+/**
+ * What a Discard that a closed owner returned leaves on the control pressed, in its trailing
+ * slot so it adds no height (`DraftNotices.showBounce`). Nothing for any other notice.
+ */
+export function BounceChip({ notice }: { notice: DraftNotice | null }) {
+  useLingui();
+  if (notice?.kind !== "discarded" || notice.status !== "bounced") return null;
+  if (notice.returned === null)
+    return (
+      <WorkClosedChip
+        label={<Trans>Applied first</Trans>}
+        sentence={appliedFirstSentence(notice.appliedFirst.length)}
+      />
+    );
+  const chat = notice.returned === "chat-in-trash";
+  return (
+    <WorkClosedChip
+      label={chat ? <Trans>Its chat is in Trash</Trans> : undefined}
+      sentence={
+        chat
+          ? t`Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes.`
+          : t`Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes.`
+      }
+    />
+  );
+}
+
 export type DraftNoticeWords = {
   /** The row (a document's or folder's id) is one the notice speaks for. */
   held: (id: string) => boolean;
@@ -289,11 +380,17 @@ const takeOnce = (id: number) => !focused.has(id) && Boolean(focused.add(id));
 
 export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWords {
   useLingui();
+  const sayRemoval = useRemovalSentence();
   const undo = useNoticeUndo();
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
-  if (!notice) return { held: () => false, word: () => null };
+  useAppliedCommands();
+  // What Ctrl+Z in an editor said is that document's identity row's alone.
+  if (!notice || notice.kind === "unapplied") return { held: () => false, word: () => null };
   if (notice.kind === "applied") {
-    const factsOf = (id: string) => notice.facts.filter((fact) => fact.documentId === id);
+    // While the Apply waits for a closed owner its rows say so (the sidebar's notice), and its
+    // Undo comes back once the owner reopens: the facts read its state.
+    const factsOf = (id: string) =>
+      notice.facts.filter((fact) => fact.documentId === id && !fact.step?.command.waits());
     return {
       held: (id) => factsOf(id).length > 0,
       word: (id) => {
@@ -304,11 +401,11 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         const name = now.kind === "placed" ? documentDisplayName(now.uri) : factName(first);
         const said =
           now.kind === "removed"
-            ? removalSentence([now.removal])
+            ? sayRemoval([now.removal])
             : facts.map((fact) => factSentence(factNow(fact, now))).join(" ");
         const step = facts.find((fact) => fact.step)?.step;
         if (step) {
-          const count = step.count;
+          const { command, count } = step;
           return (
             <RowWord
               label={t`Undo applying ${name}`}
@@ -318,7 +415,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
                   ? t`Undo takes back the whole Apply, all ${count} changes.`
                   : t`Undo takes back the Apply.`
               }`}
-              onAction={step.undo}
+              onAction={() => void command.press(null)}
               // The pressed ✓ or Apply all left with its row: the first row the Apply took has
               // the focus, as a delete's Undo does.
               focus={{ take: () => takeOnce(notice.id) }}
@@ -336,14 +433,24 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
       },
     };
   }
-  const held = (id: string) => notice.documentIds.includes(id);
+  const took = (id: string) => notice.documentIds.includes(id);
+  const appliedFirst = (id: string) => notice.appliedFirst.includes(id);
   const { subject } = notice;
   const count = "count" in subject ? subject.count : 1;
   const name = "name" in subject ? subject.name : "";
   return {
-    held,
+    held: (id) => took(id) || appliedFirst(id),
     word: (id) => {
-      if (!held(id)) return null;
+      if (appliedFirst(id))
+        return (
+          <RowWord
+            tone="done"
+            word={<Trans>Applied first</Trans>}
+            sentence={appliedFirstSentence(1)}
+          />
+        );
+      if (!took(id)) return null;
+      if (notice.status === "bounced") return <BounceChip notice={notice} />;
       if (notice.status === "returned")
         return (
           <RowWord
@@ -357,7 +464,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         return (
           <RowWord
             tone="warning"
-            word={<Trans>Partly restored</Trans>}
+            word={notice.nothingBack ? <Trans>Not restored</Trans> : <Trans>Partly restored</Trans>}
             sentence={leftOutSentence(left)}
           />
         );
@@ -370,7 +477,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
             label={
               count > 1 ? t`Retry bringing back ${count} changes` : t`Retry bringing back ${name}`
             }
-            sentence={t`Couldn't bring it back. Retry tries again.`}
+            sentence={t`Undo didn't go through. Try again.`}
             onAction={() => undo(notice)}
           />
         );

@@ -16,6 +16,8 @@ export interface Hunk {
   sfrom: number; // side token range this hunk came from: set where the hunk is made, never by a filter
   sto: number;
   ins: Tok[]; // the payload: all of sfrom..sto, or what a filter kept of it
+  /** From a diff that ran out of its budget: the range is a bound on the edit, not where it was. */
+  approx?: true;
   sidx?: number[]; // side index of each payload token once filtered (merge only)
 }
 

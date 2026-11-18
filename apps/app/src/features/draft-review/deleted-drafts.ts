@@ -8,6 +8,8 @@ import type { ThreadDraftListItem } from "@meridian/contracts/branches";
  * Live deleted, and Apply can bring it back: a draft or a drafted move does (at the branch's
  * location), a drafted delete never does, so Apply all's confirmation never names one.
  */
-export function isDeletedLive(item: ThreadDraftListItem | null | undefined): boolean {
+export function isDeletedLive(
+  item: Pick<ThreadDraftListItem, "deletedLive" | "tree"> | null | undefined,
+): boolean {
   return item?.deletedLive === true && !item.tree?.deleted;
 }

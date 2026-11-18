@@ -66,10 +66,6 @@ export function returnedWriteResult(
   const work = detail.work ? `Work ${detail.work}` : "The Work";
   const message = (() => {
     switch (why) {
-      case "draft_discarded":
-        return "Not in the document: the writer discarded the draft this edit was made on, so it was not kept anywhere.";
-      case "draft_replaced":
-        return "Not in the document: the writer restored an earlier draft over the draft this edit was made on, so it was not kept anywhere.";
       case "document_removed":
         return `Not in the document: this file was ${removalPhrase(detail.removal, detail.thisChat)} and is in the trash, so this edit was not kept anywhere. It can be restored.`;
       case "work_archived":

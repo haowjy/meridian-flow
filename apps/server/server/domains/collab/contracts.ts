@@ -238,13 +238,11 @@ export type NodeHistory = {
   /** Receipts that take a step back (a write or a redo) and were not themselves reversed, newest first. */
   undo: TreeReceipt[];
   /** Receipts that took a step back (an undo) and were not redone, newest first. */
-  redo: TreeReceipt[];
   /** Every receipt of the node by its handle on that node. */
   all: TreeReceipt[];
-  /** The ordinals of the text edits Undo would take, newest first, and of the one Redo would. */
+  /** The ordinals of the text edits Undo would take, newest first. */
   text: {
     undo: number[];
-    redo: number | null;
     /** The command of each text edit by ordinal, where it has one: what makes a step of a tree receipt's command. */
     commands: Record<number, string>;
   };
@@ -259,12 +257,14 @@ export type AgentTreeHistory = {
   /** Whether the turn (one reply) already made a drafted tree change. */
   draftedInReply(turnId: TurnId): Promise<boolean>;
   /**
-   * What a card Undo or Redo of a reply takes: the reply's receipts that were not reversed (Undo,
-   * newest first), or the ones a reversal took back and nothing redid (Redo, oldest first), each
-   * with the nodes it changed. The same receipts, reversed by the same `reverses` links, as
-   * the model's `undo` chooses from.
+   * What a card Undo of a reply takes: the reply's receipts that were not reversed, newest
+   * first, each with the nodes it changed, the same receipts by the same `reverses` links as
+   * the model's `undo` chooses from; and how many of the reply's receipts a card Undo took back.
    */
-  turnSteps(threadId: ThreadId, turnId: TurnId, direction: "undo" | "redo"): Promise<TreeReceipt[]>;
+  turnSteps(
+    threadId: ThreadId,
+    turnId: TurnId,
+  ): Promise<{ open: TreeReceipt[]; undoneByCard: number }>;
   /**
    * The node this chat's receipts took away from `at`, so an undo there finds it: the latest
    * deleted there or its create undone (the path the model wrote); else what last stood at `at`
@@ -286,7 +286,6 @@ export type AgentTreeHistory = {
 export type ReverseThreadContextInput = {
   threadId: ThreadId;
   userId: UserId;
-  direction: "undo" | "redo";
   turnId: TurnId;
   /** Minted by the browser for each click; a resend under it answers the stored outcome. */
   commandId: CommandId;
@@ -307,7 +306,6 @@ export type TurnReversalAccess = {
   reverseTurn(input: {
     threadId: ThreadId;
     turnId: TurnId;
-    direction: "undo" | "redo";
     actor: { type: "user"; userId: string } | { type: "agent" };
     documentIds?: DocumentId[];
   }): Promise<ReversalOutcome>;
@@ -450,7 +448,9 @@ export type DraftReviewApi = {
    */
   apply(input: {
     branchId: BranchId;
-    request: import("@meridian/contracts/branches").ApplyItemsClick;
+    request: Omit<import("@meridian/contracts/branches").ApplyItemsClick, "saw">;
+    /** The press's cut, decoded at the route. */
+    saw?: import("./domain/apply-click.js").TreeCut;
     envelope: CommandEnvelope;
   }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
   /** One Apply command taken back, text and tree: its document is the command's own record. */
@@ -461,11 +461,7 @@ export type DraftReviewApi = {
   }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
   /** The documents a command touched, from its own record: what its routes authorize. */
   commandDocuments: {
-    ofApply(input: {
-      applyCommandId: CommandId;
-      accountId: UserId;
-      branchId: BranchId;
-    }): Promise<DocumentId[]>;
+    ofApply(input: { applyCommandId: CommandId; accountId: UserId }): Promise<DocumentId[]>;
     ofDiscard(input: {
       discardCommandId: CommandId;
       accountId: UserId;
@@ -473,6 +469,8 @@ export type DraftReviewApi = {
     }): Promise<DocumentId[]>;
   };
   /** The document half of Trash's Discard entries in a project; the tree answers its own half. */
+  /** The day-30 purge of Trash's command entries (`drizzle-discard-purge.ts`); the rows removed. */
+  purgeDiscards(): Promise<number>;
   listDiscards(
     projectId: ProjectId,
   ): Promise<import("@meridian/contracts/branches").DiscardEntry[]>;
@@ -489,9 +487,11 @@ export type DraftReviewApi = {
   listItems(input: { owner: DraftOwner }): Promise<{
     branchId: BranchId | null;
     items: DraftReviewItem[];
-    /** The folders the branch has a row on, with the revision an Apply of one freezes. */
-    folders: { id: string; revision: string }[];
+    /** The folders the branch has a row on. */
+    folders: { id: string }[];
     threadTitles: ReadonlyMap<string, string>;
+    /** Each list's cut, read before the items. */
+    saw: import("@meridian/contracts/branches").TreeSaw;
   }>;
   /** Pending documents summed over the project's active branches. */
   pendingDocumentCount(projectId: ProjectId): Promise<number>;
@@ -522,10 +522,10 @@ export type DraftReviewApi = {
   /** `lookupCommand` for a resend: waits a while on a first request still running under the id. */
   awaitCommand(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
   discardItem(input: {
-    item: DraftReviewItem;
-    /** What ends, and the text draft the writer saw (`DraftDiscardRequest`). */
+    /** The item as the route resolved it; a document the branch holds nothing on has no row to resolve. */
+    item: Pick<DraftReviewItem, "branchId" | "itemKey" | "documentId" | "origin">;
+    /** What ends (`DraftDiscardRequest`). */
     ends: DiscardItem["ends"];
-    draftSeenAt?: DiscardItem["draftSeenAt"];
     userId: UserId;
     envelope: CommandEnvelope;
   }): Promise<CommandOutcome>;
@@ -558,7 +558,7 @@ export type TurnLiveLineageAccess = {
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
   /** The folders the turn changed: its card lists them with the documents. */
   listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
-  getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
+  getDocumentAndTreeChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
 /**

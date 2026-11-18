@@ -24,6 +24,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
+import { createTestDraftCoordinator } from "../../../test-support/draft-coordinator.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
@@ -159,10 +160,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     // The Work is purged for good: its branch is discarded whole, its view's rows go, and the
     // document is in no view until the window passes.
     const workProjection = createTestWorkProjectionMutation(db);
+    const branchStore = createDrizzleBranchStore(db);
     const discard = createDrizzleBranchDiscard(db, {
+      coordinator: createTestDraftCoordinator(db, {
+        close: draftClose,
+        treeLists,
+        workProjection,
+        branches: branchStore,
+      }),
       close: draftClose,
       branches: createBranches({
-        store: createDrizzleBranchStore(db),
+        store: branchStore,
         boundary: createDrizzleBranchWriteBoundary(db, workProjection),
       }),
       workProjection,

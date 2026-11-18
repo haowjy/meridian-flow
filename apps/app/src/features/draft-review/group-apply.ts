@@ -8,7 +8,12 @@
  * the one answer, and the command's answer is the first a sent member settles on: the post's, a
  * Retry's, or a lookup's after its draft closed.
  */
-import type { ApplyClick, ApplyClickAnswer, ApplyItemsClick } from "@meridian/contracts/branches";
+import type {
+  ApplyClick,
+  ApplyClickAnswer,
+  ApplyItemsClick,
+  TreeSaw,
+} from "@meridian/contracts/branches";
 import type { ApplyClickOutcome } from "./apply-click-queue";
 
 type Item = ApplyItemsClick["items"][number];
@@ -23,7 +28,6 @@ export class GroupApply {
     this.ready = resolve;
   });
   private request: Promise<ApplyClickAnswer> | null = null;
-  private revisions: Promise<ReadonlyMap<string, string>> | null = null;
   private answered: ApplyClickAnswer | null = null;
   private settle!: (answer: ApplyClickAnswer | null) => void;
   /** The command's final answer; null when every member ended without sending. */
@@ -34,19 +38,14 @@ export class GroupApply {
   constructor(
     readonly commandId: string,
     private readonly input: {
-      /**
-       * The folders' tree cuts: each one's revision of the Work's row. Read once, when the
-       * command first goes, so a resend carries the same body.
-       */
-      revisions: () => Promise<ReadonlyMap<string, string>>;
-      restore: boolean;
+      /** What the tree lists held at the press; every send carries it. */
+      saw: TreeSaw | undefined;
       post(body: ApplyItemsClick): Promise<ApplyClickAnswer>;
     },
   ) {}
 
   /**
-   * One member's place in the command: the send its queued click uses, and its way out. A
-   * folder's tree cut is its revision, read when the command goes.
+   * One member's place in the command: the send its queued click uses, and its way out.
    */
   member(
     node: string,
@@ -72,7 +71,12 @@ export class GroupApply {
       answered: (answer) => {
         // Only a sent click's answer came from the server: an unsent one ends cancelled.
         if (!this.handed.has(index)) return;
-        if (answer.status !== "landed" && answer.status !== "cancelled") this.heard(answer);
+        if (
+          answer.status !== "landed" &&
+          answer.status !== "cancelled" &&
+          answer.status !== "unsent"
+        )
+          this.heard(answer);
       },
     };
   }
@@ -96,22 +100,17 @@ export class GroupApply {
 
   /** One request at a time; a member's queue retries a failed delivery, with the same id. */
   private post(): Promise<ApplyClickAnswer> {
-    this.revisions ??= this.input.revisions();
-    this.request ??= this.revisions
-      .then((revisions) =>
-        this.input.post({
-          commandId: this.commandId,
-          // Folders first: what a document lands in comes before it.
-          items: [...this.handed.values()]
-            .sort((a, b) => Number(b.folder) - Number(a.folder))
-            .map(({ node, folder, body }) =>
-              folder
-                ? { node, tree: { revision: revisions.get(node) ?? null } }
-                : itemOf(node, body),
-            ),
-          ...(this.input.restore ? { restore: true as const } : {}),
-        }),
-      )
+    this.request ??= this.input
+      .post({
+        commandId: this.commandId,
+        // Folders first: what a document lands in comes before it.
+        items: [...this.handed.values()]
+          .sort((a, b) => Number(b.folder) - Number(a.folder))
+          .map(({ node, folder, body }) =>
+            folder ? { node, tree: true as const } : itemOf(node, body),
+          ),
+        ...(this.input.saw ? { saw: this.input.saw } : {}),
+      })
       .then(
         (answer) => {
           this.heard(answer);
@@ -120,10 +119,6 @@ export class GroupApply {
         },
         (cause: unknown) => {
           this.request = null;
-          // A read that failed is read again; one that answered stays the command's cut.
-          void this.revisions?.catch(() => {
-            this.revisions = null;
-          });
           throw cause;
         },
       );
@@ -134,9 +129,15 @@ export class GroupApply {
 function itemOf(documentId: string, body: ApplyClick): Item {
   return {
     node: documentId,
-    ...(body.tree ? { tree: body.tree } : {}),
+    ...(body.tree ? { tree: true as const } : {}),
     ...(body.draftId && body.whole
-      ? { text: { draftId: body.draftId, whole: true as const } }
+      ? {
+          text: {
+            draftId: body.draftId,
+            whole: true as const,
+            ...(body.groupIds.length ? { groupIds: body.groupIds } : {}),
+          },
+        }
       : body.draftId && body.snapshot
         ? {
             text: {

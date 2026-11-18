@@ -7,6 +7,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
   ApplyAllQuestion,
+  BounceChip,
   CommandNotice,
   type CommandQuestion,
   noticeAction,
@@ -47,17 +48,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const multi = dock.files.length > 1;
   const only = dock.files[0];
   const askingApply = asking !== null && dock.showCommands;
-  const ids = (files: readonly DockFile[]) => new Set(files.map((file) => file.row.documentId));
-  // A delete the strip hadn't shown yet holds those files back; several ask again by name.
-  const apply = (restore: ReadonlySet<string>) =>
-    void dock.apply(restore).then((held) => {
-      if (held.length > 0 && multi) setAsking({ deleting: [], restoring: held });
-    });
   // One file's row shows its delete, so its Apply already says to delete or bring it back.
   const startApply = () =>
     multi && (dock.deletedToApply.length > 0 || dock.deletingToApply.length > 0)
       ? setAsking({ deleting: dock.deletingToApply, restoring: dock.deletedToApply })
-      : apply(ids(dock.deletedToApply));
+      : dock.apply();
   // One question at a time, in the footer below the files: opening it never moves a row.
   const question: CommandQuestion | null = askingApply
     ? {
@@ -76,7 +71,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         onKeep: () => setAsking(null),
         onConfirm: () => {
           setAsking(null);
-          apply(ids(asking.restoring));
+          dock.apply();
         },
         disabled: !dock.canCommand,
       }
@@ -89,14 +84,17 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       onClick={(event) => event.stopPropagation()}
     >
       {askingApply ? null : dock.showCommands ? (
-        <ReviewActions
-          scope={multi ? "all" : "change"}
-          labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
-          density="full"
-          disabled={!dock.canCommand}
-          onDiscard={dock.discard}
-          onApply={dock.canApply ? startApply : undefined}
-        />
+        <>
+          <BounceChip notice={dock.bounce} />
+          <ReviewActions
+            scope={multi ? "all" : "change"}
+            labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
+            density="full"
+            disabled={!dock.canCommand}
+            onDiscard={dock.discard}
+            onApply={dock.canApply ? startApply : undefined}
+          />
+        </>
       ) : null}
     </div>
   );
@@ -118,7 +116,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           setExpanded((value) => !value);
         }}
         inline
-        className="min-w-[12ch] flex-auto coarse:min-h-11"
+        // The chip joins the line, which gives up the name's room instead of wrapping.
+        className={cn(
+          "coarse:min-h-11",
+          dock.bounce ? "min-w-[4ch] flex-1 basis-0" : "min-w-[12ch] flex-auto",
+        )}
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">

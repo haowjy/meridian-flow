@@ -12,6 +12,7 @@ export default defineEventHandler((event) =>
       {
         fileAccess: app.fileAccess,
         projectRepo: app.projectRepo,
+        availability: app.projectContextAvailability,
         contextPorts: app.contextPorts,
         workAuthorityResolver: app.workAuthorityResolver,
       },

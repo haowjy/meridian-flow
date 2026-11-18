@@ -10,6 +10,7 @@ import {
   sourceRoot,
   type TreeRecord,
 } from "./record.js";
+import { descendantsOf } from "./shape.js";
 import { readStored } from "./validate.js";
 
 export type TreeNode = {
@@ -39,7 +40,7 @@ export type TreeNode = {
   keptByChild: boolean;
   /**
    * Deleted in live, but shown in this Work's view because the Work has a pending change to it
-   * (rule 7). Review marks it "deleted in live"; Apply leaves the change pending.
+   * (rule 7). Review marks it "Deleted"; Apply restores it and lands the change.
    */
   keptByPending: boolean;
   /** Trash emptied: gone for good, and in no Trash entry. */
@@ -128,14 +129,21 @@ export type TreeProjection = {
   skipped: Array<{ record: string; reason: SkipReason }>;
   /** Creates whose folder was never created in this view: put at the top of their source (rule 6). */
   rescued: string[];
-  /** Trash: the deletes still in force. Per view, like the tree. */
+  /** Trash: the deletes in force that hide something (`hidingDeletes`). Per view, like the tree. */
   trash: TrashEntry[];
   /**
-   * The root ids of the deletes Undo may still take back: each Trash entry's own, and a delete
-   * that took a restore back (its entries and cascade members are in Trash again) while one of
-   * those stands.
+   * The root ids of the deletes in force (not lifted by a restore or an Undo, not purged): each
+   * delete's own, and a delete that took a restore back while one of the deletes it put back is
+   * in force. Undo may take these back, and only these.
    */
   standingDeletes: ReadonlySet<string>;
+  /**
+   * Those of `standingDeletes` that hide something now, by the same ids: what Trash lists. A
+   * delete in force whose nodes all show (an Apply brought back what it took, or a create keeps
+   * its folder standing) is out of this set until they leave again, and in `standingDeletes`
+   * throughout.
+   */
+  hidingDeletes: ReadonlySet<string>;
   /** Documents in no view whose content was purged: a Discarded create, emptied from Trash. */
   gone: ReadonlySet<string>;
   /** Records the server dropped at admission (from the settle log; `replayView` fills it, `replay` has no log). */
@@ -209,6 +217,54 @@ export function replay(
   values: readonly unknown[],
   of: { draft?: string | null; pendingText?: ReadonlySet<string> } = {},
 ): TreeProjection {
+  return startReplay(values, of).finish();
+}
+
+/** What `Replay.wouldTake` answers: why the replay would skip the record, or the sources it would change. */
+export type WouldTake = { skipped: SkipReason } | { sources: readonly string[] };
+
+/** A node as an Undo reads it from a replay that is still open. */
+export type StandingNode = {
+  id: string;
+  kind: NodeKind;
+  name: string;
+  parent: string;
+  rank: string;
+  filetype?: string;
+  purged: boolean;
+  trashed: boolean;
+};
+
+/** The tree as a replay that is still open has it: what making an opposite record reads. */
+export type TreeStanding = {
+  node(id: string): StandingNode | undefined;
+  history(id: string): NodeHistory | undefined;
+  changes: ReadonlyMap<string, Change>;
+  standingDeletes: ReadonlySet<string>;
+  /** Every node below `id`, trashed ones included, in `descendantsOf`'s order. */
+  descendants(id: string): string[];
+};
+
+/**
+ * A replay that can take more records at its end. `replay(values)` is `startReplay(values).finish()`,
+ * and `startReplay(values)` then `push(record)` is `startReplay([...values, record])`: one fold,
+ * read a record at a time.
+ */
+export type Replay = {
+  /** Replays one more record at the end of the list. Never a purge: rule 10 reads purges ahead of the list. */
+  push(record: TreeRecord): void;
+  /** What `push(record)` would do, changing nothing. */
+  wouldTake(record: TreeRecord): WouldTake;
+  /** The tree as the list stands, without the names shown: valid until the next `push`. */
+  standing(): TreeStanding;
+  /** The projection. The replay takes no record after it. */
+  finish(): TreeProjection;
+};
+
+export function startReplay(
+  values: readonly unknown[],
+  of: { draft?: string | null; pendingText?: ReadonlySet<string> } = {},
+): Replay {
   const nodes = new Map<string, Working>();
   const skipped: TreeProjection["skipped"] = [];
   const rescued: string[] = [];
@@ -412,21 +468,22 @@ export function replay(
   };
   // An Undo of a move or rename sets nothing itself: it flips which changes about its change are
   // in force, at its own place in the list, and the node shows what the changes in force then
-  // say. One that would leave the node somewhere it cannot stand is skipped whole. Returns
-  // whether it was taken.
-  const turn = (record: TreeRecord, node: Working, index: number): boolean => {
-    const flips = flipsOf(record);
+  // say. One that would leave the node somewhere it cannot stand is skipped whole.
+  const turnsTo = (
+    record: TreeRecord,
+    node: Working,
+    flips: readonly Change[],
+  ): { parent: string } | { skip: SkipReason } => {
     const to = turned(node, flips).place.at(-1)?.says ?? node.born;
     if (to.parent !== node.parent) {
       const why = cannotStand(record.node, to.parent);
-      if (why) {
-        skipped.push({ record: record.id, reason: why });
-        return false;
-      }
+      if (why) return { skip: why };
     }
-    take(record, index, undefined, flips);
-    return true;
+    return { parent: to.parent };
   };
+  // Where a node stands once `flips` have flipped.
+  const parentAfter = (node: Working, flips: readonly Change[]) =>
+    turned(node, flips).place.at(-1)?.says.parent ?? node.born.parent;
   // Why a node cannot be put under `parent`, if it cannot.
   const cannotStand = (node: string, parent: string): SkipReason | undefined => {
     if (!isSourceRoot(parent)) {
@@ -437,65 +494,55 @@ export function replay(
     return wouldLoop(nodes, node, parent) ? "cycle" : undefined;
   };
 
-  const sourceAt = (id: string): string | undefined => {
-    let at: string | undefined = nodes.get(id)?.parent;
+  const sourceFrom = (parent: string | undefined): string | undefined => {
+    let at = parent;
     for (let guard = 0; at !== undefined && guard <= nodes.size; guard += 1) {
       if (isSourceRoot(at)) return sourceIdOf(at);
       at = nodes.get(at)?.parent;
     }
     return undefined;
   };
-  let open: { id: string; node: string; before: string | undefined } | undefined;
-  const close = () => {
-    if (!open) return;
-    const change = changes.get(open.id);
-    if (change)
-      change.sources = [
-        ...new Set([open.before, sourceAt(open.node)].filter((s): s is string => s !== undefined)),
-      ];
-    open = undefined;
-  };
-  for (const [index, read] of reads.entries()) {
-    close();
-    if (read.ok && !changes.has(read.record.id))
-      open = { id: read.record.id, node: read.record.node, before: sourceAt(read.record.node) };
-    if (!read.ok) {
-      const id = (values[index] as { id?: unknown } | null)?.id;
-      skipped.push({ record: typeof id === "string" ? id : "", reason: "unreadable" });
-      continue;
-    }
-    const record = read.record;
-    const skip = (reason: SkipReason) => skipped.push({ record: record.id, reason });
+  const sourceAt = (id: string) => sourceFrom(nodes.get(id)?.parent);
+  const sourcesOf = (before: string | undefined, after: string | undefined) => [
+    ...new Set([before, after].filter((s): s is string => s !== undefined)),
+  ];
+  /**
+   * One record of the fold. Every check that skips a record must come before anything it changes:
+   * with `dry` the step returns there, saying where the node would stand, and changes nothing. A
+   * state change put before a skip check makes `wouldTake` change the replay, and every Undo's
+   * answer goes wrong without a failure.
+   */
+  const step = (
+    record: TreeRecord,
+    index: number,
+    dry: boolean,
+  ): { skip: SkipReason } | { parent: string | undefined } | undefined => {
+    const skip = (reason: SkipReason) => {
+      if (!dry) skipped.push({ record: record.id, reason });
+      return { skip: reason };
+    };
     const target = record.undoes === undefined ? undefined : families.get(record.undoes);
-    if (target && target.node !== record.node) {
-      skip("undo-other-node");
-      continue;
-    }
+    if (target && target.node !== record.node) return skip("undo-other-node");
     if (record.type === "create") {
       const existing = nodes.get(record.node);
       if (existing) {
         // The same create applied again after an Undo of its Apply (the first copy's node is in
         // Trash): it brings the node back, as a move would (rule 9). Any other is a repeat.
-        if (existing.root !== (record.carries ?? record.id)) {
-          skip("duplicate");
-          continue;
-        }
+        if (existing.root !== (record.carries ?? record.id)) return skip("duplicate");
+        if (dry) return { parent: parentAfter(existing, flipsOf(record)) };
         lift(record, existing, { ownOnly: record.draft !== null });
         pend(record);
         take(record, index);
-        continue;
+        return;
       }
-      if (record.kind === "document" && !isTracked(record.filetype)) {
-        skip("type-not-editable");
-        continue;
-      }
-      let parentId = record.parent;
-      if (!isSourceRoot(record.parent) && placeable(record.parent)?.kind !== "folder") {
-        // Rule 6: the folder it was made in was never created in this view (its create was
-        // discarded concurrently), so the node shows at the top of its source.
-        parentId = sourceRoot(record.source);
-        rescued.push(record.id);
-      }
+      if (record.kind === "document" && !isTracked(record.filetype))
+        return skip("type-not-editable");
+      // Rule 6: the folder it was made in was never created in this view (its create was
+      // discarded concurrently), so the node shows at the top of its source.
+      const rescue = !isSourceRoot(record.parent) && placeable(record.parent)?.kind !== "folder";
+      const parentId = rescue ? sourceRoot(record.source) : record.parent;
+      if (dry) return { parent: parentId };
+      if (rescue) rescued.push(record.id);
       nodes.set(record.node, {
         id: record.node,
         kind: record.kind,
@@ -527,7 +574,7 @@ export function replay(
         place: [],
       });
       take(record, index);
-      continue;
+      return;
     }
     // A node is acted on only while it stands in this view (`placeIn`): the same test Undo and
     // restoring a Discard make before they append a record.
@@ -536,27 +583,26 @@ export function replay(
     // this one, and it says the document's content is gone.
     if (record.type === "purge" && !nodes.has(record.node)) {
       gone.add(record.node);
-      continue;
+      return;
     }
-    if (!node) {
-      skip(nodes.has(record.node) ? "purged" : "missing-node");
-      continue;
-    }
+    if (!node) return skip(nodes.has(record.node) ? "purged" : "missing-node");
     switch (record.type) {
       case "move": {
         if (record.undoes !== undefined) {
-          if (!turn(record, node, index)) continue;
+          const flips = flipsOf(record);
+          const to = turnsTo(record, node, flips);
+          if ("skip" in to) return skip(to.skip);
+          if (dry) return to;
+          take(record, index, undefined, flips);
           const back = lifted.get(record.undoes);
           if (back) putBack(record, back);
           pend(record);
           node.lastChangedBy = record.actor;
-          break;
+          return;
         }
         const why = cannotStand(record.node, record.parent);
-        if (why) {
-          skip(why);
-          continue;
-        }
+        if (why) return skip(why);
+        if (dry) return { parent: record.parent };
         // Rule 9: acting on a node in Trash brings it back (an Undo's opposite record never does).
         lift(record, node, { ownOnly: record.draft !== null });
         pend(record);
@@ -566,25 +612,25 @@ export function replay(
         take(record, index, sets);
         set(node, sets, index);
         node.lastChangedBy = record.actor;
-        break;
+        return;
       }
       case "rename": {
         if (record.undoes !== undefined) {
-          if (!turn(record, node, index)) continue;
+          const flips = flipsOf(record);
+          const to = turnsTo(record, node, flips);
+          if ("skip" in to) return skip(to.skip);
+          if (dry) return to;
+          take(record, index, undefined, flips);
           // A rename that takes back only the name a move set leaves the deletes that move lifted lifted.
           const back = lifted.get(record.undoes);
           if (back?.by === "rename") putBack(record, back);
         } else {
           if (record.filetype !== undefined) {
-            if (!isTracked(record.filetype)) {
-              skip("type-not-editable");
-              continue;
-            }
-            if (!node.filetype || schemaOf(node.filetype) !== schemaOf(record.filetype)) {
-              skip("type-across-schemas");
-              continue;
-            }
+            if (!isTracked(record.filetype)) return skip("type-not-editable");
+            if (!node.filetype || schemaOf(node.filetype) !== schemaOf(record.filetype))
+              return skip("type-across-schemas");
           }
+          if (dry) return { parent: node.parent };
           lift(record, node, { ownOnly: record.draft !== null });
           const sets: Sets = {
             label: holder(record, index, {
@@ -599,14 +645,15 @@ export function replay(
         // A rename to the same name counts: it is how a writer keeps "Untitled" on purpose.
         if (record.actor.startsWith("user:")) node.provisional = false;
         node.lastChangedBy = record.actor;
-        break;
+        return;
       }
       case "delete": {
+        if (dry) return { parent: parentAfter(node, flipsOf(record)) };
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
         take(record, index);
         if (back) {
           putBack(record, back);
-          break;
+          return;
         }
         // Two deletes of one node both count: each takes what its author saw.
         deletes.push({
@@ -617,21 +664,21 @@ export function replay(
           cascade: new Set(record.cascade),
           own: ownDelete(record),
         });
-        break;
+        return;
       }
       case "restore":
-        lift(record, node, { index });
+        if (dry) return { parent: parentAfter(node, flipsOf(record)) };
+        // An Apply's restore of a node the Work's view kept brings back what live deleted and
+        // leaves the node where it arrived: the twin the writer saw as plain stays plain.
+        lift(record, node, record.fromDraft === undefined ? { index } : { ownOnly: false });
         take(record, index);
-        break;
+        return;
       case "purge": {
         // Rule 10: final, and exactly what the server found the delete covering when it purged
         // (and whose content it released). A node someone put inside since, by a record placed
         // before the purge but admitted after it, was not purged: it goes to its source's top.
         const entry = deletes.find((d) => d.id === record.delete || d.from === record.delete);
-        if (!entry || entry.node !== record.node) {
-          skip("missing-node");
-          break;
-        }
+        if (!entry || entry.node !== record.node) return skip("missing-node");
         for (const id of record.nodes) {
           const gone = nodes.get(id);
           if (gone && !gone.purged) {
@@ -641,27 +688,133 @@ export function replay(
         }
         deletes = deletes.filter((d) => d !== entry);
         take(record, index);
-        break;
+        return;
       }
     }
-  }
+  };
+  let count = 0;
+  const read = (value: unknown, stored = readStored(value)) => {
+    const index = count;
+    count += 1;
+    if (!stored.ok) {
+      const id = (value as { id?: unknown } | null)?.id;
+      skipped.push({ record: typeof id === "string" ? id : "", reason: "unreadable" });
+      return;
+    }
+    const record = stored.record;
+    const fresh = !changes.has(record.id);
+    const before = sourceAt(record.node);
+    step(record, index, false);
+    const change = fresh ? changes.get(record.id) : undefined;
+    if (change) change.sources = sourcesOf(before, sourceAt(record.node));
+  };
+  for (const [index, value] of values.entries()) read(value, reads[index]);
 
-  close();
-  if (purgedAt.size > 0) rescueFromPurged(nodes, purgedAt);
+  let done = false;
+  let cached: { count: number; tree: TreeStanding } | undefined;
   return {
-    ...derive(nodes, deletes, pendingOn, of.pendingText ?? new Set(), skipped, rescued, gone),
-    changes,
-    inForce: new Set([...changes.values()].flatMap((each) => (each.inForce ? [each.id] : []))),
-    dropped: [],
+    push(record) {
+      if (done) throw new Error("replay: push after finish");
+      if (record.type === "purge") throw new Error("replay: a purge cannot be pushed");
+      read(record);
+    },
+    wouldTake(record) {
+      if (record.type === "purge") throw new Error("replay: a purge cannot be pushed");
+      const would = step(record, count, true);
+      if (!would) return { sources: [] };
+      if ("skip" in would) return { skipped: would.skip };
+      return { sources: sourcesOf(sourceAt(record.node), sourceFrom(would.parent)) };
+    },
+    standing() {
+      if (cached?.count === count) return cached.tree;
+      const rescuedTo = rescueFromPurged(nodes, purgedAt);
+      const { children, standing } = stand(
+        nodes,
+        deletes,
+        pendingOn,
+        of.pendingText ?? new Set(),
+        rescuedTo,
+      );
+      const sorted = new Map<string, Working[]>();
+      const kidsOf = (parent: string) => {
+        let kids = sorted.get(parent);
+        if (!kids) {
+          kids = [...(children.get(parent) ?? [])].sort(byRankThenId);
+          sorted.set(parent, kids);
+        }
+        return kids;
+      };
+      const tree: TreeStanding = {
+        node(id) {
+          const node = nodes.get(id);
+          const state = node && standing.get(id);
+          if (!node || !state) return undefined;
+          return {
+            id,
+            kind: node.kind,
+            name: node.name,
+            parent: rescuedTo.get(id)?.parent ?? node.parent,
+            rank: node.rank,
+            ...(node.filetype ? { filetype: node.filetype } : {}),
+            purged: node.purged,
+            trashed: node.purged || (state.deleted && !state.keptByChild),
+          };
+        },
+        history(id) {
+          const node = nodes.get(id);
+          return (
+            node && {
+              born: node.born,
+              label: node.label,
+              place: node.place,
+              createdAt: node.createdAt,
+            }
+          );
+        },
+        changes,
+        standingDeletes: rootsOf(inForce(nodes, deletes), (put) => put.size > 0),
+        descendants: (id) => descendantsOf({ children: { get: kidsOf } }, id),
+      };
+      cached = { count, tree };
+      return tree;
+    },
+    finish() {
+      done = true;
+      return {
+        ...derive(
+          nodes,
+          deletes,
+          pendingOn,
+          of.pendingText ?? new Set(),
+          skipped,
+          rescued,
+          gone,
+          rescueFromPurged(nodes, purgedAt),
+        ),
+        changes,
+        inForce: new Set([...changes.values()].flatMap((each) => (each.inForce ? [each.id] : []))),
+        dropped: [],
+      };
+    },
   };
 }
 
+/** Where a node under a purged one shows, and when it arrived there. */
+type Rescued = ReadonlyMap<string, { parent: string; arrivedAt: number }>;
+
 /**
- * Every node standing directly under a purged one goes to the top of the source its place was in,
+ * Every node standing directly under a purged one shows at the top of the source its place was in,
  * arriving there at that purge. Once purged a node takes nothing (`placeIn`), so what is under one
- * at the end was under it at its purge.
+ * at the end was under it at its purge. The nodes are not changed: the fold reads them again, so
+ * `derive` and `standing` must read a rescued node's parent and arrival through this overlay and
+ * never from the node.
  */
-function rescueFromPurged(nodes: Map<string, Working>, purgedAt: ReadonlyMap<string, number>) {
+function rescueFromPurged(
+  nodes: Map<string, Working>,
+  purgedAt: ReadonlyMap<string, number>,
+): Rescued {
+  const out = new Map<string, { parent: string; arrivedAt: number }>();
+  if (purgedAt.size === 0) return out;
   const sourceAbove = (id: string) => {
     let parent = id;
     for (let guard = 0; !isSourceRoot(parent) && guard <= nodes.size; guard += 1)
@@ -671,9 +824,9 @@ function rescueFromPurged(nodes: Map<string, Working>, purgedAt: ReadonlyMap<str
   for (const node of nodes.values()) {
     const at = node.purged ? undefined : purgedAt.get(node.parent);
     if (at === undefined) continue;
-    node.parent = sourceAbove(node.parent);
-    node.arrivedAt = at;
+    out.set(node.id, { parent: sourceAbove(node.parent), arrivedAt: at });
   }
+  return out;
 }
 
 /** Whether a restore lifts a delete: the one it `undoes`, or every delete of the node if it undoes none. */
@@ -782,24 +935,23 @@ type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean
 
 /**
  * One pass over the nodes, parents before children on the way down and children before parents
- * on the way up: what is deleted (rules 2 and 7), which deleted folders stand (rule 3) and which
- * twins carry a suffix (rule 14). Cost follows the number of nodes and what the deletes name, not
- * depth.
+ * on the way up: what is deleted (rules 2 and 7) and which deleted folders stand (rule 3). Cost
+ * follows the number of nodes and what the deletes name, not depth. An open replay's `standing` and
+ * `derive` both read the tree from this.
  */
-function derive(
+function stand(
   nodes: Map<string, Working>,
   deletes: DeleteInForce[],
   pendingOn: Map<string, Set<string>>,
   pendingText: ReadonlySet<string>,
-  skipped: TreeProjection["skipped"],
-  rescued: string[],
-  gone: ReadonlySet<string>,
-): Omit<TreeProjection, "dropped" | "changes" | "inForce"> {
+  rescuedTo: Rescued,
+): { children: Map<string, Working[]>; standing: Map<string, Standing> } {
   const children = new Map<string, Working[]>();
   for (const node of nodes.values()) {
-    const siblings = children.get(node.parent);
+    const parent = rescuedTo.get(node.id)?.parent ?? node.parent;
+    const siblings = children.get(parent);
     if (siblings) siblings.push(node);
-    else children.set(node.parent, [node]);
+    else children.set(parent, [node]);
   }
   // A delete applies to a node when the node is the delete's own, or a member of its cascade
   // with the delete's node above it.
@@ -816,7 +968,6 @@ function derive(
   ]);
 
   const standing = new Map<string, Standing>();
-  const suffixes = new Map<string, string>();
   const active = new Set<DeleteInForce>();
   type Frame = {
     key: string;
@@ -838,13 +989,22 @@ function derive(
       const child = frame.kids[frame.next];
       if (child) {
         frame.next += 1;
-        const mine = ownedBy.get(child.id) ?? [];
-        for (const entry of mine) active.add(entry);
-        const taken = [...mine, ...(takenBy.get(child.id) ?? [])].filter((entry) =>
-          active.has(entry),
-        );
-        const deleted = taken.length > 0;
-        const draftDeleted = taken.some((entry) => entry.own);
+        const mine = ownedBy.get(child.id);
+        const cascades = takenBy.get(child.id);
+        let deleted = false;
+        let draftDeleted = false;
+        if (mine)
+          for (const entry of mine) {
+            active.add(entry);
+            deleted = true;
+            draftDeleted ||= entry.own;
+          }
+        if (cascades)
+          for (const entry of cascades)
+            if (active.has(entry)) {
+              deleted = true;
+              draftDeleted ||= entry.own;
+            }
         // Rule 7: a delete in live does not take a node this Work has a pending change to,
         // unless the Work deleted it too: it stays in the Work's view, marked.
         const keptByPending = deleted && !draftDeleted && pendingNodes.has(child.id);
@@ -857,12 +1017,6 @@ function derive(
         open(child.id, frame.source, child);
         continue;
       }
-      // Every child has been finished: give the twins shown here their suffixes, then report upward.
-      const shown = frame.kids.filter((kid) => {
-        const state = standing.get(kid.id);
-        return !kid.purged && state && (!state.deleted || state.keptByChild);
-      });
-      for (const [id, suffix] of twinSuffixes(shown)) suffixes.set(id, suffix);
       stack.pop();
       const node = frame.node;
       if (!node) continue;
@@ -873,6 +1027,69 @@ function derive(
       const parent = stack[stack.length - 1];
       if (parent && (!state.deleted || frame.liveBelow)) parent.liveBelow = true;
     }
+  }
+  return { children, standing };
+}
+
+const inForce = (nodes: Map<string, Working>, deletes: DeleteInForce[]) =>
+  deletes.filter((entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged);
+
+/**
+ * The deletes in force that still hide something: their node or a member of their cascade. An
+ * entry whose nodes all show has nothing in Trash and nothing for an Undo to bring back now, and
+ * hides them again once what keeps them standing leaves.
+ */
+const deletesInTrash = (
+  nodes: Map<string, Working>,
+  deletes: DeleteInForce[],
+  standing: ReadonlyMap<string, Standing>,
+) =>
+  inForce(nodes, deletes).filter((entry) =>
+    [entry.node, ...entry.cascade].some((id) => hidden(standing, id)),
+  );
+
+const hidden = (standing: ReadonlyMap<string, Standing>, id: string) => {
+  const state = standing.get(id);
+  return state?.deleted === true && !state.keptByChild;
+};
+
+/**
+ * The root ids an Undo reaches `entries` by (`standingDeletes`, `hidingDeletes`): each entry's
+ * own, and each restore's Undo that put it back while what it put back `counts`.
+ */
+const rootsOf = (entries: DeleteInForce[], counts: (put: ReadonlySet<string>) => boolean) =>
+  new Set(
+    entries.flatMap((entry) => [
+      entry.id,
+      entry.from ?? entry.id,
+      ...[...entry.putBackBy].flatMap(([root, put]) => (counts(put) ? [root] : [])),
+    ]),
+  );
+
+/** The projection: `stand`, then the names shown (rule 4) and each node as the view shows it. */
+function derive(
+  nodes: Map<string, Working>,
+  deletes: DeleteInForce[],
+  pendingOn: Map<string, Set<string>>,
+  pendingText: ReadonlySet<string>,
+  skipped: TreeProjection["skipped"],
+  rescued: string[],
+  gone: ReadonlySet<string>,
+  rescuedTo: Rescued,
+): Omit<TreeProjection, "dropped" | "changes" | "inForce"> {
+  const { children, standing } = stand(nodes, deletes, pendingOn, pendingText, rescuedTo);
+  const parentOf = (node: Working) => rescuedTo.get(node.id)?.parent ?? node.parent;
+  const arrivedAt = (node: Working) => rescuedTo.get(node.id)?.arrivedAt ?? node.arrivedAt;
+  const suffixes = new Map<string, string>();
+  for (const kids of children.values()) {
+    const shown = kids
+      .filter((kid) => {
+        const state = standing.get(kid.id);
+        return !kid.purged && state && (!state.deleted || state.keptByChild);
+      })
+      // Rule 14: the node already standing keeps the plain name; the one that arrived later carries a suffix.
+      .sort((a, b) => arrivedAt(a) - arrivedAt(b) || a.createdAt - b.createdAt);
+    for (const [id, suffix] of suffixesInArrival(shown)) suffixes.set(id, suffix);
   }
 
   const out = new Map<string, TreeNode>();
@@ -890,7 +1107,7 @@ function derive(
       kind: node.kind,
       name: node.name,
       ...(suffixes.has(node.id) ? { suffix: suffixes.get(node.id) } : {}),
-      parent: node.parent,
+      parent: parentOf(node),
       source: state.source,
       rank: node.rank,
       ...(node.filetype ? { filetype: node.filetype } : {}),
@@ -904,20 +1121,18 @@ function derive(
       ...(node.blob ? { blob: node.blob } : {}),
       createdBy: node.createdBy,
       lastChangedBy: node.lastChangedBy,
-      arrival: node.arrivedAt,
+      arrival: arrivedAt(node),
     });
   }
   const ordered = new Map<string, TreeNode[]>();
   for (const [parent, kids] of children)
     ordered.set(parent, kids.map((kid) => out.get(kid.id) as TreeNode).sort(byRankThenId));
-  const inTrash = deletes.filter(
-    (entry) => nodes.has(entry.node) && !nodes.get(entry.node)?.purged,
-  );
+  const inTrash = deletesInTrash(nodes, deletes, standing);
   // A delete covers the nodes of its cascade whose ancestry still runs through its node: one
   // moved out since (by a move placed before the delete, whose author did not see it) is not.
   const covered = (entry: DeleteInForce) =>
     [...entry.cascade].filter((member) => {
-      for (let at = nodes.get(member); at; at = nodes.get(at.parent))
+      for (let at = nodes.get(member); at; at = nodes.get(parentOf(at)))
         if (at.id === entry.node) return true;
       return false;
     });
@@ -934,25 +1149,9 @@ function derive(
       node: entry.node,
       cascade: covered(entry),
     })),
-    standingDeletes: new Set(
-      inTrash.flatMap((entry) => [
-        entry.id,
-        entry.from ?? entry.id,
-        ...[...entry.putBackBy].flatMap(([root, put]) => (put.size > 0 ? [root] : [])),
-      ]),
-    ),
+    standingDeletes: rootsOf(inForce(nodes, deletes), (put) => put.size > 0),
+    hidingDeletes: rootsOf(inTrash, (put) => [...put].some((id) => hidden(standing, id))),
   };
-}
-
-/**
- * Rule 14. Of shown siblings with one name, every one but the first to arrive (list order, then
- * creation) carries the shortest start, four hex digits or more, of its id's hex digits that no
- * other shown sibling's begins with. A folder with no twins pays only the name check.
- */
-function twinSuffixes(shown: readonly Working[]): Map<string, string> {
-  return suffixesInArrival(
-    [...shown].sort((a, b) => a.arrivedAt - b.arrivedAt || a.createdAt - b.createdAt),
-  );
 }
 
 /**
@@ -991,7 +1190,7 @@ function common(a: string, b: string | undefined): number {
 }
 
 /** By rank, then id, so equal ranks from concurrent inserts still sort the same everywhere. */
-function byRankThenId(a: TreeNode, b: TreeNode): number {
+function byRankThenId(a: { rank: string; id: string }, b: { rank: string; id: string }): number {
   if (a.rank !== b.rank) return a.rank < b.rank ? -1 : 1;
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
@@ -1010,13 +1209,25 @@ function schemaOf(type: string): string | null {
  * two deletes of one node answers.
  */
 export function deleteCovering(projection: TreeProjection, id: string): TrashEntry | undefined {
+  return deletesCovering(projection, id)[0];
+}
+
+/**
+ * Every delete in force that covers a node, nearest first: its own, then each one above it whose
+ * cascade names it, each node's latest first. A nearer delete doesn't hide a farther one,
+ * so a command can ask whether any delete it made covers the node.
+ */
+export function deletesCovering(projection: TreeProjection, id: string): TrashEntry[] {
+  const out: TrashEntry[] = [];
   for (let at = projection.nodes.get(id); at; at = projection.nodes.get(at.parent)) {
-    const entry = projection.trash
-      .filter((each) => each.node === at?.id && (at.id === id || each.cascade.includes(id)))
-      .pop();
-    if (entry) return entry;
+    const node = at.id;
+    out.push(
+      ...projection.trash
+        .filter((each) => each.node === node && (node === id || each.cascade.includes(id)))
+        .reverse(),
+    );
   }
-  return undefined;
+  return out;
 }
 
 /**

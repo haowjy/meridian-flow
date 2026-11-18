@@ -102,7 +102,8 @@ export class MemoryDraftStore implements DraftStore {
     for (const id of draftIds) {
       const draft = this.drafts.get(id);
       if (draft?.status === "active") states[id] = "open";
-      else if (draft?.closedCause) states[id] = draft.closedCause;
+      else if (draft?.closedCause)
+        states[id] = draft.closedCause === "left_out" ? "discarded" : draft.closedCause;
     }
     return states;
   }
@@ -138,7 +139,8 @@ export class MemoryDraftStore implements DraftStore {
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const documentDraft = this.drafts.get(input.draftId);
     if (
-      documentDraft?.status !== "active" ||
+      !documentDraft ||
+      (input.draft !== "any" && documentDraft.status !== "active") ||
       (input.work !== "any" && documentDraft.lifecycle !== "active")
     )
       return { status: "refused" };

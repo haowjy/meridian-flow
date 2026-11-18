@@ -195,6 +195,10 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     return locateDocumentById(this.db, view, documentId);
   }
 
+  async readSubtree(id: string) {
+    return (await this.readableSourceStore())?.readSubtree(id) ?? null;
+  }
+
   async listTree(view: TreeView) {
     return (await this.readableSourceStore())?.listTree(view) ?? { folders: [], documents: [] };
   }

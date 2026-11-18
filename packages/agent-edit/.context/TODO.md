@@ -3,7 +3,7 @@
 ## One save sequencing
 
 A write saves through `prepareSave` in `tool/document-save.ts`, but model inverses
-commit outside the port: Undo, redo and revert journal and deliver through collab's
+commit outside the port: Undo and revert journal and deliver through collab's
 `drizzle-turn-inverse.ts`. So every save-time concern lands once per path.
 
 Route inverses through `prepareSave`.

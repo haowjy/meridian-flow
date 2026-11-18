@@ -82,18 +82,6 @@ describe("inverse integration (postgres)", () => {
     ).toMatchObject({ status: "success" });
     expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
     expect(
-      await fixture.collab
-        .agentEdit()
-        .write({ command: "redo", file: "alpha.md", documentId: ALPHA_ID }, moved),
-    ).toMatchObject({ status: "success" });
-    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nblue\n\ngreen\n");
-    expect(
-      await fixture.collab
-        .agentEdit()
-        .write({ command: "revert", edit: "e1", file: "alpha.md", documentId: ALPHA_ID }, moved),
-    ).toMatchObject({ status: "success" });
-    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
-    expect(
       (await db.select().from(schema.branches)).filter(
         (branch) => branch.originWorkId === WORK_B_ID,
       ),
@@ -111,7 +99,6 @@ describe("inverse integration (postgres)", () => {
     const outcome = await fixture.collab.reverseTurn({
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      direction: "undo",
       actor: { type: "user", userId: USER_ID },
     });
     expect(outcome).toMatchObject({ status: "expired", acceptedParts: 0 });
@@ -155,7 +142,6 @@ describe("inverse integration (postgres)", () => {
     const turnUndo = await fixture.collab.reverseTurn({
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      direction: "undo",
       actor: { type: "user", userId: USER_ID },
     });
     expect(turnUndo).toMatchObject({ status: "reversed", skips: [] });

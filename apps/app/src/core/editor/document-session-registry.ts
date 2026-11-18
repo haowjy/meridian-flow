@@ -63,10 +63,23 @@ export interface LiveDocumentSessionRegistry {
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;
   /**
-   * The writer's Undo of the document's live session in this tab, shown or kept for its undo;
-   * null when the tab holds none.
+   * The Yjs state vector of the document's live session in this tab (or of its draft room, for
+   * `"draft"`), typing the server hasn't acknowledged included; null when this tab holds no
+   * such session, or several draft rooms for the document.
    */
-  liveHistory(documentId: DocumentId): DocumentHistory | null;
+  openStateVector(documentId: DocumentId, view?: "live" | "draft"): Uint8Array | null;
+  /**
+   * Settles once the server holds the typing in this tab's live session of the document; at once
+   * when the tab holds none or it is not connected.
+   */
+  whenLiveHeld(documentId: DocumentId): Promise<void>;
+  /**
+   * The writer's Undo of a room's session in this tab, shown or kept for its undo: a document's
+   * live room by its id, a draft room by its name. Null when the tab holds none.
+   */
+  history(roomKey: string): DocumentHistory | null;
+  /** Calls `observer` each time a session opens in this tab, live or draft, with a new `history`. */
+  observeHistories(observer: () => void): () => void;
   restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,
