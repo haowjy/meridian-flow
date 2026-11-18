@@ -18,7 +18,6 @@ import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, PaintHold, PaintScope } from "@/components/app/PaintHold";
 import { AgentFileState } from "@/features/agents/AgentFileState";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
 import {
   DocumentStatePortal,
@@ -302,7 +301,7 @@ function useHostFreeze(projectId: string, tab: OpenDocument) {
   return useDocumentFreeze(projectId, tab, reviewing ? controller.ownerKey : null);
 }
 
-/** The document's identity and state, its notices and its review's toast. */
+/** The document's identity and state, and its notices. */
 function DesktopDocumentChrome({
   projectId,
   document,
@@ -318,7 +317,6 @@ function DesktopDocumentChrome({
   focusReview?: string | null;
   onFocusReview?: (itemKey: string | null) => void;
 }) {
-  const { controller } = useDraftReview();
   const freeze = useHostFreeze(projectId, document);
   const removal = useContextRemovalCoordinator();
   const openRoute = useOpenContextRoute();
@@ -376,9 +374,6 @@ function DesktopDocumentChrome({
         freeze={freeze}
         reviewNotices={place === "main"}
       />
-      {controller.toast ? (
-        <ReviewToast toast={controller.toast} onDismiss={controller.dismissToast} />
-      ) : null}
     </>
   );
 }

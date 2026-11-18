@@ -6,28 +6,16 @@ export type InlineDraftReview = DraftReviewSelection & {
   focus?: ReviewFocus | null;
   shown?: boolean;
 };
-export type ReviewToastCode = "change-gone";
-export type ReviewToast = {
-  id: number;
-  code: ReviewToastCode;
-  tone: "info" | "error";
-};
 export type DraftReviewState = {
   surface: { kind: "none" } | InlineDraftReview;
-  toast: ReviewToast | null;
-  toastSeq: number;
 };
 export type DraftReviewAction =
   | (DraftReviewSelection & { type: "enterInline" })
   | (DraftReviewSelection & { type: "inlineShown"; shown: boolean })
   | (DraftReviewSelection & { type: "changeFocused"; focus: ReviewFocus | null })
-  | { type: "toast"; code: ReviewToastCode; tone: "info" | "error" }
-  | { type: "toastDismissed"; id: number }
   | { type: "exitInline" | "exitReview" };
 export const EMPTY_DRAFT_REVIEW_STATE: DraftReviewState = {
   surface: { kind: "none" },
-  toast: null,
-  toastSeq: 0,
 };
 export function draftReviewReducer(
   state: DraftReviewState,
@@ -43,14 +31,6 @@ export function draftReviewReducer(
     case "exitInline":
     case "exitReview":
       return { ...state, surface: { kind: "none" } };
-    case "toast":
-      return {
-        ...state,
-        toastSeq: state.toastSeq + 1,
-        toast: { id: state.toastSeq + 1, code: action.code, tone: action.tone },
-      };
-    case "toastDismissed":
-      return state.toast?.id === action.id ? { ...state, toast: null } : state;
   }
   const review = state.surface;
   if (review.kind !== "inline" || !matches(review, action)) return state;

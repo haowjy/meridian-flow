@@ -12,7 +12,6 @@ import {
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
   inlineReviewFromState,
-  type ReviewToast,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-model";
 import {
@@ -22,7 +21,7 @@ import {
   type WorkBranchCommands,
 } from "./useWorkBranchCommands";
 
-export type { DraftReviewSelection, InlineDraftReview, ReviewToast };
+export type { DraftReviewSelection, InlineDraftReview };
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
 export type ReviewChangeTarget = ReviewFocus;
@@ -92,8 +91,6 @@ export type DraftReviewController = {
     change: ReviewChangeTarget,
     options?: { scroll?: boolean; instant?: boolean; keepRestoredPlace?: boolean },
   ) => void;
-  toast: ReviewToast | null;
-  dismissToast: (id: number) => void;
   enterInlineReview: (documentId: string, itemKey: string) => void;
   exitInlineReview: () => void;
   exitReview: () => void;
@@ -239,10 +236,6 @@ export function useDraftReviewController({
     [reportFocusedChange],
   );
 
-  const dismissToast = useCallback((id: number) => {
-    dispatch({ type: "toastDismissed", id });
-  }, []);
-
   const { startDraft, apply, discard } = commands;
 
   return useMemo(
@@ -260,8 +253,6 @@ export function useDraftReviewController({
       focus: inlineReview?.focus ?? null,
       reportFocusedChange,
       focusReviewChange,
-      toast: state.toast,
-      dismissToast,
       enterInlineReview,
       exitInlineReview,
       exitReview,
@@ -286,8 +277,6 @@ export function useDraftReviewController({
       inlineReview?.focus,
       reportFocusedChange,
       focusReviewChange,
-      state.toast,
-      dismissToast,
       enterInlineReview,
       exitInlineReview,
       exitReview,

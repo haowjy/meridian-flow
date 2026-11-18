@@ -41,14 +41,6 @@ export function reversalRefusalCopy(refusal: ReversalRefusal): string {
     case "partial":
     case "partial_failure":
       return t`Only part of this change could be reversed.`;
-    case "not_found":
-    case "document_not_found":
-      return t`That document is no longer available, so this change can't be reversed.`;
-    case "ambiguous_match":
-    case "invalid_write":
-      return t`This change no longer matches the document's text, so it can't be reversed.`;
-    case "binary_file":
-      return t`This file is binary, so this change can't be reversed.`;
     case "permission_denied":
       return permissionDeniedCopy(refusal.denial);
     case "not_undone":

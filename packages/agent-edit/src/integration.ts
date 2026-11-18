@@ -158,17 +158,6 @@ export {
   runInverseJob,
 } from "./undo/forward-inverse.js";
 export { heldDeletes } from "./undo/held-deletes.js";
-export type { ClockRange, JournalDependencyRow } from "./undo/journal-dependencies.js";
-export {
-  decodeUpdateForDependencies,
-  deleteRanges,
-  dependsOnRows,
-  laterDependencyClosure,
-  rangeCovers,
-  rangesOverlap,
-  structDependencies,
-  suppliedRanges,
-} from "./undo/journal-dependencies.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,
