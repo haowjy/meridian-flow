@@ -4,11 +4,11 @@ Two lock-free drafts probes. **P5** stops the server between a draft write's
 `COMMIT` and its acknowledgement and checks the resend lands once. **P6** runs two
 server processes on one database, with a tab on each typing into the same draft.
 Both run on an owned mock stack (`MODEL_PROVIDER=mock pnpm dev`) and read
-durable state with `tools/qa/draft-readback.ts`.
+durable state with `tools/qa/draft-readback.mts`.
 
 ## Tools
 
-- `pnpm exec tsx tools/qa/draft-readback.ts <draftId> [--db <url>]` prints a
+- `pnpm exec tsx tools/qa/draft-readback.mts <draftId> [--db <url>]` prints a
   draft's `revision`, `checkpointRevision`, `checkpointSeq`, generation, tail
   rows with their client ids, materialized `text` and `stateSha256`. Without
   `--db` it reads this checkout's database.
@@ -47,7 +47,7 @@ Seed a document, create a named Work, create a thread on it with
 draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
 `./mf api GET /api/projects/<project>/works/<work>/branches` lists the Work's branch
 (`items[].branchId`). Each item is one document draft (`itemKey`
-`${branchId}:${documentId}`). `draft-readback.ts` takes that draft's
+`${branchId}:${documentId}`). `draft-readback.mts` takes that draft's
 `document_drafts.id` (`draft_<uuid>`), not `branchId`.
 
 ## P5: crash between the append's commit and its ack
