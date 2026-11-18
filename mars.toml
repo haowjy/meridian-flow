@@ -15,6 +15,7 @@ targets = [
     ".codex",
 ]
 models_cache_ttl_hours = 24
+agent_emission = "never"
 
 # [settings.meridian.agent_copy]
 # harnesses = ["claude"]
