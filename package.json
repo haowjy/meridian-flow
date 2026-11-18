@@ -42,7 +42,7 @@
     "dev:db:ensure": "bun tools/dev/ensure-db.ts",
     "dev:db:prepare": "bun tools/dev/prepare-db.ts",
     "dev:db:drop": "bun tools/dev/drop-db.ts",
-    "smoke:project-domain": "tsx tools/dev/smoke-project-domain.ts",
+    "smoke:project-domain": "tsx tools/dev/smoke-project-domain.mts",
     "smoke:app-dev-transform": "bun tools/dev/smoke-app-dev-transform.ts",
     "smoke:prod-boot": "bun tools/dev/smoke-prod-boot.ts",
     "dev:gc-dbs": "bun tools/dev/gc-dbs.ts",
