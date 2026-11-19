@@ -48,14 +48,17 @@ export function createDraftProvenanceReader(store: DraftDispositionStore) {
           members,
           userId: cut.userId,
           snapshot: Array.from(Y.encodeSnapshot(Y.snapshot(doc))),
-          parts: cut.parts.map(({ threadId, turnId, toolCallId, inserted, deleted, owner }) => ({
-            threadId,
-            turnId,
-            ...(toolCallId ? { toolCallId } : {}),
-            inserted,
-            deleted,
-            owner,
-          })),
+          parts: cut.parts.map(
+            ({ threadId, turnId, toolCallId, inserted, deleted, owner, taken }) => ({
+              threadId,
+              turnId,
+              ...(toolCallId ? { toolCallId } : {}),
+              inserted,
+              deleted,
+              ...(taken ? { taken: true as const } : {}),
+              owner,
+            }),
+          ),
         });
       } finally {
         doc.destroy();

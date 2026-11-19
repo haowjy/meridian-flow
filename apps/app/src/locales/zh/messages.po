@@ -2893,6 +2893,10 @@ msgstr ""
 #~ msgid "Couldn't delete this folder."
 #~ msgstr ""
 
+#: src/features/draft-review/draft-command-owner.ts
+msgid "Couldn't discard that."
+msgstr ""
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard this draft."
 msgstr ""
