@@ -188,42 +188,54 @@ try {
     workProjection: h.projection,
     treeLists: createTestRemovalDeps(h.db).treeLists,
   });
+  const discarding = h.discardCommand(work.branchId);
   await discard.discardLocked({
-    kernel: { branchId: work.branchId, selection: { kind: "whole" } },
-    command: h.discardCommand(work.branchId),
+    kernel: {
+      branchId: work.branchId,
+      selection: { kind: "whole" },
+      commandId: discarding.envelope.commandId,
+    },
+    command: discarding,
   });
   const closed =
     await h.raw`select id,status,closed_cause from document_drafts where branch_id=${work.branchId} order by id`;
-  observe("Discard all draft lifecycle", closed);
+  observe("Discard all leaves the drafts active", closed);
   assert.ok(closed.length >= 5);
-  assert.ok(closed.every((row) => row.status === "closed" && row.closed_cause === "discarded"));
+  assert.ok(closed.every((row) => row.status === "active" && row.closed_cause === null));
+  // The Discard's own append records system receipts; every earlier receipt is untouched.
+  const partsAfter = await h.raw`select id,origin,effect from document_edit_parts order by id`;
+  assert.deepEqual(partsAfter.slice(0, partsBefore.length), [...partsBefore]);
   assert.deepEqual(
-    await h.raw`select id,origin,effect from document_edit_parts order by id`,
-    partsBefore,
+    (await h.raw`select id from draft_write_journal order by id`).slice(0, journalBefore.length),
+    [...journalBefore],
   );
-  assert.deepEqual(await h.raw`select id from draft_write_journal order by id`, journalBefore);
-  for (const f of closing)
-    assert.ok((await read(f.draftId))?.parts.every((p) => p.disposition === "discarded"));
+  // An open draft keeps its receipts pending after a Discard; the text reads as the base.
+  for (const f of closing) {
+    assert.ok((await read(f.draftId))?.parts.every((p) => p.disposition === "pending"));
+    assert.equal((await h.readDraft(f.draftId)).lifecycle, "active");
+  }
   assert.equal(
     (await read(applied.draftId))?.parts.find((p) => p.editId === applied.editId)?.disposition,
     "applied",
   );
   observe(
-    "closed historical Apply evidence",
-    "applied receipt retained; non-applied receipts discarded",
+    "Apply evidence",
+    "applied receipt retained; discarded receipts stay pending in an open draft",
   );
   const closedLive = await h.liveText(applied.documentId);
   const closedRevert = await applied.command("revert");
-  observe("closed draft never writable", {
+  observe("an applied draft is not reverted after a Discard", {
     status: closedRevert.status,
     message: closedRevert.message,
   });
-  assert.equal(closedRevert.status, "cant_undo_applied");
-  assert.match(closedRevert.message, /applied/i);
+  assert.equal(closedRevert.status, "nothing_to_revert");
   assert.equal(await h.liveText(applied.documentId), closedLive);
   assert.deepEqual(
-    await h.raw`select id,origin,effect from document_edit_parts order by id`,
-    partsBefore,
+    (await h.raw`select id,origin,effect from document_edit_parts order by id`).slice(
+      0,
+      partsBefore.length,
+    ),
+    [...partsBefore],
   );
   console.log("PASS G1 disposition and close");
 } finally {

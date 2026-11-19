@@ -62,24 +62,19 @@ and owner-rolled AI ranges; current single-user projects never query human
 receipts, even when unresolved ranges were requested. The receipt query starts
 with the document's agent edits (partial actor index) and joins parts by edit
 and immutable origin draft, so human typing history need not be scanned. Edited-text Discard belongs to the browser's local undoable edit.
-The per-document HTTP Discard says what it ends. `tree` ends only the branch's move or
-delete: a live chat's Discard, whose text the writer reverts in the room. `item` ends
-everything the branch holds on the document: a creation only the Work shows (always ended
-whole), or a frozen lineage's draft, whose room drops the writer's text. The URL names the
-branch; the body names the item and what ends. A draft that moved on since the writer saw it is
-discarded all the same, and Undo brings it back. The answer's `itemClosed` is what the kernel
-ended. Its command row is claimed first
-in the kernel's transaction and holds the answer when it commits, and so is the bounce on an
-archived or deleted Work or a chat in Trash (`settled: [returned]`, nothing ended). A Discard
-never refuses: an item with no pending record and no changed text draft is answered from
-`settlementOf` (`already discarded` when a Discard, or nothing, settled it; `overtaken` by the
-Apply that did, which wins when the halves differ), and the others in the selection still
-discard. A branch that is no longer active takes nothing, and its selected items are answered by
-the same reader; only Discard all on a closed branch answers one `already`. Whether a draft holds
-text is decided under its row lock from the draft itself (`draftHoldsText`, the projection's own
-judgement): `has_effect` stands in only when its watermark is the draft's revision, so a
-projection lagging an Apply never makes a Discard close text that is live. No cut is sent: a Discard takes the records the Work holds when it runs, and Undo
-brings them back. The tree half of every Discard is the
+The per-document HTTP Discard says what it takes: each item names a document and its `text`
+(`"all"` or change ids) and `tree` (the branch's move, delete or create). It is one server command
+over change ids, described in [apply.md](apply.md): the draft stays open and the text half is an
+appended update, so a draft the writer has since typed over is discarded all the same, and Undo
+brings back what still stands. The answer's `closed` is what left Changes whole. Its command row is
+claimed first in the kernel's transaction and holds the answer when it commits, and so is the bounce on an
+archived or deleted Work or a chat in Trash (`settled: [returned]`, nothing taken). A Discard
+never refuses: an item with nothing pending is answered from `settlementOf` (`already discarded`
+when a Discard, or nothing, settled it; `overtaken` by the Apply that did), and the others in the
+selection still discard. Whether a draft holds text is decided under its row lock from the draft
+itself (`draftHoldsText`): `has_effect` stands in only when its watermark is the draft's revision, so
+a projection lagging an Apply never makes a Discard take text that is live. No cut is sent: a
+Discard takes the records the Work holds when it runs. The tree half of every Discard is the
 package's `discardDraft`, run with `treeListStore.submit` in each list the Work spans
 (`adapters/drizzle-branch-discard.ts`): the pending records are settled `discarded` with the
 command's id. A discarded drafted create is in no view, and its `documents` row and text stay

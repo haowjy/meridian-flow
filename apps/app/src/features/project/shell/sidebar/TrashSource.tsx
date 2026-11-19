@@ -79,18 +79,18 @@ export function TrashSource({
           {lines.map(({ entry, gone, discard }) =>
             discard ? (
               <TrashDiscardRow
-                key={discard.entry.commandId}
+                key={discard.entry.commandIds[0]}
                 entry={discard.entry}
                 names={discard.names}
                 workName={discard.workName}
                 now={now}
-                state={discards.states.get(discard.entry.commandId)}
+                state={discards.states.of(discard.entry.commandIds)}
                 onRestore={() => {
                   notices.end();
                   discards.restore(discard.entry);
                 }}
                 onUndo={discards.undoOf(discard.entry)}
-                undo={discards.undoing.get(discard.entry.commandId)}
+                undo={discards.undoing.get(discard.entry.commandIds[0])}
               />
             ) : !entry ? null : gone ? (
               <ListRow
@@ -233,11 +233,11 @@ function useTrashDiscardRows(projectId: string) {
     });
   const listed = query.data?.entries ?? [];
   for (const entry of listed) {
-    const kind = states.get(entry.commandId)?.kind;
-    if ((kind === "restored" || kind === "left_out") && !restored.current.has(entry.commandId))
-      restored.current.set(entry.commandId, {
+    const kind = states.of(entry.commandIds)?.kind;
+    if ((kind === "restored" || kind === "left_out") && !restored.current.has(keyOf(entry)))
+      restored.current.set(keyOf(entry), {
         entry,
-        listedThen: new Set(listed.map(({ commandId }) => commandId)),
+        listedThen: new Set(listed.map(keyOf)),
       });
   }
   // A new Discard of a restored draft is the next thing done to it: the restore's Undo ends.
@@ -246,7 +246,7 @@ function useTrashDiscardRows(projectId: string) {
     if (
       listed.some(
         (entry) =>
-          !listedThen.has(entry.commandId) &&
+          !listedThen.has(keyOf(entry)) &&
           documentsOf(entry).some((document) => took.has(document)),
       )
     )
@@ -256,7 +256,7 @@ function useTrashDiscardRows(projectId: string) {
     ...listed,
     ...[...restored.current.values()]
       .map(({ entry }) => entry)
-      .filter((held) => !listed.some((entry) => entry.commandId === held.commandId)),
+      .filter((held) => !listed.some((entry) => keyOf(entry) === keyOf(held))),
   ];
   const rows = entries.map((entry) => {
     const created = new Map(entry.tree.created.map((node) => [node.node, node.name]));
@@ -275,39 +275,43 @@ function useTrashDiscardRows(projectId: string) {
     undoing,
     /** The Undo of a restore made here: the drafts go back to Trash as a new Discard entry. */
     undoOf: (entry: DiscardEntry) => {
-      const state = states.get(entry.commandId);
+      const state = states.of(entry.commandIds);
       if (state?.kind !== "restored" || !state.branchId || !entry.workId) return undefined;
       const { branchId, brought } = state;
       const ownerKey = workOwnerKey({ id: entry.workId });
       return () => {
-        if (undoing.get(entry.commandId) === "sending") return;
-        mark(entry.commandId, "sending");
+        if (undoing.get(keyOf(entry)) === "sending") return;
+        mark(keyOf(entry), "sending");
         void discardDrafts(queryClient, owner, {
           projectId,
           ownerKey,
           branchId,
           items: [...new Set([...brought.text, ...brought.tree])].map((documentId) => ({
             documentId,
-            ends: brought.text.includes(documentId) ? ("item" as const) : ("tree" as const),
+            tree: brought.tree.includes(documentId),
+            text: brought.text.includes(documentId),
           })),
         }).then((outcome) => {
-          if (outcome.kind !== "done") return mark(entry.commandId, "failed");
+          if (outcome.kind !== "done") return mark(keyOf(entry), "failed");
           // The restored row gives way to the new entry the refetch lists.
-          restored.current.delete(entry.commandId);
-          mark(entry.commandId, null);
+          restored.current.delete(keyOf(entry));
+          mark(keyOf(entry), null);
         });
       };
     },
     restore: (entry: DiscardEntry) => {
       restored.current.clear();
-      restore({
-        commandId: entry.commandId,
+      void restore({
+        commandIds: entry.commandIds,
         branchId: entry.branchId,
         documentIds: documentsOf(entry),
       });
     },
   };
 }
+
+/** A run of Discards is keyed by its latest. */
+const keyOf = (entry: DiscardEntry) => entry.commandIds[0];
 
 /** What a Discard took: its drafts' documents and every node its tree half settled. */
 const documentsOf = (entry: DiscardEntry) => [

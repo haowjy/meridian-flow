@@ -515,7 +515,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         workProjection: createTestWorkProjectionMutation(db),
         treeLists,
       }),
-      holdRetirement: draftClose.holdRetirement,
     }),
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,

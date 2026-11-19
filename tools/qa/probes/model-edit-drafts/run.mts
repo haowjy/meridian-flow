@@ -306,7 +306,7 @@ const cases: ModelEditCase[] = [
   },
   {
     name: "a Discard between two calls of one response",
-    expected: "the first call's edit went to the discarded draft; the second lands in a new draft",
+    expected: "the first call's edit is taken out of the draft; the second lands in the same draft",
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "discard-between", "draft");
       const doc = await h.seedDocument("discard-between", "Live seed.");
@@ -329,18 +329,15 @@ const cases: ModelEditCase[] = [
       assert.deepEqual(after.edits, ["call-1", "call-2"]);
       assert.deepEqual(
         (await drafts(h, doc.documentId)).map((d) => [d.status, d.doc]),
-        [
-          ["closed", ["Live seed.", "Added."]],
-          ["active", ["Live seed.", "Then."]],
-        ],
+        [["active", ["Live seed.", "Then."]]],
       );
       console.log(`  (the second call ended as ${after.results[1]}; commands ${after.commands})`);
     },
   },
   {
-    name: "a write after a Discard lands in a new draft and the answer is the stored one",
+    name: "a write after a Discard lands in the same draft and the answer is the stored one",
     expected:
-      "the answer is stored once as a done row; resolving the key again returns it, the old draft stays closed beside the new one",
+      "the answer is stored once as a done row; resolving the key again returns it, the one draft stays active",
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "write-after-discard", "draft");
       const doc = await h.seedDocument("write-after-discard", "Live seed.");
@@ -376,13 +373,13 @@ const cases: ModelEditCase[] = [
       assert.equal((again as { result?: { settled?: unknown } }).result?.settled, undefined);
       assert.deepEqual(
         (await drafts(h, doc.documentId)).map((d) => d.status),
-        ["closed", "active"],
+        ["active"],
       );
     },
   },
   {
-    name: "a Discard, then another chat writes a new draft",
-    expected: "the old draft stays closed with its edit; the new draft holds the new edit alone",
+    name: "a Discard, then another chat writes the same draft",
+    expected: "the draft holds the new edit alone",
     async run({ h, start }) {
       const work = await seedWorkWithChats(h, "new-draft", "draft", 2);
       const doc = await h.seedDocument("new-draft", "Live seed.");
@@ -403,10 +400,7 @@ const cases: ModelEditCase[] = [
       const found = await drafts(h, doc.documentId);
       assert.deepEqual(
         found.map((d) => [d.status, d.doc]),
-        [
-          ["closed", ["Live seed.", "Added."]],
-          ["active", ["Live seed.", "Then."]],
-        ],
+        [["active", ["Live seed.", "Then."]]],
       );
       assert.deepEqual((await state(h, two, doc.documentId)).results, ["call-2:committed"]);
     },

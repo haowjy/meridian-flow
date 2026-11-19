@@ -8,11 +8,11 @@ import {
   applyCommandEffects,
   applyCommandTrees,
   commands,
-  documentDrafts,
+  discardCommandEffects,
   documents,
 } from "@meridian/database/schema";
 import { discardedBy } from "@meridian/project-tree";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
@@ -58,7 +58,7 @@ export function createDrizzleCommandDocuments(
       return documentsAmong([...text.map((row) => row.id), ...trees.flatMap((row) => row.nodes)]);
     },
 
-    /** The documents a Discard command settled records of or closed text drafts on (the ones still closed by it). */
+    /** The documents a Discard command settled records of or took text from. */
     async ofDiscard(input: {
       discardCommandId: CommandId;
       accountId: UserId;
@@ -66,15 +66,13 @@ export function createDrizzleCommandDocuments(
     }): Promise<DocumentId[]> {
       const tx = currentDrizzleDb(db);
       const text = await tx
-        .select({ id: documentDrafts.documentId })
-        .from(documentDrafts)
-        .innerJoin(commands, eq(commands.id, documentDrafts.closedBy))
+        .select({ id: discardCommandEffects.documentId })
+        .from(discardCommandEffects)
+        .innerJoin(commands, eq(commands.id, discardCommandEffects.commandId))
         .where(
           and(
-            eq(documentDrafts.closedBy, input.discardCommandId),
+            eq(discardCommandEffects.commandId, input.discardCommandId),
             eq(commands.accountId, input.accountId),
-            eq(documentDrafts.branchId, input.branchId),
-            ne(documentDrafts.closedCause, "left_out"),
           ),
         );
       const nodes = await deps.treeLists.read({

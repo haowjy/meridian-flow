@@ -251,6 +251,26 @@
   }
 }
 
+/* A change the writer just discarded, until the server's write reaches the room: it reads as the base
+   text it goes back to. The words it added are hidden and the words it removed are plain. */
+.meridian-editor .ProseMirror .meridian-review-added.meridian-review-discarded {
+  display: none;
+}
+
+.meridian-editor .ProseMirror .meridian-review-removal.meridian-review-discarded {
+  color: unset;
+}
+
+.meridian-editor
+  .ProseMirror
+  .meridian-review-removal.meridian-review-discarded
+  .meridian-review-removal-text {
+  color: unset;
+  background: none;
+  text-decoration: none;
+  padding-inline-end: 0;
+}
+
 .meridian-editor .ProseMirror .meridian-review-arrived {
   animation: meridian-review-arrive 1.3s ease-out 1;
 }

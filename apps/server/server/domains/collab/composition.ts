@@ -123,7 +123,6 @@ import {
 import { createDraftAheadRegistration } from "./domain/draft-ahead-registration.js";
 import type { AttemptScope } from "./domain/draft-attempts.js";
 import { createDraftCoordinator } from "./domain/draft-coordinator.js";
-import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createDraftProjection } from "./domain/draft-projection.js";
 import { createDraftProvenanceReader } from "./domain/draft-provenance.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
@@ -503,10 +502,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     workProjection: deps.workProjectionMutation,
     treeLists: deps.treeLists,
   });
-  const discard = createBranchDiscard({
-    store: discardStore,
-    holdRetirement: deps.draftClose.holdRetirement,
-  });
+  const discard = createBranchDiscard({ store: discardStore });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
   const reopen = createReopenDrafts(deps.db, {
@@ -514,7 +510,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     close: deps.draftClose,
     treeLists: deps.treeLists,
     workProjection: deps.workProjectionMutation,
-    live: persistence.journal,
     scheduleLivePull: (documentId) => draftPulls.scheduleLivePull(documentId),
   });
   const applyCommands = createApplyClickService({
@@ -568,9 +563,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const discardEntries = createDrizzleDiscardEntries(deps.db);
   const discardPurge = createDrizzleDiscardPurge(deps.db, {
     workProjection: deps.workProjectionMutation,
-    treeLists: deps.treeLists,
     ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
-    readDisposition: createDraftDispositionReader(createDrizzleDraftDispositionStore(deps.db)),
   });
   const undoDiscard = createUndoDiscardService({
     commands,
@@ -578,7 +571,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       treeLists: deps.treeLists,
-      reopen,
+      coordinator: draftCoordinator,
     }),
   });
   const branches = createWorkBranchReviewService({

@@ -28,6 +28,8 @@ const ADDED_CLASS = "meridian-review-added";
 const EMPHASIS_CLASS = "meridian-review-emphasized";
 /** A change that arrived while the writer was reviewing pulses once. */
 const ARRIVED_CLASS = "meridian-review-arrived";
+/** A change the writer discarded, until the server's write reaches the room: its base side shows. */
+const DISCARDED_CLASS = "meridian-review-discarded";
 /** Modifier on the insert class when the decoration covers a whole block node. */
 const BLOCK_CLASS = "meridian-review-block";
 /** A block whose nesting changed: its marker, indent and bar are painted, its text is not. */
@@ -244,6 +246,7 @@ export const inlineReviewClassNames = {
   nested: NESTED_CLASS,
   emphasized: EMPHASIS_CLASS,
   arrived: ARRIVED_CLASS,
+  discarded: DISCARDED_CLASS,
   block: BLOCK_CLASS,
   removal: REMOVAL_CLASS,
   removalBlock: REMOVAL_BLOCK_CLASS,

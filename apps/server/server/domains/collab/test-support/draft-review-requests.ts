@@ -101,7 +101,7 @@ export function reviewDriver(
 ) {
   const owner = scope.owner ?? { kind: "work", workId: WORK_ID as WorkId };
   const userId = scope.userId ?? (USER_ID as UserId);
-  const body = (outcome: Awaited<ReturnType<DraftReviewApi["discardItem"]>>) =>
+  const body = (outcome: Awaited<ReturnType<DraftReviewApi["discardBranch"]>>) =>
     outcome.kind === "result" ? outcome.result : outcome;
   async function resolved(documentId: string) {
     const found = await review.resolveItemByDocument({ owner, documentId: documentId as never });
@@ -122,11 +122,14 @@ export function reviewDriver(
       return (await review.items({ owner })).items;
     },
     async discardItem(documentId: string) {
-      const { item, branchId } = await resolved(documentId);
+      const { branchId } = await resolved(documentId);
       return body(
-        await review.discardItem({
-          item,
-          ends: "item",
+        await review.discardBranch({
+          branchId,
+          selection: {
+            kind: "items",
+            items: [{ documentId: documentId as never, tree: true, text: "all" }],
+          },
           userId,
           envelope: testEnvelope({ kind: "discard", branchId, userId }),
         }),

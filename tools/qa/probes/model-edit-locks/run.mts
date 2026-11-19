@@ -133,7 +133,7 @@ const cases: ModelEditCase[] = [
     expected:
       "the Undo takes the Work before the document, so the first write makes its draft and both finish",
     async run({ h, start }) {
-      // Two chats in the Work: the second never saw the draft the Discard closes.
+      // Two chats in the Work: the second never saw the draft the Discard emptied.
       const drafting = await seedWorkWithChats(h, "first-write-x", "draft", 2);
       const direct = await seedWorkWithChats(h, "first-write-y", "direct");
       const { documentId } = await h.seedDocument("first-write", "Live seed.");
@@ -152,7 +152,7 @@ const cases: ModelEditCase[] = [
       ]);
       await send(child, h, x);
       await waitForAssistantTurn(h, x);
-      // The draft closes; its part stays in the document's history, so an Undo locks its Work.
+      // The draft reads as its base; its part stays in the document's history, so an Undo locks its Work.
       await child.call({
         op: "discard",
         projectId: h.ids.project,
@@ -187,7 +187,7 @@ const cases: ModelEditCase[] = [
       assert.deepEqual((await state(h, x2, documentId)).results, ["call-x2:committed"]);
       assert.deepEqual(
         (await drafts(h, documentId)).map((d) => d.status),
-        ["closed", "active"],
+        ["active"],
       );
     },
   },

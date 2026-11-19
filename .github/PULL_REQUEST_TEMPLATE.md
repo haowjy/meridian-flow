@@ -35,10 +35,9 @@
      change, in Changelog order. Each block gives:
      - Setup: main or this branch, how to start it (`pnpm dev`, provider), seed data.
      - Steps: numbered, driving the running app. Use ./mf only to set up state.
-     - Screenshots or a GIF beside the steps: Before and After for a fix or a
-       changed behavior, After only for a new capability. Commit them under
-       .github/pr-assets/<dir>/ and link them at a commit SHA so they stay
-       readable after the files leave the tree.
+     - Screenshots, or a video, beside the steps: Before and After for a fix or a
+       changed behavior, After only for a new capability. Upload them with
+       `gh pr edit --attach <file>`; never commit them to the repo.
      - Expect: what main does and what this branch does.
      A server-only change still shows the writer flow it runs through, with
      screenshots, plus its CLI or API output where that shows the change. When
@@ -119,8 +118,8 @@
 
 <!-- What you ran and what you saw, expected against observed.
      - Browser: every change a writer's experience runs through, server-only
-       included, ends with a prober's agent-browser run whose video (linked at a
-       commit) and screenshots are in Examples. ./mf output is debugging context, not verification. A PR with
+       included, ends with a prober's agent-browser run whose video and
+       screenshots, attached with gh --attach, are in Examples. ./mf output is debugging context, not verification. A PR with
        no writer-reachable change says "Browser: none" with the reason.
      - Model: name the provider each run used and why. A change to the
        harness (the agent stack in .context/CONTEXT.md, Harness composition:
