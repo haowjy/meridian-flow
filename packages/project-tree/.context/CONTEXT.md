@@ -99,7 +99,9 @@ the replay uses them (package `AGENTS.md`).
 - **`admit` stamps `dropped`** on a record in a closed draft, on a record of a dropped node or
   a create inside a dropped folder, and on a record whose addition changes a closed source. The
   server decides: its arrival order is the one shared by all clients. Admission compares the held
-  tree with the tree after the whole update and checks the added records' reported sources. If
+  tree with the tree after the whole update and checks the added records' reported sources. Records
+  that cancel each other in one update (a move and its Undo) change nothing together, so none is
+  dropped, even when one alone would reach a closed source. If
   that gate fails, it doubles prefixes and bisects to find the next record to judge, leaving each
   dropped record out of later projections. A reported source can be a no-op, so the candidate is
   checked against its own full projection before it is dropped. The diff counts both sources of a
