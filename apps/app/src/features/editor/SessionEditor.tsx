@@ -19,6 +19,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
+import { useRefreshTurnCardsOnEdit } from "@/client/query/useTurnLiveLineage";
 import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
@@ -331,6 +332,7 @@ function ActiveSessionEditorView({
   });
 
   usePaintPending(editor === null);
+  useRefreshTurnCardsOnEdit(editor);
 
   useEffect(() => {
     editorRef.current = editor;

@@ -33,35 +33,21 @@ export type TurnLiveLineageDocumentItem = {
   | { scope: "draft"; owner: DraftOwnerKey }
 );
 
-/**
- * `live-active` offers Undo. The rest offer none: `undone` and `partly` say the card's Undo ran
- * (`partly` when some parts stayed), `expired` that nothing is left for it to act on.
- */
-export type TurnReceiptState = "live-active" | "undone" | "partly" | "expired";
-
 export type TurnReceiptControl = "undo" | "view_change";
 
-/** What became of one half of a turn's drafted change to a node: still waiting, applied, or discarded. */
-export type TurnDraftState = "pending" | "applied" | "discarded";
-
 /**
- * What became of a turn's drafted tree change to a node: as a text half's, or `replaced` when a
- * later change to the same fact landed in its place.
+ * What became of a turn's drafted change to one document, text and tree halves folded into the
+ * less settled one: still waiting, applied, taken back by the card's Undo, or discarded.
  */
-export type TurnTreeState = TurnDraftState | "replaced";
+export type TurnDraftState = "pending" | "applied" | "undone" | "discarded";
 
 export interface TurnReceiptChip {
-  /** Each drafted document's text, by document id; absent for documents the turn wrote live. */
+  /** Each drafted document's change, by document or node id; absent for what the turn wrote live. */
   drafts?: Record<string, TurnDraftState>;
-  /**
-   * Each node's drafted tree change (a move, rename, delete or create, a folder's included), by
-   * node id. Beside `drafts`, which says the text half.
-   */
-  trees?: Record<string, TurnTreeState>;
-  skips?: import("./write-reversal.js").TurnInverseSkip[];
-  state: TurnReceiptState;
   /** `undo`: the card's Undo would take something back. */
   control: TurnReceiptControl;
+  /** The card's Undo ran and nothing is left for it; the card says "Undone". */
+  undone?: true;
 }
 
 export interface ListTurnLiveLineageResponse {

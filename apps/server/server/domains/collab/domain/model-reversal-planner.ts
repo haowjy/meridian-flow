@@ -1,7 +1,6 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
 import { REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
-import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import { draftSchema, isPending, takeBack, takeOutStanding } from "./draft-changes.js";
@@ -167,11 +166,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     if (destinations.size !== 1) throw new Error("One edit spans multiple versions");
     const [destination] = destinations;
     if (!destination) throw new Error("One edit has no destination");
-    const every = (cause: TurnInverseSkipCause) => ({ causes: entry.parts.map(() => cause) });
-    if (destination.closed) return every("returned");
-    if (destination.kind === "draft" && destination.state === "gone")
-      return { causes: entry.parts.map(closedPartCause) };
-    if (destination.kind === "live" && destination.removed) return every("document_deleted");
+    // A closed owner, a gone draft or a deleted document has nothing the card's Undo can take.
+    if (destination.closed) return null;
+    if (destination.kind === "draft" && destination.state === "gone") return null;
+    if (destination.kind === "live" && destination.removed) return null;
     const actionKind = poppableForTurn(turn).has(entry.id)
       ? ("undo" as const)
       : ("revert" as const);
@@ -179,12 +177,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     // its text is not there for an Undo to take out.
     const settled = (part: StoredInversePart) =>
       destination.kind === "draft" && !part.waiting && part.disposition !== "applied";
-    return {
-      destination,
-      actionKind,
-      selection: entry.parts.filter((part) => !settled(part)),
-      discarded: entry.parts.filter(settled),
-    };
+    return { destination, actionKind, selection: entry.parts.filter((part) => !settled(part)) };
   }
   function poppableForTurn(turn: TurnInverseQuery) {
     const poppable = new Set<string>();

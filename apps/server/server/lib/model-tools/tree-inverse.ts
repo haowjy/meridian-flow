@@ -164,7 +164,7 @@ export async function runTreeInverse(
 
 /** Why an Undo left a change where it is, for the model: the owner it would have changed is closed. */
 function closedMessage(closed: ClosedSource | undefined): string {
-  const who = closed?.owner ?? "its owner";
+  const who = "its owner";
   switch (closed?.why) {
     case "chat_frozen":
       return `Not undone: ${who} is in Trash, so the change stayed. It comes undone only after the writer restores it.`;

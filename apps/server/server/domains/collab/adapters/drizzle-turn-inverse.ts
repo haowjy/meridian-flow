@@ -15,7 +15,6 @@ import {
   textInRanges,
 } from "@meridian/agent-edit/yjs-mutation";
 import type { BranchId, DocumentId, DraftOwner, UserId } from "@meridian/contracts";
-import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import {
   branches,
   type Database,
@@ -473,7 +472,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
 
   /**
    * An owner that closed after this attempt's capture: the next capture sees it closed and
-   * plans its targets as `returned` skips. Any other refusal is the policy's and stands.
+   * plans nothing for its targets. Any other refusal is the policy's and stands.
    */
   function refusalOrMiss(refusal: FileEditRefusedError): Error {
     return refusal.refused.every(
@@ -525,7 +524,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       return {
         acting: tree.steps.length,
         taken: tree.taken.length + tree.undoneByCard,
-        stayed: tree.stayed,
       };
     },
     async readHistory(documentId) {
@@ -575,7 +573,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const documents = [...planned.values()];
       const handles: string[] = [];
       const deliveries: (() => Promise<void>)[] = [];
-      const skips: TurnInverseSkip[] = [];
       // Off every lock: the tree receipts the reply left, which lists and Works they write.
       const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query);
       const grants = await admitInverse(sequence, query, userId, tree.documents);
@@ -602,15 +599,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           for (const { plan, step } of sequence) {
             const entry = planned.get(plan);
             if (!entry) throw new Error("A step's plan is not among the commit's plans");
-            const outcome = await commitTextStep(entry, step, userId, query);
-            if (typeof outcome === "string") {
-              if (outcome) handles.push(outcome);
-            } else skips.push(outcome);
+            const handle = await commitTextStep(entry, step, userId, query);
+            if (handle) handles.push(handle);
           }
         };
         const runTree = async () => {
-          if (!tree.steps.length && !tree.stayed.length && !tree.taken.length && !tree.undoneByCard)
-            return;
+          if (!tree.steps.length && !tree.taken.length && !tree.undoneByCard) return;
           const now = await treePlanOf(query);
           const locked = new Set(tree.lists.map((list) => JSON.stringify(list)));
           if (now.lists.some((list) => !locked.has(JSON.stringify(list))))
@@ -623,7 +617,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             userId,
           });
           treeReversed = done.reversed;
-          skips.push(...done.skips);
         };
         // A node a reply made is taken back once the text written into it is.
         await runText();
@@ -648,7 +641,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       return {
         handles,
         updates: documents.flatMap((entry) => entry.updates.map(({ update }) => update)),
-        skips,
         treeReversed,
         reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
         outcomes: documents.flatMap((entry) => entry.outcomes),

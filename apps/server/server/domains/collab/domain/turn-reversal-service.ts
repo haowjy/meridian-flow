@@ -75,7 +75,6 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
       );
       return {
         status: "permission_denied",
-        denial: cause.refused[0]?.reason,
         documents,
       } satisfies ReversalOutcome;
     }
