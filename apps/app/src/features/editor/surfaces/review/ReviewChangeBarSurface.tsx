@@ -61,8 +61,6 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
       change={focusedItem.change}
       disabled={view.locked}
       touch={touch}
-      inFlow={placement.kind === "below"}
-      draftFailure={focusedItem.draftFailure}
       canApply
       onApply={() => void view.apply(focusedItem.change)}
       onDiscard={() => void view.discard(focusedItem.change)}

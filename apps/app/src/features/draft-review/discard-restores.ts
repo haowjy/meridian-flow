@@ -10,12 +10,11 @@ export type RestoreAnswer = {
   branchId?: string;
 };
 
-/** Where one Discard's restore stands in this tab; none until one is sent. */
+/** Where one Discard's restore stands in this tab; none until one is sent, and again once one failed. */
 export type DiscardRestoreState =
   | { kind: "restoring" }
   /** `branchId` absent: it was already back. */
-  | { kind: "restored"; branchId?: string; brought: RestoredHalves }
-  | { kind: "failed" };
+  | { kind: "restored"; branchId?: string; brought: RestoredHalves };
 
 /**
  * The one progress of each Discard's restore, by the Discard's command id, whatever sent it: the
@@ -46,11 +45,18 @@ export class DiscardRestores {
     this.set(discardCommandId, { kind: "restoring" });
     const answered = send().then((answer) => {
       this.running.delete(discardCommandId);
-      this.set(discardCommandId, stateOf(answer));
+      if (answer.answer === "failed") this.clear(discardCommandId);
+      else this.set(discardCommandId, stateOf(answer));
       return answer;
     });
     this.running.set(discardCommandId, answered);
     return answered;
+  }
+
+  private clear(discardCommandId: string) {
+    this.states.delete(discardCommandId);
+    this.revision++;
+    for (const listener of this.listeners) listener();
   }
 
   private set(discardCommandId: string, state: DiscardRestoreState) {
@@ -60,11 +66,8 @@ export class DiscardRestores {
   }
 }
 
-const stateOf = (answer: RestoreAnswer): DiscardRestoreState =>
-  answer.answer === "failed"
-    ? { kind: "failed" }
-    : {
-        kind: "restored",
-        brought: answer.brought ?? { text: [], tree: [] },
-        ...(answer.branchId ? { branchId: answer.branchId } : {}),
-      };
+const stateOf = (answer: RestoreAnswer): DiscardRestoreState => ({
+  kind: "restored",
+  brought: answer.brought ?? { text: [], tree: [] },
+  ...(answer.branchId ? { branchId: answer.branchId } : {}),
+});

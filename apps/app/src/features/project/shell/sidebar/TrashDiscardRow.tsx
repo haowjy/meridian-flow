@@ -13,8 +13,8 @@ export type DiscardEntry = ListDiscardEntriesResponse["entries"][number];
 
 /**
  * A Discard in Trash: the drafts it took, by name, and the Work it took them from, its age at the
- * right; its menu restores them. What became of a restore is the row's word: restored (the row
- * stays, struck through) or Retry.
+ * right; its menu restores them. A restored row stays, struck through, with its Undo; a failed
+ * restore is the pill's.
  */
 export function TrashDiscardRow({
   entry,
@@ -35,8 +35,8 @@ export function TrashDiscardRow({
   onRestore: () => void;
   /** Undo of a restore made here: Discard the same drafts again. Absent until it can be sent. */
   onUndo?: () => void;
-  /** The Undo's Discard is on its way, or was refused. */
-  undo?: "sending" | "failed";
+  /** The Undo's Discard is on its way. */
+  undo?: boolean;
 }) {
   const title =
     names.length > 0
@@ -52,15 +52,7 @@ export function TrashDiscardRow({
         title={title}
         detail={detail}
         notice={
-          undo === "failed" ? (
-            <RowWord
-              tone="warning"
-              word={<Trans>Retry</Trans>}
-              label={t`Retry undoing the restore of ${title}`}
-              sentence={t`Undo didn't go through. Try again.`}
-              onAction={onUndo}
-            />
-          ) : !onUndo ? (
+          !onUndo ? (
             // Restored elsewhere first: nothing here can put it back.
             <RowWord tone="done" word={<Trans>Restored</Trans>} sentence={t`Restored just now.`} />
           ) : (
@@ -72,7 +64,7 @@ export function TrashDiscardRow({
                   ? t`Restored just now: the drafts are back in ${workName}. Undo puts them back in Trash.`
                   : t`Restored just now: the drafts are back. Undo puts them back in Trash.`
               }
-              pending={undo === "sending"}
+              pending={undo}
               onAction={onUndo}
             />
           )
@@ -94,15 +86,7 @@ export function TrashDiscardRow({
       }}
       revealActions
       notice={
-        state?.kind === "failed" ? (
-          <RowWord
-            tone="warning"
-            word={<Trans>Retry</Trans>}
-            label={t`Retry restoring ${title}`}
-            sentence={t`Couldn't restore it. Retry tries again.`}
-            onAction={onRestore}
-          />
-        ) : state?.kind === "restoring" ? (
+        state?.kind === "restoring" ? (
           <RowWord word={<Trans>Restoring</Trans>} sentence={t`Restoring the drafts.`} pending />
         ) : null
       }

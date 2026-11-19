@@ -31,10 +31,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     deleting: readonly DockFile[];
     restoring: readonly DockFile[];
   } | null>(null);
-  const troubledFileCount = dock.files.filter(
-    (file) => file.status === "error" || dock.fileFailures(file).length > 0,
-  ).length;
-  // A refusal or a preview that did not load opens the strip so the writer sees it.
+  const troubledFileCount = dock.files.filter((file) => file.status === "error").length;
+  // A preview that did not load opens the strip so the writer sees it.
   useEffect(() => {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
@@ -231,7 +229,7 @@ function DockFileLine({
   const own = new Set(file.changes.map((change) => change.id));
   const items = view.items.filter(({ change }) => own.has(change.id));
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
-  // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
+  // A command's progress is the file's status line's (`DraftCommandStatus`), shown once.
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
   const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
   if (!summary && !expanded) return null;

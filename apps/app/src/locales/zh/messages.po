@@ -1747,8 +1747,8 @@ msgid "Apply changes in {name}"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Apply couldn't be sent. Try again."
-msgstr ""
+#~ msgid "Apply couldn't be sent. Try again."
+#~ msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewActions.tsx
@@ -1764,8 +1764,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Apply is waiting for confirmation."
-msgstr ""
+#~ msgid "Apply is waiting for confirmation."
+#~ msgstr ""
 
 #. placeholder {0}: file.name
 #: src/features/chat/DraftDock.tsx
@@ -2744,9 +2744,13 @@ msgstr ""
 msgid "Couldn't add the connection."
 msgstr ""
 
-#: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't apply this draft."
+#: src/features/draft-review/draft-command-owner.ts
+msgid "Couldn't apply that."
 msgstr ""
+
+#: src/features/draft-review/ReviewMessageText.tsx
+#~ msgid "Couldn't apply this draft."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't ask a question"
@@ -2898,8 +2902,8 @@ msgid "Couldn't discard that."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't discard this draft."
-msgstr ""
+#~ msgid "Couldn't discard this draft."
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
@@ -3180,7 +3184,11 @@ msgid "Couldn't restore {title}. Retry tries again."
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Couldn't restore it. Retry tries again."
+#~ msgid "Couldn't restore it. Retry tries again."
+#~ msgstr ""
+
+#: src/features/project/context/use-restore-discard.ts
+msgid "Couldn't restore that."
 msgstr ""
 
 #: src/features/draft-review/TrashedChatNotice.tsx
@@ -6504,7 +6512,6 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/chat/RecentChatsLanding.tsx
@@ -6513,7 +6520,6 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
@@ -6547,7 +6553,6 @@ msgid "Retry restoring {name}"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Retry restoring {title}"
 msgstr ""
 
@@ -6568,8 +6573,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Retry undoing the restore of {title}"
-msgstr ""
+#~ msgid "Retry undoing the restore of {title}"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Retry Work"
@@ -8624,7 +8629,6 @@ msgid "Undo delete of {title}"
 msgstr ""
 
 #: src/features/chat/thread-controls/control-copy.ts
-#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Undo didn't go through. Try again."
 msgstr ""
 
@@ -8645,8 +8649,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Undo is waiting for confirmation."
-msgstr ""
+#~ msgid "Undo is waiting for confirmation."
+#~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo move of {name}"

@@ -58,7 +58,7 @@ import {
   itemOf,
 } from "./draft-notices";
 import { GroupApply } from "./group-apply";
-import type { BranchCommandFailure, DraftRef } from "./review-command-types";
+import type { DraftRef } from "./review-command-types";
 import {
   buildFrame,
   inSchema,
@@ -73,11 +73,9 @@ import { type ReviewRuntime, retainReviewRuntime } from "./review-runtime";
 export type DraftCommandState = {
   applying: boolean;
   unapplying: boolean;
-  stalled: boolean;
   pending: boolean;
   hidden: boolean;
   discarding: ((change: ReviewChange) => boolean) | null;
-  failure: BranchCommandFailure | null;
   /** The draft is gone for good: its Work or document was purged. The page leaves. */
   ended: boolean;
   checkingClose: boolean;
@@ -85,11 +83,9 @@ export type DraftCommandState = {
 const EMPTY: DraftCommandState = {
   applying: false,
   unapplying: false,
-  stalled: false,
   pending: false,
   hidden: false,
   discarding: null,
-  failure: null,
   ended: false,
   checkingClose: false,
 };
@@ -350,12 +346,10 @@ export class DraftCommandOwner {
   /** The item's schedule, on the generation its state follows: the one publication path. */
   private publishQueue({ ref, queue }: Item) {
     const unapplying = queue.unapplies.length > 0;
-    const stalled = queue.stalled;
     this.setState(ref.itemKey, {
       pending: queue.pending,
       applying: queue.applying,
       unapplying,
-      stalled,
     });
   }
 
@@ -581,15 +575,16 @@ export class DraftCommandOwner {
     this.items.delete(item.ref.itemKey);
   }
 
-  /** A click's answer, as its caller's outcome and a line on the generation it was made for. */
-  private settled(ref: DraftRef, id: string, answer: ApplyClickOutcome): CommandOutcome {
+  /** A click's answer, as its caller's outcome; one that didn't go through is the pill's. */
+  private settled(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
     const outcome = this.outcomeOf(ref, answer);
     if (outcome.kind === "change-refused")
-      this.setState(
-        ref.itemKey,
-        { failure: { code: "apply-refused", serverCode: outcome.code } },
-        id,
-      );
+      // One pill for the branch, so an Apply all that fails shows one.
+      notifyFailure({
+        key: `apply:${branchOf(ref.itemKey)}`,
+        title: t`Couldn't apply that.`,
+        brief: true,
+      });
     return outcome;
   }
 
@@ -696,13 +691,13 @@ export class DraftCommandOwner {
       patched: [],
       acknowledged: Promise.resolve(),
     };
-    this.setState(ref.itemKey, { hidden: true, failure: null }, id);
+    this.setState(ref.itemKey, { hidden: true }, id);
     const outcome = this.item(ref)
       .queue.enqueue(frozen)
       .then((answer) => {
         joint?.answered(answer);
         this.setState(ref.itemKey, { hidden: false }, id);
-        return this.settled(ref, id, answer);
+        return this.settled(ref, answer);
       });
     return { sent: true, outcome };
   }
@@ -750,8 +745,7 @@ export class DraftCommandOwner {
       ...(saw ? { saw } : {}),
     };
     const acknowledged = binding.session.whenCurrentChangesAcknowledged();
-    this.setState(ref.itemKey, { failure: null });
-    const rebuilt = this.rebuilder(
+    const rebuild = this.rebuilder(
       entry.draftId,
       target.kind === "draft" ? null : ids,
       frame,
@@ -762,7 +756,7 @@ export class DraftCommandOwner {
       optimistic,
       patched,
       acknowledged,
-      rebuild: rebuilt.rebuild,
+      rebuild,
       ...(joint ? { send: joint.send } : {}),
     };
     const scheduled = histories
@@ -770,8 +764,6 @@ export class DraftCommandOwner {
           frozen,
           patchFor: (groupIds) =>
             applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
-          intent: () => this.setState(entry.ref.itemKey, { failure: null }),
-          replayed: (answer) => void this.settled(entry.ref, entry.draftId, answer),
         })
       : { outcome: entry.item.queue.enqueue(frozen), handle: null };
     let band: ApplyEntries | undefined;
@@ -794,7 +786,7 @@ export class DraftCommandOwner {
     binding.runtime.projectNow();
     return {
       sent: true,
-      outcome: this.textOutcome(ref, entry.draftId, scheduled.outcome, rebuilt, joint),
+      outcome: this.textOutcome(ref, scheduled.outcome, joint),
       ...(band ? { band } : {}),
     };
   }
@@ -824,10 +816,9 @@ export class DraftCommandOwner {
       ...(tree ? { tree: true as const } : {}),
       ...(saw ? { saw } : {}),
     };
-    const rebuilt = this.rebuilder(draftId, groupIds, frame, body);
+    const rebuild = this.rebuilder(draftId, groupIds, frame, body);
     const schema = frame.doc.type.schema;
     const optimistic = frame.diff.base.blocks;
-    this.setState(ref.itemKey, { failure: null });
     const outcome = this.item(ref).queue.enqueue({
       body,
       optimistic,
@@ -838,12 +829,12 @@ export class DraftCommandOwner {
       ),
       acknowledged: Promise.resolve(),
       madeAfterRoomEnded: true,
-      rebuild: rebuilt.rebuild,
+      rebuild,
       ...(joint ? { send: joint.send } : {}),
     });
     return {
       sent: true,
-      outcome: this.textOutcome(ref, draftId, outcome, rebuilt, joint),
+      outcome: this.textOutcome(ref, outcome, joint),
     };
   }
 
@@ -855,88 +846,73 @@ export class DraftCommandOwner {
    * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
    * it applies (the read's own blocks are another schema's). A room that
    * can't be read sends the click as it was frozen, and the server says why; one this build can't
-   * read settles unsent without a send, `needsReload`, since only a reload of this tab could read it.
+   * read settles unsent without a send.
    */
   private rebuilder(
     draftId: string,
     chosen: readonly string[] | null,
     shown: ReviewFrame,
     body: ApplyClick,
-  ): { rebuild: NonNullable<FrozenApply["rebuild"]>; needsReload: boolean } {
-    const result = {
-      needsReload: false,
-      rebuild: async (signal: AbortSignal) => {
-        const fields = {
-          commandId: body.commandId,
-          draftId,
-          ...(body.tree ? { tree: true as const } : {}),
-          ...(body.saw ? { saw: body.saw } : {}),
+  ): NonNullable<FrozenApply["rebuild"]> {
+    return async (signal: AbortSignal) => {
+      const fields = {
+        commandId: body.commandId,
+        draftId,
+        ...(body.tree ? { tree: true as const } : {}),
+        ...(body.saw ? { saw: body.saw } : {}),
+      };
+      if (!chosen)
+        return {
+          body: { ...fields, whole: true as const, groupIds: [], baseViewDelta: [] },
+          optimistic: [],
+          patched: [],
         };
-        if (!chosen)
-          return {
-            body: { ...fields, whole: true as const, groupIds: [], baseViewDelta: [] },
-            optimistic: [],
-            patched: [],
-          };
-        const fresh = await readRoomOnce(draftRoomName(draftId), signal);
-        if (fresh === "schema") {
-          result.needsReload = true;
-          return "reload" as const;
-        }
-        if (!(fresh instanceof Y.Doc)) return undefined;
-        try {
-          const content = roomContent(fresh);
-          const schema = content.doc.type.schema;
-          const base = readBase(fresh, schema);
-          const frame = buildFrame(fresh, base, content.doc);
-          const { going } = readChosen(shown, frame, chosen);
-          if (!going.length) return null;
-          return {
-            body: {
-              ...fields,
-              snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
-              groupIds: going.map((pair) => pair.read),
-              baseViewDelta: [],
-            },
-            optimistic: shown.diff.base.blocks,
-            patched: applySpanPatches(
-              shown.diff.base.blocks,
-              composeGroups(
-                shown.doc.type.schema,
-                shown,
-                going.map((pair) => pair.shown),
-                "apply",
-              ),
-              "base",
+      const fresh = await readRoomOnce(draftRoomName(draftId), signal);
+      if (fresh === "schema") {
+        return "reload" as const;
+      }
+      if (!(fresh instanceof Y.Doc)) return undefined;
+      try {
+        const content = roomContent(fresh);
+        const schema = content.doc.type.schema;
+        const base = readBase(fresh, schema);
+        const frame = buildFrame(fresh, base, content.doc);
+        const { going } = readChosen(shown, frame, chosen);
+        if (!going.length) return null;
+        return {
+          body: {
+            ...fields,
+            snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
+            groupIds: going.map((pair) => pair.read),
+            baseViewDelta: [],
+          },
+          optimistic: shown.diff.base.blocks,
+          patched: applySpanPatches(
+            shown.diff.base.blocks,
+            composeGroups(
+              shown.doc.type.schema,
+              shown,
+              going.map((pair) => pair.shown),
+              "apply",
             ),
-          };
-        } finally {
-          fresh.destroy();
-        }
-      },
+            "base",
+          ),
+        };
+      } finally {
+        fresh.destroy();
+      }
     };
-    return result;
   }
 
   /** A text click's outcome, with the changes a rebuild left in the draft said on its item. */
   private textOutcome(
     ref: DraftRef,
-    draftId: string,
     outcome: Promise<ApplyClickOutcome>,
-    rebuilt: { needsReload: boolean },
     joint?: Joint,
   ): Promise<CommandOutcome> {
     return outcome.then((answer) => {
       joint?.answered(answer);
-      const settled = this.settled(ref, draftId, answer);
-      // The server can't take a click from this build until the tab reloads: say that, not "try again".
-      if (rebuilt.needsReload)
-        this.setState(
-          ref.itemKey,
-          { failure: { code: "apply-refused", serverCode: "needs_reload" } },
-          draftId,
-        );
-      return settled;
+      return this.settled(ref, answer);
     });
   }
 
@@ -1008,10 +984,6 @@ export class DraftCommandOwner {
     return { commandId: group.commandId, answer: group.answer, outcomes };
   }
 
-  retry(itemKey: string) {
-    if (this.items.get(itemKey)?.queue.stalled) this.setState(itemKey, { failure: null });
-    this.items.get(itemKey)?.queue.retry();
-  }
   /**
    * The one Discard, a server command named by `commandId`, which its Undo names too: every change
    * of the branch (`all`), or exactly the chosen items, each with what is taken from it. The
@@ -1061,16 +1033,16 @@ export class DraftCommandOwner {
           ? null
           : selection.items.find((item) => item.ref.itemKey === ref.itemKey);
       if ("all" in selection || taken?.hides) {
-        this.setState(ref.itemKey, { hidden: true, failure: null });
+        this.setState(ref.itemKey, { hidden: true });
       } else if (taken?.text) {
         shown.set(ref.itemKey, taken.text);
-        this.setState(ref.itemKey, { discarding: discardingOf(taken.text), failure: null });
+        this.setState(ref.itemKey, { discarding: discardingOf(taken.text) });
       }
     }
-    const failed = (failure: BranchCommandFailure | null) => {
+    const failed = () => {
       if (this.active)
         for (const ref of scope.values())
-          this.setState(ref.itemKey, { hidden: false, discarding: null, failure });
+          this.setState(ref.itemKey, { hidden: false, discarding: null });
     };
     // Named changes are read on the server at the room's snapshot, so it must hold the writer's
     // typing first, as a room Apply waits for. A room that ended is sent anyway: a server still
@@ -1103,18 +1075,18 @@ export class DraftCommandOwner {
         [...scope.values()].map((ref) => ref.documentId),
       );
       if (outcome.kind === "returned") {
-        failed(null);
+        failed();
         return outcome;
       }
       // The caller drops the rows that left review.
       for (const ref of scope.values()) {
-        this.setState(ref.itemKey, { hidden: false, failure: null });
+        this.setState(ref.itemKey, { hidden: false });
         const text = shown.get(ref.itemKey);
         if (text) this.releaseWhenRoomHas(ref.itemKey, text);
       }
       return outcome;
     } catch {
-      failed(null);
+      failed();
       notifyFailure({ key: `discard:${branchId}`, title: t`Couldn't discard that.`, brief: true });
       return { kind: "change-refused", code: "unknown" };
     } finally {

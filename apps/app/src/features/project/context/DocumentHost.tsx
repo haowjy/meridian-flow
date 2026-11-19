@@ -368,12 +368,7 @@ function DesktopDocumentChrome({
           );
         }}
       />
-      <DocumentPaneChrome
-        projectId={projectId}
-        document={document}
-        freeze={freeze}
-        reviewNotices={place === "main"}
-      />
+      <DocumentPaneChrome projectId={projectId} document={document} freeze={freeze} />
     </>
   );
 }

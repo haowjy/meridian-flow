@@ -167,11 +167,8 @@ export function ChangesSource({
   );
   const touch = useCoarsePointer();
   const drafts = useOwnerDrafts(projectId, ownerKey);
-  // A command in flight hides its row, until its delivery needs the writer's Retry.
-  const inFlight = (itemKey: string) => {
-    const state = controller.owner.state(itemKey);
-    return state.hidden && !state.stalled;
-  };
+  // A command in flight hides its row.
+  const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
   const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.draft.itemKey));
   const sources = useProjectTrees(projectId).sources;
   const schemeOfSource = (id: string) => sources.find((source) => source.id === id)?.scheme;
@@ -717,7 +714,7 @@ function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>)
  * A folder the Work changes, heading what it holds: its name, what the Work does to it, why it
  * cannot land if it cannot, and × ✓ for it and everything listed under it; a click folds its
  * rows. A folder changed with no drafted document under it takes its × and ✓ alone. Its own
- * command's state (pending, refused, waiting for confirmation) shows under it, as a document's
+ * command's state (pending) shows under it, as a document's
  * does under its row.
  */
 function FolderGroupRow({

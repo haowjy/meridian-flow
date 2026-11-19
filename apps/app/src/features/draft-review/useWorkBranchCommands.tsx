@@ -154,8 +154,8 @@ export function useWorkBranchCommands({
         }),
       );
     /** A Discard's item left review, taken here or before: all but one an Apply took first. */
-    const leftReview = (answer: CommandOutcome, itemKey: string) =>
-      (answer.kind === "done" || answer.kind === "settled") && !owner.state(itemKey).failure;
+    const leftReview = (answer: CommandOutcome) =>
+      answer.kind === "done" || answer.kind === "settled";
     /** Whether an Apply asks for the item's tree records: the target names them and the row has one pending. */
     const treeAsked = (target: ApplyTarget, item: ThreadDraftListItem | undefined) =>
       Boolean((target.kind === "tree" || target.kind === "draft" || target.tree) && item?.tree);
@@ -612,9 +612,7 @@ export function useWorkBranchCommands({
           // A whole item that left review leaves the list at once; the refetch confirms it.
           const ended = new Set(
             [...taken.values()].flatMap(({ draft, text }) =>
-              (input.all || text === "all") && leftReview(answer, draft.itemKey)
-                ? [draft.itemKey]
-                : [],
+              (input.all || text === "all") && leftReview(answer) ? [draft.itemKey] : [],
             ),
           );
           if (ended.size)

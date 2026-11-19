@@ -3,7 +3,6 @@
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { DraftChangesView } from "./draft-changes";
-import { useChangeItems } from "./draft-changes";
 import type { DraftRef } from "./review-command-types";
 import { listedItemChanges, targetOfChanges } from "./review-model";
 import { hasTreeLine, treeChange, treeLineOf } from "./tree-line";
@@ -36,7 +35,7 @@ export function useDraftView(
         : listedItemChanges(item, read.listedChanges)
       : read.listedChanges;
   const treeLine = !!item && hasTreeLine(item);
-  const { items } = useChangeItems(draft, changes);
+  const items = changes.map((change) => ({ change }));
   return {
     documentId: draft.documentId,
     itemKey: draft.itemKey,

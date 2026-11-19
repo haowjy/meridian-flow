@@ -1,53 +1,33 @@
 /**
  * Focused change attribution and Apply/Discard, one control row on desktop and
- * phone. The bar is the one home of its draft's failure while it shows
- * (`useReviewFailures`). Where the bar's growth moves nothing (the margin, the
- * phone's bottom bar) the failure grows below the row. In the manuscript's flow
- * it would push the text down, so there it takes the byline's place in a row
- * tall enough for two lines.
+ * phone.
  */
 import { t } from "@lingui/core/macro";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { cn } from "@/lib/utils";
 import { ReviewActions } from "./ReviewActions";
 import { ChangeAuthor } from "./ReviewChangeParts";
-import { ReviewMessageText } from "./ReviewMessageText";
-import type { BranchCommandFailure } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeBarProps = {
   change: ReviewChange;
   disabled: boolean;
-
-  draftFailure?: BranchCommandFailure | null;
   /** False withdraws Apply (another document holds the path); Discard still applies. */
   canApply?: boolean;
   onApply: () => void;
   onDiscard: () => void;
   touch?: boolean;
-  /** Drawn in the manuscript's flow, after the change's paragraph. */
-  inFlow?: boolean;
   className?: string;
 };
 
 export function ReviewChangeBar({
   change,
   disabled,
-  draftFailure,
   canApply = true,
   onApply,
   onDiscard,
   touch = false,
-  inFlow = false,
   className,
 }: ReviewChangeBarProps) {
-  const failure = draftFailure ? (
-    <InlineErrorRow
-      message={<ReviewMessageText failure={draftFailure} />}
-      className="min-w-0 py-0 pr-2 pl-0"
-    />
-  ) : null;
-  const failureInRow = inFlow && failure;
   return (
     <section
       aria-label={t`Change`}
@@ -63,19 +43,15 @@ export function ReviewChangeBar({
         className={cn(
           "flex min-w-0 shrink-0 flex-wrap items-center gap-y-0.5",
           touch ? "gap-x-3 py-0.5" : "gap-x-1.5",
-          // Two lines of failure fit without growing the bar.
-          inFlow && !touch && "min-h-7",
         )}
       >
         <div className="flex min-w-12 flex-1 items-center">
-          {failureInRow || (
-            <ChangeAuthor
-              touch={touch}
-              fit="names"
-              change={change}
-              className={touch ? "min-h-11" : undefined}
-            />
-          )}
+          <ChangeAuthor
+            touch={touch}
+            fit="names"
+            change={change}
+            className={touch ? "min-h-11" : undefined}
+          />
         </div>
         {!disabled ? (
           <ReviewActions
@@ -87,7 +63,6 @@ export function ReviewChangeBar({
           />
         ) : null}
       </div>
-      {failureInRow ? null : failure}
     </section>
   );
 }
