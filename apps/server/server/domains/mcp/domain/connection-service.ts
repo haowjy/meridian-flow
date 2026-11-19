@@ -11,6 +11,7 @@ import {
   type McpConnectionStatus,
   type McpConnectionView,
   type McpToolView,
+  mcpAddressProblem,
 } from "@meridian/contracts/mcp";
 import {
   type Listing,
