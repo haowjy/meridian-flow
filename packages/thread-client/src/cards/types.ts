@@ -18,7 +18,7 @@ export type ChatCardCopy =
   | "compaction-failed"
   /** The handoff brief's failure. */
   | "brief-failed"
-  /** "Couldn't retry." */
+  /** "Couldn't retry" */
   | "retry-refused"
   /** "Couldn't start the retry." */
   | "retry-lost"
