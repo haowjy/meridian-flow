@@ -17,7 +17,7 @@ about: Something goes wrong for writers or developers, or is missing
 <!-- Walk it through as a writer meets it:
      - Setup: the commit, how to start it (`pnpm dev`, provider), seed data.
      - Steps: numbered, driving the running app.
-     - Screenshots or a GIF beside the steps, linked at a commit SHA.
+     - Screenshots or a video beside the steps, uploaded with `gh issue edit --attach`.
      - Expect: what main does, and what it should do.
      Paste errors and output verbatim. If you couldn't reproduce it, say what
      you saw and what you tried. -->

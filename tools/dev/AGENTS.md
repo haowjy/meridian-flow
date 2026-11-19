@@ -91,8 +91,6 @@ stacks when `MemAvailable` is under `DEV_LOW_MEMORY_GB` (default 8).
    `pnpm dev:prune-worktrees -- --target <branch|path>`, `--dry-run` first.
 4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
    `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
-5. On `main` after a PR merges, `git rm -r .github/pr-assets/<dir>` and commit. PR
-   bodies link each image and video at a commit, so they stay readable.
 
 Run `pnpm dev:gc-dbs` after a batch of cleanups.
 
