@@ -382,10 +382,9 @@ function read(
           mine: previous?.mine ?? ownRuns(change),
           forced: at ? forcedOut(reading, change, at, cut) : "none",
         };
-  // Another reply's words in the blocks an Undo took this change out of look like the writer
-  // altering it. A taken change none of whose new words is in the text is not in it, and no pending
-  // change is its. Without the Undo's record a later edit that overwrote the words reads the same.
-  if (taken && vacated(reading, change)) return { state: "out", sitsIn: new Set(), memo };
+  // An Undo is a recorded event: whatever the text later holds, a change it took is out of it and
+  // no pending change is its. Reading it from the text would hand it to a later identical proposal.
+  if (taken) return { state: "out", sitsIn: new Set(), memo };
   const removed = new Set<number>();
   let added = false;
   if (memo.forced === "none") {
@@ -454,24 +453,6 @@ function baseCut(
   const edgesPair =
     baseIds.has(idOf(at.blocks[0])) && baseIds.has(idOf(at.blocks[at.blocks.length - 1]));
   return last - first === paired.length - 1 && edgesPair ? base.slice(first, last + 1) : null;
-}
-
-const wordsOf = (blocks: readonly PMNode[]) =>
-  blocks.flatMap((block) => block.textContent.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
-
-const wordsIn = new WeakMap<Reading, Set<string>>();
-
-/**
- * None of the words the change added (that its `before` lacked) is anywhere in the text: the change
- * is not in it, however its blocks read now. A change that added none is never vacated.
- */
-function vacated(reading: Reading, change: EditChange): boolean {
-  const had = new Set(wordsOf(change.before));
-  const added = wordsOf(change.after).filter((word) => !had.has(word));
-  if (!added.length) return false;
-  const present = wordsIn.get(reading) ?? new Set(wordsOf(reading.text));
-  wordsIn.set(reading, present);
-  return added.every((word) => !present.has(word));
 }
 
 /** What the press writes, when it can run; null when the removal conflicts. */

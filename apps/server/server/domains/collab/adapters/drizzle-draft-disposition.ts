@@ -16,6 +16,7 @@ import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
 } from "../../../shared/drizzle-transaction.js";
+import { effectiveActionIndex, partKey } from "../domain/inverse-actions.js";
 import type {
   DraftDispositionCapture,
   DraftDispositionStore,
@@ -87,6 +88,27 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
         range.clock,
         range.len,
       ];
+      const documentIds = [...new Set(drafts.map((draft) => draft.documentDraft.documentId))];
+      const actionRows = await tx
+        .select({
+          id: documentEditParts.id,
+          kind: documentEdits.kind,
+          actor: documentEdits.actor,
+          actionId: documentEdits.actionId,
+          targets: documentEditParts.targets,
+        })
+        .from(documentEditParts)
+        .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
+        .where(
+          and(
+            inArray(documentEdits.documentId, documentIds),
+            inArray(documentEdits.kind, ["undo", "revert"]),
+          ),
+        );
+      const took = effectiveActionIndex(
+        actionRows,
+        new Set(rows.map((row) => partKey(row))),
+      ).byPart;
       const parts = new Map<string, DraftReceiptPart[]>();
       for (const row of rows) {
         const resolved = row.threadId ? owners.get(row.threadId) : undefined;
@@ -115,6 +137,7 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
           deleted: row.effect.deleted.map(tuple),
           owner,
           delta: row.delta,
+          taken: took.has(partKey(row)),
         });
         parts.set(row.draftId, list);
       }

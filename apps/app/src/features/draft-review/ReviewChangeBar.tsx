@@ -61,13 +61,13 @@ export function ReviewChangeBar({
     >
       <div
         className={cn(
-          "flex min-w-0 shrink-0 items-center",
-          touch ? "gap-3 py-0.5" : "gap-x-1.5",
+          "flex min-w-0 shrink-0 flex-wrap items-center gap-y-0.5",
+          touch ? "gap-x-3 py-0.5" : "gap-x-1.5",
           // Two lines of failure fit without growing the bar.
           inFlow && !touch && "min-h-7",
         )}
       >
-        <div className="flex min-w-0 flex-1 items-center">
+        <div className="flex min-w-12 flex-1 items-center">
           {failureInRow || (
             <ChangeAuthor
               touch={touch}
@@ -83,6 +83,7 @@ export function ReviewChangeBar({
             touch={touch}
             onDiscard={onDiscard}
             onApply={canApply ? onApply : undefined}
+            className="ml-auto"
           />
         ) : null}
       </div>
