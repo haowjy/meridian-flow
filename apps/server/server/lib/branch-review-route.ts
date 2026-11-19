@@ -246,11 +246,6 @@ const ApplyTextBody = z.union([
   z.strictObject({
     draftId: z.string().min(1).max(128),
     whole: z.literal(true),
-    groupIds: z
-      .array(z.string().min(1))
-      .min(1)
-      .refine((ids) => new Set(ids).size === ids.length)
-      .optional(),
   }),
 ]);
 const ApplyItemsBody = z.strictObject({
@@ -1044,6 +1039,7 @@ export async function handleDiscardBranchRequest(
           documentId: entry.node as DocumentId,
           tree: entry.tree === true,
           text: entry.text ?? null,
+          ...(entry.snapshot ? { snapshot: entry.snapshot } : {}),
         })),
       }),
     };

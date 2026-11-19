@@ -15,7 +15,6 @@ import { setTestHook } from "../../shared/test-hooks.js";
 import { interleave, type Settled } from "../../test-support/lock-interleave.js";
 import { readDraftAt } from "./adapters/drizzle-draft-storage.js";
 import { createDraftRuntime } from "./domain/draft-runtime.js";
-import { ReversalConflictError } from "./domain/reversal-conflict.js";
 import {
   ALPHA_ID,
   closeDatabase,
@@ -334,32 +333,16 @@ describe("writer frames racing rewrites (postgres)", () => {
     },
   );
 
-  /** Novel clocks, no visible effect: a character typed and erased in one frame. */
-  const typedAndErased = (fragment: Y.XmlFragment) => {
-    const text = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlText;
-    text.insert(0, "x");
-    text.delete(0, 1);
-  };
-
-  /**
-   * Every one of the inverse's four commit attempts meets a writer frame that moved the draft
-   * after its capture; `last` is the frame before the fourth commit.
-   */
-  async function framesBeforeEveryCommit(
-    draftId: string,
-    last: (fragment: Y.XmlFragment) => void,
-  ): Promise<{ commits: () => number; remove: () => void }> {
-    let commits = 0;
-    const remove = setTestHook("inverse.beforeCommitScope", async () => {
-      commits += 1;
-      const frame = await writerFrame(draftId, commits === 4 ? last : typedAndErased);
+  /** A writer frame lands after the inverse's capture, before its commit scope. */
+  function frameBeforeCommit(draftId: string, frameEdit: (fragment: Y.XmlFragment) => void) {
+    return setTestHook("inverse.beforeCommitScope", async () => {
+      const frame = await writerFrame(draftId, frameEdit);
       try {
         expect(await frame.send()).toEqual({ admitted: true });
       } finally {
         frame.destroy();
       }
     });
-    return { commits: () => commits, remove };
   }
 
   const modelUndo = () =>
@@ -378,26 +361,17 @@ describe("writer frames racing rewrites (postgres)", () => {
     });
 
   it.each(["model", "card"] as const)(
-    "an inverse (%s) whose four attempts all miss while its part still applies is a conflict, never a refusal",
+    "an inverse (%s) whose draft moved after its capture lands on the committed text",
     async (door) => {
       const draftId = await draftWithChange();
-      const frames = await framesBeforeEveryCommit(draftId, typedAndErased);
+      const remove = frameBeforeCommit(draftId, appendParagraph("Extra."));
       try {
-        if (door === "model") {
-          const undone = await modelUndo();
-          expect(undone).toMatchObject({ status: "internal_error" });
-          expect(JSON.stringify(undone)).toContain(
-            "the document changed while reversing; try again",
-          );
-        } else {
-          await expect(cardUndo()).rejects.toBeInstanceOf(ReversalConflictError);
-        }
+        if (door === "model") expect(await modelUndo()).toMatchObject({ status: "success" });
+        else await cardUndo();
       } finally {
-        frames.remove();
+        remove();
       }
-      // Four commits, each unwound; the classification pass never writes.
-      expect(frames.commits()).toBe(4);
-      expect(await fixture.view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
+      expect(await fixture.view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n\nExtra.\n");
     },
   );
 });

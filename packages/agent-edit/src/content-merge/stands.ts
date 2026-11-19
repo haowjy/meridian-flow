@@ -394,13 +394,37 @@ function read(
       added = whole.added;
     }
   }
-  for (const index of holding(reading, change, memo.mine)) removed.add(index);
+  const touches = touching(reading, change);
+  for (const index of holding(reading, change, memo.mine, touches)) removed.add(index);
+  if (touches) alignToChange(reading, removed, touches);
   // An Undo that would add a pending change takes nothing back: it is not offered.
   return {
     state: memo.state === "stands" && added ? "altered" : memo.state,
     sitsIn: removed,
     memo,
   };
+}
+
+/**
+ * Changes with equal ids (the same words changed in two paragraphs) cannot be told apart by their
+ * hash, so the removal's alignment may name the wrong one. Of each such family the ones that touch
+ * the change's blocks are the ones it sits in.
+ */
+function alignToChange(
+  reading: Reading,
+  removed: Set<number>,
+  touches: (index: number) => boolean,
+): void {
+  for (const index of [...removed]) {
+    const family = reading.hashes
+      .map((hash, at) => (hash === reading.hashes[index] ? at : -1))
+      .filter((at) => at >= 0);
+    if (family.length < 2) continue;
+    const mine = family.filter(touches);
+    if (!mine.length) continue;
+    for (const at of family) removed.delete(at);
+    for (const at of mine) removed.add(at);
+  }
 }
 
 /** The blocks of `base` that pair with the window by id, when they are one run whose edges pair. */
@@ -515,15 +539,44 @@ function ownRuns(change: EditChange): Run[] {
 }
 
 /**
+ * Which pending changes touch the blocks the change altered, by block id; null when a block of it
+ * was split or joined away, which leaves no id to pair, so any change may be its own.
+ */
+function touching(reading: Reading, change: EditChange): ((index: number) => boolean) | null {
+  const present = new Set(reading.text.map(idOf));
+  if (!change.after.every((block) => present.has(idOf(block)))) return null;
+  const same = (block: PMNode, others: readonly PMNode[]) =>
+    others.some((other) => idOf(other) === idOf(block) && blocksEqual([other], [block]));
+  const ids = new Set([
+    ...change.before.filter((block) => !same(block, change.after)).map(idOf),
+    ...change.after.filter((block) => !same(block, change.before)).map(idOf),
+  ]);
+  const { draft, base } = reading.pending.diff;
+  const hits = (blocks: readonly PMNode[], range: { from: number; to: number }) =>
+    blocks.slice(range.from, range.to).some((block) => ids.has(idOf(block)));
+  return (index) =>
+    reading.pending.groups[index].spans.some(
+      (span) => hits(draft.blocks, span.draft) || hits(base.blocks, span.base),
+    );
+}
+
+/**
  * The pending changes that hold the change's words: one of their hunks removed what the change's
  * hunk removed and added what it added (each side the hunk has). A change with no words (a
  * paragraph split, a stray quote mark) is placed by its blocks, or by its marks being among the ones
- * the change removed or added.
+ * the change removed or added. Only a pending change that touches the change's blocks can hold it:
+ * the same words changed in another paragraph are another change.
  */
-function holding(reading: Reading, change: EditChange, mine: readonly Run[]): number[] {
+function holding(
+  reading: Reading,
+  change: EditChange,
+  mine: readonly Run[],
+  touches: ((index: number) => boolean) | null,
+): number[] {
   const blockIds = new Set(change.after.map(idOf));
   const out: number[] = [];
   reading.pending.groups.forEach((group, index) => {
+    if (touches && !touches(index)) return;
     const theirs = reading.runs[index];
     const bare = theirs.every((t) => !t.removed.length && !t.inserted.length);
     const holds = bare

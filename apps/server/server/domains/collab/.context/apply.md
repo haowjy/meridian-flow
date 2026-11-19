@@ -8,7 +8,7 @@ room: snapshot, `baseViewDelta`, `groupIds`; the server refuses `unsynced` when 
 lacks the snapshot, and `malformed` for a group the cut's projection doesn't have. A whole cut
 (`{draftId, whole: true}`) is what a tab with no room open sends (Changes rows, folders, Apply
 all): `compileClick` cuts at the replica `loadBase` returned, with an empty `baseViewDelta`, and
-takes every group of that projection, or, with `groupIds` (a Redo: `redoOf` on the Apply route has the server read what the Un-Apply took from the effect rows it marked, `redoItems`), the named groups the projection holds, passing over the rest. A whole cut with no group
+takes every group of that projection, or, for a Redo (`redoOf` on the Apply route has the server read what the Un-Apply took from the effect rows it marked, `redoItems`), only the groups that hold a change an Un-Applied effect `carried` (`carriedBy`: membership, so a neighbour another chat proposed since that merged into the group does not make the Redo take nothing) or, for a change no AI edit made, has an effect's group id. A whole cut with no group
 compiles to an empty click; the adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and
 the Un-Apply records are the same for both.
 
