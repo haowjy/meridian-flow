@@ -8,7 +8,6 @@
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
 
 const BRIEF_MS = 5000;
 
@@ -78,7 +77,6 @@ const PHONE_OFFSET = {
 
 // `pointer-events-auto`: an open modal sets `pointer-events: none` on the body, which the toast would inherit.
 export function FailureToaster() {
-  const phone = usePhoneShell();
   return (
     <Toaster
       position="top-center"
