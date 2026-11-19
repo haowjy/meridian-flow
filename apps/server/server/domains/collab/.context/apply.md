@@ -19,7 +19,7 @@ count, so Changes needs no room to say "N text changes".
 
 `domain/apply-click.ts` keeps the schema with the frozen optimistic base and patched
 blocks: independently built schemas have distinct node and mark types, which the merge
-kernel can't mix. Receipt membership is classified at that cut, not replayed onto live.
+merge can't mix. Receipt membership is classified at that cut, not replayed onto live.
 
 A document live has in Trash comes back whenever the click lands records on it, with no question
 asked: the answer says `restored { documentId }` in `settled`. Apply reads the addressed document's
@@ -32,8 +32,9 @@ commits after the route resolved the item doesn't refuse the live grant (`comman
 the command reads it under its locks and brings the document back.
 
 Editor Undo sends an `unapply` command for the original Apply command (`POST .../branches/:branchId/unapply`: the command's own records name its documents, the URL names none). This path
-uses the forward-inverse kernel directly against live history, not the model/turn
-reversal planner, and folds only the reversed groups out of the current review base.
+merges the effect's recorded `live_delta` back out of Live (the same `stands` and `takeOut` the card's
+Undo uses, `reversal.md`), not through the model/turn reversal planner, and folds only the
+reversed groups out of the current review base.
 
 The groups of one click are a chain: group *k* is compiled and merged against the base with groups
 1..*k*−1 already applied, one live update each. Merging each group against the click's base would

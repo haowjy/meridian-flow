@@ -5452,19 +5452,6 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
-        "frontier": {
-          "name": "frontier",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "aliases": {
-          "name": "aliases",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
         "delta": {
           "name": "delta",
           "type": "jsonb",
@@ -5518,22 +5505,6 @@
           ],
           "isUnique": false,
           "where": "\"document_edit_parts\".\"origin\"->>'kind' = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "document_edit_parts_live_origin_seq": {
-          "name": "document_edit_parts_live_origin_seq",
-          "columns": [
-            {
-              "expression": "((\"origin\"->>'seq')::bigint)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"document_edit_parts\".\"origin\"->>'kind' = 'live'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -10115,12 +10086,6 @@
         "edit_id": {
           "name": "edit_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "edit_part_ordinal": {
-          "name": "edit_part_ordinal",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },

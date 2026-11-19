@@ -700,9 +700,8 @@ integrity failure, never a partially journaled update. Manifest membership
 mutations still journal cumulative sync bytes
 ([#753](https://github.com/haowjy/meridian-flow/issues/753)).
 
-Forward inverses append ordinary immutable journal parts with restoration
-aliases. They do not rewrite target rows, mark them reversed, or use a reserved
-undo client. Card actions and model undo share immutable edit origins and captured
+An inverse is an ordinary immutable edit. It does not rewrite target rows, mark them
+reversed, or use a reserved undo client. Card actions and model undo share immutable edit origins and captured
 text-derived disposition, but retain their own authorization and stack policy.
 Draft-origin Revert never targets live. Applied parts revert in the draft
 as pending changes.

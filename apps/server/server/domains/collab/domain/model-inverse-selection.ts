@@ -1,6 +1,6 @@
-/** Shared model inverse stack selection and immutable-view classification. */
+/** The model's undo stack, chosen from the stored edit history. */
 
-import { editHandle, type PreparedEditRoots } from "@meridian/agent-edit/integration";
+import { editHandle } from "@meridian/agent-edit/integration";
 import { effectiveActionIndex, partKey as key } from "./inverse-actions.js";
 import type { StoredInversePart } from "./turn-inverse-service.js";
 
@@ -51,25 +51,3 @@ export function inspectionActions(history: StoredInversePart[], own: Entry[]) {
     top: stack[0],
   };
 }
-/** Facts belong to one immutable view. Advancing a scratch plan replaces this context. */
-export function inspectionContext(
-  index: PreparedEditRoots,
-  actions: ReturnType<typeof inspectionActions>,
-) {
-  const classifications = new Map<string, ReturnType<PreparedEditRoots["classify"]>[number]>();
-  return {
-    index,
-    ...actions,
-    states(parts: StoredInversePart[]) {
-      const missing = parts.filter((part) => !classifications.has(key(part)));
-      if (missing.length)
-        for (const state of index.classify(missing)) classifications.set(key(state.part), state);
-      return parts.map((part) => {
-        const state = classifications.get(key(part));
-        if (!state) throw new Error("Missing inverse classification");
-        return state;
-      });
-    },
-  };
-}
-export type Inspection = ReturnType<typeof inspectionContext>;

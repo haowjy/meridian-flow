@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 /**
- * Probe: the manuscript gate of the single-truth design (stage 0). Does an Undo of an AI edit read
- * from content do no worse than the Yjs inverse kernel when the manuscript is written through the
- * real paths? The AI writes through the model's tools (`core.write`, the lowering of a find and a
- * replacement into Yjs operations); the writer types in a real TipTap editor bound by y-tiptap,
- * relayed to the room as the app relays it. Each row is played in three fresh worlds from one
- * script: the kernel's Undo, the content Undo, and the oracle (the same later typing without the
- * AI's edit). See manuscript-gate.md beside this file.
+ * Probe: the manuscript gate of the single-truth design. How does an Undo of an AI edit, read from
+ * content, come out when the manuscript is written through the real paths? The AI writes through
+ * the model's tools (`core.write`, the lowering of a find and a replacement into Yjs operations);
+ * the writer types in a real TipTap editor bound by y-tiptap, relayed to the room as the app relays
+ * it. Each row is played in two fresh worlds from one script: the content Undo, and the oracle (the
+ * same later typing without the AI's edit). See manuscript-gate.md beside this file.
  */
 import {
   changeStateIn,
@@ -19,13 +18,6 @@ import {
   readBlocks,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
-import {
-  captureEditFrontier,
-  captureEditParts,
-  computeInverse,
-  type InversePart,
-  pairEdit,
-} from "@meridian/agent-edit/integration";
 import { createWriteToolHarness } from "@meridian/agent-edit/test-support";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { Editor } from "@tiptap/core";
@@ -184,7 +176,7 @@ const wordsIn = (text: string) =>
 
 // --- one world: a room, the model's tools and a real editor -----------------------------------
 
-type Part = { before: PMNode[]; after: PMNode[]; part: InversePart };
+type Part = { before: PMNode[]; after: PMNode[] };
 type Cmd = Record<string, unknown> & { command: string };
 
 class World {
@@ -195,9 +187,6 @@ class World {
   readonly toLive: Uint8Array[] = [];
   readonly toEditor: Uint8Array[] = [];
   held = false;
-  history: InversePart[] = [];
-  nextPartId = 1;
-  nextEdit = 1;
   constructor(markdown: string, seed: number) {
     // Client ids and block ids come from the seed, so a world replays.
     const ids = rng(seed + 1_000_003);
@@ -252,11 +241,10 @@ class World {
   editorText(): string {
     return textOf(this.editorBlocks());
   }
-  /** One tool call of the AI, with its Yjs update and a receipt part captured around it. */
+  /** One tool call of the AI, with the blocks it changed. */
   async ai(cmd: Cmd): Promise<Part | null> {
     await this.ctx.core.read({ file: FILE }, CTX);
     const before = this.liveBlocks();
-    const frontier = captureEditFrontier(this.live);
     const updates: Uint8Array[] = [];
     const collect = (u: Uint8Array) => updates.push(u);
     this.live.on("update", collect);
@@ -270,18 +258,7 @@ class World {
     this.sync();
     const after = this.liveBlocks();
     if (blocksEqual(before, after)) return null;
-    const update = Y.mergeUpdates(updates);
-    const editId = `e${this.nextEdit++}`;
-    const part: InversePart = {
-      ...captureEditParts(this.live, [{ frontier, update, replaced: pairEdit(this.live, { update, frontier }) }])[0]!,
-      id: this.nextPartId++,
-      editId,
-      ordinal: 0,
-      kind: "write",
-      targets: [],
-    };
-    this.history.push(part);
-    return { before, after, part };
+    return { before, after };
   }
   async bodies(): Promise<{ hash: string; body: string }[]> {
     const read = (await this.ctx.core.read({ file: FILE }, CTX)) as {
@@ -450,7 +427,7 @@ function contentUndo(change: EditChange, text: readonly PMNode[]): { stands: boo
   return { stands: true, text: takeOut(schema, change, text) };
 }
 
-type Mode = "kernel" | "content" | "oracle";
+type Mode = "content" | "oracle";
 type Outcome = {
   failed: string | null;
   text: PMNode[];
@@ -531,19 +508,7 @@ async function playRow(seed: number, family: Family, mode: Mode, script: Step[],
   const seenBlocks = world.liveBlocks();
   let offered = false;
   let allOffered = false;
-  if (mode === "kernel") {
-    const cold = new Y.Doc({ gc: false });
-    Y.applyUpdate(cold, Y.encodeStateAsUpdate(world.live));
-    let client = 20_000;
-    const result = computeInverse(cold, world.history, targetParts.map((p) => p.part), {
-      actionId: `a${seed}`,
-      allocateClient: () => client++,
-    });
-    const before = JSON.stringify(world.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toJSON());
-    for (const e of result.edits) for (const part of e.parts) Y.applyUpdate(world.live, part.update, "server");
-    offered = JSON.stringify(world.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).toJSON()) !== before;
-    allOffered = offered;
-  } else if (mode === "content") {
+  if (mode === "content") {
     let text = world.liveBlocks();
     const states: boolean[] = [];
     for (const p of [...targetParts].reverse())
@@ -587,86 +552,58 @@ it(`manuscript gate: ${ROWS} rows per kind`, async () => {
     for (let seed = 1; produced < ROWS && seed < ROWS * 6; seed++) {
       const script: Step[] = [];
       const base = seed * 7 + (family === "plain" ? 1 : family === "marks" ? 2 : family === "table" ? 3 : 4) + (unsent ? 100_000 : 0);
-      let kernel: Outcome;
       let content: Outcome;
       let oracle: Outcome;
       try {
-        kernel = await play(base, family, "kernel", script, unsent);
-        if (kernel.failed) {
-          bump(refused, `${name}: ${kernel.failed}`);
+        content = await play(base, family, "content", script, unsent);
+        if (content.failed) {
+          bump(refused, `${name}: ${content.failed}`);
           continue;
         }
-        content = await play(base, family, "content", script, unsent);
         oracle = await play(base, family, "oracle", script, unsent);
       } catch (error) {
         bump(refused, `${name}: THROW ${(error as Error).message.slice(0, 60)}`);
         continue;
       }
-      if (content.failed) {
-        bump(refused, `${name}: content world ${content.failed}`);
-        continue;
-      }
       produced++;
       const independent = !oracle.failed;
-      const allowed = new Set([...VOCAB, ...kernel.typed, ...content.typed]);
-      const gluedWords = (o: Outcome) => wordsIn(textOf(o.text)).filter((w) => !allowed.has(w));
-      const glued = (o: Outcome) => gluedWords(o).length > 0;
+      const allowed = new Set([...VOCAB, ...content.typed]);
+      const gluedWords = wordsIn(textOf(content.text)).filter((w) => !allowed.has(w));
       // A typed word is lost when its letters are gone from the text; one glued to a neighbour is not lost, and counts as glued.
-      const lost = (o: Outcome, seen: string) => {
-        const present = (text: string, tok: string) => new RegExp(`${tok}(?!\\d)`).test(text);
-        return o.typed.filter((tok) => present(seen, tok) && !present(textOf(o.text), tok));
-      };
-      const kLost = lost(kernel, kernel.seen);
-      const cLost = lost(content, content.seen);
+      const present = (text: string, tok: string) => new RegExp(`${tok}(?!\\d)`).test(text);
+      const lost = content.typed.filter((tok) => present(content.seen, tok) && !present(textOf(content.text), tok));
       bump(t, "rows");
-      const result = (o: Outcome) => (sig(o.text) === sig(oracle.text) ? "matches oracle" : sig(o.text) === sig(o.seenBlocks) ? "left as it was" : "other text");
+      const result = sig(content.text) === sig(oracle.text) ? "matches oracle" : sig(content.text) === sig(content.seenBlocks) ? "left as it was" : "other text";
       if (independent) {
         bump(t, "independent rows");
-        bump(t, `kernel ${result(kernel)}`);
-        bump(t, `content ${result(content)}`);
+        bump(t, `content ${result}`);
       }
-      if (glued(kernel)) bump(t, "kernel glued word rows");
-      if (glued(content)) bump(t, "content glued word rows");
-      if (glued(content) && !glued(kernel)) bump(t, "NEW glue: content only");
-      bump(t, "kernel glued words", gluedWords(kernel).length);
-      bump(t, "content glued words", gluedWords(content).length);
-      bump(t, "kernel lost words", kLost.length);
-      bump(t, "content lost words", cLost.length);
-      if (kLost.length) bump(t, "kernel lost-word rows");
-      if (cLost.length) bump(t, "content lost-word rows");
-      if (cLost.some((x) => !kLost.includes(x))) bump(t, "LOST by content, kept by kernel");
-      if (kLost.some((x) => !cLost.includes(x))) bump(t, "lost by kernel, kept by content");
-      if (kernel.offered) bump(t, "kernel Undo offered");
+      if (gluedWords.length) bump(t, "content glued word rows");
+      bump(t, "content glued words", gluedWords.length);
+      bump(t, "content lost words", lost.length);
+      if (lost.length) bump(t, "content lost-word rows");
       if (content.offered) bump(t, "content Undo offered");
       if (content.allOffered) bump(t, "content Undo offered for every change");
-      if (kernel.diverged || content.diverged) bump(t, "diverged (editor differs from room)");
+      if (content.diverged) bump(t, "diverged (editor differs from room)");
       const bad: string[] = [];
-      if (cLost.some((x) => !kLost.includes(x))) bad.push("lost");
-      if (glued(content) && !glued(kernel)) bad.push("glue");
-      if (independent && result(content) === "other text" && result(kernel) !== "other text") bad.push("content other text, kernel not");
+      if (gluedWords.length) bad.push("glue");
+      if (lost.length) bad.push("lost");
+      if (independent && result === "other text") bad.push("other text");
       for (const b of bad) {
         const list = (samples[`${name}: ${b}`] ??= []);
         if (list.length < 3)
-          list.push({ seed: base, script: JSON.stringify(script), seen: kernel.seen, kernel: textOf(kernel.text), content: textOf(content.text), oracle: independent ? textOf(oracle.text) : null });
+          list.push({ seed: base, script: JSON.stringify(script), seen: content.seen, content: textOf(content.text), oracle: independent ? textOf(oracle.text) : null });
       }
     }
   }
   const sum = (key: string) => Object.values(total).reduce((n, t) => n + (t[key] ?? 0), 0);
   const keys = [...new Set(Object.values(total).flatMap((t) => Object.keys(t)))];
-  const order = ["rows", "independent rows", "kernel matches oracle", "content matches oracle", "kernel left as it was", "content left as it was", "kernel other text", "content other text", "kernel glued word rows", "content glued word rows", "kernel glued words", "content glued words", "NEW glue: content only", "kernel lost-word rows", "content lost-word rows", "kernel lost words", "content lost words", "LOST by content, kept by kernel", "lost by kernel, kept by content", "kernel Undo offered", "content Undo offered", "content Undo offered for every change", "diverged (editor differs from room)"];
+  const order = ["rows", "independent rows", "content matches oracle", "content left as it was", "content other text", "content glued word rows", "content glued words", "content lost-word rows", "content lost words", "content Undo offered", "content Undo offered for every change", "diverged (editor differs from room)"];
   const lines = [`| kind | ${order.join(" | ")} |`, `|---|${order.map(() => "---:").join("|")}|`];
   for (const [name, t] of Object.entries(total)) lines.push(`| ${name} | ${order.map((k) => t[k] ?? 0).join(" | ")} |`);
   lines.push(`| **all** | ${order.map((k) => sum(k)).join(" | ")} |`);
-  // The design's rule, as written: no word lost by content that the kernel keeps, no glued word the kernel does not
-  // have, and content matching the oracle in no fewer rows than the kernel.
-  const rule = {
-    noNewLoss: sum("LOST by content, kept by kernel") === 0,
-    noNewGlue: sum("NEW glue: content only") === 0,
-    noFewerMatches: sum("content matches oracle") >= sum("kernel matches oracle"),
-  };
-  const pass = rule.noNewLoss && rule.noNewGlue && rule.noFewerMatches;
   process.stdout.write(
-    `\n${JSON.stringify({ rowsPerKind: ROWS, pass, ...rule, unlisted: keys.filter((k) => !order.includes(k)) })}\n${lines.join("\n")}\nrows not produced:\n${JSON.stringify(refused, null, 1)}\nsamples:\n${JSON.stringify(samples, null, 1)}\n`,
+    `\n${JSON.stringify({ rowsPerKind: ROWS, unlisted: keys.filter((k) => !order.includes(k)) })}\n${lines.join("\n")}\nrows not produced:\n${JSON.stringify(refused, null, 1)}\nsamples:\n${JSON.stringify(samples, null, 1)}\n`,
   );
   expect(true).toBe(true);
 }, 3_600_000);

@@ -1,9 +1,14 @@
-/** Writer receipt and failed-response policies over immutable forward-inverse parts. */
+/** Writer receipt and failed-response policies over the stored edit parts. */
 import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
 import type { ChangeRead, StoredDelta } from "@meridian/agent-edit/content-merge";
 import { readBlocks } from "@meridian/agent-edit/diff";
-import { editHandle, type InversePart } from "@meridian/agent-edit/integration";
+import {
+  type CapturedPart,
+  type EditKind,
+  type EditTarget,
+  editHandle,
+} from "@meridian/agent-edit/integration";
 import type {
   BranchId,
   DocumentId,
@@ -35,7 +40,13 @@ import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
-export type StoredInversePart = InversePart & {
+export type StoredInversePart = CapturedPart & {
+  id: number;
+  editId: string;
+  ordinal: number;
+  kind: EditKind;
+  actionId?: string | null;
+  targets: EditTarget[];
   documentId: DocumentId;
   threadId: ThreadId | null;
   turnId: TurnId | null;

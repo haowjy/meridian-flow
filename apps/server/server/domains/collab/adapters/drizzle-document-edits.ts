@@ -3,11 +3,9 @@ import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-mer
 import { readBlocks } from "@meridian/agent-edit/diff";
 import {
   type CapturedPart,
-  captureEditFrontier,
   captureEditParts,
   type EditTarget,
   heldDeletes,
-  pairEdit,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
@@ -95,8 +93,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       ordinal,
       update: Buffer.from(p.update),
       effect: p.effect,
-      frontier: p.frontier,
-      aliases: p.aliases,
       delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,
@@ -117,12 +113,9 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
   }
   const live = input.receipts.filter((p) => p.origin.kind === "live");
   for (const seq of new Set(live.map((p) => (p.origin.kind === "live" ? p.origin.seq : 0)))) {
-    const ordinals = input.receipts.flatMap((p, ordinal) =>
-      p.origin.kind === "live" && p.origin.seq === seq ? [ordinal] : [],
-    );
     await db
       .update(documentYjsUpdates)
-      .set({ editId: edit.id, editPartOrdinal: ordinals.length === 1 ? ordinals[0] : null })
+      .set({ editId: edit.id })
       .where(eq(documentYjsUpdates.id, seq));
   }
   return edit.id;
@@ -130,24 +123,21 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
 /**
  * Authoritative pre-write state plus transaction deltas, never a state-vector diff. A delete of
  * an item the room had already deleted when the row applied is not the row's effect, whether the
- * author read a stale view or the writer's delete landed after the call. `pair` records each
- * row's replaces right after the row applied, for a receipt that can be undone.
+ * author read a stale view or the writer's delete landed after the call. `withDelta` reads each
+ * row's text before and after it, for a receipt of an AI write or an Undo that can be undone.
  */
 export function captureReceiptRows(
   doc: Y.Doc,
   rows: readonly { update: Uint8Array; origin: EditOrigin }[],
-  pair: boolean,
+  withDelta: boolean,
 ): (ReceiptWrite["receipts"][number] & { held: ReadonlySet<string> })[] {
   const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   const receipts = rows.map((row) => {
-    const frontier = captureEditFrontier(doc);
     const held = heldDeletes(doc, row.update, Y.decodeStateVector(Y.encodeStateVector(doc)));
-    // An AI write's delta, read on each side of it (a writer's frame has none).
-    const textBefore = pair ? readBlocks(fragment, deltaSchema) : null;
+    const textBefore = withDelta ? readBlocks(fragment, deltaSchema) : null;
     Y.applyUpdate(doc, row.update);
-    const replaced = pair ? pairEdit(doc, { update: row.update, frontier, held }) : undefined;
     const delta = textBefore ? captureDelta(textBefore, readBlocks(fragment, deltaSchema)) : null;
-    return { ...row, frontier, held, replaced, delta };
+    return { ...row, held, delta };
   });
   return receipts.map((receipt, i) => ({
     ...captureEditParts(doc, [receipt])[0],

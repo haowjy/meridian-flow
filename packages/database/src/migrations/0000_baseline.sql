@@ -543,8 +543,6 @@ CREATE TABLE "document_edit_parts" (
 	"update" "bytea" NOT NULL,
 	"effect" jsonb NOT NULL,
 	"targets" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"frontier" jsonb NOT NULL,
-	"aliases" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"delta" jsonb,
 	"origin" jsonb NOT NULL,
 	"draft_branch_id" uuid,
@@ -1022,7 +1020,6 @@ CREATE TABLE "document_yjs_updates" (
 	"batch_ordinal" integer DEFAULT 0 NOT NULL,
 	"update_data" "bytea" NOT NULL,
 	"edit_id" uuid,
-	"edit_part_ordinal" integer,
 	"origin_type" text,
 	"actor_user_id" uuid,
 	"actor_turn_id" uuid,
@@ -1259,7 +1256,6 @@ CREATE UNIQUE INDEX "works_project_handle" ON "works" USING btree ("project_id",
 CREATE UNIQUE INDEX "works_project_no_work_active" ON "works" USING btree ("project_id") WHERE "works"."is_no_work" = true AND "works"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "document_edit_parts_edit_ordinal" ON "document_edit_parts" USING btree ("edit_id","ordinal");--> statement-breakpoint
 CREATE INDEX "document_edit_parts_pending_origin_idx" ON "document_edit_parts" USING btree (("origin"->>'draftId')) WHERE "document_edit_parts"."origin"->>'kind' = 'pending';--> statement-breakpoint
-CREATE INDEX "document_edit_parts_live_origin_seq" ON "document_edit_parts" USING btree ((("origin"->>'seq')::bigint)) WHERE "document_edit_parts"."origin"->>'kind' = 'live';--> statement-breakpoint
 CREATE INDEX "document_edits_document_idx" ON "document_edits" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "document_edits_turn_idx" ON "document_edits" USING btree ("turn_id");--> statement-breakpoint
 CREATE INDEX "document_edits_action_idx" ON "document_edits" USING btree ("action_id");--> statement-breakpoint

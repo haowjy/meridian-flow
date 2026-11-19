@@ -4,7 +4,7 @@ import { validateSemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import type { AppendDraftJournalInput } from "./draft-store.js";
-import { validateClientUpdateAdmission, validateProvenanceGraph } from "./provenance.js";
+import { validateClientUpdateAdmission } from "./provenance.js";
 
 export type AuthorshipSource =
   | { kind: "writer" }
@@ -135,13 +135,11 @@ function validateFreshAuthorship(
 
 /**
  * `source` replicated whole into `target` from a frozen copy: the identity replication every
- * thread-peer seed and pull uses. The candidate's provenance is validated before `target`
- * changes; persistence belongs to the draft store.
+ * thread-peer seed and pull uses. Persistence belongs to the draft store.
  */
 export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
   const update = Y.encodeStateAsUpdate(source, Y.encodeStateVector(target));
   assertNonEmptyUpdate(update);
-  validatePostUpdateProvenance(target, update);
   Y.applyUpdate(target, update);
 }
 
@@ -211,19 +209,6 @@ export function assertFreshAgentUpdate(doc: Y.Doc, update: Uint8Array): void {
   for (const struct of Y.decodeUpdate(update).structs) {
     if (clients.has(struct.id.client))
       throw new Error(`Agent segment reused client ${struct.id.client}`);
-  }
-}
-
-function validatePostUpdateProvenance(targetDocument: Y.Doc, update: Uint8Array): void {
-  const candidate = new Y.Doc({ gc: false });
-  try {
-    Y.applyUpdate(candidate, Y.encodeStateAsUpdate(targetDocument));
-    Y.applyUpdate(candidate, update);
-    validateProvenanceGraph(candidate);
-  } catch (cause) {
-    invalid(cause instanceof Error ? cause.message : "Candidate provenance graph is invalid");
-  } finally {
-    candidate.destroy();
   }
 }
 
