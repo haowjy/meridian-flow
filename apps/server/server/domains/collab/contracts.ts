@@ -466,6 +466,11 @@ export type DraftReviewApi = {
       accountId: UserId;
       branchId: BranchId;
     }): Promise<DocumentId[]>;
+    /** The items of an Apply that applies again what an Un-Apply took back. */
+    redoItems(input: {
+      unapplyCommandId: CommandId;
+      accountId: UserId;
+    }): Promise<import("@meridian/contracts/branches").ApplyItemsClick["items"]>;
   };
   /** The document half of Trash's Discard entries in a project; the tree answers its own half. */
   /** The day-30 purge of Trash's command entries (`drizzle-discard-purge.ts`); the rows removed. */

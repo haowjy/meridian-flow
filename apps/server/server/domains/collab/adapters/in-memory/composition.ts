@@ -339,6 +339,9 @@ function createInMemoryBranchStub(): CollabBranches {
         async ofDiscard() {
           return [];
         },
+        async redoItems() {
+          return [];
+        },
       },
       async listDiscards() {
         return [];
