@@ -16,6 +16,11 @@ export type DraftProvenanceResponse = {
   userId: string;
   snapshot: number[];
   parts: readonly DraftProvenancePart[];
+  /**
+   * The chats with a change of an AI edit in each pending change, by the id Changes gives it
+   * (read from the draft's text, so it names whoever's change the writer altered too).
+   */
+  members: Readonly<Record<string, readonly string[]>>;
   writers?: readonly {
     userId: string;
     inserted: readonly DraftItemRange[];
