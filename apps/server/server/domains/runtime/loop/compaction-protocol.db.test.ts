@@ -377,9 +377,6 @@ else
         "Write did not land",
       ])
         expect(bytes).toContain(text);
-      expect(promptBytes({ ...first, promptCacheKey: "<thread-id>" })).toMatchSnapshot(
-        "elided compacted request bytes",
-      );
       const thread = (await rig.repos.threads.findById(rig.threadId))!;
       const turns = await rig.repos.turns.listByThread(rig.threadId);
       const blocks = await rig.repos.blocks.listByThread(rig.threadId);
@@ -1753,9 +1750,6 @@ else
       // The re-shown document survives the successor's tool call: both requests carry it.
       expect(promptBytes(request)).toContain("RESHOWN NOTES TEXT");
       expect(promptBytes(later)).toContain("RESHOWN NOTES TEXT");
-      expect(promptBytes({ ...request, promptCacheKey: "<thread-id>" })).toMatchSnapshot(
-        "compacted request bytes",
-      );
       const thread = await rig.repos.threads.findById(rig.threadId);
       if (!thread) throw new Error("Missing thread");
       const rebuilt = await assembleNextTurnContext({

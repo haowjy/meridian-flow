@@ -151,7 +151,9 @@ every unit and DB run and compares the **expanded case count per test file**
   check what changed, not as a gate.
   A local `pnpm check` on 24 cores takes about a minute and the DB suite about 35 s. The one
   long unit test was the project-tree property test at 300 seeds (42 s of a 47 s run); it runs
-  40 seeds by default, and `TREE_SEEDS=300` restores the full sweep.
+  40 seeds by default, starting at a random seed each run (a failure prints
+  its seed; replay with `TREE_FIRST_SEED=<seed> TREE_SEEDS=1`). The CI test jobs set
+  `TREE_SEEDS=300`.
 - It also samples RSS across the whole process tree (descendants included, so a
   `forks` pool's children count) and enforces `TEST_MEMORY_CEILING_MB` (default
   4096) **on every run except a refresh**: a `TEST_BUDGET_UPDATE=1` run writes

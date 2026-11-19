@@ -1637,3 +1637,270 @@ describe("Undo of names and places reads the changes in force", () => {
     expect(t.at(folder)?.source).toBe("manuscript");
   });
 });
+
+describe("two replicas of one list", () => {
+  function replica(clientID: number): TreeWriter {
+    const doc = new Y.Doc({ gc: false });
+    doc.clientID = clientID;
+    return new TreeWriter(doc);
+  }
+  function sync(...writers: TreeWriter[]) {
+    for (const from of writers)
+      for (const to of writers)
+        if (from !== to)
+          Y.applyUpdate(to.doc, Y.encodeStateAsUpdate(from.doc, Y.encodeStateVector(to.doc)));
+  }
+  function names(writer: TreeWriter, parent: string, draft: string | null = null): string[] {
+    return childrenOf(replayView(writer.doc, { draft }), parent).map(segmentOf);
+  }
+  const pair = () => ({ a: replica(1), b: replica(2) });
+
+  it("concurrent moves that would form a cycle: one is skipped, both replicas agree", () => {
+    const { a, b } = pair();
+    const x = a.create(LIVE, WRITER, { kind: "folder", name: "X", parent: ROOT }).node;
+    const y = a.create(LIVE, WRITER, { kind: "folder", name: "Y", parent: ROOT }).node;
+    sync(a, b);
+    a.move(LIVE, WRITER, x, y);
+    b.move(LIVE, CHAT, y, x);
+    sync(a, b);
+    const pa = replayView(a.doc, LIVE);
+    const pb = replayView(b.doc, LIVE);
+    expect(treeViolations(pa)).toEqual([]);
+    expect(pa.skipped.map((s) => s.reason)).toEqual(["cycle"]);
+    expect([...pa.nodes.values()].map((n) => [n.id, n.parent])).toEqual(
+      [...pb.nodes.values()].map((n) => [n.id, n.parent]),
+    );
+  });
+
+  it("move against delete: the moved node leaves the deleted folder and survives", () => {
+    const { a, b } = pair();
+    const f = a.create(LIVE, WRITER, { kind: "folder", name: "Old", parent: ROOT }).node;
+    const keep = a.create(LIVE, WRITER, { kind: "folder", name: "Keep", parent: ROOT }).node;
+    const doc = a.create(LIVE, WRITER, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch1",
+      parent: f,
+    }).node;
+    sync(a, b);
+    a.delete(LIVE, WRITER, f); // the writer saw Ch1 inside and deleted it with the folder
+    b.move(LIVE, CHAT, doc, keep); // meanwhile the agent moved Ch1 out
+    sync(a, b);
+    const live = replayView(a.doc, LIVE);
+    expect(treeViolations(live)).toEqual([]);
+    expect(live.nodes.get(f)?.trashed).toBe(true);
+    expect(live.nodes.get(doc)).toMatchObject({ parent: keep, trashed: false });
+  });
+
+  it("create in a folder that was deleted: the folder stays, marked as kept by its child", () => {
+    const { a, b } = pair();
+    const f = a.create(LIVE, WRITER, { kind: "folder", name: "Arc 2", parent: ROOT }).node;
+    sync(a, b);
+    a.delete(LIVE, WRITER, f);
+    const made = b.create(LIVE, CHAT, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch9",
+      parent: f,
+    }).node;
+    sync(a, b);
+    const live = replayView(b.doc, LIVE);
+    expect(treeViolations(live)).toEqual([]);
+    expect(live.nodes.get(f)).toMatchObject({ trashed: false, keptByChild: true });
+    expect(live.nodes.get(made)?.trashed).toBe(false);
+    expect(replayView(a.doc, LIVE).nodes.get(f)).toMatchObject({ keptByChild: true });
+  });
+
+  it("rename against rename: one name wins, the same one everywhere", () => {
+    const { a, b } = pair();
+    const n = a.create(LIVE, WRITER, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Draft",
+      parent: ROOT,
+    }).node;
+    sync(a, b);
+    a.rename(LIVE, WRITER, n, "Prologue");
+    b.rename(LIVE, CHAT, n, "Opening");
+    sync(a, b);
+    expect(replayView(a.doc, LIVE).nodes.get(n)?.name).toBe(
+      replayView(b.doc, LIVE).nodes.get(n)?.name,
+    );
+  });
+
+  it("two replicas each create Kael: each shows its own plain, and after the merge both show the same twin plain", () => {
+    const { a, b } = pair();
+    const mine = a.create(LIVE, WRITER, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Kael",
+      parent: ROOT,
+    }).node;
+    const theirs = b.create(LIVE, CHAT, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Kael",
+      parent: ROOT,
+    }).node;
+    expect([names(a, ROOT), names(b, ROOT)]).toEqual([["Kael"], ["Kael"]]);
+    sync(a, b);
+    const merged = replayView(a.doc, LIVE);
+    const suffixed = [mine, theirs].filter((id) => merged.nodes.get(id)?.suffix !== undefined);
+    expect(suffixed).toHaveLength(1);
+    expect(names(a, ROOT).sort()).toEqual([
+      "Kael",
+      `Kael~${idHex(suffixed[0] as string).slice(0, 4)}`,
+    ]);
+    expect(names(a, ROOT)).toEqual(names(b, ROOT));
+  });
+
+  it("reorder against reorder: every replica shows one order", () => {
+    const { a, b } = pair();
+    for (const name of ["1", "2", "3", "4"])
+      a.create(LIVE, WRITER, { kind: "document", filetype: "markdown", name, parent: ROOT });
+    sync(a, b);
+    const [one, , , four] = childrenOf(replayView(a.doc, LIVE), ROOT).map((n) => n.id) as string[];
+    a.move(LIVE, WRITER, four as string, ROOT, 0);
+    b.move(LIVE, CHAT, one as string, ROOT, 4);
+    b.move(LIVE, CHAT, four as string, ROOT, 2);
+    sync(a, b);
+    expect(names(a, ROOT)).toEqual(names(b, ROOT));
+    expect(names(a, ROOT)).toHaveLength(4);
+  });
+
+  it("a draft reads as live plus its changes, and sees live changes made after it started", () => {
+    const a = replica(1);
+    const ch = a.create(LIVE, WRITER, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch1",
+      parent: ROOT,
+    }).node;
+    const work = { draft: "work-1" };
+    const folder = a.create(work, CHAT, { kind: "folder", name: "Arc 1", parent: ROOT }).node;
+    a.move(work, CHAT, ch, folder);
+    a.create(LIVE, WRITER, { kind: "document", filetype: "markdown", name: "Ch2", parent: ROOT });
+    expect(names(a, ROOT)).toEqual(["Ch1", "Ch2"]);
+    // Both were appended after Ch1 and got the same rank; the id breaks the tie the same way
+    // everywhere, which is not necessarily the order each author saw.
+    expect(names(a, ROOT, "work-1").sort()).toEqual(["Arc 1", "Ch2"]);
+    expect(names(a, folder, "work-1")).toEqual(["Ch1"]);
+  });
+
+  it("a binary file is a node with a pointer to its bytes", () => {
+    const a = replica(1);
+    const blob = { storageKey: "uploads/abc", mime: "image/png", size: 1234 };
+    const img = a.create(LIVE, WRITER, { kind: "file", name: "map.png", parent: ROOT, blob }).node;
+    expect(replayView(a.doc, LIVE).nodes.get(img)?.blob).toEqual(blob);
+    const doc = a.create(LIVE, WRITER, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Doc",
+      parent: ROOT,
+    }).node;
+    a.move(LIVE, WRITER, doc, img);
+    expect(replayView(a.doc, LIVE).nodes.get(doc)?.parent).toBe(ROOT);
+  });
+
+  it("merging a draft's raw Yjs updates instead of rebasing lets client ids pick the winner", () => {
+    // Why Apply re-authors ops: a fork merged as a CRDT orders its old ops by causality, so a
+    // drafted rename concurrent with a live rename wins or loses on client id, not on Apply.
+    const outcomes = new Set<string>();
+    for (const [liveId, draftId] of [
+      [1, 2],
+      [2, 1],
+    ] as const) {
+      const live = replica(liveId);
+      const n = live.create(LIVE, WRITER, {
+        kind: "document",
+        filetype: "markdown",
+        name: "Ch",
+        parent: ROOT,
+      }).node;
+      const fork = replica(draftId);
+      sync(live, fork);
+      fork.rename(LIVE, CHAT, n, "drafted");
+      live.rename(LIVE, WRITER, n, "live");
+      sync(fork, live);
+      outcomes.add(replayView(live.doc, LIVE).nodes.get(n)?.name as string);
+    }
+    expect(outcomes).toEqual(new Set(["drafted", "live"]));
+  });
+  it("two deletes of one folder both count, whatever the client ids", () => {
+    const outcomes = new Set<string>();
+    for (const [ia, ib] of [
+      [1, 2],
+      [2, 1],
+    ] as const) {
+      const a = replica(ia);
+      const b = replica(ib);
+      const f = a.create(LIVE, WRITER, { kind: "folder", name: "F", parent: ROOT }).node;
+      a.create(LIVE, WRITER, { kind: "document", filetype: "markdown", name: "x", parent: f });
+      sync(a, b);
+      a.create(LIVE, WRITER, { kind: "document", filetype: "markdown", name: "y", parent: f });
+      a.delete(LIVE, WRITER, f);
+      b.delete(LIVE, CHAT, f);
+      sync(a, b);
+      const live = replayView(a.doc, LIVE);
+      expect(treeViolations(live)).toEqual([]);
+      outcomes.add([...live.nodes.values()].map((n) => `${n.name}:${n.trashed}`).join(","));
+    }
+    expect(outcomes.size).toBe(1);
+    expect([...outcomes][0]).not.toContain("false,y");
+    expect([...outcomes][0]).toContain("y:true");
+  });
+
+  it("an applied copy names who drafted it and who applied it", () => {
+    const a = replica(1);
+    a.create({ draft: "w" }, CHAT, {
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: ROOT,
+    });
+    const [copy] = applyDraft(a, "w", WRITER, cmd()).copies;
+    expect(copy).toMatchObject({ actor: CHAT, appliedBy: WRITER, draft: null });
+  });
+
+  it("restoring a Discard leaves out a record whose node was purged", () => {
+    const a = replica(1);
+    const arc = a.create(LIVE, CHAT, { kind: "folder", name: "Arc", parent: ROOT }).node;
+    a.rename({ draft: "w" }, CHAT, arc, "Act 1");
+    discardDraft(a, "w", WRITER, "cmd-1");
+    purge(a, a.delete(LIVE, CHAT, arc));
+    const result = restoreDiscard(a, "cmd-1", CHAT, "w", "restore-3");
+    expect(result).toEqual({ copies: [] });
+  });
+
+  it("a record id counts once: two copies that appended the same record merge to one act", () => {
+    const { a, b } = pair();
+    const again = {
+      id: "same-record",
+      actor: WRITER,
+      draft: null,
+      type: "create",
+      node: "n",
+      kind: "document",
+      filetype: "markdown",
+      name: "Ch",
+      parent: ROOT,
+      source: "manuscript",
+      rank: "a0",
+    };
+    for (const copy of [a, b]) copy.doc.getArray("ops").push([again]);
+    sync(a, b);
+    expect(recordsOf(a.doc).length).toBe(2);
+    expect(replayView(a.doc, LIVE).skipped).toEqual([]);
+    expect(names(a, ROOT)).toEqual(["Ch"]);
+  });
+
+  it("two writers on one copy never make the same record id", () => {
+    const doc = new Y.Doc({ gc: false });
+    const first = new TreeWriter(doc);
+    const second = new TreeWriter(doc);
+    first.create(LIVE, WRITER, { kind: "folder", name: "A", parent: ROOT });
+    second.create(LIVE, WRITER, { kind: "folder", name: "B", parent: ROOT });
+    const ids = recordsOf(doc).map((record) => record.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

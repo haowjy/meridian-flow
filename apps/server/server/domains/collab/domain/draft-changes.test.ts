@@ -57,15 +57,15 @@ describe("a part an Undo took", () => {
     const second = { id: 1002, delta: delta(original, replaced("golden dust")) };
     const { parts } = reading(replaced("golden dust"), first, second);
     expect(parts.get(1001)?.changes.map((c) => [c.state, c.sitsIn.size])).toEqual([["out", 0]]);
-    expect(parts.get(1002)?.changes.every(isPending)).toBe(true);
+    expect(parts.get(1002)?.changes.map(isPending)).toEqual([true]);
   });
 
   it("is not claimed by a later reply that proposes the very same change", () => {
     const first = { id: 1001, delta: delta(original, replaced("silver rain")), taken: true };
     const second = { id: 1002, delta: delta(original, replaced("silver rain")) };
     const { parts } = reading(replaced("silver rain"), first, second);
-    expect(parts.get(1001)?.changes.some(isPending)).toBe(false);
-    expect(parts.get(1002)?.changes.every(isPending)).toBe(true);
+    expect(parts.get(1001)?.changes.map(isPending)).toEqual([false]);
+    expect(parts.get(1002)?.changes.map(isPending)).toEqual([true]);
   });
 });
 
@@ -79,7 +79,7 @@ describe("a hand edit in another paragraph", () => {
     expect(reading.pending.groups).toHaveLength(2);
     const sitsIn = [...(parts.get(3001)?.changes[0].sitsIn ?? [])];
     expect(sitsIn).toHaveLength(1);
-    expect(reading.pending.groups[sitsIn[0]].spans[0].draft.from).toBe(0);
+    expect(reading.pending.groups[sitsIn[0]].excerpt.inserted).toContain("cat");
   });
 });
 
@@ -101,7 +101,7 @@ describe("a Redo's cut", () => {
     doc: Y.Doc,
     parts: Parameters<typeof compileClick>[2],
     carried: [number, number][],
-  ) => compileClick(doc, { draftId: "d", whole: true, carried, commandId: "c" } as never, parts);
+  ) => compileClick(doc, { draftId: "d", whole: true, carried, commandId: "c" }, parts);
   const applied = (click: ReturnType<typeof compileClick>) =>
     click.groups.map((group) => words(group.patched));
 

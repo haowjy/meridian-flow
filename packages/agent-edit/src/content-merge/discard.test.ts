@@ -23,13 +23,13 @@ describe("Discard", () => {
   const base = doc("p#a:The tiger slept. | p#b:Rain fell. | p#c:The gate opened.");
   const seen = doc("p#a:The cat slept. | p#b:Rain fell. | p#c:The gate opened.");
 
-  it("takes the change the writer saw when typing arrived elsewhere since", () => {
+  it("takes the change the writer saw when typing arrived beside it since", () => {
     const [change] = idsIn(base, seen);
-    const now = doc("p#a:The cat slept. | p#b:Rain fell hard. | p#c:The gate opened.");
+    const now = doc("p#a:The cat slept soundly. | p#b:Rain fell. | p#c:The gate opened.");
     const taken = discardChanges(schema, base, now, [change], { base, text: seen });
     expect(words(taken?.text ?? [])).toEqual([
-      "The tiger slept.",
-      "Rain fell hard.",
+      "The tiger slept soundly.",
+      "Rain fell.",
       "The gate opened.",
     ]);
   });
