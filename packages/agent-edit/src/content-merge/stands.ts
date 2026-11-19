@@ -545,9 +545,9 @@ function ownRuns(change: EditChange): Run[] {
 
 /**
  * How near each pending change is to the blocks the change altered, by block id: 0 when it touches
- * them. A block of it that was split or joined away leaves no id to pair (`joined`), so its place is
- * its surviving blocks and a pending change's rank is its distance from them. Null when none
- * survives.
+ * them. When no pending change touches them (`joined`: a block of it was split or joined away, or
+ * its words moved into a block with another id), the ids place nothing, so its place is its
+ * surviving blocks and a pending change's rank is its distance from them. Null when none survives.
  */
 function touching(
   reading: Reading,
@@ -555,24 +555,6 @@ function touching(
 ): { rank: (index: number) => number; joined: boolean } | null {
   const { text } = reading;
   const { draft, base } = reading.pending.diff;
-  const present = new Set(text.map(idOf));
-  const joined = !change.after.every((block) => present.has(idOf(block)));
-  if (joined) {
-    const own = new Set([...change.before, ...change.after].map(idOf));
-    const kept = text.flatMap((block, index) => (own.has(idOf(block)) ? [index] : []));
-    if (!kept.length) return null;
-    return {
-      joined,
-      rank: (index) =>
-        Math.min(
-          ...reading.pending.groups[index].spans.flatMap(({ draft: range }) =>
-            kept.map((at) =>
-              at < range.from ? range.from - at : at >= range.to ? at - range.to + 1 : 0,
-            ),
-          ),
-        ),
-    };
-  }
   const same = (block: PMNode, others: readonly PMNode[]) =>
     others.some((other) => idOf(other) === idOf(block) && blocksEqual([other], [block]));
   const ids = new Set([
@@ -581,14 +563,25 @@ function touching(
   ]);
   const hits = (blocks: readonly PMNode[], range: { from: number; to: number }) =>
     blocks.slice(range.from, range.to).some((block) => ids.has(idOf(block)));
+  const touched = reading.pending.groups.map((group) =>
+    group.spans.some((span) => hits(draft.blocks, span.draft) || hits(base.blocks, span.base)),
+  );
+  if (touched.includes(true)) {
+    return { joined: false, rank: (index) => (touched[index] ? 0 : Number.POSITIVE_INFINITY) };
+  }
+  const own = new Set([...change.before, ...change.after].map(idOf));
+  const kept = text.flatMap((block, index) => (own.has(idOf(block)) ? [index] : []));
+  if (!kept.length) return null;
   return {
-    joined,
+    joined: true,
     rank: (index) =>
-      reading.pending.groups[index].spans.some(
-        (span) => hits(draft.blocks, span.draft) || hits(base.blocks, span.base),
-      )
-        ? 0
-        : Number.POSITIVE_INFINITY,
+      Math.min(
+        ...reading.pending.groups[index].spans.flatMap(({ draft: range }) =>
+          kept.map((at) =>
+            at < range.from ? range.from - at : at >= range.to ? at - range.to + 1 : 0,
+          ),
+        ),
+      ),
   };
 }
 
@@ -596,8 +589,10 @@ function touching(
  * The pending changes that hold the change's words: one of their hunks removed what the change's
  * hunk removed and added what it added (each side the hunk has). A change with no words (a
  * paragraph split, a stray quote mark) is placed by its blocks, or by its marks being among the ones
- * the change removed or added. Only a pending change that touches the change's blocks can hold it:
- * the same words changed in another paragraph are another change.
+ * the change removed or added. Only a pending change that touches the change's blocks (`touches`)
+ * can hold it: the same words changed in another paragraph are another change. A run of words that
+ * no touching change holds has moved into a block the change never had (a sentence moved to another
+ * paragraph), so that run alone is read against every pending change.
  */
 function holding(
   reading: Reading,
@@ -606,33 +601,38 @@ function holding(
   touches: ((index: number) => boolean) | null,
 ): number[] {
   const blockIds = new Set(change.after.map(idOf));
-  const out: number[] = [];
-  reading.pending.groups.forEach((group, index) => {
-    if (touches && !touches(index)) return;
+  const holds = (index: number, runs: readonly Run[]) => {
+    const group = reading.pending.groups[index];
     const theirs = reading.runs[index];
     const bare = theirs.every((t) => !t.removed.length && !t.inserted.length);
-    const holds = bare
+    return bare
       ? group.spans.some((span) =>
           reading.pending.diff.draft.blocks
             .slice(span.draft.from, span.draft.to)
             .some((block) => blockIds.has(idOf(block))),
         ) ||
-        theirs.some((t) =>
-          mine.some(
-            (run) =>
-              (t.removedAll.length || t.insertedAll.length) &&
-              mostlyIn(t.removedAll, run.removedAll) &&
-              mostlyIn(t.insertedAll, run.insertedAll),
-          ),
-        )
-      : mine.some((run) =>
+          theirs.some((t) =>
+            runs.some(
+              (run) =>
+                (t.removedAll.length || t.insertedAll.length) &&
+                mostlyIn(t.removedAll, run.removedAll) &&
+                mostlyIn(t.insertedAll, run.insertedAll),
+            ),
+          )
+      : runs.some((run) =>
           theirs.some(
             (t) =>
               (!run.removed.length || mostlyIn(run.removed, t.removed)) &&
               (!run.inserted.length || mostlyIn(run.inserted, t.inserted)),
           ),
         );
-    if (holds) out.push(index);
-  });
-  return out;
+  };
+  const all = reading.pending.groups.map((_, index) => index);
+  const near = touches ? all.filter(touches) : all;
+  const out = new Set(near.filter((index) => holds(index, mine)));
+  if (touches) {
+    const moved = mine.filter((run) => ![...out].some((index) => holds(index, [run])));
+    if (moved.length) for (const index of all) if (holds(index, moved)) out.add(index);
+  }
+  return [...out];
 }
