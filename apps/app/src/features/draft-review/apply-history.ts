@@ -210,6 +210,7 @@ export function queuePort(handle: ApplyCommandHandle, node: string): ApplyPort {
     },
     redo: async () => {
       const outcome = await handle.redo();
+      if (outcome.status === "unsent") return "failed";
       return landed(outcome) ? { commandId: handle.applyInForce() } : null;
     },
   };

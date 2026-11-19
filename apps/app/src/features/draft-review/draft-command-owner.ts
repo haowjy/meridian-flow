@@ -782,6 +782,10 @@ export class DraftCommandOwner {
       band = applied;
       this.bandApplies.set(band, { draftId: entry.draftId, handle });
       this.applied.add(band);
+      // An Apply the server never took leaves nothing for Ctrl+Z to take back.
+      void scheduled.outcome.then((answer) => {
+        if (answer.status === "unsent") applied.end();
+      });
     }
     binding.runtime.projectNow();
     return {
