@@ -31,6 +31,7 @@ import type { Principal } from "../../file-policy/index.js";
 import { draftBlocks, draftSchema, isPending, takeBack } from "./draft-changes.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
+import { effectiveActionIndex, partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
@@ -343,9 +344,11 @@ function draftStates(
       (part) => targetsTurn(part, query) && part.origin.kind === "pending",
     );
     if (!drafted.length) continue;
+    // An applied change an Undo took out of the manuscript is out, whatever the Apply still says.
+    const took = effectiveActionIndex(document.history, new Set(drafted.map(partKey))).byPart;
     states[document.documentId] = drafted.some((part) => part.waiting)
       ? "pending"
-      : drafted.some((part) => part.disposition === "applied")
+      : drafted.some((part) => part.disposition === "applied" && !took.has(partKey(part)))
         ? "applied"
         : "discarded";
   }
