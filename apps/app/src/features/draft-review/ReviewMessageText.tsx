@@ -10,15 +10,6 @@ import type { BranchCommandFailure, ServerRefusal } from "./review-command-types
 /** The refusals the writer can act on, worded here (not by the server) from the server's code. */
 function knownRefusal(serverCode: string): MessageDescriptor | undefined {
   switch (serverCode) {
-    case "review_updated":
-      return msg`The review updated. Choose the change again.`;
-    case "unavailable":
-      return msg`Apply is temporarily unavailable.`;
-    case "work_not_found":
-      return msg`This Work no longer exists.`;
-    case "draft_not_found":
-    case "not_found":
-      return msg`This draft is no longer here. It may have been applied or discarded already.`;
     case "overtaken_discarded":
       return msg`This was discarded before Apply reached it. Restore it to apply it.`;
     case "overtaken_removed":
@@ -37,8 +28,6 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`Apply couldn't be sent. Try again.`;
     case "read_only":
       return msg`This draft just became read-only, so nothing was discarded. Check it, then try again.`;
-    case "chat_frozen":
-      return msg`This chat is in the trash, so its drafts are frozen. Restore the chat to apply them.`;
     case "left_out_not_on_server":
       return msg`The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft.`;
     case "left_out_not_in_draft":
@@ -54,18 +43,15 @@ function answersAlone(serverCode: string | undefined): boolean {
 }
 
 /**
- * Why the server refused, as a sentence after the lead line. A code we know is
- * worded here, in the language shown now; any other code keeps the server's own
- * text (not in our catalogs). It never decides the wording around it, which
- * comes from the failure's code. The one renderer for a whole-draft and a
- * per-change refusal.
+ * Why the server refused, as a sentence after the lead line, worded here in the
+ * language shown now. It never decides the wording around it, which comes from
+ * the failure's code. The one renderer for a whole-draft and a per-change refusal.
  */
-function RefusalReason({ serverCode, serverReason }: Partial<ServerRefusal>) {
+function RefusalReason({ serverCode }: ServerRefusal) {
   const { i18n } = useLingui();
   const known = serverCode ? knownRefusal(serverCode) : undefined;
-  const reason = known
-    ? i18n._(known)
-    : (serverReason ?? i18n._(msg`The server couldn't do that. Try again.`));
+  if (!known) return null;
+  const reason = i18n._(known);
   return <> {/[.!?]$/.test(reason) ? reason : `${reason}.`}</>;
 }
 
@@ -87,7 +73,7 @@ export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }
       </span>
     ));
   }
-  const { code, serverCode, serverReason } = failure;
+  const { code, serverCode } = failure;
   switch (code) {
     case "unapply-refused":
       return <Trans>Undo didn't go through. Try again.</Trans>;
@@ -104,7 +90,7 @@ export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }
       return (
         <>
           {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}
-          <RefusalReason serverCode={serverCode} serverReason={serverReason} />
+          <RefusalReason serverCode={serverCode} />
         </>
       );
     case "discard-unknown":
@@ -117,10 +103,8 @@ export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }
       return (
         <>
           {answersAlone(serverCode) ? null : <Trans>Couldn't discard this draft.</Trans>}
-          <RefusalReason serverCode={serverCode} serverReason={serverReason} />
+          <RefusalReason serverCode={serverCode} />
         </>
       );
-    case "review-failed":
-      return <Trans>Couldn't open this draft. Try again.</Trans>;
   }
 }

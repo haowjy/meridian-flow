@@ -2,7 +2,6 @@
 export type DraftRef = { projectId: string; ownerKey: string; documentId: string; itemKey: string };
 export type ServerRefusal = {
   serverCode?: string;
-  serverReason?: string;
 };
 /**
  * One line of what an Apply left out of an item, for the half it explains: `overtaken_<state>`
@@ -10,12 +9,7 @@ export type ServerRefusal = {
  */
 export type ApplyLine = { half: "tree" | "text"; code: string; by?: string };
 export type CommandRefusal = {
-  code:
-    | "apply-refused"
-    | "unapply-refused"
-    | "discard-refused"
-    | "discard-unknown"
-    | "review-failed";
+  code: "apply-refused" | "unapply-refused" | "discard-refused" | "discard-unknown";
 } & ServerRefusal;
 export type BranchCommandFailure =
   | CommandRefusal

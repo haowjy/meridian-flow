@@ -71,7 +71,7 @@ canonical room and Work. A review body is read-only and has no editing toolbar.
 presentation. `MobileReviewHeader` owns the draft switcher, stepper, and list
 button; `MobileChangeBar` sits in page flow at the bottom of the manuscript;
 `MobileChangeSheet` lists this document's changes and links to Work changes.
-All controls use 44px targets. Apply/Discard, refusal holds, toast, and next
+All controls use 44px targets. Apply/Discard, refusal holds, and next
 change behavior come from shared draft-review state; phone owns only sheet and
 phone-layout state. No Apply-all/Discard-all lives in the sheet.
 

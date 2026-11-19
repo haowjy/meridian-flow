@@ -1753,8 +1753,8 @@ msgid "Apply draft of {name}"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Apply is temporarily unavailable."
-msgstr ""
+#~ msgid "Apply is temporarily unavailable."
+#~ msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
 msgid "Apply is waiting for confirmation."
@@ -3052,8 +3052,8 @@ msgid "Couldn't open this document."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't open this draft. Try again."
-msgstr ""
+#~ msgid "Couldn't open this draft. Try again."
+#~ msgstr ""
 
 #: src/features/project/context/FolderMenu.tsx
 #: src/features/project/side/SideExplorer.tsx
@@ -7368,8 +7368,8 @@ msgid "That change couldn't be made."
 msgstr ""
 
 #: src/features/draft-review/ReviewToast.tsx
-msgid "That change is no longer in the draft."
-msgstr ""
+#~ msgid "That change is no longer in the draft."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That change wasn't kept in {name}."
@@ -7396,8 +7396,8 @@ msgid "That document couldn't be found."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "That document is no longer available, so this change can't be reversed."
-msgstr ""
+#~ msgid "That document is no longer available, so this change can't be reversed."
+#~ msgstr ""
 
 #: src/features/project/context/open-project-document.ts
 msgid "That document is no longer available."
@@ -7720,8 +7720,8 @@ msgid "The restore from Trash"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "The review updated. Choose the change again."
-msgstr ""
+#~ msgid "The review updated. Choose the change again."
+#~ msgstr ""
 
 #: src/features/chat/script-copy.ts
 msgid "the script runner failed"
@@ -7732,8 +7732,8 @@ msgid "The server couldn't be reached."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "The server couldn't do that. Try again."
-msgstr ""
+#~ msgid "The server couldn't do that. Try again."
+#~ msgstr ""
 
 #: src/core/editor/images/RemoteImagePlaceholder.tsx
 #: src/features/connections/connection-status.ts
@@ -7908,8 +7908,8 @@ msgid "This change is no longer reversible."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "This change no longer matches the document's text, so it can't be reversed."
-msgstr ""
+#~ msgid "This change no longer matches the document's text, so it can't be reversed."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 #~ msgid "This change only applies together with the rest of the document. Apply the whole document instead."
@@ -7938,8 +7938,8 @@ msgid "This chat has no connection tool by that name."
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
-msgstr ""
+#~ msgid "This chat is in the trash, so its drafts are frozen. Restore the chat to apply them."
+#~ msgstr ""
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
@@ -8137,8 +8137,8 @@ msgid "This draft is in Trash"
 msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This draft is no longer here. It may have been applied or discarded already."
-msgstr ""
+#~ msgid "This draft is no longer here. It may have been applied or discarded already."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
@@ -8165,8 +8165,8 @@ msgid "This file holds code only."
 msgstr ""
 
 #: src/features/chat/turn-receipt-copy.ts
-msgid "This file is binary, so this change can't be reversed."
-msgstr ""
+#~ msgid "This file is binary, so this change can't be reversed."
+#~ msgstr ""
 
 #: src/features/project/context/tree-action-message.ts
 #~ msgid "This file is no longer there. Refresh and try again."
@@ -8369,7 +8369,6 @@ msgid "This Work is unavailable."
 msgstr ""
 
 #: src/client/query/work-update-failure.ts
-#: src/features/draft-review/ReviewMessageText.tsx
 msgid "This Work no longer exists."
 msgstr ""
 

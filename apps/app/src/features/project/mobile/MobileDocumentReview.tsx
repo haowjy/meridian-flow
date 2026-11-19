@@ -1,13 +1,12 @@
 /**
  * MobileDocumentReview — wraps a phone document's editor with the review's
  * chrome while that document is under inline review: the header above it, the
- * selected change's bar below it, this document's change-list sheet over it,
- * the toast.
+ * selected change's bar below it, this document's change-list sheet over it.
  * With no review of this document it is only the column the editor sits in.
  *
  * Every command goes through the same controller the desktop uses
  * (`useReviewHeader`, `useReviewChanges`), so optimistic Apply and Discard,
- * refusals, toasts, the entry hold and "No changes left" behave alike on both.
+ * refusals, the entry hold and "No changes left" behave alike on both.
  * The header and bar appear with the painted review (`inlineReview.shown`),
  * never over the live text that is held until then.
  *
@@ -22,7 +21,6 @@ import { PaintCapture } from "@/components/app/PaintHold";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
-import { ReviewToast } from "@/features/draft-review/ReviewToast";
 import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import {
   type ManuscriptState,
@@ -165,25 +163,11 @@ function ReviewBottom({
   listOpen: boolean;
   onListOpenChange: (open: boolean) => void;
 }) {
-  const { controller, view } = header;
+  const { view } = header;
   return (
     <>
       <MobileChangeBar view={view} canApply={header.canApply} />
-      <MobileChangeSheet
-        open={listOpen}
-        onOpenChange={onListOpenChange}
-        view={view}
-        controller={controller}
-      />
-      <ReviewToast
-        toast={listOpen ? null : controller.toast}
-        onDismiss={controller.dismissToast}
-        className={
-          view.focused
-            ? "bottom-[calc(max(0.5rem,env(safe-area-inset-bottom),var(--mobile-keyboard-height,0px))+5.25rem)]"
-            : "bottom-4"
-        }
-      />
+      <MobileChangeSheet open={listOpen} onOpenChange={onListOpenChange} view={view} />
     </>
   );
 }
