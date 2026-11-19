@@ -34,8 +34,6 @@ export function MobileChangeBar({
       <ReviewChangeBar
         touch
         change={change}
-        itemKey={view.itemKey ?? ""}
-        documentId={view.documentId}
         disabled={view.locked}
         draftFailure={draftFailure}
         canApply={canApply}

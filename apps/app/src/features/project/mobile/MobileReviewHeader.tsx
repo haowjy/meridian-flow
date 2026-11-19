@@ -106,12 +106,7 @@ export function MobileReviewHeader({
       {notice ? (
         <DraftNoticeLine notice={notice} className="border-t border-border-subtle" />
       ) : null}
-      <ReviewFailureNotices
-        itemKey={view.itemKey ?? ""}
-        commandError={header.commandError}
-        failedElsewhere={header.failedElsewhere}
-        onOpenNext={header.openDraft}
-      />
+      <ReviewFailureNotices commandError={header.commandError} />
     </section>
   );
 }

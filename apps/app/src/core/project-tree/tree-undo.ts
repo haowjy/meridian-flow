@@ -5,20 +5,19 @@
  * stored. Whether a tree step can still be taken is read from the list at the press (`takeBackAll`:
  * by the changes in force), and one that no longer fits is skipped for the one before it. An Apply
  * is asked of the server, and its press is spent once the server answers, whatever it took back. A
- * step that waits for a closed owner (an archived or deleted Work, a chat in Trash) keeps its place,
- * and a press passes over it until the owner reopens (`waitsForClosed`). So does a delete that hides
+ * tree step that waits for a closed owner (an archived or deleted Work, a chat in Trash) keeps its
+ * place, and a press passes over it until the owner reopens (`waitsForClosed`). So does a delete that hides
  * nothing now (`rests`: what it took shows again, kept standing by an Apply or a create), until it
  * hides something again. A notice's Undo
  * (`undoStep`) takes back the same step a press would. There is no Redo: an Undo's own records go
  * on no stack.
  *
  * Each list also holds the notice its rows show (`treeNotice`): the writer's latest gesture with
- * its Undo, or what a press skipped or couldn't take back. It ends at the next gesture or press,
- * or when its step leaves the stack. Beside it, the writer's changes the server bounced since
+ * its Undo. It ends at the next gesture or press, or when its step leaves the stack. Beside it, the writer's changes the server bounced since
  * (`treeBounces`: their Work was closed), each said on the row it was made on; they end at the
  * writer's next gesture, press or action elsewhere in the list, as the notice does.
  */
-import type { ClosedOwnerWhy, LeftOutWhy } from "@meridian/contracts/commands";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   appliedNodes,
   type DroppedRecord,
@@ -81,67 +80,22 @@ export type TreeStep = {
 export type ClosedOwner = { why: ClosedOwnerWhy; owner?: string };
 
 /**
- * Which owners this tab reads as closed now, from the Works and chats it holds. A step something
- * of which is held waits for them: a press passes over it while they are all closed. A held
- * answer is evidence the step keeps until a read of the owner that started after it lands
- * (`readAt`); from then on the tab's read decides, and an owner it can't tell about (its list
- * dropped from the cache) reads open, so a stale read costs one answered press. A press that
- * passes over the step reads again an owner with no read landed since (`reread`).
+ * Which owners this tab reads as closed now, from the Works and chats it holds. A tree step some of
+ * whose records are in them waits: a press passes over it while they are all closed.
  */
 export type ClosedOwners = {
   /** The closed owner of a source's notes; null when it is open or the tab can't tell. */
   source(sourceId: string): ClosedOwner | null;
-  /** Whether the owner a key names (`work:<id>`, `lineage:<root>`) is closed. */
-  owner(ownerKey: string): boolean;
-  /**
-   * When the latest read of the owner's state that landed started, or this tab's own change to
-   * it (ms since epoch); 0 when none has. Kept for the tab's life, whatever the cache drops.
-   */
-  readAt(ownerKey: string): number;
-  /** The server said these owners are closed: read them again. */
-  refresh(ownerKeys: readonly string[]): void;
-  /** Hears what the tab knows of its owners change (one reopened, one closed). */
-  subscribe(listener: () => void): () => void;
 };
 
-export const NOTHING_CLOSED: ClosedOwners = {
-  source: () => null,
-  owner: () => false,
-  readAt: () => Number.POSITIVE_INFINITY,
-  refresh: () => {},
-  subscribe: () => () => {},
-};
+export const NOTHING_CLOSED: ClosedOwners = { source: () => null };
 
 /**
- * Part of an Apply an Un-Apply left applied, because taking it back would change a closed owner's
- * notes: its tree fact (`tree`), its text groups, or both. `ownerKey` is the owner it waits for.
- */
-export type Held = ClosedOwner & {
-  node: string;
-  tree: boolean;
-  groupIds: readonly string[];
-  ownerKey: string;
-};
-
-/**
- * What an Un-Apply took back of its Apply: `all` of what stood, `partly`, `nothing`, or `already`
- * (an earlier Un-Apply, here or in another tab, took it all). `leftOut` names each node whose
- * change this press left, with why, and whether its tree fact stayed (`tree`) or its text;
- * `held`, what stayed for a closed owner and comes back to Undo once it reopens.
- */
-export type Unapplied = {
-  taken: "all" | "partly" | "nothing" | "already";
-  leftOut: readonly { node: string; why: LeftOutWhy; tree: boolean }[];
-  held: readonly Held[];
-};
-
-/**
- * An Apply, one step whichever view is on screen: it changed live and the Work's tree alike.
- * `ask` asks the server, and `failed` is a press that didn't reach it. It has two halves: its
- * text ends only by an Un-Apply (a press answers it, this tab's or, as `already`, another's); its
- * tree half ends when nothing of it stands in live any more (`endWhenTakenBack`). Its own state
- * puts it on the stack and takes it off: in force, or while an Un-Apply of it is out, it is
- * there, and what an Un-Apply `held` keeps it in its place.
+ * An Apply, one step whichever view is on screen: it changed live and the Work's tree alike. A
+ * press sends its Un-Apply (`undo`: false when the request didn't reach the server, which the
+ * writer is told; the step stays). It is on the stack from when it landed until an Un-Apply took
+ * something back or nothing is left of it, and a Redo that lands puts it back on top. Its tree
+ * half also ends when nothing of it stands in live any more (`endWhenTakenBack`).
  */
 export type ApplyStep = {
   kind: "apply";
@@ -151,39 +105,13 @@ export type ApplyStep = {
   tree: { command: string; restores: readonly string[] } | null;
   /** The sources its nodes show in; none known, every source's stack holds it. */
   sources: readonly string[];
-  /** What it applied: "Ch 3 and Outline", "4 changes". */
-  name: string;
-  /** The nodes it took, whose rows say what an Undo of it couldn't do. */
+  /** The nodes it took, where the focus goes after an Undo. */
   nodes: readonly string[];
-  /** What its last Un-Apply left for closed owners, while it waits in force. */
-  readonly held: readonly Held[];
-  /** Something is held and every owner it waits for is closed: a press passes over it. */
-  waits(): boolean;
-  /** A press passed over it: reads again each owner it waits for that the tab hasn't read since. */
-  reread(): void;
-  /** Its changes stand: false while an Un-Apply or Redo of it is out. */
-  inForce(): boolean;
-  /** A row's Undo: `ask`, with a failed answer said on its rows (`sayUnapplied`). */
-  press(from: null): Promise<Unapplied | { taken: "failed" }>;
-  /** Every Undo of it: its own state decides whether it asks the server. */
-  ask(): Promise<Unapplied | { taken: "failed" }>;
-  /** Nothing of its tree half stands any more: taken back elsewhere. */
-  treeTaken(): void;
+  undo(): Promise<boolean>;
 };
 
-/**
- * What a list's rows say: the latest gesture, whose rows offer its Undo, or an Un-Apply that
- * didn't reach the server, on that Apply's rows.
- */
-export type TreeNotice = { kind: "step"; step: TreeStep } | { kind: "said"; said: readonly Said[] };
-
-export type Said = {
-  kind: "failed";
-  name: string;
-  nodes: readonly string[];
-  /** An Apply's Un-Apply didn't reach the server; `step` is still on the stack. */
-  step: ApplyStep;
-};
+/** What a list's rows say: the latest gesture, whose rows offer its Undo. */
+export type TreeNotice = { kind: "step"; step: TreeStep };
 
 /**
  * A change of the writer's that the server bounced (it changed a Work that was closed): the row
@@ -203,20 +131,7 @@ export type UndoOutcome =
       /** What the step taken back acted on: where the focus follows it. */
       nodes: readonly string[];
     }
-  | { kind: "nothing" }
-  /** An Apply's Un-Apply didn't reach the server: the step stays on the stack. */
-  | { kind: "failed"; name: string; step: ApplyStep };
-
-function saidOf(outcome: UndoOutcome): TreeNotice | null {
-  return outcome.kind === "failed"
-    ? {
-        kind: "said",
-        said: [
-          { kind: "failed", name: outcome.name, nodes: outcome.step.nodes, step: outcome.step },
-        ],
-      }
-    : null;
-}
+  | { kind: "nothing" };
 
 const stacks = new WeakMap<TreeListSession, UndoStep[]>();
 const notices = new WeakMap<TreeListSession, TreeNotice>();
@@ -317,11 +232,10 @@ export function pushUndoStep(session: TreeListSession, step: UndoStep): void {
 }
 
 /**
- * Something of the step waits for closed owners, every one of which the tab reads as closed still:
+ * Something of the tree step waits for closed owners, every one of which the tab reads as closed still:
  * a press passes over it. Its place is kept, and the press after the owners reopen takes it.
  */
-export function waitsForClosed(step: UndoStep, closed: ClosedOwners): boolean {
-  if (step.kind === "apply") return step.waits();
+function waitsForClosed(step: TreeStep, closed: ClosedOwners): boolean {
   const waits = step.waits ?? [];
   return waits.length > 0 && waits.every((source) => closed.source(source) !== null);
 }
@@ -349,9 +263,7 @@ export async function undoLatest(
 ): Promise<UndoOutcome> {
   actedIn(session);
   show(session, null);
-  const outcome = await takeLatest(session, source, view, actor, closed, pendingText);
-  show(session, saidOf(outcome));
-  return outcome;
+  return takeLatest(session, source, view, actor, closed, pendingText);
 }
 
 async function takeLatest(
@@ -366,15 +278,10 @@ async function takeLatest(
   for (let at = stack.length - 1; at >= 0; at -= 1) {
     const step = stack[at] as UndoStep;
     if (!fits(step, source, view)) continue;
-    if (waitsForClosed(step, closed)) {
-      if (step.kind === "apply") step.reread();
-      continue;
-    }
-    if (step.kind === "tree" && rests(session, step)) continue;
     if (step.kind === "apply") {
-      if (!step.inForce()) continue;
-      return unappliedOutcome(step, await step.ask());
+      return (await step.undo()) ? { kind: "undone", nodes: step.nodes } : { kind: "nothing" };
     }
+    if (waitsForClosed(step, closed) || rests(session, step)) continue;
     stack.splice(at, 1);
     const back = takeBack(session, step, view, actor, closed, pendingText);
     if (back === "undone") {
@@ -402,7 +309,7 @@ export async function undoStep(
   closed: ClosedOwners,
   pendingText?: ReadonlySet<string>,
 ): Promise<boolean> {
-  if (step.kind === "apply") return (await step.press(null)).taken !== "failed";
+  if (step.kind === "apply") return step.undo();
   const stack = stackOf(session);
   const at = stack.indexOf(step);
   if (at < 0 || rests(session, step)) return false;
@@ -426,30 +333,15 @@ export async function undoStep(
 }
 
 /**
- * Says on `step`'s rows that its Un-Apply didn't reach the server, as a press says it: an applied
- * row's Undo, an editor's Ctrl+Z, a chat card's Undo.
- */
-export async function sayUnapplied(
-  session: TreeListSession,
-  step: ApplyStep,
-  answer: Promise<Unapplied | { taken: "failed" }>,
-): Promise<void> {
-  show(session, null);
-  show(session, saidOf(unappliedOutcome(step, await answer)));
-}
-
-/** What an Un-Apply's answer comes to; one that didn't reach the server leaves the step. */
-function unappliedOutcome(step: ApplyStep, answer: Unapplied | { taken: "failed" }): UndoOutcome {
-  if (answer.taken === "failed") return { kind: "failed", name: step.name, step };
-  return answer.taken === "nothing" ? { kind: "nothing" } : { kind: "undone", nodes: step.nodes };
-}
-
-/**
  * Tells the Apply `step` once nothing of its tree half stands in `lists` (`appliedNodes`): a
  * card's Undo, or another tab's Un-Apply, took it back. Only a half seen standing ends, so a list
  * still catching up with the Apply's copies ends nothing. Returns the stop for the watch.
  */
-export function endWhenTakenBack(lists: readonly TreeListSession[], step: ApplyStep): () => void {
+export function endWhenTakenBack(
+  lists: readonly TreeListSession[],
+  step: ApplyStep,
+  taken: () => void,
+): () => void {
   const half = step.tree;
   if (!half) return () => undefined;
   const stands = () =>
@@ -465,7 +357,7 @@ export function endWhenTakenBack(lists: readonly TreeListSession[], step: ApplyS
       }
       if (!seen) return;
       stop();
-      step.treeTaken();
+      taken();
     }),
   );
   const stop = () => {

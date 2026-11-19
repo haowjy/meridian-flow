@@ -4,7 +4,7 @@
  * question an Apply all asks first in the notice's place while it is open.
  */
 import { i18n } from "@lingui/core";
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -13,7 +13,6 @@ import { setDocumentView } from "@/client/project-shell/document-views";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { RowWord } from "@/components/app/RowWord";
-import { WorkClosedChip } from "@/components/app/WorkClosedChip";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
   useAccountId,
@@ -38,17 +37,6 @@ export type CommandQuestion = {
   disabled?: boolean;
 };
 
-/** Reads again whenever an Apply this tab holds changes state. */
-export function useAppliedCommands() {
-  const { applied } = useDraftCommandOwner();
-  useSyncExternalStore(
-    applied.subscribe,
-    () => applied.revision,
-    () => 0,
-  );
-  return applied;
-}
-
 /** The owner's notice, wherever it was made; the caller shows it if it was made there. */
 export function useDraftNotice(ownerKey: string): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
@@ -71,16 +59,6 @@ export function useDocumentNotice(
   return useSyncExternalStore(
     notices.subscribe,
     () => notices.forDocument(projectId, documentId),
-    () => null,
-  );
-}
-
-/** The notice on one change card of a document (`DraftNotices.forCard`). */
-export function useCardNotice(projectId: string, documentId: string | null): DraftNotice | null {
-  const { notices } = useDraftCommandOwner();
-  return useSyncExternalStore(
-    notices.subscribe,
-    () => (documentId ? notices.forCard(projectId, documentId) : null),
     () => null,
   );
 }
@@ -156,36 +134,17 @@ export function DraftNoticeLine({
   const openDocument = useOpenProjectDocument(notice.projectId);
   const whereabouts = useWhereabouts(notice.projectId);
   if (!hasLine(notice)) return null;
-  if (notice.kind === "unapplied") {
-    return (
-      <ActionNotice
-        data-command-notice="unapply-failed"
-        sentence={t`Undo didn't go through. Try again.`}
-        onDismiss={notice.dismiss}
-        failure={{
-          message: t`Undo didn't go through. Try again.`,
-          onRetry: notice.retry,
-          onDismiss: notice.dismiss,
-        }}
-        className={className}
-      />
-    );
-  }
   if (notice.kind === "applied") {
     // A document gone since says so once, in place of what the Apply did to it.
     const removed = new Map<string, Removal>();
     const facts = notice.facts.flatMap((fact): AppliedFact[] => {
       if (fact.kind === "applied") return [];
-      const now = whereabouts(fact.documentId, factName(fact));
+      const now = whereabouts(fact.documentId, fact.name);
       if (now.kind !== "removed") return [factNow(fact, now)];
       removed.set(fact.documentId, now.removal);
       return [];
     });
     const landed = facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
-    const restored = facts.flatMap((fact) => (fact.kind === "restored" ? [fact] : []));
-    const also = facts.flatMap((fact) =>
-      fact.kind === "also" ? [`${fact.from} → ${fact.to}`] : [],
-    );
     const [only] = landed;
     // The bare "Now in X." only when the Apply landed one document: with others it needs its name.
     const single = only && notice.facts.filter((fact) => fact.kind === "landed").length === 1;
@@ -194,7 +153,6 @@ export function DraftNoticeLine({
     // once per place, so the line holds at sidebar width.
     const sentence = [
       ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
-      appliedSentence(restored, also),
       sayRemoval([...removed.values()]),
     ]
       .filter(Boolean)
@@ -231,19 +189,12 @@ export function DraftNoticeLine({
               ? (name: string) => t`Changes in ${name} discarded.`
               : (name: string) => t`Change to ${name} discarded.`;
   const failed = notice.status === "failed";
-  const first = notice.appliedFirst.length;
   const named = "name" in subject ? subject.name : "";
   const said = typeof sentence === "function" ? sentence(named) : sentence;
   return (
     <ActionNotice
       data-command-notice={failed ? "undo-failed" : "discarded"}
-      sentence={
-        first === 0
-          ? sentence
-          : typeof sentence === "function"
-            ? (name: string) => `${sentence(name)} ${appliedFirstLine(first)}`
-            : `${sentence} ${appliedFirstLine(first)}`
-      }
+      sentence={sentence}
       name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: onUndo, pending: notice.status === "undoing" }}
       onDismiss={notice.dismiss}
@@ -289,37 +240,6 @@ function useNoticeUndo() {
   };
 }
 
-/** What a Discard says of the changes an Apply took before it reached them. */
-function appliedFirstSentence(count: number): string {
-  return plural(count, {
-    one: "Applied before your Discard reached it, so it stays applied.",
-    other: "# changes were applied before your Discard reached them, so they stay applied.",
-  });
-}
-
-/** The same said on a notice's line, beside what the Discard took: it names how many. */
-function appliedFirstLine(count: number): string {
-  return plural(count, {
-    one: "# change was applied before your Discard reached it.",
-    other: "# changes were applied before your Discard reached them.",
-  });
-}
-
-/**
- * What a Discard that an Apply took first leaves on the control pressed, in its trailing slot so
- * it adds no height. Nothing for any other notice.
- */
-export function BounceChip({ notice }: { notice: DraftNotice | null }) {
-  useLingui();
-  if (notice?.kind !== "discarded" || notice.status !== "bounced") return null;
-  return (
-    <WorkClosedChip
-      label={<Trans>Applied first</Trans>}
-      sentence={appliedFirstSentence(notice.appliedFirst.length)}
-    />
-  );
-}
-
 export type DraftNoticeWords = {
   /** The row (a document's or folder's id) is one the notice speaks for. */
   held: (id: string) => boolean;
@@ -339,70 +259,40 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   const sayRemoval = useRemovalSentence();
   const undo = useNoticeUndo();
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
-  useAppliedCommands();
-  // What Ctrl+Z in an editor said is that document's identity row's alone.
-  if (!notice || notice.kind === "unapplied") return { held: () => false, word: () => null };
+  if (!notice) return { held: () => false, word: () => null };
   if (notice.kind === "applied") {
-    // While the Apply waits for a closed owner its rows say so (the sidebar's notice), and its
-    // Undo comes back once the owner reopens: the facts read its state.
-    const factsOf = (id: string) =>
-      notice.facts.filter((fact) => fact.documentId === id && !fact.step?.command.waits());
+    // An Apply's rows offer its Undo while it can be taken back: the notice ends with it.
+    const factsOf = (id: string) => notice.facts.filter((fact) => fact.documentId === id);
     return {
       held: (id) => factsOf(id).length > 0,
       word: (id) => {
-        const facts = factsOf(id);
-        const [first] = facts;
-        if (!first) return null;
-        const now = whereabouts(id, factName(first));
-        const name = now.kind === "placed" ? documentDisplayName(now.uri) : factName(first);
-        const said =
-          now.kind === "removed"
-            ? sayRemoval([now.removal])
-            : facts.map((fact) => factSentence(factNow(fact, now))).join(" ");
-        const step = facts.find((fact) => fact.step)?.step;
-        if (step) {
-          const { command } = step;
-          return (
-            <RowWord
-              label={t`Undo applying ${name}`}
-              word={<Trans>Undo</Trans>}
-              sentence={said}
-              onAction={() => void command.press(null)}
-              // The pressed ✓ or Apply all left with its row: the first row the Apply took has
-              // the focus, as a delete's Undo does.
-              focus={{ take: () => takeOnce(notice.id) }}
-            />
-          );
-        }
+        const [first] = factsOf(id);
+        const step = factsOf(id).find((fact) => fact.step)?.step;
+        if (!first || !step) return null;
+        const now = whereabouts(id, first.name);
+        const name = now.kind === "placed" ? documentDisplayName(now.uri) : first.name;
         return (
           <RowWord
-            tone="done"
-            label={t`${name}, applied`}
-            word={<Trans>Applied</Trans>}
-            sentence={said}
+            label={t`Undo applying ${name}`}
+            word={<Trans>Undo</Trans>}
+            sentence={now.kind === "removed" ? sayRemoval([now.removal]) : t`Applied just now.`}
+            onAction={() => void step.undo(null)}
+            // The pressed ✓ or Apply all left with its row: the first row the Apply took has
+            // the focus, as a delete's Undo does.
+            focus={{ take: () => takeOnce(notice.id) }}
           />
         );
       },
     };
   }
   const took = (id: string) => notice.documentIds.includes(id);
-  const appliedFirst = (id: string) => notice.appliedFirst.includes(id);
   const { subject } = notice;
   const count = "count" in subject ? subject.count : 1;
   const name = "name" in subject ? subject.name : "";
   return {
-    held: (id) => took(id) || appliedFirst(id),
+    held: took,
     word: (id) => {
-      if (appliedFirst(id))
-        return (
-          <RowWord
-            tone="done"
-            word={<Trans>Applied first</Trans>}
-            sentence={appliedFirstSentence(1)}
-          />
-        );
       if (!took(id)) return null;
-      if (notice.status === "bounced") return <BounceChip notice={notice} />;
       if (notice.status === "failed")
         return (
           <RowWord
@@ -460,36 +350,10 @@ function useWhereabouts(projectId: string): (documentId: string, name: string) =
   };
 }
 
-const factName = (fact: AppliedFact) => (fact.kind === "also" ? fact.to : fact.name);
-
-/** The fact as the document stands now: a landing names where it is, a return its name. */
+/** The fact as the document stands now: a landing names where it is. */
 function factNow(fact: AppliedFact, now: Whereabouts): AppliedFact {
-  if (now.kind !== "placed") return fact;
-  if (fact.kind === "landed") return { ...fact, uri: now.uri, name: documentDisplayName(now.uri) };
-  if (fact.kind === "restored") return { ...fact, name: documentDisplayName(now.uri) };
-  return fact;
-}
-
-/** What one fact of an Apply says on its document's row. */
-function factSentence(fact: AppliedFact): string {
-  switch (fact.kind) {
-    case "landed": {
-      const place = placeOf(fact.uri);
-      return t`Applied. Now in ${place}.`;
-    }
-    case "applied": {
-      const area = schemeLabel(fact.scheme);
-      return area ? t`Applied just now: its changes are in ${area}.` : t`Applied just now.`;
-    }
-    case "restored": {
-      const area = schemeLabel(fact.scheme);
-      return area ? t`Applied. It is back in ${area}.` : t`Applied. It is back.`;
-    }
-    case "also": {
-      const { from, to } = fact;
-      return t`Applied with the others: ${from} → ${to}.`;
-    }
-  }
+  if (now.kind !== "placed" || fact.kind !== "landed") return fact;
+  return { ...fact, uri: now.uri, name: documentDisplayName(now.uri) };
 }
 
 /** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */
@@ -547,21 +411,6 @@ export function ApplyAllQuestion({
   return <>{sentences.join(" ")}</>;
 }
 
-/** "‹title› is back in Knowledge.": one sentence per area an Apply brought documents back to. */
-function restoredSentence(restored: readonly InArea[]): string {
-  return byArea(restored)
-    .map(({ area, names, count }) =>
-      area
-        ? count === 1
-          ? t`${names} is back in ${area}.`
-          : t`${names} are back in ${area}.`
-        : count === 1
-          ? t`${names} is back.`
-          : t`${names} are back.`,
-    )
-    .join(" ");
-}
-
 /** "Ch 3 and Outline are now in Manuscript/Arc 3.": one sentence per place, in landing order. */
 function landedSentences(landed: readonly { uri: string }[]): string[] {
   const byPlace = new Map<string, string[]>();
@@ -581,17 +430,4 @@ function landedSentences(landed: readonly { uri: string }[]): string[] {
 function placeOf(uri: string): string {
   const whole = documentLocationName(uri);
   return whole.slice(0, whole.lastIndexOf("/")) || whole;
-}
-
-export function appliedSentence(
-  restored: readonly InArea[],
-  alsoApplied: readonly string[] = [],
-): string {
-  const others = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
-    alsoApplied,
-  );
-  return [
-    ...(restored.length ? [restoredSentence(restored)] : []),
-    ...(alsoApplied.length ? [t`Also applied ${others}.`] : []),
-  ].join(" ");
 }

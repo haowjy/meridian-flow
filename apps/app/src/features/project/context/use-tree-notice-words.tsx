@@ -6,7 +6,6 @@ import { type GoneRow, RowWord } from "@/components/app/RowWord";
 import {
   type Bounce,
   endTreeNotice,
-  type Said,
   subscribeTreeNotices,
   type TreeStep,
   treeBounces,
@@ -173,12 +172,6 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
         />
       ));
     }
-    for (const { notice, list } of shown)
-      if (notice.kind === "said")
-        for (const said of notice.said)
-          put(said.nodes, (node) => (
-            <SaidWord key={node} said={said} onRetry={(step) => void list.undo(step)} />
-          ));
     return {
       end,
       header,
@@ -293,18 +286,4 @@ function stepSentence(step: TreeStep, node: string): string {
     case "create":
       return "";
   }
-}
-
-/** An Apply the press couldn't reach the server for, on its row, with the Retry. */
-function SaidWord({ said, onRetry }: { said: Said; onRetry: (step: Said["step"]) => void }) {
-  const { name } = said;
-  return (
-    <RowWord
-      tone="warning"
-      word={<Trans>Retry</Trans>}
-      label={t`Retry undoing applying ${name}`}
-      sentence={t`Undo didn't go through. Try again.`}
-      onAction={() => onRetry(said.step)}
-    />
-  );
 }

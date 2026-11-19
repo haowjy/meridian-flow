@@ -14,7 +14,7 @@ import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useDraftReview } from "./DraftReviewProvider";
-import { type BranchCommandFailure, isNote } from "./review-command-types";
+import type { BranchCommandFailure } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
@@ -52,13 +52,6 @@ export type ReviewHeaderModel = {
   completing: "apply" | "discard" | null;
   /** What the last command on the open draft left on it (a refusal, a lost answer), when no change bar shows it. */
   commandError: BranchCommandFailure | null;
-  /**
-   * The Work's other listed drafts that hold a refusal or a lost answer: Apply
-   * all moves on (or finishes) while its commands run, and a draft can be
-   * refused after the writer left it, so the review the writer is in must still
-   * say which drafts did not apply.
-   */
-  failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   showLive: () => void;
   /** `takeFocus`: the writer's focus was in the controls, so it follows to what replaces them. */
   applyDraft: (takeFocus?: boolean) => void;
@@ -85,7 +78,7 @@ export function useReviewFailures(input: {
   view: ReviewChangesView;
 }) {
   const owner = useDraftCommandOwner();
-  const { controller, files } = useDraftReview();
+  const { controller } = useDraftReview();
   const phone = usePhoneShell();
   const snapshot = () => (input.itemKey ? owner.snapshot() : 0);
   useSyncExternalStore(owner.subscribe, snapshot, snapshot);
@@ -95,13 +88,6 @@ export function useReviewFailures(input: {
     own && view.status === "ready" && Boolean(view.focused) && (phone || controller.marksVisible);
   return {
     commandError: barCarries || (own && view.finished) ? null : owner.state(input.itemKey).failure,
-    failedElsewhere: files.flatMap((row) => {
-      const failure = owner.state(row.draft.itemKey).failure;
-      // Another document's note beside what landed stays on that document.
-      return row.draft.itemKey !== input.itemKey && failure && !isNote(failure)
-        ? [{ row, failure }]
-        : [];
-    }),
   };
 }
 
@@ -124,7 +110,7 @@ export function useReviewHeader({
   const ready = view.status === "ready";
   const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
+  const { commandError } = useReviewFailures({ documentId, itemKey, view });
   const showLive = () => (onCloseDraftOnly ?? showDocumentLive)();
 
   // The item this header shows while it is mounted; null once the writer has left it.
@@ -158,7 +144,6 @@ export function useReviewHeader({
     finished,
     completing,
     commandError,
-    failedElsewhere,
     showLive,
     applyDraft: (takeFocus) => dispose("apply", takeFocus === true),
     discardDraft: (takeFocus) => dispose("discard", takeFocus === true),

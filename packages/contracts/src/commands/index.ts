@@ -61,8 +61,8 @@ export type Settlement =
       /** On an Un-Apply: the nodes it left as the Apply left them, for `why`. */
       items?: string[];
     }
-  /** Another command settled the item first (`by`), so this one left it as that left it. */
-  | { rule: "overtaken"; state: string; by: CommandId; item?: string }
+  /** Another command settled the item first, so this one left it as that left it. */
+  | { rule: "overtaken"; state: string; item?: string }
   /**
    * Part of the command could not land: `items` name what was left out. On an Un-Apply, `tree`
    * says whether the items' tree facts stayed or their text.

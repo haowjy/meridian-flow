@@ -1,70 +1,22 @@
 /** Writer-facing copy for a review message; the controller emits codes, never localized text. */
-import type { MessageDescriptor } from "@lingui/core";
-import { msg } from "@lingui/core/macro";
-import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { reloadNow } from "@/client/release/release";
 import { ReloadWords } from "@/components/app/AppStatus";
 import type { BranchCommandFailure, ServerRefusal } from "./review-command-types";
-
-/** The refusals the writer can act on, worded here (not by the server) from the server's code. */
-function knownRefusal(serverCode: string): MessageDescriptor | undefined {
-  switch (serverCode) {
-    case "overtaken_discarded":
-      return msg`This was discarded before Apply reached it. Restore it to apply it.`;
-    case "overtaken_removed":
-      return msg`This document was deleted before its changes could be applied.`;
-    case "left_out_would_loop":
-      return msg`This move would put a folder inside itself, so it wasn't applied.`;
-    case "left_out_purged":
-      return msg`This is no longer in the draft, so it wasn't applied.`;
-    case "left_out_after_press":
-      return msg`This changed after you pressed Apply, so it wasn't applied. Check it, then apply again.`;
-    case "left_out_needs":
-      return msg`This depends on a change that wasn't applied, so it was left out.`;
-    case "left_out_changed_since":
-      return msg`This draft moved on since you pressed Apply, so it wasn't applied.`;
-    case "unsynced":
-      return msg`Apply couldn't be sent. Try again.`;
-    case "left_out_not_on_server":
-      return msg`The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft.`;
-    default:
-      return undefined;
-  }
-}
 
 /** State answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
   return serverCode === "unsynced";
 }
 
-/**
- * Why the server refused, as a sentence after the lead line, worded here in the
- * language shown now. It never decides the wording around it, which comes from
- * the failure's code. The one renderer for a whole-draft and a per-change refusal.
- */
+/** What the server refused, worded here (not by the server) in the language shown now. */
 function RefusalReason({ serverCode }: ServerRefusal) {
-  const { i18n } = useLingui();
-  const known = serverCode ? knownRefusal(serverCode) : undefined;
-  if (!known) return null;
-  const reason = i18n._(known);
-  return <> {/[.!?]$/.test(reason) ? reason : `${reason}.`}</>;
+  return serverCode === "unsynced" ? <Trans>Apply couldn't be sent. Try again.</Trans> : null;
 }
 
 export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }) {
-  if (failure.code === "apply-left-out") {
-    // One sentence per distinct reason, whichever half it explains: each says what to do.
-    const codes = [...new Set(failure.lines.map((line) => line.code))];
-    return codes.map((code) => (
-      <span key={code} className="block">
-        <RefusalReason serverCode={code} />
-      </span>
-    ));
-  }
   const { code, serverCode } = failure;
   switch (code) {
-    case "unapply-refused":
-      return <Trans>Undo didn't go through. Try again.</Trans>;
     case "apply-refused":
       if (serverCode === "needs_reload")
         return (

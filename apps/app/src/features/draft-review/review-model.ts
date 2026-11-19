@@ -113,18 +113,7 @@ export type TextTarget =
 /** Some of a draft's changes, which a Discard writes back in the draft's room. */
 export type GroupsTarget = Extract<TextTarget, { kind: "groups" }>;
 export type ChangeTarget = TextTarget | { kind: "tree" };
-/**
- * A Redo: what its Un-Apply took back of one item, applied again. The groups of `draftId` are cut
- * on receipt from the draft as the server holds it, which passes over one it no longer has, so a
- * Redo never applies a change its Undo didn't take back. `tree`: the item's tree records too.
- */
-export type AgainTarget = {
-  kind: "again";
-  draftId?: string;
-  groupIds: readonly string[];
-  tree: boolean;
-};
-export type ApplyTarget = ChangeTarget | AgainTarget;
+export type ApplyTarget = ChangeTarget;
 export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget {
   const text = changes.filter((change) => !change.tree);
   const tree = text.length < changes.length;

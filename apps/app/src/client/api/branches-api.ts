@@ -14,6 +14,7 @@ import type {
   DraftStatesResponse,
   DraftsProvenanceRequest,
   DraftsProvenanceResponse,
+  RedoClick,
   ThreadDraftListResponse,
   UnapplyClick,
   UnapplyClickAnswer,
@@ -128,8 +129,8 @@ export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObs
     return { status: "none", commandId: body.commandId };
   return found.outcome.result as ApplyClickResult;
 }
-/** Several nodes, folders included, as one Apply command. */
-export function applyItems(projectId: string, branchId: string, body: ApplyItemsClick) {
+/** Several nodes, folders included, as one Apply command; or a Redo, which names an Un-Apply. */
+export function applyItems(projectId: string, branchId: string, body: ApplyItemsClick | RedoClick) {
   return postCommand<ApplyClickAnswer>(apiProjectBranchApplyPath(projectId, branchId), body);
 }
 /** Takes one Apply command back, every document and the tree, by its id. */

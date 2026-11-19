@@ -1,9 +1,8 @@
 /**
  * ManuscriptStateNotice — what live did to the document this draft holds: deleted from its
- * area (Apply brings it back). Once an Apply brings it back the same place says so, until the writer dismisses it or opens another
- * document; a host swap on promotion (the phone's) remounts it and must not end it. With none
- * of those, it says what a Work's pending move or delete will do to the document, which
- * live doesn't show until Apply: "Ascension is renaming this to ch12-old."
+ * area (Apply brings it back). With none of that, it says what a Work's pending move or delete
+ * will do to the document, which live doesn't show until Apply: "Ascension is renaming this to
+ * ch12-old."
  *
  * It lives in the free end of a header row the document already has (the identity row, the
  * phone's review row), never in a strip of its own: a delete lands while the writer reads, and
@@ -13,14 +12,11 @@
  */
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
-import { Info, X } from "lucide-react";
-import { useEffect, useSyncExternalStore } from "react";
+import { Info } from "lucide-react";
 import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { OpenDocument } from "@/client/stores";
-import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { appliedSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import {
@@ -28,7 +24,6 @@ import {
   treeNoticeLabel,
   treeNoticeSentence,
 } from "@/features/draft-review/tree-line";
-import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { tabLocation } from "@/features/project/context/identity-location";
 import { useLiveDraftCue } from "@/features/project/context/LiveDraftNotice";
@@ -38,10 +33,9 @@ import { useShellTreeVersion } from "@/features/project/tree-version";
 import { cn } from "@/lib/utils";
 
 export type ManuscriptState = {
-  kind: "deleted" | "applied" | "pending-tree";
+  kind: "deleted" | "pending-tree";
   sentence: string;
   label: string;
-  dismiss?: () => void;
 };
 
 /** The document's manuscript state, or null when live did nothing to it. */
@@ -49,13 +43,6 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   useLingui();
   const { documentId } = tab;
   const { files } = useDraftReview();
-  const owner = useDraftCommandOwner();
-  const restored = useSyncExternalStore(
-    owner.subscribe,
-    () => owner.wasRestored(projectId, documentId),
-    () => false,
-  );
-  useEffect(() => owner.keepApplyFactsOnly(projectId, documentId), [owner, projectId, documentId]);
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedLive(item);
   const removal = useRemovalRecord(projectId, deleted ? documentId : null);
@@ -77,15 +64,6 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
     );
     return { kind: "deleted", sentence, label: from ? t`Deleted from ${from}` : t`Deleted` };
   }
-  const { scheme } = tabLocation(tab);
-  const area = schemeLabel(scheme);
-  if (restored)
-    return {
-      kind: "applied",
-      sentence: appliedSentence([{ name: title, scheme }]),
-      label: t`Back in ${area}`,
-      dismiss: () => owner.forgetApplyFacts(projectId, documentId),
-    };
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
     hint.tree && hint.owner !== shown ? [{ work: hint.label, line: hint.tree }] : [],
   );
@@ -153,11 +131,6 @@ function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: 
           {state.sentence}
         </PopoverContent>
       </Popover>
-      {state.dismiss ? (
-        <IconButton label={t`Dismiss`} className="shrink-0" onClick={state.dismiss}>
-          <X aria-hidden />
-        </IconButton>
-      ) : null}
     </div>
   );
 }

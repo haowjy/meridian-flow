@@ -14,7 +14,6 @@ import { schemeLabel } from "@/features/project/context/context-schemes";
 import { isDeletedLive } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
 import { ReviewMessageText } from "./ReviewMessageText";
-import { isNote } from "./review-command-types";
 /** Beside the name of a drafted document or folder its area no longer has: Apply brings it back. */
 export function DeletedWord({ scheme }: { scheme: ProjectContextTreeScheme | null | undefined }) {
   const area = schemeLabel(scheme);
@@ -59,7 +58,6 @@ export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
   ) : state.failure ? (
     <InlineErrorRow
       message={<ReviewMessageText failure={state.failure} />}
-      note={isNote(state.failure)}
       className="min-w-0 flex-1 p-0"
     />
   ) : null;

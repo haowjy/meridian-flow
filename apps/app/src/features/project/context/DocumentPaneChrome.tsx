@@ -11,7 +11,6 @@ import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { DraftReviewFailureNotices } from "@/features/editor/DraftReviewBand";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { useAiDraftLauncher } from "../review-launch";
 import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentProperties } from "./DocumentProperties";
 import { LiveDraftNotice } from "./LiveDraftNotice";
@@ -53,14 +52,7 @@ export function DocumentPaneChrome({
 
 function ReviewFailureNotices({ document }: { document: OpenDocument }) {
   const { controller } = useDraftReview();
-  const { openReviewFile } = useAiDraftLauncher();
   const review = controller.inlineReview;
   if (review?.documentId !== document.documentId || !review.shown) return null;
-  return (
-    <DraftReviewFailureNotices
-      documentId={document.documentId}
-      itemKey={review.itemKey}
-      onOpenDraft={(row) => openReviewFile(row, controller.ownerKey)}
-    />
-  );
+  return <DraftReviewFailureNotices documentId={document.documentId} itemKey={review.itemKey} />;
 }
