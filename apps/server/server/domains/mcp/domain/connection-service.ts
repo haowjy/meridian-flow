@@ -80,8 +80,17 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
     } catch {
       throw new McpConnectionError("invalid", "Invalid address");
     }
-    if (deps.addressRefusal(url))
-      throw new McpConnectionError("invalid", "Needs an https address");
+    if (deps.addressRefusal(url)) {
+      const problem = mcpAddressProblem(url);
+      throw new McpConnectionError(
+        "invalid",
+        problem === "not_https"
+          ? "Needs an https address"
+          : problem === "not_port_443"
+            ? "Needs port 443"
+            : "Invalid address",
+      );
+    }
     url.hash = "";
     return url.toString();
   }

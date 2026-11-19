@@ -99,5 +99,7 @@ export function addressRefusal(address: string): string | null {
   } catch {
     return null;
   }
-  return mcpAddressProblem(url) === null ? null : t`Needs an https address`;
+  const problem = mcpAddressProblem(url);
+  if (problem === null) return null;
+  return problem === "not_https" ? t`Needs an https address` : t`Needs port 443`;
 }

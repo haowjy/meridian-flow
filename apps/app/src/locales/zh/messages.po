@@ -3999,6 +3999,10 @@ msgstr ""
 msgid "Needs an https address"
 msgstr ""
 
+#: src/features/connections/connection-status.ts
+msgid "Needs port 443"
+msgstr ""
+
 #: src/features/chat/tool-failure.tsx
 #: src/features/connections/connection-status.ts
 msgid "Needs sign-in"
