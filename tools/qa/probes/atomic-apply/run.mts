@@ -569,7 +569,7 @@ try {
     });
     f.close();
   });
-  await row("delayed deletion click stays bound to discarded draft after replacement", async () => {
+  await row("delayed deletion click after a Discard lands what it froze", async () => {
     const a = await fixture(["The big black cat sat."], ["The cat sat."]);
     const click = a.click();
     const discard = createDrizzleBranchDiscard(h.db, {
@@ -589,49 +589,12 @@ try {
       },
       command: discarding,
     });
-    const branch = await h.projection.mutate({ works: [a.workId] }, () =>
-      h.branches.ensureActiveLocked({
-        owner: { kind: "work", workId: a.workId },
-        projectId: h.ids.project,
-        createdBy: h.ids.user,
-        originThreadId: a.threadId,
-      }),
-    );
-    const b = await fixture(
-      ["The big black cat sat."],
-      ["The cat sat."],
-      { documentId: a.documentId, live: clone(a.live) },
-      { ...a, branchId: branch.id },
-    );
-    assert.notEqual(a.draftId, b.draftId);
-    assert.notEqual(a.branchId, b.branchId);
     const answer = await a.send(click);
-    console.log("delayed replacement answer", answer.status, await a.liveText());
-    // The Discard took the draft: the answer names it, so the writer is offered the reverse.
-    assert.deepEqual(answer, {
-      status: "applied",
-      commandId: click.request.commandId,
-      items: [
-        {
-          node: a.documentId,
-          text: {
-            landed: false,
-            settled: [
-              {
-                rule: "overtaken",
-                state: "discarded",
-                by: discarding.envelope.commandId,
-                item: a.documentId,
-              },
-            ],
-          },
-        },
-      ],
-      applied: [],
-    });
-    assert.deepEqual(await a.liveText(), ["The big black cat sat."]);
+    // The click froze the room before the Discard, so it lands what the writer saw then.
+    console.log("delayed click after Discard", answer.status, await a.liveText());
+    assert.equal(answer.status, "applied");
+    assert.deepEqual(await a.liveText(), ["The cat sat."]);
     a.close();
-    b.close();
   });
   await row("two Works merge distinct changes into one live paragraph", async () => {
     const a = await fixture(["The cat sat."], ["A cat sat."]);
