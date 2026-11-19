@@ -66,9 +66,9 @@ The per-document HTTP Discard says what it takes: each item names a document and
 (`"all"` or change ids) and `tree` (the branch's move, delete or create). It is one server command
 over change ids, described in [apply.md](apply.md): the draft stays open and the text half is an
 appended update, so a draft the writer has since typed over is discarded all the same, and Undo
-brings back what still stands. The answer's `closed` is what left Changes whole. Its command row is
-claimed first in the kernel's transaction and holds the answer when it commits, and so is the bounce on an
-archived or deleted Work or a chat in Trash (`settled: [returned]`, nothing taken). A Discard
+brings back what still stands. The answer's `closed` is what left Changes whole. Its command row holds the
+answer, and so is the bounce on an archived or deleted Work or a chat in Trash
+(`settled: [returned]`, nothing taken). A Discard
 never refuses: an item with nothing pending is answered from `settlementOf` (`already discarded`
 when a Discard, or nothing, settled it; `overtaken` by the Apply that did), and the others in the
 selection still discard. Whether a draft holds text is decided under its row lock from the draft
@@ -324,7 +324,7 @@ badge) is a projection, not part of the append. Every committed
 append marks the draft dirty (`onAppendCommitted`, a required coordinator
 input); the projection job (`domain/draft-projection.ts`) coalesces marks
 (250 ms after the last, at most 1 s after the first), runs at most four
-judgements at a time, compares `review_base` and `prosemirror` with the kernel's
+judgements at a time, compares `review_base` and `prosemirror` with
 `blocksEqual` (empty fragment equals one default empty paragraph), and writes `has_effect` with its watermark `has_effect_revision` through
 `writeEffect` at exactly that revision, inside `mutate` (which reconciles the
 Work's stored badge count and notifies only if it moved), under
@@ -691,7 +691,7 @@ the extractor bumps its version, and no second post-write writer exists.
 ## Selective disposition and response retirement
 
 Discard takes a selection: the whole branch, or items each naming a document,
-its origin and what it ends. What the kernel ended decides the answer, and every answer is
+its origin and what it ends. What it took decides the answer, and every answer is
 `discarded` with its `settled` lines (`work-branch-review-service.ts`).
 
 A draft write never regenerates durable rows from a raw state-vector diff, which

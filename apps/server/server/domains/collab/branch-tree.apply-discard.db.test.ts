@@ -562,9 +562,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await branchRow(folder)).toMatchObject({ name: "Arc two" });
         expect(await unapply(commandId, undo)).toMatchObject({ status: "unapplied" });
         // Taken back already: nothing of it is left to take back.
-        expect(await unapply(commandId)).toMatchObject({
+        expect(await unapply(commandId)).toEqual({
           status: "unapplied",
-          settled: [{ rule: "already", state: "unapplied" }],
+          commandId: expect.any(String),
+          branchId: expect.any(String),
+          textUndone: [],
+          treeUndone: [],
         });
       });
 

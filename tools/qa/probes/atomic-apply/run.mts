@@ -976,7 +976,6 @@ try {
         answer.textUndone.flatMap((text) => text.groupIds),
         click.request.groupIds,
       );
-      assert.deepEqual(answer.textSkipped, []);
     }
     assert.deepEqual(await f.liveText(), ["The cat sat."]);
     const durable = await f.durable();
@@ -1029,7 +1028,6 @@ try {
       assert.equal(answer.status, "unapplied", JSON.stringify(answer));
       if (answer.status === "unapplied") {
         assert.equal(answer.textUndone[0]?.groupIds.length, 2);
-        assert.deepEqual(answer.textSkipped, []);
       }
       assert.deepEqual(await f.liveText(), ["The very cat sat.", "The dog slept."]);
       const durable = await f.durable();

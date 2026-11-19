@@ -19,11 +19,16 @@ import { threadQueryKeys } from "./thread-query-keys";
  * every Apply or Discard (the writer's, a peer's, per change or whole) calls this. A read already
  * in flight is the one the writer waits on, so it is not restarted.
  */
-export function refreshTurnCards(queryClient: QueryClient): Promise<void> {
+export function refreshTurnCards(queryClient: QueryClient, documentId?: string): Promise<void> {
   return queryClient.invalidateQueries(
     {
-      predicate: ({ queryKey }) =>
-        queryKey[0] === threadQueryKeys.all[0] && queryKey[2] === "live-lineage",
+      predicate: ({ queryKey, state }) =>
+        queryKey[0] === threadQueryKeys.all[0] &&
+        queryKey[2] === "live-lineage" &&
+        (documentId === undefined ||
+          (state.data as ListTurnLiveLineageResponse | undefined)?.documents.some(
+            (item) => item.documentId === documentId,
+          ) === true),
     },
     { cancelRefetch: false },
   );
@@ -32,9 +37,9 @@ export function refreshTurnCards(queryClient: QueryClient): Promise<void> {
 /**
  * A card's Undo depends on the text, so an edit to the open document, the writer's own typing
  * among them, refreshes the cards a moment after it settles. One read per pause in typing, and
- * only for the cards on screen.
+ * only for the on-screen cards whose lineage names the edited document.
  */
-export function useRefreshTurnCardsOnEdit(editor: Editor | null): void {
+export function useRefreshTurnCardsOnEdit(editor: Editor | null, documentId: string): void {
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!editor) return;
@@ -43,7 +48,7 @@ export function useRefreshTurnCardsOnEdit(editor: Editor | null): void {
       if (timer != null) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         timer = null;
-        void refreshTurnCards(queryClient);
+        void refreshTurnCards(queryClient, documentId);
       }, 300);
     };
     editor.on("update", onUpdate);
@@ -51,7 +56,7 @@ export function useRefreshTurnCardsOnEdit(editor: Editor | null): void {
       if (timer != null) window.clearTimeout(timer);
       editor.off("update", onUpdate);
     };
-  }, [editor, queryClient]);
+  }, [editor, queryClient, documentId]);
 }
 
 export type TurnLiveLineageStatus = ListQueryStatus<TurnLiveLineageDocumentItem> & {

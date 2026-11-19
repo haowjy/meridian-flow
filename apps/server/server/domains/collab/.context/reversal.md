@@ -203,8 +203,8 @@ review base has no shown change and can read discarded. In an active draft a cha
 and sits in a pending change decides Undo and Revert eligibility; a discarded or applied
 disposition chooses the copy only when a part is skipped, ahead of the edited-since reading, so an
 applied part never reads as the writer's edit. Effective action consumption follows immutable receipts,
-regardless of whether those receipts currently contribute to review. Closed drafts are never
-writable. History derives its offered command from the same captured origin-resolved plan as the
+regardless of whether those receipts currently contribute to review. A purged draft is never
+writable (a Discard closes nothing). History derives its offered command from the same captured origin-resolved plan as the
 write command; an archived origin shows no action even when the chat's current destination is
 writable. Runtime context reports a card action by turn
 and document, not model handle. There are no inverse holds or blocking flags.

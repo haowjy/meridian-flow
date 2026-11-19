@@ -12,6 +12,7 @@ import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { ActionNotice } from "@/components/app/ActionNotice";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { RowWord } from "@/components/app/RowWord";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
@@ -115,9 +116,9 @@ export function CommandNotice({
 }
 
 /**
- * One notice: "Draft of Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss,
+ * One notice: "Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss,
  * or what an Apply did.
- * An Undo that failed stays, with Retry. When main, the side or the phone's sheet still presents
+ * An Undo that failed shows the pill toast, and the notice keeps its Undo. When main, the side or the phone's sheet still presents
  * the document the Discard left there, an Undo returns that view to the draft; anywhere else
  * nothing moves.
  */
@@ -178,36 +179,19 @@ export function DraftNoticeLine({
   const onUndo = () => undo(notice);
   const sentence =
     subject.kind === "drafts"
-      ? t`${subject.count} drafts discarded.`
+      ? t`${subject.count} discarded.`
       : subject.kind === "deletes"
         ? t`${subject.count} items deleted.`
         : subject.kind === "deleted"
           ? (name: string) => t`${name} deleted.`
-          : subject.kind === "draft"
-            ? (name: string) => t`Draft of ${name} discarded.`
-            : subject.kind === "folder"
-              ? (name: string) => t`Changes in ${name} discarded.`
-              : (name: string) => t`Change to ${name} discarded.`;
-  const failed = notice.status === "failed";
-  const named = "name" in subject ? subject.name : "";
-  const said = typeof sentence === "function" ? sentence(named) : sentence;
+          : (name: string) => t`${name} discarded.`;
   return (
     <ActionNotice
-      data-command-notice={failed ? "undo-failed" : "discarded"}
+      data-command-notice="discarded"
       sentence={sentence}
       name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: onUndo, pending: notice.status === "undoing" }}
       onDismiss={notice.dismiss}
-      failure={
-        failed
-          ? {
-              // Away from the rows, the line still says which Undo failed.
-              message: `${said} ${t`Undo didn't go through. Try again.`}`,
-              onRetry: onUndo,
-              onDismiss: notice.dismiss,
-            }
-          : null
-      }
       className={className}
     />
   );
@@ -229,6 +213,14 @@ function useNoticeUndo() {
     // if main is still there.
     const stays = left ? left.landed : review?.documentId;
     void notice.undo().then((answer) => {
+      if (answer === "failed") {
+        notifyFailure({
+          key: `undo-discard:${notice.id}`,
+          title: t`Couldn't undo that.`,
+          brief: true,
+        });
+        return;
+      }
       if (answer !== "ok" || !review || stays === undefined || !presented) return;
       if (presented.mainDocumentId(projectId) === stays) openReviewFile(review, ownerKey);
       // Beside main the address is main's: only the document's view changes.
@@ -275,7 +267,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
           <RowWord
             label={t`Undo applying ${name}`}
             word={<Trans>Undo</Trans>}
-            sentence={now.kind === "removed" ? sayRemoval([now.removal]) : t`Applied just now.`}
+            sentence={now.kind === "removed" ? sayRemoval([now.removal]) : t`Applied`}
             onAction={() => void step.undo(null)}
             // The pressed ✓ or Apply all left with its row: the first row the Apply took has
             // the focus, as a delete's Undo does.
@@ -293,29 +285,11 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
     held: took,
     word: (id) => {
       if (!took(id)) return null;
-      if (notice.status === "failed")
-        return (
-          <RowWord
-            tone="warning"
-            word={<Trans>Retry</Trans>}
-            label={
-              count > 1 ? t`Retry bringing back ${count} changes` : t`Retry bringing back ${name}`
-            }
-            sentence={t`Undo didn't go through. Try again.`}
-            onAction={() => undo(notice)}
-          />
-        );
       return (
         <RowWord
           word={<Trans>Undo</Trans>}
           label={count > 1 ? t`Undo discard of ${count} changes` : t`Undo discard of ${name}`}
-          sentence={
-            count > 1
-              ? t`Discarded ${count} changes just now. Undo brings them all back.`
-              : subject.kind === "folder"
-                ? t`Discarded the changes in ${name} just now. Undo brings them back.`
-                : t`Discarded just now. Undo brings it back.`
-          }
+          sentence={t`Discarded`}
           pending={notice.status === "undoing"}
           onAction={() => undo(notice)}
         />

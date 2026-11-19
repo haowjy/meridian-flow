@@ -81,8 +81,8 @@ export type UnapplyCommand = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   patchFor(groupIds: readonly string[]): readonly PMNode[];
-  /** What the answer took back (`held`: it left something for a closed owner). */
-  selectionChanged(groupIds: readonly string[], tree: boolean, held: boolean): void;
+  /** What the answer took back. */
+  selectionChanged(groupIds: readonly string[], tree: boolean): void;
   ready: Promise<boolean>;
   groupIds: Set<string>;
   sent: boolean;
@@ -238,13 +238,13 @@ export class ApplyClickQueue {
             return landed(answer);
           }),
           // A Redo pressed before the answer brings back only what the Un-Apply took back, and
-          // nothing when it took nothing or held something: a held Apply stays in force whole.
-          selectionChanged: (groupIds, tree, held) => {
+          // nothing when it took nothing.
+          selectionChanged: (groupIds, tree) => {
             handle.replaySelection = [...groupIds];
             handle.replayTree = tree;
             const replay = handle.pendingReplay;
             if (!replay || replay.sent) return;
-            if (held || (groupIds.length === 0 && !tree)) {
+            if (groupIds.length === 0 && !tree) {
               handle.pendingReplay = null;
               this.cancel(replay.body.commandId);
               return;
@@ -373,7 +373,7 @@ export class ApplyClickQueue {
     patched: readonly PMNode[];
     groupIds: readonly string[];
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    selectionChanged(groupIds: readonly string[], tree: boolean, held: boolean): void;
+    selectionChanged(groupIds: readonly string[], tree: boolean): void;
     ready: Promise<boolean>;
   }): UnapplyCommand {
     let finish!: (result: UnapplyClickOutcome) => void;
@@ -635,11 +635,7 @@ export class ApplyClickQueue {
       const undone = textUndoneOf(answer, this.port.node);
       command.groupIds = new Set(undone);
       command.patched = command.patchFor(undone);
-      command.selectionChanged(
-        undone,
-        answer.treeUndone.includes(this.port.node),
-        (answer.held ?? []).length > 0,
-      );
+      command.selectionChanged(undone, answer.treeUndone.includes(this.port.node));
       // The answer is acted on now (notice, history, hand-over); the room only settles it.
       command.hear(answer);
       this.reconcileUnapply(command);

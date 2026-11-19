@@ -45,7 +45,7 @@ stateDiagram-v2
 ```
 
 `enforceDraftHandshake` refuses every sync step 2 and update until the room is `passed`, and
-closes the socket with a typed close code (`DRAFT_CLOSED`, `DRAFT_PREFIX_MISSING`). `rejected`
+closes the socket with a typed close code (`DRAFT_PURGED`, `DRAFT_PREFIX_MISSING`). `rejected`
 is final for that connection: the client reconnects, or reads the close code and gives the room
 up. Authorization happens at the upgrade; no frame can grant it later.
 

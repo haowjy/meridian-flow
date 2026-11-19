@@ -151,7 +151,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           id: documentEditParts.id,
           editId: documentEditParts.editId,
           ordinal: documentEditParts.ordinal,
-          update: documentEditParts.update,
           effect: documentEditParts.effect,
           targets: documentEditParts.targets,
           delta: documentEditParts.delta,
@@ -165,7 +164,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       .orderBy(documentEditParts.id);
     return rows.map(({ part, edit }) => ({
       ...part,
-      update: new Uint8Array(part.update),
       kind: edit.kind,
       actionId: edit.actionId,
       documentId: edit.documentId,
@@ -529,7 +527,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     async readHistory(documentId) {
       return (await history([documentId])).map((part) => ({ ...part, disposition: "pending" }));
     },
-    describePart(document, part) {
+    async describePart(document, part) {
       const destination = document.destinationOf(part.origin);
       const doc =
         destination.kind === "draft" && destination.state === "active"
@@ -541,7 +539,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         Y.applyUpdate(excerpt, Y.encodeStateAsUpdate(doc));
         document.excerptViews.set(doc, excerpt);
       }
-      Y.applyUpdate(excerpt, part.update);
+      const [stored] = await db()
+        .select({ update: documentEditParts.update })
+        .from(documentEditParts)
+        .where(eq(documentEditParts.id, part.id));
+      if (!stored) throw new Error(`Edit part ${part.id} is gone`);
+      Y.applyUpdate(excerpt, new Uint8Array(stored.update));
       const fragment = excerpt.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
       // Only the changed words, with `…` where other text sits between them in a block.
       const read = (ranges: ItemRanges) => textInRanges(fragment, ranges, { gap: " … " }).text;

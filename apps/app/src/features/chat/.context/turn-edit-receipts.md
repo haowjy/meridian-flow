@@ -12,8 +12,8 @@ ended: the receipt's `drafts` map (one word per drafted document, text and tree 
 folded into the less settled one; still a draft means a change waits in an open draft at
 this reply's own text, or the writer typed over it, and another reply's change in the same
 draft does not count) is re-read when this chat's waiting drafts change (`useDraftDock`)
-and when the writer edits an open document (`useRefreshTurnCardsOnEdit`, debounced), so
-the Undo goes within a moment of the text it depends on changing. A turn that wrote the
+and when the writer edits an open document (`useRefreshTurnCardsOnEdit`, debounced; only the
+cards whose lineage names that document), so the Undo goes within a moment of the text it depends on changing. A turn that wrote the
 manuscript reads "Edited 1 document", or "Changed 1 document" once it moved or deleted one
 or wrote both a draft and the manuscript. A drafted row says "Applied", "Undone" or
 "Discarded" at its end; one still waiting needs no word.
@@ -69,10 +69,9 @@ Yjs publishes the edit after durable commit and failures stay on the card.
 Eligibility is the text's: a change stands when taking it out merges cleanly
 (`content-merge/stands.ts`). The word "Undone" counts only the writer's own Undo, text and
 tree alike: an undo the model made in the reply is part of what the reply did, so the card
-offers Undo for what still stands. Review text Discard is a separate local
-edit in the same stable room, not receipt Undo or a generation reset. Terminal
-closure retires that draft identity without changing committed live authority.
-Dependency and archived-Work guards still apply.
+offers Undo for what still stands. A Discard takes the draft's pending changes out as one
+appended update in the same room; it is not receipt Undo, and the draft stays open. Only a purge
+of its Work retires a draft's identity. Dependency and archived-Work guards still apply.
 
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
 remain exclusively in the composer-attached `DraftDock` and inline review

@@ -358,7 +358,7 @@ export function createHocuspocusPersistenceService(
           room: document,
           trigger: "enrollment",
         });
-        if (!base) closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_CLOSED);
+        if (!base) closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_PURGED);
       })().catch((cause: unknown) => {
         if (!deps.eventSink) return;
         emitEvent(deps.eventSink, {

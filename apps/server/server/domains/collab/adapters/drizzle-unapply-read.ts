@@ -1,7 +1,5 @@
 /** Command-scoped receipt and base-effect reads for durable Un-Apply. */
 import { applySpanPatches, type SpanPatch } from "@meridian/agent-edit/diff";
-import { parseDraftItemKey } from "@meridian/contracts";
-import type { ApplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
   applyCommandEffects,
@@ -56,36 +54,6 @@ export function effectBases<Row extends EffectRow>(
 }
 
 /**
- * The documents the Apply's stored answer says it moved, deleted or created, when no tree row
- * of it is left: a Work's purge deletes the rows with its branches, and the tree half they
- * described cannot come back.
- */
-async function treeHalfLostWithBranch(
-  tx: ReturnType<typeof currentDrizzleDb>,
-  applyCommandId: string,
-  accountId: string,
-): Promise<string[]> {
-  const [row] = await tx
-    .select({ outcome: commands.outcome })
-    .from(commands)
-    .where(
-      and(
-        eq(commands.id, applyCommandId),
-        eq(commands.accountId, accountId),
-        eq(commands.kind, "apply"),
-      ),
-    );
-  const result =
-    row?.outcome.status === "never"
-      ? undefined
-      : (row?.outcome.result as ApplyClickResult | undefined);
-  return (result?.applied ?? []).flatMap((item) => {
-    const documentId = item.transition && parseDraftItemKey(item.itemKey)?.documentId;
-    return documentId ? [documentId] : [];
-  });
-}
-
-/**
  * The command's effects, read for the account that sent it: the text effects of
  * each document it wrote, and its tree half. Keyed by the Apply, not by a branch: a Restore moves
  * a draft to another branch, a delete's Apply closes it. The draft's state is read by `unapply`
@@ -130,11 +98,7 @@ export async function loadPreparedUnapply(
     .where(and(eq(applyCommandEffects.commandId, applied), ownApply))
     .orderBy(applyCommandEffects.documentId, applyCommandEffects.ordinal);
   const branchId = trees[0]?.branchId ?? rows[0]?.draftBranchId ?? command.branchId;
-  const treeLost = trees.length
-    ? []
-    : await treeHalfLostWithBranch(tx, applied, command.envelope.accountId);
-  if (!rows.length)
-    return trees.length || treeLost.length ? { branchId, texts: [], trees, treeLost } : null;
+  if (!rows.length) return trees.length ? { branchId, texts: [], trees } : null;
   const texts: PreparedUnapply["texts"] = [];
   for (const documentId of new Set(rows.map((row) => row.documentId))) {
     const own = rows.filter((row) => row.documentId === documentId);
@@ -160,5 +124,5 @@ export async function loadPreparedUnapply(
       ),
     });
   }
-  return { branchId, texts, trees, treeLost };
+  return { branchId, texts, trees };
 }

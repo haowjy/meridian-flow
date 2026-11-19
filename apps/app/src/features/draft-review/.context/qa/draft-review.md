@@ -87,14 +87,14 @@ separate browser check covers rendering and native keyboard history.
 | Action | Required result |
 |---|---|
 | Discard an editor change | Text reverts immediately; one Ctrl+Z restores it with restoration provenance and bylines. |
-| Discard the document draft (band) | All pending changes revert, the draft id stays, the page goes Live, and "Draft of ‹name› discarded." takes the review line above the toolbar. Undo returns the page to the draft with the same marks and bylines. |
+| Discard the document draft (band) | All pending changes revert, the draft id stays, the page goes Live, and "‹name› discarded." takes the review line above the toolbar. Undo returns the page to the draft with the same marks and bylines. |
 | Discard from the dock or the Changes list | The item leaves immediately; the notice takes its row's place (a dock: its footer). Undo restores the same draft and bylines. |
 | Discard, open another document, come back | The Changes or dock notice is still there; Undo restores the draft and main does not move. |
 | Discard, then type elsewhere in that draft | The notice stays; its Undo restores the discarded text and keeps the typing. |
 | Discard, then type over the discarded text or let a reply write the same sentence again | The notice stays; its Undo says "1 change couldn't come back" and writes nothing twice. In the editor that discarded, Ctrl+Z undoes the typing, then drops the Discard, ends the notice, shows the same line on the draft's failure line, and never undoes an earlier step in that press. The same holds after the notice was dismissed, and for a Discard brought back by Ctrl+Shift+Z after its Ctrl+Z. When it was the document's only change, the line takes the band's "No changes left" place (side editor, main, and 390). Typing right after the restored word counts as an edit too. Typing over the word in Live (this tab or another profile) and pressing the notice's Undo at once says the same, and the draft keeps the writer's word. |
 | A second Discard or an Apply by the same Work | It replaces the notice. |
 | Reload | The notice ends; discarded text persists. |
-| Discard all / the dock's Discard with only text drafts | No question; one notice "N drafts discarded."; one Undo restores every room. |
+| Discard all / the dock's Discard with only text drafts | No question; one notice "N discarded."; one Undo restores every room. |
 | Discard a new document, a move or delete | No question; the notice shows, and Undo brings back the document, the move or delete and its text. |
 | Discard a trashed chat's draft | It asks once ("This can't be undone.") in place of its controls, and shows no notice. |
 | Discard all with a move and text, then Undo | Both come back as pending; a document drafted again meanwhile keeps its newer draft, and the notice says how many couldn't come back. |

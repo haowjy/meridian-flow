@@ -60,11 +60,6 @@ export type PreparedUnapply = {
       baseAfter: unknown[];
     }[];
   }[];
-  /**
-   * Documents whose tree half the Apply made, and no list row says so now: the Work's purge took
-   * the rows. Un-Apply answers them `left_out purged`.
-   */
-  treeLost: string[];
   /** One per list the Apply settled records in: the list's state vector it left. */
   trees: {
     scope: "project" | "account";
