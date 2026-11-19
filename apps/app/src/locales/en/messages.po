@@ -206,8 +206,8 @@ msgstr "{0, plural, one {# note} other {# notes}}"
 
 #. placeholder {0}: failedElsewhere.length - MAX_NAMED_FAILURES
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
-msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
+#~ msgid "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
+#~ msgstr "{0, plural, one {Changes in # more document did not apply} other {Changes in # more documents did not apply}}"
 
 #. placeholder {0}: Math.floor(seconds / 60)
 #: src/features/chat/ask/AskTakeover.tsx
@@ -558,8 +558,8 @@ msgstr "{count, plural, one {# call} other {# calls}}"
 #~ msgstr "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
-msgstr "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
+#~ msgid "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
+#~ msgstr "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
 
 #: src/features/chat/DraftDock.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
@@ -630,8 +630,8 @@ msgstr "{count, plural, one {# tool} other {# tools}}"
 #~ msgstr "{count, plural, one {# unsaved Agent change} other {# unsaved Agent changes}}"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{count, plural, one {Applied before your Discard reached it, so it stays applied.} other {# changes were applied before your Discard reached them, so they stay applied.}}"
-msgstr "{count, plural, one {Applied before your Discard reached it, so it stays applied.} other {# changes were applied before your Discard reached them, so they stay applied.}}"
+#~ msgid "{count, plural, one {Applied before your Discard reached it, so it stays applied.} other {# changes were applied before your Discard reached them, so they stay applied.}}"
+#~ msgstr "{count, plural, one {Applied before your Discard reached it, so it stays applied.} other {# changes were applied before your Discard reached them, so they stay applied.}}"
 
 #: src/features/agents/PackageSave.tsx
 #~ msgid "{count, plural, one {Not saved: # problem} other {Not saved: # problems}}"
@@ -654,7 +654,6 @@ msgstr "{count, plural, one {Applied before your Discard reached it, so it stays
 #~ msgstr "{count, plural, one {Undo left # part as it was} other {Undo left # parts as they were}}"
 
 #: src/features/draft-review/ReviewStepper.tsx
-#: src/features/draft-review/useWorkBranchCommands.tsx
 msgid "{count} changes"
 msgstr "{count} changes"
 
@@ -981,8 +980,8 @@ msgid "{name}, {count} to review"
 msgstr "{name}, {count} to review"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{name}, applied"
-msgstr "{name}, applied"
+#~ msgid "{name}, applied"
+#~ msgstr "{name}, applied"
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "{name}, renamed"
@@ -1016,28 +1015,28 @@ msgid "{named} and {more} more"
 msgstr "{named} and {more} more"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{names} are back in {area}."
-msgstr "{names} are back in {area}."
+#~ msgid "{names} are back in {area}."
+#~ msgstr "{names} are back in {area}."
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "{names} are back in the manuscript."
 #~ msgstr "{names} are back in the manuscript."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{names} are back."
-msgstr "{names} are back."
+#~ msgid "{names} are back."
+#~ msgstr "{names} are back."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{names} is back in {area}."
-msgstr "{names} is back in {area}."
+#~ msgid "{names} is back in {area}."
+#~ msgstr "{names} is back in {area}."
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "{names} is back in the manuscript."
 #~ msgstr "{names} is back in the manuscript."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{names} is back."
-msgstr "{names} is back."
+#~ msgid "{names} is back."
+#~ msgstr "{names} is back."
 
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "{names} is gone for good, so it wasn't copied."
@@ -1632,8 +1631,8 @@ msgstr "Already there"
 #~ msgstr "Already undone"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Also applied {others}."
-msgstr "Also applied {others}."
+#~ msgid "Also applied {others}."
+#~ msgstr "Also applied {others}."
 
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Alt text"
@@ -1672,7 +1671,6 @@ msgstr "Appearance and behavior settings."
 #~ msgstr "applied"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/draft-review/CommandNotice.tsx
 msgid "Applied"
 msgstr "Applied"
 
@@ -1685,12 +1683,12 @@ msgstr "Applied {what}"
 #~ msgstr "Applied as {name}: the name was taken."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied first"
-msgstr "Applied first"
+#~ msgid "Applied first"
+#~ msgstr "Applied first"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied just now: its changes are in {area}."
-msgstr "Applied just now: its changes are in {area}."
+#~ msgid "Applied just now: its changes are in {area}."
+#~ msgstr "Applied just now: its changes are in {area}."
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "Applied just now: its changes are in the manuscript."
@@ -1705,24 +1703,24 @@ msgstr "Applied just now."
 #~ msgstr "Applied to the manuscript"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied with the others: {from} → {to}."
-msgstr "Applied with the others: {from} → {to}."
+#~ msgid "Applied with the others: {from} → {to}."
+#~ msgstr "Applied with the others: {from} → {to}."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied. It is back in {area}."
-msgstr "Applied. It is back in {area}."
+#~ msgid "Applied. It is back in {area}."
+#~ msgstr "Applied. It is back in {area}."
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "Applied. It is back in the manuscript."
 #~ msgstr "Applied. It is back in the manuscript."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied. It is back."
-msgstr "Applied. It is back."
+#~ msgid "Applied. It is back."
+#~ msgstr "Applied. It is back."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied. Now in {place}."
-msgstr "Applied. Now in {place}."
+#~ msgid "Applied. Now in {place}."
+#~ msgstr "Applied. Now in {place}."
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
@@ -1869,8 +1867,8 @@ msgid "Back from {0}"
 msgstr "Back from {0}"
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Back in {area}"
-msgstr "Back in {area}"
+#~ msgid "Back in {area}"
+#~ msgstr "Back in {area}"
 
 #: src/features/editor/ManuscriptStateNotice.tsx
 #~ msgid "Back in the manuscript"
@@ -3305,6 +3303,7 @@ msgstr "Couldn't undo"
 #~ msgstr "Couldn't undo applying {name}. Try again."
 
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/draft-review/apply-history.ts
 msgid "Couldn't undo that."
 msgstr "Couldn't undo that."
 
@@ -3742,7 +3741,6 @@ msgstr "Discarding"
 #: src/components/app/failure-toast.tsx
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
-#: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/editor/RescuedText.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/GoneWord.tsx
@@ -5749,8 +5747,8 @@ msgstr "Only one question or request can wait for an answer at a time, so this o
 #~ msgstr "Only part of this change could be reversed."
 
 #: src/features/draft-review/ReviewHeaderNotices.tsx
-msgid "Open"
-msgstr "Open"
+#~ msgid "Open"
+#~ msgstr "Open"
 
 #: src/features/chat/OpenSubagentChatButton.tsx
 msgid "Open \"{name}\""
@@ -6492,7 +6490,6 @@ msgstr "Resume my documents on any device"
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -6547,8 +6544,8 @@ msgid "Retry the handoff brief"
 msgstr "Retry the handoff brief"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Retry undoing applying {name}"
-msgstr "Retry undoing applying {name}"
+#~ msgid "Retry undoing applying {name}"
+#~ msgstr "Retry undoing applying {name}"
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Retry undoing the restore of {title}"
@@ -7738,8 +7735,8 @@ msgid "The server didn't answer."
 msgstr "The server didn't answer."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft."
-msgstr "The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft."
+#~ msgid "The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft."
+#~ msgstr "The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft."
 
 #: src/features/connections/ConnectionPanel.tsx
 msgid "The server didn't list its tools."
@@ -7913,8 +7910,8 @@ msgstr "This cell is not merged."
 #~ msgstr "This change only applies together with the rest of the document. Apply the whole document instead."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This changed after you pressed Apply, so it wasn't applied. Check it, then apply again."
-msgstr "This changed after you pressed Apply, so it wasn't applied. Check it, then apply again."
+#~ msgid "This changed after you pressed Apply, so it wasn't applied. Check it, then apply again."
+#~ msgstr "This changed after you pressed Apply, so it wasn't applied. Check it, then apply again."
 
 #: src/features/editor/EditorView.tsx
 #: src/features/editor/SessionEditor.tsx
@@ -7997,8 +7994,8 @@ msgid "This conversation couldn't be compacted."
 msgstr "This conversation couldn't be compacted."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This depends on a change that wasn't applied, so it was left out."
-msgstr "This depends on a change that wasn't applied, so it was left out."
+#~ msgid "This depends on a change that wasn't applied, so it was left out."
+#~ msgstr "This depends on a change that wasn't applied, so it was left out."
 
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
@@ -8066,8 +8063,8 @@ msgstr "This document is still opening."
 #~ msgstr "This document was deleted"
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This document was deleted before its changes could be applied."
-msgstr "This document was deleted before its changes could be applied."
+#~ msgid "This document was deleted before its changes could be applied."
+#~ msgstr "This document was deleted before its changes could be applied."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "This document was deleted before this change could be made."
@@ -8142,8 +8139,8 @@ msgstr "This document was discarded from the draft."
 #~ msgstr "This draft just became read-only, so nothing was discarded. Check it, then try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This draft moved on since you pressed Apply, so it wasn't applied."
-msgstr "This draft moved on since you pressed Apply, so it wasn't applied."
+#~ msgid "This draft moved on since you pressed Apply, so it wasn't applied."
+#~ msgstr "This draft moved on since you pressed Apply, so it wasn't applied."
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "This draft was discarded, so the change wasn't kept. The AI will read it again."
@@ -8198,8 +8195,8 @@ msgid "This image never finished uploading."
 msgstr "This image never finished uploading."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This is no longer in the draft, so it wasn't applied."
-msgstr "This is no longer in the draft, so it wasn't applied."
+#~ msgid "This is no longer in the draft, so it wasn't applied."
+#~ msgstr "This is no longer in the draft, so it wasn't applied."
 
 #: src/features/import/reason-copy.ts
 msgid "This isn't the same selection as the one already started."
@@ -8222,8 +8219,8 @@ msgstr "This Meridian export can't be read. Import its folders one at a time."
 #~ msgstr "This move or delete changed since you looked. Check it, then apply again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This move would put a folder inside itself, so it wasn't applied."
-msgstr "This move would put a folder inside itself, so it wasn't applied."
+#~ msgid "This move would put a folder inside itself, so it wasn't applied."
+#~ msgstr "This move would put a folder inside itself, so it wasn't applied."
 
 #: src/features/project/context/use-create-entry-form.ts
 msgid "This name can't be used. Try a different one."
@@ -8318,8 +8315,8 @@ msgid "This version of Meridian can't display it."
 msgstr "This version of Meridian can't display it."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This was discarded before Apply reached it. Restore it to apply it."
-msgstr "This was discarded before Apply reached it. Restore it to apply it."
+#~ msgid "This was discarded before Apply reached it. Restore it to apply it."
+#~ msgstr "This was discarded before Apply reached it. Restore it to apply it."
 
 #: src/features/chat/tool-failure.tsx
 msgid "This was stopped before it finished."
@@ -8608,8 +8605,6 @@ msgstr "Undo delete of {title}"
 
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/draft-review/CommandNotice.tsx
-#: src/features/draft-review/ReviewMessageText.tsx
-#: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Undo didn't go through. Try again."
 msgstr "Undo didn't go through. Try again."
@@ -8747,7 +8742,6 @@ msgstr "Unsaved"
 #~ msgid "Unsaved changes"
 #~ msgstr "Unsaved changes"
 
-#: src/features/draft-review/ReviewHeaderNotices.tsx
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "Untitled"
 msgstr "Untitled"

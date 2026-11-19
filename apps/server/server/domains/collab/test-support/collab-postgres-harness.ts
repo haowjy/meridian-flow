@@ -487,6 +487,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     commandDocuments: {
       ofApply: async () => [],
       ofDiscard: async () => [],
+      redoItems: async () => [],
     },
     listDiscards: async () => [],
     purgeDiscards: async () => 0,

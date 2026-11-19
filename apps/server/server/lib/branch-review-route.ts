@@ -813,16 +813,35 @@ async function branchCommand<Request extends { commandId: string }, Answer, Acce
   });
 }
 
-/** Apply any selection of nodes, a folder and what is under it, as one command. */
-export function handleApplyItemsRequest(
+const RedoBody = z.strictObject({ commandId: CommandIdSchema, redoOf: CommandIdSchema });
+
+/**
+ * Apply any selection of nodes, a folder and what is under it, as one command; or, with `redoOf`,
+ * what an Un-Apply took back, read from its own records (`commandDocuments.redoItems`). A Redo
+ * that finds nothing to apply answers with no item and stores nothing.
+ */
+export async function handleApplyItemsRequest(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
 ): Promise<ApplyClickAnswer | CommandRunning> {
-  const { restore: _ignored, ...request } = parseBody(ApplyItemsBody, input.request, "Apply");
+  const redo = RedoBody.safeParse(input.request);
+  const request: ParsedApply = redo.success
+    ? {
+        commandId: redo.data.commandId as CommandId,
+        items: await deps.documentSync.draftReview.commandDocuments.redoItems({
+          unapplyCommandId: redo.data.redoOf as CommandId,
+          accountId: input.userId,
+        }),
+      }
+    : (({ restore: _ignored, ...parsed }) => parsed as ParsedApply)(
+        parseBody(ApplyItemsBody, input.request, "Apply"),
+      );
+  if (redo.success && request.items.length === 0)
+    return { status: "applied", commandId: request.commandId, items: [], applied: [] };
   return applyItems(
     deps,
     input,
-    request as ParsedApply,
+    request,
     envelopeOf(input, {
       commandId: request.commandId,
       kind: "apply",

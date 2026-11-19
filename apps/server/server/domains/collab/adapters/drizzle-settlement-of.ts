@@ -3,7 +3,7 @@
  * reader Apply (and B4's Discard) answer `already`, `overtaken` or `left_out` from, so a Discard
  * that took an item can never read as "already applied".
  */
-import type { BranchId, CommandId } from "@meridian/contracts";
+import type { BranchId } from "@meridian/contracts";
 import type { Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { applyCommandEffects, commands, documentDrafts } from "@meridian/database/schema";
@@ -20,9 +20,7 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { TreeCut } from "../domain/apply-click.js";
 
-export type Settled =
-  | { kind: "applied" | "discarded" | "removed"; by: CommandId }
-  | { kind: "purged" };
+export type Settled = { kind: "applied" | "discarded" | "removed" } | { kind: "purged" };
 
 export type ItemSettlement = {
   /** `pending`: the Work still has records that are this node's item. */
@@ -98,7 +96,7 @@ export function noteOf(
 ): Settlement {
   if (!last || last.kind === "purged") return { rule: "left_out", items: [node], why: "purged" };
   if (last.kind === asked) return { rule: "already", state: asked, item: node };
-  return { rule: "overtaken", state: last.kind, by: last.by, item: node };
+  return { rule: "overtaken", state: last.kind, item: node };
 }
 
 const sameList = (a: TreeList, b: TreeList) =>
@@ -127,7 +125,7 @@ function treeHalf(end: ListWriter, branchId: BranchId, saw: Uint8Array | undefin
     if (!settle?.command || settle.fate === "dropped") return [];
     // A record replaced by a later one an Apply landed: that Apply took the node's item.
     const kind = settle.fate === "discarded" ? ("discarded" as const) : ("applied" as const);
-    return [{ record, kind, by: settle.command as CommandId, at: settle.at }];
+    return [{ record, kind, at: settle.at }];
   });
   const above = (folder: string, node: string) => {
     for (let at = draft.nodes.get(node); at; at = draft.nodes.get(at.parent))
@@ -147,7 +145,7 @@ function treeHalf(end: ListWriter, branchId: BranchId, saw: Uint8Array | undefin
     const found = latest(saw ? [...own, ...covering] : own.length ? own : covering);
     return {
       pending: recordsOfItem(draft, pending, node).length > 0,
-      last: found ? { kind: found.kind, by: found.by } : null,
+      last: found ? { kind: found.kind } : null,
     };
   };
 }
@@ -172,7 +170,6 @@ async function textHalf(db: Database, draftIds: readonly string[]) {
     ? await tx
         .selectDistinctOn([applyCommandEffects.draftId], {
           draftId: applyCommandEffects.draftId,
-          by: applyCommandEffects.commandId,
         })
         .from(applyCommandEffects)
         .innerJoin(commands, eq(commands.id, applyCommandEffects.commandId))
@@ -186,7 +183,7 @@ async function textHalf(db: Database, draftIds: readonly string[]) {
     out.set(row.id, {
       open: true,
       branchId: row.branchId,
-      last: effect ? { kind: "applied", by: effect.by } : null,
+      last: effect ? { kind: "applied" } : null,
     });
   }
   return out;

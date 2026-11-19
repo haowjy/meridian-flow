@@ -1,8 +1,10 @@
 /**
  * The documents a command touched, from its own record: what a route must hold edit grants on
  * before Un-Apply or Undo of a Discard writes them. A folder has no document and no grant.
+ * `redoItems` reads the same records for a Redo: what an Un-Apply took back.
  */
 import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
+import type { ApplyItemsClick, UnapplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
   applyCommandEffects,
@@ -56,6 +58,53 @@ export function createDrizzleCommandDocuments(
           ),
         );
       return documentsAmong([...text.map((row) => row.id), ...trees.flatMap((row) => row.nodes)]);
+    },
+
+    /**
+     * What an Un-Apply took back, as the items an Apply of it again sends: each document's text
+     * groups from the effect rows the Un-Apply marked, in the draft they were applied from, and
+     * the documents whose tree half it took back. Empty when it took nothing, or is not this
+     * account's.
+     */
+    async redoItems(input: {
+      unapplyCommandId: CommandId;
+      accountId: UserId;
+    }): Promise<ApplyItemsClick["items"]> {
+      const tx = currentDrizzleDb(db);
+      const [own] = await tx
+        .select({ outcome: commands.outcome })
+        .from(commands)
+        .where(
+          and(
+            eq(commands.id, input.unapplyCommandId),
+            eq(commands.accountId, input.accountId),
+            eq(commands.kind, "unapply"),
+          ),
+        );
+      if (!own || own.outcome.status === "never") return [];
+      const { treeUndone } = own.outcome.result as UnapplyClickResult;
+      const effects = await tx
+        .select({
+          documentId: applyCommandEffects.documentId,
+          draftId: applyCommandEffects.draftId,
+          groupId: applyCommandEffects.groupId,
+        })
+        .from(applyCommandEffects)
+        .where(eq(applyCommandEffects.unappliedBy, input.unapplyCommandId))
+        .orderBy(applyCommandEffects.documentId, applyCommandEffects.ordinal);
+      const items = new Map<string, ApplyItemsClick["items"][number]>();
+      for (const node of treeUndone) items.set(node, { node, tree: true });
+      for (const { documentId, draftId, groupId } of effects) {
+        const held = items.get(documentId);
+        const groupIds = new Set(held?.text?.groupIds);
+        groupIds.add(groupId);
+        items.set(documentId, {
+          node: documentId,
+          ...(held?.tree ? { tree: true as const } : {}),
+          text: { draftId, whole: true, groupIds: [...groupIds] },
+        });
+      }
+      return [...items.values()];
     },
 
     /** The documents a Discard command settled records of or took text from. */

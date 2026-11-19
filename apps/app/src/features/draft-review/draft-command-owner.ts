@@ -19,11 +19,8 @@ import {
 import type {
   ApplyClick,
   ApplyClickAnswer,
-  ApplyItemResult,
   DiscardCommandResult,
-  DraftMetadataResponse,
   TreeSaw,
-  UnapplyClick,
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
@@ -42,7 +39,6 @@ import {
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
 import { readRoomOnce } from "@/core/editor/room-read-once";
-import type { ClosedOwners } from "@/core/project-tree/tree-undo";
 import {
   type ApplyClickOutcome,
   ApplyClickQueue,
@@ -50,13 +46,7 @@ import {
   type FrozenApply,
   frozenOn,
 } from "./apply-click-queue";
-import {
-  AppliedCommand,
-  AppliedCommands,
-  type Histories,
-  queuePort,
-  serverBandPort,
-} from "./apply-history";
+import { ApplyEntries, type Histories, queuePort, serverPort } from "./apply-history";
 import { DiscardRestores } from "./discard-restores";
 import {
   type ApplyHalves,
@@ -64,15 +54,9 @@ import {
   DraftNotices,
   halvesOf,
   itemOf,
-  viewOf,
 } from "./draft-notices";
 import { GroupApply } from "./group-apply";
-import type {
-  ApplyLine,
-  BranchCommandFailure,
-  CommandRefusal,
-  DraftRef,
-} from "./review-command-types";
+import type { BranchCommandFailure, DraftRef } from "./review-command-types";
 import {
   buildFrame,
   inSchema,
@@ -117,10 +101,6 @@ export type CommandOutcome =
       halves?: ApplyHalves;
       /** Its tree half landed whole: nothing of its move, delete or creation is still pending. */
       treeWhole?: boolean;
-      /** Each half's lines for what stayed out beside what landed. */
-      lines?: ApplyLine[];
-      /** The document had been live deleted and this Apply brought it back. */
-      restored?: true;
       /** Per-item facts committed by this click. */
       applied?: {
         itemKey: string;
@@ -129,8 +109,8 @@ export type CommandOutcome =
       /** A Discard's answer: what of what it was sent it took (`DiscardTook`). */
       took?: DiscardTook;
     }
-  /** The server answered for this item and landed neither half: each half's lines say why. */
-  | { kind: "settled"; lines: ApplyLine[]; took?: DiscardTook }
+  /** The server answered for this item and landed neither half. */
+  | { kind: "settled"; took?: DiscardTook }
   /** A closed owner answered and changed nothing; nothing is said, its drafts stay as they are. */
   | { kind: "returned" }
   | { kind: "change-refused"; code: string };
@@ -176,51 +156,33 @@ type Joint = {
 export type StartedApply = {
   sent: boolean;
   outcome: Promise<CommandOutcome>;
-  band?: AppliedCommand;
+  band?: ApplyEntries;
 };
-/** A band's Apply: the editors its Ctrl+Z goes in, and which owners are closed now. */
-export type BandHistories = { histories: Histories; closed: ClosedOwners };
+/** A band's Apply: the editors its Ctrl+Z goes in. */
+export type BandHistories = { histories: Histories };
 /**
  * A Discard's answer for the documents it was sent. `done` when it took something, `settled` when
  * each item was settled before it, `returned` when a closed owner changed nothing. `untaken`: the
- * items it found settled; `lines`: each item's own lines (a delete that took it first), by
- * document; an Apply that took one first is the notice's to say (`took.appliedFirst`), not a
- * line. `already` is quiet and gives none; a line naming no item covers every one sent.
+ * items it found settled (an earlier Discard's, or an Apply that took them first), which say
+ * nothing. `already` is quiet and gives none.
  */
 function discardAnswer(
   result: DiscardCommandResult,
   documentIds: readonly string[],
-): {
-  outcome: CommandOutcome;
-  untaken: ReadonlySet<string>;
-  lines: ReadonlyMap<string, ApplyLine[]>;
-} {
+): { outcome: CommandOutcome; untaken: ReadonlySet<string> } {
   if (result.settled?.some((one) => one.rule === "returned"))
-    return { outcome: { kind: "returned" }, untaken: new Set(), lines: new Map() };
+    return { outcome: { kind: "returned" }, untaken: new Set() };
   const untaken = new Set<string>();
-  const appliedFirst = new Set<string>();
-  const lines = new Map<string, ApplyLine[]>();
   for (const one of result.settled ?? []) {
     if (one.rule !== "already" && one.rule !== "overtaken") continue;
-    const view = viewOf(one);
-    for (const item of one.item ? [one.item] : documentIds) {
-      untaken.add(item);
-      if (view?.kind !== "overtaken") continue;
-      if (view.state === "applied") appliedFirst.add(item);
-      else
-        lines.set(item, [
-          ...(lines.get(item) ?? []),
-          { half: "tree", code: `overtaken_${view.state}`, by: view.by },
-        ]);
-    }
+    for (const item of one.item ? [one.item] : documentIds) untaken.add(item);
   }
-  const took = { untaken: [...untaken], appliedFirst: [...appliedFirst] };
+  const took = { untaken: [...untaken] };
   return {
     outcome: documentIds.some((id) => !untaken.has(id))
       ? { kind: "done", took }
-      : { kind: "settled", lines: [...lines.values()].flat(), took },
+      : { kind: "settled", took },
     untaken,
-    lines,
   };
 }
 /** A Discard's showing in the review: every change, or the ones it names. */
@@ -228,23 +190,6 @@ const discardingOf = (text: "all" | readonly string[]) =>
   text === "all" ? () => true : (change: ReviewChange) => text.includes(change.id);
 /** How long a Discard's showing waits for the server's write to reach the room. */
 const ROOM_WRITE_WAIT_MS = 5_000;
-const leftOut = (lines: readonly ApplyLine[] | undefined): BranchCommandFailure | null =>
-  lines?.length ? { code: "apply-left-out", landed: false, lines } : null;
-/**
- * Every line an item shows for what of it didn't land, each with its half: `overtaken_<state>`
- * or `left_out_<why>`. `already` and `restored` are painted quietly and give none.
- */
-function linesOf(item: ApplyItemResult | undefined): ApplyLine[] {
-  return (["tree", "text"] as const).flatMap((half) =>
-    (item?.[half]?.settled ?? []).flatMap((one): ApplyLine[] => {
-      const view = viewOf(one);
-      if (view?.kind === "overtaken")
-        return [{ half, code: `overtaken_${view.state}`, by: view.by }];
-      if (view?.kind === "left_out") return [{ half, code: `left_out_${view.why}` }];
-      return [];
-    }),
-  );
-}
 const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
@@ -259,22 +204,17 @@ export class DraftCommandOwner {
    * item queue's handle until the review lets go of the draft's room.
    */
   private readonly bandApplies = new Map<
-    AppliedCommand,
+    ApplyEntries,
     { draftId: string; handle: ApplyCommandHandle | null }
   >();
-  /**
-   * Every Apply this tab can still take back or apply again: the one each Undo of it presses, a
-   * chat card's included (`AppliedCommand`).
-   */
-  readonly applied = new AppliedCommands();
+  /** Every Apply this tab can still take back or apply again, a band's or not. */
+  readonly applied = new Set<ApplyEntries>();
   private readonly byItem = new Map<string, Entry>();
   private readonly identities = new Map<string, string>();
   private readonly records = new Map<string, DraftCommandState>();
   private readonly listeners = new Set<() => void>();
   private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
-  /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
-  private readonly restoredDocuments = new Set<string>();
   private active = true;
   private revision = 0;
   /** Each Discard's restore, whatever sent it: the one progress every view reads. */
@@ -296,7 +236,9 @@ export class DraftCommandOwner {
       closeCreated?(ref: DraftRef): void;
     } = {},
   ) {
-    this.stopRejoining = registry.observeHistories(() => this.applied.rejoin());
+    this.stopRejoining = registry.observeHistories(() => {
+      for (const applied of this.applied) applied.enter();
+    });
   }
   /** An Apply made before a session of its documents opened joins that session's history. */
   private readonly stopRejoining: () => void;
@@ -387,6 +329,7 @@ export class DraftCommandOwner {
         send: (body) => applyDraftClick(ref, body),
         lookup: observeDraftClick,
         unapply: (body) => unapplyDraftClick(ref, body),
+        redo: (body) => applyItems(ref.projectId, branchOf(ref.itemKey), body),
         changed: () => {
           for (const entry of item.rooms) {
             entry.binding?.runtime.invalidateBase();
@@ -411,9 +354,6 @@ export class DraftCommandOwner {
       applying: queue.applying,
       unapplying,
       stalled,
-      ...(stalled && unapplying
-        ? { failure: { code: "unapply-refused" as const, serverCode: "unknown" } }
-        : {}),
     });
   }
 
@@ -522,24 +462,6 @@ export class DraftCommandOwner {
     else observe();
   }
 
-  /** Whether an Apply brought this document back from a delete. */
-  wasRestored(projectId: string, documentId: string): boolean {
-    return this.restoredDocuments.has(JSON.stringify([projectId, documentId]));
-  }
-
-  forgetApplyFacts(projectId: string, documentId: string): void {
-    if (this.restoredDocuments.delete(JSON.stringify([projectId, documentId]))) this.publish();
-  }
-
-  /** The writer moved on to `documentId`: every other document's Apply fact ends. */
-  keepApplyFactsOnly(projectId: string, documentId: string): void {
-    const kept = JSON.stringify([projectId, documentId]);
-    let changed = false;
-    for (const key of this.restoredDocuments)
-      if (key !== kept) changed = this.restoredDocuments.delete(key) || changed;
-    if (changed) this.publish();
-  }
-
   /**
    * The drafts of one document that a surface holds open right now. A live delete leaves
    * them active, so their tabs stay; the review list lags, this does not.
@@ -639,16 +561,12 @@ export class DraftCommandOwner {
     if (this.byItem.get(entry.ref.itemKey) === entry) this.byItem.delete(entry.ref.itemKey);
     // The Apply stays in force after its review closes (Draft view to Live): its Ctrl+Z goes on
     // without the queue, which settles only by watching this room.
-    const port = {
-      send: (body: ApplyClick) => applyDraftClick(entry.ref, body),
-      unapply: (body: UnapplyClick) => unapplyDraftClick(entry.ref, body),
-    };
     for (const [band, held] of this.bandApplies) {
       if (held.draftId !== entry.draftId || !held.handle) continue;
       band.switchPort(
-        serverBandPort(port, held.handle.applyInForce(), {
-          node: entry.ref.documentId,
-          draftId: entry.draftId,
+        serverPort({
+          unapply: (body) => unapplyDraftClick(entry.ref, body),
+          redo: (body) => applyItems(entry.ref.projectId, branchOf(entry.ref.itemKey), body),
         }),
       );
       held.handle = null;
@@ -664,41 +582,31 @@ export class DraftCommandOwner {
   /** A click's answer, as its caller's outcome and a line on the generation it was made for. */
   private settled(ref: DraftRef, id: string, answer: ApplyClickOutcome): CommandOutcome {
     const outcome = this.outcomeOf(ref, answer);
-    const failure: BranchCommandFailure | null =
-      (outcome.kind === "settled" || outcome.kind === "done") && outcome.lines?.length
-        ? { code: "apply-left-out", landed: outcome.kind === "done", lines: outcome.lines }
-        : outcome.kind === "change-refused"
-          ? { code: "apply-refused", serverCode: outcome.code }
-          : null;
-    if (failure) this.setState(ref.itemKey, { failure }, id);
+    if (outcome.kind === "change-refused")
+      this.setState(
+        ref.itemKey,
+        { failure: { code: "apply-refused", serverCode: outcome.code } },
+        id,
+      );
     return outcome;
   }
 
   /**
    * One item's outcome from its entry in the answer: done when either half landed (it gets the
-   * Undo step and the applied facts), settled when neither did. Every line of both halves goes
-   * with it, so a landed delete with a left-out rename reads as applied, with the line.
+   * Undo step and the applied facts), settled when neither did. What stayed out says nothing.
    */
   private outcomeOf(ref: DraftRef, answer: ApplyClickOutcome): CommandOutcome {
     if (answer.status === "applied") {
       const item = itemOf(answer, ref.documentId);
-      const lines = linesOf(item);
       const tree = item?.tree?.landed === true;
-      if (!tree && item?.text?.landed !== true) return { kind: "settled", lines };
+      if (!tree && item?.text?.landed !== true) return { kind: "settled" };
       const treeWhole = tree && !item?.tree?.settled?.some((one) => one.rule === "left_out");
-      const restored = [...(item?.tree?.settled ?? []), ...(item?.text?.settled ?? [])].some(
-        (one) => one.rule === "restored",
-      );
-      if (restored) this.restoredDocuments.add(JSON.stringify([ref.projectId, ref.documentId]));
       const branchId = parseDraftItemKey(ref.itemKey)?.branchId;
-      if (restored) this.publish();
       return {
         kind: "done",
         commandId: answer.commandId,
         halves: halvesOf(answer),
         treeWhole,
-        lines,
-        ...(restored ? { restored: true as const } : {}),
         applied: branchId
           ? answer.items.flatMap((one) =>
               one.tree?.landed || one.text?.landed
@@ -742,12 +650,6 @@ export class DraftCommandOwner {
     // A tree cut already on its way is not sent twice.
     const tree =
       requested && !this.items.get(ref.itemKey)?.queue.clicks.some((click) => click.body.tree);
-    if (target.kind === "again") {
-      const draftId = target.groupIds.length ? target.draftId : undefined;
-      return draftId || tree
-        ? this.captureOnReceipt(ref, { draftId, groupIds: target.groupIds, tree }, saw, joint)
-        : null;
-    }
     const binding = this.byItem.get(ref.itemKey)?.binding;
     const room = binding?.runtime.state().ready ? binding : null;
     // No room open here: the server cuts the whole draft on receipt.
@@ -767,12 +669,12 @@ export class DraftCommandOwner {
   /**
    * A click the server resolves on receipt, so it needs no room: a tree cut alone (design-v2
    * §4), or every change of `draftId` as the server holds it then, with the item's tree cut when
-   * given; `groupIds`, only those of its changes. Text an agent writes before the server receives
-   * it is included. The row hides until the answer.
+   * given. Text an agent writes before the server receives it is included. The row hides until
+   * the answer.
    */
   private captureOnReceipt(
     ref: DraftRef,
-    cut: { draftId?: string; groupIds?: readonly string[]; tree?: boolean },
+    cut: { draftId?: string; tree?: boolean },
     saw: TreeSaw | undefined,
     joint?: Joint,
   ): StartedApply | null {
@@ -783,7 +685,7 @@ export class DraftCommandOwner {
       body: {
         commandId: joint?.commandId ?? crypto.randomUUID(),
         ...(cut.draftId ? { draftId: cut.draftId, whole: true as const } : {}),
-        groupIds: cut.draftId ? [...(cut.groupIds ?? [])] : [],
+        groupIds: [],
         baseViewDelta: [],
         ...(cut.tree ? { tree: true as const } : {}),
         ...(saw ? { saw } : {}),
@@ -824,12 +726,7 @@ export class DraftCommandOwner {
         ? { going: frame.groups.map((group) => ({ read: group.id })), stayed: [] }
         : readChosen(target.frame, frame, target.groupIds);
     const ids = chosen.going.map((pair) => pair.read);
-    if (!ids.length) {
-      if (!chosen.stayed.length) return null;
-      const lines: ApplyLine[] = [{ half: "text", code: "left_out_not_on_server" }];
-      this.setState(ref.itemKey, { failure: { code: "apply-left-out", landed: false, lines } });
-      return { sent: false, outcome: Promise.resolve({ kind: "settled", lines }) };
-    }
+    if (!ids.length) return null;
     const schema = frame.doc.type.schema;
     const optimistic = frame.diff.base.blocks;
     const patched = applySpanPatches(
@@ -857,7 +754,6 @@ export class DraftCommandOwner {
       target.kind === "draft" ? null : ids,
       frame,
       body,
-      chosen.stayed,
     );
     const frozen: FrozenApply = {
       body,
@@ -874,40 +770,19 @@ export class DraftCommandOwner {
             applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
           intent: () => this.setState(entry.ref.itemKey, { failure: null }),
           replayed: (answer) => void this.settled(entry.ref, entry.draftId, answer),
-          unapplyRefused: (answer) =>
-            this.setState(entry.ref.itemKey, {
-              failure: { code: "unapply-refused", serverCode: answer.status },
-            }),
         })
       : { outcome: entry.item.queue.enqueue(frozen), handle: null };
-    let band: AppliedCommand | undefined;
+    let band: ApplyEntries | undefined;
     if (scheduled.handle && histories) {
       const handle = scheduled.handle;
-      const applied: AppliedCommand = new AppliedCommand(
-        {
-          text: true,
-          tree: null,
-          sources: [],
-          name: "",
-          nodes: [ref.documentId],
-        },
+      const applied: ApplyEntries = new ApplyEntries(
+        handle.applyInForce(),
         queuePort(handle, ref.documentId),
         histories.histories,
-        {
-          closed: histories.closed,
-          seat: null,
-          said: ({ answer, step }) =>
-            this.notices.showPress({
-              projectId: ref.projectId,
-              ownerKey: ref.ownerKey,
-              documentId: ref.documentId,
-              step,
-              answer,
-            }),
-          over: () => {
-            this.bandApplies.delete(applied);
-            this.applied.delete(applied);
-          },
+        null,
+        () => {
+          this.bandApplies.delete(applied);
+          this.applied.delete(applied);
         },
       );
       band = applied;
@@ -947,7 +822,7 @@ export class DraftCommandOwner {
       ...(tree ? { tree: true as const } : {}),
       ...(saw ? { saw } : {}),
     };
-    const rebuilt = this.rebuilder(draftId, groupIds, frame, body, []);
+    const rebuilt = this.rebuilder(draftId, groupIds, frame, body);
     const schema = frame.doc.type.schema;
     const optimistic = frame.diff.base.blocks;
     this.setState(ref.itemKey, { failure: null });
@@ -974,8 +849,7 @@ export class DraftCommandOwner {
    * A text click again, for a room that ended before the server had its typing: the whole draft
    * as the server's whole cut, else the chosen changes as a frozen click on the draft read from the
    * server now. A choice is never widened: a chosen change goes only when the server's read names
-   * the same change (`readChosen`); any other stays (`stayed`, after `left`, what the caller
-   * already left out).
+   * the same change (`readChosen`); any other stays in the draft.
    * `chosen` null: the whole draft; `shown` the frame it was chosen on, where the rows fold what
    * it applies (the read's own blocks are another schema's). A room that
    * can't be read sends the click as it was frozen, and the server says why; one this build can't
@@ -986,10 +860,8 @@ export class DraftCommandOwner {
     chosen: readonly string[] | null,
     shown: ReviewFrame,
     body: ApplyClick,
-    left: readonly string[],
-  ): { rebuild: NonNullable<FrozenApply["rebuild"]>; stayed: string[]; needsReload: boolean } {
+  ): { rebuild: NonNullable<FrozenApply["rebuild"]>; needsReload: boolean } {
     const result = {
-      stayed: [...left],
       needsReload: false,
       rebuild: async (signal: AbortSignal) => {
         const fields = {
@@ -1015,8 +887,7 @@ export class DraftCommandOwner {
           const schema = content.doc.type.schema;
           const base = readBase(fresh, schema);
           const frame = buildFrame(fresh, base, content.doc);
-          const { going, stayed } = readChosen(shown, frame, chosen);
-          result.stayed = [...left, ...stayed];
+          const { going } = readChosen(shown, frame, chosen);
           if (!going.length) return null;
           return {
             body: {
@@ -1050,7 +921,7 @@ export class DraftCommandOwner {
     ref: DraftRef,
     draftId: string,
     outcome: Promise<ApplyClickOutcome>,
-    rebuilt: { stayed: string[]; needsReload: boolean },
+    rebuilt: { needsReload: boolean },
     joint?: Joint,
   ): Promise<CommandOutcome> {
     return outcome.then((answer) => {
@@ -1061,23 +932,6 @@ export class DraftCommandOwner {
         this.setState(
           ref.itemKey,
           { failure: { code: "apply-refused", serverCode: "needs_reload" } },
-          draftId,
-        );
-      else if (rebuilt.stayed.length && settled.kind !== "change-refused")
-        this.setState(
-          ref.itemKey,
-          {
-            failure: {
-              code: "apply-left-out",
-              landed: settled.kind === "done",
-              lines: [
-                ...(settled.kind === "done" || settled.kind === "settled"
-                  ? (settled.lines ?? [])
-                  : []),
-                { half: "text", code: "left_out_not_on_server" },
-              ],
-            },
-          },
           draftId,
         );
       return settled;
@@ -1209,7 +1063,7 @@ export class DraftCommandOwner {
         this.setState(ref.itemKey, { discarding: discardingOf(taken.text), failure: null });
       }
     }
-    const failed = (failure: CommandRefusal | null) => {
+    const failed = (failure: BranchCommandFailure | null) => {
       if (this.active)
         for (const ref of scope.values())
           this.setState(ref.itemKey, { hidden: false, discarding: null, failure });
@@ -1235,14 +1089,9 @@ export class DraftCommandOwner {
         failed(null);
         return outcome;
       }
-      // The caller drops the rows that left review. An item an Apply took first keeps its row,
-      // with its own line.
-      const { lines } = discardAnswer(
-        answer,
-        [...scope.values()].map((ref) => ref.documentId),
-      );
+      // The caller drops the rows that left review.
       for (const ref of scope.values()) {
-        this.setState(ref.itemKey, { hidden: false, failure: leftOut(lines.get(ref.documentId)) });
+        this.setState(ref.itemKey, { hidden: false, failure: null });
         const text = shown.get(ref.itemKey);
         if (text) this.releaseWhenRoomHas(ref.itemKey, text);
       }

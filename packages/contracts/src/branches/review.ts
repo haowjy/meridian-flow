@@ -204,6 +204,17 @@ export type ApplyItemsClick = {
 };
 
 /**
+ * Apply again what the Un-Apply `redoOf` took back, which is all the browser says: the server
+ * reads the Un-Apply's own records for the documents, groups and tree halves, so a change another
+ * chat proposed since is never applied with it, and an identical change in two documents is
+ * applied only in the one the Un-Apply took.
+ */
+export type RedoClick = {
+  commandId: CommandId;
+  redoOf: CommandId;
+};
+
+/**
  * Restore a Discard, from the notice right after it, the editor's Ctrl+Z or Trash: the Work gets
  * fresh pending copies of the tree records it settled, and each text change it took out is merged
  * back into the draft where it still stands.

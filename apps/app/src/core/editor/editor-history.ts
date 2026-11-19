@@ -27,13 +27,6 @@ type EditorHistoryAction = {
    */
   undo(): Promise<boolean>;
   redo(): void;
-  /**
-   * The Apply waits for an owner to reopen: an undo passes over its entry to the one under it,
-   * and its boundary still keeps the edits on either side apart.
-   */
-  passedOver?(): boolean;
-  /** An undo just passed over it: the writer pressed Undo and an older step went instead. */
-  passed?(): void;
   /** Its redo is gone: new edits cleared the redo side, or the history closed with it there. */
   dropped?(): void;
 };
@@ -42,9 +35,8 @@ type ApplyEntry = { remove(): void };
 /**
  * `hide` takes the entry out of both sides and keeps its place; `show` puts a hidden entry back on
  * the undo side at that place, below what was done after it, and leaves the redo side alone.
- * `restate`: whether it is passed over changed, so what Undo offers is read again.
  */
-export type DocumentApplyEntry = ApplyEntry & { hide(): void; show(): void; restate(): void };
+export type DocumentApplyEntry = ApplyEntry & { hide(): void; show(): void };
 export type EditorHistoryHandle = {
   captureApply(action: EditorHistoryAction): ApplyEntry;
 };
@@ -65,8 +57,6 @@ const GUARD_META = "meridian-editor-guard";
 type Guard = { dropped(): void };
 
 type RelativeSelection = ReturnType<typeof getRelativeSelection>;
-
-const passedOver = (entry: Entry) => entry.kind === "apply" && entry.action.passedOver?.() === true;
 
 function insert(entries: Entry[], entry: Entry): void {
   const index = entries.findIndex((candidate) => candidate.sequence > entry.sequence);
@@ -168,7 +158,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   }
 
   captureApply(action: EditorHistoryAction): DocumentApplyEntry {
-    if (!this.active) return { remove: noop, hide: noop, show: noop, restate: noop };
+    if (!this.active) return { remove: noop, hide: noop, show: noop };
     this.manager.stopCapturing();
     const entry: Entry = { kind: "apply", sequence: ++this.sequence, action, presses: 0 };
     this.undo.push(entry);
@@ -204,14 +194,12 @@ export class DocumentHistory implements EditorHistoryHandle {
         insert(this.undo, entry);
         this.changed();
       },
-      restate: () => this.changed(),
     };
   }
 
   /**
-   * Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. An
-   * Apply passed over for a closed owner counts: Undo takes it once the owner reopens. So does a
-   * hidden Apply, which may come back.
+   * Whether undoing or redoing has anything to lose; the owner of the session keeps it while so. A
+   * hidden Apply counts, which may come back.
    */
   hasEntries(): boolean {
     return this.active && (this.undo.length > 0 || this.redo.length > 0 || this.hiddenApplies > 0);
@@ -224,7 +212,7 @@ export class DocumentHistory implements EditorHistoryHandle {
   }
 
   canUndo(): boolean {
-    return this.active && this.undo.some((entry) => !passedOver(entry));
+    return this.active && this.undo.length > 0;
   }
 
   canRedo(): boolean {
@@ -234,15 +222,8 @@ export class DocumentHistory implements EditorHistoryHandle {
   run(direction: "undo" | "redo", editor: Editor): boolean {
     if (!this.active) return false;
     const source = direction === "undo" ? this.undo : this.redo;
-    const entry = direction === "undo" ? source.findLast((each) => !passedOver(each)) : source[0];
-    const over = direction === "undo" ? source.slice(entry ? source.indexOf(entry) + 1 : 0) : [];
-    const passed = () => {
-      for (const each of over) if (each.kind === "apply") each.action.passed?.();
-    };
-    if (!entry) {
-      passed();
-      return false;
-    }
+    const entry = direction === "undo" ? source.at(-1) : source[0];
+    if (!entry) return false;
     if (entry.kind === "apply") {
       source.splice(source.indexOf(entry), 1);
       insert(direction === "undo" ? this.redo : this.undo, entry);
@@ -252,8 +233,7 @@ export class DocumentHistory implements EditorHistoryHandle {
         void entry.action.undo().then((happened) => {
           if (!happened && entry.presses === press) this.reinstate(entry);
         });
-      passed();
-    } else if (this.runNative(direction, source, editor)) passed();
+    } else this.runNative(direction, source, editor);
     this.changed();
     return true;
   }
@@ -289,15 +269,13 @@ export class DocumentHistory implements EditorHistoryHandle {
 
   /**
    * Let Yjs skip native no-ops, but never let that traversal cross an Apply boundary or reach a
-   * guarded step: that one runs alone, once its guard says it still can. An undo passes over an
-   * Apply that waits for a closed owner, as a press does.
+   * guarded step: that one runs alone, once its guard says it still can.
    */
   private runNative(direction: "undo" | "redo", source: Entry[], editor: Editor): boolean {
     const segment: Extract<Entry, { kind: "yjs" }>[] = [];
     if (direction === "undo") {
       for (let index = source.length - 1; index >= 0; index--) {
         const entry = source[index];
-        if (entry && passedOver(entry)) continue;
         if (!entry || entry.kind === "apply") break;
         const guard = entry.item.meta.get(GUARD_META) as Guard | undefined;
         if (guard && segment.length) break;

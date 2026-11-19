@@ -4,6 +4,7 @@ import type {
   ApplyClickAnswer,
   ApplyClickObservation,
   ApplyClickResult,
+  RedoClick,
   UnapplyClick,
   UnapplyClickAnswer,
   UnapplyClickResult,
@@ -115,8 +116,10 @@ type ScheduledApplyHandle = ApplyCommandHandle & {
   inForce: ApplyCommand;
   reversal: Promise<UnapplyClickOutcome>;
   replaySelection: string[];
-  /** The Un-Apply took this item's tree change back, so a Redo carries the tree cut again. */
+  /** The Un-Apply took this item's tree change back, so the Redo's painting shows it. */
   replayTree: boolean;
+  /** The Un-Apply sent, which the Redo names; null when it was cancelled before it was sent. */
+  unapplyId: string | null;
   pendingReplay: ApplyCommand | null;
 };
 
@@ -150,6 +153,7 @@ export class ApplyClickQueue {
       send(body: ApplyClick): Promise<ApplyClickAnswer>;
       lookup(body: ApplyClick): Promise<ApplyClickObservation>;
       unapply?(body: UnapplyClick): Promise<UnapplyClickAnswer>;
+      redo?(body: RedoClick): Promise<ApplyClickAnswer>;
       changed(): void;
     },
   ) {}
@@ -185,7 +189,6 @@ export class ApplyClickQueue {
     intent(): void;
     /** A Redo's answer, landed or not: its item shows what of it stayed out. */
     replayed(answer: ApplyClickOutcome): void;
-    unapplyRefused(answer: UnapplyClickOutcome): void;
   }): { outcome: Promise<ApplyClickOutcome>; handle: ApplyCommandHandle } {
     const initial = this.queueApply(input.frozen);
     this.startFeedback();
@@ -202,19 +205,23 @@ export class ApplyClickQueue {
       reversal: Promise.resolve({ status: "cancelled" }),
       replaySelection: [...initial.body.groupIds],
       replayTree: initial.body.tree === true,
+      unapplyId: null,
       pendingReplay: null,
       undo: () => {
         input.intent();
         handle.pendingReplay = null;
         if (this.cancel(handle.current.body.commandId)) {
+          handle.unapplyId = null;
           handle.reversal = Promise.resolve({ status: "cancelled" });
           return handle.reversal;
         }
         handle.replaySelection = [...handle.current.body.groupIds];
         handle.replayTree = handle.current.body.tree === true;
+        const unapplyId = crypto.randomUUID();
+        handle.unapplyId = unapplyId;
         const inverse = this.queueUnapply({
           body: {
-            commandId: crypto.randomUUID(),
+            commandId: unapplyId,
             applyCommandId: handle.current.body.commandId,
           },
           draftId: handle.current.body.draftId ?? "",
@@ -247,21 +254,26 @@ export class ApplyClickQueue {
           },
         });
         handle.reversal = inverse.outcome;
-        return inverse.heard.then((answer) => {
-          if (answer.status === "unsent") input.unapplyRefused(answer);
-          return answer;
-        });
+        return inverse.heard;
       },
       redo: () => {
         input.intent();
         const before = handle.inForce;
+        const { unapplyId } = handle;
+        const sendRedo = this.port.redo?.bind(this.port);
         const replay = this.queueApply({
+          // What the review shows at once and records under its id. The Redo sent names only the
+          // Un-Apply: the server works out what it took back. An Apply cancelled before it was
+          // sent has no Un-Apply: the click goes again as it was frozen.
           body: {
             ...handle.current.body,
             commandId: crypto.randomUUID(),
             groupIds: [...handle.replaySelection],
             tree: handle.replayTree || undefined,
           },
+          ...(unapplyId && sendRedo
+            ? { send: (body) => sendRedo({ commandId: body.commandId, redoOf: unapplyId }) }
+            : {}),
           optimistic: handle.current.optimistic,
           patched: input.patchFor(handle.replaySelection),
           // Waits for the Un-Apply: one that did not land leaves the Apply standing, so the Redo

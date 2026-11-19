@@ -10,16 +10,8 @@ import type {
   ApplyItemResult,
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
-import {
-  CLOSED_OWNER_WHYS,
-  type ClosedOwnerWhy,
-  type LeftOutWhy,
-  type Settlement,
-} from "@meridian/contracts/commands";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ApplyStep, Unapplied } from "@/core/project-tree/tree-undo";
-import type { AppliedCommand } from "./apply-history";
+import type { ApplyEntries } from "./apply-history";
 import type { DiscardRestores } from "./discard-restores";
 
 export type NoticeSurface =
@@ -41,59 +33,6 @@ export type NoticeSubject =
   | { kind: "drafts"; count: number }
   | { kind: "deletes"; count: number };
 
-/**
- * What one settlement line says, for the screen. `already` and `restored` paint the result
- * quietly; `overtaken` names the command that settled the item first (the screen offers its
- * reverse); `left_out` says why part of it stayed out.
- */
-export type SettledView =
-  | { kind: "already"; state: string }
-  | { kind: "restored" }
-  | { kind: "overtaken"; state: string; by: string }
-  | { kind: "left_out"; why: string };
-
-/**
- * The one place a settlement becomes what is shown. Null: a `returned`, which no command surface
- * says: the closed owner's drafts stay as they are.
- */
-export function viewOf(one: Settlement): SettledView | null {
-  switch (one.rule) {
-    case "already":
-      return { kind: "already", state: one.state };
-    case "restored":
-      return { kind: "restored" };
-    case "overtaken":
-      return { kind: "overtaken", state: one.state, by: one.by };
-    case "left_out":
-      return { kind: "left_out", why: one.why };
-    case "returned":
-      return null;
-  }
-}
-
-/**
- * Every line of a flat answer (Discard, Restore, Un-Apply) that names `itemId`, or every line
- * when it is left out. A line that names no item is about the whole command and always counts.
- */
-export function settledOf(
-  settled: readonly Settlement[] | undefined,
-  itemId?: string,
-): SettledView[] {
-  return (settled ?? []).flatMap((one) => {
-    if (itemId !== undefined && !names(one, itemId)) return [];
-    const view = viewOf(one);
-    return view ? [view] : [];
-  });
-}
-
-function names(one: Settlement, itemId: string): boolean {
-  if (one.rule === "already" || one.rule === "overtaken")
-    return one.item === undefined || one.item === itemId;
-  if (one.rule === "restored") return one.documentId === itemId;
-  if (one.rule === "left_out") return one.items.includes(itemId);
-  return true;
-}
-
 /** An Apply's answer for one item: each half landed or settled. */
 export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult | undefined {
   return answer.items.find((item) => item.node === node);
@@ -110,24 +49,15 @@ export function textUndoneOf(answer: UnapplyClickResult, node: string): string[]
   return answer.textUndone.find((text) => text.node === node)?.groupIds ?? [];
 }
 
-/**
- * What of an Apply landed, command-wide: its Undo step's two halves, and what the tree half did
- * to each node it landed on, from where live had it before and after (`did`).
- */
-export type TreeDid = "moved" | "renamed" | "restored" | "deleted" | "created" | null;
-
+/** What of an Apply landed, command-wide: its Undo step's two halves. */
 export type ApplyHalves = {
   text: boolean;
   tree: boolean;
   restores: string[];
-  did: Record<string, TreeDid>;
 };
 
 export function halvesOf(answer: ApplyClickResult): ApplyHalves {
   return {
-    did: Object.fromEntries(
-      answer.items.flatMap((item) => (item.tree?.landed ? [[item.node, didOf(item)]] : [])),
-    ),
     text: answer.items.some((item) => item.text?.landed),
     tree: answer.items.some((item) => item.tree?.landed),
     restores: answer.items.flatMap((item) =>
@@ -137,46 +67,10 @@ export function halvesOf(answer: ApplyClickResult): ApplyHalves {
 }
 
 /**
- * What an Un-Apply took back, the one place its answer becomes what every surface says. Something
- * taken back with nothing left or held is `all`; with something left or held, `partly`; nothing
- * taken back but something left or held, `nothing`; neither, `already` (the server's `already
- * unapplied`). Each node a `left_out` line names keeps that line's reason and half (`leftOut`),
- * read here, not through `settledOf`, whose views drop the nodes they name. `held` is what stayed for a closed
- * owner, as the answer says it; an answer stored before it had one holds nothing.
- */
-export function unappliedOf(answer: UnapplyClickResult): Unapplied {
-  const took = answer.textUndone.length > 0 || answer.treeUndone.length > 0;
-  const leftOut = new Map<string, { node: string; why: LeftOutWhy; tree: boolean }>();
-  for (const one of answer.settled ?? [])
-    if (one.rule === "left_out")
-      for (const node of one.items)
-        if (!leftOut.has(node)) leftOut.set(node, { node, why: one.why, tree: one.tree === true });
-  const held = answer.held ?? [];
-  const stayed = leftOut.size > 0 || held.length > 0;
-  return {
-    taken: took ? (stayed ? "partly" : "all") : stayed ? "nothing" : "already",
-    leftOut: [...leftOut.values()],
-    held,
-  };
-}
-
-function didOf(item: ApplyItemResult): TreeDid {
-  const tree = item.tree;
-  if (tree?.restore || tree?.settled?.some((one) => one.rule === "restored")) return "restored";
-  const { from, to } = tree?.transition ?? { from: undefined, to: undefined };
-  if (from === undefined) return null;
-  if (from === null) return "created";
-  if (to === null || to === undefined) return "deleted";
-  const parent = (uri: string) => uri.replace(/\/?[^/]*\/?$/, "");
-  return parent(from) === parent(to) && from !== to ? "renamed" : "moved";
-}
-
-/**
  * What a Discard's answer says of the documents and folders it was sent: `untaken`, the ones it
- * found settled already (an earlier Discard's, quietly, or an Apply's), and of those
- * `appliedFirst`, the ones an Apply took before it. A notice lists only what it took.
+ * found settled already (an earlier Discard's, or an Apply's). A notice lists only what it took.
  */
-export type DiscardTook = { untaken: readonly string[]; appliedFirst: readonly string[] };
+export type DiscardTook = { untaken: readonly string[] };
 
 export type DiscardUndoAnswer = {
   answer: "ok" | "failed" | "gone";
@@ -228,15 +122,9 @@ export type DraftNotice =
       subject: NoticeSubject;
       /** What the Discard took (its answer's word, once it came): the rows its Undo brings back. */
       documentIds: readonly string[];
-      /** What it was sent that an Apply took first: each says so where the writer pressed. */
-      appliedFirst: readonly string[];
       /** A single draft's review, which an Undo may return main to. */
       review: ReviewFileTarget | null;
-      /**
-       * `bounced`: the Discard itself discarded nothing, because an Apply took all of it first
-       * (`appliedFirst`); no Undo, and it ends after `BOUNCE_SHOWN_MS`.
-       */
-      status: "ready" | "undoing" | "failed" | "bounced";
+      status: "ready" | "undoing" | "failed";
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
       /** `ok` once the server lists every restored draft again; `unlisted` if one never was. */
@@ -248,37 +136,21 @@ export type DraftNotice =
       /** What the Apply did that the writer can't see from the rows alone, each on its document. */
       facts: readonly AppliedFact[];
       dismiss(): void;
-    })
-  | (Base & {
-      /** Ctrl+Z on an Apply in an editor didn't reach the server: that document says so, with its Retry. */
-      kind: "unapplied";
-      retry(): void;
-      dismiss(): void;
     });
-
-/** An Apply's Undo: the Apply (`AppliedCommand`), whose state says whether its Undo is offered. */
-export type AppliedUndo = { command: AppliedCommand };
 
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
- * only its row says), landed somewhere new (`uri`), came back to its area (`scheme`, its source),
- * or was applied along with the documents picked
- * (`also`: its old and new names). `step`: the Apply's Undo, while it can be taken back.
+ * only its row's Undo shows), or landed somewhere new (`uri`). `step`: the Apply's Undo, while it
+ * can be taken back.
  */
-export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
-  | { kind: "applied"; name: string; scheme: ProjectContextTreeScheme | null }
+export type AppliedFact = { documentId: string; step?: ApplyEntries } & (
+  | { kind: "applied"; name: string }
   | { kind: "landed"; uri: string; name: string }
-  | { kind: "restored"; name: string; scheme: ProjectContextTreeScheme | null }
-  | { kind: "also"; from: string; to: string }
 );
 
 /** A notice with something to say on a line: a plain Apply's is said only on its rows. */
 export const hasLine = (notice: DraftNotice): boolean =>
-  notice.kind === "applied"
-    ? notice.facts.some((fact) => fact.kind !== "applied")
-    : notice.kind === "unapplied" || notice.status !== "bounced";
-
-const BOUNCE_SHOWN_MS = 6_000;
+  notice.kind !== "applied" || notice.facts.some((fact) => fact.kind !== "applied");
 
 type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
 
@@ -288,9 +160,6 @@ export class DraftNotices {
   private readonly parts = new Map<number, DiscardPart[]>();
   /** The notice's own Undo: in flight, or a tree share that failed. A Discard's progress is `DiscardRestores`'. */
   private readonly pressed = new Map<number, "undoing" | "failed">();
-  private readonly bounceTimers = new Map<number, ReturnType<typeof setTimeout>>();
-  /** Where a Discard notice says it discarded nothing, when not where it shows (`bounceSurface`). */
-  private readonly bounceTo = new Map<number, NoticeSurface>();
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
   private revision = 0;
@@ -323,13 +192,6 @@ export class DraftNotices {
   forDocument(projectId: string, documentId: string | null): DraftNotice | null {
     for (const notice of this.notices.values())
       if (
-        notice.kind === "unapplied" &&
-        notice.projectId === projectId &&
-        notice.surface.kind === "band" &&
-        notice.surface.documentId === documentId
-      )
-        return notice;
-      else if (
         notice.kind === "discarded" &&
         notice.projectId === projectId &&
         (notice.surface.kind === "band"
@@ -384,35 +246,6 @@ export class DraftNotices {
     this.publish();
   }
 
-  /**
-   * What Ctrl+Z on an Apply in `documentId`'s editor answered, on that document's identity row:
-   * what stayed, or that it didn't go through. Taken back whole, the text says it.
-   */
-  showPress(input: {
-    projectId: string;
-    ownerKey: string;
-    documentId: string;
-    step: ApplyStep & { press(from: null): Promise<unknown> };
-    answer: Unapplied | { taken: "failed" };
-  }): () => void {
-    const { step, answer } = input;
-    if (this.closed || answer.taken !== "failed") return () => {};
-    const held = this.notices.get(input.ownerKey);
-    if (held) this.drop(held);
-    const id = this.nextId++;
-    this.notices.set(input.ownerKey, {
-      kind: "unapplied",
-      id,
-      projectId: input.projectId,
-      ownerKey: input.ownerKey,
-      surface: { kind: "band", documentId: input.documentId },
-      retry: () => void step.press(null),
-      dismiss: () => this.endIf(input.ownerKey, id),
-    });
-    this.publish();
-    return () => this.endIf(input.ownerKey, id);
-  }
-
   /** The facts an Apply adds to the owner's applied notice, if it is the one showing. */
   appliedFacts(ownerKey: string) {
     const held = this.notices.get(ownerKey);
@@ -423,8 +256,6 @@ export class DraftNotices {
     projectId: string;
     ownerKey: string;
     surface: NoticeSurface;
-    /** Where it says it discarded nothing, as a closed owner's bounce would (a change card's). */
-    bounceSurface?: NoticeSurface;
     parts: readonly DiscardPart[];
   }): number | null {
     if (this.closed || input.parts.length === 0) {
@@ -435,7 +266,6 @@ export class DraftNotices {
     if (held) this.drop(held);
     const id = this.nextId++;
     this.parts.set(id, [...input.parts]);
-    if (input.bounceSurface) this.bounceTo.set(id, input.bounceSurface);
     const { ownerKey } = input;
     this.notices.set(ownerKey, {
       kind: "discarded",
@@ -445,7 +275,6 @@ export class DraftNotices {
       surface: input.surface,
       left: null,
       status: "ready",
-      appliedFirst: [],
       ...this.subjectOf(input.parts),
       undo: () => this.undo(ownerKey, id),
       dismiss: () => this.endIf(ownerKey, id),
@@ -456,8 +285,7 @@ export class DraftNotices {
 
   /**
    * What a Discard's answer says it took (`DiscardTook`): the share's rows it didn't take leave
-   * the notice, and the ones an Apply took first say so. A notice left with nothing to bring back
-   * but something applied first says only that, as a bounce does.
+   * the notice, and a notice left with nothing to bring back ends.
    */
   answered(handle: DiscardUndo, took: DiscardTook) {
     const untaken = new Set(took.untaken);
@@ -478,57 +306,14 @@ export class DraftNotices {
           covers,
           ...(part.count !== undefined ? { count: covers.length } : {}),
         };
-      const appliedFirst = [...new Set([...notice.appliedFirst, ...took.appliedFirst])];
-      if (parts.length === 0) {
-        const surface = this.bounceTo.get(id) ?? notice.surface;
-        this.forget(notice);
-        if (appliedFirst.length > 0)
-          this.bounce({
-            id,
-            projectId: notice.projectId,
-            ownerKey: notice.ownerKey,
-            surface,
-            documentIds: [],
-            appliedFirst,
-          });
-      } else {
-        this.notices.set(notice.ownerKey, { ...notice, appliedFirst, ...this.subjectOf(parts) });
+      if (parts.length === 0) this.forget(notice);
+      else {
+        this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf(parts) });
         this.settle(notice.ownerKey, id);
       }
       this.publish();
       return;
     }
-  }
-
-  private bounce(input: {
-    id: number;
-    projectId: string;
-    ownerKey: string;
-    surface: NoticeSurface;
-    documentIds: readonly string[];
-    appliedFirst: readonly string[];
-  }) {
-    const { id, ownerKey } = input;
-    this.notices.set(ownerKey, {
-      kind: "discarded",
-      id,
-      projectId: input.projectId,
-      ownerKey,
-      surface: input.surface,
-      subject: { kind: "drafts", count: input.documentIds.length },
-      documentIds: input.documentIds,
-      appliedFirst: input.appliedFirst,
-      review: null,
-      left: null,
-      status: "bounced",
-      undo: async () => "failed",
-      dismiss: () => this.endIf(ownerKey, id),
-    });
-    this.bounceTimers.set(
-      id,
-      setTimeout(() => this.endIf(ownerKey, id), BOUNCE_SHOWN_MS),
-    );
-    this.publish();
   }
 
   /**
@@ -692,9 +477,6 @@ export class DraftNotices {
     this.notices.delete(notice.ownerKey);
     this.parts.delete(notice.id);
     this.pressed.delete(notice.id);
-    clearTimeout(this.bounceTimers.get(notice.id));
-    this.bounceTimers.delete(notice.id);
-    this.bounceTo.delete(notice.id);
   }
 
   private publish() {

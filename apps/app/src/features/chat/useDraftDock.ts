@@ -8,7 +8,7 @@ import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { hasLine } from "@/features/draft-review/draft-notices";
-import { type BranchCommandFailure, isNote } from "@/features/draft-review/review-command-types";
+import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   listedItemChanges,
@@ -63,8 +63,6 @@ export function useDraftDock({
   const here =
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
   const notice = here && hasLine(here) ? here : null;
-  // A Discard an Apply took first: a chip on the strip's controls, no line of its own.
-  const bounce = here && !hasLine(here) ? here : null;
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
@@ -220,7 +218,7 @@ export function useDraftDock({
 
   const fileFailures = (file: DockFile): BranchCommandFailure[] => {
     const failure = controller.owner.state(file.row.draft.itemKey).failure;
-    return failure && !isNote(failure) ? [failure] : [];
+    return failure ? [failure] : [];
   };
 
   return {
@@ -228,7 +226,6 @@ export function useDraftDock({
     controller,
     files,
     notice,
-    bounce,
     mounted: files.length > 0 || notice !== null,
     changeCount: totalChanges(files),
     /** The Changes list's items the strip's commands leave. */
