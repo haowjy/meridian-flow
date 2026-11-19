@@ -48,7 +48,8 @@ Yjs item id:
 
 - **`changeState`**: `stands` when the text holds the whole change, the merge can take it out
   (`contentMerge(after, before, window)` has no conflict, changes the window, and putting the change
-  back on its result gives the window again) and taking it out adds no pending change; `altered` when
+  back on its result gives the window again) and taking it out adds no pending change (checked on the
+  result `takeOut` writes, when that has no conflict, so the check and the press are one merge); `altered` when
   the text holds it changed, or when taking it out would leave Changes with a group it has not got (a
   group cut in two, or one sitting where none went); `out` when it is gone. `takeOut` writes the
   inverse for a change that stands. Undo is offered, and a press writes, only for `stands`: the
@@ -67,10 +68,12 @@ keyed on the blocks a read looked at lets a re-read after a write elsewhere skip
 
 Known limits: the windowed read names fewer pending changes than the whole-document one (the whole read
 re-aligns the document tail). At four fresh seeds of 4,000 rows each, no Undo added a pending change,
-none left a change standing, and no second press changed the text; about one row in five of that
-stress workload (a reply plus one to four later edits, many in the same paragraph) loses an Undo to
-the offer rule, mostly because taking the change out would cut a neighbouring pending change in two.
-Two of 16,000 rows miss a pending change the edit caused (after a Live move and join); the change
+none left a change standing, and no second press changed the text; about 2 % of rows (64 to 86 per
+4,000) of that stress workload (a reply plus one to four later edits, many in the same paragraph) lose
+an Undo to the offer rule, mostly where taking the change out would cut a neighbouring pending change
+in two (the same words in two groups, which Changes would show as one card more). Dropping that rule
+adds real pending changes (8 rows per 4,000 at seed 300000). Four of 16,000 rows miss a pending
+change the edit caused (after a Live move and a join or split); the change
 then reads altered, so no Undo is offered. An Undo puts back `before` as the AI saw it, not as the
 review base holds it now; restoring the base's version of the touched blocks was tried and made a
 change still read as standing after its Undo more often, so it was not kept.

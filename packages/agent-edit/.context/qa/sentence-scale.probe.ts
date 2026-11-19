@@ -440,8 +440,11 @@ it("sentence-scale differential", { timeout: 1_800_000 }, () => {
   const hit = (re: RegExp) => Object.entries(table).filter(([k]) => re.test(k)).reduce((n, [, v]) => n + v, 0);
   // A change the edit caused and no change of it names is a rare edge case after Live moves and joins
   // paragraphs (about one row in 8,000 at fresh seeds): the change reads altered, so no Undo is
-  // offered and Discard in Changes still takes it. Hold the rate, not zero.
-  expect(hit(/MISSED/), "membership misses almost no change").toBeLessThanOrEqual(Math.ceil(ROWS / 4000) * 2);
+  // offered and Discard in Changes still takes it. Hold the rate, not zero. Count the windowed line only:
+  // the whole-document line repeats the same row.
+  expect(hit(/^membership.*MISSED/), "membership misses almost no change").toBeLessThanOrEqual(Math.ceil(ROWS / 4000) * 2);
+  // About 2% of rows hide an Undo; a walk that stops advancing past an unpartnered group hides 20%.
+  expect(hit(/Undo hidden/), "Undo is hidden only where it would add a pending change").toBeLessThanOrEqual(ROWS * 0.03);
   expect(hit(/THROW|GLUED|AFTER UNDO|SECOND PRESS|UNDO ADDED|NOT in Changes|state stands \/ not in Changes/), "Undo is safe and every proposed change is in Changes").toBe(0);
 });
 

@@ -214,10 +214,14 @@ function unpaired(before: readonly string[], after: readonly string[]): number[]
       lcs[i][j] =
         before[i] === after[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
   const out: number[] = [];
+  let i = 0;
   let j = 0;
-  for (let i = 0; i < n; i++) {
-    if (j < m && before[i] === after[j] && lcs[i][j] === lcs[i + 1][j + 1] + 1) j++;
-    else out.push(i);
+  while (i < n) {
+    if (j < m && before[i] === after[j] && lcs[i][j] === lcs[i + 1][j + 1] + 1) {
+      i++;
+      j++;
+    } else if (j < m && lcs[i][j + 1] > lcs[i + 1][j]) j++;
+    else out.push(i++);
   }
   return out;
 }
@@ -383,6 +387,12 @@ function baseCut(
   return last - first === paired.length - 1 && edgesPair ? base.slice(first, last + 1) : null;
 }
 
+/** What the press writes, when it can run; null when the removal conflicts. */
+const pressedBlocks = (schema: Schema, change: EditChange, at: Window) => {
+  const out = removal(schema, change, at.blocks);
+  return out.conflicts.length ? null : out.blocks;
+};
+
 const forcedBlocks = (schema: Schema, change: EditChange, at: Window) =>
   contentMerge(schema, change.after, at.blocks, change.before).blocks;
 
@@ -398,10 +408,11 @@ function forcedOut(
   const before = projectReview(diffBlocks(cut, at.blocks));
   const after = projectReview(diffBlocks(cut, forced));
   const windowed = before.groups.map(hashOf);
+  const pressed = pressedBlocks(reading.schema, change, at);
   return {
     windowed,
     gone: unpaired(windowed, after.groups.map(hashOf)),
-    added: adds(before, after),
+    added: adds(before, pressed ? projectReview(diffBlocks(cut, pressed)) : after),
   };
 }
 
@@ -410,9 +421,13 @@ function wholeRemoval(reading: Reading, change: EditChange, at: Window) {
   const forced = forcedBlocks(reading.schema, change, at);
   if (blocksEqual(forced, at.blocks)) return { gone: [] as number[], added: false };
   const after = projectReview(diffBlocks(reading.base, at.put(forced)));
+  const pressed = pressedBlocks(reading.schema, change, at);
   return {
     gone: unpaired(reading.hashes, after.groups.map(hashOf)),
-    added: adds(reading.pending, after),
+    added: adds(
+      reading.pending,
+      pressed ? projectReview(diffBlocks(reading.base, at.put(pressed))) : after,
+    ),
   };
 }
 

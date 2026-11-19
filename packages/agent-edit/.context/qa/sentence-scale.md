@@ -28,7 +28,10 @@ It fails when:
 Undo is offered for a change only when taking it out changes the draft and leaves Changes' pending
 set no bigger: every group with no partner by id must sit where a group that went sat (or hold its
 words), and no group may be cut in two. The row `Undo hidden: it would add a pending change` counts
-the changes that lose their Undo to this rule.
+the changes that lose their Undo to this rule: 64 to 86 per 4,000 rows at fresh seeds. A much higher
+count means `unpaired` stopped advancing past an unpartnered group, which makes every later group
+read as new. The membership bound counts the windowed `membership` line only; the `WHOLE-doc` line
+repeats the same row.
 
 The windowed read may name fewer than the whole-document one: the whole-document diff re-aligns
 the tail of the document when a change is forced out and names a group there that neither the
