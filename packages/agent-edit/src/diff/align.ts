@@ -390,10 +390,21 @@ function blockIdPairs(bt: Tok[], b0: number, b1: number, st: Tok[], s0: number, 
 
 /**
  * A pure insertion or deletion next to equal tokens can sit at several equivalent places. Pick one
- * by rule so both sides' diffs agree: whole blocks at block boundaries when possible, else leftmost.
+ * by rule so both sides' diffs agree: whole blocks at block boundaries when possible, else the
+ * first place that starts a sentence (so a sentence added after a full stop is not ". Text" before
+ * it, and two sentences that end alike do not share their full stop), else leftmost.
  */
 function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
   const boundary = (p: number) => p === bt.length || isBlockTok(bt[p]);
+  const coreAt = (k: number) => {
+    const t = bt[k];
+    return t?.kind === "text" ? t.core : "";
+  };
+  const sentenceStart = (p: number) => {
+    let k = p - 1;
+    while (k >= 0 && /^["'\u201d\u2019)\]]+$/.test(coreAt(k))) k--;
+    return k < 0 || isBlockTok(bt[k]) || /[.!?\u2026]$/.test(coreAt(k));
+  };
   for (let i = 0; i < hunks.length; i++) {
     const h = hunks[i];
     const lo = i > 0 ? hunks[i - 1].to : 0;
@@ -412,7 +423,10 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
         sf++;
         cands.push([p, sf]);
       }
-      const best = cands.find(([q, s]) => boundary(q) && isBlockTok(st[s])) ?? cands.at(-1)!;
+      const best =
+        cands.find(([q, s]) => boundary(q) && isBlockTok(st[s])) ??
+        cands.find(([q]) => sentenceStart(q)) ??
+        cands[0];
       h.from = h.to = best[0];
       h.sfrom = best[1];
       h.sto = best[1] + n;
@@ -431,7 +445,10 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
         sf++;
         cands.push([p, sf]);
       }
-      const best = cands.find(([q]) => isBlockTok(bt[q]) && boundary(q + n)) ?? cands.at(-1)!;
+      const best =
+        cands.find(([q]) => isBlockTok(bt[q]) && boundary(q + n)) ??
+        cands.find(([q]) => sentenceStart(q)) ??
+        cands[0];
       h.from = best[0];
       h.to = best[0] + n;
       h.sfrom = h.sto = best[1];

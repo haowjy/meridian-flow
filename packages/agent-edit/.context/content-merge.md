@@ -122,7 +122,7 @@ side where the same two tokens are neighbours is how the patch is put back, not 
 | Rule | What it does | Code | Case |
 |---|---|---|---|
 | `draft-wins-space` | Both sides changed the space before one word differently: the draft's | `settleWhitespace` | `draft-wins-space` |
-| `space-added-between-words` | A word that no side had after the token before it gets a space when that token is a word or ends a clause or sentence, except in scripts written without spaces | `settleWhitespace` | `space-added-after-sentence` |
+| `space-added-between-words` | A word that no side had after the token before it gets a space when that token is a word or ends a clause or sentence, except in scripts written without spaces | `settleWhitespace` | `coords` |
 
 **Shape** (`buildBlocks` in `diff/tokens.ts`; review's `composeHunks` shares it and does not count)
 
@@ -141,10 +141,10 @@ a count from production says it never fires.
 - `draftAbsorbsLive` decides that an overlap is no clash because the draft's text already holds live's
   change. It is part of how `draft-wins-text` counts.
 - The diff's own choices of where a change sits (`align`: `separateBlocks`, `canonicalize`,
-  `refine`) run on every diff, review's too. `canonicalize` puts a pure insertion or deletion at the
-  rightmost of its equal places, so a sentence added after a full stop sits after it, not as ". Text"
-  before it: the writer's words typed beside it then land at the same place and a punctuation mark
-  is not shared between two sentences.
+  `refine`) run on every diff, review's too. `canonicalize` puts a pure insertion or deletion, among its equal places, at the first that
+  starts a sentence (after a full stop, `!`, `?` or a block start), else the leftmost: a sentence
+  added after a full stop sits after it, not as ". Text" before it, so the writer's words typed
+  beside it begin at the same place and a full stop is not shared between two sentences.
 - The size limits (`coarse-diff`: a paragraph or run of changed paragraphs past 1,000 tokens, a
   diff past 4,000 keys, pairing past 40,000 block pairs) turn a diff into one whole replacement, so a
   change on both sides is one clash and the draft's text stands. `diff/tokens.ts` and `diff/align.ts`

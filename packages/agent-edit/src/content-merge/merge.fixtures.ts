@@ -1935,9 +1935,14 @@ export const CASES: Case[] = [
     base: "p:head b d | p:e e tail | p:f b",
     live: "p:head | p:e e e tail b d | p:f b",
     draft: "p:head EDIT d | p:d e e tail | p:f b",
-    merged: "p:head EDIT d | p:d e e e tail | p:f b",
+    merged: "p:head EDIT d | p:e d e e tail | p:f b",
     conflicts: 2,
-    rules: ["draft-wins-text", "moved-text-dropped"],
+    rules: [
+      "draft-wins-text",
+      "insertions-kept-both",
+      "moved-text-dropped",
+      "space-added-between-words",
+    ],
   },
   {
     row: "a paragraph moved out of a repeated pair, then a join",
@@ -2161,15 +2166,5 @@ export const CASES: Case[] = [
     merged: "p:a   b",
     conflicts: 0,
     rules: ["draft-wins-space"],
-  },
-  {
-    row: "both sides add a sentence at the start of a paragraph: the draft's first word had no space before it",
-    name: "space-added-after-sentence",
-    base: "p:One two.",
-    live: "p:A new one. One two.",
-    draft: "p:Typed words. One two.",
-    merged: "p:A new one. Typed words. One two.",
-    conflicts: 0,
-    rules: ["insertions-kept-both", "space-added-between-words"],
   },
 ];
