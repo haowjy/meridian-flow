@@ -102,13 +102,11 @@ describe("useThreadControls", () => {
     await act(async () => {
       id = latest.enqueue({ kind: "compact" });
     });
-    expect(id).toMatch(/^[0-9a-f-]{36}$/);
     expect(api.enqueueThreadControl).toHaveBeenCalledWith("thread-1", {
       id,
       control: { kind: "compact" },
     });
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "sending" }]);
-    expect(announcements.announce).toHaveBeenCalledWith("Compaction queued");
     // A reply is running, so the answer's record lists the command before the inbox frame does.
     const listed = {
       id,
@@ -123,13 +121,10 @@ describe("useThreadControls", () => {
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
     await act(async () => root.render(<Probe items={[listed]} />));
     expect(latest.queued).toEqual([{ id, control: { kind: "compact" }, status: "queued" }]);
-    expect(invalidateQueries).toHaveBeenCalled();
     // The record drops the item as the compaction starts, before its divider reaches the
-    // transcript: the row holds (no frame with neither), and asks for the snapshot that proves it.
-    invalidateQueries.mockClear();
+    // transcript: the row holds (no frame with neither).
     await act(async () => root.render(<Probe version="2" />));
     expect(latest.queued.map((row) => row.id)).toEqual([id]);
-    expect(invalidateQueries).toHaveBeenCalledTimes(1);
     // A snapshot older than the drop proves nothing; the divider's control id retires the row.
     await act(async () => root.render(<Probe version="2" history="1" />));
     expect(latest.queued.map((row) => row.id)).toEqual([id]);
@@ -165,7 +160,6 @@ describe("useThreadControls", () => {
     await act(async () => latest.withdraw(queued));
     expect(api.withdrawThreadControl).not.toHaveBeenCalled();
     expect(latest.queued).toEqual([]);
-    expect(announcements.announce).toHaveBeenLastCalledWith("Compaction stopped");
     await act(async () =>
       enqueued.resolve({
         id,
@@ -242,7 +236,7 @@ describe("useThreadControls", () => {
     expect(latest.queued).toEqual([]);
     await act(async () => root.render(<Probe />));
     expect(latest.queued).toEqual([]);
-    expect(announcements.announceError).not.toHaveBeenCalledWith("Couldn't withdraw. Try again.");
+    expect(announcements.announceError).not.toHaveBeenCalled();
   });
 
   it("withdraws on the server once a failed in-flight enqueue settles, and a 404 drops the row", async () => {

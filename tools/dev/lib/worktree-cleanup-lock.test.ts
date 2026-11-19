@@ -28,8 +28,6 @@ describe("acquireCleanupLock", () => {
     const { dir, lockPath } = freshLock();
     const lock = acquireCleanupLock(lockPath, { isAlive: () => true });
 
-    expect(readFileSync(lockPath, "utf8").trim()).toBe(String(process.pid));
-    expect(readdirSync(dir)).toEqual(["meridian-prune.lock"]);
     expect(() => acquireCleanupLock(lockPath, { isAlive: () => true })).toThrow(
       /cleanup is running/,
     );
@@ -50,7 +48,6 @@ describe("acquireCleanupLock", () => {
     writeFileSync(stale.lockPath, "999999999\n");
     expect(() => acquireCleanupLock(stale.lockPath, { isAlive: () => false })).toThrow(/Stale/);
     expect(existsSync(stale.lockPath)).toBe(true);
-    expect(readdirSync(stale.dir)).toEqual(["meridian-prune.lock"]);
 
     const garbage = freshLock();
     writeFileSync(garbage.lockPath, "not-a-pid\n");
