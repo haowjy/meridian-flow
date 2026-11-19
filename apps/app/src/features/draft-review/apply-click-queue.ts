@@ -60,7 +60,6 @@ type ApplyCommand = FrozenApply & {
   kind: "apply";
   sent: boolean;
   attempts: number;
-  stalled: boolean;
   closed: boolean;
   /** Its `acknowledged` settled: it may be sent once it is the head. */
   released: boolean;
@@ -87,7 +86,6 @@ export type UnapplyCommand = {
   groupIds: Set<string>;
   sent: boolean;
   attempts: number;
-  stalled: boolean;
   answer?: UnapplyClickResult;
   /** The server's answer as it arrives, or how the command ended without one. */
   heard: Promise<UnapplyClickOutcome>;
@@ -166,10 +164,6 @@ export class ApplyClickQueue {
     return this.commands.filter((command): command is UnapplyCommand => command.kind === "unapply");
   }
 
-  get stalled(): boolean {
-    return this.commands[0]?.stalled ?? false;
-  }
-
   get pending(): boolean {
     return this.commands.length > 0;
   }
@@ -186,9 +180,6 @@ export class ApplyClickQueue {
   enqueueHistory(input: {
     frozen: FrozenApply;
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    intent(): void;
-    /** A Redo's answer, landed or not: its item shows what of it stayed out. */
-    replayed(answer: ApplyClickOutcome): void;
   }): { outcome: Promise<ApplyClickOutcome>; handle: ApplyCommandHandle } {
     const initial = this.queueApply(input.frozen);
     this.startFeedback();
@@ -208,7 +199,6 @@ export class ApplyClickQueue {
       unapplyId: null,
       pendingReplay: null,
       undo: () => {
-        input.intent();
         handle.pendingReplay = null;
         if (this.cancel(handle.current.body.commandId)) {
           handle.unapplyId = null;
@@ -257,7 +247,6 @@ export class ApplyClickQueue {
         return inverse.heard;
       },
       redo: () => {
-        input.intent();
         const before = handle.inForce;
         const { unapplyId } = handle;
         const sendRedo = this.port.redo?.bind(this.port);
@@ -296,7 +285,6 @@ export class ApplyClickQueue {
             handle.current === replay
           )
             handle.current = before;
-          if (answer.status !== "cancelled") input.replayed(answer);
           return answer;
         });
       },
@@ -343,7 +331,6 @@ export class ApplyClickQueue {
       ...frozen,
       sent: false,
       attempts: 0,
-      stalled: false,
       closed: false,
       released: false,
       roomEnded: frozen.madeAfterRoomEnded === true,
@@ -390,7 +377,6 @@ export class ApplyClickQueue {
       groupIds: new Set(input.groupIds),
       sent: false,
       attempts: 0,
-      stalled: false,
       heard,
       hear,
       outcome,
@@ -416,15 +402,6 @@ export class ApplyClickQueue {
     } else if (head?.kind === "unapply") {
       this.reconcileUnapply(head, records);
     } else this.port.changed();
-  }
-
-  retry(): void {
-    const head = this.commands[0];
-    if (!head?.stalled) return;
-    head.stalled = false;
-    head.attempts = 0;
-    this.port.changed();
-    void this.dispatch(head);
   }
 
   cancel(commandId: string): boolean {
@@ -517,7 +494,7 @@ export class ApplyClickQueue {
   }
 
   private async dispatch(command: Command): Promise<void> {
-    if (this.request || this.commands[0] !== command || command.stalled) return;
+    if (this.request || this.commands[0] !== command) return;
     if (command.kind === "apply") await this.dispatchApply(command);
     else await this.dispatchUnapply(command);
   }
@@ -545,7 +522,7 @@ export class ApplyClickQueue {
         this.moveOn();
         return;
       }
-      // Unanswered, like a send: tried again, then stalled with Retry.
+      // Unanswered, like a send: tried again, then given up as unsent.
       if (!answered) {
         this.scheduleRetry(command);
         return;
@@ -618,7 +595,7 @@ export class ApplyClickQueue {
       if (this.commands[0] === command) this.settle(command, { status: "cancelled" });
       return;
     }
-    if (this.request || this.commands[0] !== command || command.stalled) return;
+    if (this.request || this.commands[0] !== command) return;
     this.request = command;
     command.sent = true;
     let answer: UnapplyClickAnswer | undefined;
@@ -718,8 +695,13 @@ export class ApplyClickQueue {
 
   private scheduleRetry(command: Command): void {
     const delay = RETRY_DELAYS[command.attempts++];
-    if (delay === undefined) command.stalled = true;
-    else this.retryTimer = setTimeout(() => void this.dispatch(command), delay);
+    if (delay === undefined) {
+      // Out of retries: the click is given up as not sent, so the draft shows it still pending and
+      // the commands behind it go.
+      this.settle(command, { status: "unsent", commandId: command.body.commandId });
+      return;
+    }
+    this.retryTimer = setTimeout(() => void this.dispatch(command), delay);
     this.port.changed();
   }
 
@@ -741,6 +723,7 @@ export class ApplyClickQueue {
     return true;
   }
 
+  private settle(command: Command, result: ClickUnsent): void;
   private settle(command: ApplyCommand, result: ApplyClickOutcome): void;
   private settle(command: UnapplyCommand, result: UnapplyClickOutcome): void;
   private settle(command: Command, result: ApplyClickOutcome | UnapplyClickOutcome): void {

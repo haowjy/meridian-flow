@@ -16,10 +16,10 @@ stateDiagram-v2
   sent --> sent: a timeout, or the server says the first request is still running
   sent --> retrying: no usable answer
   retrying --> sent: after 1, 2, then 4 seconds, with the same body
-  retrying --> stalled: three retries used
-  stalled --> sent: the writer retries
+  retrying --> unsent: three retries used
   sent --> cancelled: the queue was closed and a lookup says the server never saw it
   settled --> [*]
+  unsent --> [*]
   cancelled --> [*]
 ```
 
@@ -27,7 +27,7 @@ stateDiagram-v2
   the room's typing and the click is sent: a whole-draft click as the whole cut, any other built
   again at the head from the draft read from the server (`cancelled` when none of its changes is
   there), and either settles on its answer. An Apply pressed after the room ended is built the
-  same way. The read waits like a send: unanswered, it is tried again, then stalls with Retry. A Redo whose Un-Apply did not land is `cancelled`:
+  same way. The read waits like a send: unanswered, it is tried again, then the click settles `unsent`. A Redo whose Un-Apply did not land is `cancelled`:
   the Apply it would repeat still stands.
 - **A click can be taken back only before it is sent.** Once `sent`, the server may have it,
   and the same command id is resent until the server answers.
@@ -36,8 +36,8 @@ stateDiagram-v2
   the head stays `sent`, shown as Applying. Only a resend that times out too, or any other
   lost answer, moves to `retrying`.
 - **No answer is not a refusal.** A thrown request, or an answer for another command id, keeps
-  the head where it is. A stalled head holds every later command behind it, because sending
-  them around it would apply changes out of order.
+  the head where it is. The head is tried again at 1, 2 and 4 seconds; after that it settles `unsent` (the change
+  is pending again, and the press shows the failure pill) and the commands behind it go.
 - **A frozen Apply settles when the server's record shows it**, not on the answer, when its own
   item's text landed. The server keeps a row for each applied command, and the command settles
   once its id is among them. A click with no frozen cut (a tree cut alone, or a whole-draft cut

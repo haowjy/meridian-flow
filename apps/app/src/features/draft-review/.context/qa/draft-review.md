@@ -129,9 +129,9 @@ server resolves on receipt.
 | Apply, type beside it, then Discard before the answer | Applied words stay in the optimistic base; the new typing reverts. |
 | Apply a deletion before the first answer | The base ends at the applied text; the deletion does not reappear. |
 | Room record before answer, then answer before record | No flicker or duplicate insertion; each head settles once. |
-| Refuse the middle click | Its change returns with an item failure, then the next frozen click sends. |
-| Refuse `{status:"refused",reason:"not_found"}` at desktop, narrow desktop, and coarse-pointer phone | The focused bar, identity row, Changes source status, and dock show the failure exactly once; paragraph and row tops do not move. |
-| Drop the answer | The same body and id retry after 1, 2, and 4 seconds; then the item shows Retry and no successor sends. |
+| Refuse the middle click | Its change returns and the pill shows, then the next frozen click sends. |
+| Refuse `{status:"refused",reason:"not_found"}` at desktop, narrow desktop, and coarse-pointer phone | One "Couldn't apply that." pill shows at the top centre and goes by itself; no bar, row or line shows the failure, and paragraph and row tops do not move. |
+| Drop the answer | The same body and id retry after 1, 2, and 4 seconds; then the click settles unsent, the change is pending again, one pill shows, and the next click sends. |
 | Slow ten clicks | Groups leave together; Applying uses reserved space after 500 ms and completion is FIFO. |
 | Navigate to the Changes source during the head | The owner receives the answer and record and settles without a mounted editor. |
 | Hold the final draft update, click Apply, archive the Work in another tab | The click is sent when the room ends; the server's `work_archived` answer reverts it silently, with no Applying/Retry limbo. Unarchive and reopen: a fresh Apply works. |
@@ -224,8 +224,7 @@ Open a draft with two separated changes and a move.
 5. Delay or drop an Apply answer, then press Undo and Redo while typing. Commands
    settle in order, typing remains enabled, and the review does not flash back
    before its authoritative room update.
-6. Refuse Un-Apply. The restored change shows the error and Retry with the same
-   command id, and the next Ctrl+Z tries the Un-Apply again rather than undoing
+6. Refuse Un-Apply. A "Couldn't undo that." pill shows, and the next Ctrl+Z tries the Un-Apply again rather than undoing
    the typing under it. Tree-only and delete-short-circuit Apply do not enter
    editor history; a chat or sidebar Apply does (see `draft-review.md`).
 7. Apply a chat's change, block `**/unapply` and press Ctrl+Z: the next Ctrl+Z

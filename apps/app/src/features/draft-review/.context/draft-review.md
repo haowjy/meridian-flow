@@ -127,11 +127,10 @@ names it in the read; when the bases differ (another tab applied a change, an ea
 part out), a repeated edit stays. Any other chosen change (typing the server never got, an edit changed since
 by another client) stays in the draft, shown as `left_out_not_on_server`: a choice is never widened. Nothing left sends nothing.
 The read is a request like a send: unanswered in 10 seconds, it closes and is tried again, then
-the head stalls with Retry; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
+the click settles `unsent`; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
 server won't open (closed, access ended) sends the frame's own cut and the server says why. A room
 this build can't open (schema stale or superseded) can't be read either, so the click isn't sent:
-it settles `unsent` in the client, freeing the draft's queue, and the item says `needs_reload`
-with the deploy notice's own words (`ReloadWords`), since only a reload lets the click succeed. The ended room stays bound for its
+it settles `unsent` in the client, freeing the draft's queue, and the press shows the failure pill. The ended room stays bound for its
 projection only (`Entry.ended`): its rows fold the click while it runs, as any Apply's do, and
 keep folding it once it lands (`landedUnrecorded`), since no record will show, until a room opens
 on the draft again. No lease opens a room for such a click. A click
@@ -169,11 +168,11 @@ every member reached its queue's head, so each text cut lands after that documen
 clicks. A member that ends unsent (closed draft, unread room) is left out; a drop before the
 group is sealed decides nothing. A folder is a member too: a tree cut in its own item's queue
 under `folderKey(branchId, folderId)`, so a folder-only command has the same pending, refused
-and unknown-delivery states, shown on the folder row with Retry, as a document's. Its cut is the
+and unknown-delivery states as a document's; a failure is the pill. Its cut is the
 list response's `folders[].revision`, read once when the command first goes, so a resend
 carries the same body; folders lead the items. Every member's queue settles from the one answer,
 `conflict` included, and the group's answer, which makes the Undo step and the notice, is the
-first a sent member settles on: the post's, a Retry's, or a closed queue's lookup (an unsent
+first a sent member settles on: the post's, a closed queue's lookup (an unsent
 member ends cancelled, and that is not the command's answer); groups are enqueued in item order in one turn, so two groups never wait on
 each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
 the same id.
@@ -182,7 +181,7 @@ An editor text Apply gives that editor's history one entry (`ApplyEntries`, `app
 Undo and Redo go through the schedule-owned command handle (`queuePort`). Undo moves the history
 cursor synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. The schedule
 retries the targeted Apply before the inverse when its delivery is unknown and withholds later
-commands behind any stalled intent. The Un-Apply goes when either half of the Apply landed: a
+commands behind any intent. The Un-Apply goes when either half of the Apply landed: a
 landed rename with settled text still has something to take back.
 
 Every Redo is one request that names its Un-Apply: `{ commandId, redoOf }` (`RedoClick`, on the
@@ -222,8 +221,9 @@ shares of the notice, the room's and the server's, and only the server's answer 
 with its Undo, when it took any item, and `settled` when it took none. An Apply's Undo step
 holds the nodes its answer says landed, not the ones pressed.
 
-`ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
-Retry. A timeout is not one of those failures: the Apply and Un-Apply requests
+`ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then the click
+settles `unsent` (its optimistic fold ends, so the change is pending again, and the commands behind
+it go), and the press shows one "Couldn't apply that." pill per branch. A timeout is not one of those failures: the Apply and Un-Apply requests
 (`postCommand` in `branches-api.ts`) resend under the same id after a timeout and while the
 server answers `running`, so a large Apply stays `Applying` until its answer instead of
 stalling. Changes shows one "Applying" line while rows are hidden by an Apply in flight, and
@@ -306,7 +306,7 @@ the controls that come back (the Changes list prefers the restored row). If the 
 before the go-back resolved, the notice ends. Apply
 facts from a band stay out of the store: the identity row shows them from the owner's per-document
 facts (`useManuscriptState`). Discard all is one notice and one server command. An Undo is one Restore command: the notice ends and
-the row returns when the server answers, and one that throws keeps the notice with Retry. Ctrl+Z in the
+the row returns when the server answers, and one that throws keeps the notice and shows the pill. Ctrl+Z in the
 reviewing editor sends the same Restore (the `captureApply` entry). The server brings back only the
 changes that still stand on the draft, so an edit the writer made over a discarded change leaves that
 change in the base, silently.

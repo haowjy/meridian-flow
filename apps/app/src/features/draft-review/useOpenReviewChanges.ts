@@ -6,7 +6,7 @@
  */
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import type { DraftChangesData } from "./draft-changes";
-import { useChangeItems, useDraftCommandState } from "./draft-changes";
+import { useDraftCommandState } from "./draft-changes";
 import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useRoomReview } from "./useRoomReview";
@@ -30,10 +30,9 @@ export function useOpenReviewChanges(
   const read = useRoomReview(draft);
   const line = item && !item.isNew ? treeLineOf(item) : null;
   const changes = line?.kind === "delete" ? [] : read.changes;
-  const { items } = useChangeItems(
-    draft,
-    item && line ? [treeChange(item, line), ...changes] : changes,
-  );
+  const items = (item && line ? [treeChange(item, line), ...changes] : changes).map((change) => ({
+    change,
+  }));
   return {
     inline,
     documentId: inline?.documentId ?? null,

@@ -90,7 +90,7 @@ export function TrashSource({
                   discards.restore(discard.entry);
                 }}
                 onUndo={discards.undoOf(discard.entry)}
-                undo={discards.undoing.get(discard.entry.commandId)}
+                undo={discards.undoing.has(discard.entry.commandId)}
               />
             ) : !entry ? null : gone ? (
               <ListRow
@@ -223,11 +223,11 @@ function useTrashDiscardRows(projectId: string) {
   const restored = useRef(
     new Map<string, { entry: DiscardEntry; listedThen: ReadonlySet<string> }>(),
   );
-  const [undoing, setUndoing] = useState<ReadonlyMap<string, "sending" | "failed">>(new Map());
-  const mark = (commandId: string, state: "sending" | "failed" | null) =>
+  const [undoing, setUndoing] = useState<ReadonlySet<string>>(new Set());
+  const mark = (commandId: string, sending: boolean) =>
     setUndoing((current) => {
-      const next = new Map(current);
-      if (state) next.set(commandId, state);
+      const next = new Set(current);
+      if (sending) next.add(commandId);
       else next.delete(commandId);
       return next;
     });
@@ -280,8 +280,8 @@ function useTrashDiscardRows(projectId: string) {
       const { branchId, brought } = state;
       const ownerKey = workOwnerKey({ id: entry.workId });
       return () => {
-        if (undoing.get(keyOf(entry)) === "sending") return;
-        mark(keyOf(entry), "sending");
+        if (undoing.has(keyOf(entry))) return;
+        mark(keyOf(entry), true);
         void discardDrafts(queryClient, owner, {
           projectId,
           ownerKey,
@@ -292,10 +292,11 @@ function useTrashDiscardRows(projectId: string) {
             text: brought.text.includes(documentId),
           })),
         }).then((outcome) => {
-          if (outcome.kind !== "done") return mark(keyOf(entry), "failed");
-          // The restored row gives way to the new entry the refetch lists.
-          restored.current.delete(keyOf(entry));
-          mark(keyOf(entry), null);
+          // A refused Discard is the owner's pill; the row stays restored, with its Undo.
+          if (outcome.kind === "done")
+            // The restored row gives way to the new entry the refetch lists.
+            restored.current.delete(keyOf(entry));
+          mark(keyOf(entry), false);
         });
       };
     },

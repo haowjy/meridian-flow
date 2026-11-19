@@ -1747,8 +1747,8 @@ msgid "Apply changes in {name}"
 msgstr "Apply changes in {name}"
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Apply couldn't be sent. Try again."
-msgstr "Apply couldn't be sent. Try again."
+#~ msgid "Apply couldn't be sent. Try again."
+#~ msgstr "Apply couldn't be sent. Try again."
 
 #: src/features/draft-review/DraftSwitcher.tsx
 #: src/features/draft-review/ReviewActions.tsx
@@ -1764,8 +1764,8 @@ msgstr "Apply draft of {name}"
 #~ msgstr "Apply is temporarily unavailable."
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Apply is waiting for confirmation."
-msgstr "Apply is waiting for confirmation."
+#~ msgid "Apply is waiting for confirmation."
+#~ msgstr "Apply is waiting for confirmation."
 
 #. placeholder {0}: file.name
 #: src/features/chat/DraftDock.tsx
@@ -2744,9 +2744,13 @@ msgstr "Copying from {source} into"
 msgid "Couldn't add the connection."
 msgstr "Couldn't add the connection."
 
+#: src/features/draft-review/draft-command-owner.ts
+msgid "Couldn't apply that."
+msgstr "Couldn't apply that."
+
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't apply this draft."
-msgstr "Couldn't apply this draft."
+#~ msgid "Couldn't apply this draft."
+#~ msgstr "Couldn't apply this draft."
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Couldn't ask a question"
@@ -2898,8 +2902,8 @@ msgid "Couldn't discard that."
 msgstr "Couldn't discard that."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't discard this draft."
-msgstr "Couldn't discard this draft."
+#~ msgid "Couldn't discard this draft."
+#~ msgstr "Couldn't discard this draft."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't edit"
@@ -3180,8 +3184,12 @@ msgid "Couldn't restore {title}. Retry tries again."
 msgstr "Couldn't restore {title}. Retry tries again."
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Couldn't restore it. Retry tries again."
-msgstr "Couldn't restore it. Retry tries again."
+#~ msgid "Couldn't restore it. Retry tries again."
+#~ msgstr "Couldn't restore it. Retry tries again."
+
+#: src/features/project/context/use-restore-discard.ts
+msgid "Couldn't restore that."
+msgstr "Couldn't restore that."
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 msgid "Couldn't restore the chat. Try again."
@@ -6504,7 +6512,6 @@ msgstr "Resume my documents on any device"
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/chat/RecentChatsLanding.tsx
@@ -6513,7 +6520,6 @@ msgstr "Resume my documents on any device"
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 #: src/routes/_authenticated/p/$projectId.tsx
@@ -6547,7 +6553,6 @@ msgid "Retry restoring {name}"
 msgstr "Retry restoring {name}"
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
-#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Retry restoring {title}"
 msgstr "Retry restoring {title}"
 
@@ -6568,8 +6573,8 @@ msgstr "Retry the handoff brief"
 #~ msgstr "Retry undoing applying {name}"
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Retry undoing the restore of {title}"
-msgstr "Retry undoing the restore of {title}"
+#~ msgid "Retry undoing the restore of {title}"
+#~ msgstr "Retry undoing the restore of {title}"
 
 #: src/features/project/work/WorkCollection.tsx
 msgid "Retry Work"
@@ -8624,7 +8629,6 @@ msgid "Undo delete of {title}"
 msgstr "Undo delete of {title}"
 
 #: src/features/chat/thread-controls/control-copy.ts
-#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Undo didn't go through. Try again."
 msgstr "Undo didn't go through. Try again."
 
@@ -8645,8 +8649,8 @@ msgstr "Undo goes back to the previous saved version and merges its text into yo
 #~ msgstr "Undo is no longer available."
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Undo is waiting for confirmation."
-msgstr "Undo is waiting for confirmation."
+#~ msgid "Undo is waiting for confirmation."
+#~ msgstr "Undo is waiting for confirmation."
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Undo move of {name}"

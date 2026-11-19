@@ -1,19 +1,16 @@
 /**
- * A listed file's status: pending delivery and same-id Retry stay on the addressed item even
- * when no review groups remain. With nothing to report, it occupies no line.
+ * A listed file's status: pending delivery stays on the addressed item even when no review groups
+ * remain. With nothing to report, it occupies no line.
  */
 
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { RowWord } from "@/components/app/RowWord";
-import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { isDeletedLive } from "./deleted-drafts";
 import { useDraftCommandState } from "./draft-changes";
-import { ReviewMessageText } from "./ReviewMessageText";
 /** Beside the name of a drafted document or folder its area no longer has: Apply brings it back. */
 export function DeletedWord({ scheme }: { scheme: ProjectContextTreeScheme | null | undefined }) {
   const area = schemeLabel(scheme);
@@ -34,32 +31,11 @@ export function DeletedLiveTag({ item }: { item: ThreadDraftListItem | undefined
 }
 
 export function DraftCommandStatus({ itemKey }: { itemKey: string }) {
-  const owner = useDraftCommandOwner();
   const state = useDraftCommandState(itemKey);
-  const content = state.stalled ? (
-    <>
-      {state.unapplying ? (
-        <Trans>Undo is waiting for confirmation.</Trans>
-      ) : (
-        <Trans>Apply is waiting for confirmation.</Trans>
-      )}
-      <button
-        type="button"
-        className="text-button coarse:min-h-11"
-        onClick={() => owner.retry(itemKey)}
-      >
-        <Trans>Retry</Trans>
-      </button>
-    </>
-  ) : state.unapplying ? (
+  const content = state.unapplying ? (
     <Trans>Undoing Apply</Trans>
   ) : state.applying ? (
     <Trans>Applying</Trans>
-  ) : state.failure ? (
-    <InlineErrorRow
-      message={<ReviewMessageText failure={state.failure} />}
-      className="min-w-0 flex-1 p-0"
-    />
   ) : null;
   if (!content) return null;
   return (
