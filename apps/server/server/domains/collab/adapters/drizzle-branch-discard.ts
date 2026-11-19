@@ -32,10 +32,16 @@ import { discardCommandEffects, documentDrafts } from "@meridian/database/schema
 import { discardDraft, newId, pendingRecords, recordsOfItem } from "@meridian/project-tree";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
+import {
+  ApplyClickMalformed,
+  containsSnapshot,
+  decodeClickedSnapshot,
+} from "../domain/apply-click.js";
 import type {
   BranchDiscardStore,
   DiscardEnded,
@@ -226,6 +232,32 @@ async function untakenNotes(
   });
 }
 
+/**
+ * The base and text of `draft` at the snapshot a Discard's ids were read at. A snapshot the draft
+ * does not hold yet (the writer's room is ahead of what reached the server) names nothing here, so
+ * the ids are read against the draft as it is.
+ */
+function cutOf(draft: Y.Doc, encoded: string | undefined) {
+  if (!encoded) return undefined;
+  let snapshot: Y.Snapshot;
+  try {
+    snapshot = decodeClickedSnapshot(encoded);
+  } catch (cause) {
+    if (cause instanceof ApplyClickMalformed) return undefined;
+    throw cause;
+  }
+  if (!containsSnapshot(Y.snapshot(draft), snapshot)) return undefined;
+  const cut = Y.createDocFromSnapshot(draft, snapshot, new Y.Doc({ gc: false }));
+  try {
+    return {
+      base: readBlocks(cut.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema),
+      text: readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema),
+    };
+  } finally {
+    cut.destroy();
+  }
+}
+
 export type DrizzleBranchDiscard = BranchDiscardStore & {
   /** The locked kernel: the caller holds §14's locks and proved the Work's state. */
   kernel(input: DiscardKernelInput): Promise<DiscardKernelResult>;
@@ -266,6 +298,7 @@ export function createDrizzleBranchDiscard(
     documentId: DocumentId;
     draftId: string;
     text: "all" | readonly string[];
+    snapshot?: string;
   }): Promise<boolean> {
     const base = await deps.coordinator.loadBase(input.draftId);
     let taken: ReturnType<typeof discardChanges> = null;
@@ -275,7 +308,14 @@ export function createDrizzleBranchDiscard(
       authorServerRows(prefix) {
         const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
         const before = readBlocks(prefix.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema);
-        taken = discardChanges(draftSchema, before, readBlocks(fragment, draftSchema), input.text);
+        const text = readBlocks(fragment, draftSchema);
+        taken = discardChanges(
+          draftSchema,
+          before,
+          text,
+          input.text,
+          cutOf(prefix, input.snapshot),
+        );
         if (!taken) return [];
         const next = taken.text;
         holds = !blocksEqual(before, next);
@@ -373,7 +413,13 @@ export function createDrizzleBranchDiscard(
       const text = created.has(id) ? "all" : item.text;
       const tookText =
         text && draft
-          ? await discardText({ commandId, documentId: id, draftId: draft.id, text })
+          ? await discardText({
+              commandId,
+              documentId: id,
+              draftId: draft.id,
+              text,
+              ...(item.snapshot ? { snapshot: item.snapshot } : {}),
+            })
           : false;
       if (!had.has(id) && !tookText) untaken.push(id);
       // Only a whole item leaves review; a tree-only Discard leaves a draft that holds text there.

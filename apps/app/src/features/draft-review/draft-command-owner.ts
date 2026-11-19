@@ -190,7 +190,7 @@ const discardingOf = (text: "all" | readonly string[]) =>
   text === "all" ? () => true : (change: ReviewChange) => text.includes(change.id);
 /** How long a Discard's showing waits for the server's write to reach the room. */
 const ROOM_WRITE_WAIT_MS = 5_000;
-const base64 = (bytes: Uint8Array) =>
+export const base64 = (bytes: Uint8Array) =>
   btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
 const RESOLVE_RETRY_MS = 1_000;
@@ -1030,6 +1030,8 @@ export class DraftCommandOwner {
             tree: boolean;
             /** The text changes taken: all of them, those named, or none. */
             text: "all" | readonly string[] | null;
+            /** Base64 of the room snapshot the named changes were read at. */
+            snapshot?: string;
             /** Gone whole at once, as a created document or a folder is, rather than shown discarded. */
             hides: boolean;
           }[];
@@ -1074,10 +1076,11 @@ export class DraftCommandOwner {
         ...("all" in selection
           ? { all: true as const }
           : {
-              items: selection.items.map(({ ref, tree, text }) => ({
+              items: selection.items.map(({ ref, tree, text, snapshot }) => ({
                 node: ref.documentId,
                 ...(tree ? { tree: true as const } : {}),
                 ...(text ? { text: text === "all" ? text : [...text] } : {}),
+                ...(snapshot && text && text !== "all" ? { snapshot } : {}),
               })),
             }),
       });

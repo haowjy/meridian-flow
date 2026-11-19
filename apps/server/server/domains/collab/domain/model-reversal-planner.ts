@@ -75,9 +75,17 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     }
     return text;
   };
+  // Read once: the diff's memo follows node identity, so a fresh read of the same base costs every
+  // later press its whole diff again.
+  const bases = new Map<string, readonly PMNode[]>();
   const baseOf = (draftId: string) => {
-    const doc = document.drafts.get(draftId)?.doc;
-    return doc ? readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema) : [];
+    let base = bases.get(draftId);
+    if (!base) {
+      const doc = document.drafts.get(draftId)?.doc;
+      base = doc ? readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema) : [];
+      bases.set(draftId, base);
+    }
+    return base;
   };
   /**
    * Whether a change of the part still stands where it landed: in Live's text, or in its draft's

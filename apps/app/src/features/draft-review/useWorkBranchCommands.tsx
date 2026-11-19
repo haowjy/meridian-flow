@@ -8,6 +8,7 @@ import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
+import * as Y from "yjs";
 import { applyItems, branchOf, unapplyCommand, undoDiscard } from "@/client/api/branches-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
@@ -38,7 +39,12 @@ import {
 import { useClosedOwners } from "@/features/project/context/closed-owners";
 import { ApplyEntries, type Seat, serverPort } from "./apply-history";
 import type { RestoreAnswer } from "./discard-restores";
-import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
+import {
+  base64,
+  type CommandOutcome,
+  type DraftCommandOwner,
+  folderKey,
+} from "./draft-command-owner";
 import {
   type AppliedFact,
   type ApplyHalves,
@@ -534,6 +540,7 @@ export function useWorkBranchCommands({
           draft: DraftReviewSelection;
           tree: boolean;
           text: "all" | string[] | null;
+          snapshot?: string;
           hides: boolean;
         }
       >();
@@ -548,6 +555,11 @@ export function useWorkBranchCommands({
         const held = taken.get(draft.documentId);
         taken.set(draft.documentId, {
           draft,
+          ...(held?.snapshot
+            ? { snapshot: held.snapshot }
+            : target.kind === "groups"
+              ? { snapshot: base64(Y.encodeSnapshotV2(target.frame.snapshot)) }
+              : {}),
           tree: (held?.tree ?? false) || own.tree,
           text:
             held?.text === "all" || own.text === "all"
@@ -580,10 +592,11 @@ export function useWorkBranchCommands({
             ? { all: true, refs: [...refs, ...folderRefs] }
             : {
                 items: [
-                  ...[...taken.values()].map(({ draft, tree, text, hides }) => ({
+                  ...[...taken.values()].map(({ draft, tree, text, snapshot, hides }) => ({
                     ref: ref(draft),
                     tree,
                     text,
+                    ...(snapshot ? { snapshot } : {}),
                     hides,
                   })),
                   ...folderRefs.map((folderRef) => ({

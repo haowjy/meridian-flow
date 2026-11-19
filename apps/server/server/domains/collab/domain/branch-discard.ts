@@ -49,6 +49,8 @@ export type DiscardItem = {
    * taken whole.
    */
   text: "all" | readonly string[] | null;
+  /** Base64 of the draft's snapshot the named ids were read at; see `BranchDiscardRequestSchema`. */
+  snapshot?: string;
 };
 
 export type DiscardKernelInput = {

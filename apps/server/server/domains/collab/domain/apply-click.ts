@@ -148,12 +148,12 @@ export class ApplyClickMalformed extends Error {}
 export class ApplyClickUnsynced extends Error {}
 
 /** Snapshot containment includes tombstones: a delete-only key must have been acknowledged too. */
-function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
+export function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
   for (const [client, clock] of clicked.sv) if (clock > (current.sv.get(client) ?? 0)) return false;
   return Y.equalDeleteSets(current.ds, Y.mergeDeleteSets([current.ds, clicked.ds]));
 }
 
-function decodeClickedSnapshot(encoded: string): Y.Snapshot {
+export function decodeClickedSnapshot(encoded: string): Y.Snapshot {
   try {
     const bytes = Buffer.from(encoded, "base64");
     if (bytes.toString("base64") !== encoded) throw new Error("Invalid base64");
@@ -193,11 +193,18 @@ export function compileClick(
     const optimistic = applySpanPatches(base, patches, "base");
     const draftText = readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
     const projection = projectReview(diffBlocks(optimistic, draftText));
+    const reading = readChangesAt(optimistic, draftText, parts);
     let groupIds: readonly string[];
     if ("whole" in request) {
-      const named = request.groupIds && new Set(request.groupIds);
-      groupIds = projection.groups.flatMap((group) =>
-        !named || named.has(group.id) ? [group.id] : [],
+      const ids = request.groupIds && new Set(request.groupIds);
+      const carried = request.carried && new Set(request.carried.map((key) => key.join(":")));
+      const named = ids || carried;
+      groupIds = projection.groups.flatMap((group, position) =>
+        !named ||
+        ids?.has(group.id) ||
+        carriedBy(reading, position).some((key) => carried?.has(key.join(":")))
+          ? [group.id]
+          : [],
       );
       if (groupIds.length === 0) return { schema, groups: [] };
     } else groupIds = request.groupIds;
@@ -208,7 +215,6 @@ export function compileClick(
       groupIds.some((id) => !known.has(id))
     )
       throw new ApplyClickMalformed();
-    const reading = readChangesAt(optimistic, draftText, parts);
     const chosen: Hunk[] = [];
     let before = optimistic;
     const groups = groupIds.map((groupId): CompiledApplyGroup => {
