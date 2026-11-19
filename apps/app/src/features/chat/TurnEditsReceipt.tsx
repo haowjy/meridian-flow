@@ -21,14 +21,9 @@ import { successfulWorkReversals } from "@/client/api/reverse-api";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
 import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
-import { unappliedSentence } from "@/core/project-tree/tree-left-sentence";
-import type { TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
-import { useAppliedCommands } from "@/features/draft-review/CommandNotice";
-import { useCardUnapply } from "@/features/draft-review/card-unapply";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import {
@@ -93,12 +88,6 @@ export function TurnEditsReceipt({
   const [outcomeNotices, setOutcomeNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
   const projectId = useProjectDocumentNavigationProjectId();
-  const unapply = useCardUnapply(projectId);
-  const appliedCommands = useAppliedCommands();
-  // What the card's last Undo of its applied changes left standing, said where pressed.
-  const [left, setLeft] = useState<
-    (Unapplied & { count: number; facts: ReadonlyMap<string, TreeFact> }) | null
-  >(null);
 
   const drafts = receipt?.drafts;
   const trees = receipt?.trees;
@@ -122,41 +111,7 @@ export function TurnEditsReceipt({
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  // The Applies that took this reply's changes, as the server lists them: the Undo takes each
-  // back whole. This tab's owner of one (`AppliedCommand`) only blocks the press while a request
-  // of it is out (`asking`), or passes it over while it waits for a closed owner, which every card
-  // listing it says until the owner reopens.
-  const listed = (receipt?.applied ?? []).map((apply) => ({
-    apply,
-    command: appliedCommands.find(apply.commandId),
-  }));
-  const waiting = listed.flatMap(({ command }) => (command?.waits() ? [command] : []));
-  const applies = listed.flatMap(({ apply, command }) => (command?.waits() ? [] : [apply]));
-  const asking = listed.some(
-    ({ command }) => command?.state.kind === "unapplying" || command?.state.kind === "reapplying",
-  );
-  const reverses = receipt?.control === "undo";
-  const reversible = reverses || applies.length > 0;
-  const appliedCount = applies.reduce((sum, apply) => sum + apply.count, 0);
-  const wholeApply = applies.length > 1 || (applies[0] !== undefined && !applies[0].onlyThisTurn);
-  // What each listed Apply did to a node, as the Changes row names it: this tab's own Applies
-  // read it from the tree, and one the card made an owner for, from the card's tree lines.
-  const cardFacts = treeFactsOf(documents, trees);
-  const factsNow = () =>
-    new Map([
-      ...cardFacts,
-      ...listed.flatMap(({ command }) => (command ? [...command.facts] : [])),
-    ]);
-  const heldParts = waiting.flatMap((command) => command.held);
-  const said = heldParts.length
-    ? {
-        taken: "nothing" as const,
-        leftOut: left?.leftOut ?? [],
-        held: heldParts,
-        count: listed.reduce((sum, { apply }) => sum + apply.count, 0),
-        facts: factsNow(),
-      }
-    : left;
+  const reversible = receipt?.control === "undo";
 
   useEffect(() => {
     if (receipt?.control !== "view_change") setCommandRefusal(null);
@@ -196,23 +151,10 @@ export function TurnEditsReceipt({
   }
 
   async function reverseTurn() {
-    if (pending || asking || !reversible) return;
+    if (pending || !reversible) return;
     setPending(true);
-    setLeft(null);
     try {
-      // One press: the reversal of what no Apply took, then each Apply's Un-Apply. In this order
-      // the reversal never sees a part the Un-Apply drafted again, so the draft keeps it.
-      const outcome = reverses ? await turnMutation.mutateAsync({ turnId: turn.id }) : null;
-      const facts = factsNow();
-      const taken = applies.length ? await unapply(applies, cardFacts) : null;
-      if (outcome) answered(outcome);
-      if (taken?.taken === "failed") {
-        setCommandRefusal({ status: "request_failed" });
-        setExpanded(true);
-      } else if (taken && (taken.taken === "partly" || taken.taken === "nothing")) {
-        setLeft(taken.leftOut.length ? { ...taken, held: [], count: appliedCount, facts } : null);
-        setExpanded(true);
-      }
+      answered(await turnMutation.mutateAsync({ turnId: turn.id }));
     } catch {
       // A rejected request is a refusal the writer never asked for: the command
       // is the only thing that can report it, so it says so here rather than
@@ -255,15 +197,7 @@ export function TurnEditsReceipt({
           </span>
         </FoldToggle>
         {reversible ? (
-          <UndoButton
-            pending={pending || asking}
-            wholeApply={wholeApply ? appliedCount : null}
-            onUndo={() => void reverseTurn()}
-          />
-        ) : waiting.length ? (
-          <span className="ml-auto shrink-0 text-muted-foreground" role="status">
-            <Trans>Not undone</Trans>
-          </span>
+          <UndoButton pending={pending} onUndo={() => void reverseTurn()} />
         ) : (
           <UndoneWord state={receipt?.state} />
         )}
@@ -297,28 +231,6 @@ export function TurnEditsReceipt({
                 ))}
               </ul>
             </div>
-          ) : null}
-          {said ? (
-            <p
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
-              data-unapply-outcome
-              role="status"
-            >
-              {unappliedSentence({
-                ...said,
-                facts: namedFacts(documents, said.facts),
-                name:
-                  documents.length === 1 && documents[0]
-                    ? documentDisplayName(documents[0].uri)
-                    : changeCount(said.count),
-                nodes: [
-                  ...new Set([
-                    ...said.leftOut.map((one) => one.node),
-                    ...said.held.map((one) => one.node),
-                  ]),
-                ],
-              })}
-            </p>
           ) : null}
           {outcomeNotices?.map((notice) => (
             <p
@@ -493,43 +405,6 @@ function useDocumentRowDrag(document: TurnEditDocument) {
 
 /** What became of a row's drafted text (`text`) and tree change (`tree`), each when the turn drafted it. */
 type Halves = { text?: TurnDraftState; tree?: TurnTreeState };
-
-/** What each node's drafted tree change on the card did, named as its line names it. */
-function treeFactsOf(
-  documents: readonly TurnEditDocument[],
-  trees: TurnReceiptChip["trees"],
-): Map<string, TreeFact> {
-  return new Map(
-    documents.flatMap((document) =>
-      trees?.[document.documentId]
-        ? [[document.documentId, { did: didOf(document.tree), folder: !!document.folder }]]
-        : [],
-    ),
-  );
-}
-
-/** The facts a line says, each naming its document: a card lists several apart from their rows. */
-function namedFacts(
-  documents: readonly TurnEditDocument[],
-  facts: ReadonlyMap<string, TreeFact>,
-): Map<string, TreeFact> {
-  const named = new Map(facts);
-  for (const document of documents) {
-    const fact = facts.get(document.documentId);
-    named.set(document.documentId, {
-      did: fact?.did ?? null,
-      folder: fact?.folder ?? !!document.folder,
-      name: (document.folder ? folderDisplayName : documentDisplayName)(document.uri),
-    });
-  }
-  return named;
-}
-
-function didOf(line: TurnTreeLine | undefined): TreeFact["did"] {
-  if (!line || line.op === "copy") return "created";
-  if (line.op === "delete") return "deleted";
-  return describeModelMove(line.from, line.to).kind === "rename" ? "renamed" : "moved";
-}
 
 function halvesOf(
   document: TurnEditDocument,
@@ -740,27 +615,8 @@ function skipsHeading(count: number, undone: boolean): string {
   });
 }
 
-/**
- * The card's Undo. When it takes back a whole Apply that held more than this reply's changes
- * (`wholeApply`: how many it held in all), it says so, as the Changes row does.
- */
-function UndoButton({
-  pending,
-  wholeApply,
-  onUndo,
-}: {
-  pending: boolean;
-  wholeApply: number | null;
-  onUndo: () => void;
-}) {
-  const takes =
-    wholeApply === null
-      ? null
-      : plural(wholeApply, {
-          one: "Takes back the whole Apply, # change.",
-          other: "Takes back the whole Apply, all # changes.",
-        });
-  const button = (
+function UndoButton({ pending, onUndo }: { pending: boolean; onUndo: () => void }) {
+  return (
     <Button
       type="button"
       variant="quiet"
@@ -770,23 +626,12 @@ function UndoButton({
         onUndo();
       }}
       disabled={pending}
-      aria-description={takes ?? undefined}
       className="ml-auto shrink-0 text-jade-text"
     >
-      {pending ? t`Undoing…` : takes ? t`Undo Apply` : t`Undo`}
+      {pending ? t`Undoing…` : t`Undo`}
     </Button>
   );
-  if (!takes) return button;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent>{takes}</TooltipContent>
-    </Tooltip>
-  );
 }
-
-/** What the card's Un-Apply of its applied changes did, in the Undo's place. */
-const changeCount = (count: number) => plural(count, { one: "# change", other: "# changes" });
 
 /** Where Undo sat once the writer's Undo ran; an expired card has no word. */
 function UndoneWord({ state }: { state: TurnReceiptChip["state"] | undefined }) {

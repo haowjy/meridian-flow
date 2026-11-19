@@ -6,15 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import {
-  appendApplyRecord,
-  applyRecordOf,
-  composeGroups,
-  REVIEW_BASE_FRAGMENT,
-  readBlocks,
-  recordRestorations,
-  writeBlocks,
-} from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
@@ -35,7 +27,7 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
-import { classifiedDraft } from "./test-support/draft-classification.js";
+import { classifiedDraft, recordApply } from "./test-support/draft-classification.js";
 
 const db = createTestDatabase();
 const pm = buildDocumentSchema();
@@ -132,11 +124,8 @@ async function fixture() {
     return editId;
   }
   async function apply() {
-    const view = await classified(draftId);
-    const entry = applyRecordOf(view.classifications, view.classifications.keys());
     doc.clientID = 1;
     doc.transact(() => {
-      appendApplyRecord(doc, entry);
       writeBlocks(
         doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
         pm,
@@ -144,6 +133,13 @@ async function fixture() {
       );
     });
     await save();
+    await recordApply(db, {
+      draftId,
+      documentId: ALPHA_ID,
+      accountId: USER_ID,
+      projectId: PROJECT_ID,
+      store,
+    });
   }
   return { doc, draftId, ai, save, apply };
 }
@@ -210,7 +206,10 @@ it("reads applied and discarded historical parts after close, independent of pla
       .where(eq(schema.documentDrafts.id, f.draftId));
     const released = await review(f.draftId);
     expect(await classifiedDraft(store, f.draftId)).toBeNull();
-    expect(released.parts.every((p) => p.disposition === "discarded")).toBe(true);
+    // What an Apply took is a recorded fact: it reads applied without the draft's bytes.
+    expect(released.parts.map((p) => [p.editId, p.disposition])).toEqual(
+      historical.parts.map((p) => [p.editId, p.disposition]),
+    );
   } finally {
     f.doc.destroy();
   }
@@ -257,40 +256,6 @@ it("rolls a subagent receipt and its byline up to the owning conversation's spaw
     ]);
     expect([...classes.classifications.values()][0].members).toEqual([0]);
     expect(classes.provenance.snapshot.sv.get(31)).toBeGreaterThan(0);
-  } finally {
-    f.doc.destroy();
-  }
-});
-
-it("retains Apply evidence when Undo restored AI items before they were applied", async () => {
-  const f = await fixture();
-  try {
-    await f.ai(41, "The golden mountain waits.");
-    f.doc.clientID = 98;
-    const origin = Symbol("discard");
-    const history = new Y.UndoManager(f.doc.getXmlFragment("prosemirror"), {
-      trackedOrigins: new Set([origin]),
-    });
-    recordRestorations(history);
-    const { projection } = await classified(f.draftId);
-    const patches = composeGroups(
-      pm,
-      projection,
-      projection.groups.map((g) => g.id),
-      "discard",
-    );
-    // A whole-document fixture has one block patch. The browser writes the same composed blocks.
-    f.doc.transact(
-      () => writeBlocks(f.doc.getXmlFragment("prosemirror"), pm, patches[0].blocks),
-      origin,
-    );
-    history.undo();
-    history.destroy();
-    await f.save();
-    expect((await review(f.draftId)).parts[0].disposition).toBe("pending");
-    await f.apply();
-    await f.save("closed");
-    expect((await review(f.draftId)).parts[0].disposition).toBe("applied");
   } finally {
     f.doc.destroy();
   }

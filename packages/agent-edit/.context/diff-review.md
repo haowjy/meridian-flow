@@ -135,9 +135,10 @@ character tombstones, cannot borrow another block's author. Only proven Undo del
 Discard base copies are excluded from that guard, so undoing Discard keeps the original
 byline.
 
-`appliedParts` associates positive Apply evidence with immutable receipt ranges. Any
-overlap is evidence, not full receipt coverage, and absence of a change alone never proves
-Apply: the host combines this with lifecycle and membership to tell pending from discarded.
+Whether a part was applied is not read from this evidence: the Apply records the changes it took
+(`apply_command_effects.carried`), and the card reads those. The Apply record's item ranges are
+no longer written (only its command and group ids); the classifier still reads what an older
+record holds, until the browser's byline classifier goes.
 
 ## Apply and local Discard are the same operation on two sides
 

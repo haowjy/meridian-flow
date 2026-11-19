@@ -59,24 +59,10 @@ export interface TurnReceiptChip {
    */
   trees?: Record<string, TurnTreeState>;
   skips?: import("./write-reversal.js").TurnInverseSkip[];
-  /**
-   * The Applies in force that took this reply's drafted changes. The card's Undo takes each back
-   * whole by its Un-Apply, beside the reversal of the reply's other changes (`control`). `count`:
-   * the changes the Apply took; `onlyThisTurn`: every one of them is this reply's.
-   */
-  applied?: TurnAppliedCommand[];
   state: TurnReceiptState;
-  /** `undo`: the reply has changes besides its applied ones for the card's Undo to reverse. */
+  /** `undo`: the card's Undo would take something back. */
   control: TurnReceiptControl;
 }
-
-/** An Apply holding a reply's drafted changes, which the card's Undo takes back by its Un-Apply. */
-export type TurnAppliedCommand = {
-  commandId: string;
-  branchId: string;
-  count: number;
-  onlyThisTurn: boolean;
-};
 
 export interface ListTurnLiveLineageResponse {
   documents: TurnLiveLineageDocumentItem[];

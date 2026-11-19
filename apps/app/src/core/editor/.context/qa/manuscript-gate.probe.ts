@@ -8,13 +8,14 @@
  * script: the kernel's Undo, the content Undo, and the oracle (the same later typing without the
  * AI's edit). See manuscript-gate.md beside this file.
  */
-import { contentMerge } from "@meridian/agent-edit/content-merge";
 import {
-  applySpanPatches,
+  changeStateIn,
+  type EditChange,
+  editChanges,
+  takeOut,
+} from "@meridian/agent-edit/content-merge";
+import {
   blocksEqual,
-  composeGroups,
-  diffBlocks,
-  projectReview,
   readBlocks,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
@@ -443,41 +444,10 @@ function type(world: World, spec: WriterSpec): string[] | null {
 
 // --- the Undos -------------------------------------------------------------------------------
 
-type Delta = { before: PMNode[]; after: PMNode[] };
-function changesOf(before: PMNode[], after: PMNode[]): Delta[] {
-  const proj = projectReview(diffBlocks(before, after));
-  return proj.groups
-    .filter((g) => g.kind === "change")
-    .map((g) => ({ before, after: applySpanPatches(before, composeGroups(schema, proj, [g.id], "apply"), "base") }));
-}
-/** The change cut to its changed blocks and one unchanged block each side, and the same stretch of the text by block id. */
-function windowOf(d: Delta, text: readonly PMNode[]) {
-  const { before, after } = d;
-  let p = 0;
-  while (p < before.length && p < after.length && blocksEqual([before[p]!], [after[p]!])) p++;
-  let s = 0;
-  while (s < before.length - p && s < after.length - p && blocksEqual([before[before.length - 1 - s]!], [after[after.length - 1 - s]!])) s++;
-  const from = Math.max(0, p - 1);
-  const b = before.slice(from, Math.min(before.length, before.length - s + 1));
-  const a = after.slice(from, Math.min(after.length, after.length - s + 1));
-  const ids = new Set([...b, ...a].map((x) => x.attrs.id as string));
-  const at = text.map((x, i) => (ids.has(x.attrs.id as string) ? i : -1)).filter((i) => i >= 0);
-  if (!at.length) return null;
-  return { before: b, after: a, lo: Math.max(0, at[0]! - 1), hi: Math.min(text.length - 1, at[at.length - 1]! + 1) };
-}
-/** Whether the change stands in the text (it can be taken out cleanly, and putting it back gives the text again) and the text without it. */
-function contentUndo(d: Delta, text: readonly PMNode[]): { stands: boolean; text: PMNode[] } {
-  const w = windowOf(d, text);
-  if (!w) return { stands: false, text: [...text] };
-  const win = text.slice(w.lo, w.hi + 1);
-  const put = (blocks: readonly PMNode[]) => [...text.slice(0, w.lo), ...blocks, ...text.slice(w.hi + 1)];
-  const inv = contentMerge(schema, w.after, w.before, win);
-  if (inv.conflicts.length || blocksEqual(inv.blocks, win)) return { stands: false, text: [...text] };
-  const fwd = contentMerge(schema, w.before, w.after, win);
-  if (!blocksEqual(fwd.blocks, win)) return { stands: false, text: [...text] };
-  const back = contentMerge(schema, w.before, w.after, inv.blocks);
-  if (back.conflicts.length || !blocksEqual(back.blocks, win)) return { stands: false, text: [...text] };
-  return { stands: true, text: put(inv.blocks) };
+/** Whether the change stands in the text, by the server's own read (`content-merge/stands.ts`), and the text without it. */
+function contentUndo(change: EditChange, text: readonly PMNode[]): { stands: boolean; text: PMNode[] } {
+  if (changeStateIn(schema, change, text) !== "stands") return { stands: false, text: [...text] };
+  return { stands: true, text: takeOut(schema, change, text) };
 }
 
 type Mode = "kernel" | "content" | "oracle";
@@ -577,7 +547,7 @@ async function playRow(seed: number, family: Family, mode: Mode, script: Step[],
     let text = world.liveBlocks();
     const states: boolean[] = [];
     for (const p of [...targetParts].reverse())
-      for (const c of changesOf(p.before, p.after)) {
+      for (const c of editChanges(schema, { before: p.before, after: p.after })) {
         const u = contentUndo(c, text);
         states.push(u.stands);
         if (u.stands) text = u.text;

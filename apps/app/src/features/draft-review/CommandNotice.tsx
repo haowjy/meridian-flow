@@ -405,16 +405,12 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
             : facts.map((fact) => factSentence(factNow(fact, now))).join(" ");
         const step = facts.find((fact) => fact.step)?.step;
         if (step) {
-          const { command, count } = step;
+          const { command } = step;
           return (
             <RowWord
               label={t`Undo applying ${name}`}
               word={<Trans>Undo</Trans>}
-              sentence={`${said} ${
-                count > 1
-                  ? t`Undo takes back the whole Apply, all ${count} changes.`
-                  : t`Undo takes back the Apply.`
-              }`}
+              sentence={said}
               onAction={() => void command.press(null)}
               // The pressed ✓ or Apply all left with its row: the first row the Apply took has
               // the focus, as a delete's Undo does.

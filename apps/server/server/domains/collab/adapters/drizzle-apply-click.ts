@@ -12,9 +12,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   addCounts,
   applyBase,
+  captureDelta,
+  changeStateIn,
   contentMerge,
   type RuleCounts,
+  readDelta,
   ruleCounter,
+  type StoredDelta,
+  takeOut,
 } from "@meridian/agent-edit/content-merge";
 import {
   appendApplyRecord,
@@ -23,8 +28,7 @@ import {
   readBlocks,
   writeBlocks,
 } from "@meridian/agent-edit/diff";
-import type { InversePart, JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
-import { computeInverse } from "@meridian/agent-edit/integration";
+import type { JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type {
@@ -51,9 +55,10 @@ import {
   type TreeWriter,
   undoApply,
 } from "@meridian/project-tree";
-import { allocateDocumentClient, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import * as Y from "yjs";
+import type { Node as PMNode } from "prosemirror-model";
+import type * as Y from "yjs";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
@@ -79,7 +84,6 @@ import type { Branches } from "../domain/branches.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import type { DraftBase } from "../domain/draft-runtime.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
-import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import { storedDocument } from "../domain/stored-document.js";
 import {
   createApplyTreeOperations,
@@ -88,7 +92,6 @@ import {
 } from "./drizzle-apply-tree.js";
 import { treeListOfNode, treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
-import { recordDocumentEdit, stampLiveEditsWithCommand } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { type ReopenDrafts, reverseBaseHalf } from "./drizzle-reopen-drafts.js";
 import {
@@ -98,7 +101,9 @@ import {
   settlementOf,
 } from "./drizzle-settlement-of.js";
 import { writeTextAnswer } from "./drizzle-text-answer.js";
-import { loadPreparedUnapply, loadUnapplyHistory } from "./drizzle-unapply-read.js";
+import { loadPreparedUnapply } from "./drizzle-unapply-read.js";
+
+const documentSchema = buildDocumentSchema();
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
@@ -250,38 +255,28 @@ export function createDrizzleApplyClick(
     try {
       let overrode = 0;
       const merged = ruleCounter();
-      const liveEffects: { groupId: string; seq: number | null }[] = [];
+      const liveEffects: { groupId: string; delta: StoredDelta | null }[] = [];
+      const fragment = live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
       for (const group of click.groups) {
-        const groupMerge = contentMerge(
-          schema,
-          group.before,
-          readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-          group.patched,
-        );
+        const before = readBlocks(fragment, schema);
+        const groupMerge = contentMerge(schema, group.before, before, group.patched);
         overrode += groupMerge.overrode;
         addCounts(merged.fire, groupMerge.rules);
         update = undefined;
-        live.transact(
-          () =>
-            writeBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema, groupMerge.blocks),
-          "apply",
-        );
-        const seq = update
-          ? await deps.live.append(
-              node,
-              update,
-              { seq: 0, origin: `human:${accountId}` },
-              snapshot.authority,
-            )
-          : null;
-        liveEffects.push({ groupId: group.groupId, seq });
+        live.transact(() => writeBlocks(fragment, schema, groupMerge.blocks), "apply");
+        if (update)
+          await deps.live.append(
+            node,
+            update,
+            { seq: 0, origin: `human:${accountId}` },
+            snapshot.authority,
+          );
+        liveEffects.push({
+          groupId: group.groupId,
+          delta: update ? captureDelta(before, readBlocks(fragment, schema)) : null,
+        });
       }
       deps.merged({ commandId, kind: "apply", rules: merged.counts, overrode });
-      await stampLiveEditsWithCommand(
-        tx,
-        commandId,
-        liveEffects.flatMap((effect) => (effect.seq === null ? [] : [effect.seq])),
-      );
       await testHook("apply.afterLive");
       const baseEffects: { groupId: string; start?: unknown[]; delta: unknown[] }[] = [];
       const write = deps.coordinator.prepareAppend(base, [], {
@@ -339,7 +334,8 @@ export function createDrizzleApplyClick(
             groupId: group.groupId,
             documentId: node,
             draftId: base.snapshot.draftId,
-            liveUpdateSeq: liveEffect.seq,
+            liveDelta: liveEffect.delta,
+            carried: group.carried,
             baseStart: baseEffect.start,
             baseDelta: baseEffect.delta,
           };
@@ -594,7 +590,8 @@ export function createDrizzleApplyClick(
                   draftGone: boolean;
                   snapshot: JournalSnapshot;
                   live: Y.Doc;
-                  inverse: ReturnType<typeof computeInverse>;
+                  /** Live's blocks once the reversed groups are out. */
+                  blocks: readonly PMNode[];
                   reversed: PreparedUnapply["texts"][number]["effects"];
                   skipped: PreparedUnapply["texts"][number]["effects"];
                 }[] = [];
@@ -640,47 +637,33 @@ export function createDrizzleApplyClick(
                   const snapshot = await deps.live.read(text.documentId);
                   const live = storedDocument(snapshot);
                   lives.push(live);
-                  const history = await loadUnapplyHistory(
-                    db,
-                    text.documentId,
-                    effects.flatMap((effect) =>
-                      effect.liveUpdateSeq === null ? [] : [effect.liveUpdateSeq],
-                    ),
+                  // The latest group first: a group's change builds on the earlier groups', so the
+                  // earlier one comes out cleanly only once the later one is out. Each is judged
+                  // on what the ones before it leave. A group that changed nothing in live has
+                  // nothing to take out and reverses.
+                  let blocks: readonly PMNode[] = readBlocks(
+                    live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
+                    documentSchema,
                   );
-                  const bySeq = new Map<number, InversePart>();
-                  for (const part of history) {
-                    const value = part.origin;
-                    if (value?.kind === "live") bySeq.set(value.seq, part);
+                  const taken = new Set<number>();
+                  for (const effect of [...effects].reverse()) {
+                    if (!effect.liveDelta) {
+                      taken.add(effect.ordinal);
+                      continue;
+                    }
+                    const change = readDelta(documentSchema, effect.liveDelta);
+                    if (changeStateIn(documentSchema, change, blocks) !== "stands") continue;
+                    blocks = takeOut(documentSchema, change, blocks);
+                    taken.add(effect.ordinal);
                   }
-                  const targeted = effects.flatMap((effect) => {
-                    if (effect.liveUpdateSeq === null) return [];
-                    const part = bySeq.get(effect.liveUpdateSeq);
-                    return part ? [{ effect, part }] : [];
-                  });
-                  const inverse = computeInverse(
-                    live,
-                    history,
-                    // Latest group first: a group's live update builds on the earlier groups' items, so the
-                    // earlier group is intact only once the later one is out.
-                    [...targeted].reverse().map(({ part }) => part),
-                    { actionId: commandId, allocateClient: allocateDocumentClient },
-                  );
-                  const reversedEditIds = new Set(inverse.edits.map((edit) => edit.targetEditId));
-                  const reversed = effects.filter(
-                    (effect) =>
-                      effect.liveUpdateSeq === null ||
-                      targeted.some(
-                        ({ effect: candidate, part }) =>
-                          candidate.ordinal === effect.ordinal && reversedEditIds.has(part.editId),
-                      ),
-                  );
+                  const reversed = effects.filter((effect) => taken.has(effect.ordinal));
                   plans.push({
                     documentId: text.documentId,
                     currentBase,
                     draftGone: !draft,
                     snapshot,
                     live,
-                    inverse,
+                    blocks,
                     reversed,
                     skipped: effects.filter((effect) => !reversed.includes(effect)),
                   });
@@ -688,38 +671,18 @@ export function createDrizzleApplyClick(
                 let unappliedSeq: string | undefined;
                 for (const plan of plans) {
                   if (!plan.reversed.length) continue;
-                  const { documentId, live, snapshot, inverse, currentBase } = plan;
-                  const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
-                  for (const edit of inverse.edits) {
-                    for (const part of edit.parts) {
-                      const provenance = captureMutationUpdates(live, () => {
-                        live.transact(() => {
-                          Y.applyUpdate(live, part.update);
-                          appendInverseRestorationFacts(live, part.aliases);
-                        });
-                      });
-                      const update = provenance.length
-                        ? Y.mergeUpdates([part.update, ...provenance])
-                        : part.update;
-                      const seq = await deps.live.append(
-                        documentId,
-                        update,
-                        { seq: 0, origin: "system" },
-                        snapshot.authority,
-                      );
-                      receipts.push({ ...part, update, origin: { kind: "live", seq } });
-                    }
-                  }
-                  if (receipts.length)
-                    await recordDocumentEdit(tx, {
+                  const { documentId, live, snapshot, blocks, currentBase } = plan;
+                  const fragment = live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+                  const written = captureMutationUpdates(live, () =>
+                    live.transact(() => writeBlocks(fragment, documentSchema, blocks), "unapply"),
+                  );
+                  for (const update of written)
+                    await deps.live.append(
                       documentId,
-                      actor: "human",
-                      actorUserId: command.envelope.accountId,
-                      kind: "undo",
-                      actionId: commandId,
-                      commandId,
-                      receipts,
-                    });
+                      update,
+                      { seq: 0, origin: "system" },
+                      snapshot.authority,
+                    );
 
                   if (currentBase) {
                     const groupIds = new Set(plan.reversed.map((effect) => effect.groupId));
@@ -731,7 +694,7 @@ export function createDrizzleApplyClick(
                           {
                             applyCommandId,
                             groupIds,
-                            merges: plan.reversed.filter((effect) => effect.liveUpdateSeq !== null),
+                            merges: plan.reversed.filter((effect) => effect.liveDelta !== null),
                           },
                         ]);
                         return reversal.rows;

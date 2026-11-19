@@ -426,7 +426,7 @@ export function useWorkBranchCommands({
     };
     /** The applied rows' Undo: `step`, the one Ctrl+Z takes, over the changes it landed. */
     const undoOf = (step: AppliedCommand | null, data: StepData | null): AppliedUndo | null =>
-      step && data ? { command: step, count: data.nodes.length } : null;
+      step && data ? { command: step } : null;
     /**
      * `redone`: the Apply whose Redo this is, which becomes this Apply's step. `landed`: what it
      * landed, null when nothing did.

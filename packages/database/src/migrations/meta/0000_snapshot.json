@@ -9022,11 +9022,17 @@
           "primaryKey": false,
           "notNull": true
         },
-        "live_update_seq": {
-          "name": "live_update_seq",
-          "type": "bigint",
+        "live_delta": {
+          "name": "live_delta",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
+        },
+        "carried": {
+          "name": "carried",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
         },
         "base_start": {
           "name": "base_start",

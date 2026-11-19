@@ -288,11 +288,8 @@ export type DraftNotice =
       dismiss(): void;
     });
 
-/**
- * An Apply's Undo: the Apply (`AppliedCommand`), whose state says whether its Undo is offered, over
- * `count` changes.
- */
-export type AppliedUndo = { command: AppliedCommand; count: number };
+/** An Apply's Undo: the Apply (`AppliedCommand`), whose state says whether its Undo is offered. */
+export type AppliedUndo = { command: AppliedCommand };
 
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which

@@ -41,7 +41,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       handleApplyItemsRequest,
       handleDiscardBranchRequest,
       handleOwnerDraftListRequest,
-      handleUnapplyClickRequest,
       selectBranchRouteServices,
     } = await import("./branch-review-route.js");
 
@@ -523,7 +522,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         );
 
-      it("the card's Undo after an Apply is the Apply's Un-Apply, though one drafted document was discarded", async () => {
+      it("the card's Undo takes back a move an Apply landed, though one drafted document was discarded", async () => {
         const script = await start();
         await drafting(script).reply(async (edit) => {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
@@ -554,26 +553,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         } as never);
         const [part1] = await placementsNamed("part1");
         expect((await placement(CH1))?.parentId).toBe(part1?.id);
-        const chip = () =>
-          composed.ports.documentSync.getDocumentAndTreeChip(
-            OTHER.threadId as never,
-            OTHER.turnId as never,
-          );
-        // The card names the Apply that took the move, and its own reversal leaves the move to it.
-        expect(await chip()).toMatchObject({
-          applied: [{ commandId: applyCommandId, branchId, count: 1, onlyThisTurn: true }],
-        });
+        // The Apply landed the move; the card's own Undo takes it back, as it takes back any reply's move.
         await cardUndo();
-        expect((await placement(CH1))?.parentId).toBe(part1?.id);
-        const unapplied = await handleUnapplyClickRequest(routes, {
-          ...scope,
-          branchId,
-          request: { commandId: randomUUID(), applyCommandId },
-        } as never);
-        expect(unapplied, JSON.stringify(unapplied)).toMatchObject({ status: "unapplied" });
         expect((await placement(CH1))?.parentId).toBeNull();
         expect(await placementsNamed("fresh")).toEqual([]);
-        expect((await chip())?.applied).toBeUndefined();
       });
 
       it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {

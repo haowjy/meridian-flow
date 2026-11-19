@@ -204,7 +204,7 @@ export function createReopenDrafts(
         documentId: applyCommandEffects.documentId,
         ordinal: applyCommandEffects.ordinal,
         groupId: applyCommandEffects.groupId,
-        liveUpdateSeq: applyCommandEffects.liveUpdateSeq,
+        liveDelta: applyCommandEffects.liveDelta,
         baseStart: applyCommandEffects.baseStart,
         baseDelta: applyCommandEffects.baseDelta,
       })
@@ -242,7 +242,7 @@ export function createReopenDrafts(
         applyCommandId: group[0]?.commandId as string,
         groupIds: new Set(effects.map(({ effect }) => effect.groupId)),
         // `order` is latest first within an Un-Apply; the body wants oldest first.
-        merges: effects.filter(({ effect }) => effect.liveUpdateSeq !== null).reverse(),
+        merges: effects.filter(({ effect }) => effect.liveDelta !== null).reverse(),
       });
     }
     return reversals;

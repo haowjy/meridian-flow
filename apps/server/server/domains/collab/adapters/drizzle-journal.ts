@@ -362,15 +362,14 @@ async function validateAppendAuthority(
 type AppendedUpdate = { seq: number };
 
 /**
- * One update inserted under the document mutation lock the caller holds. `stored` is the
- * document before it, present for a human update, whose edit receipts are captured against it.
+ * One update inserted under the document mutation lock the caller holds. A writer's frame leaves
+ * no edit receipt: what the writer typed is read from the text, not from a record of the frame.
  */
 async function insertUpdate(
   db: JournalDb,
   documentId: string,
   update: Uint8Array,
   meta: UpdateMeta,
-  stored: Y.Doc | undefined,
 ): Promise<AppendedUpdate> {
   const origin = parseOrigin(meta);
   const authorityHead = await allocateAdmission(db, documentId);
@@ -390,18 +389,6 @@ async function insertUpdate(
     })
     .returning({ id: documentYjsUpdates.id });
   if (!row) throw new Error("Failed to append Yjs update");
-  if (stored && origin.originType === "human") {
-    await recordDocumentEdit(db, {
-      documentId: asDocumentId(documentId),
-      actor: "human",
-      actorUserId: origin.actorUserId,
-      receipts: captureReceiptRows(
-        stored,
-        [{ update, origin: { kind: "live", seq: row.id } }],
-        false,
-      ),
-    });
-  }
   return { seq: row.id };
 }
 
@@ -593,15 +580,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         const txDb = await enterJournalSeam(db, [docId], agentAuthored(meta) ? [docId] : []);
         await validateAppendAuthority(txDb, docId, authority);
         // Agent and system appends carry their own fresh structs and are not judged.
-        const stored =
-          parseOrigin(meta).originType === "human"
-            ? storedDocument(await createDrizzleJournal(txDb).read(docId))
-            : undefined;
-        try {
-          return (await insertUpdate(txDb, docId, update, meta, stored)).seq;
-        } finally {
-          stored?.destroy();
-        }
+        return (await insertUpdate(txDb, docId, update, meta)).seq;
       });
     },
 
@@ -617,7 +596,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           if (documentContainsUpdate(stored, update)) return { status: "contained" } as const;
           return {
             status: "appended",
-            ...(await insertUpdate(txDb, docId, update, meta, stored)),
+            ...(await insertUpdate(txDb, docId, update, meta)),
           } as const;
         } finally {
           stored.destroy();

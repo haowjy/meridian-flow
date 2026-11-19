@@ -1,9 +1,12 @@
 /** Pure attempt-local text planning for one captured inverse document. */
+import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
+import { readBlocks } from "@meridian/agent-edit/diff";
 import type { ComputedInverseEdit } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import type { BranchId } from "@meridian/contracts";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
+import { allocateDocumentClient, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { draftSchema } from "../domain/draft-changes.js";
 import { appendInverseRestorationFacts } from "../domain/provenance.js";
 import type { PreparedDocumentInverse, TurnInverseQuery } from "../domain/turn-inverse-service.js";
 
@@ -11,7 +14,10 @@ export type PlannedInverse = {
   plan: PreparedDocumentInverse;
   documentId: import("@meridian/contracts").DocumentId;
   /** Each live step's parts, with their restoration facts on this attempt's copy of Live. */
-  edits: Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>;
+  edits: Map<
+    ComputedInverseEdit,
+    (ComputedInverseEdit["parts"][number] & { delta: StoredDelta | null })[]
+  >;
   /** What a step wrote: Live's journal updates (`draftId` null) and the appends of a draft's content steps. */
   updates: { draftId: string | null; update: Uint8Array }[];
   live: boolean;
@@ -30,16 +36,19 @@ export function planInverseDocument(
   query: TurnInverseQuery,
 ): PlannedInverse {
   const document = plan.document;
-  const edits = new Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>();
+  const edits: PlannedInverse["edits"] = new Map();
   for (const step of plan.steps) {
-    // A step in an open draft is content: it is computed under the draft's hold, not here.
-    if (step.kind === "content") continue;
+    // A content or manuscript step is computed under its draft's hold or Live's key, not here.
+    if (step.kind !== "kernel") continue;
     const view = document.live;
     edits.set(
       step.edit,
       step.edit.parts.map((part) => {
         const client =
           Y.decodeUpdate(part.update).structs[0]?.id.client ?? allocateDocumentClient(view);
+        const fragment = view.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+        // What this Undo or revert did to the text, so the card can take it out by content.
+        const textBefore = readBlocks(fragment, draftSchema);
         const provenance = captureMutationUpdates(view, () => {
           view.transact(() => {
             Y.applyUpdate(view, part.update);
@@ -55,6 +64,7 @@ export function planInverseDocument(
         return {
           ...part,
           update: provenance.length ? Y.mergeUpdates([part.update, ...provenance]) : part.update,
+          delta: captureDelta(textBefore, readBlocks(fragment, draftSchema)),
         };
       }),
     );
