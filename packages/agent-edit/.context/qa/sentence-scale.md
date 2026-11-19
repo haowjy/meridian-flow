@@ -4,7 +4,9 @@
 paragraphs of two to four sentences with punctuation and quotes. Each row is one AI edit of one to
 three parts (reword, rewrite or delete a sentence, insert one, rewrite or add a paragraph), then one
 to four later edits by the writer, a later reply or Live (split, join, move, reword), carried in by
-the pull's own merge, then (60% of rows) an Apply of one change. The oracle is the same row without the
+the pull's own merge (a quarter of the rows instead have the writer only type words straight before or
+after an AI sentence, with or without a space: the `EDGE row` lines; typing next to the AI's words
+keeps Undo, typing inside them does not), then (60% of rows) an Apply of one change. The oracle is the same row without the
 AI edit. It needs no database or browser and is not part of `pnpm check`. Run it when
 `content-merge/stands.ts`, the merge's rules, or `diff/review.ts`'s cut change.
 

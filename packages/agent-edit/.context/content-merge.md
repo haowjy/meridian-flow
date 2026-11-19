@@ -48,7 +48,8 @@ Yjs item id:
 
 - **`changeState`**: `stands` when the text holds the whole change, the merge can take it out
   (`contentMerge(after, before, window)` has no conflict, changes the window, and putting the change
-  back on its result gives the window again) and taking it out adds no pending change (checked on the
+  back on its result gives the window again, with either side named first, since words typed at the
+  very edge of the change sit on either side of it) and taking it out adds no pending change (checked on the
   result `takeOut` writes, when that has no conflict, so the check and the press are one merge); `altered` when
   the text holds it changed, or when taking it out would leave Changes with a group it has not got (a
   group cut in two, or one sitting where none went); `out` when it is gone. `takeOut` writes the
@@ -100,10 +101,10 @@ not list, or lists one it does not fire.
 
 | Rule | What it does | Code | Case |
 |---|---|---|---|
-| `insertions-kept-both` | Both sides inserted at one point: both stay, live's first; a word both typed stays once | `unionInsertions` in `merge-settle.ts` | `insert-different` |
+| `insertions-kept-both` | Both sides inserted at one point: both stay, live's first; a word both typed stays once, a shared full stop or comma alone does not | `unionInsertions` in `merge-settle.ts` | `insert-different` |
 | `same-block-added-twice` | Both sides made the same block at one place (equal but for ids): one block, with live's id | `unifyAdded` | `id-typed-twice` |
 | `marks-merged` | Both sides only reformatted one word: each mark comes from the side that changed it | `mergeMarks` in `merge-hunks.ts` | `bold-vs-italic` |
-| `shared-edge-kept-once` | One side inserted words the other side's replacement also starts or ends with: kept once. Off, words double | `peel` | `shared-edge-kept-once` |
+| `shared-edge-kept-once` | One side inserted words the other side's replacement also starts or ends with: kept once (a shared full stop or comma alone is not a shared word: two sentences that each end in one are two sentences). Off, words double | `peel` | `shared-edge-kept-once` |
 | `typed-at-end-of-deleted` | Words typed at the end of a paragraph the other side deleted are a clash, not a join onto the paragraph before. Off, a word is joined onto a paragraph neither side joined it to | `typedAtEndOfDeleted`, through `touch` | `typed-at-end-of-deleted` |
 | `moved-text-dropped` | Live cut and pasted text (3 or more words, or a whole inserted run) whose source the draft changed: live's paste is left out and the draft's text stays at the source. The draft's own paste of text live changed stays and is not counted | `dropMovedText` | `live-moves-sentence-draft-edits-it` |
 | `neighbouring-changes-joined` | Two one-sided changes within three unchanged tokens are one change the two diffs placed differently. Off, words double | `coalesce` | `neighbouring-changes-joined` |
@@ -121,7 +122,7 @@ side where the same two tokens are neighbours is how the patch is put back, not 
 | Rule | What it does | Code | Case |
 |---|---|---|---|
 | `draft-wins-space` | Both sides changed the space before one word differently: the draft's | `settleWhitespace` | `draft-wins-space` |
-| `space-added-between-words` | Two words no side had side by side get one space, except in scripts written without spaces | `settleWhitespace` | `coords` |
+| `space-added-between-words` | A word that no side had after the token before it gets a space when that token is a word or ends a clause or sentence, except in scripts written without spaces | `settleWhitespace` | `space-added-after-sentence` |
 
 **Shape** (`buildBlocks` in `diff/tokens.ts`; review's `composeHunks` shares it and does not count)
 
@@ -140,7 +141,10 @@ a count from production says it never fires.
 - `draftAbsorbsLive` decides that an overlap is no clash because the draft's text already holds live's
   change. It is part of how `draft-wins-text` counts.
 - The diff's own choices of where a change sits (`align`: `separateBlocks`, `canonicalize`,
-  `refine`) run on every diff, review's too.
+  `refine`) run on every diff, review's too. `canonicalize` puts a pure insertion or deletion at the
+  rightmost of its equal places, so a sentence added after a full stop sits after it, not as ". Text"
+  before it: the writer's words typed beside it then land at the same place and a punctuation mark
+  is not shared between two sentences.
 - The size limits (`coarse-diff`: a paragraph or run of changed paragraphs past 1,000 tokens, a
   diff past 4,000 keys, pairing past 40,000 block pairs) turn a diff into one whole replacement, so a
   change on both sides is one clash and the draft's text stands. `diff/tokens.ts` and `diff/align.ts`

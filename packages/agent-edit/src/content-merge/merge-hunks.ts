@@ -145,8 +145,9 @@ export function draftAbsorbsLive(
 /**
  * Where one side inserts text at a boundary of the other side's replacement, and the
  * replacement's new text shares that edge, split that shared part off as a plain insertion, so
- * it merges as one insertion and only the rest can conflict (`shared-edge-kept-once`). Returns how
- * many hunks it split.
+ * it merges as one insertion and only the rest can conflict (`shared-edge-kept-once`). Punctuation
+ * alone is not a shared edge: two sentences that both end in "." are two sentences. Returns how many
+ * hunks it split.
  */
 export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
   let peeled = 0;
@@ -180,7 +181,7 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
           coreKey(hunk.ins[shared]) === coreKey(insertion.ins[shared])
         )
           shared++;
-        if (shared > 0) {
+        if (shared > 0 && hunk.ins.slice(0, shared).some(isWordTok)) {
           own.splice(
             i,
             1,
@@ -203,7 +204,7 @@ export function peel(liveHunks: Hunk[], draftHunks: Hunk[]): number {
           coreKey(suffix.ins[suffix.ins.length - 1 - shared])
       )
         shared++;
-      if (shared > 0) {
+      if (shared > 0 && hunk.ins.slice(hunk.ins.length - shared).some(isWordTok)) {
         const cut = hunk.ins.length - shared;
         own.splice(
           i,

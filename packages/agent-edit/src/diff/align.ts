@@ -416,7 +416,7 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
         sf++;
         cands.push([p, sf]);
       }
-      const best = cands.find(([q, s]) => boundary(q) && isBlockTok(st[s])) ?? cands[0];
+      const best = cands.find(([q, s]) => boundary(q) && isBlockTok(st[s])) ?? cands.at(-1)!;
       h.from = h.to = best[0];
       h.sfrom = best[1];
       h.sto = best[1] + n;
@@ -435,7 +435,7 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
         sf++;
         cands.push([p, sf]);
       }
-      const best = cands.find(([q]) => isBlockTok(bt[q]) && boundary(q + n)) ?? cands[0];
+      const best = cands.find(([q]) => isBlockTok(bt[q]) && boundary(q + n)) ?? cands.at(-1)!;
       h.from = best[0];
       h.to = best[0] + n;
       h.sfrom = h.sto = best[1];
