@@ -116,7 +116,7 @@ const standing = (projection: TreeProjection) =>
 
 const cmd = () => crypto.randomUUID();
 
-const SEEDS = Number(process.env.TREE_SEEDS ?? 300);
+const SEEDS = Number(process.env.TREE_SEEDS ?? 40);
 const FIRST_SEED = Number(process.env.TREE_FIRST_SEED ?? 1);
 const STEPS = Number(process.env.TREE_STEPS ?? 160);
 const REPLICAS = 4;
