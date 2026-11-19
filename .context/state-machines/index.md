@@ -87,5 +87,6 @@ have it:
 
 Named states that no code steps: they are computed from other state on each read. Examples
 are the handoff brief card and compaction divider (from a turn's status), the import word the
-writer sees, undo part state in agent-edit and the Stop button's status. Two-way toggles and
+writer sees, undo part state in agent-edit, the state of a change of an AI edit in a draft (drawn in
+[collab reversal](../../apps/server/server/domains/collab/.context/reversal.md)) and the Stop button's status. Two-way toggles and
 one-shot results are left out too.
