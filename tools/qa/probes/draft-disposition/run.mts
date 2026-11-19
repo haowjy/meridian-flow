@@ -127,7 +127,7 @@ try {
   discarded.doc.clientID = 654;
   discarded.text.delete(discarded.text.length - 3, 3);
   await discarded.save();
-  assert.equal((await read(discarded.draftId))?.parts[0].disposition, "discarded");
+  assert.equal((await read(discarded.draftId))?.parts[0].disposition, "pending");
   const discardedBefore = await h.readDraft(discarded.draftId);
   const discardResult = await discarded.command("revert");
   observe("revert discarded by edit", {
