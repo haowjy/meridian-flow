@@ -309,9 +309,8 @@ sentence says it was applied, with where it is now (read by id from the tree, th
 to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
 takes (`AppliedCommand.press`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
 answers ends the applied notice, so its result shows on the rows as a press's does: nothing, when it
-took everything back; "Partly undone" or "Not undone", when a tree change stayed because it was
-changed since or has writing in it since (`unappliedOf`, in `draft-notices.ts`, the one reading of an Un-Apply answer); "Retry", when it
-didn't reach the server. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
+took everything back or left something as it was (an Un-Apply never says why); "Retry", when it
+didn't reach the server (`unappliedOf`, in `draft-notices.ts`, is the one reading of an Un-Apply answer). The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
 removed-documents notice). Only the document's name shortens in a notice; its verb and Undo

@@ -7,13 +7,11 @@ import {
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -161,25 +159,6 @@ export function useDraftReviewScopeValue({
         ? (activeEditorProjection?.session ?? null)
         : null,
   });
-
-  useEffect(() => {
-    if (!threadId || !activeEditorProjection || activeEditorProjection.inReview) return;
-    const session = activeEditorProjection.session;
-    if (!session) return;
-    let timer: number | null = null;
-    const invalidateLineage = () => {
-      if (timer != null) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        timer = null;
-        void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
-      }, 200);
-    };
-    session.document.on("update", invalidateLineage);
-    return () => {
-      if (timer != null) window.clearTimeout(timer);
-      session.document.off("update", invalidateLineage);
-    };
-  }, [activeEditorProjection, queryClient, threadId]);
 
   const value = useMemo<DraftReviewContextValue>(
     () => ({

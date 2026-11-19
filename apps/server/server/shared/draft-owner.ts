@@ -230,33 +230,3 @@ export async function branchDraftRefs(
     .where(inArray(documentDrafts.id, [...new Set(draftIds)]));
   return rows;
 }
-
-/**
- * The name an owner goes by in a line about its notes: a Work's name, or a conversation's title
- * else its ref. By owner id (`workId`, or `rootThreadId`); an owner with no row has none.
- */
-export async function ownerNames(
-  db: DrizzleDb,
-  owners: { workIds: readonly string[]; rootThreadIds: readonly string[] },
-): Promise<ReadonlyMap<string, string>> {
-  const tx = currentDrizzleDb(db);
-  const ids = (list: readonly string[]) =>
-    sql.join(
-      [...new Set(list)].map((id) => sql`${id}::uuid`),
-      sql`, `,
-    );
-  const rows = [
-    ...(owners.workIds.length
-      ? await tx.execute<{ id: string; name: string }>(
-          sql`SELECT id::text AS id, name FROM works WHERE id IN (${ids(owners.workIds)})`,
-        )
-      : []),
-    ...(owners.rootThreadIds.length
-      ? await tx.execute<{ id: string; name: string }>(
-          sql`SELECT id::text AS id, coalesce(nullif(trim(title), ''), ref) AS name
-              FROM threads WHERE id IN (${ids(owners.rootThreadIds)})`,
-        )
-      : []),
-  ];
-  return new Map(rows.map((row) => [row.id, row.name]));
-}

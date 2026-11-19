@@ -278,7 +278,7 @@ describe("Work receipt reversal", () => {
     await expect(h.works.findById(work.id)).resolves.toMatchObject({ name: "A" });
     await expect(
       getTurnReceiptChip(h.deps, { threadId: THREAD_ID, turnId: TURN_ID }),
-    ).resolves.toMatchObject({ state: "undone", control: "view_change" });
+    ).resolves.toMatchObject({ undone: true, control: "view_change" });
   });
 
   it("reports external C to D divergence without overwriting it", async () => {

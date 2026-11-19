@@ -6,7 +6,6 @@ import {
   type PartClassification,
   prepareEditRoots,
 } from "@meridian/agent-edit/integration";
-import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
 import { allocateDocumentClient, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
@@ -163,15 +162,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
         ? ("already_removed" as const)
         : ("edited_since" as const)
       : kernelCause(part, inspection.states([part])[0], inspection);
-  /** The per-turn skip cause, in the turn protocol's words, for a part found `kernel`. */
-  function turnSkipCause(
-    part: StoredInversePart,
-    kernel: PartClassification | null,
-  ): TurnInverseSkipCause {
-    const cause = settledCause(part.disposition) ?? kernelCause(part, kernel);
-    return cause === "already_removed" ? "already_undone" : cause;
-  }
-
   function textSelection(entry: Entry, inspection: Inspection) {
     const selection: StoredInversePart[] = [];
     const partial: TextOmission[] = [];
@@ -233,11 +223,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     if (destinations.size !== 1) throw new Error("One edit spans multiple versions");
     const [destination] = destinations;
     if (!destination) throw new Error("One edit has no destination");
-    const every = (cause: TurnInverseSkipCause) => ({ causes: entry.parts.map(() => cause) });
-    if (destination.closed) return every("returned");
-    if (destination.kind === "draft" && destination.state === "gone")
-      return { causes: entry.parts.map(closedPartCause) };
-    if (destination.kind === "live" && destination.removed) return every("document_deleted");
+    // A closed owner, a gone draft or a deleted document has nothing the card's Undo can take.
+    if (destination.closed) return null;
+    if (destination.kind === "draft" && destination.state === "gone") return null;
+    if (destination.kind === "live" && destination.removed) return null;
     const actionKind = poppableForTurn(turn).has(entry.id)
       ? ("undo" as const)
       : ("revert" as const);
@@ -245,12 +234,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     // its text is not there for an Undo to take out.
     const settled = (part: StoredInversePart) =>
       destination.kind === "draft" && !part.waiting && part.disposition !== "applied";
-    return {
-      destination,
-      actionKind,
-      selection: entry.parts.filter((part) => !settled(part)),
-      discarded: entry.parts.filter(settled),
-    };
+    return { destination, actionKind, selection: entry.parts.filter((part) => !settled(part)) };
   }
   function poppableForTurn(turn: TurnInverseQuery) {
     const poppable = new Set<string>();
@@ -293,7 +277,6 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     compute,
     textPlan,
     turnTextPlan,
-    turnSkipCause,
     takenBy,
     available,
     planTakeOut,

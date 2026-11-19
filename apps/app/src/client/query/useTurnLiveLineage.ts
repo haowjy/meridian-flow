@@ -4,7 +4,9 @@ import type {
   TurnLiveLineageDocumentItem,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import { type QueryClient, useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Editor } from "@tiptap/core";
+import { useEffect } from "react";
 
 import { listTurnLiveLineage } from "@/client/api/live-lineage-api";
 import { useIsThreadPendingCreation } from "@/client/stores";
@@ -25,6 +27,31 @@ export function refreshTurnCards(queryClient: QueryClient): Promise<void> {
     },
     { cancelRefetch: false },
   );
+}
+
+/**
+ * A card's Undo depends on the text, so an edit to the open document, the writer's own typing
+ * among them, refreshes the cards a moment after it settles. One read per pause in typing, and
+ * only for the cards on screen.
+ */
+export function useRefreshTurnCardsOnEdit(editor: Editor | null): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!editor) return;
+    let timer: number | null = null;
+    const onUpdate = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void refreshTurnCards(queryClient);
+      }, 300);
+    };
+    editor.on("update", onUpdate);
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+      editor.off("update", onUpdate);
+    };
+  }, [editor, queryClient]);
 }
 
 export type TurnLiveLineageStatus = ListQueryStatus<TurnLiveLineageDocumentItem> & {

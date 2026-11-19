@@ -58,8 +58,6 @@ export type Settlement =
   | {
       rule: "returned";
       why: ReturnedWhy;
-      /** For a closed owner of notes the command would change: the name it goes by. */
-      owner?: string;
       /** On an Un-Apply: the nodes it left as the Apply left them, for `why`. */
       items?: string[];
     }

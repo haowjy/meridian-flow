@@ -66,14 +66,12 @@ its outcome, the no-op answers included (`nothing_to_undo`, `expired`); every st
 `lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
 both halves or neither; its one stored outcome answers a resend, and another request under the id
 is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's branch no longer places the node (a Discard took it out) is
-dropped from the grants and never run: it reports as skipped, and the rest of the reply still
+dropped from the grants and never run: it is left alone, and the rest of the reply still
 reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or deleted Work, a chat
-in Trash) is planned per target, not refused: the reversal lands Live and open targets and
-reports each closed one as a `returned` skip with its `why` (`work_archived`, `work_deleted`,
-`chat_frozen`, `TurnInverseSkip.why`), which the card words per part. A reversal whose every
-target is closed answers `expired` with those skips. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the attempt misses and recaptures, which plans those targets as `returned` (`refusalOrMiss`; a deleted Work's refusal reads `not_found` and is not recognised). A denial for another reason refuses the
-whole reversal, and the outcome carries the policy's reason (`denial`) for the card to word: deleted
-document, or no longer editable.
+in Trash) is planned per target, not refused: the reversal lands Live and open targets and plans nothing
+for a closed one, and the card says nothing about it (its Undo is absent while the owner is
+closed). A reversal whose every target is closed answers `expired`. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the attempt misses and recaptures, which plans nothing for those targets (`refusalOrMiss`; a deleted Work's refusal reads `not_found` and is not recognised). A denial for another reason refuses the
+whole reversal (`permission_denied`), which the card shows as a failed press.
 A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
 `"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
@@ -117,8 +115,8 @@ offers neither for it, because the listing asks the same planner. A model's forw
 own edit: undoing it is an Undo of that edit, which leaves the original's parts untaken. Once nothing is left to undo, the chip
 (`getDocumentAndTreeChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
 the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
-card's undo receipts, whatever has happened to the nodes since), `partly` when parts stayed, else
-`expired` (the same rule as for tree receipts below). Effective action state is indexed per
+card's undo receipts, whatever has happened to the nodes since): the chip's `undone` flag. Otherwise
+it carries no word (the same rule as for tree receipts below). Effective action state is indexed per
 immutable part (`effectiveActionIndex`). A model count consumes original
 actions: once a partial model Undo reverses any surviving part of an edit, the next count
 continues to the preceding edit.
@@ -133,10 +131,10 @@ cannot use a reconstruction endpoint, reversal table, or reserved client. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
 commands. A card Undo pops the turn's poppable stack prefix and writes forward reverts for its
-other text parts, including applied parts. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest. A part of an open draft that no change waits on and that was not applied is skipped as `discarded` the same way, so the card offers Undo only while some of the turn's text still stands in a draft; the Discard's own notice Undo covers the rest.
+other text parts, including applied parts. The card plans nothing for a part whose draft was discarded and inverts the rest. A part of an open draft that no change waits on and that was not applied is left alone the same way, so the card offers Undo only while some of the turn's text still stands in a draft; the Discard's own notice Undo covers the rest.
 Each agent is its own peer: Undo of its edit removes the items the edit inserted and restores
 the items it deleted, item by item, and keeps everyone else's typing, so a later writer edit
-never refuses it. An item that is already gone is skipped ("Stayed as you edited it"): text
+never refuses it. An item that is already gone is left as it is: text
 the writer deleted, a deleted paragraph's words (Undo never re-creates an ancestor the
 writer deleted), a heading level or other attribute the writer set after the edit. An
 element the edit created that the writer typed in stays, holding only the writer's text.
@@ -211,8 +209,7 @@ The card's Undo takes an applied change out of Live and the draft (above).
 Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
 review base has no shown change and can read discarded. In an active draft the kernel decides
 Undo and Revert eligibility; a discarded or applied disposition
-chooses the copy only when the kernel skips a part, ahead of the edited-since reading, so an
-applied part never reads as the writer's edit. Effective action consumption follows immutable receipts,
+settles a part the kernel leaves out. Effective action consumption follows immutable receipts,
 regardless of whether those receipts currently contribute to review. Closed drafts are never
 writable. History derives its offered command from the same captured origin-resolved plan as the
 write command; an archived origin shows no action even when the chat's current destination is
@@ -336,9 +333,8 @@ chip's `preview` stays in-process, one document per turn of the loop (`setImmedi
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`,
 `expired`, or `partial` with HTTP 200; callers retain
-those outcomes and refresh the turn query. Every skipped part carries a typed `cause`
-(`TurnInverseSkipCause`) and the app words it; a tree skip names the path its entry was shown
-at, its `op`, and `changed_since`, `purged` or `returned`.
+those outcomes and refresh the turn query. The outcome carries no per-part explanation: the
+card reads again and shows what is true.
 
 Each tree receipt's fate is decided once, from the walk's own answers for its records
 (`changeUndone` in `@meridian/project-tree`), and the planner, the reversal's status, the chip
@@ -354,8 +350,7 @@ its successors are read from, and it judges the sources that read names, until t
   reversal for it, the status is `reversed` when nothing else stayed, and the chip reads
   Undone. A receipt an earlier card Undo took counts the same, so a second Undo, concurrent or
   from a stale tab, answers `reversed` too; text an earlier card Undo took out does the same.
-- `changed_since` or `purged`: the receipt stays, a skip with that cause, in the chip's skips
-  and the Undo's alike. A reply whose only parts stayed answers `not_undone`.
+- `changed_since` or `purged`: the receipt stays, and nothing is said.
 - `closed`: an opposite record would change a closed owner's notes (an archived or deleted Work, a
   chat in Trash): the record stays, as in Un-Apply, and the skip is `returned` with `why` and the
   owner's name. A source with no `context_sources` row reads `purged`. The card's Undo and the
@@ -374,8 +369,7 @@ after every document outcome, and the press's status comes from one count of the
 stayed and failed across documents, tree and Works (`combineWorkReversalOutcome`). The reply's
 chip is composed once (`getTurnReceiptChip` there; the collab port's `getDocumentAndTreeChip`
 knows nothing of Works, so nothing else answers the card with it):
-Undo while any part acts, Undone when every part is taken, `partly` when some stayed, with the
-documents' and tree's skips; a Work has no skip kind of its own.
+Undo while any part acts, `undone` once a part was taken and none acts now.
 
 Live has unrelated Yjs identity, so skipped inverse parts can retain their cause
 without before/after snippets; never merge live to manufacture them.
