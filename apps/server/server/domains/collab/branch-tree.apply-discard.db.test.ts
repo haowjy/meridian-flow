@@ -26,7 +26,6 @@ import {
 import { LIVE, lastSettlements, listRecords, type TreeWriter } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { accountUserSource } from "../../test-support/branch-tree-seeds.js";
@@ -45,14 +44,12 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
-import { draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
 import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createApplyClickService, type TreeCut } from "./domain/apply-click.js";
 import { createBranchDiscard } from "./domain/branch-discard.js";
 import { createBranches } from "./domain/branches.js";
-import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createUndoDiscardService } from "./domain/undo-discard.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -543,42 +540,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             discardCommandId: discardCommandId as CommandId,
           },
         });
-      /** A Work draft of the document holding `text`: what a closed draft keeps after a Discard. */
-      async function draftOf(documentId: DocumentId, text: string) {
-        const doc = new Y.Doc();
-        doc.getText("body").insert(0, text);
-        const id = `draft_${randomUUID()}`;
-        await db.insert(documentDrafts).values({
-          id,
-          documentId,
-          kind: "work_draft",
-          branchId,
-          state: Buffer.from(Y.encodeStateAsUpdate(doc)),
-          stateVector: Buffer.from(Y.encodeStateVector(doc)),
-          // Judged at its revision: it holds a change, as the effect projection would say.
-          hasEffect: true,
-          hasEffectRevision: 0,
-        });
-        return id;
-      }
-      const workRow = async () => {
-        const [row] = await db.select().from(works).where(eq(works.id, WORK));
-        return {
-          pendingDocumentCount: row?.pendingDocumentCount,
-          entityRevision: Number(row?.entityRevision),
-        };
-      };
-      const draftsOn = (documentId: DocumentId, on: string, status: "active" | "closed") =>
-        db
-          .select()
-          .from(documentDrafts)
-          .where(
-            and(
-              eq(documentDrafts.documentId, documentId),
-              eq(documentDrafts.branchId, on as BranchId),
-              eq(documentDrafts.status, status),
-            ),
-          );
       async function unapply(applyCommandId: string, commandId: string = randomUUID()) {
         return service.unapply({
           branchId,
