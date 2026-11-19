@@ -41,7 +41,11 @@ client contracts, stores and server-owned runtime behavior.
   apply, discard, undo, redo, restore, import, upload, download, log out), "Sign-in expired",
   "Can't drop here", "File too large", "Not an image". No cause, consequence or instruction:
   the cause goes to the console (`detail`). No pill when the screen already shows the state, the
-  thing settles by itself, or the writer has nothing to do about it.
+  thing settles by itself, or the writer has nothing to do about it. The only other pills are
+  the editor's: "Copied" and "Downloaded" for a verb that leaves nothing on screen, and "Passage
+  changed". Closing a pill only hides it: what it hands back stays until the writer acts on it.
+  A drag hint at the pointer is not a pill: it says why that spot refuses ("Can't put that
+  inside code"), so the writer can pick another.
 - A list row is one line until it has something to say
   ([copy and feedback][copy-and-feedback]).
 

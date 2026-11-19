@@ -1,6 +1,6 @@
 /**
  * The app-wide state words: "Not sent" while something the writer did has gone unanswered for a
- * while or the browser is offline with something waiting, and the update word once the app was
+ * while or the browser is offline with something waiting (signed out, it opens the login screen), and the update word once the app was
  * deployed under this tab. The shell places them in the trailing area of the band it already has
  * (main's header on desktop, the phone top bar), so they take room the band already has, change the
  * height of nothing and cover no control; both can show together.
@@ -52,13 +52,39 @@ export function ReloadWords() {
   );
 }
 
+/** Signed out (`paused`), the edits wait for a sign-in, so the word is the way to it. */
 function NotSentWord() {
-  const { notSent } = useDriverSnapshot();
+  const { notSent, paused } = useDriverSnapshot();
   if (!notSent) return null;
-  return (
-    <span role="status" className={WORD}>
+  const words = (
+    <>
       <CloudOff className="size-3" aria-hidden />
       {t`Not sent`}
+    </>
+  );
+  if (paused)
+    return (
+      <button
+        type="button"
+        onClick={logInAgain}
+        aria-label={t`Not sent. Log in`}
+        className={`${WORD} cursor-pointer hover:text-foreground`}
+      >
+        {words}
+      </button>
+    );
+  return (
+    <span role="status" className={WORD}>
+      {words}
     </span>
   );
+}
+
+/**
+ * The login screen, back to this page after: a full load, so the app starts on the new sign-in
+ * and the edits this device kept go out then.
+ */
+export function logInAgain() {
+  const here = `${window.location.pathname}${window.location.search}`;
+  window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);
 }

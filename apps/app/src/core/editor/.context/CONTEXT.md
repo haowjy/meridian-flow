@@ -696,7 +696,8 @@ from the wire alone, with nothing stored between handshakes.
     browser runs one at a time across tabs and workers, so two tabs holding the same words get
     one notice between them and a tab holding more gets a second notice with only the rest. It
     reads the words inside the transaction, from a scratch document of the caller's snapshot.
-  - `act(id)` on Copy or Dismiss marks it acted on: it drops the words and keeps the items, and
+  - `act(id)` on a Copy that reached the clipboard marks it acted on (closing the pill only hides
+    it): it drops the words and keeps the items, and
     nothing clears it. No path rewrites a notice's ranges, so no stale tab can take a fact back.
     Unacted notices carry a field a sparse index lists, so a tab's read costs the open notices,
     not the account's history.

@@ -7,6 +7,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextSourceFacts } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
+import { logInAgain } from "@/components/app/AppStatus";
 import { notifyFailure } from "@/components/app/failure-toast";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import {
@@ -106,15 +107,6 @@ export function ProjectContextRemovalController({
   }, [coordinator, projectId, stableRoute]);
 
   return null;
-}
-
-/**
- * The login screen, back to this page after: a full load, so the app starts on the new sign-in
- * and the edits this device kept go out then.
- */
-function logInAgain() {
-  const here = `${window.location.pathname}${window.location.search}`;
-  window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);
 }
 
 /**

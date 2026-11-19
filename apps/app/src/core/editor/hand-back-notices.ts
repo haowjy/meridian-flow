@@ -51,7 +51,7 @@ export interface HandBackNotices {
     lacking: Ranges,
     read: (ranges: Ranges) => string | null,
   ): Promise<HandBackNotice | null>;
-  /** Copy or Dismiss was pressed: the notice is acted on, for good. Rejects when it can't be stored. */
+  /** The words reached the clipboard: the notice is acted on, for good. Rejects when it can't be stored. */
   act(id: string): Promise<void>;
   /** Every notice not acted on. */
   unacted(): Promise<HandBackNotice[]>;

@@ -66,7 +66,7 @@ export const fileDropDoor: DropDoor = {
         : landing;
     if (picturesOnly) {
       if (at.kind === "inline" && !acceptsInlineImage(editor.state.doc, at.pos))
-        return { kind: "refuse", hint: t`A picture cannot go there.` };
+        return { kind: "refuse", hint: t`Can’t drop here` };
       return {
         kind: "accept",
         pos: at.pos,
@@ -77,7 +77,7 @@ export const fileDropDoor: DropDoor = {
     // A chip's slot is the same wherever it is: probed with a stand-in, committed with the files.
     const probe = chipFor(editor, "file", crypto.randomUUID(), "unfiled");
     const placed = probe && placeNodes(editor.view, at, [probe]);
-    if (!placed) return { kind: "refuse", hint: t`File can’t go there` };
+    if (!placed) return { kind: "refuse", hint: t`Can’t drop here` };
     return {
       kind: "accept",
       pos: placed.pos,

@@ -4,7 +4,8 @@
  * toasts. A failure stays until dismissed, except a `brief` one, a slip from the writer's own
  * action, which goes by itself. `visibleToasts` caps how many show at once. Every toast is one
  * floating pill: the failure's category ("Couldn't apply", "Sign-in expired"), at most one action,
- * and a close. Cause and consequence go to the console (`detail`), never into the pill.
+ * and a close. Cause and consequence go to the console (`detail`), never into the pill. Closing
+ * hides it and never discards anything: `onClose` must not throw away what the writer hasn't kept.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
@@ -23,6 +24,7 @@ export function notifyFailure({
   onClose,
   brief,
   detail,
+  body,
 }: {
   /** This failure's own: a second toast under one key replaces the first. */
   key: string;
@@ -36,12 +38,16 @@ export function notifyFailure({
   brief?: true;
   /** What went wrong, for whoever debugs it: logged, never shown. */
   detail?: unknown;
+  /** Something the writer needs to reach under the title, such as words to select. */
+  body?: ReactNode;
 }) {
   if (detail !== undefined) console.warn(`[failure] ${key}`, detail);
   dismissFailure(key);
   const owns = () => shown.get(key) === id;
   const id = toast.error(title, {
     duration: brief ? BRIEF_MS : Number.POSITIVE_INFINITY,
+    description: body,
+    className: body ? "rounded-xl! items-start! py-1.5!" : undefined,
     onDismiss: () => {
       if (!owns()) return;
       shown.delete(key);
@@ -106,6 +112,7 @@ export function FailureToaster() {
           icon: "flex shrink-0",
           content: "min-w-0",
           title: "truncate",
+          description: "mt-1.5 mb-0.5 w-[min(19rem,calc(100vw-6rem))] select-text",
           actionButton: "text-button shrink-0 text-compact coarse:min-h-11",
           closeButton:
             "focus-ring order-last flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground coarse:size-11 [&_svg]:size-3",

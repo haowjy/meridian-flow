@@ -2,7 +2,7 @@
  * The one body for text handed back to the writer: each passage with Copy, then what happened
  * and Dismiss, so Dismiss never clears words the writer has not seen. The schema repair's bar
  * opens it under Details. Unsent typing is a failure pill instead (`unsentTypingToasts`): its
- * Copy takes the words without showing them.
+ * Copy takes the words without showing them, and only a refused Copy shows them here.
  *
  * Copy is the point: it is the writer's way to keep the words. So it goes through the feature's
  * clipboard adapter and reports a refusal on that passage. (`CopyTextButton` swallows refusals.)
@@ -163,41 +163,57 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
 
 /**
  * Typing a room ended with, handed back as a failure pill: "Couldn't save", Copy, close. The
- * room is gone or reopened on the server's text, so there is no place on screen for it. It stays
- * until the writer copies the words or closes it (`typing.done`), and until then a reload offers
- * the words again. Done in another tab, it leaves this one too. With no words there is nothing to
- * hand back, so no toast.
+ * room is gone or reopened on the server's text, so there is no place on screen for it. Only a
+ * Copy that reached the clipboard ends it (`typing.done`): closing or swiping the pill only hides
+ * it, and a reload offers the words again. A refused Copy shows the words to select. Done in
+ * another tab, it leaves this one too. With no words there is nothing to hand back, so no toast.
  */
 export const unsentTypingToasts: UnsentTypingObserver = {
-  show: (typing) => notifyUnsentTyping(typing, t`Couldn't save`),
+  show: (typing) => notifyUnsentTyping(typing, "unsent"),
   withdraw: (id) => dismissFailure(unsentKey(id)),
 };
 
 const unsentKey = (id: string) => `unsent:${id}`;
 
-/**
- * Copy or close ends it; a press whose local write couldn't be stored, or a copy the browser
- * refused, brings the pill back to press again.
- */
-function notifyUnsentTyping(typing: UnsentTyping, title: string) {
+/** `unsent`: the words wait behind Copy. `refused`: the browser refused Copy, so they show. */
+function notifyUnsentTyping(typing: UnsentTyping, state: "unsent" | "refused") {
   const words = typing.text;
   if (words === null) return;
-  const done = () =>
-    void typing.done().catch((error: unknown) => {
-      console.warn("[unsent-typing] couldn't record the press", error);
-      notifyUnsentTyping(typing, t`Couldn't save`);
-    });
+  const key = unsentKey(typing.id);
+  const copied = () =>
+    void typing.done().then(
+      () => dismissFailure(key),
+      (error: unknown) => {
+        console.warn("[unsent-typing] couldn't record the copy", error);
+        notifyUnsentTyping(typing, "unsent");
+      },
+    );
   notifyFailure({
-    key: unsentKey(typing.id),
-    title: <CountedUnsentTyping typing={typing} words={words} title={title} />,
-    action: {
-      label: t`Copy`,
-      run: () =>
-        writeClipboardText(words).then((write) =>
-          write.status === "done" ? done() : notifyUnsentTyping(typing, t`Couldn't copy`),
-        ),
-    },
-    onClose: done,
+    key,
+    title: (
+      <CountedUnsentTyping
+        typing={typing}
+        words={words}
+        title={state === "unsent" ? t`Couldn't save` : t`Couldn't copy`}
+      />
+    ),
+    ...(state === "unsent"
+      ? {
+          action: {
+            label: t`Copy`,
+            run: () =>
+              writeClipboardText(words).then((write) =>
+                write.status === "done" ? copied() : notifyUnsentTyping(typing, "refused"),
+              ),
+          },
+        }
+      : {
+          body: (
+            <ol>
+              <RescuedPassage text={words} onCopied={copied} />
+            </ol>
+          ),
+        }),
   });
 }
 
