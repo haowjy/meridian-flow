@@ -5465,6 +5465,12 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "delta": {
+          "name": "delta",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "origin": {
           "name": "origin",
           "type": "jsonb",

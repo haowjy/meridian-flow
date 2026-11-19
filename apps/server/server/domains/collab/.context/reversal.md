@@ -5,6 +5,42 @@ Undo/Revert. There is no Redo: the card's and the model's `redo` are gone, and t
 model writes the edit again (the writer asks it to). An inverse is an ordinary
 immutable journal edit; it never rewrites a target row or marks it reversed.
 
+## A drafted edit is text
+
+The card's state and Undo for a part written into an open draft read the part's `delta`, never its
+Yjs item ids (`domain/draft-changes.ts`, over `agent-edit/content-merge/stands.ts`). A change of the edit
+is proposed while it stands and sits in a pending change, altered when it sits in one but no longer
+stands, else out. A part with a change that stands is a `content` step of the reply's plan; its commit
+(`commitContentStep`) is an append under the draft's hold that takes out every change that still stands
+in the committed text and records one `undo` receipt naming the parts it took. A part the writer altered
+has no Undo (the card skips it as edited), and a part an Undo took stays a target only while a change of
+it is back in the draft, so Restore and a Discard's Undo bring the Undo back. The model's `undo` and
+`revert` of a part in an open draft are the same `content` step (`model-inverse-policy.ts`): the planner
+(`model-reversal-planner.ts`) judges each part by its delta against the draft's text, and an entry
+planned earlier in one command is judged on the text the earlier ones leave. A part the writer applied
+or typed inside is refused as changed. The kernel plans only Live parts (until stages 2a and 3): a
+draft has no Yjs lineage view, no `rewriteDraft` and no restoration links.
+
+Undo is offered for a change, and a press writes, only when taking it out adds no pending change to
+Changes (`stands` in `agent-edit/content-merge/stands.ts`: one state for the offer and the press). A
+change whose removal would cut a pending change in two reads altered: Changes still lists it and its
+Discard works, and the card offers no Undo.
+
+```mermaid
+stateDiagram-v2
+  [*] --> proposed: the AI's write lands in the draft
+  proposed --> altered: the writer or a later reply changes its words, or taking it out would add a pending change
+  altered --> proposed: the words are back as the edit wrote them
+  proposed --> out: the card's Undo, the model's undo or revert, or a Discard of it
+  altered --> out: a Discard of it, or it is typed away
+  out --> proposed: Restore of that Discard, or anything else that puts the words back
+  proposed --> applied: Apply
+  applied --> proposed: Un-Apply
+```
+
+No code steps this machine: each change's state is read from its delta and the draft's text on every
+read, so it cannot go stale. `applied` still comes from the Apply record until stage 2a.
+
 ## Commands and policy
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST

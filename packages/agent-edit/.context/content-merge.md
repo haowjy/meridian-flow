@@ -40,6 +40,41 @@ merge attributes, merge block order (`mergeOrder`), align both sides to base as 
 moved text, then group the touching hunks into clusters and decide each, and last put whitespace
 back (`settleWhitespace`) and build blocks (`buildBlocks`).
 
+## Reading an AI edit against a text: `stands` and membership
+
+`content-merge/stands.ts` answers two questions about one change of an AI edit from the edit's recorded
+delta (`document_edit_parts.delta`: the blocks the write changed, before and after) and a text, with no
+Yjs item id:
+
+- **`changeState`**: `stands` when the text holds the whole change, the merge can take it out
+  (`contentMerge(after, before, window)` has no conflict, changes the window, and putting the change
+  back on its result gives the window again) and taking it out adds no pending change; `altered` when
+  the text holds it changed, or when taking it out would leave Changes with a group it has not got (a
+  group cut in two, or one sitting where none went); `out` when it is gone. `takeOut` writes the
+  inverse for a change that stands. Undo is offered, and a press writes, only for `stands`: the
+  press and the offer read the same state.
+- **`readChange`**: which pending changes of Changes the change sits in. Forcing the change out
+  (`contentMerge(after, window, before)`, so `before` wins where the text was altered) alters the
+  pending changes whose hash goes. Joined with the pending changes that hold the change's words (or,
+  for a change with no words, its blocks or marks), for what the merge cannot pair: a paragraph the AI
+  wrote that Live joined into another, a stray quote mark. Equal hashes are paired in document order.
+
+The removal diff covers the change's window (its blocks and one either side, with `base` cut to the
+blocks that pair with it by id); when they are not one run it diffs the whole document. A `ChangeMemo`
+keyed on the blocks a read looked at lets a re-read after a write elsewhere skip the merges.
+`.context/qa/sentence-scale.md` is the differential (misses, glue, a second press) and the cost bench
+(19,000 words, 75 changes: about 330 ms cold, 60 to 65 ms re-read).
+
+Known limits: the windowed read names fewer pending changes than the whole-document one (the whole read
+re-aligns the document tail). At four fresh seeds of 4,000 rows each, no Undo added a pending change,
+none left a change standing, and no second press changed the text; about one row in five of that
+stress workload (a reply plus one to four later edits, many in the same paragraph) loses an Undo to
+the offer rule, mostly because taking the change out would cut a neighbouring pending change in two.
+Two of 16,000 rows miss a pending change the edit caused (after a Live move and join); the change
+then reads altered, so no Undo is offered. An Undo puts back `before` as the AI saw it, not as the
+review base holds it now; restoring the base's version of the touched blocks was tried and made a
+change still read as standing after its Undo more often, so it was not kept.
+
 ## Merge rules
 
 "Case" is a row of `CASES` in `merge.fixtures.ts`. The test fails when a row fires a rule it does

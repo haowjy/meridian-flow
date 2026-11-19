@@ -78,6 +78,8 @@ export const documentEdits = pgTable(
     check("document_edits_kind_valid", sql`${t.kind} IN ('write','undo','revert')`),
   ],
 );
+export type EditDeltaJson = { before: Record<string, unknown>[]; after: Record<string, unknown>[] };
+
 export const documentEditParts = pgTable(
   "document_edit_parts",
   {
@@ -94,6 +96,12 @@ export const documentEditParts = pgTable(
       .default(sql`'[]'::jsonb`),
     frontier: jsonb("frontier").$type<Record<string, number>>().notNull(),
     aliases: jsonb("aliases").$type<Alias[]>().notNull().default(sql`'[]'::jsonb`),
+    /**
+     * The blocks the part changed, before and after the write merged in, as ProseMirror JSON with
+     * one unchanged block either side. What the card and the model's Undo read the edit from, in a
+     * draft and in the manuscript; null for a part written before the column or one that no AI wrote.
+     */
+    delta: jsonb("delta").$type<EditDeltaJson | null>(),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
     /**
      * A drafted part's branch, as its draft row named it when the part was written; null for a

@@ -4,9 +4,11 @@
  * materialization of one read. The coordinator and the storage adapters both build on this.
  */
 
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import type {
   BlockOriginMap,
   CapturedPart,
+  EditTarget,
   SemanticEditIRV1,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
@@ -104,7 +106,7 @@ export type DraftRead = {
 export type AppendReceiptGroup = {
   /** The rows of the write, by index into the finalized rows. */
   rowIndexes: readonly number[];
-  parts: readonly CapturedPart[];
+  parts: readonly (CapturedPart & { delta?: StoredDelta | null })[];
 };
 
 /** A cursor a warm replica already holds, so a read ships only what came after it. */
@@ -123,6 +125,8 @@ export type AppendDraftJournalInput = {
   actorUserId?: string | null;
   updateMeta?: unknown;
   semanticEditIr?: SemanticEditIRV1;
+  /** The receipt's kind and the parts it took back, for an Undo or revert; a write otherwise. */
+  inverse?: { kind: "undo" | "revert"; actionId: string; targets: EditTarget[] };
 };
 
 /**

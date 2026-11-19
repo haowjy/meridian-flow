@@ -881,12 +881,11 @@ function computePreparedInverse(
 
 /**
  * One `compute` as bytes, for a thread that holds no Y.Doc of the caller's: the live document's
- * update, the update of the draft view it lands in (`null` for live) and the history. A Y.Doc
- * rebuilt from an update plans the same inverse as the one it encodes.
+ * update and the history. A Y.Doc rebuilt from an update plans the same inverse as the one it
+ * encodes.
  */
 export interface InverseJob {
   live: Uint8Array;
-  view: Uint8Array | null;
   history: readonly InversePart[];
   selection: readonly InversePart[];
   actionId: string;
@@ -901,16 +900,13 @@ export function runInverseJob(
     return doc;
   };
   const live = cold(job.live);
-  const view = job.view && cold(job.view);
   try {
-    const roots = prepareEditRoots(live, job.history);
-    return (view ? roots.forView(view) : roots).compute(job.selection, {
+    return prepareEditRoots(live, job.history).compute(job.selection, {
       actionId: job.actionId,
       allocateClient,
     });
   } finally {
     live.destroy();
-    view?.destroy();
   }
 }
 
@@ -922,7 +918,6 @@ export function runInverseJob(
 export function prepareEditRoots(doc: Y.Doc, history: readonly InversePart[]): PreparedEditRoots {
   return preparedRoots(
     doc,
-    history,
     once(() => new Lineage(doc, history)),
   );
 }
@@ -934,7 +929,6 @@ function once<T>(make: () => T): () => T {
   };
 }
 export interface PreparedEditRoots {
-  forView(doc: Y.Doc): PreparedEditRoots;
   classify(parts: readonly InversePart[]): PartClassification[];
   compute(selection: readonly InversePart[], action: InverseAction): ComputedInverse;
   /**
@@ -946,19 +940,8 @@ export interface PreparedEditRoots {
   roots(effect: EditEffect): string[];
   inspect(roots: Iterable<string>): { root: string; identity: string | null }[];
 }
-function preparedRoots(
-  doc: Y.Doc,
-  history: readonly InversePart[],
-  lineage: () => Lineage,
-): PreparedEditRoots {
+function preparedRoots(doc: Y.Doc, lineage: () => Lineage): PreparedEditRoots {
   return {
-    forView(view) {
-      return preparedRoots(
-        view,
-        history,
-        once(() => new Lineage(view, history, lineage())),
-      );
-    },
     classify(parts) {
       const index = lineage();
       return parts.map((part) => classify(index, part));

@@ -21,7 +21,12 @@ import * as Y from "yjs";
 import { createDocumentContainment } from "./document-containment.js";
 import { assertWriterAuthorship } from "./document-mutation-policy.js";
 import { type AttemptScope, NO_ATTEMPT_SCOPE, runBoundedAttempts } from "./draft-attempts.js";
-import { type AuthorServerRows, type FinalizedAppend, finalizeAppend } from "./draft-receipts.js";
+import {
+  type AuthorServerRows,
+  type FinalizeAppendInput,
+  type FinalizedAppend,
+  finalizeAppend,
+} from "./draft-receipts.js";
 import { DraftCorruptError } from "./draft-resolver.js";
 import {
   type AppendDraftJournalInput,
@@ -115,6 +120,7 @@ export type DraftRuntime = {
     options?: {
       admitted?: Y.Doc;
       authorServerRows?: AuthorServerRows;
+      serverRow?: FinalizeAppendInput["serverRow"];
       work?: "active" | "any";
       draft?: "open" | "any";
       precondition?: SavePrecondition;
@@ -437,13 +443,21 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
     options?: {
       admitted?: Y.Doc;
       authorServerRows?: AuthorServerRows;
+      serverRow?: FinalizeAppendInput["serverRow"];
       work?: "active" | "any";
       draft?: "open" | "any";
       precondition?: SavePrecondition;
     },
   ): PreparedDraftAppend {
     const { snapshot, replica } = base;
-    const { admitted, authorServerRows, work = "active", draft, precondition } = options ?? {};
+    const {
+      admitted,
+      authorServerRows,
+      serverRow,
+      work = "active",
+      draft,
+      precondition,
+    } = options ?? {};
     let prefix: Y.Doc;
     try {
       prefix = cloneReplica(replica);
@@ -500,6 +514,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
               containment: documentContainment,
               validateWriter: assertWriterAuthorship,
               authorServerRows,
+              serverRow,
               precondition,
               ...(snapshot.kind === "work_draft"
                 ? {

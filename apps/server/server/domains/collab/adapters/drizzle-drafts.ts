@@ -854,10 +854,19 @@ async function recordAppendReceipts(
           ? (meta.authoringResponseId as import("@meridian/contracts").ModelResponseId)
           : undefined,
       toolCallId: journal.toolCallId,
-      actor: journal.source === "writer" ? "human" : journal.threadId ? "agent" : "system",
+      actor:
+        journal.source === "writer" || (journal.inverse && !journal.threadId)
+          ? "human"
+          : journal.threadId
+            ? "agent"
+            : "system",
       actorUserId: journal.actorUserId as import("@meridian/contracts").UserId | null | undefined,
+      ...(journal.inverse
+        ? { kind: journal.inverse.kind, actionId: journal.inverse.actionId }
+        : {}),
       receipts: group.parts.map((part, i) => ({
         ...part,
+        ...(journal.inverse ? { targets: journal.inverse.targets } : {}),
         origin: {
           kind: "pending" as const,
           draftId: input.draftId,

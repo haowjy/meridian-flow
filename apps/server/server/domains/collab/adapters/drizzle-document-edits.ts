@@ -1,4 +1,6 @@
 // Immutable edit capture shared by writer inverses and the model stack.
+import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
+import { readBlocks } from "@meridian/agent-edit/diff";
 import {
   type CapturedPart,
   captureEditFrontier,
@@ -17,6 +19,7 @@ import {
   draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import {
@@ -38,8 +41,14 @@ export interface ReceiptWrite {
   actorUserId?: UserId | null;
   kind?: typeof documentEdits.$inferInsert.kind;
   actionId?: string;
-  receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
+  receipts: (CapturedPart & {
+    origin: EditOrigin;
+    targets?: EditTarget[];
+    delta?: StoredDelta | null;
+  })[];
 }
+
+const deltaSchema = buildDocumentSchema();
 
 const modelEditCommand = { name: "model-edit-command" };
 
@@ -88,6 +97,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       effect: p.effect,
       frontier: p.frontier,
       aliases: p.aliases,
+      delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,
       draftBranchId:
@@ -128,17 +138,22 @@ export function captureReceiptRows(
   rows: readonly { update: Uint8Array; origin: EditOrigin }[],
   pair: boolean,
 ): (ReceiptWrite["receipts"][number] & { held: ReadonlySet<string> })[] {
+  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   const receipts = rows.map((row) => {
     const frontier = captureEditFrontier(doc);
     const held = heldDeletes(doc, row.update, Y.decodeStateVector(Y.encodeStateVector(doc)));
+    // An AI write's delta, read on each side of it (a writer's frame has none).
+    const textBefore = pair ? readBlocks(fragment, deltaSchema) : null;
     Y.applyUpdate(doc, row.update);
     const replaced = pair ? pairEdit(doc, { update: row.update, frontier, held }) : undefined;
-    return { ...row, frontier, held, replaced };
+    const delta = textBefore ? captureDelta(textBefore, readBlocks(fragment, deltaSchema)) : null;
+    return { ...row, frontier, held, replaced, delta };
   });
   return receipts.map((receipt, i) => ({
     ...captureEditParts(doc, [receipt])[0],
     origin: rows[i].origin,
     held: receipt.held,
+    delta: receipt.delta,
   }));
 }
 

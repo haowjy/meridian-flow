@@ -1,9 +1,8 @@
 /**
  * The browser's half of attribution: the room's text and the server's payload, classified once per
- * frame. The kernel answers byline (who wrote a change) and members (which AI writes are in it); this
- * joins those answers to conversations. A write's `owner` is the conversation the writer knows (for a
- * subagent, the primary conversation that spawned it), so every membership consumer reads
- * `members` and none walks lineage itself.
+ * frame. The classifier answers byline (who wrote a change); which chats have a change in it (`members`)
+ * is the server's read of the text, by the id Changes gives the change. A write's `owner` is the
+ * conversation the writer knows (for a subagent, the primary conversation that spawned it).
  */
 import { type Author, classifyChanges } from "@meridian/agent-edit/diff";
 import type { DraftProvenancePart, DraftProvenanceResponse } from "@meridian/contracts/branches";
@@ -71,7 +70,7 @@ export const writerIn = (change: Pick<ReviewChange, "byline">) =>
 export function classifyRoom(
   doc: Y.Doc,
   frame: ReviewFrame,
-  data: Pick<DraftProvenanceResponse, "userId" | "parts" | "snapshot" | "writers">,
+  data: Pick<DraftProvenanceResponse, "userId" | "parts" | "snapshot" | "writers" | "members">,
   localDeletions?: Y.Snapshot["ds"],
 ): ReadonlyMap<
   string,
@@ -102,14 +101,7 @@ export function classifyRoom(
         unresolved: c.unresolved,
         unresolvedItems: c.unresolvedItems,
         chats: chatsOf(c.byline, resolve),
-        members: [
-          ...new Set(
-            c.members.flatMap((i) => {
-              const owner = data.parts[i].owner;
-              return owner ? [owner.threadId] : [];
-            }),
-          ),
-        ],
+        members: [...(data.members[id] ?? [])],
       },
     ]),
   );

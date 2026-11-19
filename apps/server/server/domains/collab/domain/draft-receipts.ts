@@ -5,12 +5,14 @@
  * and their receipts, or why nothing is written.
  */
 
+import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
 import {
   DRAFT_SERVER_CLIENT_ID,
   findLostEdits,
   type LateTyping,
   type LostEdit,
   NO_LATE_TYPING,
+  readBlocks,
   recoverLatePeerEdits,
 } from "@meridian/agent-edit/diff";
 import {
@@ -61,6 +63,8 @@ export type FinalizeAppendInput = {
   precondition?: SavePrecondition;
   work?: "active" | "any";
   authorServerRows?: AuthorServerRows;
+  /** What the rows `authorServerRows` writes carry: who made them and, for an Undo, what they took back. */
+  serverRow?: () => Partial<Omit<AppendDraftJournalInput, "draftId" | "source" | "updateData">>;
   recovery?: {
     memory(): LateTyping;
     /** Which of these ids a writer or an earlier recovery inserted, among the committed rows. */
@@ -140,6 +144,7 @@ export async function finalizeAppend(
       frontier: EditFrontier;
       held: Set<string>;
       replaced?: EditChange[];
+      delta: StoredDelta | null;
     }[] = [];
     function admit(row: AppendDraftJournalInput): AppendFinalization | undefined {
       if (input.containment.contains(doc, row.updateData)) return;
@@ -152,6 +157,10 @@ export async function finalizeAppend(
         assertFreshAgentUpdate(doc, novel);
         validateClientUpdateAdmission(doc, novel);
       }
+      // What an AI write did to the text, read once on each side of it: the card and the model's
+      // Undo read the edit from this, not from Yjs ids.
+      const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+      const textBefore = row.source === "agent" ? readBlocks(fragment, recoverySchema) : null;
       Y.applyUpdate(doc, novel);
       const missing = pendingClocks(doc);
       if (missing.length) return { status: "prefixMissing", clocks: missing };
@@ -166,6 +175,7 @@ export async function finalizeAppend(
           row.source === "writer"
             ? undefined
             : pairEdit(doc, { update: novel, frontier: entryFrontier, held }),
+        delta: textBefore ? captureDelta(textBefore, readBlocks(fragment, recoverySchema)) : null,
       });
     }
     /** Typing a frame's deletion removed unseen counts only when a writer or an earlier recovery wrote it. */
@@ -255,6 +265,7 @@ export async function finalizeAppend(
         authoring.clientID = DRAFT_SERVER_CLIENT_ID;
         for (const updateData of await input.authorServerRows(authoring)) {
           const refused = admit({
+            ...input.serverRow?.(),
             draftId: read.documentDraft.draftId,
             source: "server",
             updateData,
@@ -283,7 +294,7 @@ export async function finalizeAppend(
           held: kept[index].held,
           replaced: kept[index].replaced,
         })),
-      ),
+      ).map((part, i) => ({ ...part, delta: kept[rowIndexes[i]].delta })),
     }));
     const rows = kept.map((entry) => entry.row);
     // Finalization is over: this document is immutable for both the save cut and the replica.

@@ -1,13 +1,16 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
+import { REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
 import {
   type InversePart,
   type PartClassification,
   prepareEditRoots,
 } from "@meridian/agent-edit/integration";
 import type { TurnInverseSkipCause } from "@meridian/contracts/protocol";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
+import { allocateDocumentClient, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
+import { draftSchema, isPending, takeOutStanding } from "./draft-changes.js";
 import { settledCause } from "./draft-disposition.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
@@ -38,38 +41,25 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     : document.destinationOf({ kind: "live", seq: 0 });
   const draftIdOf = (destination: InverseDestination): string | null =>
     destination.kind === "draft" && destination.state === "active" ? destination.draftId : null;
-  const view =
-    queryDestination.kind === "draft" && queryDestination.state === "gone"
-      ? document.live
-      : queryDestination.view;
+  // An open draft's parts are read from its text, never through the Yjs lineage: the only
+  // lineage inspected is Live's.
   const own = entries(document.history, query.threadId);
   const actions = inspectionActions(document.history, own);
   const poppableByTurn = new Map<string, Set<string>>();
-  const inspections = new Map<Y.Doc, Inspection>();
-  inspections.set(document.live, inspectionContext(liveIndex, actions));
-  const inspect = (current = view) => {
-    let inspection = inspections.get(current);
-    if (!inspection) {
-      inspection = inspectionContext(liveIndex.forView(current), actions);
-      inspections.set(current, inspection);
-    }
-    return inspection;
-  };
+  const liveInspection = inspectionContext(liveIndex, actions);
+  const inspect = () => liveInspection;
   const compute = async (
     destination: InverseDestination,
     selection: readonly InversePart[],
     actionId: string,
     { preview = false }: { preview?: boolean } = {},
   ) => {
-    if (destination.kind === "draft" && destination.state === "gone")
-      throw new Error("A gone destination cannot be selected");
-    if (preview) {
-      const index = destination.kind === "live" ? liveIndex : liveIndex.forView(destination.view);
-      return index.preview(selection, { actionId, allocateClient: allocateDocumentClient });
-    }
+    if (destination.kind === "draft")
+      throw new Error("A draft's parts are taken out as content, not computed on the lineage");
+    if (preview)
+      return liveIndex.preview(selection, { actionId, allocateClient: allocateDocumentClient });
     return planInverseOffThread({
       live: Y.encodeStateAsUpdate(document.live),
-      view: destination.kind === "live" ? null : Y.encodeStateAsUpdate(destination.view),
       history: document.history,
       selection,
       actionId,
@@ -110,16 +100,49 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     inspection.actions.byPart.get(key(part));
   const taken = (part: StoredInversePart, inspection?: Inspection) =>
     takenBy(part, inspection) !== undefined;
+  /** A part of an open draft is judged by its text: one of its changes stands and sits in a pending change. */
+  const inOpenDraft = (part: StoredInversePart) => {
+    const destination = document.destinationOf(part.origin);
+    return destination.kind === "draft" && destination.state === "active";
+  };
+  /**
+   * The text of each open draft after the steps planned so far, so a later step of one command is
+   * judged on what the earlier ones leave, as its commit will.
+   */
+  const planned = new Map<string, readonly PMNode[]>();
+  const baseOf = (draftId: string) => {
+    const doc = document.drafts.get(draftId)?.doc;
+    return doc ? readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema) : [];
+  };
+  const standsInDraft = (part: StoredInversePart) => {
+    const text = part.origin.kind === "pending" ? planned.get(part.origin.draftId) : undefined;
+    return text && part.origin.kind === "pending"
+      ? takeOutStanding(text, baseOf(part.origin.draftId), [part]).taken.length > 0
+      : (part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false);
+  };
+  /** Records that `parts` were chosen to be taken out of their open draft. */
+  const planTakeOut = (draftId: string, parts: readonly StoredInversePart[]) => {
+    const doc = document.drafts.get(draftId)?.doc;
+    if (!doc) return;
+    const text =
+      planned.get(draftId) ??
+      readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema);
+    planned.set(draftId, takeOutStanding(text, baseOf(draftId), parts).text);
+  };
+  /** A part whose text no longer reads as the edit wrote it. */
+  const changed = (part: StoredInversePart) =>
+    inOpenDraft(part) ? !standsInDraft(part) : inspect().states([part])[0].state === "changed";
+  /** Whether a part can still be taken out where it landed. */
+  const available = (part: StoredInversePart, inspection: Inspection) =>
+    inOpenDraft(part)
+      ? standsInDraft(part)
+      : !taken(part, inspection) && inspection.states([part])[0].state === "active";
   function refusal(part: StoredInversePart, inspection: Inspection): TextFailure | null {
     const destination = document.destinationOf(part.origin);
     if (destination.closed) return "draft_archived";
     if (destination.kind === "draft" && destination.state === "gone") return closedPartCause(part);
-    if (taken(part, inspection)) return "changed";
-    const state = inspection.states([part])[0];
-    if (state.state !== "active") {
-      return settledCause(part.disposition) ?? "changed";
-    }
-    return null;
+    if (available(part, inspection)) return null;
+    return settledCause(part.disposition) ?? "changed";
   }
   // Why a part is not reversible, as a cause: one an Undo took reads as removed, else the
   // kernel's first reason. The writer's apply or discard outranks this (`settledCause`).
@@ -133,6 +156,13 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       : kernel?.reasons.includes("inaccessible ancestor")
         ? ("paragraph_removed" as const)
         : ("edited_since" as const);
+  /** Why a part is not available: an open draft's text no longer holds it, else the kernel's reason. */
+  const unavailableCause = (part: StoredInversePart, inspection: Inspection) =>
+    inOpenDraft(part)
+      ? taken(part, inspection) && !part.waiting
+        ? ("already_removed" as const)
+        : ("edited_since" as const)
+      : kernelCause(part, inspection.states([part])[0], inspection);
   /** The per-turn skip cause, in the turn protocol's words, for a part found `kernel`. */
   function turnSkipCause(
     part: StoredInversePart,
@@ -143,7 +173,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   }
 
   function textSelection(entry: Entry, inspection: Inspection) {
-    const selection: InversePart[] = [];
+    const selection: StoredInversePart[] = [];
     const partial: TextOmission[] = [];
     for (const original of [...entry.parts].sort((a, b) => b.id - a.id)) {
       const refused = refusal(original, inspection);
@@ -151,7 +181,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       else if (refused === "changed")
         partial.push({
           ordinal: original.ordinal,
-          cause: kernelCause(original, inspection.states([original])[0], inspection),
+          cause: unavailableCause(original, inspection),
         });
       else return { selection, partial, refusal: refused };
     }
@@ -185,8 +215,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
       entry.parts.some((part) => part.origin.kind === "pending" && part.disposition === "applied")
         ? "revert"
         : direction;
-    const inspection = inspectAt(destination);
-    inspection.states(entry.parts);
+    const inspection = destination.kind === "draft" ? inspect() : inspectAt(destination);
     const selected =
       actionKind === "revert"
         ? revertSelection(entry, inspection)
@@ -241,27 +270,24 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   }
   function revertSelection(entry: Entry, inspection = inspect()) {
     const skipped: TextOmission[] = [];
-    const selection: InversePart[] = [];
-    const states = inspection.states(entry.parts);
-    for (const [i, part] of entry.parts.entries()) {
-      const state = states[i];
+    const selection: StoredInversePart[] = [];
+    for (const part of entry.parts) {
       const originDestination = document.destinationOf(part.origin);
       const reason = originDestination.closed
         ? "draft_archived"
         : originDestination.kind === "draft" && originDestination.state === "gone"
           ? "discarded"
-          : state?.state === "active" && !taken(part, inspection)
+          : available(part, inspection)
             ? null
             : part.disposition === "discarded"
               ? "discarded"
-              : kernelCause(part, state, inspection);
+              : unavailableCause(part, inspection);
       if (reason) skipped.push({ ordinal: part.ordinal, cause: reason });
       else selection.push(part);
     }
     return { selection, skipped };
   }
   return {
-    view,
     own,
     inspect,
     compute,
@@ -269,6 +295,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     turnTextPlan,
     turnSkipCause,
     takenBy,
+    available,
+    planTakeOut,
+    changed,
+    inOpenDraft,
     version,
     queryDestination,
     draftIdOf,

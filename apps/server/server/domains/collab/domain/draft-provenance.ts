@@ -5,6 +5,7 @@ import type { DraftProvenanceResponse } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
+import { isPending, readDraftChanges } from "./draft-changes.js";
 import { assertReadableDraft, materializeDraftRead } from "./draft-store.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
@@ -31,7 +32,21 @@ export function createDraftProvenanceReader(store: DraftDispositionStore) {
       assertReadableDraft(cut.draft.documentDraft);
       const doc = materializeDraftRead(cut.draft);
       try {
+        const { reading, parts } = readDraftChanges(doc, cut.parts);
+        const members: Record<string, string[]> = {};
+        for (const part of cut.parts) {
+          if (!part.owner) continue;
+          for (const change of parts.get(part.id)?.changes ?? [])
+            if (isPending(change))
+              for (const index of change.sitsIn) {
+                const id = reading.pending.groups[index].id;
+                const chats = members[id] ?? [];
+                if (!chats.includes(part.owner.threadId)) chats.push(part.owner.threadId);
+                members[id] = chats;
+              }
+        }
         out.set(draftId, {
+          members,
           userId: cut.userId,
           snapshot: Array.from(Y.encodeSnapshot(Y.snapshot(doc))),
           parts: cut.parts.map(({ threadId, turnId, toolCallId, inserted, deleted, owner }) => ({

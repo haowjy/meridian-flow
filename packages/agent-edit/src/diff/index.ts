@@ -41,7 +41,6 @@ export {
   retainLateTypingDeletions,
 } from "./late-peer-recovery.js";
 export {
-  appendRestorationLinks,
   RESTORED_ROOT,
   type RestorationLink,
   readRestorations,
