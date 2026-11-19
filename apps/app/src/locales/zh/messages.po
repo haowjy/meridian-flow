@@ -3171,8 +3171,8 @@ msgid "Couldn't restore the chat. Try again."
 msgstr ""
 
 #: src/features/editor/InTrashStatus.tsx
-msgid "Couldn't restore this draft"
-msgstr ""
+#~ msgid "Couldn't restore this draft"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -6344,12 +6344,12 @@ msgid "replaced by a later one"
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Replaced by a restore"
-msgstr ""
+#~ msgid "Replaced by a restore"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
-msgid "Replaced by a restore in {workName}"
-msgstr ""
+#~ msgid "Replaced by a restore in {workName}"
+#~ msgstr ""
 
 #: src/features/chat/mcp-renderers.tsx
 msgid "Reply"
@@ -8127,12 +8127,12 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/editor/InTrashStatus.tsx
-msgid "This draft is gone from Trash"
-msgstr ""
+#~ msgid "This draft is gone from Trash"
+#~ msgstr ""
 
 #: src/features/editor/InTrashStatus.tsx
-msgid "This draft is in Trash"
-msgstr ""
+#~ msgid "This draft is in Trash"
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 #~ msgid "This draft is no longer here. It may have been applied or discarded already."
@@ -8453,7 +8453,6 @@ msgstr ""
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
 #: src/features/connections/connection-status.ts
-#: src/features/editor/InTrashStatus.tsx
 #: src/features/editor/SyncStatus.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx

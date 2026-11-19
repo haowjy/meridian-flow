@@ -207,10 +207,9 @@ export type ApplyItemsClick = {
 };
 
 /**
- * Restore a Discard, from the notice right after it or from Trash: the Work gets fresh pending
- * copies of the tree records it settled, and the text drafts it closed reopen as the same rows
- * in the Work's current branch. `discardCommandId` may name a restore too, which swaps the text
- * it closed back in.
+ * Restore a Discard, from the notice right after it, the editor's Ctrl+Z or Trash: the Work gets
+ * fresh pending copies of the tree records it settled, and each text change it took out is merged
+ * back into the draft where it still stands.
  */
 export type UndoDiscardClick = {
   commandId: CommandId;
@@ -219,40 +218,48 @@ export type UndoDiscardClick = {
 export type UndoDiscardResult = {
   status: "restored";
   commandId: CommandId;
-  /** The Discard (or earlier restore) this took the members of. */
+  /** The Discard this took the members of. */
   discardCommandId: CommandId;
-  /** The Work's current branch: where the copies and the reopened drafts are. */
+  /** The Work's current branch: where the tree copies are. */
   branchId: BranchId;
-  /** What came back: tree records copied and text drafts reopened. */
+  /** What came back: tree records copied and documents whose text changes were merged back. */
   restored: number;
-  /** Newer drafts of the same documents this restore closed, now members of its own entry. */
-  swapped: number;
-  /** What the Discard held that could not come back: a purged node or document, or the changes of a draft whose Live text was edited since. */
+  /** What the Discard held that could not come back: a purged node or document. */
   leftOut: number;
   /** The halves this restore brought back, by document: what an Undo of it takes back, and no more. */
   brought: { text: string[]; tree: string[] };
   /**
-   * Why `restored` is 0: `returned` (the draft's owner is closed), `already` (a restore took the
-   * members), `left_out purged` (the entry is gone from Trash or what it held was purged), `left_out changed_since` (Live's text was edited over the draft: it stays closed, `items` names its documents, and the entry leaves Trash).
+   * Why `restored` is 0: `returned` (the draft's owner is closed), `already` (the entry is ended:
+   * a restore brought it back, or nothing of it could come back), `left_out purged` (the entry is
+   * gone from Trash or what it held was purged).
    */
   settled?: Settlement[];
 };
 export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; commandId: CommandId };
 
-/**
- * The document half of a Trash entry for a Discard (or for a restore that swapped a newer draft
- * out): the command, and the text drafts it closed that are still closed. The tree half is the
- * tree's own answer for the same command id; an entry with no member in either is not listed.
- */
-export type DiscardEntry = {
+/** One Discard command, the document half of what Trash lists: the drafts it took text from and no restore has ended. */
+export type DiscardedCommand = {
   commandId: CommandId;
-  kind: "discard" | "undo_discard" | "unapply";
-  /** When the command ran: the entry leaves Trash 30 days later. */
+  /** When the command ran: its entry leaves Trash 30 days later. */
   at: string;
   /** The branch the command ran on; Restore names it. */
   branchId: BranchId;
   workId: string | null;
   drafts: { draftId: string; documentId: string }[];
+  /** The writer who ran it. */
+  accountId: string;
+  /** No Apply, Un-Apply or Restore of this writer ran between it and the next older Discard in the list. */
+  adjoinsOlder: boolean;
+};
+
+/**
+ * A Trash entry: a run of Discards by one writer in one place with no other command between,
+ * folded into one so twenty Discards in a review are one entry. The tree half is the tree's own
+ * answer for the same command ids; an entry with no member in either is not listed.
+ */
+export type DiscardEntry = Omit<DiscardedCommand, "commandId" | "accountId" | "adjoinsOlder"> & {
+  /** The run's commands, latest first: Restore sends each in turn. */
+  commandIds: CommandId[];
 };
 
 /** `GET /api/projects/:projectId/context/trash/discards`: entries with a member in either half. */
@@ -441,47 +448,22 @@ export type ModelEditOutcome =
 /** What a document command's row holds. */
 export type DocumentCommandOutcome = CommandOutcome<StoredDocumentCommandResult>;
 
-/** Whether a settled item left review, and how (applied if anything reached live). */
-export type DraftItemSettlement = {
-  itemClosed: boolean;
-  /** Present when `itemClosed`. */
-  itemDisposition?: "applied" | "discarded";
-};
-
 /**
- * What a Discard answers, item or selection: it never refuses. `settled` says what became of an
- * item this command did not take: `already` (a Discard took it), `overtaken` (an Apply did), or
- * `returned` (the owner is closed, nothing changed).
+ * What a Discard answers: it never refuses. `settled` says what became of an item this command did
+ * not take: `already` (a Discard took it), `overtaken` (an Apply did), or `returned` (the owner is
+ * closed, nothing changed).
  */
 export type DiscardOutcomeNotes = { settled?: Settlement[] };
 
-export type DraftDiscardResponse = {
-  status: "discarded";
-  branchId: BranchId;
-  itemKey: DraftItemKey;
-} & DraftItemSettlement &
-  DiscardOutcomeNotes;
-
 /**
- * One item's Discard on the server. `tree` ends only the branch's move or delete: a live chat's
- * Discard, whose text the writer reverts in the room. `item` ends everything the branch holds
- * on the document: a still-hidden creation, or a frozen owner's draft, whose room refuses the
- * writer's text. The URL names the branch.
- */
-export type DraftDiscardRequest = {
-  itemKey: DraftItemKey;
-  commandId: CommandId;
-  ends: "tree" | "item";
-};
-
-/**
- * `POST …/branches/:branchId/discard`, one server command either way. `all`: Discard all, every
- * change of the branch, which closes it; only an explicit `all` does that. `items`: any selection
- * of nodes, documents or folders (a folder group's ×, a folder changed alone), each ending as
- * `DraftDiscardRequest.ends` says; what stands on a node it discards goes with it (a document
- * moved into a folder the Work created). Its text halves close on the server, and Undo of a
- * Discard brings both halves back. Not strict at either level: a tab still on the old code sends
- * `draftSeenAt` on each item, and it is dropped, not a 400.
+ * `POST …/branches/:branchId/discard`, the one Discard, always one server command. `all`: Discard
+ * all, every change of the branch. `items`: any selection of nodes, documents or folders, each
+ * with what is taken from it: `tree`, its move, delete or creation; `text`, its text changes,
+ * `"all"` of them or those named by id (the ids Changes lists, which are content hashes, so a
+ * request needs no room open). What stands on a node it discards goes with it (a document moved
+ * into a folder the Work created). The text is merged into the draft, which stays open, and the
+ * command records what it took so that Restore can merge it back. Not strict at either level: a
+ * tab still on the old code sends extra fields, and they are dropped, not a 400.
  */
 export const BranchDiscardRequestSchema = z.union([
   z.object({ commandId: CommandIdSchema, all: z.literal(true) }),
@@ -489,25 +471,27 @@ export const BranchDiscardRequestSchema = z.union([
     commandId: CommandIdSchema,
     items: z
       .array(
-        z.object({
-          node: z.string().min(1),
-          ends: z.enum(["tree", "item"]),
-        }),
+        z
+          .object({
+            node: z.string().min(1),
+            tree: z.literal(true).optional(),
+            text: z.union([z.literal("all"), z.array(z.string().min(1)).min(1)]).optional(),
+          })
+          .refine((item) => item.tree || item.text),
       )
       .min(1),
   }),
 ]);
 export type BranchDiscardRequest = z.infer<typeof BranchDiscardRequestSchema>;
 /**
- * `discarded` with `all` and no `closed` means the branch closed; with `items`, `closed` names
- * the selected nodes nothing of the branch remains on, those an earlier command took included
- * (`settled` says which). A closed owner's bounce carries `closed: []`.
+ * `closed` names the selected nodes nothing of the branch remains on, those an earlier command took
+ * included (`settled` says which). A closed owner's bounce carries `closed: []`.
  */
 export type BranchDiscardResponse = {
   status: "discarded";
   branchId: BranchId;
-  closed?: string[];
+  closed: string[];
 } & DiscardOutcomeNotes;
 
 /** A Discard's terminal body, exactly what its 200 carries. */
-export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardResponse;
+export type DiscardCommandResult = BranchDiscardResponse;

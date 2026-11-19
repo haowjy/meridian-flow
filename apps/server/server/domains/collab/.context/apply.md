@@ -216,67 +216,46 @@ Where the draft goes: `ensureActiveForWrite` with `{ requireActive: false }`, ca
 Apply closed a draft, so an Un-Apply with nothing to reopen makes no branch; an archived Work whose
 branch closed gets a new one.
 
-A newer draft the reopen swaps out is closed with the reopening command's id, and that command
-(`undo_discard` or `unapply`) is a Trash entry with that draft as a member, so the swap stays
-restorable. The entry query lists `discard` and `undo_discard` commands, and an `unapply` only while a draft
-it swapped out is still closed under it; Restore accepts all three; the Un-Apply's answer carries `branchId` for it.
+A newer draft an Un-Apply's reopen swaps out is closed with the Un-Apply's command id, and that command is
+a Trash entry only while a draft it swapped out is still closed under it; Restore accepts it, and the
+Un-Apply's answer carries `branchId` for it. A Discard closes no draft (below).
 
 Every route that writes documents on behalf of a command takes `command` grants before it runs:
 Apply the draft's and the live document's on each item (a restore grant for one live has deleted),
-Un-Apply the live document's, and Undo of a Discard and Discard the draft's, on each document the
-command's own record names (`commandDocuments`). `command` ignores lifecycle (a closed Work or chat,
+Un-Apply the live document's, and Discard and its Restore the draft's, on each document the
+command's own record names (`commandDocuments`; for a Discard, its effect rows). `command` ignores lifecycle (a closed Work or chat,
 a deleted document) and keeps the person and agent terms, so the route never answers for a closed
 owner; the owners' locks do, in the command's transaction (below). A folder has no file of its own: the project's
-owner is its only writer, which the branch's identity step proved. A creation only the Work
-showed, whose draft a Discard closed, has no tree row for any target to resolve until Undo of
-the Discard copies it back; it takes no grant, and the Work's lock (lifecycle) is its authority.
+owner is its only writer, which the branch's identity step proved.
 
-`POST .../branches/:branchId/undo-discard` (kind `undo_discard`) restores a Discard, from the
-notice right after it or from Trash; `discardCommandId` may also name an earlier restore (see
-below). The branch in the URL is the one the command ran on. The tree records the Discard settled
-come back as pending copies (`restoreDiscard`) on the Work's current branch (`ensureActiveForWrite`:
-a whole Discard closed the branch it ran on, so a new one is made; a branch row never reopens). Each
-text draft with `closed_by` = the Discard is **reopened as the same row** (`reopenDrafts`, above), moved to that branch,
-`closed_by` and `closed_cause` cleared: its receipts' origin, authorship and seeds stay keyed to
-the draft id, and the model's next write finds an active draft, not a closed one. If the Work has
-a newer active draft of the document, the restore closes it first with `closed_by` = the restore's
-own command id (`swapped` in the answer): that draft is a member of the restore's entry, and
-restoring that entry swaps it back. Nothing is refused because a newer draft exists. The restore marks the owner's
-current drafts changed (`draftMembershipChanged`), so the Work's revision moves and its owner hint
-goes out even when the pending count stays the same (a swap). Restore never refuses and reads no
-clock; a restore that brings nothing back is `done` with `restored: 0` and says why in
-`settled`: `already restored` (the tree took its records, another Work holds them, or a stored restore
-named this command), `left_out purged` (no command of kind `discard`, `undo_discard` or `unapply`
-is stored under the id: the day-30 purge took it, or it never was; or what the entry held was
-purged), with `leftOut` counting purged nodes beside a partial restore. A restore reopens a draft only if
-Live's text has not overtaken it: `reopen` with `leaveOutEdited` reads an empty document as no blocks (as `blocksEqual` does: after the Un-Apply of a create, Live holds none while the base keeps an empty paragraph, and nobody edited that) and compares, on the base the draft reopens with
-(its waiting Un-Applies replayed on a copy, since the check runs before the draft is open), the token ranges
-Live changed since that base with the ranges the draft changed, both uncleaned (a long paragraph's
-edits stay small hunks, `boundedDiff`, up to 1,000 edit operations; past that its hunks are `approx` and
-count for nothing, so the draft reopens). Live's edit that overlaps the change, or is a pure insertion at its edge
-or inside it, leaves the whole draft out (a neighbouring word's replacement sharing an endpoint does not, even
-when the change is itself an insertion): the room Discard's rule
-(`touchedSince`: an edit that deletes, or writes into or beside, what the change wrote or deleted ends that
-document's whole share), on stored rows and a journal instead of Yjs structs. An edit to the next or the
-previous word, to its marks, or a split of the block does not count. A join into the block before, or a new
-block type, does: Yjs's Undo cannot follow the text out of the removed block, so both paths leave it out. The
-paths differ in two cases. The writer types over the changed word and types the original back: the text is as
-the Discard left it, so the server restores; the room leaves it out, since its Undo would double the text. And
-any edits to both words neighbouring an AI insertion: one token hunk spans the insertion point, so the
-server leaves it out where the room, which sees separate character insertions, restores. It
-counts as its review changes in `leftOut` and as `left_out changed_since` in `settled`, naming the documents.
-A left-out draft stays closed under its Discard (`closed_by` kept, so the day-30 purge still deletes it) with
-`closed_cause = left_out`: a restore that answered takes it out of Trash's entry and `closedBy()`, so no entry
-leaves the same thing out on every Restore. Every other reader (the model's write path, receipts, the purge)
-reads it as the Discard's draft. The restore still replays the draft's waiting Un-Applies onto the closed draft (`appendRows` with `draft: "any"`), so its base and Apply records no longer hold an Apply that was taken back. `brought` names the documents whose text came back and whose tree changes did;
-Trash's Undo of the restore discards exactly those halves. An Un-Apply's reopen does not ask
-(its own Apply wrote that text). A purged Work's branch is a 404
-at the route. A branch of another project is a 404 too. A Work or
-chat that cannot take the restore (archived, deleted, a chat in Trash) bounces: stored `done`, nothing
-changed, `restored: 0`, `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
+**Discard is one server command over change ids** (`adapters/drizzle-branch-discard.ts`,
+`POST .../branches/:branchId/discard`). Each item names a document and what it takes: `text` is
+`"all"` or the change ids to take out, `tree` the branch's move, delete or create. The text half
+appends to the draft's own text the update that makes the draft read as the base for those
+changes (`discardChanges`, `content-merge/discard.ts`), exactly as a model's edit appends, so the
+draft stays open and its history, receipts and room are untouched; the writer's later typing is
+never rewritten. One `discard_command_effects` row per document keeps the delta (draft side before,
+base side after, `StoredDelta`) and is what Restore reads; the tree half settles the Work's pending
+records `discarded` with the command's id, as before. A change the writer has since written over
+is not taken back by Restore, and nothing says so. `closed` in the answer names the items that
+left Changes whole (`text: "all"`, or a tree-only item with no text held); the draft row is not
+closed by it. Discard all runs the same path with `text: "all"` on every active draft; a Work
+purge is the only thing that still closes drafts (`disposeBranchLocked`).
+
+`POST .../branches/:branchId/undo-discard` (kind `undo_discard`) restores a Discard, from the notice
+right after it or from Trash; `discardCommandId` may also name an earlier restore. Each effect row's
+delta is read backwards (`restoreChanges`, `standsIn`): the changes that still stand on the draft's
+current text come back as one more appended update, the rest are gone silently, and the effect row is
+marked `ended_by` when everything (or nothing) came back so it leaves Trash. The tree records come
+back as pending copies (`restoreDiscard`) on the Work's current branch (`ensureActiveForWrite`). Restore never refuses and
+reads no clock; one that brings nothing back is `done` with `restored: 0`. A command of another kind
+or one the day-30 purge took finds nothing. A purged Work's branch is a 404 at the route, and a branch
+of another project is a 404 too. A Work or chat that cannot take the restore (archived, deleted, a
+chat in Trash) bounces: stored `done`, nothing changed, `restored: 0`,
+`settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
 The Work lock throws and `closedOwnerBounce` (`adapters/closed-owner-bounce.ts`) turns the throw into that
-result in the command's mapper; Discard bounces the same way (the item as it stands, with the `returned` line). Apply and
-Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries.
+result in the command's mapper; Discard bounces the same way. Apply and
+Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries: one per Discard command with an effect not yet ended, and Trash folds a run of adjoining ones (`adjoinsOlder`: no Apply, Un-Apply or Restore between them) into one entry.
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
 the copies act on, then the draft rows.
 

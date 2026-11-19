@@ -39,7 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const {
       handleApplyClickRequest,
       handleApplyItemsRequest,
-      handleDiscardWorkDraftRequest,
+      handleDiscardBranchRequest,
       handleOwnerDraftListRequest,
       selectBranchRouteServices,
     } = await import("./branch-review-route.js");
@@ -248,16 +248,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               ...extra,
             },
           } as never),
-        discard: async (documentId: string, ends: Record<string, unknown> = { ends: "tree" }) => {
+        discard: async (documentId: string, ends: { ends: "tree" | "item" } = { ends: "tree" }) => {
           const row = await item(documentId);
-          return handleDiscardWorkDraftRequest(routes, {
+          return handleDiscardBranchRequest(routes, {
             ...scope,
             branchId: row?.branchId,
-            documentId: documentId as never,
             request: {
-              itemKey: row?.itemKey,
               commandId: randomUUID(),
-              ...ends,
+              items: [
+                {
+                  node: documentId,
+                  tree: true,
+                  ...(ends.ends === "item" ? { text: "all" } : {}),
+                },
+              ],
             },
           } as never);
         },
@@ -293,7 +297,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("a whole-item Discard of a moved, edited document closes its text draft too", async () => {
+    it("a whole-item Discard of a moved, edited document takes its text too and leaves the draft open", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
       const writer = review(script);
@@ -315,10 +319,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           );
 
       expect(await writer.discard(CH1, { ends: "item" })).toMatchObject({
-        body: { status: "discarded", itemClosed: true, itemDisposition: "discarded" },
+        body: { status: "discarded", closed: [CH1] },
       });
       expect(await writer.item(CH1)).toBeUndefined();
-      expect(await textDrafts()).toEqual([{ status: "closed" }]);
+      expect(await textDrafts()).toEqual([{ status: "active" }]);
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
@@ -358,7 +362,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({
-        body: { status: "discarded", itemClosed: false },
+        body: { status: "discarded", closed: [] },
       });
       expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");

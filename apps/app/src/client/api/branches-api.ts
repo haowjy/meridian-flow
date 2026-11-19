@@ -9,8 +9,6 @@ import type {
   BranchDiscardRequest,
   BranchDiscardResponse,
   DocumentDraftHintsResponse,
-  DraftDiscardRequest,
-  DraftDiscardResponse,
   DraftMetadataResponse,
   DraftState,
   DraftStatesRequest,
@@ -31,7 +29,6 @@ import {
   apiProjectBranchApplyPath,
   apiProjectBranchDiscardPath,
   apiProjectBranchDocumentDraftApplyPath,
-  apiProjectBranchDocumentDraftDiscardPath,
   apiProjectBranchDocumentDraftPath,
   apiProjectBranchUnapplyPath,
   apiProjectBranchUndoDiscardPath,
@@ -149,18 +146,8 @@ export function undoDiscard(projectId: string, branchId: string, body: UndoDisca
     signal: AbortSignal.timeout(10_000),
   });
 }
-export function discardDraftItem(draft: DraftAddress, body: DraftDiscardRequest) {
-  return postJson<DraftDiscardResponse>(
-    apiProjectBranchDocumentDraftDiscardPath(
-      draft.projectId,
-      branchOf(draft.itemKey),
-      draft.documentId,
-    ),
-    body,
-  );
-}
-/** The branch's Discard: Discard all, or a selection of nodes, as one command. */
-export function discardBranch(projectId: string, branchId: string, body: BranchDiscardRequest) {
+/** The one Discard: Discard all, or a selection of nodes and changes, as one command. */
+export function discard(projectId: string, branchId: string, body: BranchDiscardRequest) {
   return postJson<BranchDiscardResponse>(apiProjectBranchDiscardPath(projectId, branchId), body);
 }
 /** A draft's branch, named by its item key (`${branchId}:${documentId}`). */

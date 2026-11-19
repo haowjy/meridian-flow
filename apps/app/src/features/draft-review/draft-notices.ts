@@ -207,16 +207,13 @@ export type DiscardUndoAnswer = {
 };
 
 /**
- * One share of a Discard's Undo: a room's text (`startDraftDiscardSession`), or a Discard the
- * server ran, which its Undo command takes back.
+ * One share of a notice's Undo: a Discard the server ran, which its Restore command takes back, or
+ * a delete in the tree, which the tree's own Undo step takes back.
  */
 export type DiscardUndo = {
   /**
-   * Takes the share back now. `ok` once the prose is back in the room (or the server made its
-   * copies), with `landed` settling when the server holds it; `gone`: nothing is left to take
-   * back (the room ended or turned read-only, the write never landed, or it was taken back).
-   * A room's answer comes once the server has pulled Live's typing into the room; the server's
-   * share answers with its restore.
+   * Takes it back now. `ok` once it is back, with `landed` settling when the writer's own room
+   * holds it; `gone`: nothing is left to take back.
    */
   undo(): DiscardUndoAnswer | Promise<DiscardUndoAnswer>;
   end(): void;
@@ -232,16 +229,16 @@ export type DiscardPart = {
   covers?: readonly string[];
   handle: DiscardUndo;
   /**
-   * The server Discard the share takes back, by its command id: its progress is the one every view
+   * The Discard the share takes back, by its command id: its progress is the one every view
    * reads (`DiscardRestores`), so a restore sent from Trash or the editor ends or answers the
-   * notice too.
+   * notice too. A share without one is a delete in the tree, which `handle` takes back.
    */
   restore?: string;
   /** The draft's review, for the view to follow an Undo back to. */
   review?: ReviewFileTarget;
   /**
-   * Right after this room's Undo is written, given its `landed`: the caller's caches catch up.
-   * Resolves true once the server lists the draft again, so a view may open it.
+   * Right after this Discard's Undo, given its `landed`: the caller's caches catch up. Resolves
+   * true once the server lists the draft again, so a view may open it.
    */
   undone?: (landed: Promise<void>) => Promise<boolean>;
 };
@@ -321,18 +318,7 @@ export class DraftNotices {
   private readonly notices = new Map<string, DraftNotice>();
   /** A Discard notice's shares still holding an Undo. */
   private readonly parts = new Map<number, DiscardPart[]>();
-  /**
-   * A Discard notice's shares whose Discard stands but whose Undo can't take it back (its text was
-   * edited since, its room closed), with how many changes that leaves out: the notice still names
-   * them, and says they couldn't come back.
-   */
-  private readonly expired = new Map<number, { part: DiscardPart; leftOut: number }[]>();
-  /** Notices where a room's share undid and left `parts`: something came back, whatever else stayed out. */
-  private readonly roomBack = new Set<number>();
-  /**
-   * The notice's own Undo: in flight, or a room's share that failed. A server share's progress is
-   * `DiscardRestores`'.
-   */
+  /** The notice's own Undo: in flight, or a tree share that failed. A Discard's progress is `DiscardRestores`'. */
   private readonly pressed = new Map<number, "undoing" | "failed">();
   private readonly bounceTimers = new Map<number, ReturnType<typeof setTimeout>>();
   /** Where a Discard notice says it discarded nothing, when not where it shows (`bounceSurface`). */
@@ -559,9 +545,7 @@ export class DraftNotices {
           ...(part.count !== undefined ? { count: covers.length } : {}),
         };
       const appliedFirst = [...new Set([...notice.appliedFirst, ...took.appliedFirst])];
-      // Expired shares are still discarded: they keep the notice and its sentence.
-      const standing = [...parts, ...this.expiredParts(id)];
-      if (standing.length === 0) {
+      if (parts.length === 0) {
         const surface = this.bounceTo.get(id) ?? notice.surface;
         this.forget(notice);
         if (appliedFirst.length > 0)
@@ -575,7 +559,7 @@ export class DraftNotices {
             returned: null,
           });
       } else {
-        this.notices.set(notice.ownerKey, { ...notice, appliedFirst, ...this.subjectOf(standing) });
+        this.notices.set(notice.ownerKey, { ...notice, appliedFirst, ...this.subjectOf(parts) });
         this.settle(notice.ownerKey, id);
       }
       this.publish();
@@ -627,27 +611,16 @@ export class DraftNotices {
     else this.endIf(ownerKey, id);
   }
 
-  /**
-   * A share's Undo ended on its own. `leftOut`: its Discard is still written (its text was edited,
-   * its room closed), so the notice keeps naming it and says how many changes couldn't come back.
-   * Otherwise it was never written or was taken back (refused, Ctrl+Z), and the notice stops
-   * naming it.
-   */
-  partEnded(handle: DiscardUndo, leftOut?: number) {
+  /** A share's Undo ended on its own (refused or blocked): the notice stops naming it. */
+  partEnded(handle: DiscardUndo) {
     for (const [id, parts] of this.parts) {
       const index = parts.findIndex((part) => part.handle === handle);
       if (index < 0) continue;
-      const [part] = parts.splice(index, 1);
-      if (part && leftOut !== undefined) this.expire(id, part, leftOut);
+      parts.splice(index, 1);
       const notice = [...this.notices.values()].find((candidate) => candidate.id === id);
       if (notice?.kind !== "discarded" || notice.status === "undoing") return;
-      if (leftOut === undefined) {
-        this.notices.set(notice.ownerKey, {
-          ...notice,
-          ...this.subjectOf([...parts, ...this.expiredParts(id)]),
-        });
-        this.publish();
-      }
+      this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf(parts) });
+      this.publish();
       this.settle(notice.ownerKey, id);
       return;
     }
@@ -673,19 +646,15 @@ export class DraftNotices {
       return "failed";
     this.pressed.set(id, "undoing");
     this.settle(ownerKey, id);
-    // Retry takes back only the shares still out: a room's share that undid leaves the list, and a
-    // server's is done once its restore is.
+    // Retry takes back only the shares still out: a tree share that undid leaves the list, and a
+    // Discard's is done once its restore is.
     const answers = await Promise.all(
       this.outstanding(parts).map(async (part) => ({ part, ...(await part.handle.undo()) })),
     );
     const listed = answers.flatMap(({ part, answer, landed }) =>
       answer !== "ok" ? [] : [part.undone ? part.undone(landed) : landed.then(() => true)],
     );
-    const roomFailed = answers.some(({ part, answer }) => !part.restore && answer === "failed");
-    // A room's share answering `gone` stays written: the notice counts what it couldn't bring back.
-    for (const { part, answer, leftOut } of answers)
-      if (!part.restore && answer === "gone" && leftOut) this.expire(id, part, leftOut);
-    if (answers.some(({ part, answer }) => !part.restore && answer === "ok")) this.roomBack.add(id);
+    const treeFailed = answers.some(({ part, answer }) => !part.restore && answer === "failed");
     if (this.parts.has(id)) {
       this.parts.set(
         id,
@@ -695,7 +664,7 @@ export class DraftNotices {
             (answers.find((answered) => answered.part === part)?.answer ?? "failed") === "failed",
         ),
       );
-      if (roomFailed) this.pressed.set(id, "failed");
+      if (treeFailed) this.pressed.set(id, "failed");
       else this.pressed.delete(id);
       this.settle(ownerKey, id);
     }
@@ -706,7 +675,7 @@ export class DraftNotices {
     return (await Promise.all(listed)).every(Boolean) ? "ok" : "unlisted";
   }
 
-  /** The shares an Undo still has to take back: every room's left, and each server's not yet back. */
+  /** The shares an Undo still has to take back: every tree share left, and each Discard not yet back. */
   private outstanding(parts: readonly DiscardPart[]) {
     return parts.filter((part) => {
       const state = part.restore ? this.restores.state(part.restore) : undefined;
@@ -731,16 +700,14 @@ export class DraftNotices {
     const leftOut = restores.reduce(
       (sum, state) =>
         sum + (state?.kind === "restored" || state?.kind === "left_out" ? state.leftOut : 0),
-      (this.expired.get(id) ?? []).reduce((sum, { leftOut }) => sum + leftOut, 0),
+      0,
     );
     const out = this.outstanding(parts);
-    const expired = this.expiredParts(id);
     const nothingBack =
-      !this.roomBack.has(id) &&
+      parts.length > 0 &&
       parts.every(
         (part) =>
-          expired.includes(part) ||
-          (part.restore !== undefined && this.restores.state(part.restore)?.kind === "left_out"),
+          part.restore !== undefined && this.restores.state(part.restore)?.kind === "left_out",
       );
     const status: Discarded["status"] | null =
       pressed === "undoing" || restores.some((state) => state?.kind === "restoring")
@@ -777,14 +744,6 @@ export class DraftNotices {
       return;
     this.notices.set(ownerKey, next);
     this.publish();
-  }
-
-  private expire(id: number, part: DiscardPart, leftOut: number) {
-    this.expired.set(id, [...(this.expired.get(id) ?? []), { part, leftOut }]);
-  }
-
-  private expiredParts(id: number) {
-    return (this.expired.get(id) ?? []).map(({ part }) => part);
   }
 
   private subjectOf(parts: readonly DiscardPart[]) {
@@ -834,8 +793,6 @@ export class DraftNotices {
   private forget(notice: DraftNotice) {
     this.notices.delete(notice.ownerKey);
     this.parts.delete(notice.id);
-    this.expired.delete(notice.id);
-    this.roomBack.delete(notice.id);
     this.pressed.delete(notice.id);
     clearTimeout(this.bounceTimers.get(notice.id));
     this.bounceTimers.delete(notice.id);

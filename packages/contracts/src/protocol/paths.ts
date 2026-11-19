@@ -163,15 +163,6 @@ export function apiProjectBranchUnapplyPath(projectId: string, branchId: string)
 export function apiProjectBranchUndoDiscardPath(projectId: string, branchId: string): string {
   return `${apiProjectBranchPath(projectId, branchId)}/undo-discard`;
 }
-
-export function apiProjectBranchDocumentDraftDiscardPath(
-  projectId: string,
-  branchId: string,
-  documentId: string,
-): string {
-  return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/discard`;
-}
-
 /** (user, project)-scoped UI preferences — user resolved from auth. */
 
 /** A chat's lineage by its first chat's id: handle and title, even when that chat is trashed. */

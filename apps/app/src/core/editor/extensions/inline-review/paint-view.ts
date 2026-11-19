@@ -58,11 +58,16 @@ export function createReviewPaintView(
           element.classList.remove(
             inlineReviewClassNames.emphasized,
             inlineReviewClassNames.arrived,
+            inlineReviewClassNames.discarded,
           );
           continue;
         }
         if (element.getAttribute(CHANGE_ATTR) !== id) element.setAttribute(CHANGE_ATTR, id);
         element.classList.toggle(inlineReviewClassNames.emphasized, id === state.activeChangeId);
+        element.classList.toggle(
+          inlineReviewClassNames.discarded,
+          state.discardedChangeIds.has(id),
+        );
         if (animateArrival && arrivals.has(changeKey))
           element.classList.add(inlineReviewClassNames.arrived);
         const plan = state.removals.get(key);

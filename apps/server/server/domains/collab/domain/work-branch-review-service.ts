@@ -1,4 +1,4 @@
-/** Work draft listing, idempotent item and whole Discard, and the frozen Apply command. */
+/** Work draft listing, idempotent Discard, and the frozen Apply command. */
 import type { BranchId, DraftOwner } from "@meridian/contracts";
 import type {
   DiscardCommandResult,
@@ -126,46 +126,6 @@ export function createWorkBranchReviewService(input: {
       resolveItemByDocument: (command) => input.identity.resolveReviewItemByDocument(command),
       lookupCommand: (envelope) => input.commands.lookup(envelope),
       awaitCommand: (envelope) => input.commands.await(envelope),
-      async discardItem(command) {
-        const { envelope, item } = command;
-        const first = await known(envelope);
-        if (first) return first;
-        // What the kernel ended decides the answer, stored with the command in its transaction.
-        const settled = (ended: DiscardResult): DiscardCommandResult => {
-          const closed = ended.branchClosed || ended.closed.includes(item.documentId);
-          const overtaken = ended.settled.some(
-            (one) => one.rule === "overtaken" && one.state === "applied",
-          );
-          return {
-            status: "discarded",
-            branchId: item.branchId,
-            itemKey: item.itemKey,
-            ...(closed
-              ? { itemClosed: true, itemDisposition: overtaken ? "applied" : "discarded" }
-              : { itemClosed: false }),
-            ...notesOf(ended),
-          };
-        };
-        return effect(envelope, async () => {
-          return settled(
-            await input.discard.discardItems({
-              branchId: item.branchId,
-              selection: {
-                kind: "items",
-                items: [
-                  {
-                    documentId: item.documentId,
-                    origin: item.origin,
-                    ends: command.ends,
-                  },
-                ],
-              },
-              userId: command.userId,
-              command: { envelope, result: settled },
-            }),
-          );
-        });
-      },
       async discardBranch(command) {
         const { envelope, branchId, selection } = command;
         const first = await known(envelope);
@@ -173,7 +133,7 @@ export function createWorkBranchReviewService(input: {
         const settled = (ended: DiscardResult): DiscardCommandResult => ({
           status: "discarded",
           branchId,
-          ...(ended.branchClosed ? {} : { closed: [...ended.closed] }),
+          closed: [...ended.closed],
           ...notesOf(ended),
         });
         return effect(envelope, async () =>

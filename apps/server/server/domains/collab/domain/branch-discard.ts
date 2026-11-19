@@ -1,4 +1,4 @@
-/** Settle a Work's drafted tree records discarded, for chosen items or the whole branch, and close the drafts they end. */
+/** Settle a Work's drafted tree records discarded and merge the base's text into its drafts, for chosen items or the whole branch. */
 import type { BranchId, UserId } from "@meridian/contracts";
 import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type { Settlement } from "@meridian/contracts/commands";
@@ -12,12 +12,11 @@ export type DiscardSelection = { kind: "items"; items: readonly DiscardItem[] } 
 
 /**
  * What a Discard ended with, whatever it found: `closed` the selected documents whose item left
- * review (the kernel closed all it held, or an earlier command already had), `settled` what
- * became of the items this command did not take, and `branchClosed` for Discard all.
+ * review (the kernel took all it held, or an earlier command already had), and `settled` what
+ * became of the items this command did not take.
  */
 export type DiscardResult = {
   branchId: BranchId;
-  branchClosed: boolean;
   closed: readonly DocumentId[];
   settled: Settlement[];
 };
@@ -39,17 +38,17 @@ export interface BranchDiscard {
   }): Promise<DiscardResult>;
 }
 
-/** One selected item as the kernel ends it. */
+/** One selected item as the kernel takes it. */
 export type DiscardItem = {
   documentId: DocumentId;
-  /** Provenance only: the kernel classifies by the document's visibility under its locks (§2.2). */
-  origin: "created" | "edited";
+  /** The item's move, delete or creation. */
+  tree: boolean;
   /**
-   * What ends: `tree`, only the branch's move or delete (a live chat's Discard, whose text the
-   * writer reverts in the room), or `item`, everything the branch holds on the document. A
-   * creation only the Work shows always ends whole.
+   * The draft's text changes to set back to the review base: all of them, or the ones named by id
+   * (an id that names no pending change takes nothing). A creation only the Work shows is always
+   * taken whole.
    */
-  ends: "tree" | "item";
+  text: "all" | readonly string[] | null;
 };
 
 export type DiscardKernelInput = {
@@ -101,28 +100,14 @@ type CommandClaim = NonNullable<Parameters<BranchDiscard["discardItems"]>[0]["co
 
 function discardResult(
   branchId: BranchId,
-  selection: DiscardSelection,
+  _selection: DiscardSelection,
   ended: DiscardEnded,
 ): DiscardResult {
-  if ("returned" in ended)
-    return { branchId, branchClosed: false, closed: [], settled: ended.returned };
-  return {
-    branchId,
-    branchClosed: selection.kind === "whole",
-    closed: ended.closed,
-    settled: ended.settled,
-  };
+  if ("returned" in ended) return { branchId, closed: [], settled: ended.returned };
+  return { branchId, closed: ended.closed, settled: ended.settled };
 }
 
-export function createBranchDiscard(deps: {
-  store: BranchDiscardStore;
-  /**
-   * Runs the Discard, holding back the retirement of the drafts its commit closed until it
-   * leaves its live scopes: a root the Discard opened commits while they are held, and a save
-   * racing the retirement may need them.
-   */
-  holdRetirement<T>(run: () => Promise<T>): Promise<T>;
-}): BranchDiscard {
+export function createBranchDiscard(deps: { store: BranchDiscardStore }): BranchDiscard {
   /**
    * The locked kernel again when the branch moved: each attempt is one command transaction,
    * and a miss rolls it back past its claim before the next attempt.
@@ -169,9 +154,7 @@ export function createBranchDiscard(deps: {
         selection,
         commandId: input.command.envelope.commandId,
       };
-      const ended = await deps.holdRetirement(() =>
-        attempts((attempt) => commitDiscard(attempt, kernel, input.command)),
-      );
+      const ended = await attempts((attempt) => commitDiscard(attempt, kernel, input.command));
       return discardResult(branchId, selection, ended);
     },
   };
