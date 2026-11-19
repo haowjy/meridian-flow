@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
 import type { ChangeRead, StoredDelta } from "@meridian/agent-edit/content-merge";
+import { readBlocks } from "@meridian/agent-edit/diff";
 import { editHandle, type InversePart } from "@meridian/agent-edit/integration";
 import type {
   BranchId,
@@ -16,20 +17,20 @@ import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
   ReversalOutcome,
-  TurnAppliedCommand,
   TurnInverseSkip,
   TurnInverseSkipCause,
   TurnReceiptChip,
   TurnTreeState,
 } from "@meridian/contracts/protocol";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type { Node as PMNode } from "prosemirror-model";
 import type * as Y from "yjs";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Learned } from "../../../shared/tree-owners.js";
 import type { Principal } from "../../file-policy/index.js";
-import { isPending } from "./draft-changes.js";
+import { draftBlocks, draftSchema, isPending, takeBack } from "./draft-changes.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
-import { partKey } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
 import { INVERSE_WORKERS } from "./inverse-worker.js";
@@ -52,8 +53,8 @@ export type StoredInversePart = InversePart & {
   changes?: readonly ChangeRead[];
   /** A change of this part sits in a pending change of its open draft. */
   waiting?: boolean;
-  /** The Apply that took an applied part: its Un-Apply takes the part back, not the card's revert. */
-  appliedBy?: string;
+  /** The changes of the part an Apply in force took, by index in its delta, with the Apply's command. */
+  appliedChanges?: ReadonlyMap<number, string>;
 };
 export type TurnInverseQuery = {
   threadId: ThreadId;
@@ -131,27 +132,8 @@ export interface TurnInverseStore {
   treeSteps(
     query: TurnInverseQuery,
   ): Promise<{ acting: number; taken: number; stayed: TurnInverseSkip[] }>;
-  /**
-   * What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`),
-   * and every Apply that took one of each node's changes.
-   */
-  treeDraftStates(query: TurnInverseQuery): Promise<{
-    states: Record<string, TurnTreeState>;
-    appliedBy: Record<string, readonly string[]>;
-  }>;
-  /**
-   * Each Apply command's branch, the nodes it landed on, and how many changes it made (text groups
-   * and tree moves), read by its id; an id with no stored Apply is absent. `textTakenBack`: it
-   * landed text, and an Un-Apply took back every group of it.
-   */
-  applyCommands(
-    commandIds: readonly string[],
-  ): Promise<
-    Map<
-      string,
-      { branchId: string; nodes: readonly string[]; changes: number; textTakenBack: boolean }
-    >
-  >;
+  /** What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`). */
+  treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnTreeState>>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -249,23 +231,13 @@ async function prepare(
         parts: parts.sort((a, b) => b.id - a.id),
       }))
       .sort((a, b) => b.at - a.at);
-    const contentSteps: InverseStep[] = [];
-    const order: {
-      editId: string;
-      destination: InverseDestination;
-      actionKind: "undo" | "revert";
-      at: number;
-    }[] = [];
-    const selection = new Map<InverseDestination, InversePart[]>();
-    for (const { at, parts: all } of originals) {
-      let chosen = 0;
-      // A part an Apply took goes back with that Apply's Un-Apply, which the card sends beside.
-      const parts = all.filter((part) => {
-        if (!part.appliedBy) return true;
-        skip(part, "applied");
-        return false;
-      });
-      if (parts.length === 0) continue;
+    const steps: InverseStep[] = [];
+    // The text each step is judged on is what the steps before it leave, as its commit will find it.
+    let manuscript: readonly PMNode[] = originals.length
+      ? readBlocks(document.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema)
+      : [];
+    const drafted = new Map<string, { base: readonly PMNode[]; text: readonly PMNode[] }>();
+    for (const { at, parts } of originals) {
       const entry = {
         id: parts[0]?.editId ?? "",
         handle: parts[0]?.wId === null ? "" : editHandle(parts[0]?.wId ?? 0),
@@ -278,92 +250,68 @@ async function prepare(
         continue;
       }
       for (const part of planned.discarded) skip(part, "discarded");
-      if (planned.destination.kind === "draft" && planned.destination.state === "active") {
-        // An open draft's text is taken out as content: a part with a change that stands and sits
-        // in a pending change is a step; one with none left was altered since.
-        const stands = (part: StoredInversePart) =>
+      const { destination, actionKind } = planned;
+      const selection = planned.selection as StoredInversePart[];
+      if (destination.kind === "draft" && destination.state === "active") {
+        // An open draft's proposed changes are taken out as content: a change that stands and sits
+        // in a pending change. The changes an Apply took go out of Live, and out of the draft where
+        // they stand there, when they stand in Live and taking them out adds no pending change.
+        const draft =
+          drafted.get(destination.draftId) ??
+          draftBlocks(document.drafts.get(destination.draftId)?.doc);
+        const back = takeBack(
+          manuscript,
+          draft,
+          selection.flatMap((part) =>
+            part.appliedChanges?.size
+              ? [{ part, delta: part.delta, only: new Set(part.appliedChanges.keys()) }]
+              : [],
+          ),
+        );
+        manuscript = back.live;
+        drafted.set(destination.draftId, {
+          base: back.base ?? draft.base,
+          text: back.text ?? draft.text,
+        });
+        const backed = new Set(back.taken.map(({ part }) => part));
+        const standing = (part: StoredInversePart) =>
           part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false;
-        for (const part of planned.selection)
-          if (!stands(part as StoredInversePart)) skip(part as StoredInversePart, "edited_since");
-        const takable = planned.selection.filter((part) => stands(part as StoredInversePart));
-        if (takable.length)
-          contentSteps.push({
-            kind: "content",
-            parts: takable as StoredInversePart[],
-            destination: planned.destination,
+        for (const part of selection)
+          if (!standing(part) && !backed.has(part))
+            skip(part, part.appliedChanges?.size ? "applied" : "edited_since");
+        const proposed = selection.filter(standing);
+        if (proposed.length)
+          steps.push({ kind: "content", parts: proposed, destination, actionId, actionKind, at });
+        if (backed.size)
+          steps.push({
+            kind: "manuscript",
+            parts: back.taken.map(({ part, only }) => ({ part, only })),
+            destination,
             actionId,
-            actionKind: planned.actionKind,
+            actionKind,
             at,
           });
         continue;
       }
-      for (const part of planned.selection) {
-        selection.set(planned.destination, [
-          ...(selection.get(planned.destination) ?? []),
-          part as StoredInversePart,
-        ]);
-        chosen++;
-      }
-      if (chosen && parts[0])
-        order.push({
-          editId: parts[0].editId,
-          destination: planned.destination,
-          actionKind: planned.actionKind,
+      const back = takeBack(
+        manuscript,
+        null,
+        selection.map((part) => ({ part, delta: part.delta })),
+      );
+      manuscript = back.live;
+      const backed = new Set(back.taken.map(({ part }) => part));
+      for (const part of selection) if (!backed.has(part)) skip(part, "edited_since");
+      if (backed.size)
+        steps.push({
+          kind: "manuscript",
+          parts: back.taken.map(({ part }) => ({ part })),
+          destination,
+          actionId,
+          actionKind,
           at,
         });
     }
-    // Each destination's parts compute as one selection in step order over that destination's
-    // view; one edit lands in one destination. Review membership does not decide inverse
-    // eligibility.
-    const computed = new Map(
-      await Promise.all(
-        [...selection].map(
-          async ([destination, parts]) =>
-            [
-              destination,
-              await entryPlanner.compute(destination, parts, actionId, { preview }),
-            ] as const,
-        ),
-      ),
-    );
-    const classifiedKeys = new Set(
-      [...computed.values()].flatMap((result) =>
-        result.skipped.map((classified) => partKey(classified.part)),
-      ),
-    );
-    for (const classified of [...computed.values()].flatMap((result) => result.skipped)) {
-      const part = targets.find((target) => partKey(target) === partKey(classified.part));
-      if (part) skip(part, entryPlanner.turnSkipCause(part, classified));
-    }
-    const emittedEditIds = new Set(
-      [...computed.values()].flatMap((result) => result.edits.map((edit) => edit.targetEditId)),
-    );
-    for (const selected of [...selection.values()].flat()) {
-      const key = partKey(selected);
-      const target = targets.find((part) => partKey(part) === key);
-      if (target && !classifiedKeys.has(key) && !emittedEditIds.has(selected.editId))
-        skip(target, entryPlanner.turnSkipCause(target, null));
-    }
-    const steps = [
-      ...order.flatMap((step): InverseStep[] => {
-        const edit = computed
-          .get(step.destination)
-          ?.edits.find((edit) => edit.targetEditId === step.editId);
-        return edit
-          ? [
-              {
-                kind: "kernel" as const,
-                edit,
-                destination: step.destination,
-                actionId,
-                actionKind: step.actionKind,
-                at: step.at,
-              },
-            ]
-          : [];
-      }),
-      ...contentSteps,
-    ].sort((a, b) => b.at - a.at);
+    steps.sort((a, b) => b.at - a.at);
     return { document, steps, skips };
   };
   // As many documents at once as the worker pool has threads. A planner keeps its lineage until
@@ -425,46 +373,6 @@ function draftStates(
   return Object.keys(states).length ? states : undefined;
 }
 
-/**
- * The Applies in force that took the reply's drafted changes, text and tree, each read once by
- * its id. One whose tree half is taken back and whose every text group an Un-Apply took back has
- * nothing left for the card's Undo, though the draft still reads its text applied. A group an
- * Un-Apply left because its words changed since keeps the Apply listed: each press judges it anew. One holds only this reply's
- * changes when every node it landed on is the reply's and no other reply's part it took sits in
- * the reply's documents.
- */
-async function appliedCommandsOf(
-  store: TurnInverseStore,
-  documents: readonly InverseDocument[],
-  query: TurnInverseQuery,
-  treeAppliedBy: Record<string, readonly string[]>,
-): Promise<TurnAppliedCommand[]> {
-  const treeInForce = new Set<string>(Object.values(treeAppliedBy).flat());
-  const ours = new Set(treeInForce);
-  const others = new Set<string>();
-  for (const document of documents)
-    for (const part of document.history)
-      if (part.appliedBy) (targetsTurn(part, query) ? ours : others).add(part.appliedBy);
-  if (ours.size === 0) return [];
-  const nodes = new Set<string>([
-    ...documents.map((document) => document.documentId as string),
-    ...Object.keys(treeAppliedBy),
-  ]);
-  const stored = await store.applyCommands([...ours]);
-  return [...ours].flatMap((commandId) => {
-    const command = stored.get(commandId);
-    if (!command || (command.textTakenBack && !treeInForce.has(commandId))) return [];
-    return [
-      {
-        commandId,
-        branchId: command.branchId,
-        count: command.changes,
-        onlyThisTurn: !others.has(commandId) && command.nodes.every((node) => nodes.has(node)),
-      },
-    ];
-  });
-}
-
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
     ...createModelInversePolicy(store),
@@ -474,21 +382,19 @@ export function createTurnInverseService(store: TurnInverseStore) {
     ): Promise<TurnReceiptChip | null> {
       const query = { threadId, turnId };
       return store.withCapturedDocuments(query, async (documents) => {
-        // A reply that only changed the tree has no text to capture, and its card still takes it
-        // back: by its own Undo, or by the Un-Apply of each Apply that took one of its changes.
+        // A reply that only changed the tree has no text to capture, and its card still takes it back.
         const tree = await store.treeSteps(query);
-        const { states: treeStates, appliedBy: treeAppliedBy } = await store.treeDraftStates(query);
+        const treeStates = await store.treeDraftStates(query);
         if (
           !documents.length &&
           !tree.acting &&
           !tree.taken &&
           !tree.stayed.length &&
-          Object.keys(treeAppliedBy).length === 0
+          Object.keys(treeStates).length === 0
         )
           return null;
         const drafts = draftStates(documents, query);
         const trees = Object.keys(treeStates).length ? treeStates : undefined;
-        const applied = await appliedCommandsOf(store, documents, query, treeAppliedBy);
         const { plans: undo, undoneByWriter } = await prepare(
           store,
           documents,
@@ -500,11 +406,8 @@ export function createTurnInverseService(store: TurnInverseStore) {
         );
         // A part an Undo took out has no skip, so the skips are the parts that stay.
         const skips = [...undo.flatMap((plan) => plan.skips), ...tree.stayed];
-        const withApplied = applied.length ? { applied } : {};
         if (hasSteps(undo) || tree.acting)
-          return { state: "live-active", control: "undo", drafts, trees, skips, ...withApplied };
-        if (applied.length)
-          return { state: "live-active", control: "view_change", drafts, trees, skips, applied };
+          return { state: "live-active", control: "undo", drafts, trees, skips };
         const state =
           tree.taken || undoneByWriter ? (skips.length ? "partly" : "undone") : "expired";
         return { state, control: "view_change", drafts, trees, skips };

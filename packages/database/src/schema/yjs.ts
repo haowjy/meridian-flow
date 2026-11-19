@@ -33,7 +33,7 @@ import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { branches } from "./branches";
 import { documents, projects } from "./content";
-import { documentEdits } from "./document-edits";
+import { documentEdits, type EditDeltaJson } from "./document-edits";
 import { users } from "./users";
 
 type DocumentDraftKind = "work_draft";
@@ -439,8 +439,18 @@ export const applyCommandEffects = pgTable(
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     draftId: text("draft_id").notNull(),
-    /** Null means live already held the group's text: Un-Apply removes no live or base text. */
-    liveUpdateSeq: bigint("live_update_seq", { mode: "number" }),
+    /**
+     * What this group changed in the manuscript: the blocks before and after, with one unchanged
+     * block either side. Null means live already held the group's text, so Un-Apply removes no live
+     * or base text.
+     */
+    liveDelta: jsonb("live_delta").$type<EditDeltaJson | null>(),
+    /**
+     * The changes of AI edits this group took, as `[partId, index]`: the part of a
+     * `document_edit_parts` row and the index of the change in the part's delta. Written with the
+     * effect, so the card reads "applied" for them whatever the text does later.
+     */
+    carried: jsonb("carried").$type<[number, number][]>().notNull(),
     /** The command's base before its first group; stored once rather than once per group. */
     baseStart: jsonb("base_start").$type<unknown[]>(),
     /** This group's bounded change to the preceding committed base. */

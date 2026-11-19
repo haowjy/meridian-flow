@@ -1,28 +1,28 @@
 /**
- * Whether a draft's parts were applied, and by which Apply, at a captured draft revision. Whether
- * a change of a part still waits is `draft-changes.ts`'s read of its text.
+ * Whether a draft's parts were applied, and by which Apply, at a captured draft revision. An Apply
+ * in force names the changes it took (`carried`, written with its effect), so this reads no Yjs
+ * item id. Whether a change of a part still waits is `draft-changes.ts`'s read of its text.
  */
-import { type ApplyEntry, appliedParts, readApplyRecord } from "@meridian/agent-edit/diff";
-import type * as Y from "yjs";
-import { assertReadableDraft, type DraftSnapshot, materializeDraftRead } from "./draft-store.js";
+import { assertReadableDraft } from "./draft-store.js";
 import type { DraftDispositionStore, DraftReceiptPart } from "./ports/draft-disposition-store.js";
 
 export type PartDisposition = "applied" | "pending" | "discarded";
 /**
- * The writer's apply or discard of a part, if they made one. It outranks whatever the kernel
- * says about the part's text (a sibling change applied, or the writer typed over it).
+ * The writer's apply or discard of a part, if they made one. It outranks whatever the text says
+ * about the part (a sibling change applied, or the writer typed over it).
  */
 export const settledCause = (disposition: PartDisposition) =>
   disposition === "applied" || disposition === "discarded" ? disposition : null;
 export interface DraftDispositionView {
-  draft: DraftSnapshot;
+  draft: import("./draft-store.js").DraftSnapshot;
   /**
-   * `pending`: the part's draft is open and no Apply took it. `appliedBy`: the Apply command that
-   * took an applied part, which its Un-Apply takes back.
+   * `applied`: an Apply in force took a change of the part. `appliedChanges` names, by index in
+   * the part's delta, the Apply command that took each; the latest when two did. Else `pending`
+   * while the draft is open, and `discarded` once it is closed.
    */
   parts: readonly (DraftReceiptPart & {
     disposition: PartDisposition;
-    appliedBy?: string;
+    appliedChanges: ReadonlyMap<number, string>;
   })[];
 }
 
@@ -35,54 +35,29 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
       // Only a terminal released creation may have no bytes; never manufacture an empty draft.
       if (draft.status !== "closed" || !cut.contentReleased || cut.draft.tail.length)
         throw new Error(`Missing draft checkpoint: ${draftId}`);
-      return {
-        draft,
-        parts: cut.parts.map((part) => ({ ...part, disposition: "discarded" })),
-      };
-    }
-    assertReadableDraft(draft);
-    const doc = materializeDraftRead(cut.draft);
-    try {
-      const applyRecord = readApplyRecord(doc);
-      const applied = appliedParts(doc, cut.parts, applyRecord);
-      const by = appliedByCommand(doc, cut.parts, applyRecord, applied);
-      return {
-        draft,
-        parts: cut.parts.map((part, index) => ({
+    } else assertReadableDraft(draft);
+    // Effects arrive oldest first, so the later Apply wins a change two took.
+    const takenBy = new Map<number, Map<number, string>>();
+    for (const effect of cut.applied)
+      for (const [part, index] of effect.carried) {
+        const changes = takenBy.get(part) ?? new Map<number, string>();
+        changes.set(index, effect.commandId);
+        takenBy.set(part, changes);
+      }
+    return {
+      draft,
+      parts: cut.parts.map((part) => {
+        const appliedChanges = takenBy.get(part.id) ?? new Map<number, string>();
+        return {
           ...part,
-          ...(by[index] ? { appliedBy: by[index] } : {}),
-          disposition: applied[index]
+          appliedChanges,
+          disposition: appliedChanges.size
             ? "applied"
             : draft.status === "active"
               ? "pending"
               : "discarded",
-        })),
-      };
-    } finally {
-      doc.destroy();
-    }
+        };
+      }),
+    };
   };
-}
-
-/**
- * The Apply command that took each applied part, read from that command's own entries of the Apply
- * record; the later command when two did.
- */
-function appliedByCommand(
-  doc: Y.Doc,
-  parts: Parameters<typeof appliedParts>[1],
-  record: readonly ApplyEntry[],
-  applied: readonly boolean[],
-): (string | undefined)[] {
-  const by: (string | undefined)[] = parts.map(() => undefined);
-  if (!applied.some(Boolean)) return by;
-  const commands = new Map<string, ApplyEntry[]>();
-  for (const entry of record)
-    if (entry.commandId)
-      commands.set(entry.commandId, [...(commands.get(entry.commandId) ?? []), entry]);
-  for (const [command, entries] of commands)
-    appliedParts(doc, parts, entries).forEach((took, index) => {
-      if (took && applied[index]) by[index] = command;
-    });
-  return by;
 }

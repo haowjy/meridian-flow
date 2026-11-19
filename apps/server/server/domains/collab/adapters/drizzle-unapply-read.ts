@@ -1,7 +1,6 @@
 /** Command-scoped receipt and base-effect reads for durable Un-Apply. */
 import { applySpanPatches, type SpanPatch } from "@meridian/agent-edit/diff";
-import type { InversePart } from "@meridian/agent-edit/integration";
-import { type DocumentId, type EditOrigin, parseDraftItemKey } from "@meridian/contracts";
+import { parseDraftItemKey } from "@meridian/contracts";
 import type { ApplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
@@ -9,11 +8,9 @@ import {
   applyCommandTrees,
   commands,
   documentDrafts,
-  documentEditParts,
-  documentEdits,
 } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Node } from "prosemirror-model";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CollabBranches } from "../contracts.js";
@@ -22,59 +19,9 @@ import type { PreparedUnapply } from "../domain/apply-click.js";
 const schema = buildDocumentSchema();
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
 
-export async function loadUnapplyHistory(
-  db: Database,
-  documentId: DocumentId,
-  targetSequences: readonly number[],
-): Promise<(InversePart & { origin: EditOrigin })[]> {
-  if (!targetSequences.length) return [];
-  const connection = currentDrizzleDb(db);
-  const sequence = sql<number>`((${documentEditParts.origin} ->> 'seq')::bigint)`;
-  const targets = await connection
-    .select({ id: documentEditParts.id })
-    .from(documentEditParts)
-    .innerJoin(documentEdits, eq(documentEditParts.editId, documentEdits.id))
-    .where(
-      and(
-        eq(documentEdits.documentId, documentId),
-        sql`${documentEditParts.origin} ->> 'kind' = 'live'`,
-        inArray(sequence, targetSequences),
-      ),
-    );
-  const firstTarget = Math.min(...targets.map((row) => row.id));
-  if (!Number.isFinite(firstTarget)) return [];
-  const rows = await connection
-    .select({
-      part: {
-        id: documentEditParts.id,
-        editId: documentEditParts.editId,
-        ordinal: documentEditParts.ordinal,
-        update: documentEditParts.update,
-        effect: documentEditParts.effect,
-        targets: documentEditParts.targets,
-        frontier: documentEditParts.frontier,
-        aliases: documentEditParts.aliases,
-        origin: documentEditParts.origin,
-      },
-      kind: documentEdits.kind,
-      actionId: documentEdits.actionId,
-    })
-    .from(documentEditParts)
-    .innerJoin(documentEdits, eq(documentEditParts.editId, documentEdits.id))
-    .where(and(eq(documentEdits.documentId, documentId), gte(documentEditParts.id, firstTarget)))
-    .orderBy(documentEditParts.id);
-  return rows.map(({ part, kind, actionId }) => ({
-    ...part,
-    update: new Uint8Array(part.update),
-    kind,
-    actionId,
-  }));
-}
-
 type EffectRow = {
   ordinal: number;
   groupId: string;
-  liveUpdateSeq: number | null;
   baseStart: unknown[] | null;
   baseDelta: unknown;
 };
@@ -172,7 +119,7 @@ export async function loadPreparedUnapply(
       groupId: applyCommandEffects.groupId,
       draftId: applyCommandEffects.draftId,
       documentId: applyCommandEffects.documentId,
-      liveUpdateSeq: applyCommandEffects.liveUpdateSeq,
+      liveDelta: applyCommandEffects.liveDelta,
       baseStart: applyCommandEffects.baseStart,
       baseDelta: applyCommandEffects.baseDelta,
       unappliedBy: applyCommandEffects.unappliedBy,
@@ -204,7 +151,7 @@ export async function loadPreparedUnapply(
               {
                 ordinal: row.ordinal,
                 groupId: row.groupId,
-                liveUpdateSeq: row.liveUpdateSeq,
+                liveDelta: row.liveDelta,
                 baseBefore,
                 baseAfter,
               },

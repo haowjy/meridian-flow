@@ -2,11 +2,10 @@
  * Apply compilation and command identity. A frozen cut is the writer's click on their room; a
  * whole cut is the server's replica on receipt. No live state or locks enter either.
  */
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import {
   type ApplyEntry,
-  applyRecordOf,
   applySpanPatches,
-  classifyChanges,
   composeHunks,
   diffBlocks,
   type Hunk,
@@ -30,6 +29,7 @@ import { CommandExistsError, replay } from "../../../shared/commands/command-rec
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
 import type { DocumentCommands } from "./document-commands.js";
+import { carriedBy, readChangesAt } from "./draft-changes.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
@@ -54,7 +54,8 @@ export type PreparedUnapply = {
     effects: {
       ordinal: number;
       groupId: string;
-      liveUpdateSeq: number | null;
+      /** What the group changed in the manuscript; null when it already held the text. */
+      liveDelta: StoredDelta | null;
       baseBefore: unknown[];
       baseAfter: unknown[];
     }[];
@@ -88,7 +89,10 @@ type CompiledApplyGroup = {
   groupId: string;
   before: readonly PMNode[];
   patched: readonly PMNode[];
+  /** The draft's record of the Apply: which command took the group (the browser's queue reads it). */
   record: ApplyEntry;
+  /** The changes of AI edits that sat in this group, as `[partId, index]`, on the draft as the click found it. */
+  carried: [number, number][];
 };
 /**
  * One item of an Apply with its cuts prepared: the text compiled against the draft's replica.
@@ -162,10 +166,10 @@ function decodeClickedSnapshot(encoded: string): Y.Snapshot {
 export function compileClick(
   doc: Y.Doc,
   request: ApplyTextCut & { commandId: string },
-  provenance: {
-    userId: string;
-    parts: import("@meridian/agent-edit/diff").Provenance["parts"];
-  },
+  parts: readonly {
+    id: number;
+    delta: import("@meridian/agent-edit/content-merge").StoredDelta | null;
+  }[],
 ): CompiledClick {
   const current = Y.snapshot(doc);
   // A whole cut is the replica as received: no click froze it, so nothing can be unsynced.
@@ -187,9 +191,8 @@ export function compileClick(
       throw new ApplyClickMalformed();
     }
     const optimistic = applySpanPatches(base, patches, "base");
-    const projection = projectReview(
-      diffBlocks(optimistic, readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema)),
-    );
+    const draftText = readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+    const projection = projectReview(diffBlocks(optimistic, draftText));
     let groupIds: readonly string[];
     if ("whole" in request) {
       const named = request.groupIds && new Set(request.groupIds);
@@ -205,12 +208,7 @@ export function compileClick(
       groupIds.some((id) => !known.has(id))
     )
       throw new ApplyClickMalformed();
-    const classifications = classifyChanges(
-      cut,
-      projection,
-      { ...provenance, snapshot },
-      { record: true },
-    );
+    const reading = readChangesAt(optimistic, draftText, parts);
     const chosen: Hunk[] = [];
     let before = optimistic;
     const groups = groupIds.map((groupId): CompiledApplyGroup => {
@@ -226,11 +224,11 @@ export function compileClick(
         groupId,
         before,
         patched,
-        record: {
-          ...applyRecordOf(classifications, [groupId]),
-          commandId: request.commandId,
-          groupId,
-        },
+        record: { base: [], settled: [], commandId: request.commandId, groupId },
+        carried: carriedBy(
+          reading,
+          projection.groups.findIndex((candidate) => candidate.id === groupId),
+        ),
       };
       before = patched;
       return step;
@@ -283,7 +281,7 @@ export function createApplyClickService(input: {
         }
         let click: CompiledClick;
         try {
-          click = compileClick(base.replica.doc, { ...cut, commandId }, captured);
+          click = compileClick(base.replica.doc, { ...cut, commandId }, captured.parts);
         } finally {
           input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
         }

@@ -6,9 +6,11 @@
  * changes whose blocks it touched (`agent-edit/content-merge/stands.ts`).
  */
 import {
+  addsPendingChange,
   type ChangeMemo,
   type ChangeRead,
   changeState,
+  changeStateIn,
   type EditChange,
   editChanges,
   type Reading,
@@ -26,6 +28,14 @@ import type * as Y from "yjs";
 /** The one schema a draft's blocks are read and written with: nodes of another instance don't compare. */
 export const draftSchema = buildDocumentSchema();
 const schema = draftSchema;
+
+/** A draft's review base and text as blocks. */
+export function draftBlocks(draft: Y.Doc | undefined): { base: PMNode[]; text: PMNode[] } {
+  return {
+    base: draft ? readBlocks(draft.getXmlFragment(REVIEW_BASE_FRAGMENT), schema) : [],
+    text: draft ? readBlocks(draft.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema) : [],
+  };
+}
 
 /** The most changes the process keeps cuts and memos for; the oldest go first. */
 const KEPT = 4000;
@@ -65,11 +75,17 @@ export function readDraftChanges(
   draft: Y.Doc,
   parts: readonly { id: number; delta: StoredDelta | null }[],
 ): DraftChangeReading {
-  const reading = readDraft(
-    schema,
-    readBlocks(draft.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
-    readBlocks(draft.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-  );
+  const { base, text } = draftBlocks(draft);
+  return readChangesAt(base, text, parts);
+}
+
+/** `readDraftChanges` over a base and text already read: an Apply reads the draft against the base its click saw. */
+export function readChangesAt(
+  base: readonly PMNode[],
+  text: readonly PMNode[],
+  parts: readonly { id: number; delta: StoredDelta | null }[],
+): DraftChangeReading {
+  const reading = readDraft(schema, base, text);
   const out = new Map<number, DraftPartChanges>();
   for (const part of parts) {
     if (!part.delta) {
@@ -114,4 +130,59 @@ export function takeOutStanding<P extends { delta: StoredDelta | null }>(
       }
   }
   return { text: blocks, taken };
+}
+
+/** The `[partId, index]` of each change of `parts` that sits in the pending change at `position` of the reading. */
+export function carriedBy(
+  reading: DraftChangeReading,
+  position: number,
+): [partId: number, index: number][] {
+  const out: [number, number][] = [];
+  for (const [id, part] of reading.parts)
+    part.changes.forEach((change, index) => {
+      if (change.sitsIn.has(position)) out.push([id, index]);
+    });
+  return out;
+}
+
+/** A part and the changes of it an Undo may try: all when `only` is absent. */
+export type TakeBackPart = { delta: StoredDelta | null; only?: ReadonlySet<number> };
+
+/**
+ * An Undo of changes that are in the manuscript: each change that stands in `live` is taken out of
+ * it, and out of the draft's base and text where it stands there. A change whose removal would add
+ * a pending change to Changes is left whole, so what the card offers is what the press does. With
+ * no `draft` (a change the AI wrote straight into Live) only the manuscript is written.
+ */
+export function takeBack<P extends TakeBackPart>(
+  live: readonly PMNode[],
+  draft: { base: readonly PMNode[]; text: readonly PMNode[] } | null,
+  parts: readonly P[],
+): { live: readonly PMNode[]; base?: readonly PMNode[]; text?: readonly PMNode[]; taken: P[] } {
+  let blocks = live;
+  let base = draft?.base;
+  let text = draft?.text;
+  const taken: P[] = [];
+  for (const part of parts) {
+    if (!part.delta) continue;
+    editChanges(schema, readDelta(schema, part.delta)).forEach((change, index) => {
+      if (part.only && !part.only.has(index)) return;
+      if (changeStateIn(schema, change, blocks) !== "stands") return;
+      const nextBase =
+        base && changeStateIn(schema, change, base) === "stands"
+          ? takeOut(schema, change, base)
+          : base;
+      const nextText =
+        text && changeStateIn(schema, change, text) === "stands"
+          ? takeOut(schema, change, text)
+          : text;
+      if (base && text && nextBase && nextText && addsPendingChange(base, text, nextBase, nextText))
+        return;
+      blocks = takeOut(schema, change, blocks);
+      base = nextBase;
+      text = nextText;
+      if (!taken.includes(part)) taken.push(part);
+    });
+  }
+  return { live: blocks, ...(base ? { base } : {}), ...(text ? { text } : {}), taken };
 }

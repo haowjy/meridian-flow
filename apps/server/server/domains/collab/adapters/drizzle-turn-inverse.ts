@@ -14,8 +14,7 @@ import {
   type ItemRanges,
   textInRanges,
 } from "@meridian/agent-edit/yjs-mutation";
-import type { BranchId, CommandId, DocumentId, DraftOwner, UserId } from "@meridian/contracts";
-import type { ApplyClickResult } from "@meridian/contracts/branches";
+import type { BranchId, DocumentId, DraftOwner, UserId } from "@meridian/contracts";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
 import {
   branches,
@@ -26,11 +25,6 @@ import {
   draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
-import {
-  applyCommandEffects,
-  applyCommandTrees,
-  commands as commandRows,
-} from "@meridian/database/schema";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
@@ -61,9 +55,11 @@ import {
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
 import {
+  draftBlocks,
   draftSchema,
   isPending,
   readDraftChanges,
+  takeBack,
   takeOutStanding,
 } from "../domain/draft-changes.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
@@ -85,7 +81,11 @@ import {
   type TurnInverseQuery,
   type TurnInverseStore,
 } from "../domain/turn-inverse-service.js";
-import { type ReceiptWrite, recordDocumentEdit } from "./drizzle-document-edits.js";
+import {
+  captureReceiptRows,
+  type ReceiptWrite,
+  recordDocumentEdit,
+} from "./drizzle-document-edits.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 import { createDrizzleTreeHistory } from "./drizzle-tree-history.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
@@ -345,18 +345,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }
       const views = new Map<string, DraftDispositionView | null>();
       for (const draftId of dispositionDraftIds) views.set(draftId, await readDisposition(draftId));
-      const byPart = new Map<string, StoredInversePart["disposition"]>();
-      const appliedByPart = new Map<string, string>();
+      const viewOf = new Map<string, NonNullable<DraftDispositionView>["parts"][number]>();
       for (const view of views.values())
-        for (const part of view?.parts ?? [])
-          if (part.appliedBy) appliedByPart.set(`${part.editId}:${part.ordinal}`, part.appliedBy);
-      for (const view of views.values())
-        for (const part of view?.parts ?? [])
-          if (
-            part.disposition === "applied" ||
-            byPart.get(`${part.editId}:${part.ordinal}`) !== "applied"
-          )
-            byPart.set(`${part.editId}:${part.ordinal}`, part.disposition);
+        for (const part of view?.parts ?? []) viewOf.set(`${part.editId}:${part.ordinal}`, part);
       for (const document of captured.documents) {
         for (const draftId of dispositionDraftIds) {
           const draft = document.drafts.get(draftId);
@@ -379,29 +370,31 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
         document.history = document.history.map((part) => {
           if (part.origin.kind === "live") return { ...part, disposition: "pending" };
-          const classified = byPart.get(`${part.editId}:${part.ordinal}`);
-          const appliedBy =
-            classified === "applied"
-              ? appliedByPart.get(`${part.editId}:${part.ordinal}`)
-              : undefined;
+          const classified = viewOf.get(`${part.editId}:${part.ordinal}`);
           const destination = document.destinationOf(part.origin);
           const changes = changesOf.get(part.id);
           return {
             ...part,
-            ...(appliedBy ? { appliedBy } : {}),
+            ...(classified?.appliedChanges.size
+              ? { appliedChanges: classified.appliedChanges }
+              : {}),
             ...(changes ? { changes, waiting: changes.some(isPending) } : { waiting: false }),
             disposition:
-              classified === "applied"
-                ? classified
+              classified?.disposition === "applied"
+                ? "applied"
                 : destination.kind === "draft" && destination.state !== "gone"
                   ? "pending"
-                  : (classified ?? purged.get(part.id) ?? "discarded"),
+                  : (classified?.disposition ?? purged.get(part.id) ?? "discarded"),
           };
         });
         facts.push({
           documentId: document.documentId,
           uri: document.uri,
-          history: document.history.map((part) => [part.id, part.disposition]),
+          history: document.history.map((part) => [
+            part.id,
+            part.disposition,
+            [...(part.appliedChanges ?? [])],
+          ]),
         });
       }
       captured.fingerprint = fingerprintOf(facts);
@@ -531,65 +524,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         }
       return owners;
     },
-    async applyCommands(commandIds) {
-      const found = new Map<
-        string,
-        { branchId: string; nodes: readonly string[]; changes: number; textTakenBack: boolean }
-      >();
-      if (commandIds.length === 0) return found;
-      const ids = commandIds as CommandId[];
-      const outcomes = await db()
-        .select({ id: commandRows.id, outcome: commandRows.outcome })
-        .from(commandRows)
-        .where(inArray(commandRows.id, ids));
-      // The branch the Apply ran on: its tree half's row, or a text effect's draft.
-      const branchOf = new Map<string, string>();
-      for (const row of await db()
-        .select({ id: applyCommandTrees.commandId, branchId: applyCommandTrees.branchId })
-        .from(applyCommandTrees)
-        .where(inArray(applyCommandTrees.commandId, ids)))
-        branchOf.set(row.id, row.branchId);
-      const textOnly = ids.filter((id) => !branchOf.has(id));
-      if (textOnly.length)
-        for (const row of await db()
-          .selectDistinctOn([applyCommandEffects.commandId], {
-            id: applyCommandEffects.commandId,
-            branchId: documentDrafts.branchId,
-          })
-          .from(applyCommandEffects)
-          .innerJoin(documentDrafts, eq(documentDrafts.id, applyCommandEffects.draftId))
-          .where(inArray(applyCommandEffects.commandId, textOnly)))
-          branchOf.set(row.id, row.branchId);
-      // One effect row per text group the Apply landed, and the Applies with one not taken back.
-      const groups = new Map<string, number>();
-      const open = new Set<string>();
-      for (const row of await db()
-        .select({
-          id: applyCommandEffects.commandId,
-          unappliedBy: applyCommandEffects.unappliedBy,
-        })
-        .from(applyCommandEffects)
-        .where(inArray(applyCommandEffects.commandId, ids))) {
-        groups.set(row.id, (groups.get(row.id) ?? 0) + 1);
-        if (row.unappliedBy === null) open.add(row.id);
-      }
-      for (const { id, outcome } of outcomes) {
-        const branchId = branchOf.get(id);
-        const result =
-          outcome.status === "done" ? (outcome.result as Partial<ApplyClickResult>) : null;
-        if (!branchId || result?.status !== "applied") continue;
-        const items = result.items ?? [];
-        const nodes = items.flatMap((item) =>
-          item.tree?.landed || item.text?.landed ? [item.node] : [],
-        );
-        const changes = (groups.get(id) ?? 0) + items.filter((item) => item.tree?.landed).length;
-        found.set(id, { branchId, nodes, changes, textTakenBack: groups.has(id) && !open.has(id) });
-      }
-      return found;
-    },
     treeDraftStates: (query) =>
       query.model || !query.turnId
-        ? Promise.resolve({ states: {}, appliedBy: {} })
+        ? Promise.resolve({})
         : treeInverse.draftStates(query.threadId, query.turnId),
     async treeSteps(query) {
       const tree = await treePlanOf(query);
@@ -738,6 +675,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         branchId,
         restore: false,
       });
+      // A drafted change an Apply took is also taken out of Live.
+      if (step.kind === "manuscript")
+        requirements.set(`${documentId}:live:content`, {
+          documentId,
+          branchId: null,
+          restore: false,
+        });
     }
     // A tree change is taken back where it was made, by the one who may edit that document; a
     // live document in Trash may only be restored.
@@ -856,6 +800,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     query: TurnInverseQuery,
   ): Promise<string> {
     if (step.kind === "content") return commitContentStep(entry, step, userId, query);
+    if (step.kind === "manuscript") return commitManuscriptStep(entry, step, userId, query);
     const { plan } = entry;
     const document = plan.document;
     const parts = entry.edits.get(step.edit);
@@ -951,6 +896,90 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       write.dispose();
     }
     return wId === undefined || !taken.size ? "" : editHandle(wId);
+  }
+
+  /**
+   * Changes that stand in Live, taken out of it by content: an edit the AI wrote straight into
+   * Live, or a drafted change an Apply took. For a drafted change the same inverse goes into the
+   * draft's base and text where the change stands there (an append under the draft's hold, which
+   * decides what Live takes), so the Undo leaves nothing pending. One receipt of kind `undo` names
+   * the parts it took. A change that stopped standing between the capture and the lock is left
+   * whole.
+   */
+  async function commitManuscriptStep(
+    entry: PlannedInverse,
+    step: Extract<InverseStep, { kind: "manuscript" }>,
+    userId: UserId | undefined,
+    query: TurnInverseQuery,
+  ): Promise<string> {
+    const document = entry.plan.document;
+    const parts = step.parts.map(({ part, only }) => ({ part, delta: part.delta, only }));
+    const fragment = document.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    const drafted =
+      step.destination.kind === "draft" && step.destination.state === "active"
+        ? step.destination
+        : null;
+    let back = takeBack(readBlocks(fragment, draftSchema), null, parts);
+    let appended: Uint8Array[] = [];
+    if (drafted) {
+      const write = input.draftCoordinator.prepareAppend(
+        await input.draftCoordinator.loadBase(drafted.draftId),
+        [],
+        {
+          work: "active",
+          authorServerRows(prefix) {
+            back = takeBack(readBlocks(fragment, draftSchema), draftBlocks(prefix), parts);
+            if (!back.taken.length || !back.text) return [];
+            const { base, text } = back;
+            appended = captureMutationUpdates(prefix, () =>
+              prefix.transact(() => {
+                if (base)
+                  writeBlocks(prefix.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema, base);
+                writeBlocks(prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema, text);
+              }),
+            );
+            return appended;
+          },
+        },
+      );
+      try {
+        if (await write.persist()) {
+          write.transfer();
+          entry.updates.push(...appended.map((update) => ({ draftId: drafted.draftId, update })));
+          entry.contentDrafts.add(drafted.draftId);
+        }
+      } finally {
+        write.dispose();
+      }
+    }
+    if (!back.taken.length) return "";
+    // The receipts are read against Live as it was before the write.
+    const before = new Y.Doc({ gc: false });
+    Y.applyUpdate(before, Y.encodeStateAsUpdate(document.live));
+    const written = captureMutationUpdates(document.live, () =>
+      document.live.transact(() => writeBlocks(fragment, draftSchema, back.live), "inverse"),
+    );
+    const receipts: ReceiptWrite["receipts"] = [];
+    const targets = back.taken.map(({ part }) => ({ editId: part.editId, ordinal: part.ordinal }));
+    try {
+      for (const update of written) {
+        const seq = await input.journal.append(document.documentId, update, {
+          origin: query.model && query.turnId ? `agent:${query.turnId}` : "system",
+          ...(query.model && query.turnId ? { actorTurnId: query.turnId } : {}),
+          seq: 0,
+        });
+        entry.updates.push({ draftId: null, update });
+        for (const receipt of captureReceiptRows(
+          before,
+          [{ update, origin: { kind: "live", seq } }],
+          false,
+        ))
+          receipts.push({ ...receipt, targets });
+      }
+    } finally {
+      before.destroy();
+    }
+    return recordStep(entry, step, { draftId: null, branchId: null, receipts }, userId, query);
   }
 
   /** After every step: the document's delivery. */

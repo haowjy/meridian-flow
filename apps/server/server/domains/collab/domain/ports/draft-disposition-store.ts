@@ -27,6 +27,8 @@ export interface DraftDispositionCapture {
   userId: string;
   /** Latest first. The kernel receives the owner identity, not the subagent's identity. */
   parts: readonly DraftReceiptPart[];
+  /** The draft's Applies in force, oldest first, with the changes of parts each took. */
+  applied: readonly { commandId: string; carried: readonly (readonly [number, number])[] }[];
 }
 
 export interface DraftDispositionStore {

@@ -5,13 +5,7 @@
  * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/architecture/collaboration/turn-receipts.md#reversal-availability-is-the-servers)
  */
 import { randomUUID } from "node:crypto";
-import {
-  appendApplyRecord,
-  applyRecordOf,
-  REVIEW_BASE_FRAGMENT,
-  readBlocks,
-  writeBlocks,
-} from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { applyTextEdit } from "@meridian/agent-edit/test-support";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -35,7 +29,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/collab-postgres-harness.js";
-import { classifiedDraft } from "./test-support/draft-classification.js";
+import { recordApply } from "./test-support/draft-classification.js";
 import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture, readDraftId } from "./test-support/turn-inverse-fixture.js";
 
@@ -235,16 +229,10 @@ describe("model document stack", () => {
       const draftId = await readDraftId(db, ALPHA_ID);
       const pm = buildDocumentSchema();
       const applyDraft = async (liveText: string) => {
-        const disposition = await classifiedDraft(createDrizzleDraftDispositionStore(db), draftId);
-        if (!disposition) throw new Error("draft disposition missing");
         const { doc, snapshot } = await view.draftCoordinator.copyDraft(draftId);
         try {
           doc.clientID = 1;
           doc.transact(() => {
-            appendApplyRecord(
-              doc,
-              applyRecordOf(disposition.classifications, disposition.classifications.keys()),
-            );
             writeBlocks(
               doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
               pm,
@@ -262,6 +250,13 @@ describe("model document stack", () => {
             })
             .where(eq(schema.documentDrafts.id, draftId));
           await view.draftCoordinator.deliverCommitted(draftId);
+          await recordApply(db, {
+            draftId,
+            documentId: ALPHA_ID,
+            accountId: USER_ID,
+            projectId: PROJECT_ID,
+            store: createDrizzleDraftDispositionStore(db),
+          });
         } finally {
           doc.destroy();
         }
