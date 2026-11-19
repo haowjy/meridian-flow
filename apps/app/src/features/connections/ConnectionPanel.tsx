@@ -361,7 +361,7 @@ function ToolsPart({
         />
       ) : listing.isError || (listing.isSuccess && listing.data.tools === null) ? (
         <InlineErrorRow
-          message={t`Couldn't list tools.`}
+          message={t`Couldn't list tools`}
           onRetry={() => void listing.refetch()}
           className="px-0"
         />

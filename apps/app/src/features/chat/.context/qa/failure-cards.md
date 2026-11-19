@@ -71,8 +71,8 @@ generating brief. Restore `fetch` and press Try again: the brief stops and the c
 - **Stop:** drop the chat's `stop` POST and press Stop on a running reply: "Couldn't stop the reply."
   appears above the box and in the live region. Restore `fetch` and press Try again. The card goes;
   `document.body.innerText` and every `[aria-live]` hold no "Couldn't stop the reply."
-- **A reply failure:** fail a reply while the chat is open: the live region says "This response
-  failed." once. Send another message: it is empty.
+- **A reply failure:** fail a reply while the chat is open: the live region says "Reply failed"
+  once. Send another message: it is empty.
 - **On load:** reload a chat whose latest reply failed. The card shows and the live region stays empty.
 
 ## FC-07: unavailable feed and correlated diagnostics

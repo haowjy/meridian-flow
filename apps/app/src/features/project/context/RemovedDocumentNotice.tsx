@@ -172,7 +172,7 @@ export function removalSentence(documents: readonly Removal[], chats: ChatTitles
 
 /**
  * A draft that outlived its document's delete, in the draft's own editor: who deleted it,
- * in the removal notice's voice, and what Apply does about it.
+ * in the removal notice's voice.
  */
 export function deletedLiveSentence(
   title: string,
@@ -183,7 +183,7 @@ export function deletedLiveSentence(
   const voice = removalVoice(record, chats);
   if (voice.kind === "person") {
     const { name } = voice;
-    return area ? t`${name} deleted ${title} from ${area}` : t`${name} deleted ${title}..`;
+    return area ? t`${name} deleted ${title} from ${area}` : t`${name} deleted ${title}`;
   }
   if (voice.kind === "agent") {
     const { chat } = voice;
@@ -195,7 +195,7 @@ export function deletedLiveSentence(
       ? t`The AI in a chat deleted ${title} from ${area}`
       : t`The AI in a chat deleted ${title}`;
   }
-  return area ? t`${title} was deleted from ${area}` : t`${title} was deleted..`;
+  return area ? t`${title} was deleted from ${area}` : t`${title} was deleted`;
 }
 
 /** What a chip says when only a short sentence fits: the count and what happened. */

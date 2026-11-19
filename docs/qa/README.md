@@ -230,7 +230,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    after N requests, then reload. Check each case with the done card's See files list
    and the entry rows (`reason`):
    - Edit a received file and Continue with the same folder. It lists as "Edited after
-     it uploaded. The imported copy is the earlier version." (the entry's
+     upload" (the entry's
      `changed_after_upload` column), and the landed document keeps the old text:
      received bytes are never sent again.
    - Edit an awaiting file and let one Continue send it, then pause again and Continue

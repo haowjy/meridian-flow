@@ -73,15 +73,15 @@ function toolViews(
 
 export function createMcpConnections(deps: McpConnectionsDeps) {
   function parseUrl(raw: unknown): string {
-    if (typeof raw !== "string") throw new McpConnectionError("invalid", "Invalid address.");
+    if (typeof raw !== "string") throw new McpConnectionError("invalid", "Invalid address");
     let url: URL;
     try {
       url = new URL(raw.trim());
     } catch {
-      throw new McpConnectionError("invalid", "Invalid address.");
+      throw new McpConnectionError("invalid", "Invalid address");
     }
     if (deps.addressRefusal(url))
-      throw new McpConnectionError("invalid", "Needs an https address.");
+      throw new McpConnectionError("invalid", "Needs an https address");
     url.hash = "";
     return url.toString();
   }
@@ -229,7 +229,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
       input: { name: string; url: string; token?: string; projectId?: ProjectId },
     ): Promise<{ connection: McpConnectionView; tools: McpToolView[] | null }> {
       if (!isMcpConnectionName(input.name))
-        throw new McpConnectionError("invalid", "Invalid name.");
+        throw new McpConnectionError("invalid", "Invalid name");
       const url = parseUrl(input.url);
       const id = randomUUID();
       const token = input.token?.trim();
@@ -305,7 +305,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
     ): Promise<McpConnectionView> {
       const stored = await owned(accountId, id);
       const listing = await listingOf(stored);
-      if (!listing) throw new McpConnectionError("not_listed", "Couldn't list tools.");
+      if (!listing) throw new McpConnectionError("not_listed", "Couldn't list tools");
       const effects = listing.tools.filter(
         (tool) => toolNames.includes(String(tool.name)) && !isReadOnly(tool),
       );

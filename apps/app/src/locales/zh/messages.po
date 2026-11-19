@@ -578,16 +578,16 @@ msgid "{name} deleted {count} documents ({names})."
 msgstr "{name} 删除了 {count} 份文档（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted {title}"
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted {title} from {area}"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted {title}."
 msgstr "{name} 删除了{title}。"
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted {title}.."
-msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
@@ -754,15 +754,15 @@ msgid "{title} restored"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was deleted"
+msgstr ""
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted from {area}"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted."
-msgstr ""
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted.."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
@@ -2111,7 +2111,7 @@ msgid "Couldn't import"
 msgstr ""
 
 #: src/features/connections/ConnectionPanel.tsx
-msgid "Couldn't list tools."
+msgid "Couldn't list tools"
 msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx

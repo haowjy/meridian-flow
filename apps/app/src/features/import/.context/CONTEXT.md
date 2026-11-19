@@ -34,8 +34,7 @@ between duplicate candidates; a changed awaiting file is sent as it is now and
 marked in `X-Import-Changed-Entries`. A received entry is never sent again:
 when its re-pick differs, or it is already marked changed, the browser hashes
 just that file and posts the hash with its size and time. Two facts come back and
-stay apart: `changedAfterUpload` ("Edited after upload; the imported copy is
-the earlier version.") is the disk differing from the receipt, set and cleared by
+stay apart: `changedAfterUpload` ("Edited after upload") is the disk differing from the receipt, set and cleared by
 each report alone; `changed_after_pick` is the receive-time mark, and a report
 clears it only when the file is the originally picked one and equals the receipt.
 The need-a-look list shows both sentences when both hold.

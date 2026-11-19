@@ -578,16 +578,16 @@ msgid "{name} deleted {count} documents ({names})."
 msgstr "{name} deleted {count} documents ({names})."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{name} deleted {title}"
+msgstr "{name} deleted {title}"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted {title} from {area}"
 msgstr "{name} deleted {title} from {area}"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted {title}."
 msgstr "{name} deleted {title}."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted {title}.."
-msgstr "{name} deleted {title}.."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} deleted this document."
@@ -754,16 +754,16 @@ msgid "{title} restored"
 msgstr "{title} restored"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
+msgid "{title} was deleted"
+msgstr "{title} was deleted"
+
+#: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted from {area}"
 msgstr "{title} was deleted from {area}"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was deleted."
 msgstr "{title} was deleted."
-
-#: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted.."
-msgstr "{title} was deleted.."
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{title} was discarded from the draft."
@@ -2111,8 +2111,8 @@ msgid "Couldn't import"
 msgstr "Couldn't import"
 
 #: src/features/connections/ConnectionPanel.tsx
-msgid "Couldn't list tools."
-msgstr "Couldn't list tools."
+msgid "Couldn't list tools"
+msgstr "Couldn't list tools"
 
 #: src/features/project/chat/ChatScreen.tsx
 #: src/features/project/context/DocumentProperties.tsx
