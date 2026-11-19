@@ -174,11 +174,10 @@ A turn's edit targets include its create transition even when the document is em
 that Undo removed stays addressable through that immutable target. A draft-scoped
 edit of a document deleted live stays one: each draft-scoped target names
 the Work of the branch its part was drafted in (`document_edit_parts.draft_branch_id`,
-recorded with the part, so a draft purged from Trash keeps its target, and reads what the purge
-recorded in `purged_disposition`),
+recorded with the part, so a draft purged from Trash keeps its target),
 and the card's lineage and Undo
 authorize it at that Work's draft destination (`turnEditDestination`), where
-`survivingDraft` admits it while the draft is active. Its lineage address is the
+`survivingDraft` admits it while the draft exists. Its lineage address is the
 location it was deleted at. Live-scoped targets authorize live.
 
 Card authorization and change-viewer discovery share immutable edit and
@@ -378,6 +377,5 @@ knows nothing of Works, so nothing else answers the card with it):
 Undo while any part acts, Undone when every part is taken, `partly` when some stayed, with the
 documents' and tree's skips; a Work has no skip kind of its own.
 
-A released closed draft has no bytes from which to describe a receipt's prose.
 Live has unrelated Yjs identity, so skipped inverse parts can retain their cause
 without before/after snippets; never merge live to manufacture them.

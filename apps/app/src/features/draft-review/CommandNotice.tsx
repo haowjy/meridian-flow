@@ -25,8 +25,7 @@ import { useOpenProjectDocument } from "@/features/project/context/open-project-
 import { type Removal, useRemovalSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { type AppliedFact, type DraftNotice, hasLine, type RestoreReturned } from "./draft-notices";
-import { leftOutSentence } from "./ReviewMessageText";
+import { type AppliedFact, type DraftNotice, hasLine } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
@@ -232,28 +231,6 @@ export function DraftNoticeLine({
               ? (name: string) => t`Changes in ${name} discarded.`
               : (name: string) => t`Change to ${name} discarded.`;
   const failed = notice.status === "failed";
-  if (notice.status === "returned") {
-    return (
-      <ActionNotice
-        data-command-notice="undo-returned"
-        sentence={restoreReturnedSentence(notice.returned)}
-        onDismiss={notice.dismiss}
-        className={className}
-      />
-    );
-  }
-  if (notice.status === "partial") {
-    const first = notice.appliedFirst.length;
-    const left = leftOutSentence(notice.leftOut);
-    return (
-      <ActionNotice
-        data-command-notice="undo-partial"
-        sentence={first === 0 ? left : `${left} ${appliedFirstLine(first)}`}
-        onDismiss={notice.dismiss}
-        className={className}
-      />
-    );
-  }
   const first = notice.appliedFirst.length;
   const named = "name" in subject ? subject.name : "";
   const said = typeof sentence === "function" ? sentence(named) : sentence;
@@ -329,28 +306,16 @@ function appliedFirstLine(count: number): string {
 }
 
 /**
- * What a Discard that a closed owner returned leaves on the control pressed, in its trailing
- * slot so it adds no height (`DraftNotices.showBounce`). Nothing for any other notice.
+ * What a Discard that an Apply took first leaves on the control pressed, in its trailing slot so
+ * it adds no height. Nothing for any other notice.
  */
 export function BounceChip({ notice }: { notice: DraftNotice | null }) {
   useLingui();
   if (notice?.kind !== "discarded" || notice.status !== "bounced") return null;
-  if (notice.returned === null)
-    return (
-      <WorkClosedChip
-        label={<Trans>Applied first</Trans>}
-        sentence={appliedFirstSentence(notice.appliedFirst.length)}
-      />
-    );
-  const chat = notice.returned === "chat-in-trash";
   return (
     <WorkClosedChip
-      label={chat ? <Trans>Its chat is in Trash</Trans> : undefined}
-      sentence={
-        chat
-          ? t`Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes.`
-          : t`Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes.`
-      }
+      label={<Trans>Applied first</Trans>}
+      sentence={appliedFirstSentence(notice.appliedFirst.length)}
     />
   );
 }
@@ -438,24 +403,6 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         );
       if (!took(id)) return null;
       if (notice.status === "bounced") return <BounceChip notice={notice} />;
-      if (notice.status === "returned")
-        return (
-          <RowWord
-            tone="warning"
-            word={<Trans>Not restored</Trans>}
-            sentence={restoreReturnedSentence(notice.returned)}
-          />
-        );
-      if (notice.status === "partial") {
-        const left = notice.leftOut;
-        return (
-          <RowWord
-            tone="warning"
-            word={notice.nothingBack ? <Trans>Not restored</Trans> : <Trans>Partly restored</Trans>}
-            sentence={leftOutSentence(left)}
-          />
-        );
-      }
       if (notice.status === "failed")
         return (
           <RowWord
@@ -542,18 +489,6 @@ function factSentence(fact: AppliedFact): string {
       const { from, to } = fact;
       return t`Applied with the others: ${from} → ${to}.`;
     }
-  }
-}
-
-/** What a restore that did nothing says, wherever it was sent from. */
-export function restoreReturnedSentence(why: RestoreReturned | null): string {
-  switch (why) {
-    case "work-closed":
-      return t`Work was closed.`;
-    case "chat-in-trash":
-      return t`Its chat is in Trash.`;
-    default:
-      return t`Gone from Trash.`;
   }
 }
 

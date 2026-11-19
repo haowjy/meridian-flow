@@ -669,7 +669,7 @@ export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
  * restoring that command brings it back as a copy that wins in turn). A copy has a new id and the same node id; `carries` names the original, `restores`
  * the Discard and `restoredBy` who restored it, while `actor` stays who drafted it. A
  * record whose node cannot be acted on once the copies are in (purged, or its create is not in
- * force and no copy brings it back) is left out and returned. Once.
+ * force and no copy brings it back) is left out. Once.
  */
 export function restoreDiscard(
   writer: TreeWriter,
@@ -677,7 +677,7 @@ export function restoreDiscard(
   by: Actor,
   draft: string,
   command: string,
-): { copies: TreeRecord[]; leftOut: Array<{ record: TreeRecord; why: "purged" }> } | "already" {
+): { copies: TreeRecord[] } | "already" {
   const { doc } = writer;
   assertNewCommand(doc, command);
   const { records, restored } = discardedBy(doc, discarded);
@@ -689,11 +689,8 @@ export function restoreDiscard(
     records.flatMap((record) => (record.type === "create" ? [record.node] : [])),
   );
   const copies: TreeRecord[] = [];
-  const leftOut: Array<{ record: TreeRecord; why: "purged" }> = [];
   for (const record of records) {
-    if (!created.has(record.node) && !placeIn(view.nodes, record.node))
-      leftOut.push({ record, why: "purged" });
-    else
+    if (created.has(record.node) || placeIn(view.nodes, record.node))
       copies.push(
         writable({
           ...record,
@@ -720,7 +717,7 @@ export function restoreDiscard(
     writer.settle(by, overridden, "discarded", { command });
     recordsOf(doc).push(copies);
   });
-  return { copies, leftOut };
+  return { copies };
 }
 
 /** The records a command settled with one of these, and nothing since has settled again. */

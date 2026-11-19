@@ -1,16 +1,11 @@
-import type { RestoreReturned } from "./draft-notices";
-
 /** The documents whose text draft was reopened, and whose tree changes came back, by one restore. */
 export type RestoredHalves = { text: readonly string[]; tree: readonly string[] };
 
 /** What one restore of a Discard answered (`restoreDiscard`). */
 export type RestoreAnswer = {
-  answer: "ok" | "failed" | "gone" | "returned";
-  /** What the Discard held that could not come back. */
-  leftOut?: number;
+  answer: "ok" | "failed" | "gone";
   /** The halves this restore brought back, so an Undo of it takes back those and no more. */
   brought?: RestoredHalves;
-  why?: RestoreReturned;
   /** The Work's current branch, where the drafts came back. */
   branchId?: string;
 };
@@ -19,15 +14,7 @@ export type RestoreAnswer = {
 export type DiscardRestoreState =
   | { kind: "restoring" }
   /** `branchId` absent: it was already back. */
-  | {
-      kind: "restored";
-      branchId?: string;
-      leftOut: number;
-      brought: RestoredHalves;
-    }
-  /** Nothing came back: Live's text was edited over every change. The entry has left Trash. */
-  | { kind: "left_out"; leftOut: number }
-  | { kind: "returned"; why: RestoreReturned }
+  | { kind: "restored"; branchId?: string; brought: RestoredHalves }
   | { kind: "failed" };
 
 /**
@@ -74,15 +61,10 @@ export class DiscardRestores {
 }
 
 const stateOf = (answer: RestoreAnswer): DiscardRestoreState =>
-  answer.answer === "gone" && answer.leftOut
-    ? { kind: "left_out", leftOut: answer.leftOut }
-    : answer.answer === "ok" || answer.answer === "gone"
-      ? {
-          kind: "restored",
-          leftOut: answer.leftOut ?? 0,
-          brought: answer.brought ?? { text: [], tree: [] },
-          ...(answer.branchId ? { branchId: answer.branchId } : {}),
-        }
-      : answer.answer === "returned" && answer.why
-        ? { kind: "returned", why: answer.why }
-        : { kind: "failed" };
+  answer.answer === "failed"
+    ? { kind: "failed" }
+    : {
+        kind: "restored",
+        brought: answer.brought ?? { text: [], tree: [] },
+        ...(answer.branchId ? { branchId: answer.branchId } : {}),
+      };

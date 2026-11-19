@@ -5482,12 +5482,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "purged_disposition": {
-          "name": "purged_disposition",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -5571,10 +5565,6 @@
         "document_edit_parts_origin_valid": {
           "name": "document_edit_parts_origin_valid",
           "value": "\"document_edit_parts\".\"origin\"->>'kind' IN ('pending','live')"
-        },
-        "document_edit_parts_purged_disposition_valid": {
-          "name": "document_edit_parts_purged_disposition_valid",
-          "value": "\"document_edit_parts\".\"purged_disposition\" IN ('applied','discarded')"
         },
         "document_edit_parts_draft_branch_valid": {
           "name": "document_edit_parts_draft_branch_valid",
@@ -9051,19 +9041,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "unapplied_seq": {
-          "name": "unapplied_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "draft_reversed": {
-          "name": "draft_reversed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         }
       },
       "indexes": {
@@ -9090,22 +9067,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "apply_command_effects_unreplayed": {
-          "name": "apply_command_effects_unreplayed",
-          "columns": [
-            {
-              "expression": "draft_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"apply_command_effects\".\"unapplied_by\" is not null and not \"apply_command_effects\".\"draft_reversed\"",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -9635,25 +9596,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "closed_cause": {
-          "name": "closed_cause",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_by": {
-          "name": "closed_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "state": {
           "name": "state",
           "type": "bytea",
@@ -9767,8 +9709,8 @@
         }
       },
       "indexes": {
-        "document_drafts_active_branch_document": {
-          "name": "document_drafts_active_branch_document",
+        "document_drafts_branch_document": {
+          "name": "document_drafts_branch_document",
           "columns": [
             {
               "expression": "document_id",
@@ -9784,29 +9726,13 @@
             }
           ],
           "isUnique": true,
-          "where": "\"document_drafts\".\"kind\" = 'work_draft' AND \"document_drafts\".\"status\" = 'active'",
+          "where": "\"document_drafts\".\"kind\" = 'work_draft'",
           "concurrently": false,
           "method": "btree",
           "with": {}
         },
-        "document_drafts_closed_by": {
-          "name": "document_drafts_closed_by",
-          "columns": [
-            {
-              "expression": "closed_by",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"document_drafts\".\"closed_by\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "document_drafts_active_work_draft_by_branch": {
-          "name": "document_drafts_active_work_draft_by_branch",
+        "document_drafts_work_draft_by_branch": {
+          "name": "document_drafts_work_draft_by_branch",
           "columns": [
             {
               "expression": "branch_id",
@@ -9822,7 +9748,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"document_drafts\".\"kind\" = 'work_draft' AND \"document_drafts\".\"status\" = 'active'",
+          "where": "\"document_drafts\".\"kind\" = 'work_draft'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -9863,22 +9789,6 @@
         "document_drafts_kind_valid": {
           "name": "document_drafts_kind_valid",
           "value": "\"document_drafts\".\"kind\" = 'work_draft'"
-        },
-        "document_drafts_closed_cause_presence": {
-          "name": "document_drafts_closed_cause_presence",
-          "value": "(\"document_drafts\".\"status\" = 'closed') = (\"document_drafts\".\"closed_cause\" IS NOT NULL)"
-        },
-        "document_drafts_closed_by_closed": {
-          "name": "document_drafts_closed_by_closed",
-          "value": "\"document_drafts\".\"closed_by\" IS NULL OR \"document_drafts\".\"status\" = 'closed'"
-        },
-        "document_drafts_closed_cause_valid": {
-          "name": "document_drafts_closed_cause_valid",
-          "value": "\"document_drafts\".\"closed_cause\" IN ('discarded', 'document_removed', 'left_out')"
-        },
-        "document_drafts_status_valid": {
-          "name": "document_drafts_status_valid",
-          "value": "\"document_drafts\".\"status\" IN ('active', 'closed')"
         },
         "document_drafts_seed_record_shape": {
           "name": "document_drafts_seed_record_shape",
@@ -10645,18 +10555,7 @@
   },
   "enums": {},
   "schemas": {},
-  "sequences": {
-    "public.apply_command_effects_unapplied_seq": {
-      "name": "apply_command_effects_unapplied_seq",
-      "schema": "public",
-      "increment": "1",
-      "startWith": "1",
-      "minValue": "1",
-      "maxValue": "9223372036854775807",
-      "cache": "1",
-      "cycle": false
-    }
-  },
+  "sequences": {},
   "roles": {},
   "policies": {},
   "views": {},

@@ -23,7 +23,6 @@ import { createDrizzleBranchWriteBoundary } from "../../../../apps/server/server
 import { createDrizzleCommandDocuments } from "../../../../apps/server/server/domains/collab/adapters/drizzle-command-documents.ts";
 import { createDrizzleDocumentCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-commands.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
-import { createReopenDrafts } from "../../../../apps/server/server/domains/collab/adapters/drizzle-reopen-drafts.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
@@ -152,13 +151,6 @@ async function fixture(
     workProjection: h.projection,
     branches: workBranches,
     coordinator: h.coordinator,
-    reopen: createReopenDrafts(h.db, {
-      coordinator: h.coordinator,
-      close: draftClose,
-      treeLists,
-      workProjection: h.projection,
-      scheduleLivePull: () => {},
-    }),
     live: h.persistence.journal,
     liveCoordinator: {
       deliver: async () => {
@@ -168,7 +160,6 @@ async function fixture(
     arrivals: { settle: async () => 0 },
     treeLists,
     tree: treeReader,
-    close: draftClose,
     onCommitted: async () => {},
     merged: () => {},
     measured: (m) => measure.push(m),
@@ -548,7 +539,7 @@ try {
     const f = await fixture(["Base."], ["Changed."]);
     const c = f.click();
     await applied(f, c);
-    await h.raw`update document_drafts set status='closed',closed_cause='discarded' where id=${f.draftId}`;
+    await h.raw`delete from document_drafts where id=${f.draftId}`;
     await applied(f, c);
     const next = f.click();
     next.request.commandId = randomUUID();
@@ -800,8 +791,8 @@ try {
   const living = async (f: Awaited<ReturnType<typeof fixture>>) =>
     (await h.raw`select trash_record is null as living from tree_nodes where id=${f.documentId}`)[0]
       ?.living === true;
-  const draftStatus = async (f: Awaited<ReturnType<typeof fixture>>) =>
-    (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
+  const draftStays = async (f: Awaited<ReturnType<typeof fixture>>) =>
+    (await h.raw`select id from document_drafts where id=${f.draftId}`).length === 1;
   const restoredNote = (
     result: ApplyClickAnswer | CommandRunning,
     f: Awaited<ReturnType<typeof fixture>>,
@@ -817,7 +808,7 @@ try {
   await row("a document deleted live: its draft stays, Apply restores it then merges", async () => {
     const f = await fixture(["Base."], ["Changed."]);
     await deleteLive(f);
-    assert.equal(await draftStatus(f), "active");
+    assert.equal(await draftStays(f), true);
     const c = f.click();
     const result = await applied(f, c);
     assert.equal(restoredNote(result, f), true, JSON.stringify(result));
@@ -901,7 +892,7 @@ try {
         const original = f.send(c);
         await entered.wait;
         await applied(f, c);
-        await h.raw`update document_drafts set status='closed',closed_cause='discarded' where id=${f.draftId}`;
+        await h.raw`delete from document_drafts where id=${f.draftId}`;
         await h.raw`update branches set status='closed',closed_at=now() where id=${f.branchId}`;
         release.open();
         assert.equal((await original).status, "applied");

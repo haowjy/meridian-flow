@@ -64,10 +64,7 @@ export function createWriterFrames(runtime: DraftRuntime) {
   async function judgeWriterUpdate(frame: WriterFrameInput) {
     const base = await runtime.loadBase(frame.draftId);
     const { snapshot, replica } = base;
-    const admissible =
-      snapshot.kind === "work_draft" &&
-      snapshot.status === "active" &&
-      snapshot.lifecycle === "active";
+    const admissible = snapshot.kind === "work_draft" && snapshot.lifecycle === "active";
     if (admissible)
       runtime.reconcileRoom({
         draftId: frame.draftId,

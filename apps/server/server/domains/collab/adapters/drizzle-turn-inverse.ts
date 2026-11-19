@@ -159,7 +159,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           aliases: documentEditParts.aliases,
           delta: documentEditParts.delta,
           origin: documentEditParts.origin,
-          purgedDisposition: documentEditParts.purgedDisposition,
         },
         edit: documentEdits,
       })
@@ -212,13 +211,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
    */
   async function capture(query: TurnInverseQuery): Promise<InverseCapture> {
     const facts: unknown[] = [];
-    /** A part whose draft the Trash purge deleted: what it recorded became of the part. */
-    const purged = new Map<number, "applied" | "discarded">();
     const captured = await (async () => {
       const createdDocuments = await createdDocumentsOf(query);
       const ids = await selectedDocuments(query);
       const rows = await history(ids);
-      for (const row of rows) if (row.purgedDisposition) purged.set(row.id, row.purgedDisposition);
       const parts: StoredInversePart[] = rows.map((part) => ({
         ...part,
         disposition: "pending",
@@ -359,7 +355,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         // against the draft's text, never from item ids.
         const changesOf = new Map<number, readonly ChangeRead[]>();
         for (const [draftId, draft] of document.drafts) {
-          if (draft.documentDraft.status !== "active") continue;
           const drafted = document.history.filter(
             (part) => part.origin.kind === "pending" && part.origin.draftId === draftId,
           );
@@ -383,7 +378,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
                 ? "applied"
                 : destination.kind === "draft" && destination.state !== "gone"
                   ? "pending"
-                  : (classified?.disposition ?? purged.get(part.id) ?? "discarded"),
+                  : (classified?.disposition ?? "discarded"),
           };
         });
         facts.push({

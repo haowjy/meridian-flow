@@ -44,7 +44,6 @@ export {
   type RestorationLink,
   readRestorations,
   recordRestorations,
-  recordWriteBack,
 } from "./restorations.js";
 export {
   composeGroups,
@@ -57,4 +56,4 @@ export {
 } from "./review.js";
 export { diffKeys, type Tok, wordDiff } from "./tokens.js";
 export { countWords } from "./word-count.js";
-export { type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";
+export { type WriteStats, writeBlocks } from "./writer.js";

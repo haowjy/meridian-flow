@@ -42,27 +42,19 @@ export type NoticeSubject =
   | { kind: "deletes"; count: number };
 
 /**
- * Why a restore came back with nothing done: the Work is archived or deleted (or its chat is in
- * Trash), or Trash no longer holds what the Discard took.
- */
-export type RestoreReturned = "work-closed" | "chat-in-trash" | "gone-from-trash";
-
-/**
  * What one settlement line says, for the screen. `already` and `restored` paint the result
  * quietly; `overtaken` names the command that settled the item first (the screen offers its
- * reverse); `left_out` says why part of it stayed out; `returned`: a closed owner answered and
- * changed nothing.
+ * reverse); `left_out` says why part of it stayed out.
  */
 export type SettledView =
   | { kind: "already"; state: string }
   | { kind: "restored" }
   | { kind: "overtaken"; state: string; by: string }
-  | { kind: "left_out"; why: string }
-  | { kind: "returned"; why: RestoreReturned };
+  | { kind: "left_out"; why: string };
 
 /**
- * The one place a settlement becomes what is shown. Null: a `returned` whose reason names no
- * closed owner (a model's edit), which no command surface says.
+ * The one place a settlement becomes what is shown. Null: a `returned`, which no command surface
+ * says: the closed owner's drafts stay as they are.
  */
 export function viewOf(one: Settlement): SettledView | null {
   switch (one.rule) {
@@ -75,9 +67,7 @@ export function viewOf(one: Settlement): SettledView | null {
     case "left_out":
       return { kind: "left_out", why: one.why };
     case "returned":
-      return (CLOSED_OWNER_WHYS as readonly string[]).includes(one.why)
-        ? { kind: "returned", why: closedOwnerWord(one.why as ClosedOwnerWhy) }
-        : null;
+      return null;
   }
 }
 
@@ -102,12 +92,6 @@ function names(one: Settlement, itemId: string): boolean {
   if (one.rule === "restored") return one.documentId === itemId;
   if (one.rule === "left_out") return one.items.includes(itemId);
   return true;
-}
-
-/** Why a command was answered by a closed owner, from its lines; null when it wasn't. */
-export function returnedIn(settled: readonly Settlement[] | undefined): RestoreReturned | null {
-  for (const view of settledOf(settled)) if (view.kind === "returned") return view.why;
-  return null;
 }
 
 /** An Apply's answer for one item: each half landed or settled. */
@@ -187,11 +171,6 @@ function didOf(item: ApplyItemResult): TreeDid {
   return parent(from) === parent(to) && from !== to ? "renamed" : "moved";
 }
 
-/** The word a closed owner's reason (a `returned` settlement's, or a read-only room's) gives a notice. */
-export function closedOwnerWord(why: ClosedOwnerWhy): RestoreReturned {
-  return why === "chat_frozen" ? "chat-in-trash" : "work-closed";
-}
-
 /**
  * What a Discard's answer says of the documents and folders it was sent: `untaken`, the ones it
  * found settled already (an earlier Discard's, quietly, or an Apply's), and of those
@@ -200,12 +179,8 @@ export function closedOwnerWord(why: ClosedOwnerWhy): RestoreReturned {
 export type DiscardTook = { untaken: readonly string[]; appliedFirst: readonly string[] };
 
 export type DiscardUndoAnswer = {
-  /** `returned`: the restore was answered and did nothing, for `why`. */
-  answer: "ok" | "failed" | "gone" | "returned";
+  answer: "ok" | "failed" | "gone";
   landed: Promise<void>;
-  /** What the Discard held that could not come back (`UndoDiscardResult.leftOut`). */
-  leftOut?: number;
-  why?: RestoreReturned;
 };
 
 /**
@@ -258,16 +233,10 @@ export type DraftNotice =
       /** A single draft's review, which an Undo may return main to. */
       review: ReviewFileTarget | null;
       /**
-       * `partial`: the Undo landed, but `leftOut` of what the Discard held could not come back.
-       * `returned`: the Undo was answered with nothing done, for `returned`. `bounced`: the
-       * Discard itself discarded nothing, because a closed owner returned it (`returned`) or an
-       * Apply took all of it first (`appliedFirst`); no Undo, and it ends after `BOUNCE_SHOWN_MS`.
+       * `bounced`: the Discard itself discarded nothing, because an Apply took all of it first
+       * (`appliedFirst`); no Undo, and it ends after `BOUNCE_SHOWN_MS`.
        */
-      status: "ready" | "undoing" | "failed" | "partial" | "returned" | "bounced";
-      leftOut: number;
-      /** With `partial`: not one share came back, so the line reads "not restored". */
-      nothingBack: boolean;
-      returned: RestoreReturned | null;
+      status: "ready" | "undoing" | "failed" | "bounced";
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
       /** `ok` once the server lists every restored draft again; `unlisted` if one never was. */
@@ -476,9 +445,6 @@ export class DraftNotices {
       surface: input.surface,
       left: null,
       status: "ready",
-      leftOut: 0,
-      nothingBack: false,
-      returned: null,
       appliedFirst: [],
       ...this.subjectOf(input.parts),
       undo: () => this.undo(ownerKey, id),
@@ -486,31 +452,6 @@ export class DraftNotices {
     });
     this.publish();
     return id;
-  }
-
-  /**
-   * A Discard that came back with nothing changed, for `why`: the chip on the control pressed,
-   * for a few seconds. `documentIds` are the rows the press named.
-   */
-  showBounce(input: {
-    projectId: string;
-    ownerKey: string;
-    surface: NoticeSurface;
-    documentIds: readonly string[];
-    why: RestoreReturned;
-  }): void {
-    if (this.closed) return;
-    const held = this.notices.get(input.ownerKey);
-    if (held) this.drop(held);
-    this.bounce({
-      id: this.nextId++,
-      projectId: input.projectId,
-      ownerKey: input.ownerKey,
-      surface: input.surface,
-      documentIds: input.documentIds,
-      appliedFirst: [],
-      returned: input.why,
-    });
   }
 
   /**
@@ -549,7 +490,6 @@ export class DraftNotices {
             surface,
             documentIds: [],
             appliedFirst,
-            returned: null,
           });
       } else {
         this.notices.set(notice.ownerKey, { ...notice, appliedFirst, ...this.subjectOf(parts) });
@@ -567,7 +507,6 @@ export class DraftNotices {
     surface: NoticeSurface;
     documentIds: readonly string[];
     appliedFirst: readonly string[];
-    returned: RestoreReturned | null;
   }) {
     const { id, ownerKey } = input;
     this.notices.set(ownerKey, {
@@ -582,9 +521,6 @@ export class DraftNotices {
       review: null,
       left: null,
       status: "bounced",
-      leftOut: 0,
-      nothingBack: false,
-      returned: input.returned,
       undo: async () => "failed",
       dismiss: () => this.endIf(ownerKey, id),
     });
@@ -672,8 +608,7 @@ export class DraftNotices {
   private outstanding(parts: readonly DiscardPart[]) {
     return parts.filter((part) => {
       const state = part.restore ? this.restores.state(part.restore) : undefined;
-      // A fully left-out restore is as settled as a restored one: its entry has left Trash.
-      return state?.kind !== "restored" && state?.kind !== "left_out" && state?.kind !== "returned";
+      return state?.kind !== "restored";
     });
   }
 
@@ -689,52 +624,22 @@ export class DraftNotices {
       part.restore ? [this.restores.state(part.restore)] : [],
     );
     const pressed = this.pressed.get(id);
-    const returned = restores.find((state) => state?.kind === "returned");
-    const leftOut = restores.reduce(
-      (sum, state) =>
-        sum + (state?.kind === "restored" || state?.kind === "left_out" ? state.leftOut : 0),
-      0,
-    );
     const out = this.outstanding(parts);
-    const nothingBack =
-      parts.length > 0 &&
-      parts.every(
-        (part) =>
-          part.restore !== undefined && this.restores.state(part.restore)?.kind === "left_out",
-      );
     const status: Discarded["status"] | null =
       pressed === "undoing" || restores.some((state) => state?.kind === "restoring")
         ? "undoing"
         : pressed === "failed" || restores.some((state) => state?.kind === "failed")
           ? "failed"
-          : returned
-            ? "returned"
-            : out.length > 0
-              ? "ready"
-              : leftOut > 0
-                ? "partial"
-                : null;
+          : out.length > 0
+            ? "ready"
+            : null;
     if (status === null) {
       this.forget(notice);
       this.publish();
       return;
     }
-    const next = {
-      ...notice,
-      status,
-      leftOut,
-      nothingBack,
-      returned: returned?.kind === "returned" ? returned.why : null,
-      ...(status === "failed" ? this.subjectOf(out) : {}),
-    };
-    if (
-      next.status === notice.status &&
-      next.leftOut === notice.leftOut &&
-      next.nothingBack === notice.nothingBack &&
-      next.returned === notice.returned &&
-      next.subject === notice.subject
-    )
-      return;
+    const next = { ...notice, status, ...(status === "failed" ? this.subjectOf(out) : {}) };
+    if (next.status === notice.status && next.subject === notice.subject) return;
     this.notices.set(ownerKey, next);
     this.publish();
   }

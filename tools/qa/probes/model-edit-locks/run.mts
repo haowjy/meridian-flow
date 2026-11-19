@@ -185,10 +185,7 @@ const cases: ModelEditCase[] = [
       assert.equal(answer.status, "reversed");
       assert.deepEqual((await state(h, y, documentId)).doc, ["Live seed."]);
       assert.deepEqual((await state(h, x2, documentId)).results, ["call-x2:committed"]);
-      assert.deepEqual(
-        (await drafts(h, documentId)).map((d) => d.status),
-        ["active"],
-      );
+      assert.equal((await drafts(h, documentId)).length, 1);
     },
   },
   {

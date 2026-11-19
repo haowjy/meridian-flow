@@ -2,7 +2,6 @@
  * Account-scoped owner of live document sessions and stable-id draft rooms.
  * Live acquisition is lease-required; draft rooms retain their stable room identity.
  */
-import type { DraftState } from "@meridian/contracts/branches";
 import { type AccountId, parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
@@ -339,11 +338,11 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * The server closed the draft, as `closed` (a Discard) or `removed` (its document went). A
+   * The server closed the draft, as `closed` (its Work went) or `removed` (its document went). A
    * session the pool holds retires with that cause, which hands its copy back at the right time:
    * when nothing shows its text any more. With no session
    * (the room ended earlier, by a schema reset or a terminal close, or never opened here) the copy
-   * is handed back now. The copy stays either way: Undo Discard reopens the same draft.
+   * is handed back now. The copy stays either way.
    */
   async closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void> {
     const documentId = this.draftRooms.documentOf(roomKey);
@@ -356,19 +355,18 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * Settles the draft copies no room of this tab owns, found at start, by their draft's state.
-   * A closed draft's copy is handed back as `closed` (a Discard) or `removed` (its document went)
-   * for what it holds beyond its mark; it covers a draft that closed while no page was open, so no
-   * draft owner ran `closeDraftRoom`, and the copy stays (see `closeDraftRoom`). An open draft's
+   * Settles the draft copies no room of this tab owns, found at start, by `openOf`: the ids of
+   * the drafts the server still has. A copy of a draft the server no longer has is left as it is.
+   * An open draft's
    * copy that holds typing beyond its mark has its room opened through the pool, as if the writer
    * had reopened the draft, and released once the server acknowledges: the typing is delivered to
    * the draft. A copy another tab has open is left to that tab. Each copy is swept once: it is
    * then recorded as swept, and a later start skips it without loading it until a session opens
-   * the copy again (a restore). A copy with no mark proves nothing undelivered. At most
+   * the copy again. A copy with no mark proves nothing undelivered. At most
    * `SWEEP_LOADS` copies are handled at once.
    */
   async sweepDraftCopies(
-    statesOf: (draftIds: string[]) => Promise<ReadonlyMap<string, DraftState>>,
+    openOf: (draftIds: string[]) => Promise<ReadonlySet<string>>,
   ): Promise<void> {
     const copies = (await this.copies.unsweptDraftCopies()).flatMap((copy) => {
       const room = parseYjsRoomName(copy.roomKey);
@@ -377,22 +375,14 @@ export class DocumentSessionRegistry {
         : [];
     });
     if (copies.length === 0) return;
-    const states = await statesOf([...new Set(copies.map(({ draftId }) => draftId))]);
+    const open = await openOf([...new Set(copies.map(({ draftId }) => draftId))]);
     const openRooms = new Map<string, { documentId: DocumentId; names: string[] }>();
     const todo: (() => Promise<void>)[] = [];
     for (const { name, roomKey, documentId, draftId } of copies) {
-      const state = states.get(draftId);
-      if (state === "open") {
-        const room = openRooms.get(roomKey) ?? { documentId, names: [] };
-        room.names.push(name);
-        openRooms.set(roomKey, room);
-      } else if (state) {
-        const cause = state === "discarded" ? ("closed" as const) : ("removed" as const);
-        todo.push(async () => {
-          await this.handBackCopy(name, cause, true);
-          this.copies.markSwept(name);
-        });
-      }
+      if (!open.has(draftId)) continue;
+      const room = openRooms.get(roomKey) ?? { documentId, names: [] };
+      room.names.push(name);
+      openRooms.set(roomKey, room);
     }
     for (const [roomKey, { documentId, names }] of openRooms)
       todo.push(() => this.deliverOpenDraftCopy(roomKey, documentId, names));
@@ -440,14 +430,6 @@ export class DocumentSessionRegistry {
       }
     }
     for (const name of names) this.copies.markSwept(name);
-  }
-
-  reopenDraftRoom(roomKey: string): void {
-    // The same draft id is back: the session on screen joins it again, text and readers kept.
-    void this.draftRooms
-      .reopen(roomKey)
-      ?.restartTransport(this.transportFactory)
-      .catch(reportError);
   }
 
   abandonDraftRoom(roomKey: string): Promise<void> {

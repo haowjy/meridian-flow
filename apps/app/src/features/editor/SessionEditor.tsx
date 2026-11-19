@@ -172,14 +172,9 @@ function ActiveSessionEditorView({
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
   const removal = useRemovalRecord(projectId ?? "", removed ? documentId : null);
-  // A draft whose document went to Trash stays on screen read-only, as does a document removed
-  // elsewhere and still in Trash; the pill says so and restores it.
-  const commands = useOptionalDraftCommandOwner();
-  const room = inReview ? parseYjsRoomName(identity.roomName) : null;
-  const reviewDraft = room?.kind === "draft" ? room.draftId : null;
-  const endOf = () => (commands && reviewDraft ? commands.endOf(reviewDraft) : null);
-  const end = useSyncExternalStore(commands?.subscribe ?? subscribeNothing, endOf, endOf);
-  const documentInTrash = end === "document" || (removal?.kind === "removed" && removal.inTrash);
+  // A document removed elsewhere and still in Trash stays on screen read-only; the pill says so
+  // and restores it.
+  const documentInTrash = removal?.kind === "removed" && removal.inTrash;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);

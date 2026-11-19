@@ -554,8 +554,8 @@ msgstr "{count, plural, one {# call} other {# calls}}"
 #~ msgstr "{count, plural, one {# change couldn't come back: it was drafted again or is gone.} other {# changes couldn't come back: they were drafted again or are gone.}}"
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
-msgstr "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
+#~ msgid "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
+#~ msgstr "{count, plural, one {# change couldn't come back: the text changed after it was discarded.} other {# changes couldn't come back: the text changed after they were discarded.}}"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
@@ -2808,8 +2808,8 @@ msgid "Couldn’t confirm this preference saved."
 msgstr "Couldn’t confirm this preference saved."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "Couldn't confirm whether this discarded. Check what is left before you try again."
-msgstr "Couldn't confirm whether this discarded. Check what is left before you try again."
+#~ msgid "Couldn't confirm whether this discarded. Check what is left before you try again."
+#~ msgstr "Couldn't confirm whether this discarded. Check what is left before you try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't copy"
@@ -4270,7 +4270,6 @@ msgstr "Goal: {0}. "
 msgid "Gone for good: this document was emptied from Trash."
 msgstr "Gone for good: this document was emptied from Trash."
 
-#: src/features/draft-review/CommandNotice.tsx
 #: src/features/project/work/GoneWord.tsx
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Gone from Trash."
@@ -4582,20 +4581,20 @@ msgid "Italic"
 msgstr "Italic"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Its chat is in Trash"
-msgstr "Its chat is in Trash"
+#~ msgid "Its chat is in Trash"
+#~ msgstr "Its chat is in Trash"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
-msgstr "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
+#~ msgid "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
+#~ msgstr "Its chat is in Trash, so nothing was discarded. Restore the chat to discard its changes."
 
 #: src/features/chat/turn-receipt-copy.ts
 #~ msgid "Its chat is in Trash, so this stayed as it is"
 #~ msgstr "Its chat is in Trash, so this stayed as it is"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Its chat is in Trash."
-msgstr "Its chat is in Trash."
+#~ msgid "Its chat is in Trash."
+#~ msgstr "Its chat is in Trash."
 
 #: src/features/chat/script-copy.ts
 msgid "its code didn't parse"
@@ -5569,9 +5568,7 @@ msgstr "Not renamed:"
 msgid "Not reported"
 msgstr "Not reported"
 
-#: src/features/draft-review/CommandNotice.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
-#: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 #: src/features/project/work/WorkCollection.tsx
 msgid "Not restored"
 msgstr "Not restored"
@@ -5931,8 +5928,8 @@ msgstr "Partial result"
 #~ msgstr "Partly back"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Partly restored"
-msgstr "Partly restored"
+#~ msgid "Partly restored"
+#~ msgstr "Partly restored"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
@@ -7638,8 +7635,8 @@ msgid "The document could not be created. Try again."
 msgstr "The document could not be created. Try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft."
-msgstr "The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft."
+#~ msgid "The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft."
+#~ msgstr "The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft."
 
 #: src/features/draft-review/UnsentDraftTextNotice.tsx
 #~ msgid "The draft was discarded before your latest typing reached it."
@@ -8139,8 +8136,8 @@ msgstr "This document's Work was deleted, so this change can't be reversed."
 #~ msgstr "This draft is no longer here. It may have been applied or discarded already."
 
 #: src/features/draft-review/ReviewMessageText.tsx
-msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
-msgstr "This draft just became read-only, so nothing was discarded. Check it, then try again."
+#~ msgid "This draft just became read-only, so nothing was discarded. Check it, then try again."
+#~ msgstr "This draft just became read-only, so nothing was discarded. Check it, then try again."
 
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "This draft moved on since you pressed Apply, so it wasn't applied."
@@ -9016,12 +9013,12 @@ msgid "Work was closed"
 msgstr "Work was closed"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes."
-msgstr "Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes."
+#~ msgid "Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes."
+#~ msgstr "Work was closed, so nothing was discarded. Unarchive or restore the Work to discard its changes."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Work was closed."
-msgstr "Work was closed."
+#~ msgid "Work was closed."
+#~ msgstr "Work was closed."
 
 #: src/features/chat/SpawnReportCard.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx

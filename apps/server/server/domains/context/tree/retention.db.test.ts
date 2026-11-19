@@ -143,7 +143,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     expect(await trash.purge()).toBe(0);
     expect((await document(id))?.contentPurgedAt).toBeNull();
     const [draft] = await db.select().from(documentDrafts).where(eq(documentDrafts.id, draftId));
-    expect(draft?.status).toBe("active");
+    expect(draft).toBeDefined();
   });
 
   it("keeps a deleted Work's drafted create while the Work can be restored, and releases it after a whole Discard", async () => {

@@ -328,8 +328,8 @@ const cases: ModelEditCase[] = [
       assert.deepEqual(after.results, ["call-1:committed", "call-2:committed"]);
       assert.deepEqual(after.edits, ["call-1", "call-2"]);
       assert.deepEqual(
-        (await drafts(h, doc.documentId)).map((d) => [d.status, d.doc]),
-        [["active", ["Live seed.", "Then."]]],
+        (await drafts(h, doc.documentId)).map((d) => d.doc),
+        [["Live seed.", "Then."]],
       );
       console.log(`  (the second call ended as ${after.results[1]}; commands ${after.commands})`);
     },
@@ -371,10 +371,7 @@ const cases: ModelEditCase[] = [
       })) as { status: string };
       assert.equal(again.status, "done");
       assert.equal((again as { result?: { settled?: unknown } }).result?.settled, undefined);
-      assert.deepEqual(
-        (await drafts(h, doc.documentId)).map((d) => d.status),
-        ["active"],
-      );
+      assert.equal((await drafts(h, doc.documentId)).length, 1);
     },
   },
   {
@@ -399,8 +396,8 @@ const cases: ModelEditCase[] = [
       await waitForAssistantTurn(h, two);
       const found = await drafts(h, doc.documentId);
       assert.deepEqual(
-        found.map((d) => [d.status, d.doc]),
-        [["active", ["Live seed.", "Then."]]],
+        found.map((d) => d.doc),
+        [["Live seed.", "Then."]],
       );
       assert.deepEqual((await state(h, two, doc.documentId)).results, ["call-2:committed"]);
     },

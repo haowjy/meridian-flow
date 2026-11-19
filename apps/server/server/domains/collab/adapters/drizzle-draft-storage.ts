@@ -91,8 +91,6 @@ const draftColumns = {
   workId: draftOwner.workId,
   rootThreadId: draftOwner.rootThreadId,
   projectId: branches.projectId,
-  status: documentDrafts.status,
-  closedCause: documentDrafts.closedCause,
   revision: documentDrafts.revision,
   checkpointRevision: documentDrafts.checkpointRevision,
   checkpointSeq: documentDrafts.checkpointSeq,
@@ -137,8 +135,6 @@ export function mapDraft(row: DraftSelectRow): DraftSnapshot {
     workId: (row.workId as WorkId | null) ?? null,
     rootThreadId: (row.rootThreadId as ThreadId | null) ?? null,
     projectId: row.projectId as ProjectId,
-    status: row.status,
-    closedCause: row.closedCause,
     revision: Number(row.revision),
     checkpointRevision: Number(row.checkpointRevision),
     checkpointSeq: Number(row.checkpointSeq),
@@ -247,14 +243,14 @@ export type AppendCommitted = {
  * Shape A's storage half, inside the caller's savepoint. The `UPDATE` is the sequence point:
  * it bumps `revision` at whatever value it holds (no revision predicate, no retry) and holds
  * the row lock to `COMMIT`, so journal ids are allocated in commit order per draft (tail
- * order). It still refuses a closed or frozen draft unless the caller says `draft: "any"`. After
+ * order). It still refuses a frozen draft unless the caller says `work: "any"`. After
  * the lock, one separate statement reads the committed prefix `since` the caller's base (a fresh READ COMMITTED
  * snapshot, so every row committed before this lock), and `finalize` decides what to insert.
  * Any outcome but `appended` throws `DraftWriteRollback` so the savepoint undoes the bump.
  */
 export async function appendRowsWithinTx(
   db: DrizzleDb,
-  input: Pick<AppendRowsInput, "draftId" | "base" | "finalize" | "work" | "draft">,
+  input: Pick<AppendRowsInput, "draftId" | "base" | "finalize" | "work">,
 ): Promise<AppendCommitted> {
   const [locked] = await db
     .update(documentDrafts)
@@ -266,7 +262,6 @@ export async function appendRowsWithinTx(
     .where(
       and(
         eq(documentDrafts.id, input.draftId),
-        input.draft === "any" ? undefined : eq(documentDrafts.status, "active"),
         input.work === "any" ? undefined : draftOwnerActive,
       ),
     )
@@ -328,14 +323,13 @@ export async function commitRewriteWithinTx(
       revision: documentDrafts.revision,
       checkpointRevision: documentDrafts.checkpointRevision,
       checkpointSeq: documentDrafts.checkpointSeq,
-      status: documentDrafts.status,
       stateVector: documentDrafts.stateVector,
     })
     .from(documentDrafts)
     .where(eq(documentDrafts.id, input.draftId))
     .for("update");
   const lockedAt = performance.now();
-  if (locked?.status !== "active") return { status: "closed" };
+  if (!locked) return { status: "gone" };
   const moved =
     input.policy.kind === "exact"
       ? Number(locked.revision) !== input.policy.revision

@@ -36,30 +36,6 @@ import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { writeTextAnswer } from "./drizzle-text-answer.js";
 
-/** A restore of this command that brought something back or left it out as edited: stored with the Discard it named. */
-async function restoredBefore(
-  tx: ReturnType<typeof currentDrizzleDb>,
-  projectId: ProjectId,
-  userId: string,
-  request: UndoDiscardCommand["request"],
-): Promise<boolean> {
-  const [found] = await tx
-    .select({ id: commands.id })
-    .from(commands)
-    .where(
-      and(
-        eq(commands.projectId, projectId),
-        eq(commands.kind, "undo_discard"),
-        eq(commands.accountId, userId),
-        sql`${commands.outcome} -> 'result' ->> 'status' = 'restored'`,
-        sql`((${commands.outcome} -> 'result' ->> 'restored')::int > 0 or (${commands.outcome} -> 'result' ->> 'leftOut')::int > 0)`,
-        sql`${commands.outcome} -> 'result' ->> 'discardCommandId' = ${request.discardCommandId}`,
-      ),
-    )
-    .limit(1);
-  return found !== undefined;
-}
-
 export function createDrizzleUndoDiscard(
   db: Database,
   deps: {
@@ -81,11 +57,11 @@ export function createDrizzleUndoDiscard(
     const ended: DocumentId[] = [];
     for (const effect of effects) {
       const [draft] = await tx
-        .select({ status: documentDrafts.status })
+        .select({ id: documentDrafts.id })
         .from(documentDrafts)
         .where(eq(documentDrafts.id, effect.draftId));
-      // A draft the Work's purge closed has nothing to merge into.
-      if (draft?.status !== "active") {
+      // A draft the Work's purge deleted has nothing to merge into.
+      if (!draft) {
         ended.push(effect.documentId);
         continue;
       }
@@ -136,19 +112,16 @@ export function createDrizzleUndoDiscard(
     async run(command: UndoDiscardCommand): Promise<UndoDiscardResult> {
       const { branchId, userId, request, envelope } = command;
       const commandId = envelope.commandId;
-      /** Nothing came back, and `settled` says why. */
-      const nothing = (settled: Settlement[], leftOut = 0): UndoDiscardResult => ({
+      /** Nothing came back: the entry is gone, or its owner is closed (`settled` says that). */
+      const nothing = (settled?: Settlement[]): UndoDiscardResult => ({
         status: "restored",
         commandId,
         discardCommandId: request.discardCommandId,
         branchId,
         restored: 0,
-        leftOut,
         brought: { text: [], tree: [] },
-        settled,
+        ...(settled ? { settled } : {}),
       });
-      const purged = (items: string[] = []) =>
-        nothing([{ rule: "left_out", items, why: "purged" }]);
       return runDocumentCommand(
         db,
         envelope,
@@ -165,10 +138,10 @@ export function createDrizzleUndoDiscard(
                 .where(
                   and(eq(commands.id, request.discardCommandId), eq(commands.accountId, userId)),
                 );
-              if (discard?.kind !== "discard") return purged();
+              if (discard?.kind !== "discard") return nothing();
               // A purged Work's branches went with it: no row names an owner to lock or write.
               const owner = (await deps.branches.ownerOf(branchId))?.owner;
-              if (!owner) return purged();
+              if (!owner) return nothing();
               approveBranchWriteJoin();
               const target = await deps.branches.ensureActiveForWrite({
                 owner,
@@ -199,17 +172,13 @@ export function createDrizzleUndoDiscard(
               for (const node of [...documentIds].sort())
                 await lockDocumentMutation(tx, node as never);
 
-              let treeAlreadyRestored = false;
-              let foreignRecords = false;
               const { result } = await deps.treeLists.submit({
                 lists,
                 make: (ends) =>
                   ends.map(({ writer }) => {
                     const found = discardedBy(writer.doc, request.discardCommandId);
-                    if (found.restored) treeAlreadyRestored = true;
                     // Another Work's records, or none, are not this Discard's to restore.
                     const own = found.records.every((record) => record.draft === branchId);
-                    if (!own) foreignRecords = true;
                     return own
                       ? restoreDiscard(
                           writer,
@@ -237,40 +206,19 @@ export function createDrizzleUndoDiscard(
                     ),
                   );
 
-              const leftOut = restoredTree.flatMap((one) => one.leftOut);
               const treeCopies = restoredTree.reduce((sum, one) => sum + one.copies.length, 0);
-              const settled: Settlement[] = [];
-              if (leftOut.length > 0)
-                settled.push({
-                  rule: "left_out",
-                  items: [...new Set(leftOut.map(({ record }) => record.node))],
-                  why: "purged",
-                });
-              // An entry with no member left: a restore took the members, or another Work holds
-              // the records, or what it held left with its document's purge.
-              if (treeCopies + text.brought.length === 0 && leftOut.length === 0)
-                settled.push(
-                  treeAlreadyRestored ||
-                    foreignRecords ||
-                    recorded.length > 0 ||
-                    (await restoredBefore(tx, envelope.projectId, userId, request))
-                    ? { rule: "already", state: "restored" }
-                    : { rule: "left_out", items: [], why: "purged" },
-                );
               return {
                 status: "restored",
                 commandId,
                 discardCommandId: request.discardCommandId,
                 branchId: target.id as BranchId,
                 restored: treeCopies + text.brought.length,
-                leftOut: leftOut.length,
                 brought: {
                   text: text.brought,
                   tree: [
                     ...new Set(restoredTree.flatMap((one) => one.copies.map((copy) => copy.node))),
                   ],
                 },
-                ...(settled.length > 0 ? { settled } : {}),
               };
             },
             { requireActive: true, seam: true },

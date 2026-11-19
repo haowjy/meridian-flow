@@ -63,7 +63,7 @@ export function useDraftDock({
   const here =
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
   const notice = here && hasLine(here) ? here : null;
-  // A Discard a closed owner returned: a chip on the strip's controls, no line of its own.
+  // A Discard an Apply took first: a chip on the strip's controls, no line of its own.
   const bounce = here && !hasLine(here) ? here : null;
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();

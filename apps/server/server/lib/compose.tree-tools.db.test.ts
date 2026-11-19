@@ -309,7 +309,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(seen).toMatchObject({ hasDraft: true, tree: { movedFrom: { path: "/ch1" } } });
       const textDrafts = () =>
         db
-          .select({ status: schema.documentDrafts.status })
+          .select({ id: schema.documentDrafts.id })
           .from(schema.documentDrafts)
           .where(
             and(
@@ -322,7 +322,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         body: { status: "discarded", closed: [CH1] },
       });
       expect(await writer.item(CH1)).toBeUndefined();
-      expect(await textDrafts()).toEqual([{ status: "active" }]);
+      expect(await textDrafts()).toHaveLength(1);
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 

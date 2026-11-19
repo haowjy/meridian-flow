@@ -10,7 +10,6 @@ import type { WriteLinkAssigner } from "../links/assign-refs.js";
 import type { AgentEditModel } from "../ports/model.js";
 import type { SemanticEditIRV1, SemanticOutputRun } from "../semantic-edit-ir.js";
 import { alignBlocks } from "./block-alignment.js";
-import { carrySteps } from "./carry.js";
 import {
   cutTextWindows,
   documentBodies,
@@ -106,25 +105,14 @@ export type WritePlan =
   | {
       ok: true;
       written: readonly Block[];
-      /** Where the words landed, when that is not where the model aimed. */
-      note?: string;
       /** Ref assignment, then block alignment and no-op detection. */
       assign(links: WriteLinks): ResolveWriteResult;
     }
   | ResolveWriteFailure;
 
-/**
- * A write whose selectors the model chose in `view`, its own earlier cut of a document that
- * has since been replaced by the one being written (`view` is null when that cut can't be read).
- */
-export interface CarryFrom {
-  view: DocHandle | null;
-}
-
 export function planWrite(
   ctx: Omit<ResolveWriteContext, "links">,
   params: ResolveWriteParams,
-  carry?: CarryFrom,
 ): WritePlan {
   if (!ctx.doc)
     return error("document_not_found", `File not found: ${params.documentAddress.filePath}`);
@@ -140,9 +128,7 @@ export function planWrite(
   };
   const normalized = normalizeParams(concreteCtx, params);
 
-  const planned = carry
-    ? planCarried(concreteCtx, normalized, carry)
-    : planCommand(concreteCtx, normalized);
+  const planned = planCommand(concreteCtx, normalized);
   if (!("steps" in planned)) return planned;
   const steps = planned.steps;
   return {
@@ -154,7 +140,6 @@ export function planWrite(
           ? []
           : step.blocks,
     ),
-    ...(planned.note ? { note: planned.note } : {}),
     assign(links) {
       const resolved = assignPlannedWrite(concreteCtx, normalized, steps, links);
       if (!resolved.ok) return resolved;
@@ -181,57 +166,6 @@ function planCommand(
   }
 }
 
-/**
- * Plans the write where the model chose its selectors, in its view, then carries the result
- * onto the current document by block identity. Resolving on the current document would count,
- * span and match against text the model never saw, and so delete it.
- */
-function planCarried(
-  ctx: ConcreteResolveContext,
-  params: NormalizedParams,
-  { view }: CarryFrom,
-): PlannedWrite | ResolveWriteFailure {
-  if (!view) {
-    // Nothing says where the model aimed: its words land at the end, and nothing is removed.
-    if (params.command === "remove") return { steps: [] };
-    // The address's heading fragment is a selector too: `sectionChecked` would resolve it
-    // against the current text, where a purged draft's heading does not exist.
-    const { fragment: _fragment, ...address } = params.documentAddress;
-    const landed = planInsert(ctx, {
-      ...params,
-      documentAddress: address,
-      command: "insert",
-      all: undefined,
-      wholeDocument: undefined,
-      after: undefined,
-      before: undefined,
-      find: undefined,
-      in: undefined,
-      around: undefined,
-    });
-    return "steps" in landed
-      ? {
-          ...landed,
-          note: "Your earlier view of this file was not available, so your text landed at the end.",
-        }
-      : landed;
-  }
-  const seen = hashLocateContext(ctx.model, ctx.model.projectBlocks(view));
-  const viewCtx: ConcreteResolveContext = {
-    ...ctx,
-    doc: view,
-    projected: seen.projected,
-    blocks: seen.blocks,
-  };
-  const planned = planCommand(viewCtx, params);
-  if (!("steps" in planned)) return planned;
-  const { documentId, filePath } = params.documentAddress;
-  return carrySteps(viewCtx.projected, ctx.projected, planned.steps, {
-    documentId,
-    file: filePath,
-  });
-}
-
 /** Plan and assign in one go, for callers whose written content is known up front. */
 export function resolveWrite(
   ctx: ResolveWriteContext,
@@ -243,7 +177,6 @@ export function resolveWrite(
 
 interface PlannedWrite {
   steps: PlannedStep[];
-  note?: string;
 }
 
 function assignPlannedWrite(

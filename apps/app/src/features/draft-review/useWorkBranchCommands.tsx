@@ -50,7 +50,6 @@ import {
   type DiscardUndo,
   halvesOf,
   type NoticeSurface,
-  returnedIn,
   unappliedOf,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
@@ -188,20 +187,10 @@ export function useWorkBranchCommands({
       if (took) notices.answered(handle, took);
       else if (answer.kind !== "done") notices.partEnded(handle);
     };
-    /**
-     * The one place a closed owner's `returned` answer becomes a notice: the chip on the control
-     * pressed (`documentIds`: its rows; none: the bar's), and the Works list read again, since
-     * the writer's view of the Work was stale.
-     */
-    const bounced = (
-      outcomes: readonly CommandOutcome[],
-      surface: NoticeSurface,
-      documentIds: readonly string[],
-    ) => {
-      const returned = outcomes.find((outcome) => outcome.kind === "returned");
-      if (returned?.kind !== "returned") return;
-      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
-      notices.showBounce({ projectId, ownerKey, surface, documentIds, why: returned.why });
+    /** A closed owner's `returned` answer says nothing; the Works list is read again, since the writer's view of the Work was stale. */
+    const refreshWorksIfReturned = (outcome: CommandOutcome) => {
+      if (outcome.kind === "returned")
+        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
     };
     const titleOf = (item: ThreadDraftListItem | undefined) =>
       item?.documentName ?? documentBasename(item?.contextLocation?.path) ?? null;
@@ -755,7 +744,7 @@ export function useWorkBranchCommands({
       const handle = serverUndo(branchId, commandId, documentIds);
       void outcome.then((answer) => {
         answeredShare(handle, answer);
-        bounced([answer], input.bounceSurface ?? input.surface, input.all ? [] : documentIds);
+        refreshWorksIfReturned(answer);
       });
       const count = documentIds.length + folders.length;
       const only = count === 1 && first && folders.length === 0 ? row(first.draft) : undefined;
@@ -813,7 +802,7 @@ export function useWorkBranchCommands({
       const entry = history?.captureApply({
         undo: async () => {
           const restored = await handle.undo();
-          if (restored.answer === "failed" || restored.answer === "returned") return false;
+          if (restored.answer === "failed") return false;
           entry?.remove();
           return true;
         },
@@ -965,24 +954,13 @@ export async function restoreDiscard(
       });
     }
     if (answer.status === "conflict") return { answer: "failed" };
-    // A restore that brought nothing back: a closed owner, a restore that took it first, an entry
-    // Trash no longer holds, or changes the writer has since written over (which say nothing).
-    const closed = returnedIn(answer.settled);
-    if (closed) {
-      if (closed === "work-closed")
-        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
-      return { answer: "returned", why: closed };
-    }
-    if (answer.restored > 0)
-      return {
-        answer: "ok",
-        leftOut: answer.leftOut,
-        brought: answer.brought,
-        branchId: answer.branchId,
-      };
-    return answer.settled?.some((one) => one.rule === "already")
-      ? { answer: "gone" }
-      : { answer: "returned", why: "gone-from-trash" };
+    // A restore that brought nothing back (a closed owner, a restore that took it first, an entry
+    // Trash no longer holds, or changes the writer has since written over) says nothing.
+    if (answer.settled?.some((one) => one.rule === "returned"))
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.works(projectId) });
+    return answer.restored > 0
+      ? { answer: "ok", brought: answer.brought, branchId: answer.branchId }
+      : { answer: "gone" };
   } catch {
     return { answer: "failed" };
   }

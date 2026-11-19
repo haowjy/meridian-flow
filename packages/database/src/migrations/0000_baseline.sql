@@ -2,7 +2,6 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS btree_gin;
 CREATE EXTENSION IF NOT EXISTS pg_bigm;
 --> statement-breakpoint
-CREATE SEQUENCE "public"."apply_command_effects_unapplied_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE TABLE "agent_definition_revisions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"package_revision_id" uuid NOT NULL,
@@ -549,10 +548,8 @@ CREATE TABLE "document_edit_parts" (
 	"delta" jsonb,
 	"origin" jsonb NOT NULL,
 	"draft_branch_id" uuid,
-	"purged_disposition" text,
 	CONSTRAINT "document_edit_parts_ordinal_valid" CHECK ("document_edit_parts"."ordinal" >= 0),
 	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' IN ('pending','live')),
-	CONSTRAINT "document_edit_parts_purged_disposition_valid" CHECK ("document_edit_parts"."purged_disposition" IN ('applied','discarded')),
 	CONSTRAINT "document_edit_parts_draft_branch_valid" CHECK (("document_edit_parts"."origin"->>'kind' = 'pending') = ("document_edit_parts"."draft_branch_id" IS NOT NULL))
 );
 --> statement-breakpoint
@@ -903,8 +900,6 @@ CREATE TABLE "apply_command_effects" (
 	"base_start" jsonb,
 	"base_delta" jsonb NOT NULL,
 	"unapplied_by" uuid,
-	"unapplied_seq" bigint,
-	"draft_reversed" boolean DEFAULT false NOT NULL,
 	CONSTRAINT "apply_command_effects_command_id_ordinal_pk" PRIMARY KEY("command_id","ordinal")
 );
 --> statement-breakpoint
@@ -965,9 +960,6 @@ CREATE TABLE "document_drafts" (
 	"document_id" uuid NOT NULL,
 	"kind" text NOT NULL,
 	"branch_id" uuid NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
-	"closed_cause" text,
-	"closed_by" uuid,
 	"state" "bytea" NOT NULL,
 	"state_vector" "bytea" NOT NULL,
 	"seed_origins" jsonb,
@@ -986,10 +978,6 @@ CREATE TABLE "document_drafts" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "document_drafts_kind_valid" CHECK ("document_drafts"."kind" = 'work_draft'),
-	CONSTRAINT "document_drafts_closed_cause_presence" CHECK (("document_drafts"."status" = 'closed') = ("document_drafts"."closed_cause" IS NOT NULL)),
-	CONSTRAINT "document_drafts_closed_by_closed" CHECK ("document_drafts"."closed_by" IS NULL OR "document_drafts"."status" = 'closed'),
-	CONSTRAINT "document_drafts_closed_cause_valid" CHECK ("document_drafts"."closed_cause" IN ('discarded', 'document_removed', 'left_out')),
-	CONSTRAINT "document_drafts_status_valid" CHECK ("document_drafts"."status" IN ('active', 'closed')),
 	CONSTRAINT "document_drafts_seed_record_shape" CHECK ((("document_drafts"."seed_origins" IS NULL AND "document_drafts"."seed_live_room" IS NULL AND "document_drafts"."seed_live_snapshot" IS NULL AND "document_drafts"."seed_draft_snapshot" IS NULL) OR ("document_drafts"."kind" = 'work_draft' AND "document_drafts"."seed_origins" IS NOT NULL AND "document_drafts"."seed_live_room" IS NOT NULL AND "document_drafts"."seed_live_snapshot" IS NOT NULL AND "document_drafts"."seed_draft_snapshot" IS NOT NULL)) AND (("document_drafts"."seed_live_state" IS NULL AND "document_drafts"."seed_live_position" IS NULL) OR ("document_drafts"."seed_live_state" IS NOT NULL AND "document_drafts"."seed_live_position" IS NOT NULL)))
 );
 --> statement-breakpoint
@@ -1315,13 +1303,11 @@ CREATE INDEX "tree_nodes_parent" ON "tree_nodes" USING btree ("parent_id");--> s
 CREATE INDEX "tree_nodes_list" ON "tree_nodes" USING btree ("list_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_trashed" ON "tree_nodes" USING btree ("trashed_at") WHERE "tree_nodes"."trashed_at" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USING btree ("command_id","document_id","group_id");--> statement-breakpoint
-CREATE INDEX "apply_command_effects_unreplayed" ON "apply_command_effects" USING btree ("draft_id") WHERE "apply_command_effects"."unapplied_by" is not null and not "apply_command_effects"."draft_reversed";--> statement-breakpoint
 CREATE INDEX "commands_thread" ON "commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE INDEX "commands_discard_project" ON "commands" USING btree ("project_id","created_at") WHERE "commands"."kind" IN ('discard', 'undo_discard', 'unapply');--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "document_drafts_active_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
-CREATE INDEX "document_drafts_closed_by" ON "document_drafts" USING btree ("closed_by") WHERE "document_drafts"."closed_by" IS NOT NULL;--> statement-breakpoint
-CREATE INDEX "document_drafts_active_work_draft_by_branch" ON "document_drafts" USING btree ("branch_id","id") WHERE "document_drafts"."kind" = 'work_draft' AND "document_drafts"."status" = 'active';--> statement-breakpoint
+CREATE UNIQUE INDEX "document_drafts_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft';--> statement-breakpoint
+CREATE INDEX "document_drafts_work_draft_by_branch" ON "document_drafts" USING btree ("branch_id","id") WHERE "document_drafts"."kind" = 'work_draft';--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX "document_yjs_checkpoints_initial" ON "document_yjs_checkpoints" USING btree ("document_id") WHERE "document_yjs_checkpoints"."up_to_seq" = 0;--> statement-breakpoint
 CREATE INDEX "document_yjs_updates_document_id" ON "document_yjs_updates" USING btree ("document_id","id");--> statement-breakpoint
