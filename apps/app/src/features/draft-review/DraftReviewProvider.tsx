@@ -7,13 +7,11 @@ import {
   type ReactNode,
   useCallback,
   useContext,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
@@ -161,34 +159,6 @@ export function useDraftReviewScopeValue({
         ? (activeEditorProjection?.session ?? null)
         : null,
   });
-
-  // The cards' Undo depends on the text, so the writer's own typing refreshes them: in the
-  // manuscript, or in the open draft's review room.
-  const liveSession =
-    activeEditorProjection && !activeEditorProjection.inReview
-      ? activeEditorProjection.session
-      : null;
-  const reviewSession = roomOwner.session;
-  useEffect(() => {
-    if (!threadId) return;
-    const documents = [liveSession?.document, reviewSession?.document].flatMap((doc) =>
-      doc ? [doc] : [],
-    );
-    if (documents.length === 0) return;
-    let timer: number | null = null;
-    const invalidateLineage = () => {
-      if (timer != null) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        timer = null;
-        void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
-      }, 200);
-    };
-    for (const doc of documents) doc.on("update", invalidateLineage);
-    return () => {
-      if (timer != null) window.clearTimeout(timer);
-      for (const doc of documents) doc.off("update", invalidateLineage);
-    };
-  }, [liveSession, reviewSession, queryClient, threadId]);
 
   const value = useMemo<DraftReviewContextValue>(
     () => ({

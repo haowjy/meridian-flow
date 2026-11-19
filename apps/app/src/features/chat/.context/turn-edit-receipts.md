@@ -5,18 +5,18 @@ This page defines the chat contract for turn-edit records and reversal.
 The per-turn receipt is a quiet, default-collapsed record for live and pending draft
 document edits, moves and deletes. Its header counts documents and never names one;
 document names belong to the expanded rows, which navigate. It reads "Drafted 1
-document" while a drafted document still waits, "Applied" or "Discarded" once every
-drafted document has had that outcome, and "Drafted 3 documents: 1 applied, 1
-discarded, 1 still a draft" when they differ. The heading reads what is true now of this reply's change, not
-what was true when the reply ended: the receipt's `drafts` map (each drafted document
-still a draft, applied or discarded, from the same capture as the receipt: still a draft
-means a change waits in an open draft at this reply's own text, or the writer typed over
-it; another reply's change in the same draft does not count, so each reply's card records
-what became of that reply's change) is re-read when
-this chat's waiting drafts change (`useDraftDock`). A turn that wrote the manuscript
-reads "Edited 1 document", or "Changed 1 document" once it moved or deleted one or
-wrote both a draft and the manuscript. A drafted row says "Applied" or "Discarded" at
-its end; one still waiting needs no word.
+document" while a drafted document still waits or the documents ended differently, and
+"Applied", "Undone" or "Discarded" once every drafted document had that outcome. The
+heading reads what is true now of this reply's change, not what was true when the reply
+ended: the receipt's `drafts` map (one word per drafted document, text and tree halves
+folded into the less settled one; still a draft means a change waits in an open draft at
+this reply's own text, or the writer typed over it, and another reply's change in the same
+draft does not count) is re-read when this chat's waiting drafts change (`useDraftDock`)
+and when the writer edits an open document (`useRefreshTurnCardsOnEdit`, debounced), so
+the Undo goes within a moment of the text it depends on changing. A turn that wrote the
+manuscript reads "Edited 1 document", or "Changed 1 document" once it moved or deleted one
+or wrote both a draft and the manuscript. A drafted row says "Applied", "Undone" or
+"Discarded" at its end; one still waiting needs no word.
 Expanding shows one row per edited document and shows no per-change detail: the
 card has no Before/After excerpts or word totals. A conversation reveal opened
 from an editor peer mark lands on the owning turn.
@@ -47,50 +47,17 @@ handle (#914): the project shell supplies `OwnerNames` (`owner-names.tsx`,
 `ProjectOwnerNamesProvider`), and outside it a location reads "Scratch". The
 row is a record: it keeps its words after Undo, as text rows do. A deleted
 document's row is not a door, because its old address may hold another document
-now. The parts list's heading says which command leaves them as
-they are: "Undo leaves 2 parts as they are" before a press, "Undo left 1 part as
-it was" after one.
+now. The single Undo action calls the turn-scoped reverse endpoint. There is no Redo: to put an
+undone reply back, the writer asks the model to write it again. The card has one slot in its
+header with a fixed width: Undo (`control: "undo"`) while a press would take something back,
+"Undoing…" while it runs, "Undone" once the card's Undo ran and nothing is left for it
+(`undone`), else empty, so a change of state moves nothing under the pointer. A press sends one
+command, takes what it can and says nothing: no sentence about what stayed or why, and none for
+a held owner (a closed, archived or Trashed Work or chat): the Undo is simply absent until the
+owner reopens. Only a press that failed, or never got an answer, shows a message: the floating
+pill toast (`notifyFailure` with `brief`). An old tab that still posts a Redo gets 200 `expired`.
 
-The single Undo action calls the turn-scoped reverse endpoint. There is no Redo: to put an
-undone reply back, the writer asks the model to write it again. Receipt `state` decides what
-the header offers: `live-active` has Undo (`control: "undo"`); the rest are `view_change` and
-show no button. `undone` says "Undone", `partly` "Partly undone" (some parts stayed, each
-listed under "Undo left # part as it was" with its own cause), `expired` nothing; the server
-gives no control once every drafted document is discarded, where nothing is left to take out.
-The card shows no failure line for these: "can't reverse" is never read as "went wrong". An old
-tab that still posts a Redo gets 200 `expired`. What
-became of each part shows as plain facts after expansion, worded from the typed
-causes ("Taken out", "Stayed as you edited it"); a drafted document's apply,
-discard, or draft waiting in a closed Work is on its row and the Work's review instead
-(a skip says it is `drafted`; a direct part on the same document keeps its line).
-A part a closed owner holds names its document ("The change to Notes stayed: …"), as does
-the line an Un-Apply leaves, since a card lists several documents apart from their rows. A deleted document's row stays as a record without
-being a door.
-
-A reversal command can race the projected receipt and return a semantic
-unavailable outcome with HTTP 200. The mutation invalidates the turn query,
-expands the receipt, and retains the returned reason while refreshed lineage
-withdraws the action. Do not reduce the result to transport success or clear the
-local reason merely because the refreshed control becomes `view_change`; both
-hide the semantic refusal after a successful HTTP response.
-
-Every refusal is visible, and the receipt's reason line is where it shows.
-Skipped parts and refusals are worded in `turn-receipt-copy.ts` from typed
-causes (`TurnInverseSkipCause`, and a tree skip's `op` and `changed_since` or
-`purged`); the card never prints server prose. A tree change that stayed is
-worded by `treeLeftSentence`, the review row's and Ctrl+Z's own sentence ("Not
-undone. The move stayed: it was changed since."), and the parts list doesn't
-repeat what that line already says. The chip carries the tree changes that stay
-in its `skips` before any press, so a card with nothing left to undo says why
-when opened. A taken leaf is not a refusal: the inverse lands beside it as a twin,
-and the card says where from the committed transition.
-Copy covers the whole wire status union through an exhaustive switch that fails
-the build when a status is added, and a command that never reached a status at
-all — rejected fetch, HTTP error envelope — gets its own retry line naming the
-command the writer pressed. A refused command
-never leaves the card unchanged.
-
-Undo reverses the turn's remaining edits where they are now: pending in the
+ where they are now: pending in the
 Work's document drafts, or live. Draft and live writes remain one atomic command. The card takes back
 only this reply's own changes, applied ones included, and sends nothing else: the server reads each
 change of an edit from the text (a drafted change that stands, or an applied change the Apply's
@@ -100,8 +67,7 @@ Ctrl+Z do. Undo is offered only while a press would take something back. A chang
 inside is not taken, and the card has no Undo for it. The receipt immediately shows Undoing while the command runs;
 Yjs publishes the edit after durable commit and failures stay on the card.
 Eligibility is the text's: a change stands when taking it out merges cleanly
-(`content-merge/stands.ts`). The derived applied/pending/discarded disposition chooses a skipped part's copy,
-never grants or refuses Undo. The word "Undone" counts only the writer's own Undo, text and
+(`content-merge/stands.ts`). The word "Undone" counts only the writer's own Undo, text and
 tree alike: an undo the model made in the reply is part of what the reply did, so the card
 offers Undo for what still stands. Review text Discard is a separate local
 edit in the same stable room, not receipt Undo or a generation reset. Terminal

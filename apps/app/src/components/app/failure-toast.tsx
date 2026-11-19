@@ -68,8 +68,8 @@ export function dismissFailures(prefix: string) {
   for (const key of [...shown.keys()]) if (key.startsWith(prefix)) dismissFailure(key);
 }
 
-/** Below the side header on desktop, below the top bar on a phone. */
-const DESKTOP_OFFSET = { top: "3rem", right: "1rem" };
+/** Centred under the header on desktop, below the top bar on a phone. */
+const DESKTOP_OFFSET = { top: "3rem" };
 const PHONE_OFFSET = {
   top: "calc(env(safe-area-inset-top) + 3.5rem + 0.5rem)",
   left: "0.5rem",
@@ -81,7 +81,7 @@ export function FailureToaster() {
   const phone = usePhoneShell();
   return (
     <Toaster
-      position={phone ? "top-center" : "top-right"}
+      position="top-center"
       offset={DESKTOP_OFFSET}
       mobileOffset={PHONE_OFFSET}
       closeButton
