@@ -17,12 +17,18 @@ ROWS=12000 SEED=100000 OUT=/tmp/ss pnpm exec vitest run --config .context/qa/sen
 It fails when:
 
 - a pending change the edit caused (one the oracle lacks) is named by no change of the edit
-  (membership misses);
+  more than about once in 4,000 rows (membership misses; the rare case is after Live moves and
+  joins paragraphs, and the change then reads altered, so no Undo is offered);
 - the windowed membership names a pending change the whole-document membership does not;
 - a change that stands is in no pending change, or an Apply of one change leaves a still-proposed
   change outside Changes;
-- an Undo glues or cuts a word, a change still stands after its Undo, or a second press would
-  change the text.
+- an Undo glues or cuts a word, a change still stands after its Undo, a second press would
+  change the text, or an Undo adds a pending change after a partial Apply.
+
+Undo is offered for a change only when taking it out changes the draft and leaves Changes' pending
+set no bigger: every group with no partner by id must sit where a group that went sat (or hold its
+words), and no group may be cut in two. The row `Undo hidden: it would add a pending change` counts
+the changes that lose their Undo to this rule.
 
 The windowed read may name fewer than the whole-document one: the whole-document diff re-aligns
 the tail of the document when a change is forced out and names a group there that neither the

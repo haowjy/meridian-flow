@@ -100,6 +100,7 @@ export function readDraftChanges(
  */
 export function takeOutStanding<P extends { delta: StoredDelta | null }>(
   text: readonly PMNode[],
+  base: readonly PMNode[],
   parts: readonly P[],
 ): { text: readonly PMNode[]; taken: P[] } {
   let blocks = text;
@@ -107,7 +108,7 @@ export function takeOutStanding<P extends { delta: StoredDelta | null }>(
   for (const part of parts) {
     if (!part.delta) continue;
     for (const change of editChanges(schema, readDelta(schema, part.delta)))
-      if (changeState(schema, change, blocks) === "stands") {
+      if (changeState(schema, change, blocks, base) === "stands") {
         blocks = takeOut(schema, change, blocks);
         if (!taken.includes(part)) taken.push(part);
       }

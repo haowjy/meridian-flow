@@ -46,10 +46,13 @@ back (`settleWhitespace`) and build blocks (`buildBlocks`).
 delta (`document_edit_parts.delta`: the blocks the write changed, before and after) and a text, with no
 Yjs item id:
 
-- **`changeState`**: `stands` when the text holds the whole change and the merge can take it out
+- **`changeState`**: `stands` when the text holds the whole change, the merge can take it out
   (`contentMerge(after, before, window)` has no conflict, changes the window, and putting the change
-  back on its result gives the window again); `altered` when the text holds it changed; `out` when it
-  is gone. `takeOut` writes the inverse for a change that stands.
+  back on its result gives the window again) and taking it out adds no pending change; `altered` when
+  the text holds it changed, or when taking it out would leave Changes with a group it has not got (a
+  group cut in two, or one sitting where none went); `out` when it is gone. `takeOut` writes the
+  inverse for a change that stands. Undo is offered, and a press writes, only for `stands`: the
+  press and the offer read the same state.
 - **`readChange`**: which pending changes of Changes the change sits in. Forcing the change out
   (`contentMerge(after, window, before)`, so `before` wins where the text was altered) alters the
   pending changes whose hash goes. Joined with the pending changes that hold the change's words (or,
@@ -60,12 +63,17 @@ The removal diff covers the change's window (its blocks and one either side, wit
 blocks that pair with it by id); when they are not one run it diffs the whole document. A `ChangeMemo`
 keyed on the blocks a read looked at lets a re-read after a write elsewhere skip the merges.
 `.context/qa/sentence-scale.md` is the differential (misses, glue, a second press) and the cost bench
-(19,000 words, 75 changes: about 310 ms cold, 55 to 65 ms re-read).
+(19,000 words, 75 changes: about 330 ms cold, 60 to 65 ms re-read).
 
 Known limits: the windowed read names fewer pending changes than the whole-document one (the whole read
-re-aligns the document tail); 3 of 12,000 rows at seeds 100000+ still read a change as standing after its
-Undo (a second press changes the text); an Undo does not yet put back `before` as the base has it now,
-so after a partial Apply it can add a pending change (2 to 5 of 4,000 rows).
+re-aligns the document tail). At four fresh seeds of 4,000 rows each, no Undo added a pending change,
+none left a change standing, and no second press changed the text; about one row in five of that
+stress workload (a reply plus one to four later edits, many in the same paragraph) loses an Undo to
+the offer rule, mostly because taking the change out would cut a neighbouring pending change in two.
+Two of 16,000 rows miss a pending change the edit caused (after a Live move and join); the change
+then reads altered, so no Undo is offered. An Undo puts back `before` as the AI saw it, not as the
+review base holds it now; restoring the base's version of the touched blocks was tried and made a
+change still read as standing after its Undo more often, so it was not kept.
 
 ## Merge rules
 

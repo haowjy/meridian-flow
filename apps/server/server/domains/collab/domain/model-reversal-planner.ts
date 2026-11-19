@@ -1,6 +1,6 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
-import { readBlocks } from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
 import {
   type InversePart,
   type PartClassification,
@@ -110,10 +110,14 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
    * judged on what the earlier ones leave, as its commit will.
    */
   const planned = new Map<string, readonly PMNode[]>();
+  const baseOf = (draftId: string) => {
+    const doc = document.drafts.get(draftId)?.doc;
+    return doc ? readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema) : [];
+  };
   const standsInDraft = (part: StoredInversePart) => {
     const text = part.origin.kind === "pending" ? planned.get(part.origin.draftId) : undefined;
-    return text
-      ? takeOutStanding(text, [part]).taken.length > 0
+    return text && part.origin.kind === "pending"
+      ? takeOutStanding(text, baseOf(part.origin.draftId), [part]).taken.length > 0
       : (part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false);
   };
   /** Records that `parts` were chosen to be taken out of their open draft. */
@@ -123,7 +127,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     const text =
       planned.get(draftId) ??
       readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema);
-    planned.set(draftId, takeOutStanding(text, parts).text);
+    planned.set(draftId, takeOutStanding(text, baseOf(draftId), parts).text);
   };
   /** A part whose text no longer reads as the edit wrote it. */
   const changed = (part: StoredInversePart) =>

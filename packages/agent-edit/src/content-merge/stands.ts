@@ -124,9 +124,17 @@ export function takeOut(schema: Schema, change: EditChange, text: readonly PMNod
   return at ? at.put(removal(schema, change, at.blocks).blocks) : [...text];
 }
 
-/** The state of a change in a text alone, without its review base. */
-export function changeState(schema: Schema, change: EditChange, text: readonly PMNode[]) {
-  return stateIn(schema, change, windowIn(change, text));
+/**
+ * The state of a change in `text` against its review base: what `readChange` reports, for the press
+ * that takes it out, which must act on exactly what the card offered.
+ */
+export function changeState(
+  schema: Schema,
+  change: EditChange,
+  text: readonly PMNode[],
+  base: readonly PMNode[],
+): ChangeState {
+  return readChangeWhole(readDraft(schema, base, text), change).state;
 }
 
 /**
@@ -268,7 +276,7 @@ export interface ChangeMemo {
   /** The change's own words, which never change. */
   mine: Run[];
   /** The window's pending hashes and the ones forcing the change out removed; null when only the whole document tells. */
-  forced: { windowed: string[]; gone: number[] } | "none" | null;
+  forced: { windowed: string[]; gone: number[]; added: boolean } | "none" | null;
 }
 
 export interface ChangeRead {
@@ -326,15 +334,27 @@ function read(
           forced: at ? forcedOut(reading, change, at, cut) : "none",
         };
   const removed = new Set<number>();
+  let added = false;
   if (memo.forced === "none") {
     // nothing to take out
-  } else if (memo.forced) {
-    const offset = locate(reading, memo.forced.windowed);
-    if (offset >= 0) for (const index of memo.forced.gone) removed.add(index + offset);
-    else for (const index of wholeGone(reading, change, at as Window)) removed.add(index);
-  } else for (const index of wholeGone(reading, change, at as Window)) removed.add(index);
+  } else {
+    const offset = memo.forced ? locate(reading, memo.forced.windowed) : -1;
+    if (memo.forced && offset >= 0) {
+      for (const index of memo.forced.gone) removed.add(index + offset);
+      added = memo.forced.added;
+    } else {
+      const whole = wholeRemoval(reading, change, at as Window);
+      for (const index of whole.gone) removed.add(index);
+      added = whole.added;
+    }
+  }
   for (const index of holding(reading, change, memo.mine)) removed.add(index);
-  return { state: memo.state, sitsIn: removed, memo };
+  // An Undo that would add a pending change takes nothing back: it is not offered.
+  return {
+    state: memo.state === "stands" && added ? "altered" : memo.state,
+    sitsIn: removed,
+    memo,
+  };
 }
 
 /** The blocks of `base` that pair with the window by id, when they are one run whose edges pair. */
@@ -366,16 +386,67 @@ function forcedOut(
   const forced = forcedBlocks(reading.schema, change, at);
   if (blocksEqual(forced, at.blocks)) return "none";
   if (!cut) return null;
-  const windowed = projectReview(diffBlocks(cut, at.blocks)).groups.map(hashOf);
-  const after = projectReview(diffBlocks(cut, forced)).groups.map(hashOf);
-  return { windowed, gone: unpaired(windowed, after) };
+  const before = projectReview(diffBlocks(cut, at.blocks));
+  const after = projectReview(diffBlocks(cut, forced));
+  const windowed = before.groups.map(hashOf);
+  return {
+    windowed,
+    gone: unpaired(windowed, after.groups.map(hashOf)),
+    added: adds(before, after),
+  };
 }
 
-function wholeGone(reading: Reading, change: EditChange, at: Window): number[] {
+/** The pending changes forcing the change out removes, and whether it adds one, diffing the whole document. */
+function wholeRemoval(reading: Reading, change: EditChange, at: Window) {
   const forced = forcedBlocks(reading.schema, change, at);
-  if (blocksEqual(forced, at.blocks)) return [];
-  const after = projectReview(diffBlocks(reading.base, at.put(forced))).groups.map(hashOf);
-  return unpaired(reading.hashes, after);
+  if (blocksEqual(forced, at.blocks)) return { gone: [] as number[], added: false };
+  const after = projectReview(diffBlocks(reading.base, at.put(forced)));
+  return {
+    gone: unpaired(reading.hashes, after.groups.map(hashOf)),
+    added: adds(reading.pending, after),
+  };
+}
+
+/**
+ * Whether `after` has a pending change `before` lacks. A group with no partner by id is the same
+ * change when it sits where a group that went sat (a neighbour's change it had merged with got
+ * smaller, or the newest of two edits on one word left the older) or holds a group's words; it is
+ * new otherwise, or when more groups have no partner than went (a group cut in two).
+ */
+function adds(before: ReviewProjection, after: ReviewProjection): boolean {
+  const gone = unpaired(before.groups.map(hashOf), after.groups.map(hashOf));
+  const fresh = unpaired(after.groups.map(hashOf), before.groups.map(hashOf));
+  if (fresh.length > gone.length) return true;
+  const hunksOf = (projection: ReviewProjection, index: number) =>
+    projection.groups[index].hunks.map((hunk) => projection.diff.hunks[hunk.index]);
+  const runs = (projection: ReviewProjection, index: number) =>
+    runsOf(
+      projection.diff,
+      projection.groups[index].hunks.map((hunk) => hunk.index),
+    );
+  return fresh.some((index) => {
+    const mine = hunksOf(after, index);
+    const from = Math.min(...mine.map((h) => h.from));
+    const to = Math.max(...mine.map((h) => h.to));
+    const where = gone.some((other) => {
+      const theirs = hunksOf(before, other);
+      return (
+        from <= Math.max(...theirs.map((h) => h.to)) && Math.min(...theirs.map((h) => h.from)) <= to
+      );
+    });
+    if (where) return false;
+    const words = runs(after, index);
+    return !before.groups.some((_, other) =>
+      words.every((run) =>
+        runs(before, other).some(
+          (t) =>
+            (run.removed.length || run.inserted.length) &&
+            (!run.removed.length || mostlyIn(run.removed, t.removed)) &&
+            (!run.inserted.length || mostlyIn(run.inserted, t.inserted)),
+        ),
+      ),
+    );
+  });
 }
 
 function ownRuns(change: EditChange): Run[] {

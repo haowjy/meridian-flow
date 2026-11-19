@@ -7,7 +7,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import type { ChangeRead } from "@meridian/agent-edit/content-merge";
-import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
 import {
   captureMutationUpdates,
@@ -923,7 +923,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }),
       authorServerRows(prefix) {
         const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-        const out = takeOutStanding(readBlocks(fragment, draftSchema), step.parts);
+        const out = takeOutStanding(
+          readBlocks(fragment, draftSchema),
+          readBlocks(prefix.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema),
+          step.parts,
+        );
         for (const part of out.taken) taken.add(part);
         if (!taken.size) return [];
         appended = captureMutationUpdates(prefix, () =>
