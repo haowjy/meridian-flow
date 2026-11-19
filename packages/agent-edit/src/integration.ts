@@ -129,35 +129,15 @@ export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-ed
 export { returnedWriteResult } from "./tool/receipt.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/write-deps.js";
+export { heldDeletes } from "./undo/held-deletes.js";
 export type {
   CapturedPart,
-  ComputedInverse,
-  ComputedInverseEdit,
-  EditAlias,
-  EditChange,
   EditEffect,
-  EditFrontier,
   EditKind,
   EditRange,
   EditTarget,
-  InverseJob,
-  InversePart,
-  PartClassification,
-  PartState,
-  PreparedEditRoots,
-} from "./undo/forward-inverse.js";
-export {
-  admitInverseReceipt,
-  captureEditFrontier,
-  captureEditParts,
-  classifyEditParts,
-  computeInverse,
-  inspectEditRoots,
-  pairEdit,
-  prepareEditRoots,
-  runInverseJob,
-} from "./undo/forward-inverse.js";
-export { heldDeletes } from "./undo/held-deletes.js";
+} from "./undo/receipt.js";
+export { captureEditParts } from "./undo/receipt.js";
 export {
   applyYjsUpdateIfEffective,
   bytesEqual,

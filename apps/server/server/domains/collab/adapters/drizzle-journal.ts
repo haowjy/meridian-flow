@@ -1162,10 +1162,7 @@ async function captureLiveEdits(
           actor: mutation.actorKind,
           wId: mutation.wId,
           actorUserId: mutation.userId ? asUserId(mutation.userId) : undefined,
-          receipts: captureEditParts(
-            doc,
-            receipts.map((r) => ({ ...r, replaced: r.effect.replaced })),
-          ).map((p, i) => ({
+          receipts: captureEditParts(doc, receipts).map((p, i) => ({
             ...p,
             origin: receipts[i].origin,
             delta: receipts[i].delta,

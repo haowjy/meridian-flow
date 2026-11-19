@@ -25,13 +25,10 @@ import {
 } from "./harness.mts";
 import {
   frameOutcome,
-  journalRows,
   keystroke,
-  nth,
   openProcess,
   pausedAppend,
   rebaseLive,
-  receipts,
   runArms,
   seedDraft,
 } from "./phase4.mts";
@@ -99,19 +96,12 @@ export const appendBetweenRows: Probe = {
           const outcome = await frame;
           const roomAfterInstall = text(f.a.room);
           const durable = await harness.readDraft(f.draft.draftId);
-          const rows = await journalRows(harness, f.draft.draftId);
-          const aRow = nth(rows, -1);
-          const aReceipt = (await receipts(harness, f.draft.draftId)).find(
-            (parts) => parts[0]?.rowId === aRow.id,
-          );
-          const frontier = aReceipt?.[0]?.frontier ?? {};
           observe("arm 1", {
             bOutcomes,
             outcome,
             appendRowsCalls: f.count.calls.appendRows,
             revision: [r, durable.revision],
             roomAfterInstall,
-            frontier,
           });
           assert.deepEqual(bOutcomes, ["appended", "appended"]);
           assert.equal(outcome, "appended");
@@ -119,8 +109,6 @@ export const appendBetweenRows: Probe = {
           assert.equal(durable.revision, r + 3);
           assert.match(roomAfterInstall, / B1/);
           assert.match(roomAfterInstall, / B2/);
-          assert.equal(frontier["920001"], 3, "the receipt was captured on a prefix holding B1");
-          assert.equal(frontier["920002"], 3, "and B2");
           assert.match(durable.text, / A1/);
         } finally {
           f.pause.release();

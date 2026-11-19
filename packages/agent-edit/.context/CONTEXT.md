@@ -14,7 +14,7 @@ directions are in [ALTERNATIVES.md](ALTERNATIVES.md).
 ## Pinned reconstruction adapter
 
 Several files read Yjs struct internals, among them `frontier.ts`, `model/block-hash.ts`,
-`undo/forward-inverse.ts` and `diff/`, which is why `yjs` is exactly pinned in
+`undo/receipt.ts` and `diff/`, which is why `yjs` is exactly pinned in
 `package.json`; check them all when the pin changes. `src/yjs-mutation.ts` holds the
 mutation mechanics. Keep version-sensitive
 reconstruction here rather than in app or undo copies. Hosts choose operations,
@@ -71,37 +71,14 @@ inside a text run copies the text after it into a new run, so those characters c
 author and a peer's edit aimed at them can be lost. `main` rebuilt the whole paragraph
 there; this is a rare case left as it is.
 
-## Forward-inverse per-peer rule
+## What an Undo reads
 
-An inverse acts per item of the receipt, never on a dependency closure: each inserted item is
-deleted if still visible, each deleted item is restored if its parent is live (or is restored
-with it) and, for a map entry, nothing newer has replaced it. Anything else is skipped as
-already gone, so another peer's typing never refuses it and is never removed. An AI element
-holding a live descendant outside the receipt stays (`delete-filter.ts`) with all its attributes
-(`id` first: an element without one is not a block); only the AI's own text inside it goes. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
-leaves a writer's later attribute value.
+No Yjs item is followed to undo an edit. Each AI write records its `delta` (the blocks it changed,
+before and after), and Undo, revert and the card's state read that against the text as it is now
+([content-merge](content-merge.md#reading-an-ai-edit-against-a-text-stands-and-membership)). The receipt's `effect` still names the
+items a write inserted and deleted (`captureEditParts`, in `undo/receipt.ts`), for draft bylines and
+late-typing recovery; `heldDeletes` keeps a delete the room had already made out of it.
 
-A replacement is judged per change, not per part: one `replace` that touches two places in a
-paragraph is one part with several changes. `pairEdit` pairs each deleted run with the
-inserted text that took its place (`pairChanges`, from the immutable items: the inserted run's
-`origin` or `rightOrigin` sits on the deleted run, consecutive deleted siblings are one run, and
-text deleted before the write is stepped over, since every backspace leaves some) and stores the
-pairs in `effect.replaced`. Each write is paired right after it applied, before the next write in
-the same call or batch changes the document, so a later write's deletions never count as earlier
-ones; `captureEditParts` only drops cross-part transients from the pairs. Only a receipt that can
-be undone is paired (an agent write, a Revert, an Undo), never a writer's frame. The walk itself
-can still pair wrongly at the write (a restore receipt whose neighbours the writer deleted).
-`replacedGone` pairs a receipt written before this from the document as it stands, up to
-restoration lineage, the one place a later deletion can still change the answer. A deleted run comes back while any visible text of its replacement still
-stands: beside whatever the writer put there, so a writer who typed before the word gets "One
-smallvery  cat.", and a partly overtyped word joins ("kneltkn"). Once none of the replacement's text
-is visible (a Discard took it out, or the writer typed over every letter), that run stays deleted
-and the old word returns only with the writer's own text, never as a second copy beside it. A
-deleted run with no replacement always restores, and a part with nothing left to remove or restore
-reads `changed`. Only text counts as a replacement standing: attributes, containers and formats
-(a heading level, a list marker) are reversed by their own item, and never authorize bringing text
-back. Apart from this and the descendant protection above (Flow keeps the writer's text inside a
-block the AI created, where plain Yjs deletes it), an inverse equals a plain `Y.UndoManager`'s.
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).

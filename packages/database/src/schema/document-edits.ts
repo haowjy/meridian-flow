@@ -28,17 +28,7 @@ import { documents } from "./content";
 import { users } from "./users";
 
 type Range = { client: number; clock: number; len: number };
-/** One replace of a write; absent `replaced` marks a receipt written before pairs were recorded. */
-type Effect = {
-  inserted: Range[];
-  deleted: Range[];
-  replaced?: { deleted: Range[]; inserted: Range[] }[];
-};
-type Alias = {
-  source: { client: number; clock: number };
-  target: { client: number; clock: number };
-  len: number;
-};
+type Effect = { inserted: Range[]; deleted: Range[] };
 
 export type { EditOrigin } from "@meridian/contracts";
 export const documentEdits = pgTable(
@@ -94,8 +84,6 @@ export const documentEditParts = pgTable(
       .$type<{ editId: string; ordinal: number }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
-    frontier: jsonb("frontier").$type<Record<string, number>>().notNull(),
-    aliases: jsonb("aliases").$type<Alias[]>().notNull().default(sql`'[]'::jsonb`),
     /**
      * The blocks the part changed, before and after the write merged in, as ProseMirror JSON with
      * one unchanged block either side. What the card and the model's Undo read the edit from, in a
@@ -114,9 +102,6 @@ export const documentEditParts = pgTable(
     index("document_edit_parts_pending_origin_idx")
       .on(sql`(${t.origin}->>'draftId')`)
       .where(sql`${t.origin}->>'kind' = 'pending'`),
-    index("document_edit_parts_live_origin_seq")
-      .on(sql`((${t.origin}->>'seq')::bigint)`)
-      .where(sql`${t.origin}->>'kind' = 'live'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
     check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),
     check(

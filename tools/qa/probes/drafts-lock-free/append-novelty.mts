@@ -17,12 +17,9 @@
  * (i)'s unknown delete is journaled with its prefix absent.
  */
 import assert from "node:assert/strict";
-import {
-  appendProvenanceFacts,
-  PROVENANCE_TARGETS_TYPE,
-} from "../../../../apps/server/server/domains/collab/domain/provenance.ts";
 import { commitDraftRows } from "../../../../apps/server/server/domains/collab/test-support/draft-update-writes.ts";
 import {
+  APPLY_RECORD_ROOT,
   RESTORED_ROOT,
   recordRestorations,
 } from "../../../../packages/agent-edit/src/diff/index.ts";
@@ -273,13 +270,11 @@ export const appendNovelty: Probe = {
           (s) => s instanceof Y.Item && s.content instanceof Y.ContentString,
         );
         if (!prose) throw new Error("no prose struct");
-        const range = { clientID: prose.id.client, clock: prose.id.clock, length: prose.length };
-        appendProvenanceFacts(browser, {
-          targets: [{ version: 1, target: range, root: range }],
-        });
+        const key = `${prose.id.client}:${prose.id.clock}`;
+        captureUpdate(browser, () => browser.getMap(APPLY_RECORD_ROOT).set(key, 1));
         browser.clientID = 900_777;
         const deletion = captureUpdate(browser, () =>
-          browser.getMap(PROVENANCE_TARGETS_TYPE).delete(`${range.clientID}:${range.clock}`),
+          browser.getMap(APPLY_RECORD_ROOT).delete(key),
         );
         const pause = pausedAppend(harness.store);
         const frames = phase4Coordinator(harness, { store: pause.paused });
@@ -291,11 +286,7 @@ export const appendNovelty: Probe = {
             const base = await harness.coordinator.loadBase(draft.draftId);
             const write = harness.coordinator.prepareAppend(base, [], {
               authorServerRows(prefix) {
-                return [
-                  appendProvenanceFacts(prefix, {
-                    targets: [{ version: 1, target: range, root: range }],
-                  }),
-                ];
+                return [captureUpdate(prefix, () => prefix.getMap(APPLY_RECORD_ROOT).set(key, 1))];
               },
             });
             try {
@@ -310,7 +301,7 @@ export const appendNovelty: Probe = {
           const outcome = await frame;
           const rows = await journalRows(harness, draft.draftId);
           const doc = await durableDoc(harness, draft.draftId);
-          const facts = doc.getMap(PROVENANCE_TARGETS_TYPE).size;
+          const facts = doc.getMap(APPLY_RECORD_ROOT).size;
           doc.destroy();
           observe("f", { committed, outcome, rows: rows.map((r) => r.source), facts });
           assert.equal(committed, true);

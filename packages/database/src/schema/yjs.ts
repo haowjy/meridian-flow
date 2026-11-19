@@ -173,7 +173,6 @@ export const documentYjsUpdates = pgTable(
     batchOrdinal: integer("batch_ordinal").notNull().default(0),
     updateData: byteaColumn("update_data").notNull(),
     editId: uuid("edit_id").references(() => documentEdits.id, { onDelete: "set null" }),
-    editPartOrdinal: integer("edit_part_ordinal"),
     originType: text("origin_type"),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()

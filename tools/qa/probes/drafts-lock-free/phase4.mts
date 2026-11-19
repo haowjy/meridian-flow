@@ -100,32 +100,26 @@ export async function receipts(harness: Harness, draftId: string) {
       ordinal: number;
       row_id: string | null;
       effect: { inserted: Range[]; deleted: Range[] };
-      frontier: Record<string, number>;
     }[]
-  >`select p.edit_id, p.ordinal, p.origin->>'rowId' as row_id, p.effect, p.frontier
+  >`select p.edit_id, p.ordinal, p.origin->>'rowId' as row_id, p.effect
     from document_edit_parts p
     join draft_write_journal j on j.id = (p.origin->>'rowId')::bigint
     where p.origin->>'kind' = 'pending' and j.draft_id = ${draftId}
     order by p.edit_id, p.ordinal`;
-  const edits = new Map<
-    string,
-    { rowId: number; effect: Range[][]; frontier: Record<string, number> }[]
-  >();
+  const edits = new Map<string, { rowId: number; effect: Range[][] }[]>();
   for (const row of rows) {
     const parts = edits.get(row.edit_id) ?? [];
     parts.push({
       rowId: Number(row.row_id),
       effect: [row.effect.inserted, row.effect.deleted],
-      frontier: row.frontier,
     });
     edits.set(row.edit_id, parts);
   }
   return [...edits.values()].map((parts) =>
-    parts.map(({ rowId, effect: [inserted, deleted], frontier }) => ({
+    parts.map(({ rowId, effect: [inserted, deleted] }) => ({
       rowId,
       inserted: inserted ?? [],
       deleted: deleted ?? [],
-      frontier,
     })),
   );
 }
