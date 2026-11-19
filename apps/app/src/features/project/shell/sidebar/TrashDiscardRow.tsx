@@ -45,7 +45,7 @@ export function TrashDiscardRow({
       ? new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(names)
       : t`Changes`;
   const icon = fileKindIcon(names[0] ?? "");
-  const detail = <span className="truncate">{discardedFrom(entry, names.length, workName)}</span>;
+  const detail = <span className="truncate">{discardedFrom(names.length, workName)}</span>;
   // Answered with nothing back: the entry has left Trash, and the row says why until it goes.
   if (state?.kind === "left_out")
     return (
@@ -142,10 +142,8 @@ export function TrashDiscardRow({
   );
 }
 
-/** What took them and from where: a Discard, or a restore that put an older draft back. */
-function discardedFrom(entry: DiscardEntry, count: number, workName: string | null): string {
-  if (entry.kind === "undo_discard")
-    return workName ? t`Replaced by a restore in ${workName}` : t`Replaced by a restore`;
+/** What took them and from where. */
+function discardedFrom(count: number, workName: string | null): string {
   if (count <= 1) return workName ? t`Draft discarded from ${workName}` : t`Draft discarded`;
   return workName
     ? plural(count, {

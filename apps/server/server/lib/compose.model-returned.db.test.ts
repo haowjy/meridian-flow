@@ -38,11 +38,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-    const {
-      handleDiscardWorkDraftRequest,
-      handleOwnerDraftListRequest,
-      selectBranchRouteServices,
-    } = await import("./branch-review-route.js");
+    const { handleDiscardBranchRequest, handleOwnerDraftListRequest, selectBranchRouteServices } =
+      await import("./branch-review-route.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -172,7 +169,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.commands.kind, "model_edit"))
         .orderBy(schema.commands.createdAt);
     const draftRows = () => db.select({ id: schema.documentDrafts.id }).from(schema.documentDrafts);
-    const branchRows = () => db.select({ id: schema.branches.id }).from(schema.branches);
+    const _branchRows = () => db.select({ id: schema.branches.id }).from(schema.branches);
     const hashOf = (read: string, word: string) =>
       read
         .split("\n")
@@ -188,15 +185,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } as never);
       const row = listed.items.find((item) => item.documentId === CH1);
       if (!row) throw new Error("the model's edit made no draft to discard");
-      await handleDiscardWorkDraftRequest(routes, {
+      await handleDiscardBranchRequest(routes, {
         ...scope,
         branchId: row.branchId,
-        documentId: CH1 as never,
-        request: { itemKey: row.itemKey, commandId: randomUUID(), ends: "item" },
+        request: { commandId: randomUUID(), items: [{ node: CH1, tree: true, text: "all" }] },
       } as never);
     }
 
-    it("the writer discards the draft mid-round: the next edit lands in a new draft that says so", async () => {
+    it("the writer discards the draft mid-round: the next edit lands in the same draft", async () => {
       const { runtime, call } = await reply(DRAFTING);
       const read = await call("read", { path: "ch1" });
       const first = await call("write", {
@@ -219,11 +215,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const landed = await call("write", args, replayId);
       expect(landed.isError, landed.text).toBeFalsy();
       expect(landed.text).toContain("status: success");
-      expect(landed.text).toContain("discarded by the writer");
-      expect(landed.text).toContain("opened a new draft");
       expect(landed.text).not.toMatch(/re-read|retry|read again/i);
-      // The new draft sits beside the closed one, in the chat's strip.
-      expect(await draftRows()).toHaveLength(earlier.length + 1);
+      // A Discard closes no draft: the write lands in the one the Discard left open.
+      expect(await draftRows()).toHaveLength(earlier.length);
       const listed = await handleOwnerDraftListRequest(selectBranchRouteServices(runtime.app), {
         userId: USER_ID,
         projectId: PROJECT_ID,

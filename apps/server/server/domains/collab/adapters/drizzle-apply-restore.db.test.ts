@@ -117,7 +117,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       close: draftClose,
       treeLists,
       workProjection: projection,
-      live: persistence.journal,
       scheduleLivePull: () => {},
     });
     const applyService = createApplyClickService({
@@ -148,7 +147,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection: projection,
         treeLists,
       }),
-      holdRetirement: draftClose.holdRetirement,
     });
     const undoDiscard = createUndoDiscardService({
       commands,
@@ -156,7 +154,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection: projection,
         branches: workBranches,
         treeLists,
-        reopen,
+        coordinator,
       }),
     });
     const identity = createBranchReviewIdentity({

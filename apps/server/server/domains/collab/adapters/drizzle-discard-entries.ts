@@ -1,55 +1,33 @@
 /**
- * The document half of Trash's Discard entries (design section 7): every Discard, and every
- * restore or Un-Apply that swapped a newer draft out, that the day-30 purge hasn't removed, with the
- * text drafts it closed that are still closed. A restore reopens a draft by clearing `closed_by`;
- * one it left out (`left_out`) keeps it, for the purge, and leaves the entry. A Work in Trash keeps its entries, as an archived
- * Work does (a Restore answers `returned` until the Work is restored); a purged Work's branches
- * (and so its entries) are gone.
+ * The document half of Trash's Discard entries (design section 5): every Discard the day-30 purge
+ * hasn't removed, with the drafts it took text from that no Restore has ended. A Restore ends an
+ * entry by setting `ended_by` on the command's effects. A Work in Trash keeps its entries, as an
+ * archived Work does (a Restore answers `returned` until the Work is restored); a purged Work's
+ * branches (and so its entries) are gone.
  */
 import type { BranchId, CommandId, ProjectId } from "@meridian/contracts";
-import type { DiscardEntry } from "@meridian/contracts/branches";
+import type { DiscardedCommand } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import { branches, commands, documentDrafts } from "@meridian/database/schema";
-import { and, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { branches, commands, discardCommandEffects } from "@meridian/database/schema";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-
-/** The commands whose id can name closed drafts that Trash lists and Restore reopens. */
-export const ENTRY_KINDS = ["discard", "undo_discard", "unapply"] as const;
 
 export function createDrizzleDiscardEntries(db: Database) {
   return {
-    async list(projectId: ProjectId): Promise<DiscardEntry[]> {
+    async list(projectId: ProjectId): Promise<DiscardedCommand[]> {
       const tx = currentDrizzleDb(db);
       const rows = await tx
         .select({
           id: commands.id,
-          kind: commands.kind,
           at: commands.createdAt,
+          accountId: commands.accountId,
           outcome: commands.outcome,
         })
         .from(commands)
         .where(
           and(
             eq(commands.projectId, projectId),
-            // An Un-Apply is an entry only through a draft it swapped out, still closed.
-            or(
-              inArray(commands.kind, ["discard", "undo_discard"]),
-              and(
-                eq(commands.kind, "unapply"),
-                inArray(
-                  commands.id,
-                  tx
-                    .select({ id: documentDrafts.closedBy })
-                    .from(documentDrafts)
-                    .where(
-                      and(
-                        eq(documentDrafts.status, "closed"),
-                        ne(documentDrafts.closedCause, "left_out"),
-                      ),
-                    ),
-                ),
-              ),
-            ),
+            eq(commands.kind, "discard"),
             sql`${commands.outcome}->>'status' = 'done'`,
           ),
         )
@@ -71,32 +49,54 @@ export function createDrizzleDiscardEntries(db: Database) {
       );
       const drafts = await tx
         .select({
-          draftId: documentDrafts.id,
-          documentId: documentDrafts.documentId,
-          by: documentDrafts.closedBy,
+          commandId: discardCommandEffects.commandId,
+          draftId: discardCommandEffects.draftId,
+          documentId: discardCommandEffects.documentId,
         })
-        .from(documentDrafts)
+        .from(discardCommandEffects)
         .where(
           and(
             inArray(
-              documentDrafts.closedBy,
+              discardCommandEffects.commandId,
               ran.map((command) => command.id),
             ),
-            eq(documentDrafts.status, "closed"),
-            ne(documentDrafts.closedCause, "left_out"),
+            isNull(discardCommandEffects.endedBy),
           ),
         );
-      return ran.flatMap((command): DiscardEntry[] =>
+      // What would break a run of Discards: the writer doing something else in between.
+      const others = await tx
+        .select({ at: commands.createdAt, accountId: commands.accountId })
+        .from(commands)
+        .where(
+          and(
+            eq(commands.projectId, projectId),
+            inArray(commands.kind, ["apply", "unapply", "undo_discard"]),
+          ),
+        );
+      const adjoins = (index: number) => {
+        const newer = ran[index];
+        const older = ran[index + 1];
+        return (
+          older !== undefined &&
+          older.accountId === newer.accountId &&
+          !others.some(
+            (other) =>
+              other.accountId === newer.accountId && other.at > older.at && other.at < newer.at,
+          )
+        );
+      };
+      return ran.flatMap((command, index): DiscardedCommand[] =>
         owners.has(command.branchId)
           ? [
               {
                 commandId: command.id as CommandId,
-                kind: command.kind as DiscardEntry["kind"],
+                accountId: command.accountId,
+                adjoinsOlder: adjoins(index),
                 at: command.at.toISOString(),
                 branchId: command.branchId,
                 workId: owners.get(command.branchId) ?? null,
                 drafts: drafts
-                  .filter((draft) => draft.by === command.id)
+                  .filter((draft) => draft.commandId === command.id)
                   .map(({ draftId, documentId }) => ({ draftId, documentId })),
               },
             ]

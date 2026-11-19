@@ -297,6 +297,7 @@ function createInMemoryBranchStub(): CollabBranches {
     result: {
       status: "discarded",
       branchId: input.branchId as BranchId,
+      closed: [],
       settled: [{ rule: "already", state: "discarded" }],
     },
   });
@@ -391,7 +392,6 @@ function createInMemoryBranchStub(): CollabBranches {
       async awaitCommand() {
         return { kind: "none" };
       },
-      discardItem: (input) => gone(input.item),
       discardBranch: gone,
     },
   };

@@ -46,7 +46,6 @@ import {
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
-import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
@@ -113,7 +112,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       close: draftClose,
       treeLists,
       workProjection,
-      live: createDrizzleCollabPersistence(db).journal,
       scheduleLivePull: () => {},
     });
     const apply = createDrizzleApplyClick(db, {
@@ -139,7 +137,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection,
         treeLists,
       }),
-      holdRetirement: draftClose.holdRetirement,
     });
 
     const commands = createDrizzleDocumentCommands(db);
@@ -154,7 +151,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection,
         branches: workBranches,
         treeLists,
-        reopen,
+        coordinator,
       }),
     });
 
@@ -351,7 +348,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         userId: USER,
         selection: {
           kind: "items",
-          items: [{ documentId: made, origin: "created", ends: "item" }],
+          items: [{ documentId: made, tree: true, text: "all" }],
         },
         command: asCommand(),
       });
@@ -508,7 +505,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         discard.discardItems({
           branchId,
           userId: USER,
-          selection: { kind: "items", items: [{ documentId: a, origin: "edited", ends: "tree" }] },
+          selection: { kind: "items", items: [{ documentId: a, tree: true, text: null }] },
           command: asCommand(),
         }),
       ).resolves.toMatchObject({
@@ -666,7 +663,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           userId: USER,
           selection: {
             kind: "items",
-            items: [{ documentId: made, origin: "created", ends: "item" }],
+            items: [{ documentId: made, tree: true, text: "all" }],
           },
           command: part,
         });
@@ -714,7 +711,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         await discard.discardItems({
           branchId,
           userId: USER,
-          selection: { kind: "items", items: [{ documentId: a, origin: "edited", ends: "item" }] },
+          selection: { kind: "items", items: [{ documentId: a, tree: true, text: "all" }] },
           command: part,
         });
         expect(await draftsOn(a, branchId, "active")).toHaveLength(0);

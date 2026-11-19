@@ -157,6 +157,15 @@ function stateIn(schema: Schema, change: EditChange, at: Window | null): ChangeS
   return !back.conflicts.length && blocksEqual(back.blocks, at.blocks) ? "stands" : "altered";
 }
 
+/**
+ * Whether `change` stands in `text` on its own, which Restore asks of a Discard's change: it may
+ * add a pending change back, which is what it is for, so the pending-change test of `readChange`
+ * does not apply.
+ */
+export function standsIn(schema: Schema, change: EditChange, text: readonly PMNode[]): boolean {
+  return stateIn(schema, change, windowIn(change, text)) === "stands";
+}
+
 /** The words a hunk removed and added, and the same with punctuation. */
 type Run = { removed: string[]; inserted: string[]; removedAll: string[]; insertedAll: string[] };
 const textOf = (toks: readonly Tok[], words: boolean) =>

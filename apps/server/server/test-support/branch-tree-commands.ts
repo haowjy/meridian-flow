@@ -31,7 +31,6 @@ import type { ContextPort, GrepQuery } from "../domains/context/ports/context-po
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
   handleDiscardBranchRequest,
-  handleDiscardWorkDraftRequest,
   handleOwnerDraftListRequest,
   selectBranchRouteServices,
 } from "../lib/branch-review-route.js";
@@ -460,15 +459,23 @@ export function branchTreeCommands(
       ).body;
     }
     const results: DiscardCommandResult[] = [];
-    await eachItem(work, items, "discard", async ({ documentId, branchId, itemKey }) => {
+    await eachItem(work, items, "discard", async ({ documentId, branchId }) => {
       results.push(
         (
-          await handleDiscardWorkDraftRequest(routes(), {
+          await handleDiscardBranchRequest(routes(), {
             projectId,
             branchId: branchId as BranchId,
-            documentId,
             userId,
-            request: { itemKey, commandId: randomUUID(), ends: options.ends ?? "item" },
+            request: {
+              commandId: randomUUID(),
+              items: [
+                {
+                  node: documentId,
+                  tree: true,
+                  ...(options.ends === "tree" ? {} : { text: "all" as const }),
+                },
+              ],
+            },
           })
         ).body,
       );

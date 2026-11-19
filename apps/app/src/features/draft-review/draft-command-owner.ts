@@ -22,19 +22,16 @@ import type {
   ApplyItemResult,
   DiscardCommandResult,
   DraftMetadataResponse,
-  ThreadDraftListItem,
   TreeSaw,
   UnapplyClick,
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
-import type { Editor } from "@tiptap/core";
 import * as Y from "yjs";
 import {
   applyDraftClick,
   applyItems,
   branchOf,
-  discardBranch,
-  discardDraftItem,
+  discard as discardBranch,
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
@@ -61,11 +58,9 @@ import {
   serverBandPort,
 } from "./apply-history";
 import { DiscardRestores } from "./discard-restores";
-import { startDraftDiscardSession } from "./draft-discard-session";
 import {
   type ApplyHalves,
   type DiscardTook,
-  type DiscardUndo,
   DraftNotices,
   halvesOf,
   itemOf,
@@ -241,6 +236,11 @@ function discardAnswer(
     lines,
   };
 }
+/** A Discard's showing in the review: every change, or the ones it names. */
+const discardingOf = (text: "all" | readonly string[]) =>
+  text === "all" ? () => true : (change: ReviewChange) => text.includes(change.id);
+/** How long a Discard's showing waits for the server's write to reach the room. */
+const ROOM_WRITE_WAIT_MS = 5_000;
 const leftOut = (lines: readonly ApplyLine[] | undefined): BranchCommandFailure | null =>
   lines?.length ? { code: "apply-left-out", landed: false, lines } : null;
 /**
@@ -287,8 +287,6 @@ export class DraftCommandOwner {
   private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
   private readonly reconciling = new Map<string, Promise<boolean>>();
-  /** Drafts (by id, or item key before one is known) this tab's own Discard ended. */
-  private readonly discardedHere = new Set<string>();
   /** When this tab saw each draft end: a server answer after it may show the draft open again. */
   private readonly endedAt = new Map<string, number>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
@@ -596,16 +594,12 @@ export class DraftCommandOwner {
 
   /**
    * A draft's room closed, or its metadata answered gone: ask the server what became of it, in
-   * whichever order the close and a restore arrived. This tab's own Discard needs no asking.
+   * whichever order the close and a restore arrived.
    */
   private resolveEnd(ref: DraftRef, id: string): Promise<void> {
     if (!this.active || this.records.get(id)?.ended) return Promise.resolve();
     const pending = this.resolvingGone.get(id);
     if (pending) return pending;
-    if (this.discardedHere.has(id) || this.discardedHere.has(ref.itemKey)) {
-      this.finishClose(ref, id, "here");
-      return Promise.resolve();
-    }
     const entry = this.entries.get(id);
     const lease = entry?.binding
       ? readDraftRoom(this.registry, {
@@ -694,7 +688,6 @@ export class DraftCommandOwner {
     if (ended.length === 0) return !this.endedAt.has(draftId) && !this.endedAt.has(ref.itemKey);
     for (const key of ended) {
       this.endedAt.delete(key);
-      this.discardedHere.delete(key);
       this.setState(
         ref.itemKey,
         {
@@ -1265,164 +1258,33 @@ export class DraftCommandOwner {
     return { commandId: group.commandId, answer: group.answer, outcomes };
   }
 
-  /**
-   * The caller names whose history also holds it: its own editor (Ctrl+Z), or none (`notice`).
-   * The returned handle is the notice's Undo; the caller shows it or ends it.
-   */
-  discard(
-    ref: DraftRef,
-    target: GroupsTarget,
-    history: Editor | "notice" | null,
-  ): { handle: DiscardUndo | null; outcome: Promise<CommandOutcome> } | null {
-    const entry = this.byItem.get(ref.itemKey);
-    let handle: DiscardUndo | null = null;
-    const started = startDraftDiscardSession({
-      target,
-      history,
-      onNoticeEnd: (leftOut) => {
-        if (handle) this.notices.partEnded(handle, leftOut);
-      },
-      entry,
-      registry: this.registry,
-      active: () => this.active,
-      state: () => this.state(ref.itemKey),
-      setState: (state) => this.setState(ref.itemKey, state),
-      releaseIdle: () => {
-        if (entry) this.releaseIdle(entry);
-      },
-    });
-    handle = started?.handle ?? null;
-    return started;
-  }
-
   retry(itemKey: string) {
     if (this.items.get(itemKey)?.queue.stalled) this.setState(itemKey, { failure: null });
     this.items.get(itemKey)?.queue.retry();
   }
   /**
-   * Discards a whole item on the server, every Discard of a whole draft: Trash lists it and its
-   * Undo is the server's, by `commandId`. A created document is hidden at once and closes once the server
-   * leaves review once the server answers, whether this Discard took it or an earlier one had;
-   * any other stays in review, discarding, until then. An Apply that took it first, or a return,
-   * shows on it. Server-only lifecycle commands share this account owner, never the Apply route.
+   * The one Discard, a server command named by `commandId`, which its Undo names too: every change
+   * of the branch (`all`), or exactly the chosen items, each with what is taken from it. The
+   * writer sees it at once: a document's changes show as discarded in the review (`discarding`)
+   * until the server's write reaches the room, and a document or folder taken whole is hidden until
+   * the answer. An item an Apply took first shows that on its own row, and a return or an unknown
+   * delivery on each.
    */
-  async discardOnServer(
-    ref: DraftRef,
-    item: ThreadDraftListItem,
-    commandId: string,
-  ): Promise<CommandOutcome> {
-    if (!this.active) return { kind: "blocked" };
-    const own = this.generation(ref.itemKey);
-    this.discardedHere.add(own);
-    this.setState(
-      ref.itemKey,
-      item.isNew ? { hidden: true, failure: null } : { discarding: () => true, failure: null },
-    );
-    try {
-      const result = await discardDraftItem(ref, {
-        itemKey: item.itemKey,
-        commandId,
-        ends: "item",
-      });
-      if (!this.active) return { kind: "blocked" };
-      const { outcome, untaken, lines } = discardAnswer(result, [ref.documentId]);
-      const failure = leftOut(lines.get(ref.documentId));
-      if (outcome.kind !== "returned" && !failure) {
-        // An earlier Discard took it: it left review all the same, but not here.
-        if (untaken.has(ref.documentId)) this.discardedHere.delete(own);
-        // State held under the item key itself (no draft room ever bound, as for a picture)
-        // would hide the document's next item in this branch too; the caller drops the row.
-        const hides = item.isNew || this.generation(ref.itemKey) !== ref.itemKey;
-        if (hides) this.endedAt.set(this.generation(ref.itemKey), Date.now());
-        this.setState(
-          ref.itemKey,
-          hides ? { hidden: true, discarding: null } : { discarding: null },
-        );
-        if (item.isNew) this.lifecycle.closeCreated?.(ref);
-        return outcome;
-      }
-      this.discardedHere.delete(own);
-      this.setState(ref.itemKey, { hidden: false, discarding: null, failure });
-      return outcome;
-    } catch {
-      this.discardedHere.delete(own);
-      if (this.active)
-        this.setState(ref.itemKey, {
-          hidden: false,
-          discarding: null,
-          failure: { code: "discard-unknown" },
-        });
-      return { kind: "change-refused", code: "unknown" };
-    }
-  }
-  /**
-   * An item's Discard when its branch moves or deletes the document: the move or delete (its
-   * tree line), discarded on the server as `commandId`, and unless only the line was chosen, the
-   * chosen text, here. Its Undo takes back both: the text's `handle` and the server's command.
-   * `tree` is the server's answer alone, which says what the command took. Null when the chosen
-   * text couldn't be written: the move or delete stays with it.
-   */
-  discardItem(
-    ref: DraftRef,
-    item: ThreadDraftListItem,
-    target: GroupsTarget | { kind: "tree" },
-    history: Editor | "notice" | null,
-    commandId: string,
-  ): {
-    handle: DiscardUndo | null;
-    outcome: Promise<CommandOutcome>;
-    tree: Promise<CommandOutcome>;
-  } | null {
-    if (!this.active || !item.tree) return null;
-    const text =
-      item.hasDraft && target.kind !== "tree" ? this.discard(ref, target, history) : null;
-    if (item.hasDraft && target.kind !== "tree" && !text) return null;
-    const tree = this.discardTree(ref, item, commandId);
-    return {
-      handle: text?.handle ?? null,
-      tree,
-      outcome: Promise.all([tree, text?.outcome]).then(([answer, discarded]) =>
-        answer.kind === "done" && discarded ? discarded : answer,
-      ),
-    };
-  }
-
-  private async discardTree(
-    ref: DraftRef,
-    item: ThreadDraftListItem,
-    commandId: string,
-  ): Promise<CommandOutcome> {
-    if (!this.active || !item.tree) return { kind: "blocked" };
-    try {
-      const result = await discardDraftItem(ref, {
-        itemKey: item.itemKey,
-        commandId,
-        ends: "tree",
-      });
-      if (!this.active) return { kind: "blocked" };
-      const { outcome, lines } = discardAnswer(result, [ref.documentId]);
-      if (outcome.kind !== "done")
-        this.setState(ref.itemKey, { failure: leftOut(lines.get(ref.documentId)) });
-      return outcome;
-    } catch {
-      if (this.active) this.setState(ref.itemKey, { failure: { code: "discard-unknown" } });
-      return { kind: "change-refused", code: "unknown" };
-    }
-  }
-  /**
-   * The branch's Discard on the server, as `commandId`, which its Undo names: every change of the
-   * branch (`all`, the one command that closes it), or exactly the selected nodes, documents and
-   * folders, each ending as its `ends` says. What it takes hides until the answer; an item an
-   * Apply took first shows that on its own row, and a return or an unknown delivery on each.
-   */
-  async discardBranch(input: {
+  async discard(input: {
     projectId: string;
     branchId: string;
     commandId: string;
     selection:
       | { all: true; refs: readonly DraftRef[] }
       | {
-          items: readonly { ref: DraftRef; ends: "tree" | "item" }[];
+          items: readonly {
+            ref: DraftRef;
+            tree: boolean;
+            /** The text changes taken: all of them, those named, or none. */
+            text: "all" | readonly string[] | null;
+            /** Gone whole at once, as a created document or a folder is, rather than shown discarded. */
+            hides: boolean;
+          }[];
         };
   }): Promise<CommandOutcome> {
     const { projectId, branchId, commandId, selection } = input;
@@ -1438,15 +1300,25 @@ export class DraftCommandOwner {
         if (entry.ref.projectId === projectId && branchOf(entry.ref.itemKey) === branchId)
           scope.set(entry.ref.itemKey, entry.ref);
     if (scope.size === 0) return { kind: "blocked" };
-    // A Discard all closes the branch: nothing else is sent on it until it answers.
+    // A Discard all in flight takes everything: nothing else is sent on the branch until it answers.
     if ("all" in selection) this.closingBranches.add(branchId);
-    const own = [...scope.values()].map((ref) => this.generation(ref.itemKey));
-    for (const key of own) this.discardedHere.add(key);
-    for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: true, failure: null });
+    const shown = new Map<string, "all" | readonly string[]>();
+    for (const ref of scope.values()) {
+      const taken =
+        "all" in selection
+          ? null
+          : selection.items.find((item) => item.ref.itemKey === ref.itemKey);
+      if ("all" in selection || taken?.hides) {
+        this.setState(ref.itemKey, { hidden: true, failure: null });
+      } else if (taken?.text) {
+        shown.set(ref.itemKey, taken.text);
+        this.setState(ref.itemKey, { discarding: discardingOf(taken.text), failure: null });
+      }
+    }
     const failed = (failure: CommandRefusal | null) => {
-      for (const key of own) this.discardedHere.delete(key);
       if (this.active)
-        for (const ref of scope.values()) this.setState(ref.itemKey, { hidden: false, failure });
+        for (const ref of scope.values())
+          this.setState(ref.itemKey, { hidden: false, discarding: null, failure });
     };
     try {
       const answer = await discardBranch(projectId, branchId, {
@@ -1454,10 +1326,14 @@ export class DraftCommandOwner {
         ...("all" in selection
           ? { all: true as const }
           : {
-              items: selection.items.map(({ ref, ends }) => ({ node: ref.documentId, ends })),
+              items: selection.items.map(({ ref, tree, text }) => ({
+                node: ref.documentId,
+                ...(tree ? { tree: true as const } : {}),
+                ...(text ? { text: text === "all" ? text : [...text] } : {}),
+              })),
             }),
       });
-      const { outcome, untaken, lines } = discardAnswer(
+      const { outcome } = discardAnswer(
         answer,
         [...scope.values()].map((ref) => ref.documentId),
       );
@@ -1465,15 +1341,16 @@ export class DraftCommandOwner {
         failed(null);
         return outcome;
       }
-      // The caller drops the rows that left review, as an item's server Discard does: the keys
-      // stay live, since the Discard's Undo reopens the same items, even a closed branch's. An
-      // item an Apply took first keeps its row, with its own line.
+      // The caller drops the rows that left review. An item an Apply took first keeps its row,
+      // with its own line.
+      const { lines } = discardAnswer(
+        answer,
+        [...scope.values()].map((ref) => ref.documentId),
+      );
       for (const ref of scope.values()) {
-        if (untaken.has(ref.documentId)) this.discardedHere.delete(this.generation(ref.itemKey));
-        this.setState(ref.itemKey, {
-          hidden: false,
-          failure: leftOut(lines.get(ref.documentId)),
-        });
+        this.setState(ref.itemKey, { hidden: false, failure: leftOut(lines.get(ref.documentId)) });
+        const text = shown.get(ref.itemKey);
+        if (text) this.releaseWhenRoomHas(ref.itemKey, text);
       }
       return outcome;
     } catch {
@@ -1482,6 +1359,32 @@ export class DraftCommandOwner {
     } finally {
       if ("all" in selection) this.closingBranches.delete(branchId);
     }
+  }
+
+  /**
+   * Ends the review's showing of a Discard once its write is in the room, so the change never
+   * flashes back. A room that never gets it (offline) is not waited on past `ROOM_WRITE_WAIT_MS`.
+   */
+  private releaseWhenRoomHas(itemKey: string, text: "all" | readonly string[]) {
+    const runtime = this.byItem.get(itemKey)?.binding?.runtime;
+    const release = () => this.setState(itemKey, { discarding: null });
+    if (!runtime?.state().ready) return release();
+    const out = (changes: readonly ReviewChange[]) =>
+      text === "all" ? changes.length === 0 : !changes.some((change) => text.includes(change.id));
+    if (out(runtime.state().changes)) return release();
+    const stop = () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+    const unsubscribe = runtime.subscribe(() => {
+      if (!out(runtime.state().changes)) return;
+      stop();
+      release();
+    });
+    const timer = setTimeout(() => {
+      stop();
+      release();
+    }, ROOM_WRITE_WAIT_MS);
   }
   close() {
     this.active = false;

@@ -27,7 +27,7 @@ import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type { AgentEditRouter } from "./domain/agent-edit-router.js";
-import type { DiscardItem, DiscardSelection } from "./domain/branch-discard.js";
+import type { DiscardSelection } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
@@ -473,7 +473,7 @@ export type DraftReviewApi = {
   purgeDiscards(): Promise<number>;
   listDiscards(
     projectId: ProjectId,
-  ): Promise<import("@meridian/contracts/branches").DiscardEntry[]>;
+  ): Promise<import("@meridian/contracts/branches").DiscardedCommand[]>;
   /** Restores what a Discard settled and closed: the Work's current branch holds it afterwards. */
   undoDiscard(input: {
     /** The branch the Discard ran on; it may have closed with it. */
@@ -521,14 +521,6 @@ export type DraftReviewApi = {
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   /** `lookupCommand` for a resend: waits a while on a first request still running under the id. */
   awaitCommand(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
-  discardItem(input: {
-    /** The item as the route resolved it; a document the branch holds nothing on has no row to resolve. */
-    item: Pick<DraftReviewItem, "branchId" | "itemKey" | "documentId" | "origin">;
-    /** What ends (`DraftDiscardRequest`). */
-    ends: DiscardItem["ends"];
-    userId: UserId;
-    envelope: CommandEnvelope;
-  }): Promise<CommandOutcome>;
   /** The branch's Discard command (`BranchDiscardRequest`): all of it, or a selection of nodes. */
   discardBranch(input: {
     branchId: BranchId;

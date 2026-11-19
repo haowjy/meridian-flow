@@ -9356,6 +9356,84 @@
       },
       "isRLSEnabled": false
     },
+    "public.discard_command_effects": {
+      "name": "discard_command_effects",
+      "schema": "",
+      "columns": {
+        "command_id": {
+          "name": "command_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "draft_id": {
+          "name": "draft_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delta": {
+          "name": "delta",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ended_by": {
+          "name": "ended_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "discard_command_effects_command_id_commands_id_fk": {
+          "name": "discard_command_effects_command_id_commands_id_fk",
+          "tableFrom": "discard_command_effects",
+          "tableTo": "commands",
+          "columnsFrom": [
+            "command_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "discard_command_effects_document_id_documents_id_fk": {
+          "name": "discard_command_effects_document_id_documents_id_fk",
+          "tableFrom": "discard_command_effects",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "discard_command_effects_command_id_document_id_pk": {
+          "name": "discard_command_effects_command_id_document_id_pk",
+          "columns": [
+            "command_id",
+            "document_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.document_block_rooms": {
       "name": "document_block_rooms",
       "schema": "",

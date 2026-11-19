@@ -33,7 +33,7 @@ import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { branches } from "./branches";
 import { documents, projects } from "./content";
-import { documentEdits } from "./document-edits";
+import { documentEdits, type EditDeltaJson } from "./document-edits";
 import { users } from "./users";
 
 type DocumentDraftKind = "work_draft";
@@ -420,6 +420,30 @@ export const applyCommandTrees = pgTable(
     nodes: jsonb("nodes").$type<string[]>().notNull(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
+);
+
+/**
+ * What a Discard took out of one draft: the blocks it changed, before and after, with one block
+ * either side (the shape of `document_edit_parts.delta`). It is the only copy of the discarded
+ * text, so Restore merges it back from here and the day-30 purge deletes it with the command.
+ */
+export const discardCommandEffects = pgTable(
+  "discard_command_effects",
+  {
+    commandId: uuid("command_id")
+      .$type<CommandId>()
+      .notNull()
+      .references(() => commands.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    draftId: text("draft_id").notNull(),
+    delta: jsonb("delta").$type<EditDeltaJson>().notNull(),
+    /** The Restore that ended this entry: it brought every change back, or none that could come. */
+    endedBy: uuid("ended_by").$type<CommandId>(),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.documentId] })],
 );
 
 /** The actual text effect of each frozen Apply group, independent of compactable journals. */
