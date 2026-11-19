@@ -44,7 +44,6 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
-import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createApplyClickService, type TreeCut } from "./domain/apply-click.js";
@@ -104,23 +103,14 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const seed = treeSeeder(db);
     const pending = createDrizzleWorkBranchPendingStore(db);
     // A tree-only click reads no text: no text base is read or replayed.
-    const reopen = createReopenDrafts(db, {
-      coordinator,
-      close: draftClose,
-      treeLists,
-      workProjection,
-      scheduleLivePull: () => {},
-    });
     const apply = createDrizzleApplyClick(db, {
       workProjection,
       branches: workBranches,
       coordinator,
-      reopen,
       live: {} as never,
       liveCoordinator: {} as never,
       treeLists,
       tree,
-      close: draftClose,
       onCommitted: async () => {},
       merged: () => {},
       measured: () => {},
@@ -640,7 +630,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await undo(part.envelope.commandId)).toMatchObject({
           status: "restored",
           restored: 0,
-          settled: [{ rule: "already", state: "restored" }],
         });
 
         // A whole Discard leaves the branch open; its Undo lands on it.

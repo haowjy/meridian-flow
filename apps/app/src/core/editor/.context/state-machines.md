@@ -73,27 +73,22 @@ stateDiagram-v2
   rebuilding --> error: the rebuild threw
   usable --> fenced: this tab's document schema no longer fits the room (also asks the app to reload)
   usable --> fenced: the server refused its updates three times in a row
-  usable --> fenced: the server closed the draft (a Discard; 4205, or its answer first)
+  usable --> fenced: the server ended the draft (its Work or document was purged; 4205, or its answer first)
   usable --> usable: admitted read-only holding the writer's unsent edits; a new session replaces it
   usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
   fenced --> usable: the session reports usable again
   fenced --> rebuilding: retry, for a room whose updates were refused
-  fenced --> usable: a restore reopened a closed draft; its session rejoins in place
   error --> rebuilding: retry
   unavailable --> rebuilding: retry
 ```
 
 - **Commands act only on `usable`** (`usable()`). The editor still shows a `fenced` room,
   read-only with its notice: a schema fence, "Couldn't save your latest changes" with Try
-  again, or "This draft is in Trash" with Restore. A command on it would write what the server
+  again, or "This document is in Trash" with Restore. A command on it would write what the server
   has refused.
-- **A closed draft stays closed until a restore.** The pool keeps a retained closed room's
-  session (`draftClosed`; `endClosed` when the server's answer came before the socket's close)
-  and refuses to open its id again; when a fresh draft metadata answer shows the same draft
-  active after this tab saw it end (`DraftCommandOwner.metadataActive`), the pool lets the id
-  open (`reopenDraftRoom`) and the kept session restarts its transport, so every reader of it,
-  and the text on screen, carries on with the same session. A reader the close left
-  `unavailable` retries. A wrong answer costs one refused join, which closes it again.
+- **A closed draft stays closed.** The pool keeps a retained closed room's session
+  (`draftClosed`; `endClosed` when the server's answer came before the socket's close) and
+  refuses to open its id again: a draft ends only when it is deleted.
 - **An access change is not a state.** A 4409 reconnects the same session, which stays
   `usable`; the server's new scope only makes it read-only or writable again. The one edge:
   `usable → usable` with a new session, when a read admission's handshake shows the room holds

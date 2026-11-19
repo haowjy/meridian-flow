@@ -815,7 +815,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
         "a cascade deletion leaves its documents' drafts open for the Work's Restore",
-      ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
+      ).resolves.toMatchObject([{ id: "work-delete-draft" }]);
 
       await works.restore(work.id);
       await expect(
@@ -839,7 +839,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
+      ).resolves.toMatchObject([{ id: "work-delete-draft" }]);
       expect(await shown()).toContain(document.id);
       await expect(
         db

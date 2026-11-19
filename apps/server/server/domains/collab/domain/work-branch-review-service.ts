@@ -134,6 +134,7 @@ export function createWorkBranchReviewService(input: {
           status: "discarded",
           branchId,
           closed: [...ended.closed],
+          whole: selection.kind === "whole" || selection.items.every((item) => item.text === "all"),
           ...notesOf(ended),
         });
         return effect(envelope, async () =>

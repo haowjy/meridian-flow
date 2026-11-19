@@ -173,15 +173,12 @@ and remain quarantined until their retryable destroy ledger succeeds.
   effect dependency list.
 - Live sessions use the IndexedDB key of the account and the document id. Draft sessions
   use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
-  draft recovers unsent text. No close deletes a draft's cache: a Discard can be undone, so the
-  copy goes with its document at the list's purge (`local-document-copies.ts`). `closeDraftRoom`
-  ends the room when the review owner learns closure through authoritative metadata before
-  the socket frame, and the pool refuses to reopen that closed id until a restore reopens the
-  draft (`reopenDraftRoom`, from `DraftCommandOwner.metadataActive` or a close the server
-  answers open). A room an owner still retains keeps its session, read-only, and its transport ends as
-  the socket's close would end it (`endClosed`), so a draft that ended on screen stays readable
-  and sends nothing more; a reader that comes to it while closed reads that
-  session too, and a restore restarts its transport rather than opening a new one. Only an
+  draft recovers unsent text. A draft is deleted only with its Work or document, so
+  the copy goes with its document at the list's purge (`local-document-copies.ts`). `closeDraftRoom`
+  ends the room when the review owner learns the draft is gone through authoritative metadata
+  before the socket frame, and the pool refuses to reopen that closed id. A room an owner still
+  retains keeps its session, read-only, and its transport ends as the socket's close would end it
+  (`endClosed`), so a draft that ended on screen stays readable and sends nothing more. Only an
   unretained closed room retires.
   `abandonDraftRoom` ends the room of a document's create the server dropped (its draft was
   never made, so the room would only retry `DOCUMENT_UNKNOWN`): the tree list's dropped stamp
@@ -189,8 +186,7 @@ and remain quarantined until their retryable destroy ledger succeeds.
   the tab and the tree row offer those words from the local copy. Such a draft never answers
   active, so it never reopens.
 - Typing a closed draft's room never sent is handed back, not dropped (see "Unsent typing handed
-  back"). A close never deletes the draft's local copy: an Undo that reopens the same draft row
-  delivers it on the room's next open.
+  back").
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
@@ -768,9 +764,9 @@ from the wire alone, with nothing stored between handshakes.
   that can't be stored is retried at the next open). A copy another tab has open is left to that
   tab, and a copy a page in this tab opened during the sweep stays unswept. At most four copies are handled at a time. A swept copy is recorded (`meridian:copy-swept:<name>` in local storage) and
   skipped without loading at later starts until a session opens it (`hold`, a restore). A copy
-  with no mark proves nothing undelivered, so the sweep skips it. The account command owner asks the server what each close means (fresh
-  metadata, Trash, the document's standing) and handles a metadata `gone` the same way,
-  whichever arrives first; see Draft end and reopen in the
+  with no mark proves nothing undelivered, so the sweep skips it. The account command owner asks the server whether the draft is gone (fresh
+  metadata) and handles a metadata `gone` the same way,
+  whichever arrives first; see Draft end in the
   [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the
   [review runtime](../../../features/draft-review/.context/draft-review.md).
 - `resetDisposition` is the session transport's terminal-state vocabulary,

@@ -628,11 +628,9 @@ export class ApplyClickQueue {
         answer.treeUndone.includes(this.port.node),
         (answer.held ?? []).length > 0,
       );
-      // The answer is acted on now (notice, history, hand-over); the room only settles it. A text
-      // half that waits for its closed draft never leaves the room, so the answer settles it.
+      // The answer is acted on now (notice, history, hand-over); the room only settles it.
       command.hear(answer);
-      if (answer.draftHalfWaits) this.settle(command, answer);
-      else this.reconcileUnapply(command);
+      this.reconcileUnapply(command);
       return;
     }
     if (answer?.status === "conflict") {

@@ -51,7 +51,7 @@ export function createInverseDestinationResolver(
     const cached = drafts.get(draftId);
     if (cached) return cached;
     const captured = document.drafts.get(draftId);
-    // Capture skips a draft with no row: purged with its entry or its Work, which is gone for good.
+    // Capture skips a draft with no row: purged with its Work, which is gone for good.
     if (!captured) {
       const purged: InverseDestination = {
         kind: "draft",
@@ -63,17 +63,14 @@ export function createInverseDestinationResolver(
       return purged;
     }
     const row = captured.documentDraft;
-    const destination: InverseDestination =
-      row.status === "active"
-        ? {
-            kind: "draft",
-            closed: captured.closed,
-            branchId: row.branchId,
-            draftId: row.draftId,
-            revision: row.revision,
-            state: "active",
-          }
-        : { kind: "draft", closed: captured.closed, branchId: row.branchId, state: "gone" };
+    const destination: InverseDestination = {
+      kind: "draft",
+      closed: captured.closed,
+      branchId: row.branchId,
+      draftId: row.draftId,
+      revision: row.revision,
+      state: "active",
+    };
     drafts.set(draftId, destination);
     return destination;
   };

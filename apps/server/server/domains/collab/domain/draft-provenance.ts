@@ -25,8 +25,7 @@ export function createDraftProvenanceReader(store: DraftDispositionStore) {
       if (
         !cut ||
         ownerKeyOfColumns(cut.draft.documentDraft) !== draftOwnerKey(input.owner) ||
-        cut.draft.documentDraft.documentId !== documentId ||
-        cut.draft.documentDraft.status !== "active"
+        cut.draft.documentDraft.documentId !== documentId
       )
         continue;
       assertReadableDraft(cut.draft.documentDraft);

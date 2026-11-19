@@ -1,4 +1,4 @@
-/** POST /api/drafts/states: the state of the drafts a browser holds copies of. */
+/** POST /api/drafts/states: which of the drafts a browser holds copies of still exist. */
 import { DRAFT_STATES_MAX, type DraftStatesResponse } from "@meridian/contracts/branches";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { z } from "zod";
@@ -13,7 +13,5 @@ export default defineEventHandler(async (event): Promise<DraftStatesResponse> =>
   const parsed = request.safeParse(await readBody(event));
   if (!parsed.success)
     throw createError({ statusCode: 400, message: "Invalid draft states request" });
-  return {
-    states: await app.documentSync.draftStates(user.userId, parsed.data.draftIds),
-  };
+  return { open: await app.documentSync.openDraftIds(user.userId, parsed.data.draftIds) };
 });

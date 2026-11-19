@@ -4,7 +4,7 @@ import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DraftSnapshot } from "./draft-store.js";
 
 /** A resolved draft's identity and state as its row was read; no content. */
-export type ResolvedDraft = Pick<DraftSnapshot, "draftId" | "status" | "lifecycle" | "seed">;
+export type ResolvedDraft = Pick<DraftSnapshot, "draftId" | "lifecycle" | "seed">;
 
 export class DraftNotFoundError extends Error {
   readonly documentId: DocumentId;

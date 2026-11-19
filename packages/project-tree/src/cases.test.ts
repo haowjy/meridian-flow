@@ -520,7 +520,7 @@ describe("file tree log: cases found in review", () => {
     discardDraft(a, "w", W, "cmd-1");
     purge(a, a.delete(LIVE, A, arc));
     const result = restoreDiscard(a, "cmd-1", A, "w", "restore-3");
-    expect(result).toEqual({ copies: [], leftOut: [{ record: renamed, why: "purged" }] });
+    expect(result).toEqual({ copies: [] });
   });
 
   it("a record id counts once: two copies that appended the same record merge to one act", () => {

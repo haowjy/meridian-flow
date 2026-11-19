@@ -27,7 +27,7 @@ import { readBlocks } from "./fragments.js";
 import { diffBlocks } from "./hunks.js";
 import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
-import { writeBlocks, writeDiscardBlocks } from "./writer.js";
+import { writeBlocks } from "./writer.js";
 
 const schema = buildDocumentSchema();
 const frag = (d: Y.Doc) => d.getXmlFragment("prosemirror");
@@ -671,30 +671,22 @@ it("a removed paragraph's block tombstone names its deleter when rebased text ha
     if (actor === "thread") r.ai(remove);
     else r.writer(remove);
     r.rebase([para("abc LIVE def", "abcdef"), para("tail")]);
-    for (const restored of [false, true]) {
-      if (restored)
-        r.discardUndo(
-          (doc) =>
-            writeDiscardBlocks(frag(doc), schema, [para("abc LIVE def", "abcdef"), para("tail")]),
-          2,
-        );
-      const projection = r.projection();
-      for (const doc of [r.draft, peer(r.draft, 50, true)]) {
-        const out = [
-          ...classifyChanges(doc, projection, {
-            userId: "u1",
-            parts: r.parts,
-            snapshot: actor === "unknown" ? before : Y.snapshot(doc),
-          }).values(),
-        ];
-        expect(out.map((c) => c.byline)).toEqual([
-          actor === "unknown"
-            ? []
-            : actor === "user"
-              ? [{ kind: "user", userId: "u1" }]
-              : [{ kind: "thread", threadId: "chat0", turnId: "turn" }],
-        ]);
-      }
+    const projection = r.projection();
+    for (const doc of [r.draft, peer(r.draft, 50, true)]) {
+      const out = [
+        ...classifyChanges(doc, projection, {
+          userId: "u1",
+          parts: r.parts,
+          snapshot: actor === "unknown" ? before : Y.snapshot(doc),
+        }).values(),
+      ];
+      expect(out.map((c) => c.byline)).toEqual([
+        actor === "unknown"
+          ? []
+          : actor === "user"
+            ? [{ kind: "user", userId: "u1" }]
+            : [{ kind: "thread", threadId: "chat0", turnId: "turn" }],
+      ]);
     }
   }
   for (const moved of [false, true]) {

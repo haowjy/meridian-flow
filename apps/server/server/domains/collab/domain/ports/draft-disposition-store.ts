@@ -22,8 +22,6 @@ export interface DraftReceiptPart extends AttributionPart {
 
 export interface DraftDispositionCapture {
   draft: DraftRead;
-  /** Both durable byte fields are explicitly zero-length, not merely a missing checkpoint. */
-  contentReleased: boolean;
   userId: string;
   /** Latest first. The kernel receives the owner identity, not the subagent's identity. */
   parts: readonly DraftReceiptPart[];

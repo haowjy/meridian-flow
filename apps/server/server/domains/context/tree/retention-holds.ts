@@ -31,5 +31,5 @@ export function retentionHolds(documentIds?: readonly DocumentId[]): SQL {
     UNION
     SELECT dd.branch_id, dd.document_id FROM document_drafts dd
       JOIN branches br ON br.id = dd.branch_id AND br.status = 'active'
-      WHERE dd.kind = 'work_draft' AND dd.status = 'active' AND dd.has_effect${only("dd.document_id")}`;
+      WHERE dd.kind = 'work_draft' AND dd.has_effect${only("dd.document_id")}`;
 }

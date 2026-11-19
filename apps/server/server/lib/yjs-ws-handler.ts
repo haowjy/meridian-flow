@@ -371,8 +371,8 @@ async function classifyYjsConnectionAdmission(input: {
     const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
     if (!documentDraft) {
       // A browser connects as soon as it appends a document's `create` in a Work, which names the
-      // draft the server may not have made yet: it retries. A draft that was made and closed is
-      // refused for good.
+      // draft the server may not have made yet: it retries. A draft that exists and cannot be
+      // joined is refused for good.
       if (await services.documentSync.draftExists(room.draftId)) refuse(WS_CLOSE.DRAFT_CLOSED);
       refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
     }

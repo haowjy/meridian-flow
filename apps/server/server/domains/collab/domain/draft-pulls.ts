@@ -78,7 +78,6 @@ export function createDraftPullService(input: {
       const blocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
       for (const draftId of drafts) {
         const base = await input.draftCoordinator.loadBase(draftId);
-        if (base.snapshot.status !== "active") continue;
         if (
           blocksEqual(
             readBlocks(base.replica.doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),

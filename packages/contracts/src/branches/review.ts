@@ -142,7 +142,6 @@ export type UnapplyClickResult = {
   /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
   branchId: BranchId;
   /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
-  draftHalfWaits: boolean;
   /**
    * The text groups taken back, and those left applied, per document: one change made in two
    * documents has one group id, and a press may take it back in one of them only.
@@ -224,21 +223,19 @@ export type UndoDiscardResult = {
   branchId: BranchId;
   /** What came back: tree records copied and documents whose text changes were merged back. */
   restored: number;
-  /** What the Discard held that could not come back: a purged node or document. */
-  leftOut: number;
   /** The halves this restore brought back, by document: what an Undo of it takes back, and no more. */
   brought: { text: string[]; tree: string[] };
-  /**
-   * Why `restored` is 0: `returned` (the draft's owner is closed), `already` (the entry is ended:
-   * a restore brought it back, or nothing of it could come back), `left_out purged` (the entry is
-   * gone from Trash or what it held was purged).
-   */
+  /** Why `restored` is 0 when the draft's owner is closed: `returned`. */
   settled?: Settlement[];
 };
 export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; commandId: CommandId };
 
-/** One Discard command, the document half of what Trash lists: the drafts it took text from and no restore has ended. */
-export type DiscardedCommand = {
+/**
+ * A Trash entry: one Discard of whole drafts, with the drafts it took text from that no Restore
+ * has ended. The tree half is the tree's own answer for the same command id; an entry with no
+ * member in either is not listed.
+ */
+export type DiscardEntry = {
   commandId: CommandId;
   /** When the command ran: its entry leaves Trash 30 days later. */
   at: string;
@@ -246,20 +243,6 @@ export type DiscardedCommand = {
   branchId: BranchId;
   workId: string | null;
   drafts: { draftId: string; documentId: string }[];
-  /** The writer who ran it. */
-  accountId: string;
-  /** No Apply, Un-Apply or Restore of this writer ran between it and the next older Discard in the list. */
-  adjoinsOlder: boolean;
-};
-
-/**
- * A Trash entry: a run of Discards by one writer in one place with no other command between,
- * folded into one so twenty Discards in a review are one entry. The tree half is the tree's own
- * answer for the same command ids; an entry with no member in either is not listed.
- */
-export type DiscardEntry = Omit<DiscardedCommand, "commandId" | "accountId" | "adjoinsOlder"> & {
-  /** The run's commands, latest first: Restore sends each in turn. */
-  commandIds: CommandId[];
 };
 
 /** `GET /api/projects/:projectId/context/trash/discards`: entries with a member in either half. */
@@ -491,6 +474,8 @@ export type BranchDiscardResponse = {
   status: "discarded";
   branchId: BranchId;
   closed: string[];
+  /** It took whole drafts, or all of them: only such a Discard has a Trash entry. A change's is final but for its Undo. */
+  whole: boolean;
 } & DiscardOutcomeNotes;
 
 /** A Discard's terminal body, exactly what its 200 carries. */

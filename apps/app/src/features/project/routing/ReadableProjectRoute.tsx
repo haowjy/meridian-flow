@@ -24,7 +24,6 @@ import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import { isEditorScheme } from "@/client/stores";
 import type { WorkingSetHydrationPlan } from "@/client/working-set";
-import { staysOnScreen } from "@/features/draft-review/draft-command-owner";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
 import {
@@ -318,13 +317,12 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     addressKind === "review" && reviewedItem && closingDocumentId
       ? placeTrees.find(closingDocumentId)
       : null;
-  // A draft a Discard closed anywhere but here stays addressed, in Trash: its document is found
-  // where live has it, since the Work's tree no longer lists the draft. So is one whose end is
-  // still being asked: a page that let go of it then would not have it to keep.
-  const inTrash = staysOnScreen(closeState.ended);
+  // A draft whose end is still being asked stays addressed: its document is found where live has
+  // it, since the Work's tree no longer lists the draft, and a page that let go of it then would
+  // not have it to keep.
   const endUndecided = reviewed?.status === "gone" && !closeState.ended;
   const trashedPlace =
-    addressKind === "review" && (inTrash || endUndecided) && closingDocumentId
+    addressKind === "review" && endUndecided && closingDocumentId
       ? trees.find(closingDocumentId)
       : null;
   const reviewAddress = useMemo((): ReplayAddress | undefined => {
@@ -333,8 +331,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     const place = trashedPlace ?? (reviewed?.status === "gone" ? null : reviewPlace);
     const tree = trashedPlace ? trees : placeTrees;
     if (!trashedPlace && reviewed?.status === "gone") return { kind: "absent" };
-    if (!place)
-      return tree.isComplete && (reviewedItem || inTrash) ? { kind: "absent" } : undefined;
+    if (!place) return tree.isComplete && reviewedItem ? { kind: "absent" } : undefined;
     const owner = ownerOfSource(place.source);
     return resolveReplayAddress({
       projectId,
@@ -358,7 +355,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     placeTrees,
     trashedPlace,
     trees,
-    inTrash,
     projectId,
     user.userId,
   ]);
@@ -493,9 +489,7 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
         ? "error"
         : "loading"
       : documentResult.kind === "unavailable"
-        ? closingRef &&
-          closeState.ended !== "other" &&
-          (closeMetadata?.isFetching || closeState.checkingClose || closeState.ended)
+        ? closingRef && !closeState.ended && (closeMetadata?.isFetching || closeState.checkingClose)
           ? "loading"
           : "unavailable"
         : undefined;
@@ -595,27 +589,16 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     [shownTrashed, openTrashed],
   );
   useEffect(() => {
-    // A draft that ended the way the page keeps showing stays until the writer moves on.
-    if (!closingRef || !closeState.ended || staysOnScreen(closeState.ended)) return;
-    const itemKey = closingRef.itemKey;
-    let current = true;
-    // The address names the item; a newer draft of it may have replaced the closed one.
-    void draftCommands
-      .reconcileClosed(closingRef, () => fetchCurrentDraftMetadata(queryClient, closingRef))
-      .then((open) => {
-        const now = latest.current;
-        if (!current || open || !now.navigation || now.address.itemKey !== itemKey) return;
-        // The view owns the pin: the replace below only rewrites the address to follow it.
-        endPin(user.userId, projectId, closingRef);
-        void now.navigation.replaceIfCurrent(now.navigation.capture(), {
-          ...now.address,
-          itemKey: undefined,
-          changeId: undefined,
-        });
-      });
-    return () => {
-      current = false;
-    };
+    if (!closingRef || !closeState.ended) return;
+    const now = latest.current;
+    if (!now.navigation || now.address.itemKey !== closingRef.itemKey) return;
+    // The view owns the pin: the replace below only rewrites the address to follow it.
+    endPin(user.userId, projectId, closingRef);
+    void now.navigation.replaceIfCurrent(now.navigation.capture(), {
+      ...now.address,
+      itemKey: undefined,
+      changeId: undefined,
+    });
   }, [address.itemKey, closeState.ended]);
   const closeDestination = useCallback(
     (target: ContextRouteRequest | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {

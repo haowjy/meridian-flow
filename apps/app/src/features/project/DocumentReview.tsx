@@ -117,22 +117,13 @@ export function useDocumentReview(
       write: (review) => {
         if (documentId) setDocumentView(accountId, projectId, documentId, { pin: review });
       },
-      // A hidden draft (a Discard in flight) or a closed one (Discard, here or on another
-      // device) has already ended its review: the room owner exits it. A draft-only document
-      // keeps naming it until settlement closes its tab, and admitting it again would re-open
-      // what the room owner just closed, every render. The view names an item, not a draft:
-      // the server decides whether a restore reopened it or a newer draft replaced it.
+      // A hidden draft (a Discard in flight) or a gone one (its Work or document was purged) has
+      // already ended its review: the room owner exits it. A draft-only document keeps naming it
+      // until settlement closes its tab, and admitting it again would re-open what the room
+      // owner just closed, every render.
       admit: async (target) => {
-        const ref = {
-          projectId,
-          ownerKey: target.ownerKey,
-          documentId: target.documentId,
-          itemKey: target.itemKey,
-        };
-        const open = await draftCommands.reconcileClosed(ref, () =>
-          fetchCurrentDraftMetadata(queryClient, ref),
-        );
-        if (!open) return false;
+        const state = draftCommands.state(target.itemKey);
+        if (state.hidden || state.ended) return false;
         enterInlineReview(target.documentId, target.itemKey);
         return true;
       },

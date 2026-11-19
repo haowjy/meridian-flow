@@ -154,19 +154,7 @@ a paragraph alone never joins independent writes. A live write merges one update
   hash or number the view does not hold (`not_found`) carries the current text for the same
   reason. An insert whose anchor block was deleted is not missing its target: it is new words,
   applied on the view, and Yjs places it after the anchor's tombstone, where the anchor was. A
-  draft the writer discarded is not one of these: the host opens a new draft over the document
-  and names the closed one in `WriteContext.supersededWorkDraftId`. The write's selectors, every
-  form including `find`, resolve in the model's view of the closed draft, as every write's do;
-  `planWrite(…, carry)` then carries the planned steps onto the new draft (`resolver/carry.ts`).
-  A view block is held when the new draft has a block with its hash and equal content; the
-  step edits only held blocks, so a block the new draft holds and the view lacked is never in
-  scope and a range can't grow. Words aimed at a block the new draft lacks land after the
-  nearest held block before it (at the document's start when none), with a find applied in that
-  block's whole text; a delete of it changes nothing. A scope whose held blocks are not adjacent
-  in the new draft (the Discard restored a paragraph between them) puts the replacement on its
-  first run and deletes the later runs, leaving the restored paragraph. When the view can't be
-  read (no planning frontier, or the closed room won't open) the words land at the end of the
-  document and every remove changes nothing. `create overwrite` is not carried: it lands whole.
+  draft the writer discarded is the same open draft, so its words land in it like any other.
   An undo
   or revert that finds its text applied, discarded or changed since is `done` and says what was
   left (`cant_*`, `insufficient_*`, `nothing_to_revert` are outcomes, not errors).

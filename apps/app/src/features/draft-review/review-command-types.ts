@@ -9,7 +9,7 @@ export type ServerRefusal = {
  */
 export type ApplyLine = { half: "tree" | "text"; code: string; by?: string };
 export type CommandRefusal = {
-  code: "apply-refused" | "unapply-refused" | "discard-refused" | "discard-unknown";
+  code: "apply-refused" | "unapply-refused" | "discard-refused";
 } & ServerRefusal;
 export type BranchCommandFailure =
   | CommandRefusal
@@ -17,9 +17,7 @@ export type BranchCommandFailure =
    * The server answered an Apply and part of the item stayed out: every half's line. `landed`:
    * its other half landed, so the lines are notes beside an applied change, not an error.
    */
-  | { code: "apply-left-out"; landed: boolean; lines: readonly ApplyLine[] }
-  /** Ctrl+Z dropped a Discard whose text was edited since: `leftOut` of its changes stay discarded. */
-  | { code: "undo-left-out"; leftOut: number };
+  | { code: "apply-left-out"; landed: boolean; lines: readonly ApplyLine[] };
 /** A failure the writer reads as a note: what stayed out beside what landed. */
 export function isNote(failure: BranchCommandFailure): boolean {
   return failure.code === "apply-left-out" && failure.landed;

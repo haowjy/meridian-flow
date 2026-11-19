@@ -99,8 +99,7 @@ export function createEffectiveDocumentReader(input: {
 
   /**
    * A Work's draft room as the Work holds it: found by the Work and the document alone, with
-   * no reading chat and no reply's staged writes. A draft a Discard closed is read from its
-   * retained bytes. A Work that never drafted the document is `draft_not_found`; callers decide
+   * no reading chat and no reply's staged writes. A Work that never drafted the document is `draft_not_found`; callers decide
    * whether to fall back to live.
    */
   async function readWorkDraft<T>(
@@ -108,9 +107,7 @@ export function createEffectiveDocumentReader(input: {
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<Result<T, WorkDraftMissing>> {
     await input.draftPulls.flushLivePull(command.documentId);
-    const draft =
-      (await input.drafts.findOwnerDraft(command.documentId, command.owner)) ??
-      (await input.drafts.findClosedOwnerDraft(command.documentId, command.owner));
+    const draft = await input.drafts.findOwnerDraft(command.documentId, command.owner);
     if (!draft) return Err({ code: "draft_not_found", documentId: command.documentId });
     const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
     try {
