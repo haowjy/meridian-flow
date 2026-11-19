@@ -405,7 +405,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       expect(await branchRow(id)).toBeUndefined();
     });
 
-    it("a whole Discard settles every pending record and closes the branch", async () => {
+    it("a whole Discard settles every pending record and leaves the branch open", async () => {
       const made = (await seed.document(SOURCE, "made.md", {
         view: viewOf(),
         actor: AGENT,
@@ -418,12 +418,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         selection: { kind: "whole" },
         command: asCommand(),
       });
-      expect(result).toMatchObject({ branchClosed: true });
+      expect(result).toMatchObject({ settled: [] });
       expect(await liveRow(a)).toMatchObject({ trashRecord: null });
       expect(await liveRow(made)).toBeUndefined();
       expect((await db.select().from(documents).where(eq(documents.id, made)))[0]).toBeDefined();
       const [branch] = await db.select().from(branches).where(eq(branches.id, branchId));
-      expect(branch?.status).toBe("closed");
+      expect(branch?.status).toBe("active");
     });
 
     it("Apply of a drafted delete and another Work's whole Discard take the lists in one order", async () => {
@@ -682,7 +682,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           settled: [{ rule: "already", state: "restored" }],
         });
 
-        // A whole Discard closes the branch; its Undo lands on the Work's new one.
+        // A whole Discard leaves the branch open; its Undo lands on it.
         const whole = asCommand();
         await discard.discardItems({
           branchId,
@@ -693,7 +693,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const restored = await undo(whole.envelope.commandId);
         expect(restored).toMatchObject({ status: "restored" });
         if (restored.status !== "restored") return;
-        expect(restored.branchId).not.toBe(branchId);
+        expect(restored.branchId).toBe(branchId);
         const rows = await db
           .select()
           .from(branchTreeNodes)
@@ -701,87 +701,17 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(rows.map((row) => row.id).sort()).toEqual([a, made].sort());
       });
 
-      // Guards: a Discard's Undo that restored the tree records and left the closed drafts'
-      // text behind (a restored chapter applied empty; a text-only Discard answered
-      // `superseded`).
-      it("Restore reopens the closed draft as the same row, swaps a newer one in, and a late retirement leaves it alone", async () => {
+      it("a Restore on an archived Work bounces, and the bounce is replayed once the Work is back", async () => {
         const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
-        const kept = await draftOf(a, "the writer's paragraph");
+        await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
         const part = asCommand();
         await discard.discardItems({
           branchId,
           userId: USER,
-          selection: { kind: "items", items: [{ documentId: a, tree: true, text: "all" }] },
+          selection: { kind: "items", items: [{ documentId: a, tree: true, text: null }] },
           command: part,
         });
-        expect(await draftsOn(a, branchId, "active")).toHaveLength(0);
-
-        // The Work drafts the document again; the restore closes that draft under itself.
-        const newer = await draftOf(a, "typed after the discard");
-        // It counts as pending, as the effect projection would judge it.
-        await db
-          .update(documentDrafts)
-          .set({ hasEffect: true })
-          .where(eq(documentDrafts.id, newer));
-        await workProjection.mutate({ works: [WORK as never] }, async () => undefined);
-        const beforeSwap = await workRow();
-        woken.length = 0;
-        const first = await undo(part.envelope.commandId);
-        expect(first).toMatchObject({ status: "restored", branchId, restored: 1, swapped: 1 });
-        // One draft closed and one reopened: the count stays, the current draft changed.
-        const afterSwap = await workRow();
-        expect(afterSwap.pendingDocumentCount).toBe(beforeSwap.pendingDocumentCount);
-        expect(afterSwap.entityRevision).toBe(beforeSwap.entityRevision + 1);
-        expect(woken).toContain(`work:${WORK}`);
-        const [reopened] = await draftsOn(a, branchId, "active");
-        expect(reopened).toMatchObject({ id: kept, closedBy: null, closedCause: null });
-        const [swappedOut] = await db
-          .select()
-          .from(documentDrafts)
-          .where(eq(documentDrafts.id, newer));
-        expect(swappedOut).toMatchObject({
-          status: "closed",
-          closedBy: (first as { commandId: string }).commandId,
-        });
-
-        // Nothing is left to take from the entry, and a retirement of the Discard that runs now
-        // finds the draft reopened and closes no room.
-        expect(await undo(part.envelope.commandId)).toMatchObject({
-          status: "restored",
-          restored: 0,
-          settled: [{ rule: "already", state: "restored" }],
-        });
-        const closedRooms: string[] = [];
-        await createDraftRetirement({
-          closeDraftRoom: (draftId) => closedRooms.push(draftId),
-          closeRemovedRooms: async () => {},
-          stillClosedBy: (drafts) => draftsStillClosedBy(db, drafts),
-        })({
-          closed: [
-            {
-              draftId: kept,
-              documentId: a,
-              cause: "edit_discarded",
-              by: part.envelope.commandId,
-            },
-            {
-              draftId: newer,
-              documentId: a,
-              cause: "edit_discarded",
-              by: (first as { commandId: string }).commandId,
-            },
-          ],
-          removed: new Map(),
-        });
-        expect(closedRooms).toEqual([newer]);
-
-        // Restoring the restore's own entry swaps the text back.
-        const back = await undo((first as { commandId: string }).commandId);
-        expect(back).toMatchObject({ status: "restored", restored: 1, swapped: 1 });
-        expect((await draftsOn(a, branchId, "active")).map((row) => row.id)).toEqual([newer]);
-
-        // A restore on an archived Work bounces: stored as done with nothing changed, and
-        // replayed after the Work is unarchived.
+        // Stored as done with nothing changed, and replayed after the Work is unarchived.
         const bounced = {
           status: "restored",
           restored: 0,
@@ -791,39 +721,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const turnedAway = randomUUID();
         expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject(bounced);
         await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
-        expect(await undo((first as { commandId: string }).commandId, turnedAway)).toMatchObject(
-          bounced,
-        );
-
-        // A whole Discard with a tree record and a text draft: both come back on the new branch.
-        const b = (await seed.document(SOURCE, "beta.md")) as DocumentId;
-        await submit((writer) => writer.rename(viewOf(), AGENT, b, "beta two"));
-        const betaDraft = await draftOf(b, "beta text");
-        const whole = asCommand();
-        await discard.discardItems({
-          branchId,
-          userId: USER,
-          selection: { kind: "whole" },
-          command: whole,
-        });
-        const restored = await undo(whole.envelope.commandId);
-        expect(restored).toMatchObject({ status: "restored", restored: 3 });
-        if (restored.status !== "restored") return;
-        expect(restored.branchId).not.toBe(branchId);
-        expect((await draftsOn(a, restored.branchId, "active")).map((row) => row.id)).toEqual([
-          newer,
-        ]);
-        expect((await draftsOn(b, restored.branchId, "active")).map((row) => row.id)).toEqual([
-          betaDraft,
-        ]);
-        expect(
-          (
-            await db
-              .select()
-              .from(branchTreeNodes)
-              .where(eq(branchTreeNodes.branchId, restored.branchId))
-          ).length,
-        ).toBeGreaterThan(0);
+        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject(bounced);
       });
 
       // Guards: Un-Apply left the restore that "Restore and apply" made in live, because the

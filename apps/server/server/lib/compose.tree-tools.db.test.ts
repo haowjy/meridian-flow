@@ -363,7 +363,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({
-        body: { status: "discarded", itemClosed: false },
+        body: { status: "discarded", closed: [] },
       });
       expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");

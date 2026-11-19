@@ -107,10 +107,9 @@ describe("inverse integration (postgres)", () => {
         .map((skip) => (skip.kind === "text" ? [skip.before, skip.after, skip.cause] : []))
         .sort(),
     ).toEqual([
-      // Discard released the draft's bytes. Live has unrelated item identities, so
-      // receipts cannot manufacture snippets from it.
-      ["", "", "discarded"],
-      ["", "", "discarded"],
+      // The draft stays open after a Discard, so each part reads as a change that no longer stands.
+      ["blue", "azure", "discarded"],
+      ["red", "gold", "discarded"],
     ]);
   });
 

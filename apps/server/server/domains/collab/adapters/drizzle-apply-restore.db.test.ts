@@ -361,7 +361,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
 
     async function discard(f: Fixture) {
       const commandId = randomUUID();
-      // A Restore of Discard all reopens the draft on the Work's new branch.
       const [{ branchId }] = await db
         .select({ branchId: documentDrafts.branchId })
         .from(documentDrafts)
@@ -370,14 +369,14 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         branchId,
         userId: USER,
         // Whole: an item Discard takes nothing from a draft its Applies emptied (it answers
-        // `overtaken applied`), and Discard all closes every draft of the branch.
+        // `overtaken applied`); Discard all finds nothing to take there either.
         selection: { kind: "whole" },
         command: {
           envelope: envelope("discard", commandId),
           result: () => ({ status: "discarded", branchId }) as never,
         },
       });
-      expect(out).toMatchObject({ branchClosed: true, settled: [] });
+      expect(out).toMatchObject({ settled: [] });
       return { commandId, branchId };
     }
     const envelope = (kind: string, commandId: string) =>
@@ -392,7 +391,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         request: { commandId: commandId as CommandId, discardCommandId: discarded.commandId },
       } as never)) as { status: string; restored: number };
       expect(out).toMatchObject({ status: "restored" });
-      expect(out.restored).toBeGreaterThan(0);
     }
 
     it("A1, A2 inside A1's text, Discard, Un-Apply both, Restore: the draft is what it is without the Discard", async () => {
