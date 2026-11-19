@@ -119,8 +119,8 @@
 
 <!-- What you ran and what you saw, expected against observed.
      - Browser: every change a writer's experience runs through, server-only
-       included, ends with a prober's agent-browser run whose screenshots are in
-       Examples. ./mf output is debugging context, not verification. A PR with
+       included, ends with a prober's agent-browser run whose video (linked at a
+       commit) and screenshots are in Examples. ./mf output is debugging context, not verification. A PR with
        no writer-reachable change says "Browser: none" with the reason.
      - Model: name the provider each run used and why. A change to the
        harness (the agent stack in .context/CONTEXT.md, Harness composition:
