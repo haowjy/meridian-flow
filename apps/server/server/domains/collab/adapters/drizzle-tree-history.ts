@@ -290,7 +290,6 @@ export function createDrizzleTreeHistory(
           and(
             eq(documentDrafts.documentId, documentId),
             eq(documentDrafts.kind, "work_draft"),
-            eq(documentDrafts.status, "active"),
             eq(documentDrafts.hasEffect, true),
             eq(branches.status, "active"),
             // No Work's drafts are a chat's own, not a Work's.

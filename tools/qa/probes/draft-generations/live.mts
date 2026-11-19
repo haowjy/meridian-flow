@@ -29,7 +29,7 @@ const { HocuspocusProvider, HocuspocusProviderWebsocket } = await import(
 );
 const [draft] = await db`select d.id, d.branch_id, b.project_id from document_drafts d
   join branches b on b.id=d.branch_id where b.origin_work_id=${workId}
-  and d.document_id=${documentId} and d.status='active' and d.kind='work_draft' order by d.id limit 1`;
+  and d.document_id=${documentId} and d.kind='work_draft' order by d.id limit 1`;
 await db.end();
 assert(draft, "seed one active Work draft first");
 const room = `draft:${draft.id}`;

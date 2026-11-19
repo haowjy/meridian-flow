@@ -47,7 +47,6 @@ import { unwrapListQuery } from "@/client/query/list-query";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeView } from "@/client/query/useProjectTree";
 import type { OpenDocument } from "@/client/stores";
-import { staysOnScreen } from "@/features/draft-review/draft-command-owner";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { openDocumentFromFile } from "./context/open-document-from-file";
 import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/route-document-owner";
@@ -182,18 +181,16 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const choseKey = JSON.stringify([stored.pin?.ownerKey, stored.pin?.itemKey, choice]);
   const heldItem =
     painted?.documentId === documentId && painted.chose === choseKey ? painted.draft : null;
-  // What became of it here: `trash` once it ended in a way the page keeps showing, `ended` when it
-  // ended otherwise, `asking` while the server is asked.
+  // What became of it here: `ended` once it is gone or hidden, `asking` while the server is asked.
   const fateOf = () => {
     if (!heldItem) return "ended";
     const command = commands.state(heldItem.itemKey);
-    if (command.hidden) return "ended";
-    if (command.ended) return staysOnScreen(command.ended) ? "trash" : "ended";
+    if (command.hidden || command.ended) return "ended";
     return command.checkingClose ? "asking" : "open";
   };
   const fate = useSyncExternalStore(commands.subscribe, fateOf, fateOf);
   // The server's answer for a painted draft that left its list: still open (an Apply took its
-  // changes, so the page goes on), or gone, which closes it here and keeps it, in Trash.
+  // changes, so the page goes on), or gone.
   const [answered, setAnswered] = useState<string | null>(null);
   const held = heldItem && fate !== "ended" ? heldItem : null;
   const pin = chosen ?? held ?? undefined;
@@ -206,15 +203,13 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const pinRows = useOwnerDraftRows(projectId, foreign ? pin.ownerKey : null);
   const pinList = foreign ? pinRows : scopeRows;
   const pinListed = pin ? pinList.rows.some((row) => row.itemKey === pin.itemKey) : false;
-  // The painted draft left its list: in Trash it stays painted, and while its end is read again
-  // it stays too; any other end (an Apply took its changes) lets the page go on.
+  // The painted draft left its list: while its end is read it stays painted; any other end (an
+  // Apply took its changes) lets the page go on.
   const unlisted =
     held !== null && pin?.itemKey === held.itemKey && pinList.status === "ready" && !pinListed
-      ? fate === "trash"
-        ? ("trash" as const)
-        : answered === held.itemKey
-          ? ("gone" as const)
-          : ("asking" as const)
+      ? answered === held.itemKey
+        ? ("gone" as const)
+        : ("asking" as const)
       : null;
   const queryClient = useQueryClient();
   const askKey = unlisted === "asking" && held && documentId ? held.itemKey : null;
@@ -253,7 +248,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const pinOwner = pin?.ownerKey;
   const pinItem = pin?.itemKey;
   const pinChange = pin?.changeId;
-  const paints = pinListed || unlisted === "trash" || unlisted === "asking";
+  const paints = pinListed || unlisted === "asking";
   useEffect(() => {
     if (documentId && pinOwner && pinItem && paints)
       setPainted((prior) =>
@@ -275,7 +270,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
       scopeOwnerKey && scopeRow ? { ownerKey: scopeOwnerKey, itemKey: scopeRow.itemKey } : null;
     const base = { scopeOwnerKey, scopeDraft, view };
     if (pinOwner && pinItem && unlisted !== "gone") {
-      if (pinListed || unlisted === "trash" || unlisted === "asking")
+      if (pinListed || unlisted === "asking")
         return {
           ...base,
           showing: "draft",

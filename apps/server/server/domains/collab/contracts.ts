@@ -1,7 +1,7 @@
 /** Public contracts for the collab domain. */
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type { BranchId, CommandId, DraftOwner, LinkView } from "@meridian/contracts";
-import type { DiscardCommandResult, DraftState } from "@meridian/contracts/branches";
+import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
@@ -118,12 +118,11 @@ export type CollabTransport = {
     /** The owner whose draft the room is; its lifecycle caps the room's access. */
     owner: DraftOwner;
     schemaVersion: CollabSchemaVersion;
-    status: "active";
   } | null>;
-  /** Whether the draft was ever made, closed or not: a created document's draft is named before it is. */
+  /** Whether the draft exists: a created document's draft is named before it is made. */
   draftExists(draftId: string): Promise<boolean>;
-  /** The state of each of these drafts in the user's projects: open, or why it closed; any other id is left out. */
-  draftStates(userId: UserId, draftIds: readonly string[]): Promise<Record<string, DraftState>>;
+  /** Which of these drafts are in the user's projects: a draft that is not listed is gone. */
+  openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusDraftState(draftId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {
@@ -473,7 +472,7 @@ export type DraftReviewApi = {
   purgeDiscards(): Promise<number>;
   listDiscards(
     projectId: ProjectId,
-  ): Promise<import("@meridian/contracts/branches").DiscardedCommand[]>;
+  ): Promise<import("@meridian/contracts/branches").DiscardEntry[]>;
   /** Restores what a Discard settled and closed: the Work's current branch holds it afterwards. */
   undoDiscard(input: {
     /** The branch the Discard ran on; it may have closed with it. */

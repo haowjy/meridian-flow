@@ -82,27 +82,19 @@ leaves the draft active and empty). The scope's draft of the document, if any, t
 over; otherwise the document closes.
 
 Closure belongs to a draft generation, not its item key. The key (branch + document)
-outlives its drafts: a later write to the same document mints a new draft under the same
+outlives its drafts: a later write to the same document after a purge mints a new draft under the same
 key. The command owner keeps each draft's record under its draft id, and an item follows
-its newest known generation, advanced by `bind` and `reconcileClosed`, never by a close.
+its newest known generation, advanced by `bind`, never by an end.
 A close retires the generation it was issued for, so a late answer about the old draft
 can't close a newer one.
 
-While the item's known draft is closed, or this tab's Discard hid it, the review address port
-and the route's address clearing ask the server first (`reconcileClosed`), with a read that goes
-to the server rather than joining the cached query (a restore's invalidation would cancel it).
-`gone` or a failed read refuse admission, because the room owner just ended that review and
-admitting it again would loop; the same draft active again, read after the end, is a restore,
-which reopens it (`metadataActive`) whether or not any surface holds its room; a different
-active draft is the replacement. While a Discard is still in flight the port refuses the item
-outright for the same reason; the end of the hide is a new port, so a refused Discard restores
-the review. `useReviewAdmission` (one per document host) remembers a refusal only for the port
-that gave it, so a replacement that becomes known later is retried once.
+While this tab's Discard hid the item's draft, the review address port refuses the item outright
+(the end of the hide is a new port, so a refused Discard restores the review). A draft the room owner
+ended (its Work or document was purged) is refused admission, because admitting it again would loop.
 
 The server answers `gone` from the Work's ownership and the item key alone, before any
 content grant: the active draft is what grants reading a document deleted live or a
-hidden creation, so after a Discard on another device a content check would answer 404
-forever.
+hidden creation.
 
 ## Account command lifetime
 
@@ -355,10 +347,8 @@ editors never install it. A side or Work notice owns a separate manager and pool
 The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
-A draft closes only when its document is removed, an Apply's delete covers it or its Work is
-purged (`ended`, Draft end in [state-machines.md](state-machines.md)); a Discard never closes it. The
-review keeps a closed draft's session read-only and the editor's status pill says "This document is
-in Trash" with the document's Restore (`InTrashStatus`).
+A draft ends only when its Work or its document is purged (`ended`, Draft end in
+[state-machines.md](state-machines.md)); a Discard, a restore and an Apply of a delete leave it open.
 
 Trash lists each Discard and Restore brings it back (`restoreDiscard`, both halves onto the
 Work's current branch): the notice's Undo, Trash's Restore and a row's Undo send that one command.

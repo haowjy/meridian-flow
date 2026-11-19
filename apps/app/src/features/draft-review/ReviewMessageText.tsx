@@ -1,6 +1,6 @@
 /** Writer-facing copy for a review message; the controller emits codes, never localized text. */
 import type { MessageDescriptor } from "@lingui/core";
-import { msg, plural } from "@lingui/core/macro";
+import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { reloadNow } from "@/client/release/release";
@@ -26,12 +26,8 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
       return msg`This draft moved on since you pressed Apply, so it wasn't applied.`;
     case "unsynced":
       return msg`Apply couldn't be sent. Try again.`;
-    case "read_only":
-      return msg`This draft just became read-only, so nothing was discarded. Check it, then try again.`;
     case "left_out_not_on_server":
       return msg`The server didn't have this change as you saw it, so it wasn't applied. It's kept in the draft.`;
-    case "left_out_not_in_draft":
-      return msg`The draft didn't have this change as you saw it, so it wasn't discarded. It's kept in the draft.`;
     default:
       return undefined;
   }
@@ -39,7 +35,7 @@ function knownRefusal(serverCode: string): MessageDescriptor | undefined {
 
 /** State answers are complete sentences; a lead line like "Couldn't apply" would misstate them. */
 function answersAlone(serverCode: string | undefined): boolean {
-  return serverCode === "unsynced" || serverCode === "left_out_not_in_draft";
+  return serverCode === "unsynced";
 }
 
 /**
@@ -55,15 +51,7 @@ function RefusalReason({ serverCode }: ServerRefusal) {
   return <> {/[.!?]$/.test(reason) ? reason : `${reason}.`}</>;
 }
 
-/** What an Undo of a Discard couldn't bring back, wherever it says so. */
-export const leftOutSentence = (count: number) =>
-  plural(count, {
-    one: "# change couldn't come back: the text changed after it was discarded.",
-    other: "# changes couldn't come back: the text changed after they were discarded.",
-  });
-
 export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }) {
-  if (failure.code === "undo-left-out") return leftOutSentence(failure.leftOut);
   if (failure.code === "apply-left-out") {
     // One sentence per distinct reason, whichever half it explains: each says what to do.
     const codes = [...new Set(failure.lines.map((line) => line.code))];
@@ -92,12 +80,6 @@ export function ReviewMessageText({ failure }: { failure: BranchCommandFailure }
           {answersAlone(serverCode) ? null : <Trans>Couldn't apply this draft.</Trans>}
           <RefusalReason serverCode={serverCode} />
         </>
-      );
-    case "discard-unknown":
-      return (
-        <Trans>
-          Couldn't confirm whether this discarded. Check what is left before you try again.
-        </Trans>
       );
     case "discard-refused":
       return (

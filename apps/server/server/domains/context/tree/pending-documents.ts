@@ -40,7 +40,7 @@ export function pendingDocuments(branches: SQL, documentId?: DocumentId): SQL {
       ${treeChanges(branches, "document")}
       UNION
       SELECT dd.branch_id, dd.document_id FROM document_drafts dd
-      WHERE dd.kind = 'work_draft' AND dd.status = 'active' AND dd.has_effect
+      WHERE dd.kind = 'work_draft' AND dd.has_effect
         AND dd.branch_id IN (${branches})
         AND (
           EXISTS (SELECT 1 FROM branch_tree_nodes x

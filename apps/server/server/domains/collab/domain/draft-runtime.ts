@@ -122,7 +122,6 @@ export type DraftRuntime = {
       authorServerRows?: AuthorServerRows;
       serverRow?: FinalizeAppendInput["serverRow"];
       work?: "active" | "any";
-      draft?: "open" | "any";
       precondition?: SavePrecondition;
     },
   ): PreparedDraftAppend;
@@ -445,19 +444,11 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       authorServerRows?: AuthorServerRows;
       serverRow?: FinalizeAppendInput["serverRow"];
       work?: "active" | "any";
-      draft?: "open" | "any";
       precondition?: SavePrecondition;
     },
   ): PreparedDraftAppend {
     const { snapshot, replica } = base;
-    const {
-      admitted,
-      authorServerRows,
-      serverRow,
-      work = "active",
-      draft,
-      precondition,
-    } = options ?? {};
+    const { admitted, authorServerRows, serverRow, work = "active", precondition } = options ?? {};
     let prefix: Y.Doc;
     try {
       prefix = cloneReplica(replica);
@@ -503,7 +494,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           draftId: snapshot.draftId,
           documentId: snapshot.documentId,
           work,
-          draft,
           base: { checkpointRevision: replica.checkpointRevision, seq: replica.seq },
           async finalize(read) {
             const judged = await finalizeAppend(read, {

@@ -138,19 +138,6 @@ export function createDrizzleModelEvidence(db: DrizzleDatabase): ModelEvidence {
       }));
     },
 
-    async latestRoom(rooms, blockIds) {
-      if (rooms.length === 0 || blockIds.length === 0) return null;
-      const [row] = await runIsolatedFromAmbientTransaction(db, () =>
-        db_()
-          .select({ room: frontiers.roomKey })
-          .from(frontiers)
-          .where(and(inArray(frontiers.roomKey, [...rooms]), amongBlocks(blockIds)))
-          .orderBy(sql`${frontiers.recordedSeq} DESC NULLS LAST`)
-          .limit(1),
-      );
-      return row?.room ?? null;
-    },
-
     async forDocument(threadId, documentId) {
       const segments = (await shownLinkLineage(threadId as ThreadId, lineage)).map((segment) =>
         // Each segment selects its eligible rows on its own index prefix; the cutoff applies

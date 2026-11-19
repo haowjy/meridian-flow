@@ -68,7 +68,7 @@ async function fixture() {
     stateVector: Buffer.from(Y.encodeStateVector(doc)),
   });
   let revision = 0;
-  async function save(status: "active" | "closed" = "active") {
+  async function save() {
     revision++;
     await db
       .update(schema.documentDrafts)
@@ -77,8 +77,6 @@ async function fixture() {
         stateVector: Buffer.from(Y.encodeStateVector(doc)),
         revision,
         checkpointRevision: revision,
-        status,
-        closedCause: status === "closed" ? "discarded" : null,
       })
       .where(eq(schema.documentDrafts.id, draftId));
   }
@@ -167,12 +165,11 @@ it("reads applied and discarded historical parts after close, independent of pla
       "pending",
     );
     const visibleClosed = await f.ai(23, "The bright mountain glows.");
-    await f.save("closed");
+    await f.save();
     const historical = await review(f.draftId);
-    expect(historical.draft.status).toBe("closed");
     expect(historical.parts.map((p) => [p.editId, p.disposition])).toEqual([
-      [visibleClosed, "discarded"],
-      [discarded, "discarded"],
+      [visibleClosed, "pending"],
+      [discarded, "pending"],
       [applied, "applied"],
     ]);
     expect((await classified(f.draftId)).projection.hasChanges).toBe(true);
@@ -195,21 +192,7 @@ it("reads applied and discarded historical parts after close, independent of pla
     await db
       .delete(schema.draftWriteJournal)
       .where(eq(schema.draftWriteJournal.draftId, f.draftId));
-    await db
-      .update(schema.documentDrafts)
-      .set({ status: "active", closedCause: null })
-      .where(eq(schema.documentDrafts.id, f.draftId));
     await expect(read(f.draftId)).rejects.toThrow("Missing draft checkpoint");
-    await db
-      .update(schema.documentDrafts)
-      .set({ status: "closed", closedCause: "discarded" })
-      .where(eq(schema.documentDrafts.id, f.draftId));
-    const released = await review(f.draftId);
-    expect(await classifiedDraft(store, f.draftId)).toBeNull();
-    // What an Apply took is a recorded fact: it reads applied without the draft's bytes.
-    expect(released.parts.map((p) => [p.editId, p.disposition])).toEqual(
-      historical.parts.map((p) => [p.editId, p.disposition]),
-    );
   } finally {
     f.doc.destroy();
   }

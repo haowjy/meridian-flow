@@ -38,16 +38,14 @@ export async function releaseDocumentContent(
   await tx.delete(documentBlockRooms).where(inArray(documentBlockRooms.documentId, list));
   await tx.delete(documentLinks).where(inArray(documentLinks.sourceDocumentId, list));
   // Observation frontiers have no document foreign key; their room key is the only ownership.
-  await tx.delete(observationFrontiers).where(
-    or(
-      ...list.map((id) => like(observationFrontiers.roomKey, `live:${id}:%`)),
-      inArray(
-        observationFrontiers.roomKey,
-        list.map((id) => `superseded:${id}`),
+  await tx
+    .delete(observationFrontiers)
+    .where(
+      or(
+        ...list.map((id) => like(observationFrontiers.roomKey, `live:${id}:%`)),
+        ...drafts.map(({ draftId }) => like(observationFrontiers.roomKey, `draft:${draftId}`)),
       ),
-      ...drafts.map(({ draftId }) => like(observationFrontiers.roomKey, `draft:${draftId}`)),
-    ),
-  );
+    );
   await tx.delete(applyCommandEffects).where(inArray(applyCommandEffects.documentId, list));
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));

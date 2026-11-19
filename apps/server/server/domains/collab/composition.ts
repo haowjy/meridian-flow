@@ -76,14 +76,13 @@ import {
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleDocumentPurgeDisposal } from "./adapters/drizzle-document-purge-disposal.js";
-import { type DraftClose, draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
+import type { DraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence, enterLiveWriteSeam } from "./adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "./adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "./adapters/drizzle-model-evidence.js";
-import { createReopenDrafts } from "./adapters/drizzle-reopen-drafts.js";
 import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
@@ -370,8 +369,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
-    evidence: modelEvidence,
-    read: modelEditRead,
     liveCore: runtime.liveUtilityCore,
     threadCore,
     branches: workBranches,
@@ -389,10 +386,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         .where(eq(documentDrafts.id, draftId))
         .for("update");
     },
-    roomsOf: async (documentId) => ({
-      liveRoom: liveRoom(documentId, await readAuthorityGeneration(documentId)),
-      drafts: await drafts.listWorkDraftStates(documentId),
-    }),
+    liveRoomOf: async (documentId) =>
+      liveRoom(documentId, await readAuthorityGeneration(documentId)),
     afterLiveCommit: (documentId) =>
       deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
   });
@@ -472,7 +467,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     pendingWriters: workBranchPendingStore.pendingWriters,
     treeActors: createDrizzleBranchTreeActors(deps.db, deps.treeLists),
   });
-  // Exactly what each committed transaction ended: its closed drafts' rooms.
+  // Exactly what each committed transaction ended: its deleted drafts' rooms.
   deps.draftClose.bindRetirement(
     createDraftRetirement({
       closeDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
@@ -483,7 +478,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           draftIds,
           removalRecords.lookup,
         ),
-      stillClosedBy: (drafts) => draftsStillClosedBy(currentDrizzleDb(deps.db), drafts),
     }),
     (error) => {
       if (deps.eventSink)
@@ -505,13 +499,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const discard = createBranchDiscard({ store: discardStore });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
-  const reopen = createReopenDrafts(deps.db, {
-    coordinator: draftCoordinator,
-    close: deps.draftClose,
-    treeLists: deps.treeLists,
-    workProjection: deps.workProjectionMutation,
-    scheduleLivePull: (documentId) => draftPulls.scheduleLivePull(documentId),
-  });
   const applyCommands = createApplyClickService({
     commands,
     evidence: createDrizzleDraftDispositionStore(deps.db),
@@ -519,13 +506,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       coordinator: draftCoordinator,
-      reopen,
       live: persistence.journal,
       liveCoordinator,
       arrivals: deps.arrivals,
       treeLists: deps.treeLists,
       tree: treeReader,
-      close: deps.draftClose,
       onCommitted: async (documentId) => {
         await draftPulls.flushLivePull(documentId);
         await runDocumentWriteHook({ documentId }, "collab.apply");
@@ -654,7 +639,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       headSchemaVersion: persistence.journal.headSchemaVersion,
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
-      draftStates: hocuspocusPersistence.draftStates,
+      openDraftIds: hocuspocusPersistence.openDraftIds,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,

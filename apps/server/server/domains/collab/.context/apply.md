@@ -145,7 +145,7 @@ and when `keepsView` fails, the prefix fallback can land a pending delete of a d
 asked only text of, whose text then answers `already removed`.
 
 Lock order inside the click: Work, branch, the list's key (`treeLists.lock`), the document's
-mutex, then the writes: the list's records and rows (`submit`), the closed draft's resync, draft
+mutex, then the writes: the list's records and rows (`submit`), draft
 rows. The rows are written under the document's key because derivation certification takes that
 key and then the document's `tree_nodes` row. Nothing takes a document mutex before the list's
 lock.
@@ -184,41 +184,15 @@ text as it stands. The Live half is a merge: the groups come out latest first, e
 a word the writer typed over an applied change is never removed. A group whose `live_delta` is null
 reverses with nothing written to Live. When every group stays and the tree
 half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
-the lists' keys, then the keys of the documents the Apply wrote text in or created (and of the
-drafts the Apply closed, below).
+the lists' keys, then the keys of the documents the Apply wrote text in or created.
 
 **Un-Apply is read by the Apply, not by a branch.** Its effects and tree rows are found by the
 Apply's command id and the account; the URL's branch only names the Work. A Restore moves a draft
-to another branch, a Discard closes it, and neither changes what the Un-Apply finds. A text effect
-whose draft is **open** is reversed in the draft's base as before (`reverseBaseHalf`) and marked
-`draft_reversed`. One whose draft is **closed** is reversed in live only: its row gets
-`unapplied_by` and `unapplied_seq` (a value taken from `apply_command_effects_unapplied_seq` under
-the Work lock, since `commands.created_at` is the transaction start, not the lock order), leaves
-`draft_reversed` false, and the answer says `draftHalfWaits`. A purged draft has no draft half.
-A closed branch alone does not stop the tree half.
-
-**Reopening a closed draft** is one function, `reopenDrafts` (`drizzle-reopen-drafts.ts`), called by
-Restore and by Un-Apply of an Apply whose drafted delete closed the Work's drafts (`closed_by` = the
-Apply). It flips each row to active in the Work's current branch, closes a newer active draft of the
-document under the calling command's id, then **replays** the Un-Applies the draft waited on, and
-resyncs the reopened drafts' own lists. The replay reads the draft's effects with `unapplied_by` set
-and `draft_reversed` false, orders them by `unapplied_seq` and, within one Un-Apply, by descending
-ordinal, rebuilds each effect's base from the Apply's rows (reversed ones included: `baseStart` is
-stored once), and runs the same body as the open path (`reverseBaseHalf`): merge the group's text
-out of the base, remove its Apply records. Without it the base keeps text the Un-Apply took out of
-live, and a pull merges that deletion into the draft's own text. `draft_reversed` is what stops a
-second replay of an effect the open path already reversed. Un-Apply runs its tree half first, reopens
-only the drafts whose closing delete that half took back, a folder's cascade included (a document the
-writer restored by hand and deleted again keeps its draft closed), then reads the bases, so the draft half of its own text
-effects on a draft its delete closed runs on an open draft. A tree refusal throws and the command's
-savepoint takes the reopen back. Every reopen schedules a live pull for the document.
-Where the draft goes: `ensureActiveForWrite` with `{ requireActive: false }`, called only when the
-Apply closed a draft, so an Un-Apply with nothing to reopen makes no branch; an archived Work whose
-branch closed gets a new one.
-
-A newer draft an Un-Apply's reopen swaps out is closed with the Un-Apply's command id, and that command is
-a Trash entry only while a draft it swapped out is still closed under it; Restore accepts it, and the
-Un-Apply's answer carries `branchId` for it. A Discard closes no draft (below).
+to another branch, and that changes nothing an Un-Apply finds. A text effect whose draft exists is
+reversed in the draft's base (`reverseBaseHalf`, `reverse-base-half.ts`): the group's text is merged
+out of the base and its Apply records come out of the draft. A purged draft has no draft half. A
+closed branch alone does not stop the tree half. An Apply of a drafted delete leaves the Work's
+drafts of that document open, so an Un-Apply has no draft to reopen, swap or replay.
 
 Every route that writes documents on behalf of a command takes `command` grants before it runs:
 Apply the draft's and the live document's on each item (a restore grant for one live has deleted),
@@ -238,9 +212,12 @@ never rewritten. One `discard_command_effects` row per document keeps the delta 
 base side after, `StoredDelta`) and is what Restore reads; the tree half settles the Work's pending
 records `discarded` with the command's id, as before. A change the writer has since written over
 is not taken back by Restore, and nothing says so. `closed` in the answer names the items that
-left Changes whole (`text: "all"`, or a tree-only item with no text held); the draft row is not
-closed by it. Discard all runs the same path with `text: "all"` on every active draft; a Work
-purge is the only thing that still closes drafts (`disposeBranchLocked`).
+left Changes whole (`text: "all"`, or a tree-only item with no text held); the draft row is never
+closed. `whole` is true when the Discard took whole drafts (`text: "all"` on every item) or all
+of them; only such a Discard is listed in Trash, and a Discard of single changes is final but for
+its Undo (the notice's, or Ctrl+Z). Discard all runs the same path with `text: "all"` on every
+draft. A Work purge deletes its drafts' rows (`disposeBranchLocked`), and their rooms close after
+commit.
 
 `POST .../branches/:branchId/undo-discard` (kind `undo_discard`) restores a Discard, from the notice
 right after it or from Trash; `discardCommandId` may also name an earlier restore. Each effect row's
@@ -255,7 +232,7 @@ chat in Trash) bounces: stored `done`, nothing changed, `restored: 0`,
 `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
 The Work lock throws and `closedOwnerBounce` (`adapters/closed-owner-bounce.ts`) turns the throw into that
 result in the command's mapper; Discard bounces the same way. Apply and
-Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries: one per Discard command with an effect not yet ended, and Trash folds a run of adjoining ones (`adjoinsOlder`: no Apply, Un-Apply or Restore between them) into one entry.
+Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries: one per Discard of whole drafts (`whole`) with an effect not yet ended.
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
 the copies act on, then the draft rows.
 
@@ -333,10 +310,8 @@ bring back the miss of move destinations and folders.
 **The day-30 purge** (`recovery.purgeDiscards`, `adapters/drizzle-discard-purge.ts`, run hourly
 beside `purgeWorks` and `purgeDocuments`) is the only reader of the clock for Trash's command
 entries. For each due command row of the three entry kinds it takes the Work lock with no
-`requireActive` (an archived or deleted Work's entries expire too), then the keys of the closed
-drafts' documents in id order, re-reads the drafts still `closed_by` the command, and deletes them
-and then the row. That is a prefix of Restore's order (Work, branch, lists, documents), and the
-lists are only read, without a key, before the first document key. A Restore takes the same Work
+`requireActive` (an archived or deleted Work's entries expire too) and deletes the row, which
+cascades its effects. That is a prefix of Restore's order. A Restore takes the same Work
 lock, so it sees all of an entry or none. The tree's `purgeUnviewed` purges a drafted create (and
 its draft and content) on its own clock, so the sweep leaves those drafts alone; the tree's
 `discarded` records stay. A row whose branch is gone (a Work purge cascades the branch and its

@@ -64,8 +64,6 @@ import {
   DraftNotices,
   halvesOf,
   itemOf,
-  type RestoreReturned,
-  returnedIn,
   viewOf,
 } from "./draft-notices";
 import { GroupApply } from "./group-apply";
@@ -94,21 +92,10 @@ export type DraftCommandState = {
   hidden: boolean;
   discarding: ((change: ReviewChange) => boolean) | null;
   failure: BranchCommandFailure | null;
-  /** How the draft ended, once it has; null while it is open. */
-  ended: DraftEnd | null;
+  /** The draft is gone for good: its Work or document was purged. The page leaves. */
+  ended: boolean;
   checkingClose: boolean;
 };
-/**
- * What closed a draft, which decides what the page does: `here`, this tab's own Discard (the page
- * leaves for Live, where the notice has the Undo); `in-trash`, a Discard anywhere else (the draft
- * stays on screen, read-only, with Restore); `document`, its document went to Trash (the draft
- * stays with the document's Restore); `other`, anything else, such as a purge (the page leaves).
- */
-export type DraftEnd = "here" | "in-trash" | "document" | "other";
-/** An ended draft the page keeps showing, with its Restore. */
-export function staysOnScreen(end: DraftEnd | null): boolean {
-  return end === "in-trash" || end === "document";
-}
 const EMPTY: DraftCommandState = {
   applying: false,
   unapplying: false,
@@ -117,7 +104,7 @@ const EMPTY: DraftCommandState = {
   hidden: false,
   discarding: null,
   failure: null,
-  ended: null,
+  ended: false,
   checkingClose: false,
 };
 export type CommandOutcome =
@@ -144,8 +131,8 @@ export type CommandOutcome =
     }
   /** The server answered for this item and landed neither half: each half's lines say why. */
   | { kind: "settled"; lines: ApplyLine[]; took?: DiscardTook }
-  /** A closed owner answered and changed nothing: the surface says why, once. */
-  | { kind: "returned"; why: RestoreReturned }
+  /** A closed owner answered and changed nothing; nothing is said, its drafts stay as they are. */
+  | { kind: "returned" }
   | { kind: "change-refused"; code: string };
 type Binding = {
   session: DocumentSession;
@@ -208,8 +195,8 @@ function discardAnswer(
   untaken: ReadonlySet<string>;
   lines: ReadonlyMap<string, ApplyLine[]>;
 } {
-  const why = returnedIn(result.settled);
-  if (why) return { outcome: { kind: "returned", why }, untaken: new Set(), lines: new Map() };
+  if (result.settled?.some((one) => one.rule === "returned"))
+    return { outcome: { kind: "returned" }, untaken: new Set(), lines: new Map() };
   const untaken = new Set<string>();
   const appliedFirst = new Set<string>();
   const lines = new Map<string, ApplyLine[]>();
@@ -286,9 +273,6 @@ export class DraftCommandOwner {
   private readonly listeners = new Set<() => void>();
   private readonly closingBranches = new Set<string>();
   private readonly resolvingGone = new Map<string, Promise<void>>();
-  private readonly reconciling = new Map<string, Promise<boolean>>();
-  /** When this tab saw each draft end: a server answer after it may show the draft open again. */
-  private readonly endedAt = new Map<string, number>();
   /** Documents an Apply brought back from a delete, until dismissed or another document shows. */
   private readonly restoredDocuments = new Set<string>();
   private active = true;
@@ -300,22 +284,15 @@ export class DraftCommandOwner {
   constructor(
     private readonly registry: DraftRoomRegistry & {
       closeDraftRoom(roomKey: string, cause: "closed" | "removed"): Promise<void>;
-      /** A restore reopened the draft: the page may open its room again. */
-      reopenDraftRoom(roomKey: string): void;
       observeHistories(observer: () => void): () => void;
     },
     private readonly lifecycle: {
       /**
-       * What became of a draft whose room closed or whose metadata answered gone, read from the
-       * server now: `open` when it holds the draft open (a restore that arrived before the close),
-       * null when it can't tell yet; a rejection is a failed read. Neither decides an end.
+       * Whether a draft whose room closed or whose metadata answered gone is gone for good, read
+       * from the server now: `open` when the server holds it, null when it can't tell yet; a
+       * rejection is a failed read. Neither decides an end.
        */
-      resolveEnd?(
-        ref: DraftRef,
-        draftId: string,
-      ): Promise<Exclude<DraftEnd, "here"> | "open" | null>;
-      /** Settles once the draft's document has left Trash (restored), however that happened. */
-      documentBack?(ref: DraftRef): Promise<void>;
+      resolveEnd?(ref: DraftRef, draftId: string): Promise<"open" | "gone" | null>;
       closeCreated?(ref: DraftRef): void;
     } = {},
   ) {
@@ -333,15 +310,11 @@ export class DraftCommandOwner {
   /**
    * State follows the item's current draft generation. An item key (branch + document) outlives
    * its drafts: discarding one item keeps the branch, and a later write mints a new draft under
-   * the same key. Each generation's record stays its own; only `bind` and `reconcileClosed`
+   * the same key. Each generation's record stays its own; only `bind`
    * move the key to a newer one.
    */
   state(itemKey: string): DraftCommandState {
     return this.records.get(this.generation(itemKey)) ?? EMPTY;
-  }
-  /** How a draft ended, by its id: what a surface showing its room tells the writer. */
-  endOf(draftId: string): DraftEnd | null {
-    return this.records.get(draftId)?.ended ?? null;
   }
   /** The draft the item's state currently follows; the key itself before any draft is known. */
   generation(itemKey: string): string {
@@ -613,19 +586,15 @@ export class DraftCommandOwner {
       // A failed read or an undecided answer decides nothing: the draft stays held, and is asked
       // about again while a surface shows it (and on its next `gone` metadata answer).
       for (let wait = RESOLVE_RETRY_MS; ; wait = Math.min(wait * 2, RESOLVE_RETRY_MAX_MS)) {
-        let end: Exclude<DraftEnd, "here"> | "open" | null | undefined;
+        let end: "open" | "gone" | null | undefined;
         try {
           end = await this.lifecycle.resolveEnd?.(ref, id);
         } catch {
           end = null;
         }
         if (end === undefined || !this.active || this.records.get(id)?.ended) return;
-        if (end) {
-          // A restore landed before this close: the session on screen joins the reopened draft.
-          if (end === "open") this.registry.reopenDraftRoom(draftRoomName(id));
-          else this.finishClose(ref, id, end);
-          return;
-        }
+        if (end === "gone") this.finishClose(ref, id);
+        if (end) return;
         if (!this.entries.get(id)?.binding) return;
         await new Promise((resolve) => setTimeout(resolve, wait));
       }
@@ -642,92 +611,18 @@ export class DraftCommandOwner {
     return resolving;
   }
 
-  /**
-   * Whether the item may open, asking the server when its known generation is closed (it ended,
-   * or this tab's Discard hid it). The same draft active again is a restore, from any tab or
-   * view: it reopens here (`metadataActive`). A different active draft is a replacement under the
-   * same key: the item follows it. The closed generation's record (its unsent text, its queue) is
-   * kept, and a failed read leaves the item closed. A Discard still in flight keeps it hidden.
-   */
-  reconcileClosed(ref: DraftRef, read: () => Promise<DraftMetadataResponse>): Promise<boolean> {
-    const closedId = this.generation(ref.itemKey);
-    const state = this.state(ref.itemKey);
-    if (!state.ended && !(state.hidden && this.endedAt.has(closedId)))
-      return Promise.resolve(this.active && !state.hidden);
-    const pending = this.reconciling.get(ref.itemKey);
-    if (pending) return pending;
-    const asked = Date.now();
-    const reconcile = read()
-      .then((answer) => {
-        if (!this.active || answer.status !== "active") return false;
-        if (answer.draftId === closedId) return this.metadataActive(ref, closedId, asked);
-        if (this.generation(ref.itemKey) === closedId) {
-          this.identities.set(ref.itemKey, answer.draftId);
-          this.publish();
-          const item = this.items.get(ref.itemKey);
-          if (item) this.publishQueue(item);
-        }
-        return !this.state(ref.itemKey).ended;
-      })
-      .catch(() => false)
-      .finally(() => this.reconciling.delete(ref.itemKey));
-    this.reconciling.set(ref.itemKey, reconcile);
-    return reconcile;
-  }
-
-  /**
-   * The server answers the draft open (`draftId`), at `at`, after this tab saw it end: a restore
-   * reopened it, here or anywhere. Its ended state goes and its room may open again under the same
-   * id, and the session still on screen joins it in place; a room the server still holds closed
-   * refuses the join, which ends it again. True when the draft is open by this answer, whichever
-   * reader brought the reopening: every reader the close left without a room asks again.
-   */
-  metadataActive(ref: DraftRef, draftId: string, at: number): boolean {
-    if (!this.active) return false;
-    const ended = [draftId, ref.itemKey].filter((key) => (this.endedAt.get(key) ?? at) < at);
-    if (ended.length === 0) return !this.endedAt.has(draftId) && !this.endedAt.has(ref.itemKey);
-    for (const key of ended) {
-      this.endedAt.delete(key);
-      this.setState(
-        ref.itemKey,
-        {
-          ended: null,
-          hidden: false,
-          checkingClose: false,
-          failure: null,
-        },
-        key,
-      );
-    }
-    if (this.identities.get(ref.itemKey) !== draftId) {
-      this.identities.set(ref.itemKey, draftId);
-      this.publish();
-    }
-    this.registry.reopenDraftRoom(draftRoomName(draftId));
-    return true;
-  }
-
-  private finishClose(ref: DraftRef, id: string, end: DraftEnd) {
+  private finishClose(ref: DraftRef, id: string) {
     const record = this.records.get(id) ?? EMPTY;
     if (!this.active || record.ended) return;
     const entry = this.entries.get(id);
-    this.endedAt.set(id, Date.now());
-    this.setState(ref.itemKey, { ended: end, checkingClose: false }, id);
-    // Its document's restore brings back no draft: the page then leaves for the document.
-    if (end === "document")
-      void this.lifecycle.documentBack?.(ref).then(() => {
-        if (this.active && this.records.get(id)?.ended === "document")
-          this.setState(ref.itemKey, { ended: "other" }, id);
-      });
+    this.setState(ref.itemKey, { ended: true, checkingClose: false }, id);
     if (entry?.binding) for (const stop of entry.binding.notices) stop();
     // The server refuses an Un-Apply against an ended draft: Ctrl+Z goes past its Applies.
     for (const [band, held] of this.bandApplies) if (held.draftId === id) band.end();
     // Only this draft's clicks: the item's tree clicks and a newer draft's go on.
     this.items.get(ref.itemKey)?.queue.close(id);
     if (id !== ref.itemKey)
-      void this.registry
-        .closeDraftRoom(draftRoomName(id), end === "document" ? "removed" : "closed")
-        .catch(reportError);
+      void this.registry.closeDraftRoom(draftRoomName(id), "closed").catch(reportError);
   }
 
   private releaseIdle(entry: Entry) {
@@ -1354,7 +1249,7 @@ export class DraftCommandOwner {
       }
       return outcome;
     } catch {
-      failed({ code: "discard-unknown" });
+      failed(null);
       return { kind: "change-refused", code: "unknown" };
     } finally {
       if ("all" in selection) this.closingBranches.delete(branchId);
