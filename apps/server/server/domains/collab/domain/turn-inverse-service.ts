@@ -170,6 +170,8 @@ export interface TurnInverseStore {
     treeReversed: number;
     /** Text parts committed, by document and then by where they landed: the branch whose draft took them, null for live. */
     reversed: ReadonlyMap<DocumentId, ReadonlyMap<BranchId | null, number>>;
+    /** The cuts around the one draft write a lone document's content step committed. */
+    cut?: { before: Uint8Array; after: Uint8Array };
     /** The destinations that actually committed. */
     outcomes: readonly {
       documentId: DocumentId;

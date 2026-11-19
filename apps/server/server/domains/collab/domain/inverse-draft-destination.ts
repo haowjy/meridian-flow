@@ -20,7 +20,6 @@ export type ActiveInverseDestination = {
   branchId: BranchId;
   draftId: string;
   revision: number;
-  view: Y.Doc;
   state: "active";
 };
 export type GoneInverseDestination = {
@@ -72,7 +71,6 @@ export function createInverseDestinationResolver(
             branchId: row.branchId,
             draftId: row.draftId,
             revision: row.revision,
-            view: captured.doc,
             state: "active",
           }
         : { kind: "draft", closed: captured.closed, branchId: row.branchId, state: "gone" };

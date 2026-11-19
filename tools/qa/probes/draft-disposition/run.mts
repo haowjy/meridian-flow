@@ -11,6 +11,7 @@ import {
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
 import { createDraftDispositionReader } from "../../../../apps/server/server/domains/collab/domain/draft-disposition.ts";
+import { classifiedDraft } from "../../../../apps/server/server/domains/collab/test-support/draft-classification.ts";
 import { createAllowAllFileAccess } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
 import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
@@ -27,7 +28,8 @@ import { createScratchDatabase, observe, openHarness, Y } from "../drafts-lock-f
 const pm = buildDocumentSchema();
 const scratch = await createScratchDatabase();
 const h = await openHarness(scratch.url);
-const read = createDraftDispositionReader(createDrizzleDraftDispositionStore(h.db));
+const store = createDrizzleDraftDispositionStore(h.db);
+const read = createDraftDispositionReader(store);
 const docs: Y.Doc[] = [];
 try {
   const work = await h.seedWork("g1-disposition");
@@ -146,7 +148,7 @@ try {
   assert.match((await h.readDraft(deleted.draftId)).text, /The old mountain waits/);
 
   const applied = await fixture("applied");
-  const beforeApply = await read(applied.draftId);
+  const beforeApply = await classifiedDraft(store, applied.draftId);
   assert(beforeApply);
   // Build Apply evidence directly while lane A owns the HTTP Apply implementation.
   applied.doc.clientID = 1;
@@ -170,16 +172,10 @@ try {
   const liveBefore = await h.liveText(applied.documentId);
   const undoResult = await applied.command("undo");
   observe("undo applied", { status: undoResult.status, message: undoResult.message });
-  assert.equal(undoResult.status, "success");
-  assert.match(undoResult.message, /reverted:/);
+  // Text the writer applied is in the manuscript: the model's Undo leaves it, in the draft and in Live.
+  assert.equal(undoResult.status, "cant_undo_changed");
   assert.equal(await h.liveText(applied.documentId), liveBefore);
-  assert.notEqual((await h.readDraft(applied.draftId)).text, liveBefore);
-  const afterRevert = await read(applied.draftId);
-  assert(afterRevert);
-  assert.equal(afterRevert.projection?.hasChanges, true);
-  assert.ok(
-    afterRevert.parts.some((p) => p.editId !== applied.editId && p.disposition === "pending"),
-  );
+  assert.equal((await h.readDraft(applied.draftId)).text, liveBefore);
 
   const closing = await Promise.all([fixture("close-one"), fixture("close-two")]);
   const partsBefore = await h.raw`select id,origin,effect from document_edit_parts order by id`;

@@ -86,7 +86,7 @@ export async function journalRows(harness: Harness, draftId: string) {
     id: Number(row.id),
     source: row.source,
     update: new Uint8Array(row.update_data),
-    meta: (row.update_meta ?? {}) as { restorationAliases?: unknown[] } & Record<string, unknown>,
+    meta: (row.update_meta ?? {}) as Record<string, unknown>,
   }));
 }
 

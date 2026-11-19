@@ -3,7 +3,6 @@
 import { randomUUID } from "node:crypto";
 import {
   type DocumentEditResult,
-  type InversePart,
   type ModelInverseCommand,
   prepareEditRoots,
 } from "@meridian/agent-edit/integration";
@@ -55,34 +54,25 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       performed = { undo: [] as string[], revert: [] as string[] },
       skipped: string[] = [],
       partial: string[] = [];
-    const views = new Map<
-      InverseDestination,
-      { scratch: Y.Doc; before: Uint8Array; inspection?: Inspection }
-    >();
-    const plannedView = (destination: InverseDestination) => {
-      let planned = views.get(destination);
-      if (planned) return planned;
-      if (destination.kind === "draft" && destination.state === "gone")
-        throw new Error("A gone inverse destination has no view");
-      const source = destination.view;
-      const before = Y.encodeStateAsUpdate(source);
-      const scratch = new Y.Doc({ gc: false });
-      Y.applyUpdate(scratch, before);
-      planned = { scratch, before };
-      views.set(destination, planned);
-      return planned;
+    // Live's planning copy, made when a step first needs it. An open draft has none: its steps are
+    // taken out of the committed text under the draft's hold.
+    let live: { scratch: Y.Doc; before: Uint8Array; inspection?: Inspection } | undefined;
+    const liveView = () => {
+      if (!live) {
+        const before = Y.encodeStateAsUpdate(document.live);
+        const scratch = new Y.Doc({ gc: false });
+        Y.applyUpdate(scratch, before);
+        live = { scratch, before };
+      }
+      return live;
     };
-    const currentInspection = (destination = policy.queryDestination) => {
-      const planned = plannedView(destination);
-      if (!planned.inspection)
-        planned.inspection = inspectionContext(
-          prepareEditRoots(planned.scratch, history),
-          inspectionActions(history, own),
-        );
+    const currentInspection = () => {
+      const planned = liveView();
+      planned.inspection ??= inspectionContext(
+        prepareEditRoots(planned.scratch, history),
+        inspectionActions(history, own),
+      );
       return planned.inspection;
-    };
-    const invalidateInspections = () => {
-      for (const planned of views.values()) planned.inspection = undefined;
     };
     const count = command.command === "revert" ? 1 : (command.count ?? 1);
     const undoEntries = command.command === "undo" ? policy.inspect().stack.slice(0, count) : [];
@@ -108,7 +98,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       };
       const apply = (
         entry: Entry,
-        selection: InversePart[],
+        selection: StoredInversePart[],
         kind: "undo" | "revert",
         destination = policy.queryDestination,
       ) => {
@@ -116,14 +106,26 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           throw new Error("Gone destination selected");
         const stepActionId = stepAction(kind);
         remember(kind, entry.handle);
-        const view = plannedView(destination);
-        const result = currentInspection(destination).index.compute(selection, {
+        const at = Math.max(...entry.parts.map((part) => part.id));
+        if (destination.kind === "draft") {
+          policy.planTakeOut(destination.draftId, selection);
+          steps.push({
+            kind: "content",
+            parts: selection,
+            destination,
+            actionId: stepActionId,
+            actionKind: kind,
+            at,
+          });
+          return true;
+        }
+        const view = liveView();
+        const result = currentInspection().index.compute(selection, {
           actionId: stepActionId,
           allocateClient: allocateDocumentClient,
         });
         if (result.skipped.length)
           throw new Error("Inverse classification changed within the scratch plan");
-        const at = Math.max(...entry.parts.map((part) => part.id));
         for (const edit of result.edits) {
           steps.push({
             kind: "kernel",
@@ -151,20 +153,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               actor: "agent",
               wId: null,
               delta: null,
-              origin:
-                destination.kind === "draft"
-                  ? {
-                      kind: "pending",
-                      draftId: destination.draftId,
-                      rowId: 0,
-                    }
-                  : { kind: "live", seq: 0 },
+              origin: { kind: "live", seq: 0 },
               disposition: "pending",
             });
           }
         }
         // Neither lineage visibility nor action state survives a scratch advance.
-        invalidateInspections();
+        if (live) live.inspection = undefined;
         return result.edits.length > 0;
       };
       const modelTextPlan = (entry: Entry, direction: "undo" | "revert") => {
@@ -223,7 +218,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           message: `Nothing is left to reverse in ${document.uri}. Nothing was changed.`,
         };
       const text = steps.flatMap((step) => (step.kind === "kernel" ? [step.edit] : []));
-      // The cuts are taken before the commit, which applies the inverse to the view.
+      // Live's cuts are taken before the commit, which applies the inverse to the view; a draft's
+      // come back from its commit.
       const textDestinations = new Set(steps.map((step) => step.destination));
       const plannedDestinations = new Map<
         BranchId | "live",
@@ -240,11 +236,10 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         });
       }
       const [textDestination] = textDestinations;
-      const textView =
-        textDestinations.size === 1 && textDestination ? plannedView(textDestination) : undefined;
-      const cuts = textView
-        ? { before: textView.before, after: Y.encodeStateAsUpdate(textView.scratch) }
-        : {};
+      const liveCuts =
+        live && textDestination?.kind === "live"
+          ? { before: live.before, after: Y.encodeStateAsUpdate(live.scratch) }
+          : {};
       const inversePlan = { document, steps, skips: [] };
       if (preview) return { status: "planned" };
       const committed = await store.commit({
@@ -270,7 +265,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               ? draftRoom([...committedDraftIds][0] as string)
               : document.liveRoom
             : null,
-        ...cuts,
+        ...(committed.cut && textDestinations.size === 1 ? committed.cut : liveCuts),
         updates: committed.updates,
         ...(destinations.size === 1
           ? destination?.branchId
@@ -321,7 +316,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         ].join("\n"),
       };
     } finally {
-      for (const { scratch } of views.values()) scratch.destroy();
+      live?.scratch.destroy();
     }
   }
   return {
@@ -389,26 +384,10 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               policy,
             )
           : null;
-        const displayInspection = (part: StoredInversePart) =>
-          policy.inspect(
-            (() => {
-              const destination = document.destinationOf(part.origin);
-              return destination.kind === "draft" && destination.state === "gone"
-                ? policy.view
-                : destination.view;
-            })(),
-          );
-        const displayParts = new Map<Inspection, StoredInversePart[]>();
-        for (const entry of page)
-          for (const part of entry.parts) {
-            const context = displayInspection(part);
-            const parts = displayParts.get(context) ?? [];
-            parts.push(part);
-            displayParts.set(context, parts);
-          }
-        for (const [context, parts] of displayParts) context.states(parts);
         // Revert stays current; Undo follows a reachable live/draft origin.
-        inspection.states(page.flatMap((entry) => entry.parts));
+        inspection.states(
+          page.flatMap((entry) => entry.parts.filter((part) => !policy.inOpenDraft(part))),
+        );
         const index = inspection.actions;
         const lines = page.map((entry) => {
           const undos = index.actions.filter((action) =>
@@ -417,10 +396,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           const popped = index.byPart;
           const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
 
-          const states = entry.parts.map((part) => displayInspection(part).states([part])[0]),
-            applied = entry.parts.filter(
-              (part) => part.origin.kind === "pending" && part.disposition === "applied",
-            ).length;
+          const applied = entry.parts.filter(
+            (part) => part.origin.kind === "pending" && part.disposition === "applied",
+          ).length;
           const state = fullyUndone
             ? undos.some((undo) =>
                 undo.parts.some(
@@ -435,17 +413,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 : `partly applied (${applied} of ${entry.parts.length})`
               : entry.parts.every((part) => part.disposition === "discarded")
                 ? "discarded"
-                : states.some((state) => state.state === "changed")
+                : entry.parts.some((part) => policy.changed(part))
                   ? "changed"
                   : entry.parts.some((part) => part.origin.kind === "pending")
                     ? "pending"
                     : "live";
           let command = "none";
-          const revertPlan = policy.textPlan(entry, "revert", (destination) =>
-            destination.kind === "draft" && destination.state === "gone"
-              ? displayInspection(entry.parts[0] as StoredInversePart)
-              : policy.inspect(destination.view),
-          );
+          const revertPlan = policy.textPlan(entry, "revert", () => inspection);
           const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
           if (revert)
             command =

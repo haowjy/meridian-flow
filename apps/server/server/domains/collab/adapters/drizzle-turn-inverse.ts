@@ -6,13 +6,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import {
-  type ChangeRead,
-  changeState,
-  editChanges,
-  readDelta,
-  takeOut,
-} from "@meridian/agent-edit/content-merge";
+import type { ChangeRead } from "@meridian/agent-edit/content-merge";
 import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
 import {
@@ -37,7 +31,7 @@ import {
   applyCommandTrees,
   commands as commandRows,
 } from "@meridian/database/schema";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -66,7 +60,12 @@ import {
 } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
-import { isPending, readDraftChanges } from "../domain/draft-changes.js";
+import {
+  draftSchema,
+  isPending,
+  readDraftChanges,
+  takeOutStanding,
+} from "../domain/draft-changes.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import {
   createDraftDispositionReader,
@@ -88,15 +87,10 @@ import {
 } from "../domain/turn-inverse-service.js";
 import { type ReceiptWrite, recordDocumentEdit } from "./drizzle-document-edits.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
-import { commitRewriteWithinTx, insertJournalRows } from "./drizzle-draft-storage.js";
 import { createDrizzleTreeHistory } from "./drizzle-tree-history.js";
 import { readTurnEditTargets } from "./drizzle-turn-edit-targets.js";
 import { createTurnTreeInverse, NO_TREE_STEPS } from "./drizzle-turn-tree-inverse.js";
-import {
-  type PlannedDraft,
-  type PlannedInverse,
-  planInverseDocument,
-} from "./turn-inverse-document-plan.js";
+import { type PlannedInverse, planInverseDocument } from "./turn-inverse-document-plan.js";
 
 type Dependencies = {
   db: Database;
@@ -122,8 +116,6 @@ type Dependencies = {
     "authorizeAt" | "authorize" | "confirmEdit" | "destinationAvailability"
   >;
 };
-
-const contentSchema = buildDocumentSchema();
 
 export function createDrizzleTurnInverseService(input: Dependencies) {
   const db = () => currentDrizzleDb(input.db);
@@ -613,9 +605,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     describePart(document, part) {
       const destination = document.destinationOf(part.origin);
       const doc =
-        destination.kind === "draft" && destination.state === "gone"
-          ? document.live
-          : destination.view;
+        destination.kind === "draft" && destination.state === "active"
+          ? (document.drafts.get(destination.draftId)?.doc ?? document.live)
+          : document.live;
       let excerpt = document.excerptViews.get(doc);
       if (!excerpt) {
         excerpt = new Y.Doc({ gc: false });
@@ -719,6 +711,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         treeReversed,
         reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
         outcomes: documents.flatMap((entry) => entry.outcomes),
+        cut: documents.length === 1 ? documents[0]?.cut : undefined,
       };
     },
   };
@@ -853,8 +846,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   }
 
   /**
-   * One step inside the commit scope: its parts written where its plan lands, then its row
-   * (`recordStep`). A draft's text is one checkpoint rewrite, written at that draft's first step.
+   * One step inside the commit scope: a live step's parts written to Live's journal, or a draft's
+   * content step, then its row (`recordStep`).
    */
   async function commitTextStep(
     entry: PlannedInverse,
@@ -865,16 +858,14 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     if (step.kind === "content") return commitContentStep(entry, step, userId, query);
     const { plan } = entry;
     const document = plan.document;
-    const draft =
-      step.destination.kind === "draft" ? entry.drafts.get(step.destination) : undefined;
     const parts = entry.edits.get(step.edit);
     if (!parts) throw new Error("A text step was not planned with its document");
-    if (draft && !draft.origins.size) await rewriteDraft(entry, draft, userId, query);
-    const origins: EditOrigin[] = draft ? (draft.origins.get(step.edit) ?? []) : [];
-    if (!draft)
-      for (const part of parts)
-        origins.push({
-          kind: "live",
+    const receipts = [];
+    for (const part of parts)
+      receipts.push({
+        ...part,
+        origin: {
+          kind: "live" as const,
           seq: await input.journal.append(document.documentId, part.update, {
             // Inverse receipts are captured below; a human journal origin
             // would also capture a second, ordinary writer receipt.
@@ -887,22 +878,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               : {}),
             seq: 0,
           }),
-        });
-    const receipts = parts.map((part, ordinal) => {
-      const origin = origins[ordinal];
-      if (!origin) throw new Error("Inverse part has no journal origin");
-      return { ...part, origin };
-    });
+        },
+      });
     entry.committed.push(step.edit);
-    const landedDraftId = draft?.draftId ?? null;
-    entry.updates.push(...parts.map((part) => ({ draftId: landedDraftId, update: part.update })));
-    return recordStep(
-      entry,
-      step,
-      { draftId: landedDraftId, branchId: draft?.branchId ?? null, receipts },
-      userId,
-      query,
-    );
+    entry.updates.push(...parts.map((part) => ({ draftId: null, update: part.update })));
+    return recordStep(entry, step, { draftId: null, branchId: null, receipts }, userId, query);
   }
 
   /**
@@ -918,6 +898,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   ): Promise<string> {
     const { draftId, branchId } = step.destination;
     const taken = new Set<StoredInversePart>();
+    let appended: Uint8Array[] = [];
+    // The model's inverse is an edit on its stack: it takes the next write ordinal, as a write does.
+    const wId = query.model
+      ? await input.journal.reserveWriteOrdinal(entry.documentId, query.threadId)
+      : undefined;
     const base = await input.draftCoordinator.loadBase(draftId);
     const write = input.draftCoordinator.prepareAppend(base, [], {
       work: "active",
@@ -925,6 +910,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         threadId: query.model ? query.threadId : null,
         turnId: query.model ? query.turnId : null,
         actorUserId: userId ?? null,
+        wId,
+        toolCallId: query.toolCallId,
+        ...(query.model && query.responseIdentity
+          ? { updateMeta: { authoringResponseId: query.responseIdentity.modelResponseId } }
+          : {}),
         inverse: {
           kind: step.actionKind,
           actionId: step.actionId,
@@ -933,25 +923,22 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }),
       authorServerRows(prefix) {
         const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-        let blocks = readBlocks(fragment, contentSchema);
-        for (const part of step.parts) {
-          if (!part.delta) continue;
-          for (const change of editChanges(contentSchema, readDelta(contentSchema, part.delta)))
-            if (changeState(contentSchema, change, blocks) === "stands") {
-              blocks = takeOut(contentSchema, change, blocks);
-              taken.add(part);
-            }
-        }
+        const out = takeOutStanding(readBlocks(fragment, draftSchema), step.parts);
+        for (const part of out.taken) taken.add(part);
         if (!taken.size) return [];
-        return captureMutationUpdates(prefix, () =>
-          prefix.transact(() => writeBlocks(fragment, contentSchema, blocks)),
+        appended = captureMutationUpdates(prefix, () =>
+          prefix.transact(() => writeBlocks(fragment, draftSchema, out.text)),
         );
+        return appended;
       },
     });
     try {
       const wrote = await write.persist();
       write.transfer();
       if (wrote) {
+        const cut = write.cut();
+        entry.cut = { before: cut.beforeState, after: cut.afterState };
+        entry.updates.push(...appended.map((update) => ({ draftId, update })));
         entry.contentDrafts.add(draftId);
         count(entry, branchId, taken.size);
         entry.outcomes.push({ documentId: entry.documentId, branchId, draftId });
@@ -959,61 +946,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     } finally {
       write.dispose();
     }
-    return "";
-  }
-
-  /**
-   * Shape (a): the captured draft plus its text steps' parts, written whole as the checkpoint
-   * at the revision it was captured at; the journal rows are inserted under the row lock, inside
-   * the checkpoint they belong to.
-   */
-  async function rewriteDraft(
-    entry: PlannedInverse,
-    draft: PlannedDraft,
-    userId: UserId | undefined,
-    query: TurnInverseQuery,
-  ) {
-    const edits = draft.edits.flatMap((edit) =>
-      (entry.edits.get(edit) ?? []).map((part) => ({ edit, part })),
-    );
-    const rewritten = await commitRewriteWithinTx(db(), {
-      draftId: draft.draftId as string,
-      policy: { kind: "exact", revision: draft.revision },
-      work: "active",
-      doc: draft.view,
-      withinLock: async () => {
-        const rowIds = await insertJournalRows(
-          db(),
-          edits.map(({ part }) => ({
-            draftId: draft.draftId as string,
-            updateData: part.update,
-            source: entry.source,
-            threadId: query.model ? query.threadId : null,
-            turnId: query.model ? query.turnId : null,
-            actorUserId: userId ?? null,
-            updateMeta: {
-              ...(query.model && query.responseIdentity
-                ? {
-                    authoringResponseId: query.responseIdentity.modelResponseId,
-                  }
-                : {}),
-              restorationAliases: part.aliases.map((alias) => ({
-                source: { ...alias.source, length: alias.len },
-                target: { ...alias.target, length: alias.len },
-              })),
-            },
-          })),
-        );
-        for (const [position, { edit }] of edits.entries()) {
-          const rowId = rowIds[position];
-          if (rowId === undefined) throw new Error("Inverse journal was not inserted");
-          const origins = draft.origins.get(edit) ?? [];
-          origins.push({ kind: "pending", draftId: draft.draftId as string, rowId });
-          draft.origins.set(edit, origins);
-        }
-      },
-    });
-    if (rewritten.status !== "committed") throw new InverseAttemptMiss();
+    return wId === undefined || !taken.size ? "" : editHandle(wId);
   }
 
   /** After every step: the document's delivery. */

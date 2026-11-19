@@ -8,6 +8,7 @@
 import {
   type ChangeMemo,
   type ChangeRead,
+  changeState,
   type EditChange,
   editChanges,
   type Reading,
@@ -15,12 +16,16 @@ import {
   readDelta,
   readDraft,
   type StoredDelta,
+  takeOut,
 } from "@meridian/agent-edit/content-merge";
 import { REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type { Node as PMNode } from "prosemirror-model";
 import type * as Y from "yjs";
 
-const schema = buildDocumentSchema();
+/** The one schema a draft's blocks are read and written with: nodes of another instance don't compare. */
+export const draftSchema = buildDocumentSchema();
+const schema = draftSchema;
 
 /** The most changes the process keeps cuts and memos for; the oldest go first. */
 const KEPT = 4000;
@@ -86,4 +91,26 @@ export function readDraftChanges(
     });
   }
   return { reading, parts: out };
+}
+
+/**
+ * `text` with every change of `parts` that still stands taken out, in the order given, and the
+ * parts that had one. The one rule a draft Undo applies, to the committed text under the draft's
+ * hold and, as the model's plan, to a copy of it.
+ */
+export function takeOutStanding<P extends { delta: StoredDelta | null }>(
+  text: readonly PMNode[],
+  parts: readonly P[],
+): { text: readonly PMNode[]; taken: P[] } {
+  let blocks = text;
+  const taken: P[] = [];
+  for (const part of parts) {
+    if (!part.delta) continue;
+    for (const change of editChanges(schema, readDelta(schema, part.delta)))
+      if (changeState(schema, change, blocks) === "stands") {
+        blocks = takeOut(schema, change, blocks);
+        if (!taken.includes(part)) taken.push(part);
+      }
+  }
+  return { text: blocks, taken };
 }

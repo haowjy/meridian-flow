@@ -51,6 +51,7 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
           ordinal: documentEditParts.ordinal,
           origin: documentEditParts.origin,
           effect: documentEditParts.effect,
+          delta: documentEditParts.delta,
           threadId: documentEdits.threadId,
           turnId: documentEdits.turnId,
           toolCallId: draftWriteJournal.toolCallId,
@@ -112,6 +113,7 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
           inserted: row.effect.inserted.map(tuple),
           deleted: row.effect.deleted.map(tuple),
           owner,
+          delta: row.delta,
         });
         parts.set(row.draftId, list);
       }

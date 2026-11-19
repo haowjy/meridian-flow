@@ -1,5 +1,6 @@
 /** Detached historical draft and receipt evidence from one database snapshot. */
-import type { AttributionPart, Provenance } from "@meridian/agent-edit/diff";
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
+import type { AttributionPart } from "@meridian/agent-edit/diff";
 import type { EditOrigin } from "@meridian/contracts";
 import type { DraftRead } from "../draft-store.js";
 
@@ -15,11 +16,8 @@ export interface DraftReceiptPart extends AttributionPart {
   ordinal: number;
   origin: EditOrigin;
   owner: OwnerThread | null;
-}
-
-export interface DraftProvenance extends Provenance {
-  /** Apply evidence only; a non-applied part may ultimately be discarded. Use view.parts[].disposition. */
-  parts: readonly (DraftReceiptPart & { status: "pending" | "applied" })[];
+  /** What the part did to the text; null for a part written before deltas. */
+  delta: StoredDelta | null;
 }
 
 export interface DraftDispositionCapture {

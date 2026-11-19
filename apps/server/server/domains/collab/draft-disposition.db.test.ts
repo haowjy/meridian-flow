@@ -35,10 +35,17 @@ import {
   USER_ID,
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
+import { classifiedDraft } from "./test-support/draft-classification.js";
 
 const db = createTestDatabase();
 const pm = buildDocumentSchema();
-const read = createDraftDispositionReader(createDrizzleDraftDispositionStore(db));
+const store = createDrizzleDraftDispositionStore(db);
+const read = createDraftDispositionReader(store);
+async function classified(draftId: string) {
+  const view = await classifiedDraft(store, draftId);
+  assert(view);
+  return view;
+}
 async function review(...args: Parameters<typeof read>) {
   const view = await read(...args);
   assert(view);
@@ -125,7 +132,7 @@ async function fixture() {
     return editId;
   }
   async function apply() {
-    const view = await review(draftId);
+    const view = await classified(draftId);
     const entry = applyRecordOf(view.classifications, view.classifications.keys());
     doc.clientID = 1;
     doc.transact(() => {
@@ -172,14 +179,18 @@ it("reads applied and discarded historical parts after close, independent of pla
       [discarded, "discarded"],
       [applied, "applied"],
     ]);
-    expect(historical.projection?.hasChanges).toBe(true);
+    expect((await classified(f.draftId)).projection.hasChanges).toBe(true);
     await db.delete(schema.turns).where(eq(schema.turns.id, TURN_ID));
     const orphaned = await review(f.draftId);
     expect(orphaned.parts.map((part) => [part.editId, part.disposition])).toEqual(
       historical.parts.map((part) => [part.editId, part.disposition]),
     );
     expect(orphaned.parts.every((part) => part.owner === null)).toBe(true);
-    expect([...orphaned.classifications.values()].flatMap((change) => change.byline)).toEqual([]);
+    expect(
+      [...(await classified(f.draftId)).classifications.values()].flatMap(
+        (change) => change.byline,
+      ),
+    ).toEqual([]);
     expect(await read("missing-draft")).toBeNull();
     await db
       .update(schema.documentDrafts)
@@ -198,8 +209,7 @@ it("reads applied and discarded historical parts after close, independent of pla
       .set({ status: "closed", closedCause: "discarded" })
       .where(eq(schema.documentDrafts.id, f.draftId));
     const released = await review(f.draftId);
-    expect(released.projection).toBeNull();
-    expect(released.provenance).toBeNull();
+    expect(await classifiedDraft(store, f.draftId)).toBeNull();
     expect(released.parts.every((p) => p.disposition === "discarded")).toBe(true);
   } finally {
     f.doc.destroy();
@@ -241,11 +251,12 @@ it("rolls a subagent receipt and its byline up to the owning conversation's spaw
         reveal: { threadId: THREAD_ID, turnId: TURN_ID, subagentThreadId: child },
       },
     });
-    expect([...view.classifications.values()][0].byline).toEqual([
+    const classes = await classified(f.draftId);
+    expect([...classes.classifications.values()][0].byline).toEqual([
       { kind: "thread", threadId: THREAD_ID, turnId: TURN_ID },
     ]);
-    expect([...view.classifications.values()][0].members).toEqual([0]);
-    expect(view.provenance?.snapshot.sv.get(31)).toBeGreaterThan(0);
+    expect([...classes.classifications.values()][0].members).toEqual([0]);
+    expect(classes.provenance.snapshot.sv.get(31)).toBeGreaterThan(0);
   } finally {
     f.doc.destroy();
   }
@@ -261,12 +272,11 @@ it("retains Apply evidence when Undo restored AI items before they were applied"
       trackedOrigins: new Set([origin]),
     });
     recordRestorations(history);
-    const view = await review(f.draftId);
-    assert(view.projection);
+    const { projection } = await classified(f.draftId);
     const patches = composeGroups(
       pm,
-      view.projection,
-      view.projection.groups.map((g) => g.id),
+      projection,
+      projection.groups.map((g) => g.id),
       "discard",
     );
     // A whole-document fixture has one block patch. The browser writes the same composed blocks.
