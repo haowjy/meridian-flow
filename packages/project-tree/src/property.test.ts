@@ -30,7 +30,9 @@ import {
 } from "./index.js";
 import { undoChange } from "./undo-open.js";
 
-// Reference admission, deliberately replaying one record at a time.
+// Reference admission, deliberately replaying one record at a time. Like `admit`, it judges what
+// is left of the update as a whole first: records that cancel each other (a move and its Undo)
+// change no closed source together, so none of them is dropped.
 function walk(doc: Y.Doc, added: readonly TreeRecord[], connection: Connection): string[] {
   const out: string[] = [];
   const remaining = new Set(added.map((record) => record.id));
@@ -39,7 +41,34 @@ function walk(doc: Y.Doc, added: readonly TreeRecord[], connection: Connection):
   const droppedNodes = new Set(
     droppedRecords(doc).flatMap(({ record }) => (record.type === "create" ? [record.node] : [])),
   );
-  for (const record of added) {
+  const restIsClean = (from: number) => {
+    const rest = added.slice(from);
+    if (
+      rest.some(
+        (record) =>
+          (record.draft !== null && !connection.drafts.has(record.draft)) ||
+          droppedNodes.has(record.node) ||
+          (record.type === "create" && droppedNodes.has(record.parent)),
+      )
+    )
+      return false;
+    const ids = new Set(rest.map((record) => record.id));
+    return [...new Set(rest.map((record) => record.draft))].every((draft) => {
+      const view = { draft };
+      const records = viewRecords(doc, view).filter((r) => !dropped.has(r.id));
+      const before = replay(
+        records.filter((r) => !ids.has(r.id)),
+        view,
+      );
+      const after = replay(records, view);
+      return (
+        ![...changedSources(before, after)].some(connection.closed) &&
+        !rest.some((record) => after.changes.get(record.id)?.sources.some(connection.closed))
+      );
+    });
+  };
+  for (const [index, record] of added.entries()) {
+    if (restIsClean(index)) break;
     remaining.delete(record.id);
     if (record.type === "purge") continue;
     const view = { draft: record.draft };
