@@ -60,7 +60,7 @@ export function startImageImport(
       const file = await host.fetchBytes({ url: pending.url, filename, signal: controller.signal });
       if (controller.signal.aborted) return;
       if (!file) {
-        storage.status.refuse(t`${filename} could not be read from that site. It stayed a link.`);
+        storage.status.refuse(t`Couldn't import ${filename}`);
         sendIngressMessage(editor, { drop: id });
         return;
       }
@@ -76,7 +76,7 @@ export function startImageImport(
     } catch (error) {
       if (controller.signal.aborted) return;
       storage.status.refuse(
-        error instanceof Error ? error.message : t`${filename} did not import. It stayed a link.`,
+        error instanceof Error ? error.message : t`Couldn't import ${filename}`,
       );
       sendIngressMessage(editor, { drop: id });
     }
@@ -91,7 +91,7 @@ function landImport(editor: Editor, id: string, uploaded: UploadedImage): void {
   const link = resolvePendingImage(editor.state, entry);
   const imageType = editor.state.schema.nodes.image;
   if (!link || !imageType || !editor.isEditable) {
-    if (!link) storage.status.refuse(t`${entry.filename} imported, but its link had moved on.`);
+    if (!link) storage.status.refuse(t`Link moved, ${entry.filename} not placed`);
     sendIngressMessage(editor, { drop: id });
     return;
   }

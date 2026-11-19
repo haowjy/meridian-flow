@@ -483,8 +483,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   caret. Inline code is not a fence: a tree row or picture there snaps to the
   span's edge; a text slice stays in the span. A dragged file over a fence is
   refused (`Can’t put a file inside code`); a file the editor can't place shows
-  `A file can’t go there.` while dragging, and a picture that can't stand at the
-  caret shows `A picture cannot go there.` A drop never changes
+  `File can’t go there` while dragging, and a picture that can't stand at the
+  caret shows `Picture can’t go there`. A drop never changes
   the rows or columns of any table (nested ones too) or spills out of its cell.
   One that would is refused: `Can’t put that in a
   table cell` when it lands in a cell, `Can’t move part of a table` when a
@@ -644,7 +644,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   offline reload, in a document purged before its room reconnects, comes back, and a room with no
   session in this tab is measured too. A copy with no mark (written before marks, or whose first
   mark write was lost) counts as marking nothing: all of it is offered. The
-  account lifetime shows the words in a toast (`unsentTypingToasts`,
+  account lifetime offers the words in a failure pill, "Couldn't save edit · Copy · ×" (`unsentTypingToasts`,
   `features/editor/RescuedText.tsx`). A closed draft's copy also stays for an Undo of its Discard,
   which delivers it.
 - What it cannot reach: a read admission has no such loss (see the next section). A document no
@@ -725,17 +725,17 @@ from the wire alone, with nothing stored between handshakes.
   waiting for it, in any tab. No tab can know when the last such claim has run, so collecting acted notices by
   their copy's absence brought words back. Sign-out (`clearAll`) deletes the whole
   notice database after the copies, and only when no copy was left behind.
-- **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy shows
-  "Copied" at once; Dismiss closes the toast when `done` resolves, a local write's moment later
-  (sonner drops a toast re-shown under an id it is still removing, so a closed toast can't come
-  back). When `done` rejects, the toast stays with "Didn't go through. Try again.", and the next
-  press runs `act` again. Until one commits, the
+- **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy (once
+  the clipboard took the words) and close end the pill at once; when `done` rejects, the pill
+  comes back as "Didn't go through" (each show is a new sonner id, so a re-show is never dropped
+  as one still leaving), and the next press runs `act` again. A copy the browser refused brings
+  it back as "Couldn't copy". Until one commits, the
   notice stays unacted, so a reload offers it again too.
 - A session that opens a room's current incarnation reads the older ones no tab holds against
   its first handshake, claims what they hold beyond it (never a wordless toast, which only the
   current session's own edit earns), and deletes each one whose claim resolved.
-- Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
-  (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
+- Not done yet: the Discard's `returned` on replacement waits for never-refuse PR B's
+  `read_only` frame.
 
 ### Draft room retirement
 

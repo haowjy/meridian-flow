@@ -18,10 +18,10 @@ const Context = createContext<ImportCoordinator | null>(null);
 export function ImportsProvider({ children }: { children: ReactNode }) {
   const [coordinator] = useState(
     () =>
-      new ImportCoordinator(importApi, (sentence) =>
+      new ImportCoordinator(importApi, () =>
         notifyFailure({
           key: `import-refused:${crypto.randomUUID()}`,
-          title: t`Import didn't start. ${sentence}`,
+          title: t`Import didn't start`,
         }),
       ),
   );

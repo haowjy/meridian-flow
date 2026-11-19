@@ -88,8 +88,8 @@ export class AccountFeatureLifetime {
         notifyFailure({
           key: "tree-list-dropped",
           title: plural(records.length, {
-            one: "# change made on this device couldn't be kept.",
-            other: "# changes made on this device couldn't be kept.",
+            one: "Couldn't keep # change",
+            other: "Couldn't keep # changes",
           }),
         }),
       {

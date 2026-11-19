@@ -77,7 +77,7 @@ export const fileDropDoor: DropDoor = {
     // A chip's slot is the same wherever it is: probed with a stand-in, committed with the files.
     const probe = chipFor(editor, "file", crypto.randomUUID(), "unfiled");
     const placed = probe && placeNodes(editor.view, at, [probe]);
-    if (!placed) return { kind: "refuse", hint: t`A file can’t go there.` };
+    if (!placed) return { kind: "refuse", hint: t`File can’t go there` };
     return {
       kind: "accept",
       pos: placed.pos,
@@ -118,9 +118,7 @@ function sendRun(
   return async (signal, onProgress) => {
     const result = await host.send({ documentId, file, signal, onProgress });
     if (classifyFiletype(result.fileType).kind === "tracked")
-      status?.tell(
-        t`${file.name} is text, so it was added as a document in assets. The chip links to it.`,
-      );
+      status?.tell(t`Added ${file.name} to assets`);
   };
 }
 
@@ -165,7 +163,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       if (!entry) return;
       if (!outcome.ok) {
         status?.refuse(
-          outcome.reason instanceof Error ? outcome.reason.message : t`The upload didn’t start.`,
+          outcome.reason instanceof Error ? outcome.reason.message : t`Upload didn’t start`,
         );
         return;
       }
@@ -183,7 +181,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
         ready.map(({ node }) => node),
       );
     if (!placed) {
-      status?.refuse(t`A file can’t go there.`);
+      status?.refuse(t`File can’t go there`);
     } else {
       // The entries exist before the chips do, so no chip ever draws a gap.
       for (const { documentId, file } of ready)
@@ -199,7 +197,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       if (editor.isDestroyed) return;
       const at = here();
       if (!at) {
-        status?.refuse(t`A file can’t go there.`);
+        status?.refuse(t`File can’t go there`);
         continue;
       }
       insertImageFile(editor, file, at);
@@ -211,7 +209,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       continue;
     }
     if (!host) {
-      status?.refuse(t`Files can’t be added to this document.`);
+      status?.refuse(t`Can’t add files here`);
       continue;
     }
     const documentId = crypto.randomUUID();

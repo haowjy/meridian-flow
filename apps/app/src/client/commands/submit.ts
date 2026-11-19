@@ -29,7 +29,7 @@ export async function submitCommand(
     if (!(cause instanceof JournalUnavailableError)) throw cause;
     notifyFailure({
       key: "command-journal",
-      title: t`Couldn’t save that change on this device, so it wasn’t sent.`,
+      title: t`Couldn’t save that change`,
     });
     return null;
   }

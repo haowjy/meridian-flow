@@ -41,7 +41,7 @@ export function useRestoreDiscard(projectId: string) {
       if (answer === "failed")
         notifyFailure({
           key: `restore:${entry.commandId}`,
-          title: t`Couldn't restore that.`,
+          title: t`Couldn't restore that`,
           brief: true,
         });
     },

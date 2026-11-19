@@ -35,11 +35,7 @@ function UpdateWord() {
       type="button"
       onClick={reloadNow}
       aria-label={reload}
-      title={
-        phase === "must-reload"
-          ? t`This tab needs the new version to keep working. It reloads when you pause; unsent changes go out afterwards.`
-          : t`A new version of Meridian is ready.`
-      }
+      title={phase === "must-reload" ? t`Reloads when you pause` : undefined}
       className={`${WORD} cursor-pointer hover:text-foreground`}
     >
       <ReloadWords />
@@ -63,11 +59,7 @@ function NotSentWord() {
   return (
     <span
       role="status"
-      title={
-        paused
-          ? t`You’re signed out of this account. Sign in again and the changes will be sent.`
-          : t`Changes are waiting to be sent. They go out on their own.`
-      }
+      title={paused ? t`Sends after you log in` : t`Sends on its own`}
       className={WORD}
     >
       <CloudOff className="size-3" aria-hidden />

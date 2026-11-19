@@ -582,7 +582,7 @@ export class DraftCommandOwner {
       // One pill for the branch, so an Apply all that fails shows one.
       notifyFailure({
         key: `apply:${branchOf(ref.itemKey)}`,
-        title: t`Couldn't apply that.`,
+        title: t`Couldn't apply that`,
         brief: true,
       });
     return outcome;
@@ -1091,7 +1091,7 @@ export class DraftCommandOwner {
       return outcome;
     } catch {
       failed();
-      notifyFailure({ key: `discard:${branchId}`, title: t`Couldn't discard that.`, brief: true });
+      notifyFailure({ key: `discard:${branchId}`, title: t`Couldn't discard that`, brief: true });
       return { kind: "change-refused", code: "unknown" };
     } finally {
       if ("all" in selection) this.closingBranches.delete(branchId);

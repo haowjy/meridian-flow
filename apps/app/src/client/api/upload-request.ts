@@ -25,9 +25,7 @@ export async function uploadResponse<T>(request: Promise<Response>): Promise<T> 
     const message =
       typeof payload === "object" && payload && "message" in payload ? payload.message : null;
     if (message === "invalid_filename")
-      throw new UploadRefusedError(
-        t`This filename contains unsupported characters. Rename the file and try again.`,
-      );
+      throw new UploadRefusedError(t`Rename the file: unsupported characters`);
     // The browser checks the size before it asks, so this is the server holding the line.
     if (message === "too_large") throw new UploadRefusedError(filesTooLargeMessage());
     throw (

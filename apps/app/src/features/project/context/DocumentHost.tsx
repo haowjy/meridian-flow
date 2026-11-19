@@ -43,7 +43,6 @@ import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
-import { LiveDraftNotice } from "./LiveDraftNotice";
 import { placeTab } from "./open-document-from-file";
 import type { MountedPlace } from "./presented-documents";
 import { recentOpening } from "./recent-opening";
@@ -445,7 +444,6 @@ function PhoneEditor({
           className="shrink-0 px-2 pt-2"
         />
       ) : null}
-      <LiveDraftNotice projectId={projectId} document={document} className="shrink-0 px-2 pt-2" />
       <div className="relative min-h-0 flex-1">
         {children}
         <ContextDocumentHost

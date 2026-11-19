@@ -39,9 +39,9 @@ export function AccountMenu() {
           key: SIGN_OUT_FAILURE,
           title:
             error instanceof SignOutIncomplete && error.left === "unsent"
-              ? t`Couldn't log out: your latest changes haven't reached the server yet.`
-              : t`Couldn't log out: another tab still has your documents open.`,
-          onRetry: leave,
+              ? t`Couldn't log out: changes still sending`
+              : t`Couldn't log out: close other tabs`,
+          action: { label: t`Retry`, run: leave },
         });
       },
     );

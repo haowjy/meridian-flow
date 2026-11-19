@@ -10,8 +10,8 @@
  * One answer, one place. Every door — a chip on the row, an item in a ⋯, an
  * item in the dialog — routes its promise through `run`, and the surface that
  * owns the verb renders the notice where the writer is already looking. The
- * failure keeps its reason: "the browser blocked the clipboard" and "this
- * browser cannot export this diagram" call for different next moves.
+ * failure keeps its reason in a few words: "Clipboard blocked" and "Couldn't
+ * export image" call for different next moves.
  */
 
 import { t } from "@lingui/core/macro";
@@ -43,22 +43,19 @@ export type RunVerb = (work: Promise<unknown>, done: string) => void;
  */
 export function verbFailureMessage(error: unknown): string {
   if (error instanceof ExportError) {
-    return error.kind === "unreadable"
-      ? t`That image could not be read.`
-      : t`This browser will not turn that into an image.`;
+    return error.kind === "unreadable" ? t`Couldn't read image` : t`Couldn't make image`;
   }
 
   const name = error instanceof Error ? error.name : "";
   if (name === "NotAllowedError") {
-    return t`The browser blocked the clipboard. Check this site's permissions.`;
+    return t`Clipboard blocked`;
   }
   if (name === "SecurityError") {
     // A canvas drawn from an SVG that reaches outside the page is tainted, and
-    // the export is refused at the last step. A diagram's source always copies,
-    // so the writer is pointed at the door that works.
-    return t`This browser will not export this diagram as an image. Copy the diagram source instead.`;
+    // the export is refused at the last step.
+    return t`Couldn't export image`;
   }
-  return t`That did not work.`;
+  return t`Didn't work`;
 }
 
 export function useVerbFeedback(): {

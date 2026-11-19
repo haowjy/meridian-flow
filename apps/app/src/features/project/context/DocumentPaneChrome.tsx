@@ -1,16 +1,15 @@
 /**
  * DocumentPaneChrome — what sits above an open document's editor: the passage
- * notice, the frozen-document notice (an archived Work, a trashed chat), the document's properties, and on Live what the Work's draft does to it. Main's page and the side's
+ * notice, the frozen-document notice (an archived Work, a trashed chat) and the document's properties. Main's page and the side's
  * document stack the same chrome. The document's identity and state (an Agent file's included)
  * are elsewhere: in main at the end of the toolbar row, in the side in its header (the Live
- * menu lists other owners' drafts).
+ * menu lists every draft of the document, and its dot says one exists).
  */
 import type { OpenDocument } from "@/client/stores";
 import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentProperties } from "./DocumentProperties";
-import { LiveDraftNotice } from "./LiveDraftNotice";
 import type { DocumentFreeze } from "./use-document-freeze";
 
 export type DocumentPaneChromeProps = {
@@ -31,7 +30,6 @@ export function DocumentPaneChrome({ projectId, document, freeze }: DocumentPane
       ) : null}
       <DocumentProperties projectId={projectId} document={document} />
       <DraftedDeleteNotice documentId={document.documentId} />
-      <LiveDraftNotice projectId={projectId} document={document} />
     </>
   );
 }

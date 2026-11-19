@@ -23,7 +23,7 @@ Work's draft. "The toggle" below means this state, whichever chip sets it.
 ```mermaid
 stateDiagram-v2
     [*] --> Live
-    Live --> Draft: the Work's draft picked in a chip, Show draft, or one of its drafts opened
+    Live --> Draft: the Work's draft picked in a chip, or one of its drafts opened
     Live --> Draft: Work picked while a page is on its draft
     Draft --> Live: Live picked in a chip
     Draft --> Live: Work picked, no page on its draft
@@ -54,9 +54,9 @@ stateDiagram-v2
   to switch to: the sidebar's while the Work has pending changes (**offered**), the page's while
   the document has a draft of any owner, or its review is open (it carries the review's Close
   review, and on a phone its Apply and Discard).
-- **On Live** each row the Work changes carries a jade dot, and a page the Work drafts says
-  what the draft does to it with Show draft (`LiveDraftNotice`). A page the draft created stays
-  on its draft and says live has no version of it; its chip reads Draft.
+- **On Live** each row the Work changes carries a jade dot, and so does the chip of a page any
+  chat drafts: the chip's menu lists the drafts and what each does to the page. Nothing is said
+  above the page. A page the draft created stays on its draft; its chip reads Draft.
 - **The Work chip** under None names the chat's Work when its drafts drive the toggle, with the
   count Changes shows; the pick itself stays None.
 - **A Work pick** keeps every page that is on one of the picked Work's drafts on it, and then puts

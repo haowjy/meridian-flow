@@ -88,8 +88,8 @@ export function ProjectContextRemovalController({
       signInRequired: () =>
         notifyFailure({
           key: "sign-in-expired",
-          title: t`Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost.`,
-          onRetry: () => window.location.reload(),
+          title: t`Your sign-in expired`,
+          action: { label: t`Log in`, run: logInAgain },
         }),
     });
     setObserver(created);
@@ -106,6 +106,15 @@ export function ProjectContextRemovalController({
   }, [coordinator, projectId, stableRoute]);
 
   return null;
+}
+
+/**
+ * The login screen, back to this page after: a full load, so the app starts on the new sign-in
+ * and the edits this device kept go out then.
+ */
+function logInAgain() {
+  const here = `${window.location.pathname}${window.location.search}`;
+  window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);
 }
 
 /**

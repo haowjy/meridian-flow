@@ -3,10 +3,11 @@
  * failure that has no place of its own on a document or in the import popup; a success never
  * toasts. A failure stays until dismissed, except a `brief` one, a slip from the writer's own
  * action, which goes by itself. `visibleToasts` caps how many show at once. Every toast is one
- * floating pill, so a brief error and a lasting one look alike.
+ * floating pill of a few words: what failed, at most one action, and a close. It never explains.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { Toaster, toast } from "sonner";
 
 const BRIEF_MS = 5000;
@@ -17,16 +18,16 @@ const shown = new Map<string, string | number>();
 export function notifyFailure({
   key,
   title,
-  onRetry,
+  action,
   onClose,
   brief,
 }: {
   /** This failure's own: a second toast under one key replaces the first. */
   key: string;
-  /** Names what failed: "Couldn't move Chapter 3 to Act 2." */
-  title: string;
-  /** Only where running it again can help. */
-  onRetry?: () => void | Promise<void>;
+  /** What failed, in a few words: "Couldn't move Chapter 3." A longer title is cut to one line. */
+  title: ReactNode;
+  /** The one way on: Retry where running it again can help, or what fixes it ("Log in"). */
+  action?: { label: string; run: () => void | Promise<void> };
   /** The writer closed it. */
   onClose?: () => void;
   /** A one-line error that follows from the writer's action and loses nothing: it goes away soon. */
@@ -41,12 +42,12 @@ export function notifyFailure({
       shown.delete(key);
       onClose?.();
     },
-    action: onRetry
+    action: action
       ? {
-          label: t`Retry`,
+          label: action.label,
           onClick: () => {
             if (owns()) shown.delete(key);
-            void onRetry();
+            void action.run();
           },
         }
       : undefined,
@@ -76,6 +77,7 @@ const PHONE_OFFSET = {
 };
 
 // `pointer-events-auto`: an open modal sets `pointer-events: none` on the body, which the toast would inherit.
+// Sized to its words and centred (`inset-x-0 mx-auto w-fit`); `!` beats Sonner's phone rule that stretches each toast to the screen.
 export function FailureToaster() {
   return (
     <Toaster
@@ -85,19 +87,21 @@ export function FailureToaster() {
       closeButton
       expand
       visibleToasts={3}
+      gap={6}
       containerAriaLabel={t`Failures`}
-      icons={{ error: <CircleAlert aria-hidden className="size-4 text-destructive" /> }}
+      icons={{ error: <CircleAlert aria-hidden className="size-3.5 text-destructive" /> }}
       toastOptions={{
         unstyled: true,
         closeButtonAriaLabel: t`Dismiss`,
         classNames: {
           toast:
-            "pointer-events-auto flex w-full items-center gap-2 rounded-full border border-border bg-card py-1.5 pr-1.5 pl-4 text-sm text-foreground shadow-float",
-          content: "min-w-0 flex-1",
-          title: "[overflow-wrap:anywhere]",
-          actionButton: "text-button shrink-0 text-sm coarse:min-h-11",
+            "pointer-events-auto inset-x-0 mx-auto flex h-8 w-fit! max-w-[min(24rem,100%)] items-center gap-2 rounded-full border border-border bg-card pr-1 pl-3 text-compact text-foreground shadow-float coarse:h-11",
+          icon: "flex shrink-0",
+          content: "min-w-0",
+          title: "truncate",
+          actionButton: "text-button shrink-0 text-compact coarse:min-h-11",
           closeButton:
-            "focus-ring order-last flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground coarse:size-11",
+            "focus-ring order-last flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground coarse:size-11 [&_svg]:size-3",
         },
       }}
     />

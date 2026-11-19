@@ -124,8 +124,8 @@ msgstr "{0, plural, other {# 次调用}}"
 
 #. placeholder {0}: records.length
 #: src/features/project/context/account-feature-lifetime.ts
-msgid "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
-msgstr ""
+#~ msgid "{0, plural, one {# change made on this device couldn't be kept.} other {# changes made on this device couldn't be kept.}}"
+#~ msgstr ""
 
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
@@ -216,12 +216,22 @@ msgstr "{0, plural, other {# 分钟后继续}}"
 
 #. placeholder {0}: sources.length
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "{0, plural, one {Couldn't copy # item to {destination}.} other {Couldn't copy # items to {destination}.}}"
-msgstr ""
+#~ msgid "{0, plural, one {Couldn't copy # item to {destination}.} other {Couldn't copy # items to {destination}.}}"
+#~ msgstr ""
 
 #. placeholder {0}: sources.length
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "{0, plural, one {Couldn't copy # item.} other {Couldn't copy # items.}}"
+#~ msgid "{0, plural, one {Couldn't copy # item.} other {Couldn't copy # items.}}"
+#~ msgstr ""
+
+#. placeholder {0}: sources.length
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "{0, plural, one {Couldn't copy # item} other {Couldn't copy # items}}"
+msgstr ""
+
+#. placeholder {0}: records.length
+#: src/features/project/context/account-feature-lifetime.ts
+msgid "{0, plural, one {Couldn't keep # change} other {Couldn't keep # changes}}"
 msgstr ""
 
 #. placeholder {0}: rows.length
@@ -326,8 +336,8 @@ msgstr ""
 
 #. placeholder {0}: entry.filename
 #: src/core/editor/images/image-imports.ts
-msgid "{0} imported, but its link had moved on."
-msgstr ""
+#~ msgid "{0} imported, but its link had moved on."
+#~ msgstr ""
 
 #. placeholder {0}: clash[2]
 #. placeholder {1}: clash[1]
@@ -337,13 +347,18 @@ msgstr ""
 
 #. placeholder {0}: file.name
 #: src/core/editor/images/image-uploads.ts
-msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
-msgstr ""
+#~ msgid "{0} is not an image. Choose a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
+#~ msgstr ""
 
 #. placeholder {0}: file.name
 #: src/core/editor/file-drop/file-drop-door.ts
-msgid "{0} is text, so it was added as a document in assets. The chip links to it."
-msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
+#~ msgid "{0} is text, so it was added as a document in assets. The chip links to it."
+#~ msgstr "{0} 是文本，已作为文档添加到 assets，链接会指向它。"
+
+#. placeholder {0}: file.name
+#: src/core/editor/images/image-uploads.ts
+msgid "{0} isn't an image"
+msgstr ""
 
 #. placeholder {0}: modelName(models, runsOn)
 #. placeholder {1}: agent.model ? modelName(models, agent.model) : t`the default model`
@@ -719,12 +734,12 @@ msgid "{failing, plural, one {# can't be saved} other {# can't be saved}}"
 msgstr ""
 
 #: src/core/editor/images/image-imports.ts
-msgid "{filename} could not be read from that site. It stayed a link."
-msgstr ""
+#~ msgid "{filename} could not be read from that site. It stayed a link."
+#~ msgstr ""
 
 #: src/core/editor/images/image-imports.ts
-msgid "{filename} did not import. It stayed a link."
-msgstr ""
+#~ msgid "{filename} did not import. It stayed a link."
+#~ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "{files, plural, one {{prepared} of # file ready} other {{prepared} of # files ready}}"
@@ -929,8 +944,12 @@ msgid "{name} is gone from Trash."
 msgstr ""
 
 #: src/lib/upload-limit.ts
-msgid "{name} is over {LIMIT_MB} MB, so it can't be added."
-msgstr "{name} 超过 {LIMIT_MB} MB，无法添加。"
+msgid "{name} is over {LIMIT_MB} MB"
+msgstr ""
+
+#: src/lib/upload-limit.ts
+#~ msgid "{name} is over {LIMIT_MB} MB, so it can't be added."
+#~ msgstr "{name} 超过 {LIMIT_MB} MB，无法添加。"
 
 #: src/features/agents/AgentFileState.tsx
 msgid "{name} is unavailable"
@@ -1048,8 +1067,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "{names} is gone for good, so it wasn't copied."
-msgstr ""
+#~ msgid "{names} is gone for good, so it wasn't copied."
+#~ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "{needsLook, plural, one {# needs a look} other {# need a look}}"
@@ -1213,28 +1232,28 @@ msgid "{work} is deleting this."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "{work} is editing this."
-msgstr ""
+#~ msgid "{work} is editing this."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "{work} is moving this to {place} and editing it."
-msgstr ""
+#~ msgid "{work} is moving this to {place} and editing it."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "{work} is moving this to {place}."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "{work} is renaming this to {place} and editing it."
-msgstr ""
+#~ msgid "{work} is renaming this to {place} and editing it."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "{work} is renaming this to {place}."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "{work} is reordering this and editing it."
-msgstr ""
+#~ msgid "{work} is reordering this and editing it."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "{work} is reordering this."
@@ -1288,28 +1307,28 @@ msgid "A chat is deleting this."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "A chat is editing this."
-msgstr ""
+#~ msgid "A chat is editing this."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "A chat is moving this to {place} and editing it."
-msgstr ""
+#~ msgid "A chat is moving this to {place} and editing it."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "A chat is moving this to {place}."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "A chat is renaming this to {place} and editing it."
-msgstr ""
+#~ msgid "A chat is renaming this to {place} and editing it."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "A chat is renaming this to {place}."
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "A chat is reordering this and editing it."
-msgstr ""
+#~ msgid "A chat is reordering this and editing it."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
 msgid "A chat is reordering this."
@@ -1332,8 +1351,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
-msgid "A file can’t go there."
-msgstr "文件不能放在那里。"
+#~ msgid "A file can’t go there."
+#~ msgstr "文件不能放在那里。"
 
 #: src/features/project/context/context-entry-name.ts
 #~ msgid "A file named {name} already exists in this location."
@@ -1344,8 +1363,8 @@ msgid "A file path in this selection is too long to import."
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "A folder can't be copied into itself."
-msgstr ""
+#~ msgid "A folder can't be copied into itself."
+#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 #~ msgid "A folder named {name} already exists in this location."
@@ -1356,15 +1375,14 @@ msgid "A later Save is in use. Nothing changed."
 msgstr ""
 
 #: src/components/app/AppStatus.tsx
-msgid "A new version of Meridian is ready."
-msgstr ""
+#~ msgid "A new version of Meridian is ready."
+#~ msgstr ""
 
 #: src/features/agents/ThreadAgentDefinition.tsx
 msgid "A newer version is saved"
 msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
-#: src/core/editor/images/image-uploads.ts
 msgid "A picture cannot go there."
 msgstr "图片不能放在这里。"
 
@@ -1377,8 +1395,8 @@ msgid "A skill named {name} is already here."
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "A source is no longer there."
-msgstr ""
+#~ msgid "A source is no longer there."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
@@ -1487,6 +1505,11 @@ msgstr ""
 
 #: src/features/agents/SavedDiffDialog.tsx
 msgid "Added"
+msgstr ""
+
+#. placeholder {0}: file.name
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "Added {0} to assets"
 msgstr ""
 
 #. placeholder {0}: renamed[0]
@@ -1988,6 +2011,10 @@ msgstr "缓存重置"
 msgid "Calls"
 msgstr "调用"
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "Can’t add files here"
+msgstr ""
+
 #: src/features/connections/ConnectionRow.tsx
 msgid "Can't be reached"
 msgstr ""
@@ -2004,6 +2031,10 @@ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 msgid "Can't be used right now."
+msgstr ""
+
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "Can't copy a folder into itself"
 msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
@@ -2239,8 +2270,8 @@ msgid "Changes"
 msgstr ""
 
 #: src/components/app/AppStatus.tsx
-msgid "Changes are waiting to be sent. They go out on their own."
-msgstr ""
+#~ msgid "Changes are waiting to be sent. They go out on their own."
+#~ msgstr ""
 
 #: src/features/draft-review/DocumentChangeRows.tsx
 msgid "Changes couldn’t load"
@@ -2434,6 +2465,10 @@ msgstr "清除目标"
 #: src/features/chat/ask/permission-request.ts
 msgid "Clear the status"
 msgstr "清除状态"
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "Clipboard blocked"
+msgstr ""
 
 #: src/components/app/ViewerDialog.tsx
 #: src/components/ui/dialog.tsx
@@ -2745,8 +2780,12 @@ msgid "Couldn't add the connection."
 msgstr ""
 
 #: src/features/draft-review/draft-command-owner.ts
-msgid "Couldn't apply that."
+msgid "Couldn't apply that"
 msgstr ""
+
+#: src/features/draft-review/draft-command-owner.ts
+#~ msgid "Couldn't apply that."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 #~ msgid "Couldn't apply this draft."
@@ -2829,12 +2868,20 @@ msgid "Couldn't copy"
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "Couldn't copy {only} to {destination}."
+msgid "Couldn't copy {names}"
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "Couldn't copy {only}."
+msgid "Couldn't copy {only}"
 msgstr ""
+
+#: src/features/project/context/entry-drag/entry-failure.ts
+#~ msgid "Couldn't copy {only} to {destination}."
+#~ msgstr ""
+
+#: src/features/project/context/entry-drag/entry-failure.ts
+#~ msgid "Couldn't copy {only}."
+#~ msgstr ""
 
 #: src/features/editor/RescuedText.tsx
 msgid "Couldn't copy. Select the text to copy it."
@@ -2845,8 +2892,12 @@ msgid "Couldn't create a Work"
 msgstr ""
 
 #: src/features/home/NewProjectView.tsx
-msgid "Couldn’t create the project."
+msgid "Couldn’t create project"
 msgstr ""
+
+#: src/features/home/NewProjectView.tsx
+#~ msgid "Couldn’t create the project."
+#~ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 #~ msgid "Couldn't create this document. Try another place."
@@ -2898,8 +2949,12 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/draft-review/draft-command-owner.ts
-msgid "Couldn't discard that."
+msgid "Couldn't discard that"
 msgstr ""
+
+#: src/features/draft-review/draft-command-owner.ts
+#~ msgid "Couldn't discard that."
+#~ msgstr ""
 
 #: src/features/draft-review/ReviewMessageText.tsx
 #~ msgid "Couldn't discard this draft."
@@ -2911,6 +2966,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't explore"
+msgstr ""
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "Couldn't export image"
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
@@ -2928,6 +2987,10 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't finish that step"
 msgstr "这一步没能完成"
+
+#: src/core/editor/images/image-imports.ts
+msgid "Couldn't import {filename}"
+msgstr ""
 
 #: src/features/project/context/DocumentProperties.tsx
 msgid "Couldn't load"
@@ -3016,15 +3079,27 @@ msgid "Couldn't load. Check your connection."
 msgstr ""
 
 #: src/features/account/AccountMenu.tsx
-msgid "Couldn't log out: another tab still has your documents open."
+#~ msgid "Couldn't log out: another tab still has your documents open."
+#~ msgstr ""
+
+#: src/features/account/AccountMenu.tsx
+msgid "Couldn't log out: changes still sending"
 msgstr ""
 
 #: src/features/account/AccountMenu.tsx
-msgid "Couldn't log out: your latest changes haven't reached the server yet."
+msgid "Couldn't log out: close other tabs"
 msgstr ""
+
+#: src/features/account/AccountMenu.tsx
+#~ msgid "Couldn't log out: your latest changes haven't reached the server yet."
+#~ msgstr ""
 
 #: src/features/project/side/SideHeader.tsx
 msgid "Couldn't look up the document to show here."
+msgstr ""
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "Couldn't make image"
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -3054,7 +3129,15 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/open-project-document.ts
-msgid "Couldn't open {name}."
+msgid "Couldn't open {name}"
+msgstr ""
+
+#: src/features/project/context/open-project-document.ts
+#~ msgid "Couldn't open {name}."
+#~ msgstr ""
+
+#: src/features/project/context/open-project-document.ts
+msgid "Couldn't open document"
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
@@ -3063,7 +3146,6 @@ msgstr ""
 
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/DocumentHost.tsx
-#: src/features/project/context/open-project-document.ts
 msgid "Couldn't open this document."
 msgstr ""
 
@@ -3078,6 +3160,10 @@ msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
 msgid "Couldn’t pin {title}"
+msgstr ""
+
+#: src/core/editor/images/image-uploads.ts
+msgid "Couldn't place picture"
 msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
@@ -3116,6 +3202,10 @@ msgstr ""
 msgid "Couldn't read a connection's tools"
 msgstr ""
 
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "Couldn't read image"
+msgstr ""
+
 #: src/features/chat/thread-report-renderer.tsx
 msgid "Couldn't read report from {line}"
 msgstr "无法读取来自 {line} 的报告"
@@ -3125,8 +3215,12 @@ msgstr "无法读取来自 {line} 的报告"
 #~ msgstr ""
 
 #: src/features/draft-review/apply-history.ts
-msgid "Couldn't redo that."
+msgid "Couldn't redo that"
 msgstr ""
+
+#: src/features/draft-review/apply-history.ts
+#~ msgid "Couldn't redo that."
+#~ msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
@@ -3188,8 +3282,12 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/use-restore-discard.ts
-msgid "Couldn't restore that."
+msgid "Couldn't restore that"
 msgstr ""
+
+#: src/features/project/context/use-restore-discard.ts
+#~ msgid "Couldn't restore that."
+#~ msgstr ""
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 msgid "Couldn't restore the chat. Try again."
@@ -3223,9 +3321,17 @@ msgstr ""
 msgid "Couldn't save Agents"
 msgstr ""
 
-#: src/client/commands/submit.ts
-msgid "Couldn’t save that change on this device, so it wasn’t sent."
+#: src/features/editor/RescuedText.tsx
+msgid "Couldn't save edit"
 msgstr ""
+
+#: src/client/commands/submit.ts
+msgid "Couldn’t save that change"
+msgstr ""
+
+#: src/client/commands/submit.ts
+#~ msgid "Couldn’t save that change on this device, so it wasn’t sent."
+#~ msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Couldn’t save the goal. Try again."
@@ -3332,8 +3438,14 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/apply-history.ts
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Couldn't undo that."
-msgstr "无法撤销。"
+msgid "Couldn't undo that"
+msgstr ""
+
+#: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/draft-review/apply-history.ts
+#: src/features/draft-review/CommandNotice.tsx
+#~ msgid "Couldn't undo that."
+#~ msgstr "无法撤销。"
 
 #: src/features/chat/thread-controls/control-copy.ts
 #~ msgid "Couldn't undo the switch."
@@ -3674,8 +3786,12 @@ msgid "Diagram"
 msgstr ""
 
 #: src/features/editor/RescuedText.tsx
-msgid "Didn't go through. Try again."
+msgid "Didn't go through"
 msgstr ""
+
+#: src/features/editor/RescuedText.tsx
+#~ msgid "Didn't go through. Try again."
+#~ msgstr ""
 
 #: src/features/chat/TurnStoppedLine.tsx
 msgid "Didn't run: {calls}."
@@ -3683,6 +3799,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Didn't run: {label}"
+msgstr ""
+
+#: src/features/editor/surfaces/objects/verb-feedback.tsx
+msgid "Didn't work"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
@@ -3795,6 +3915,10 @@ msgstr ""
 
 #: src/features/chat/useDraftDock.ts
 msgid "Document"
+msgstr ""
+
+#: src/features/project/context/open-project-document.ts
+msgid "Document is gone"
 msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
@@ -4147,6 +4271,10 @@ msgstr ""
 msgid "File"
 msgstr ""
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "File can’t go there"
+msgstr ""
+
 #: src/features/project/context/IdentityChips.tsx
 msgid "File it"
 msgstr ""
@@ -4172,16 +4300,20 @@ msgid "Files attached in chat, grouped by Work."
 msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
-msgid "Files can’t be added to this document."
-msgstr "不能向此文档添加文件。"
+#~ msgid "Files can’t be added to this document."
+#~ msgstr "不能向此文档添加文件。"
 
 #: src/features/chat/ChatFilesMenu.tsx
 msgid "Files move or copy out of Uploads; they can't be dropped into it"
 msgstr ""
 
 #: src/lib/upload-limit.ts
-msgid "Files over {LIMIT_MB} MB can't be added."
+msgid "Files over {LIMIT_MB} MB can't be added"
 msgstr ""
+
+#: src/lib/upload-limit.ts
+#~ msgid "Files over {LIMIT_MB} MB can't be added."
+#~ msgstr ""
 
 #: src/features/import/ImportMenuItems.tsx
 #: src/features/import/ImportPanel.tsx
@@ -4443,8 +4575,12 @@ msgid "Image downloaded"
 msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
-msgid "Images need a project before they can be uploaded."
+msgid "Images need a project"
 msgstr ""
+
+#: src/core/editor/images/image-uploads.ts
+#~ msgid "Images need a project before they can be uploaded."
+#~ msgstr ""
 
 #: src/features/import/ImportPanel.tsx
 msgid "Import another"
@@ -4455,8 +4591,12 @@ msgid "Import didn't finish"
 msgstr ""
 
 #: src/features/import/ImportsProvider.tsx
-msgid "Import didn't start. {sentence}"
+msgid "Import didn't start"
 msgstr ""
+
+#: src/features/import/ImportsProvider.tsx
+#~ msgid "Import didn't start. {sentence}"
+#~ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "Import discarded"
@@ -4755,6 +4895,11 @@ msgstr ""
 msgid "Link a file"
 msgstr ""
 
+#. placeholder {0}: entry.filename
+#: src/core/editor/images/image-imports.ts
+msgid "Link moved, {0} not placed"
+msgstr ""
+
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Link text"
 msgstr ""
@@ -4781,12 +4926,12 @@ msgid "Live artifact view"
 msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "Live has no version of this page: it is new in {work}."
-msgstr ""
+#~ msgid "Live has no version of this page: it is new in {work}."
+#~ msgstr ""
 
 #: src/features/draft-review/tree-line.ts
-msgid "Live has no version of this page: it is new in a chat's draft."
-msgstr ""
+#~ msgid "Live has no version of this page: it is new in a chat's draft."
+#~ msgstr ""
 
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
@@ -4897,6 +5042,10 @@ msgstr ""
 #: src/features/project/side/SideExplorer.tsx
 #: src/features/project/side/SidePicker.tsx
 msgid "Loading…"
+msgstr ""
+
+#: src/features/project/context/ProjectContextRemovalController.tsx
+msgid "Log in"
 msgstr ""
 
 #: src/features/account/AccountMenu.tsx
@@ -5966,6 +6115,10 @@ msgstr ""
 #~ msgid "Partly undone"
 #~ msgstr ""
 
+#: src/features/editor/PassageNotice.tsx
+msgid "Passage changed since search"
+msgstr ""
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
 msgstr ""
@@ -6008,6 +6161,14 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "picture"
+msgstr ""
+
+#: src/core/editor/images/image-uploads.ts
+msgid "Picture can't go there"
+msgstr ""
+
+#: src/core/editor/images/image-uploads.ts
+msgid "Picture is gone"
 msgstr ""
 
 #: src/features/project/shell/sidebar/ChatsBody.tsx
@@ -6265,6 +6426,10 @@ msgstr ""
 msgid "Reload to update"
 msgstr ""
 
+#: src/components/app/AppStatus.tsx
+msgid "Reloads when you pause"
+msgstr ""
+
 #: src/features/billing/UsageCard.tsx
 msgid "remaining"
 msgstr ""
@@ -6314,6 +6479,10 @@ msgstr ""
 
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename project: {title}"
+msgstr ""
+
+#: src/client/api/upload-request.ts
+msgid "Rename the file: unsupported characters"
 msgstr ""
 
 #: src/features/chat/ask/permission-request.ts
@@ -6503,10 +6672,10 @@ msgstr ""
 msgid "Resume my documents on any device"
 msgstr "在任何设备上继续处理我的文档"
 
-#: src/components/app/failure-toast.tsx
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
+#: src/features/account/AccountMenu.tsx
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/agents/PackageSave.tsx
 #: src/features/chat/ask/AskTakeover.tsx
@@ -6516,6 +6685,8 @@ msgstr "在任何设备上继续处理我的文档"
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
+#: src/features/project/context/entry-drag/entry-failure.ts
+#: src/features/project/context/open-project-document.ts
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/routing/ProjectRouteBoundary.tsx
@@ -6844,6 +7015,14 @@ msgstr "正在发送"
 msgid "Sending now"
 msgstr ""
 
+#: src/components/app/AppStatus.tsx
+msgid "Sends after you log in"
+msgstr ""
+
+#: src/components/app/AppStatus.tsx
+msgid "Sends on its own"
+msgstr ""
+
 #: src/features/chat/mcp-renderers.tsx
 msgid "Sent"
 msgstr ""
@@ -6903,8 +7082,8 @@ msgid "Show changes"
 msgstr ""
 
 #: src/features/project/context/LiveDraftNotice.tsx
-msgid "Show draft"
-msgstr ""
+#~ msgid "Show draft"
+#~ msgstr ""
 
 #: src/features/chat/ClippedExpand.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -7403,8 +7582,8 @@ msgid "That change wasn't reverted because its text changed or is already gone."
 msgstr ""
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
-msgid "That did not work."
-msgstr ""
+#~ msgid "That did not work."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That document can't be changed."
@@ -7419,8 +7598,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/open-project-document.ts
-msgid "That document is no longer available."
-msgstr ""
+#~ msgid "That document is no longer available."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "That file is binary."
@@ -7436,8 +7615,8 @@ msgid "That folder has no files to import."
 msgstr ""
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
-msgid "That image could not be read."
-msgstr ""
+#~ msgid "That image could not be read."
+#~ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "That link could not be checked"
@@ -7452,12 +7631,12 @@ msgid "That paragraph was deleted, merged or moved before the change was made, s
 msgstr ""
 
 #: src/features/editor/PassageNotice.tsx
-msgid "That passage changed after this search."
-msgstr ""
+#~ msgid "That passage changed after this search."
+#~ msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
-msgid "That picture is no longer in the document."
-msgstr ""
+#~ msgid "That picture is no longer in the document."
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/drop-choice.ts
 msgid "That place is no longer available"
@@ -7468,8 +7647,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "That Work is closed, so nothing was copied."
-msgstr ""
+#~ msgid "That Work is closed, so nothing was copied."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -7477,8 +7656,8 @@ msgid "That Work is no longer available. Choose another Work."
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "That Work isn't available."
-msgstr ""
+#~ msgid "That Work isn't available."
+#~ msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
 #~ msgid "That Work no longer has a draft of it."
@@ -7597,8 +7776,8 @@ msgid "The assistant can't use this tool here."
 msgstr "助手在这里无法使用这个工具。"
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
-msgid "The browser blocked the clipboard. Check this site's permissions."
-msgstr ""
+#~ msgid "The browser blocked the clipboard. Check this site's permissions."
+#~ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "the built-in {slug}"
@@ -7639,8 +7818,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "The destination is no longer there."
-msgstr ""
+#~ msgid "The destination is no longer there."
+#~ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "The destination was deleted. Added at the area root."
@@ -7691,8 +7870,8 @@ msgid "The last Save left it out. Fix these and save again."
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "The latest edits hadn't reached the server."
-msgstr ""
+#~ msgid "The latest edits hadn't reached the server."
+#~ msgstr ""
 
 #: src/core/project-tree/tree-left-sentence.ts
 #~ msgid "The move"
@@ -7802,8 +7981,8 @@ msgid "The tool ran and reported a problem."
 msgstr ""
 
 #: src/core/editor/file-drop/file-drop-door.ts
-msgid "The upload didn’t start."
-msgstr "上传未能开始。"
+#~ msgid "The upload didn’t start."
+#~ msgstr "上传未能开始。"
 
 #: src/core/uploads/upload-store.ts
 msgid "The upload failed."
@@ -7829,7 +8008,6 @@ msgstr ""
 msgid "The Work did not change. Try again."
 msgstr ""
 
-#: src/features/project/context/entry-drag/entry-failure.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "The Work was closed."
 msgstr ""
@@ -7843,8 +8021,8 @@ msgid "There are no files to import here."
 msgstr ""
 
 #: src/core/editor/images/image-uploads.ts
-msgid "There is nowhere left to put that picture."
-msgstr ""
+#~ msgid "There is nowhere left to put that picture."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 #~ msgid "There isn't enough left to redo."
@@ -7891,8 +8069,8 @@ msgid "This assistant isn't allowed to make this change, so it wasn't done."
 msgstr "这个助手无权做这项更改，因此没有执行。"
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
-msgid "This browser will not export this diagram as an image. Copy the diagram source instead."
-msgstr ""
+#~ msgid "This browser will not export this diagram as an image. Copy the diagram source instead."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "This browser will not hand the clipboard to the page. Press {shortcut} to paste."
@@ -7907,8 +8085,8 @@ msgid "This browser will not let the page write to the clipboard. Press {shortcu
 msgstr ""
 
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
-msgid "This browser will not turn that into an image."
-msgstr ""
+#~ msgid "This browser will not turn that into an image."
+#~ msgstr ""
 
 #: src/features/chat/mcp-renderers.tsx
 msgid "This call failed."
@@ -8192,8 +8370,8 @@ msgstr ""
 #~ msgstr "此文件已不存在。请刷新后重试。"
 
 #: src/client/api/upload-request.ts
-msgid "This filename contains unsupported characters. Rename the file and try again."
-msgstr "此文件名含有不受支持的字符。请重命名文件后重试。"
+#~ msgid "This filename contains unsupported characters. Rename the file and try again."
+#~ msgstr "此文件名含有不受支持的字符。请重命名文件后重试。"
 
 #: src/features/project/context/NamespaceFailureMark.tsx
 #~ msgid "This folder couldn't be created where you put it."
@@ -8328,8 +8506,8 @@ msgid "This switch already happened."
 msgstr ""
 
 #: src/components/app/AppStatus.tsx
-msgid "This tab needs the new version to keep working. It reloads when you pause; unsent changes go out afterwards."
-msgstr ""
+#~ msgid "This tab needs the new version to keep working. It reloads when you pause; unsent changes go out afterwards."
+#~ msgstr ""
 
 #: src/features/chat/tool-failure.tsx
 msgid "This took too long, so it was stopped."
@@ -8815,6 +8993,10 @@ msgstr ""
 msgid "upload"
 msgstr ""
 
+#: src/core/editor/file-drop/file-drop-door.ts
+msgid "Upload didn’t start"
+msgstr ""
+
 #: src/core/editor/links/link-mark-view.ts
 msgid "Upload failed"
 msgstr "上传失败"
@@ -9017,6 +9199,10 @@ msgstr ""
 msgid "workReceipt.upToDate"
 msgstr ""
 
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "Work closed, nothing copied"
+msgstr ""
+
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Work couldn’t be archived"
 msgstr ""
@@ -9113,8 +9299,8 @@ msgid "You can retry when this chat is free."
 msgstr ""
 
 #: src/features/project/context/entry-drag/entry-failure.ts
-msgid "You can't copy there."
-msgstr ""
+#~ msgid "You can't copy there."
+#~ msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "You can't open these files."
@@ -9141,8 +9327,8 @@ msgid "You're out of usage. Your messages will send when you add more."
 msgstr ""
 
 #: src/components/app/AppStatus.tsx
-msgid "You’re signed out of this account. Sign in again and the changes will be sent."
-msgstr ""
+#~ msgid "You’re signed out of this account. Sign in again and the changes will be sent."
+#~ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "your {slug}"
@@ -9269,8 +9455,12 @@ msgid "Your selected Work is unavailable. Choose another Work, or None."
 msgstr ""
 
 #: src/features/project/context/ProjectContextRemovalController.tsx
-msgid "Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost."
+msgid "Your sign-in expired"
 msgstr ""
+
+#: src/features/project/context/ProjectContextRemovalController.tsx
+#~ msgid "Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost."
+#~ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 #~ msgid "Your skill, in every project"

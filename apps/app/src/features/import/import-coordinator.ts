@@ -77,8 +77,8 @@ export class ImportCoordinator {
   }
   constructor(
     private readonly api: ImportApi,
-    /** An import that never started: it is gone, and this sentence says why. */
-    private readonly onRefused: (sentence: string) => void,
+    /** An import that never started: it is gone. */
+    private readonly onRefused: () => void,
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -352,17 +352,16 @@ export class ImportCoordinator {
       if (!this.live(record, attempt)) return;
       await this.create(record, attempt);
     } catch (error) {
-      if (this.live(record, attempt))
-        this.refuse(record, error instanceof Error ? error.message : refusalSentence(null));
+      if (this.live(record, attempt)) this.refuse(record);
     }
   }
   /** Nothing of this import reached the server, so nothing is left to come back to. */
-  private refuse(record: RecordState, sentence: string) {
+  private refuse(record: RecordState) {
     this.retire(record);
     this.records.delete(record.view.importId);
     this.publish();
     this.nudge();
-    this.onRefused(sentence);
+    this.onRefused();
   }
   private async create(record: RecordState, attempt: UploadAttempt) {
     const command = record.command;
@@ -387,9 +386,12 @@ export class ImportCoordinator {
           error.status < 500
         )
           record.creation = "local";
-        const sentence = refusalSentence(error instanceof ImportRequestError ? error.code : null);
-        if (record.creation === "local") this.refuse(record, sentence);
-        else this.local(record, { phase: "stalled", error: sentence });
+        if (record.creation === "local") this.refuse(record);
+        else
+          this.local(record, {
+            phase: "stalled",
+            error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+          });
       }
       return;
     }
