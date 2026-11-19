@@ -11,7 +11,6 @@ import { textOmission, textPlanRefusal } from "./model-inverse-presentation.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import { createCapturedReversalPlanner, type ModelInverseQuery } from "./model-reversal-planner.js";
 import { draftRoom } from "./observation-rooms.js";
-import { ReversalConflictError } from "./reversal-conflict.js";
 import type {
   InverseDocument,
   StoredInversePart,
@@ -242,9 +241,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           return result;
         });
       } catch (cause) {
-        // Every attempt missed while the edit still applied: retryable, not a refusal.
-        if (cause instanceof ReversalConflictError)
-          return { status: "internal_error", message: cause.message };
         if (cause instanceof FileEditRefusedError)
           return {
             status: "permission_denied",

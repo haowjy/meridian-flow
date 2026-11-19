@@ -146,9 +146,10 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
  * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
- * is skipped, not refused. A whole cut with `groupIds` takes only the named groups the replica
- * holds and passes over the rest: a Redo names what its Un-Apply took back, so it never applies
- * a change its Undo didn't take.
+ * is skipped, not refused. A whole cut that names what to take (a Redo's, from its Un-Apply's own
+ * records) takes the pending changes of the replica that hold a named AI change (`carried`, as
+ * `[partId, index]`) or have a named id (`groupIds`, for a change no AI edit made), and passes
+ * over the rest.
  */
 export type ApplyTextCut =
   | {
@@ -158,7 +159,7 @@ export type ApplyTextCut =
       baseViewDelta: ApplySpanPatch[];
       groupIds: string[];
     }
-  | { draftId: string; whole: true; groupIds?: string[] };
+  | { draftId: string; whole: true; groupIds?: string[]; carried?: [number, number][] };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
@@ -436,8 +437,14 @@ export const BranchDiscardRequestSchema = z.union([
             node: z.string().min(1),
             tree: z.literal(true).optional(),
             text: z.union([z.literal("all"), z.array(z.string().min(1)).min(1)]).optional(),
+            /**
+             * Base64 of the Yjs snapshot of the draft the named ids were read at: the server
+             * resolves the same changes there and takes them out of the draft as it is now.
+             */
+            snapshot: z.string().min(1).optional(),
           })
-          .refine((item) => item.tree || item.text),
+          .refine((item) => item.tree || item.text)
+          .refine((item) => !item.snapshot || Array.isArray(item.text)),
       )
       .min(1),
   }),

@@ -73,8 +73,13 @@ never refuses: an item with nothing pending is answered from `settlementOf` (`al
 when a Discard, or nothing, settled it; `overtaken` by the Apply that did), and the others in the
 selection still discard. Whether a draft holds text is decided under its row lock from the draft
 itself (`draftHoldsText`): `has_effect` stands in only when its watermark is the draft's revision, so
-a projection lagging an Apply never makes a Discard take text that is live. No cut is sent: a
-Discard takes the records the Work holds when it runs. The tree half of every Discard is the
+a projection lagging an Apply never makes a Discard take text that is live. Change ids name
+changes at the state the writer read them: an item with ids also sends that draft's Yjs
+`snapshot`, and `discardChanges` resolves the ids in the draft at it, then merges what setting
+them back did there into the draft as it is now (`contentMerge`); a change the writer has
+written over since stays, and the item is answered `already` like any item that took nothing. A
+snapshot the server doesn't hold yet reads the ids against the draft as it is. The Work's records
+are taken as the Work holds them when it runs. The tree half of every Discard is the
 package's `discardDraft`, run with `treeListStore.submit` in each list the Work spans
 (`adapters/drizzle-branch-discard.ts`): the pending records are settled `discarded` with the
 command's id. A discarded drafted create is in no view, and its `documents` row and text stay
@@ -454,16 +459,14 @@ then commits in one scope: a seam boundary
 grants' Works in id order, the grants confirmed, before any other lock (a
 live-only inverse such as a named Work's Scratch reaches its Work only as a
 grant Work).
-Then its documents' mutation locks in id order, its drafts' rows, the capture
-taken again under them and compared (`confirmCapture`), and each draft
-destination's exact checkpoint rewrite at its captured revision. Those captured fences, not a lock of the inverse's own,
-order two inverses of the same edit: the second misses, recaptures and finds
-the edit already reversed (probe `d22-concurrent-undo` in
-[the lock-free probe index](qa/drafts-lock-free-probes.md)). Any moved revision or capture unwinds the attempt and
-recaptures; after four attempts one more capture is classified without
-writing, so a plan that still applies is a `ReversalConflictError`, never a
-semantic refusal. The
-planning capture is the only source of write admission.
+Then its documents' mutation locks in id order and its drafts' rows. The capture only
+chooses the steps: each step reads the committed text under those locks and takes out what
+stands there (a draft's step re-runs `takeOutStanding` under the draft's hold; the manuscript
+step reads Live again under the document key and re-runs `takeBack`). A write that landed after
+the capture changes what a step takes, never whether the inverse runs, so it never answers
+"changed while reversing". The locks, not a check of their own, order two inverses of the
+same edit: the second finds the edit already out and takes nothing (probe `d22-concurrent-undo`
+in [the lock-free probe index](qa/drafts-lock-free-probes.md)).
 
 A live commit schedules a content rebase (2 s debounce, 10 s maximum). Off-lock,
 the service reads committed live and skips drafts whose base already matches.
@@ -569,9 +572,9 @@ whose first write is the claim, then the list above from the Work rows on. It ta
 `withDocument` mutex: a command that needs a live room reads its journal in the transaction
 under the document key (`ensureLiveDocumentDraft`, `committedCopy` under `inLockedWrite()`). A
 read a command plans on is taken, or taken again, under the locks of what it read: the inverse
-captures off-lock, then `confirmCapture` repeats the capture under its Works, document keys and
-draft rows and writes nothing unless the two agree. A miss the server retries (a deadlock, a
-serialization failure, a moved capture or revision) rolls back past the claim and is never stored
+captures off-lock to choose its steps, then reads the text each step writes under its Works,
+document keys and draft rows. A miss the server retries (a deadlock, a serialization failure,
+a moved owner) rolls back past the claim and is never stored
 as an outcome. In dev and test, a `KeyedMutex` or a second connection taken while a command
 transaction is open throws (`assertOutsideCommandTransaction`): a wait on either is invisible to
 Postgres and can hang both sides for good. The tree list store takes no mutex (its in-memory

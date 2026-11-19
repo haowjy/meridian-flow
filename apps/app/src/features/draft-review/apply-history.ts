@@ -33,8 +33,8 @@ export type Redone = { commandId: string };
  */
 export type ApplyPort = {
   unapply(applyId: string): Promise<Undone>;
-  /** Null: nothing landed. */
-  redo(unapplyId: string): Promise<Redone | null>;
+  /** Null: nothing to apply again. `failed`: it never reached the server. */
+  redo(unapplyId: string): Promise<Redone | "failed" | null>;
 };
 
 /** Where an Apply's step is on the sidebar's Undo stack while it can be taken back. */
@@ -160,6 +160,15 @@ export class ApplyEntries {
       this.unapplyId = null;
       this.redoIn = null;
       const landed = await this.port.redo(unapplyId);
+      if (landed === "failed") {
+        notifyFailure({
+          key: `redo:${this.commandId}`,
+          title: t`Couldn't redo that.`,
+          brief: true,
+        });
+        this.end();
+        return;
+      }
       if (!landed) {
         this.end();
         return;
@@ -234,9 +243,9 @@ export function serverPort(input: {
       try {
         answer = await input.redo({ commandId, redoOf });
       } catch {
-        return null;
+        return "failed";
       }
-      if (answer.status !== "applied") return null;
+      if (answer.status !== "applied") return "failed";
       if (!answer.items.some((item) => item.text?.landed || item.tree?.landed)) return null;
       await input.redone?.(answer);
       return { commandId };

@@ -73,7 +73,7 @@ dropped from the grants and never run: it is left alone, and the rest of the rep
 reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or deleted Work, a chat
 in Trash) is planned per target, not refused: the reversal lands Live and open targets and plans nothing
 for a closed one, and the card says nothing about it (its Undo is absent while the owner is
-closed). A reversal whose every target is closed answers `expired`. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the attempt misses and recaptures, which plans nothing for those targets (`refusalOrMiss`; a deleted Work's refusal reads `not_found` and is not recognised). A denial for another reason refuses the
+closed). A reversal whose every target is closed answers `expired`. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the reversal is refused with that reason. A denial for another reason refuses the
 whole reversal (`permission_denied`), which the card shows as a failed press.
 A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
 `"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
@@ -92,12 +92,11 @@ would lock with that set before taking any lock; a Work outside it throws `TreeO
 set and every source the attempt met unlocked (`untilOwnersHold`, the same restart Apply and
 Un-Apply use; a restart that names nothing new escapes as 503 with `Retry-After`, and one that names
 nothing at all (only a fresh read) escapes after four,
-storing nothing). Exhausting the inverse's attempts is
-`ReversalConflictError` and stores nothing. The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
+storing nothing). The capture's reads run on the command's own connection, as a model edit's do. Capture resolves each
 immutable origin once: live, its active draft, or gone. One turn may reverse a
 document's live and draft text together, each on that destination's captured
 view, inside one ordered stream. Planning, history and result presentation use
-that same resolved object; commit validates it before writing the planned view.
+that same resolved object; commit reads the committed text under its locks before it writes.
 
 After selection, one admission call authorizes every content destination. Commit runs under those exact grants and confirms them after
 locking their combined Work set. The incoming content grant carries the caller
@@ -182,7 +181,8 @@ Part disposition is computed once for each resolved destination.
 `createDraftDispositionReader` reads receipts from that draft and the draft's Applies in force
 (`carried`). A part with a change an Apply took is applied (and names each change's Apply);
 otherwise an active draft is pending and a gone draft is discarded. A
-revision mismatch between evidence and planning recaptures the bounded attempt.
+revision mismatch between evidence and planning is not checked: the commit plans again on the
+committed text.
 Closed origins are gone and never stand in for a destination.
 A part whose change no longer stands in an open draft (a sibling change in its paragraph was
 applied or discarded since, or the writer typed over it) reads from its disposition first: applied
@@ -291,17 +291,12 @@ lock; those reads need not agree with each other. Its commit scope is one
 savepoint whose first locks are the Work rows (the captured drafts' Works and
 the bound grants' Works in id order, the grants confirmed: a seam boundary),
 then its documents' mutation locks in id order, then its drafts' rows; the
-inverse takes no lock of its own, since the captured fences order two inverses
-of one edit. Under them it takes the capture again and compares the two
-(`confirmCapture`): a write that landed since any read, or between two of them,
-is a miss. Each draft destination is an exact checkpoint rewrite at its
-captured revision. A miss
-unwinds the whole attempt and recaptures. After four misses one more capture is
-planned without writing: a plan that refuses every part answers with its own
-reasons, and one that still applies is a conflict, `ReversalConflictError` for
-the card and `internal_error` ("the document changed while reversing; try again")
-for model Undo and Revert, never an invented refusal. Delivery runs
-after the commit, outside the scope.
+inverse takes no lock of its own, since those locks order two inverses
+of one edit. Under them each step plans again on the committed text: a draft's step
+re-runs `takeOutStanding` under the draft's hold, the manuscript step re-reads Live and re-runs
+`takeBack`. A write that landed after the capture changes what a step takes, never whether the
+inverse runs: the card and the model's Undo and Revert are never told to read and try again.
+Delivery runs after the commit, outside the scope.
 
 The card's chip answers from the same plan as the card's Undo (`prepare`): it reads each change's
 `stands` against the text and builds nothing, so the offer and the press cannot differ. The cost is

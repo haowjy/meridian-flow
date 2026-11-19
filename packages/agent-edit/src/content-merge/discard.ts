@@ -6,8 +6,10 @@
  */
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { applySpanPatches } from "../diff/compose.js";
+import { blocksEqual } from "../diff/equal.js";
 import { diffBlocks } from "../diff/hunks.js";
 import { composeGroups, projectReview } from "../diff/review.js";
+import { contentMerge } from "./merge.js";
 import {
   captureDelta,
   type EditDelta,
@@ -20,21 +22,29 @@ import {
 /**
  * `text` with the changes of Changes named by `ids` (all of them for "all") set back to `base`,
  * and the delta of what that took out. An id that names no pending change is ignored; null when
- * nothing was taken.
+ * nothing was taken. With `seen` (the base and text the ids were read from) the ids name the
+ * changes there, and what setting them back did to that text is merged into `text`: a change the
+ * writer has written over since stays, the rest goes.
  */
 export function discardChanges(
   schema: Schema,
   base: readonly PMNode[],
   text: readonly PMNode[],
   ids: "all" | readonly string[],
+  seen?: { base: readonly PMNode[]; text: readonly PMNode[] },
 ): { text: readonly PMNode[]; delta: StoredDelta } | null {
-  const projection = projectReview(diffBlocks(base, text));
+  const at = seen ?? { base, text };
+  const projection = projectReview(diffBlocks(at.base, at.text));
   const chosen = ids === "all" ? projection.groups.map((group) => group.id) : ids;
-  const next = applySpanPatches(
-    text,
+  const taken = applySpanPatches(
+    at.text,
     composeGroups(schema, projection, chosen, "discard"),
     "draft",
   );
+  const next =
+    seen && !blocksEqual(seen.text, text)
+      ? contentMerge(schema, seen.text, taken, text).blocks
+      : taken;
   const delta = captureDelta(text, next);
   return delta ? { text: next, delta } : null;
 }
