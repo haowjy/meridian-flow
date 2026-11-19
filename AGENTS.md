@@ -98,7 +98,7 @@ session that started it.
 **Debug with `./mf`; verify in the browser.** Use `./mf` to reproduce and read
 state; [docs/debugging.md](docs/debugging.md) has the rest. Every change a writer sees or relies on, server-only changes included, gets
 a prober's `agent-browser` run of the final code before it reaches `main`, with a
-video of the run in its PR, linked at a commit, and screenshots of its key states inline. A feature built as part PRs into a release branch gets that
+video of the run and screenshots of its key states in its PR, uploaded with `gh pr edit --attach`, never committed. A feature built as part PRs into a release branch gets that
 run once, on the whole feature after review, not one per part; each part's coder
 checks its own screens in the browser. `./mf` output never stands in for it.
 
