@@ -562,7 +562,6 @@ msgid "{count, plural, one {# change was applied before your Discard reached it.
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
@@ -1190,8 +1189,8 @@ msgid "{who} discarded this document from the draft before this change could be 
 msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
-msgstr ""
+#~ msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
+#~ msgstr ""
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -5602,7 +5601,6 @@ msgstr ""
 msgid "Not sent: {0}"
 msgstr ""
 
-#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not undone"
 msgstr ""
@@ -8594,8 +8592,8 @@ msgid "Undo"
 msgstr "撤销"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undo Apply"
-msgstr ""
+#~ msgid "Undo Apply"
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Undo applying {name}"
@@ -8681,12 +8679,12 @@ msgid "Undo switch to draft mode"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Undo takes back the Apply."
-msgstr ""
+#~ msgid "Undo takes back the Apply."
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Undo takes back the whole Apply, all {count} changes."
-msgstr ""
+#~ msgid "Undo takes back the whole Apply, all {count} changes."
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "Undo takes them back out."

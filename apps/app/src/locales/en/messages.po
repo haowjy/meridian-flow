@@ -562,7 +562,6 @@ msgid "{count, plural, one {# change was applied before your Discard reached it.
 msgstr "{count, plural, one {# change was applied before your Discard reached it.} other {# changes were applied before your Discard reached them.}}"
 
 #: src/features/chat/DraftDock.tsx
-#: src/features/chat/TurnEditsReceipt.tsx
 msgid "{count, plural, one {# change} other {# changes}}"
 msgstr "{count, plural, one {# change} other {# changes}}"
 
@@ -1190,8 +1189,8 @@ msgid "{who} discarded this document from the draft before this change could be 
 msgstr "{who} discarded this document from the draft before this change could be made."
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
-msgstr "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
+#~ msgid "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
+#~ msgstr "{wholeApply, plural, one {Takes back the whole Apply, # change.} other {Takes back the whole Apply, all # changes.}}"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -5602,7 +5601,6 @@ msgstr "Not sent, signed out"
 msgid "Not sent: {0}"
 msgstr "Not sent: {0}"
 
-#: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not undone"
 msgstr "Not undone"
@@ -8594,8 +8592,8 @@ msgid "Undo"
 msgstr "Undo"
 
 #: src/features/chat/TurnEditsReceipt.tsx
-msgid "Undo Apply"
-msgstr "Undo Apply"
+#~ msgid "Undo Apply"
+#~ msgstr "Undo Apply"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Undo applying {name}"
@@ -8681,12 +8679,12 @@ msgid "Undo switch to draft mode"
 msgstr "Undo switch to draft mode"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Undo takes back the Apply."
-msgstr "Undo takes back the Apply."
+#~ msgid "Undo takes back the Apply."
+#~ msgstr "Undo takes back the Apply."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Undo takes back the whole Apply, all {count} changes."
-msgstr "Undo takes back the whole Apply, all {count} changes."
+#~ msgid "Undo takes back the whole Apply, all {count} changes."
+#~ msgstr "Undo takes back the whole Apply, all {count} changes."
 
 #: src/features/draft-review/CommandNotice.tsx
 #~ msgid "Undo takes them back out."
