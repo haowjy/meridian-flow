@@ -117,9 +117,8 @@ export type PreparedDocumentInverse = {
 };
 export interface TurnInverseStore {
   /**
-   * The inverse's attempts: `run` plans on a lock-free capture and commits through `commit`;
-   * a commit that finds the capture moved reruns `run` on a new capture. After the last
-   * attempt `run` sees one more capture on which `commit` throws `ReversalConflictError`.
+   * `run` plans on a lock-free capture and commits through `commit`, whose steps resolve
+   * against the committed text under their locks.
    */
   withCapturedDocuments<T>(
     query: TurnInverseQuery,
