@@ -193,7 +193,7 @@ const cases: ModelEditCase[] = [
   },
   {
     name: "the writer types into the model's paragraph while its Undo captures the document",
-    expected: "the Undo takes the model's words and keeps the writer's typing: no skip",
+    expected: "the writer's typing is inside the model's paragraph: the Undo leaves it whole",
     async run({ h, start }) {
       const { thread, documentId, path } = await seedCase(h, "capture", "direct");
       const child = await start();
@@ -212,9 +212,9 @@ const cases: ModelEditCase[] = [
       };
       assert.deepEqual((await state(h, thread, documentId)).doc, [
         "Live seed.",
-        " Writer keeps this.",
+        "Agent paragraph. Writer keeps this.",
       ]);
-      assert.deepEqual(answer.skips ?? [], []);
+      assert.equal(answer.status === "success", false);
     },
   },
   {

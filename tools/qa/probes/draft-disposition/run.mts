@@ -11,13 +11,11 @@ import {
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
 import { createDraftDispositionReader } from "../../../../apps/server/server/domains/collab/domain/draft-disposition.ts";
-import { classifiedDraft } from "../../../../apps/server/server/domains/collab/test-support/draft-classification.ts";
+import { recordApply } from "../../../../apps/server/server/domains/collab/test-support/draft-classification.ts";
 import { createAllowAllFileAccess } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
 import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
-  appendApplyRecord,
-  applyRecordOf,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   writeBlocks,
@@ -148,15 +146,9 @@ try {
   assert.match((await h.readDraft(deleted.draftId)).text, /The old mountain waits/);
 
   const applied = await fixture("applied");
-  const beforeApply = await classifiedDraft(store, applied.draftId);
-  assert(beforeApply);
-  // Build Apply evidence directly while lane A owns the HTTP Apply implementation.
+  // Build Apply evidence directly: the base moves to the draft's text and an effect row holds every change.
   applied.doc.clientID = 1;
   applied.doc.transact(() => {
-    appendApplyRecord(
-      applied.doc,
-      applyRecordOf(beforeApply.classifications, beforeApply.classifications.keys()),
-    );
     writeBlocks(
       applied.doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
       pm,
@@ -167,6 +159,13 @@ try {
   await h.persistence.journal.append(applied.documentId, Y.encodeStateAsUpdate(applied.doc), {
     origin: "system",
     seq: 0,
+  });
+  await recordApply(h.db, {
+    draftId: applied.draftId,
+    documentId: applied.documentId,
+    accountId: h.ids.user,
+    projectId: h.ids.project,
+    store,
   });
   assert.equal((await read(applied.draftId))?.parts[0].disposition, "applied");
   const liveBefore = await h.liveText(applied.documentId);
