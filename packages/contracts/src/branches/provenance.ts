@@ -6,6 +6,8 @@ export type DraftProvenancePart = {
   toolCallId?: string;
   inserted: readonly DraftItemRange[];
   deleted: readonly DraftItemRange[];
+  /** An Undo took the part out of the text: its tombstones are no pending change's evidence. */
+  taken?: true;
   owner: {
     threadId: string;
     title: string;

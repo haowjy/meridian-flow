@@ -18,6 +18,8 @@ export interface DraftReceiptPart extends AttributionPart {
   owner: OwnerThread | null;
   /** What the part did to the text; null for a part written before deltas. */
   delta: StoredDelta | null;
+  /** An Undo (or the writer's revert) took the part out of the text. */
+  taken: boolean;
 }
 
 export interface DraftDispositionCapture {

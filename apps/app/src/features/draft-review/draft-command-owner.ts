@@ -2,6 +2,7 @@
  * Account-lifetime command ownership. Each review item owns one frozen FIFO for its text, tree
  * and text+tree clicks; each draft room is a resource the item attaches, with its optimistic base.
  */
+import { t } from "@lingui/core/macro";
 import { applyBase } from "@meridian/agent-edit/content-merge";
 import {
   APPLY_RECORD_ROOT,
@@ -32,6 +33,7 @@ import {
   observeDraftClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
+import { notifyFailure } from "@/components/app/failure-toast";
 import type { DocumentSession } from "@/core/editor/document-session";
 import {
   type DraftRoomRead,
@@ -1113,6 +1115,7 @@ export class DraftCommandOwner {
       return outcome;
     } catch {
       failed(null);
+      notifyFailure({ key: `discard:${branchId}`, title: t`Couldn't discard that.`, brief: true });
       return { kind: "change-refused", code: "unknown" };
     } finally {
       if ("all" in selection) this.closingBranches.delete(branchId);

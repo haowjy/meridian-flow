@@ -2893,6 +2893,10 @@ msgstr "Couldn't delete this chat. Retry tries again."
 #~ msgid "Couldn't delete this folder."
 #~ msgstr "Couldn't delete this folder."
 
+#: src/features/draft-review/draft-command-owner.ts
+msgid "Couldn't discard that."
+msgstr "Couldn't discard that."
+
 #: src/features/draft-review/ReviewMessageText.tsx
 msgid "Couldn't discard this draft."
 msgstr "Couldn't discard this draft."

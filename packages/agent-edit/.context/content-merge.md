@@ -63,9 +63,9 @@ Yjs item id:
   pending changes whose hash goes. Joined with the pending changes that hold the change's words (or,
   for a change with no words, its blocks or marks), for what the merge cannot pair: a paragraph the AI
   wrote that Live joined into another, a stray quote mark. Equal hashes are paired in document order.
-  A change none of whose added words (words its `before` lacked) is anywhere in the text reads `out`
-  and sits in no pending change: another reply's words in the blocks it was taken out of (its card's
-  Undo) look like the writer altering it, but they are not its words. Two replies that propose the
+  A change an Undo took (`taken`, from the Undo's record, never from the text) reads `out` and sits in
+  no pending change, whatever the text holds later: a later reply that proposes the same words must
+  not revive it. Two replies that propose the
   very same words stay one change to this read.
 
 The removal diff covers the change's window (its blocks and one either side, with `base` cut to the
