@@ -119,10 +119,9 @@ before journal submission, synchronization, recovery or failure. A state-vector 
 is not a per-write deletion delta.
 
 Forward-write attribution comes from explicit actor context and immutable receipts,
-never transaction-origin identity. Certified aliases are the only persisted
-restoration correspondence, never text or length guesses.
+never transaction-origin identity.
 
-Forward-inverse receipt capture removes cross-part insert/delete transients as ranges,
+Receipt capture removes cross-part insert/delete transients as ranges,
 then intersects each range with the retained `prosemirror` item structs; other roots
 and GC structs never expand into per-clock identities.
 

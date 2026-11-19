@@ -113,7 +113,7 @@ it("records writer card undo with the writer's user identity", async () => {
         turnId: TURN_ID,
         actor: { type: "user", userId: USER_ID },
       }),
-    ).toMatchObject({ status: "reversed", acceptedParts: 1 });
+    ).toMatchObject({ status: "reversed" });
 
     const rows = await db
       .select({
@@ -215,7 +215,7 @@ it("an already-connected live room sees Undo without a repairing read", async ()
         turnId: TURN_ID,
         actor: { type: "user", userId: USER_ID },
       }),
-    ).toMatchObject({ status: "reversed", acceptedParts: 1 });
+    ).toMatchObject({ status: "reversed" });
     expect(view.hocuspocus.broadcasts.length).toBeGreaterThan(broadcasts);
     await vi.waitFor(() => expect(prose()).toBe("Alpha Beta.\n\nBlue."));
   } finally {

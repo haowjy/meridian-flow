@@ -297,12 +297,6 @@ export function useWorkBranchCommands({
         sources: [...new Set(data.nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))],
         name: data.name,
         nodes: data.nodes,
-        facts: new Map(
-          data.nodes.map((node) => [
-            node,
-            { did: halves.did[node] ?? null, folder: shown.nodes.get(node)?.kind === "folder" },
-          ]),
-        ),
         text: halves.text,
         tree: halves.tree ? { command: data.commandId, restores: halves.restores } : null,
       };
@@ -471,10 +465,10 @@ export function useWorkBranchCommands({
               },
             });
             if (!made) return;
-            const { tree, sources, facts } = made.init;
+            const { tree, sources } = made.init;
             band.placeOn(
               seatOn(made.session, () => made.account),
-              { tree, sources, facts },
+              { tree, sources },
             );
           };
         }

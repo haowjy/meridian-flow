@@ -1,9 +1,14 @@
-/** Writer receipt and failed-response policies over immutable forward-inverse parts. */
+/** Writer receipt and failed-response policies over the stored edit parts. */
 import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
 import type { ChangeRead, StoredDelta } from "@meridian/agent-edit/content-merge";
 import { readBlocks } from "@meridian/agent-edit/diff";
-import { editHandle, type InversePart } from "@meridian/agent-edit/integration";
+import {
+  type CapturedPart,
+  type EditKind,
+  type EditTarget,
+  editHandle,
+} from "@meridian/agent-edit/integration";
 import type {
   BranchId,
   DocumentId,
@@ -17,10 +22,8 @@ import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
   ReversalOutcome,
-  TurnInverseSkip,
-  TurnInverseSkipCause,
+  TurnDraftState,
   TurnReceiptChip,
-  TurnTreeState,
 } from "@meridian/contracts/protocol";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
@@ -37,7 +40,13 @@ import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
-export type StoredInversePart = InversePart & {
+export type StoredInversePart = CapturedPart & {
+  id: number;
+  editId: string;
+  ordinal: number;
+  kind: EditKind;
+  actionId?: string | null;
+  targets: EditTarget[];
   documentId: DocumentId;
   threadId: ThreadId | null;
   turnId: TurnId | null;
@@ -105,7 +114,6 @@ export type PreparedDocumentInverse = {
   document: InverseDocument;
   /** The document's steps, in the order they plan and run. */
   steps: InverseStep[];
-  skips: TurnInverseSkip[];
 };
 export interface TurnInverseStore {
   /**
@@ -125,15 +133,12 @@ export interface TurnInverseStore {
    */
   ownersOf(query: TurnInverseQuery, userId: UserId | undefined): Promise<OwnerLocks>;
   /**
-   * The reply's tree receipts by what the card's Undo does with each: those it would take back
-   * (`acting`), those already taken back (`taken`: by an earlier card Undo, or their opposite
-   * stands), and those that stay, with why (`stayed`).
+   * How many of the reply's tree receipts the card's Undo would take back (`acting`), and how
+   * many are already taken back (`taken`: by an earlier card Undo, or their opposite stands).
    */
-  treeSteps(
-    query: TurnInverseQuery,
-  ): Promise<{ acting: number; taken: number; stayed: TurnInverseSkip[] }>;
-  /** What became of each node's tree change the reply drafted, by node id (`TurnReceiptChip.trees`). */
-  treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnTreeState>>;
+  treeSteps(query: TurnInverseQuery): Promise<{ acting: number; taken: number }>;
+  /** What became of each node's tree change the reply drafted, by node id. */
+  treeDraftStates(query: TurnInverseQuery): Promise<Record<string, TurnDraftState>>;
   /** A document's stored edit parts, in order: all the model's Undo stack is chosen from. */
   readHistory(documentId: DocumentId): Promise<StoredInversePart[]>;
   /** Runs `sequence`, every plan's steps in one order, inside one commit scope. */
@@ -146,8 +151,6 @@ export interface TurnInverseStore {
   }): Promise<{
     handles: string[];
     updates: Uint8Array[];
-    /** Steps that couldn't run; the rest ran. A model inverse refuses whole instead. */
-    skips: TurnInverseSkip[];
     /** Tree receipts of the reply that stand taken back after the command (a card's, never the model's). */
     treeReversed: number;
     /** Text parts committed, by document and then by where they landed: the branch whose draft took them, null for live. */
@@ -207,19 +210,6 @@ async function prepare(
       }
       return !document.createdInTurn;
     });
-    const skips: TurnInverseSkip[] = [];
-    const skip = (part: StoredInversePart, cause: TurnInverseSkipCause) => {
-      const { closed, kind } = document.destinationOf(part.origin);
-      skips.push({
-        kind: "text",
-        ...store.describePart(document, part),
-        documentId: document.documentId,
-        uri: document.uri,
-        ...(kind === "draft" ? { drafted: true as const } : {}),
-        cause,
-        ...(cause === "returned" && closed ? { why: closed } : {}),
-      });
-    };
     // The originals in step order: one edit's targeted parts each.
     const byEdit = new Map<string, StoredInversePart[]>();
     for (const part of targets) byEdit.set(part.editId, [...(byEdit.get(part.editId) ?? []), part]);
@@ -242,12 +232,7 @@ async function prepare(
         parts,
       };
       const planned = entryPlanner.turnTextPlan(entry, query);
-      if ("causes" in planned) {
-        for (const [i, part] of parts.entries())
-          skip(part, planned.causes[i] as TurnInverseSkipCause);
-        continue;
-      }
-      for (const part of planned.discarded) skip(part, "discarded");
+      if (!planned) continue;
       const { destination, actionKind } = planned;
       const selection = planned.selection as StoredInversePart[];
       if (destination.kind === "draft" && destination.state === "active") {
@@ -274,9 +259,6 @@ async function prepare(
         const backed = new Set(back.taken.map(({ part }) => part));
         const standing = (part: StoredInversePart) =>
           part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false;
-        for (const part of selection)
-          if (!standing(part) && !backed.has(part))
-            skip(part, part.appliedChanges?.size ? "applied" : "edited_since");
         const proposed = selection.filter(standing);
         if (proposed.length)
           steps.push({ kind: "content", parts: proposed, destination, actionId, actionKind, at });
@@ -297,9 +279,7 @@ async function prepare(
         selection.map((part) => ({ part, delta: part.delta })),
       );
       manuscript = back.live;
-      const backed = new Set(back.taken.map(({ part }) => part));
-      for (const part of selection) if (!backed.has(part)) skip(part, "edited_since");
-      if (backed.size)
+      if (back.taken.length)
         steps.push({
           kind: "manuscript",
           parts: back.taken.map(({ part }) => ({ part })),
@@ -310,7 +290,7 @@ async function prepare(
         });
     }
     steps.sort((a, b) => b.at - a.at);
-    return { document, steps, skips };
+    return { document, steps };
   };
   const plans: PreparedDocumentInverse[] = [];
   for (const document of documents) plans.push(await planOf(document));
@@ -329,16 +309,26 @@ function inSequence(plans: readonly PreparedDocumentInverse[]) {
 }
 const hasSteps = (plans: PreparedDocumentInverse[]) => plans.some((plan) => plan.steps.length > 0);
 
+const SETTLED_LAST: Record<TurnDraftState, number> = {
+  discarded: 0,
+  undone: 1,
+  applied: 2,
+  pending: 3,
+};
+
 /**
- * What became of this reply's text in each drafted document: still a draft while a change of it
- * sits in a pending change (it stands, or the writer altered it), else applied if any part was,
- * else discarded. Another reply's waiting change in the same draft does not count.
+ * What became of this reply's change in each drafted document, one word each: still a draft
+ * while a change of it sits in a pending change (it stands, or the writer altered it), else
+ * applied if any part was, else undone if the card's Undo took it, else discarded. A document's
+ * text and tree halves fold into the less settled one. Another reply's waiting change in the
+ * same draft does not count.
  */
 function draftStates(
   documents: readonly InverseDocument[],
   query: TurnInverseQuery,
+  treeStates: Record<string, TurnDraftState>,
 ): TurnReceiptChip["drafts"] {
-  const states: NonNullable<TurnReceiptChip["drafts"]> = {};
+  const states: Record<string, TurnDraftState> = {};
   for (const document of documents) {
     const drafted = document.history.filter(
       (part) => targetsTurn(part, query) && part.origin.kind === "pending",
@@ -350,7 +340,13 @@ function draftStates(
       ? "pending"
       : drafted.some((part) => part.disposition === "applied" && !took.has(partKey(part)))
         ? "applied"
-        : "discarded";
+        : drafted.some((part) => took.has(partKey(part)))
+          ? "undone"
+          : "discarded";
+  }
+  for (const [id, state] of Object.entries(treeStates)) {
+    const was = states[id];
+    if (!was || SETTLED_LAST[state] > SETTLED_LAST[was]) states[id] = state;
   }
   return Object.keys(states).length ? states : undefined;
 }
@@ -367,29 +363,21 @@ export function createTurnInverseService(store: TurnInverseStore) {
         // A reply that only changed the tree has no text to capture, and its card still takes it back.
         const tree = await store.treeSteps(query);
         const treeStates = await store.treeDraftStates(query);
-        if (
-          !documents.length &&
-          !tree.acting &&
-          !tree.taken &&
-          !tree.stayed.length &&
-          Object.keys(treeStates).length === 0
-        )
+        if (!documents.length && !tree.acting && !tree.taken && !Object.keys(treeStates).length)
           return null;
-        const drafts = draftStates(documents, query);
-        const trees = Object.keys(treeStates).length ? treeStates : undefined;
+        const drafts = draftStates(documents, query, treeStates);
         const { plans: undo, undoneByWriter } = await prepare(
           store,
           documents,
           query,
           randomUUID(),
         );
-        // A part an Undo took out has no skip, so the skips are the parts that stay.
-        const skips = [...undo.flatMap((plan) => plan.skips), ...tree.stayed];
-        if (hasSteps(undo) || tree.acting)
-          return { state: "live-active", control: "undo", drafts, trees, skips };
-        const state =
-          tree.taken || undoneByWriter ? (skips.length ? "partly" : "undone") : "expired";
-        return { state, control: "view_change", drafts, trees, skips };
+        if (hasSteps(undo) || tree.acting) return { control: "undo", drafts };
+        return {
+          control: "view_change",
+          drafts,
+          ...(tree.taken || undoneByWriter ? { undone: true as const } : {}),
+        };
       });
     },
     /** What a card reversal of this query locks, for its caller to hold first (`ownersOf`). */
@@ -407,7 +395,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
       return store.withCapturedDocuments(query, async (documents) => {
         const { plans, undoneByWriter } = await prepare(store, documents, query, randomUUID());
         const tree = await store.treeSteps(query);
-        const treeSteps = tree.acting + tree.taken + tree.stayed.length;
+        const treeSteps = tree.acting + tree.taken;
         if (!query.documentIds && !plans.length && !treeSteps)
           return { status: "nothing_to_undo", documents: [] };
         const committed =
@@ -420,7 +408,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
                 userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
               })
             : {
-                skips: [],
                 treeReversed: 0,
                 reversed: new Map<DocumentId, ReadonlyMap<BranchId | null, number>>(),
               };
@@ -434,44 +421,21 @@ export function createTurnInverseService(store: TurnInverseStore) {
             (n, byDestination) => [...byDestination.values()].reduce((m, count) => m + count, n),
             0,
           );
-        const skips = [...plans.flatMap((plan) => plan.skips), ...committed.skips];
-        // A reply of tree changes alone, each of which stayed: the skips say why.
-        const treeStayed =
-          !plans.length && skips.length > 0 && skips.every((skip) => skip.kind === "tree");
         // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
         return {
-          status:
-            accepted || undoneByWriter
-              ? skips.length
-                ? "partial"
-                : "reversed"
-              : treeStayed
-                ? "not_undone"
-                : "expired",
-          // One row per destination a document's steps reversed in, or one for its refusal; a
-          // document with no text to reverse (it left, or comes back, with its node) has none.
-          documents: plans.flatMap((plan): DocumentReversalResult[] => {
-            if (!plan.steps.length && !plan.skips.length) return [];
-            const reversed = reversedAt(plan);
-            if (reversed.length)
-              return reversed.map((branchId) => ({
-                documentId: plan.document.documentId,
-                uri: plan.document.uri,
-                destination: branchId
-                  ? { kind: "draft" as const, branchId }
-                  : { kind: "live" as const },
-                status: "reversed" as const,
-              }));
-            return [
-              {
-                documentId: plan.document.documentId,
-                uri: plan.document.uri,
-                status: "expired" as const,
-              },
-            ];
-          }),
-          skips,
-          acceptedParts: accepted,
+          status: accepted || undoneByWriter ? "reversed" : "expired",
+          // One row per destination a document's steps reversed in; a document with no text to
+          // reverse (it left, or comes back, with its node) has none.
+          documents: plans.flatMap((plan): DocumentReversalResult[] =>
+            reversedAt(plan).map((branchId) => ({
+              documentId: plan.document.documentId,
+              uri: plan.document.uri,
+              destination: branchId
+                ? { kind: "draft" as const, branchId }
+                : { kind: "live" as const },
+              status: "reversed" as const,
+            })),
+          ),
         };
       });
     },

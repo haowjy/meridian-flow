@@ -1,26 +1,14 @@
 // Per-document model stacks over immutable edits, with all-or-nothing action planning.
 
 import { randomUUID } from "node:crypto";
-import {
-  type DocumentEditResult,
-  type ModelInverseCommand,
-  prepareEditRoots,
-} from "@meridian/agent-edit/integration";
+import type { DocumentEditResult, ModelInverseCommand } from "@meridian/agent-edit/integration";
 import type { BranchId, DocumentId } from "@meridian/contracts";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
 import { FileEditRefusedError } from "../../file-policy/index.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
 import { textOmission, textPlanRefusal } from "./model-inverse-presentation.js";
-import {
-  type Entry,
-  entries,
-  type Inspection,
-  inspectionActions,
-  inspectionContext,
-} from "./model-inverse-selection.js";
+import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import { createCapturedReversalPlanner, type ModelInverseQuery } from "./model-reversal-planner.js";
 import { draftRoom } from "./observation-rooms.js";
 import { ReversalConflictError } from "./reversal-conflict.js";
@@ -37,45 +25,22 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     query: ModelInverseQuery,
     command: ModelInverseCommand,
     preview = false,
-    preparedPolicy?: ReturnType<typeof createCapturedReversalPlanner>,
   ): Promise<DocumentEditResult | ModelPlanPreview> {
     if (!document)
       return {
         status: "document_not_found",
         message: "File not found. Read the project to find the right path.",
       };
-    const policy = preparedPolicy ?? createCapturedReversalPlanner(document, query);
+    const policy = createCapturedReversalPlanner(document, query);
     const own = policy.own,
       actionId = randomUUID();
-    const history = [...document.history];
-    let clock = Math.max(0, ...history.map((part) => part.id));
     const steps: InverseStep[] = [],
       handles: string[] = [],
       performed = { undo: [] as string[], revert: [] as string[] },
       skipped: string[] = [],
       partial: string[] = [];
-    // Live's planning copy, made when a step first needs it. An open draft has none: its steps are
-    // taken out of the committed text under the draft's hold.
-    let live: { scratch: Y.Doc; before: Uint8Array; inspection?: Inspection } | undefined;
-    const liveView = () => {
-      if (!live) {
-        const before = Y.encodeStateAsUpdate(document.live);
-        const scratch = new Y.Doc({ gc: false });
-        Y.applyUpdate(scratch, before);
-        live = { scratch, before };
-      }
-      return live;
-    };
-    const currentInspection = () => {
-      const planned = liveView();
-      planned.inspection ??= inspectionContext(
-        prepareEditRoots(planned.scratch, history),
-        inspectionActions(history, own),
-      );
-      return planned.inspection;
-    };
     const count = command.command === "revert" ? 1 : (command.count ?? 1);
-    const undoEntries = command.command === "undo" ? policy.inspect().stack.slice(0, count) : [];
+    const undoEntries = command.command === "undo" ? policy.actions.stack.slice(0, count) : [];
     if (command.command === "undo" && undoEntries.length < count)
       return undoEntries.length
         ? {
@@ -86,238 +51,172 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             status: "nothing_to_undo",
             message: `You have no edits to undo in ${document.uri}. Nothing was changed.`,
           };
-    try {
-      /**
-       * One step per original edit, in the order the command takes them: an undo's each its own
-       * action; a revert's the command's.
-       */
-      const stepAction = (kind: "undo" | "revert") =>
-        kind === "undo" && steps.length ? randomUUID() : actionId;
-      const remember = (kind: "undo" | "revert", handle: string) => {
-        if (!performed[kind].includes(handle)) performed[kind].push(handle);
+    /**
+     * One step per original edit, in the order the command takes them: an undo's each its own
+     * action; a revert's the command's.
+     */
+    const stepAction = (kind: "undo" | "revert") =>
+      kind === "undo" && steps.length ? randomUUID() : actionId;
+    const remember = (kind: "undo" | "revert", handle: string) => {
+      if (!performed[kind].includes(handle)) performed[kind].push(handle);
+    };
+    const apply = (
+      entry: Entry,
+      selection: StoredInversePart[],
+      kind: "undo" | "revert",
+      destination = policy.queryDestination,
+    ) => {
+      if (destination.kind === "draft" && destination.state === "gone")
+        throw new Error("Gone destination selected");
+      const stepActionId = stepAction(kind);
+      remember(kind, entry.handle);
+      const at = Math.max(...entry.parts.map((part) => part.id));
+      const step = { destination, actionId: stepActionId, actionKind: kind, at };
+      steps.push(
+        destination.kind === "draft"
+          ? { ...step, kind: "content", parts: selection, destination }
+          : { ...step, kind: "manuscript", parts: selection.map((part) => ({ part })) },
+      );
+      policy.planTakeOut(destination, selection);
+    };
+    const modelTextPlan = (entry: Entry, direction: "undo" | "revert") => {
+      const planned = policy.textPlan(entry, direction);
+      if (planned.failure) return textPlanRefusal(document.uri, entry.handle, planned.failure);
+      return {
+        destination: planned.destination,
+        selection: planned.selection,
+        actionKind: planned.actionKind as "undo" | "revert",
+        omissions: planned.omissions.map((omission) =>
+          textOmission(entry.handle, direction, omission),
+        ),
       };
-      const apply = (
-        entry: Entry,
-        selection: StoredInversePart[],
-        kind: "undo" | "revert",
-        destination = policy.queryDestination,
-      ) => {
-        if (destination.kind === "draft" && destination.state === "gone")
-          throw new Error("Gone destination selected");
-        const stepActionId = stepAction(kind);
-        remember(kind, entry.handle);
-        const at = Math.max(...entry.parts.map((part) => part.id));
-        if (destination.kind === "draft") {
-          policy.planTakeOut(destination.draftId, selection);
-          steps.push({
-            kind: "content",
-            parts: selection,
-            destination,
-            actionId: stepActionId,
-            actionKind: kind,
-            at,
-          });
-          return true;
-        }
-        const view = liveView();
-        const result = currentInspection().index.compute(selection, {
-          actionId: stepActionId,
-          allocateClient: allocateDocumentClient,
-        });
-        if (result.skipped.length)
-          throw new Error("Inverse classification changed within the scratch plan");
-        for (const edit of result.edits) {
-          steps.push({
-            kind: "kernel",
-            edit: { ...edit, actionId: stepActionId },
-            destination,
-            actionId: stepActionId,
-            actionKind: kind,
-            at,
-          });
-          const id = randomUUID();
-          for (const [ordinal, part] of edit.parts.entries()) {
-            Y.applyUpdate(view.scratch, part.update);
-            history.push({
-              ...part,
-              id: ++clock,
-              editId: id,
-              ordinal,
-              kind,
-              actionId: stepActionId,
-              documentId: document.documentId,
-              threadId: query.threadId,
-              turnId: query.turnId ?? null,
-              responseId: query.responseIdentity?.modelResponseId ?? null,
-              toolCallId: query.toolCallId ?? null,
-              actor: "agent",
-              wId: null,
-              delta: null,
-              origin: { kind: "live", seq: 0 },
-              disposition: "pending",
-            });
-          }
-        }
-        // Neither lineage visibility nor action state survives a scratch advance.
-        if (live) live.inspection = undefined;
-        return result.edits.length > 0;
-      };
-      const modelTextPlan = (entry: Entry, direction: "undo" | "revert") => {
-        const planned = policy.textPlan(entry, direction, currentInspection);
-        if (planned.failure) return textPlanRefusal(document.uri, entry.handle, planned.failure);
+    };
+    if (command.command === "revert") {
+      const entry = own.find((entry) => entry.handle === command.edit);
+      if (!entry)
         return {
-          destination: planned.destination,
-          selection: planned.selection,
-          actionKind: planned.actionKind as "undo" | "revert",
-          omissions: planned.omissions.map((omission) =>
-            textOmission(entry.handle, direction, omission),
-          ),
+          status: "invalid_write",
+          message: `Unknown edit ${command.edit} in ${document.uri}. Read with format: "edits" for a valid handle.`,
         };
-      };
-      if (command.command === "revert") {
-        const entry = own.find((entry) => entry.handle === command.edit);
-        if (!entry)
-          return {
-            status: "invalid_write",
-            message: `Unknown edit ${command.edit} in ${document.uri}. Read with format: "edits" for a valid handle.`,
-          };
-        const textPlan = modelTextPlan(entry, "revert");
-        if ("status" in textPlan) return textPlan;
-        skipped.push(...textPlan.omissions);
-        handles.push(entry.handle);
-        if (!textPlan.selection.length)
-          return {
-            status: "nothing_to_revert",
-            message: `Nothing was reverted: none of ${entry.handle} remains to revert in ${document.uri}.\nnot reverted: ${skipped.join("\nnot reverted: ")}`,
-          };
-        if (!apply(entry, textPlan.selection, "revert", textPlan.destination))
-          return {
-            status: "nothing_to_revert",
-            message: `Nothing is left to reverse in ${document.uri}. Nothing was changed.`,
-          };
-      } else
-        for (let n = 0; n < count; n++) {
-          const entry = undoEntries[n];
-          if (!entry) throw new Error("Captured undo selection changed while planning");
-          const textPlan = modelTextPlan(entry, "undo");
-          if ("status" in textPlan) return textPlan;
-          partial.push(...textPlan.omissions);
-          if (
-            !textPlan.selection.length ||
-            !apply(entry, textPlan.selection, textPlan.actionKind, textPlan.destination)
-          )
-            return {
-              status: "cant_undo_changed",
-              message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
-            };
-          handles.push(entry.handle);
-        }
-      if (!steps.length)
+      const textPlan = modelTextPlan(entry, "revert");
+      if ("status" in textPlan) return textPlan;
+      skipped.push(...textPlan.omissions);
+      handles.push(entry.handle);
+      if (!textPlan.selection.length)
         return {
           status: "nothing_to_revert",
-          message: `Nothing is left to reverse in ${document.uri}. Nothing was changed.`,
+          message: `Nothing was reverted: none of ${entry.handle} remains to revert in ${document.uri}.\nnot reverted: ${skipped.join("\nnot reverted: ")}`,
         };
-      const text = steps.flatMap((step) => (step.kind === "kernel" ? [step.edit] : []));
-      // Live's cuts are taken before the commit, which applies the inverse to the view; a draft's
-      // come back from its commit.
-      const textDestinations = new Set(steps.map((step) => step.destination));
-      const plannedDestinations = new Map<
-        BranchId | "live",
-        { branchId: BranchId | null; draftId: string | null; destination: InverseDestination }
-      >();
-      for (const step of steps) {
-        const { destination } = step;
-        const branchId = destination.kind === "draft" ? destination.branchId : null;
-        const previous = plannedDestinations.get(branchId ?? "live");
-        plannedDestinations.set(branchId ?? "live", {
-          branchId,
-          draftId: policy.draftIdOf(destination) ?? previous?.draftId ?? null,
-          destination,
-        });
+      apply(entry, textPlan.selection, "revert", textPlan.destination);
+    } else
+      for (let n = 0; n < count; n++) {
+        const entry = undoEntries[n];
+        if (!entry) throw new Error("Captured undo selection changed while planning");
+        const textPlan = modelTextPlan(entry, "undo");
+        if ("status" in textPlan) return textPlan;
+        partial.push(...textPlan.omissions);
+        if (!textPlan.selection.length)
+          return {
+            status: "cant_undo_changed",
+            message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
+          };
+        apply(entry, textPlan.selection, textPlan.actionKind, textPlan.destination);
+        handles.push(entry.handle);
       }
-      const [textDestination] = textDestinations;
-      const liveCuts =
-        live && textDestination?.kind === "live"
-          ? { before: live.before, after: Y.encodeStateAsUpdate(live.scratch) }
-          : {};
-      const inversePlan = { document, steps, skips: [] };
-      if (preview) return { status: "planned" };
-      const committed = await store.commit({
-        query,
-        kind: command.command,
-        plans: [inversePlan],
-        sequence: steps.map((step) => ({ plan: inversePlan, step })),
-      });
-      const parts = text.reduce((n, edit) => n + edit.parts.length, 0);
-      const destinations = new Map(
-        committed.outcomes.map((outcome) => [outcome.branchId ?? "live", outcome]),
-      );
-      const [destination] = destinations.values();
-      const committedDraftIds = new Set(
-        committed.outcomes.flatMap((outcome) => (outcome.draftId ? [outcome.draftId] : [])),
-      );
+    if (!steps.length)
       return {
-        status: "success",
-        actionId,
-        room:
-          textDestinations.size === 1
-            ? committedDraftIds.size === 1
-              ? draftRoom([...committedDraftIds][0] as string)
-              : document.liveRoom
-            : null,
-        ...(committed.cut && textDestinations.size === 1 ? committed.cut : liveCuts),
-        updates: committed.updates,
-        ...(destinations.size === 1
-          ? destination?.branchId
-            ? {
-                destination: "draft" as const,
-                ...(destination.draftId
-                  ? {
-                      draftWork:
-                        plannedDestinations.get(destination.branchId)?.destination.kind === "draft"
-                          ? (document.drafts.get(
-                              policy.draftIdOf(
-                                plannedDestinations.get(destination.branchId)
-                                  ?.destination as InverseDestination,
-                              ) as string,
-                            )?.name ?? "/")
-                          : "/",
-                    }
-                  : {}),
-              }
-            : { destination: "live" as const }
-          : {}),
-        ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
-        message: [
-          command.command === "revert"
-            ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
-            : [
-                ...(performed.undo.length ? [`undone: ${performed.undo.join(", ")}`] : []),
-                ...(performed.revert.length ? [`reverted: ${performed.revert.join(", ")}`] : []),
-              ].join("\n") +
-              (partial.length ? ` (${parts} of ${parts + partial.length} parts)` : ""),
-          ...partial.map((reason) => `not undone: ${reason}`),
-          ...(destinations.size > 1
-            ? [
-                `versions: ${[...destinations.values()]
-                  .map((destination) =>
-                    destination.draftId
-                      ? policy.version(
-                          plannedDestinations.get(destination.branchId ?? "live")?.destination ??
-                            policy.queryDestination,
-                        )
-                      : destination.branchId
-                        ? "draft"
-                        : "live",
-                  )
-                  .join(", ")}`,
-              ]
-            : []),
-        ].join("\n"),
+        status: "nothing_to_revert",
+        message: `Nothing is left to reverse in ${document.uri}. Nothing was changed.`,
       };
-    } finally {
-      live?.scratch.destroy();
+    const textDestinations = new Set(steps.map((step) => step.destination));
+    const plannedDestinations = new Map<
+      BranchId | "live",
+      { branchId: BranchId | null; draftId: string | null; destination: InverseDestination }
+    >();
+    for (const step of steps) {
+      const { destination } = step;
+      const branchId = destination.kind === "draft" ? destination.branchId : null;
+      const previous = plannedDestinations.get(branchId ?? "live");
+      plannedDestinations.set(branchId ?? "live", {
+        branchId,
+        draftId: policy.draftIdOf(destination) ?? previous?.draftId ?? null,
+        destination,
+      });
     }
+    const inversePlan = { document, steps, skips: [] };
+    if (preview) return { status: "planned" };
+    const committed = await store.commit({
+      query,
+      kind: command.command,
+      plans: [inversePlan],
+      sequence: steps.map((step) => ({ plan: inversePlan, step })),
+    });
+    const parts = steps.reduce((n, step) => n + step.parts.length, 0);
+    const destinations = new Map(
+      committed.outcomes.map((outcome) => [outcome.branchId ?? "live", outcome]),
+    );
+    const [destination] = destinations.values();
+    const committedDraftIds = new Set(
+      committed.outcomes.flatMap((outcome) => (outcome.draftId ? [outcome.draftId] : [])),
+    );
+    return {
+      status: "success",
+      actionId,
+      room:
+        textDestinations.size === 1
+          ? committedDraftIds.size === 1
+            ? draftRoom([...committedDraftIds][0] as string)
+            : document.liveRoom
+          : null,
+      ...(committed.cut && textDestinations.size === 1 ? committed.cut : {}),
+      updates: committed.updates,
+      ...(destinations.size === 1
+        ? destination?.branchId
+          ? {
+              destination: "draft" as const,
+              ...(destination.draftId
+                ? {
+                    draftWork:
+                      plannedDestinations.get(destination.branchId)?.destination.kind === "draft"
+                        ? (document.drafts.get(
+                            policy.draftIdOf(
+                              plannedDestinations.get(destination.branchId)
+                                ?.destination as InverseDestination,
+                            ) as string,
+                          )?.name ?? "/")
+                        : "/",
+                  }
+                : {}),
+            }
+          : { destination: "live" as const }
+        : {}),
+      ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
+      message: [
+        command.command === "revert"
+          ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
+          : [
+              ...(performed.undo.length ? [`undone: ${performed.undo.join(", ")}`] : []),
+              ...(performed.revert.length ? [`reverted: ${performed.revert.join(", ")}`] : []),
+            ].join("\n") + (partial.length ? ` (${parts} of ${parts + partial.length} parts)` : ""),
+        ...partial.map((reason) => `not undone: ${reason}`),
+        ...(destinations.size > 1
+          ? [
+              `versions: ${[...destinations.values()]
+                .map((destination) =>
+                  destination.draftId
+                    ? policy.version(
+                        plannedDestinations.get(destination.branchId ?? "live")?.destination ??
+                          policy.queryDestination,
+                      )
+                    : destination.branchId
+                      ? "draft"
+                      : "live",
+                )
+                .join(", ")}`,
+            ]
+          : []),
+      ].join("\n"),
+    };
   }
   return {
     /**
@@ -364,8 +263,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           };
         const policy = createCapturedReversalPlanner(document, query),
           own = policy.own,
-          inspection = policy.inspect(),
-          topEntry = inspection.top;
+          topEntry = policy.actions.top;
         if (before && !own.some((entry) => entry.handle === before))
           return {
             status: "invalid_write",
@@ -381,14 +279,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               query,
               { command: "undo", file: document.uri, documentId: document.documentId },
               true,
-              policy,
             )
           : null;
-        // Revert stays current; Undo follows a reachable live/draft origin.
-        inspection.states(
-          page.flatMap((entry) => entry.parts.filter((part) => !policy.inOpenDraft(part))),
-        );
-        const index = inspection.actions;
+        const index = policy.actions.actions;
         const lines = page.map((entry) => {
           const undos = index.actions.filter((action) =>
             entry.parts.some((part) => action.targets.has(key(part))),
@@ -419,7 +312,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                     ? "pending"
                     : "live";
           let command = "none";
-          const revertPlan = policy.textPlan(entry, "revert", () => inspection);
+          const revertPlan = policy.textPlan(entry, "revert");
           const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
           if (revert)
             command =

@@ -1,25 +1,10 @@
 /**
  * Pinned Yjs 13.6.33 mutation adapter. Owns retained-struct lookup, root/nested
  * parent resolution and tombstone splitting.
- * Browser-safe: no undo policy, host lifecycle or attribution policy. Recovery
- * and forward-inverse hosts supply identity mapping and choose mutation targets.
+ * Browser-safe: no undo policy, host lifecycle or attribution policy.
  * Keep the exact yjs manifest pin synchronized with these private invariants.
  */
 import * as Y from "yjs";
-
-export function findItem(document: Y.Doc, id: Y.ID): Y.Item | null {
-  const structs = document.store.clients.get(id.client);
-  const last = structs?.at(-1);
-  if (
-    !structs ||
-    !last ||
-    id.clock < structs[0].id.clock ||
-    id.clock >= last.id.clock + last.length
-  )
-    return null;
-  const item = structs[Y.findIndexSS(structs, id.clock)];
-  return item instanceof Y.Item ? item : null;
-}
 
 /** Retained item spans intersecting a clock range; GC and unknown clocks are omitted. */
 export function* itemsInRange(
@@ -41,9 +26,6 @@ export function* itemsInRange(
   }
 }
 
-export function allItems(doc: Y.Doc): Y.Item[] {
-  return [...doc.store.clients.values()].flat().filter((s): s is Y.Item => s instanceof Y.Item);
-}
 export function itemIsInFragment(doc: Y.Doc, item: Y.Item, root: string): boolean {
   // Typing the root first: on a doc that only integrated updates, `getXmlFragment` replaces
   // the untyped root with a new instance, so a root reached before it would never match.
@@ -51,112 +33,6 @@ export function itemIsInFragment(doc: Y.Doc, item: Y.Item, root: string): boolea
   let parent = item.parent;
   while (parent instanceof Y.AbstractType && parent._item) parent = parent._item.parent;
   return parent === fragment;
-}
-
-export function ancestorItems(item: Y.Item): Y.Item[] {
-  const ancestors: Y.Item[] = [];
-  let parent = item.parent;
-  while (parent instanceof Y.AbstractType && parent._item) {
-    ancestors.push(parent._item);
-    parent = parent._item.parent;
-  }
-  return ancestors;
-}
-
-export function itemIsVisible(doc: Y.Doc, id: Y.ID): boolean {
-  const item = findItem(doc, id);
-  return !!item && !item.deleted && ancestorItems(item).every((ancestor) => !ancestor.deleted);
-}
-
-/** Hydrate cold lineage without persisting private redone pointers. */
-export function hydrateRedone(doc: Y.Doc, pairs: readonly { source: Y.ID; target: Y.ID }[]): void {
-  doc.transact((transaction) => {
-    for (let n = 0; n < pairs.length; ) {
-      const { source, target } = pairs[n];
-      let length = 1;
-      while (n + length < pairs.length) {
-        const next = pairs[n + length];
-        if (
-          next.source.client !== source.client ||
-          next.target.client !== target.client ||
-          next.source.clock !== source.clock + length ||
-          next.target.clock !== target.clock + length
-        )
-          break;
-        length++;
-      }
-      // A contiguous alias uses Yjs's own item offsets; do not split every character.
-      for (let offset = 0; offset < length; ) {
-        const start = Y.createID(source.client, source.clock + offset);
-        const item = Y.getItemCleanStart(transaction, start);
-        const count = Math.min(item.length, length - offset);
-        Y.getItemCleanEnd(
-          transaction,
-          doc.store,
-          Y.createID(source.client, start.clock + count - 1),
-        );
-        item.redone = Y.createID(target.client, target.clock + offset);
-        offset += count;
-      }
-      n += length;
-    }
-  });
-}
-
-export function snapshotRedone(doc: Y.Doc): Map<string, string | undefined> {
-  return new Map(
-    allItems(doc).map((item) => [
-      identityKey(item.id),
-      item.redone ? identityKey(item.redone) : undefined,
-    ]),
-  );
-}
-
-export function changedRedone(
-  doc: Y.Doc,
-  before: Map<string, string | undefined>,
-): { source: Y.ID; target: Y.ID }[] {
-  return allItems(doc).flatMap((item) => {
-    const target = item.redone;
-    if (!target || before.get(identityKey(item.id)) === identityKey(target)) return [];
-    return Array.from({ length: item.length }, (_, n) => ({
-      source: Y.createID(item.id.client, item.id.clock + n),
-      target: Y.createID(target.client, target.clock + n),
-    }));
-  });
-}
-
-const identityKey = (id: Y.ID): string => `${id.client}:${id.clock}`;
-
-/** Execute an already-admitted selection with Yjs's own parent/sibling tracing. */
-export function executeUndo(
-  doc: Y.Doc,
-  root: string,
-  client: number,
-  stack: {
-    insertions: ReturnType<typeof Y.createDeleteSet>;
-    deletions: ReturnType<typeof Y.createDeleteSet>;
-    meta: Map<unknown, unknown>;
-  },
-  deleteFilter: (item: Y.Item) => boolean,
-): Uint8Array[] {
-  const updates: Uint8Array[] = [];
-  const collect = (update: Uint8Array) => updates.push(update);
-  const manager = new Y.UndoManager(doc.getXmlFragment(root), {
-    trackedOrigins: new Set(),
-    ignoreRemoteMapChanges: false,
-    deleteFilter,
-  });
-  doc.clientID = client;
-  manager.undoStack.push(stack);
-  doc.on("update", collect);
-  try {
-    manager.undo();
-  } finally {
-    doc.off("update", collect);
-    manager.destroy();
-  }
-  return updates;
 }
 
 /** Item clock ranges by client: a delete set, or the items an update inserts. */

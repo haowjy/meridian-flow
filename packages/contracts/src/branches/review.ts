@@ -153,8 +153,7 @@ export type UnapplyClickResult = {
   /**
    * What is still applied because taking it back would change a closed owner's notes, per node:
    * `tree` when a tree fact of it is held, `groupIds` the text groups of it that are held. A node
-   * whose tree fact went back and whose text is held is here with `tree: false`. `owner` is the
-   * owner's name and `ownerKey` which owner it is, so a tab can tell from the Works and chats it
+   * whose tree fact went back and whose text is held is here with `tree: false`. `ownerKey` is which owner it is, so a tab can tell from the Works and chats it
    * holds whether that owner has reopened. The `returned` lines of `settled` are derived from it.
    * The server always fills it; an answer stored before it existed has none, which reads as nothing
    * held.
@@ -164,7 +163,6 @@ export type UnapplyClickResult = {
     tree: boolean;
     groupIds: string[];
     why: ClosedOwnerWhy;
-    owner?: string;
     ownerKey: DraftOwnerKey;
   }>;
   /**

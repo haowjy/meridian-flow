@@ -1,10 +1,11 @@
 /** Decides each durable Work receipt's fate, undoes the ones that act, and composes the reply's chip. */
 
 import type { CommandId, UserId } from "@meridian/contracts";
-import type {
-  ReversalOutcome,
-  TurnReceiptChip,
-  WorkReversalResult,
+import {
+  isDoneWriteStatus,
+  type ReversalOutcome,
+  type TurnReceiptChip,
+  type WorkReversalResult,
 } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { JsonValue, Thread } from "@meridian/contracts/threads";
@@ -128,24 +129,10 @@ async function workReceiptWorkIds(
   return context ? [...new Set(context.receipts.map(({ workId }) => workId))] : [];
 }
 
-/** The documents' answers that settled the press, as parts that were reversed, stayed or failed. */
-const DOCUMENT_PARTS: Partial<
-  Record<ReversalOutcome["status"], { reversed?: true; stayed?: true; failed?: true }>
-> = {
-  nothing_to_undo: {},
-  reversed: { reversed: true },
-  reconciled: { reversed: true },
-  partial: { reversed: true, stayed: true },
-  expired: { stayed: true },
-  not_undone: { stayed: true },
-  partial_failure: { failed: true },
-};
-
 /**
- * The click's answer with its Work part, from how many parts were reversed, stayed and failed
- * across the documents, the tree and the Works: a Work taken back counts as reversed, one that
- * stayed is a part the Undo left, and only a step that threw is a failure. A documents' answer
- * that isn't one of these (a refusal) stands unless a Work failed.
+ * The click's answer with its Work part. A Work taken back counts as reversed; a step that threw
+ * is a failure. A documents' answer that took nothing back stands unless a Work was taken back
+ * or failed.
  */
 export function combineWorkReversalOutcome(
   outcome: ReversalOutcome,
@@ -154,29 +141,14 @@ export function combineWorkReversalOutcome(
   if (workReceipts.length === 0) return outcome;
   const works = (status: WorkReceiptReversal["status"]) =>
     workReceipts.filter((result) => result.status === status).length;
-  const documents = DOCUMENT_PARTS[outcome.status];
-  const reversed = works("reversed") + (documents?.reversed ? 1 : 0);
-  const stayed = works("unavailable") + (documents?.stayed || outcome.skips?.length ? 1 : 0);
-  const failed = works("failed") + (documents?.failed ? 1 : 0);
-  return {
-    ...outcome,
-    status: turnStatus(outcome.status, documents !== undefined, { reversed, stayed, failed }),
-    acceptedParts: (outcome.acceptedParts ?? 0) + works("reversed"),
-    workReceipts,
-  };
-}
-
-function turnStatus(
-  documents: ReversalOutcome["status"],
-  settled: boolean,
-  parts: { reversed: number; stayed: number; failed: number },
-): ReversalOutcome["status"] {
-  if (parts.failed) return "partial_failure";
-  if (!settled) return documents;
-  if (parts.reversed && parts.stayed) return "partial";
-  if (parts.reversed) return documents === "reconciled" ? "reconciled" : "reversed";
-  // Nothing reversed: a tree change that stayed keeps its own answer.
-  return documents === "not_undone" ? "not_undone" : "expired";
+  const status = works("failed")
+    ? "partial_failure"
+    : works("reversed") && !isDoneWriteStatus(outcome.status)
+      ? "reversed"
+      : outcome.status === "nothing_to_undo"
+        ? "expired"
+        : outcome.status;
+  return { ...outcome, status, workReceipts };
 }
 
 export async function reverseWorkReceipts(
@@ -233,14 +205,11 @@ export async function getTurnReceiptChip(
   const fates = (await planReceipts(deps, [...context.receipts].reverse(), context.thread)).map(
     ({ fate }) => fate,
   );
-  if (chip?.control === "undo" || fates.includes("acts"))
-    return { ...chip, state: "live-active", control: "undo" };
-  const taken = fates.includes("taken") || (!!chip && chip.state !== "expired");
-  const stayed = fates.includes("stayed") || (!!chip && chip.state !== "undone");
+  if (chip?.control === "undo" || fates.includes("acts")) return { ...chip, control: "undo" };
   return {
     ...chip,
-    state: taken ? (stayed ? "partly" : "undone") : "expired",
     control: "view_change",
+    ...(fates.includes("taken") || chip?.undone ? { undone: true as const } : {}),
   };
 }
 

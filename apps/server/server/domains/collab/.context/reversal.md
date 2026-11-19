@@ -1,7 +1,7 @@
 # Collab — reversal contracts
 
-Reversal uses the same forward-inverse primitive for card actions and the model's
-Undo/Revert. There is no Redo: the card's and the model's `redo` are gone, and to redo, the
+Reversal reads what an edit recorded and writes a merge, for card actions and the model's
+Undo/Revert alike. There is no Redo: the card's and the model's `redo` are gone, and to redo, the
 model writes the edit again (the writer asks it to). An inverse is an ordinary
 immutable journal edit; it never rewrites a target row or marks it reversed.
 
@@ -32,7 +32,10 @@ step order, newest edit first, each judged on what the steps before it leave:
 A step records one receipt of kind `undo` that names the parts it took, so the card says
 "Undone" and a part an Undo took is not a target again until a change of it is back in a draft. The
 model's `undo` and `revert` of a part in an open draft are the same `content` step
-(`model-inverse-policy.ts`); the kernel plans only the model's Live parts (until stage 3).
+(`model-inverse-policy.ts`), and those of a part in Live are the same `manuscript` step the card's
+Undo of one is: the model's `undo` and `revert` and the card's Undo differ in who asks and in what
+stack they count, not in how a change comes out. A step of the model's Undo is recorded as an edit
+with its own `delta`, so a later `undo` of that revert reads back like any other edit.
 
 ```mermaid
 stateDiagram-v2
@@ -66,14 +69,12 @@ its outcome, the no-op answers included (`nothing_to_undo`, `expired`); every st
 `lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
 both halves or neither; its one stored outcome answers a resend, and another request under the id
 is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's branch no longer places the node (a Discard took it out) is
-dropped from the grants and never run: it reports as skipped, and the rest of the reply still
+dropped from the grants and never run: it is left alone, and the rest of the reply still
 reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or deleted Work, a chat
-in Trash) is planned per target, not refused: the reversal lands Live and open targets and
-reports each closed one as a `returned` skip with its `why` (`work_archived`, `work_deleted`,
-`chat_frozen`, `TurnInverseSkip.why`), which the card words per part. A reversal whose every
-target is closed answers `expired` with those skips. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the attempt misses and recaptures, which plans those targets as `returned` (`refusalOrMiss`; a deleted Work's refusal reads `not_found` and is not recognised). A denial for another reason refuses the
-whole reversal, and the outcome carries the policy's reason (`denial`) for the card to word: deleted
-document, or no longer editable.
+in Trash) is planned per target, not refused: the reversal lands Live and open targets and plans nothing
+for a closed one, and the card says nothing about it (its Undo is absent while the owner is
+closed). A reversal whose every target is closed answers `expired`. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the attempt misses and recaptures, which plans nothing for those targets (`refusalOrMiss`; a deleted Work's refusal reads `not_found` and is not recognised). A denial for another reason refuses the
+whole reversal (`permission_denied`), which the card shows as a failed press.
 A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
 `"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
@@ -107,7 +108,7 @@ card uses the same admission boundary.
 An invertible active part offers Undo. One eligibility rule, in the captured planner
 (`model-reversal-planner.ts`, `taken`/`takenBy`), decides what every reversal may still take: a
 part an Undo took (the card's, a writer's revert, or the model's own undo in the same chat) is not
-available, whatever the kernel says it could restore. Nothing reverses an Undo, so its action is the
+available, whatever the text says. Nothing reverses an Undo, so its action is the
 permanent record of what it took. Without the rule, an older edit's Undo that removed the text a
 newer edit's Undo restored leaves that newer edit "restorable" again: a card would take it out on
 every press, and a model `revert` of it would bring back an intermediate word. The card's Undo and
@@ -117,14 +118,14 @@ offers neither for it, because the listing asks the same planner. A model's forw
 own edit: undoing it is an Undo of that edit, which leaves the original's parts untaken. Once nothing is left to undo, the chip
 (`getDocumentAndTreeChip`) reads `undone` when the writer's own Undo (`actor: "human"`) took some of
 the turn's text out, or the card's Undo took any of its tree changes (`treeUndoneByCard`, the
-card's undo receipts, whatever has happened to the nodes since), `partly` when parts stayed, else
-`expired` (the same rule as for tree receipts below). Effective action state is indexed per
+card's undo receipts, whatever has happened to the nodes since): the chip's `undone` flag. Otherwise
+it carries no word (the same rule as for tree receipts below). Effective action state is indexed per
 immutable part (`effectiveActionIndex`). A model count consumes original
 actions: once a partial model Undo reverses any surviving part of an edit, the next count
 continues to the preceding edit.
 
 The model owns one strict stack per thread/document. `write undo` accepts a count; `write revert`
-creates a new edit at the current (destination) view. Both use Yjs identity: a part edited since is skipped
+creates a new edit at the current (destination) view. Both read the part's `delta`: a part whose change no longer stands is skipped
 and listed by its 1-based immutable part ordinal and reason, without quoting old
 or current text. Undo refuses `cant_undo_changed` only when nothing of a text-only
 edit remains to reverse. The model uses ordinary `read` for the passage;
@@ -133,34 +134,24 @@ cannot use a reconstruction endpoint, reversal table, or reserved client. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
 commands. A card Undo pops the turn's poppable stack prefix and writes forward reverts for its
-other text parts, including applied parts. The card names and skips a part whose draft was discarded (`expired`) and inverts the rest. A part of an open draft that no change waits on and that was not applied is skipped as `discarded` the same way, so the card offers Undo only while some of the turn's text still stands in a draft; the Discard's own notice Undo covers the rest.
-Each agent is its own peer: Undo of its edit removes the items the edit inserted and restores
-the items it deleted, item by item, and keeps everyone else's typing, so a later writer edit
-never refuses it. An item that is already gone is skipped ("Stayed as you edited it"): text
-the writer deleted, a deleted paragraph's words (Undo never re-creates an ancestor the
-writer deleted), a heading level or other attribute the writer set after the edit. An
-element the edit created that the writer typed in stays, holding only the writer's text.
-A replacement is judged per change: each deleted run pairs with the inserted run that took its
-place, and the deleted run comes back only while some visible text of that run's replacement still
-stands. The write records the pairing in the part's `effect.replaced` (`pairChanges` in
-`packages/agent-edit/src/undo/forward-inverse.ts`), from the document right after that write
-applied (each row of a batch before the next is applied; a writer's frame gets none), so later
-deletions can't change it. The old word is
-never put beside the writer's text once the new word is gone ("One huge cat." with `huge`
-overtyped stays as the writer left it), and a part with several changes decides each one alone.
-Where part of a replacement still stands, the old run returns beside it ("One smallhuge cat." when
-the writer only trimmed `huge`): two writers' letters in one place are joined, not refused. Only text counts: a
-heading level, list marker, container or format never keeps a replacement standing. A deleted run
-with no replacement always comes back. A receipt written before the pairing was recorded has no
-`replaced`, and `replacedGone` pairs it from the document as it stands. That can't tell an old backspace from
-text the writer deleted since, so for those receipts selecting across a replaced run and its neighbours and
-typing over it can double text or lose an Undo. A pull or Apply writes only the insertions inside a changed run that only gained
-characters (`retainShared` in `packages/agent-edit/src/resolver/lower-block.ts`; any other change
-writes the run whole), so Undo after a pull equals Undo of the same typing on the draft when the
-writer inserted inside the AI's text. A part is `active` (Undo can act) while one item can still
-be removed or restored, else `changed`; a part an Undo already took out is `changed` too, and
-`kernelCause` words it `already_undone` from the action index. Un-Apply inverts a group the same
-way as the card.
+other text parts, including applied parts. The card plans nothing for a part whose draft was discarded and inverts the rest. A part of an open draft that no change waits on and that was not applied is left alone the same way, so the card offers Undo only while some of the turn's text still stands in a draft; the Discard's own notice Undo covers the rest.
+A change **stands** where it landed when its inverse merges into the text without a conflict
+and putting it back gives the text again (`content-merge/stands.ts`); an Undo or revert writes
+only a change that stands, and leaves the others whole. The text decides, not who typed it:
+
+- Typing beside the AI's words, or in another sentence, stays; the AI's change comes out.
+- Typing inside the AI's words, or over them, is an edit the change cannot be merged out around:
+  the change stands no longer, and the part is skipped as `edited_since` (`cant_undo_changed`
+  when nothing of the edit is left). The AI's words are never half taken out with the writer's
+  letters joined to what is left.
+- A part an Undo took reads `already_removed`; a card's reversal skips it and the chip reads
+  from the actions that took it.
+
+A pull or Apply writes only the insertions inside a changed run that only gained characters
+(`retainShared` in `packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the
+run whole), which is why typing inside the AI's words in a draft ends up beside the new words in
+the pulled text. Un-Apply reads the same way: it takes out the Apply's own `live_delta` when that
+stands in Live.
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from the package's walk (`undoReports`) as the lists
 stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's branch
@@ -183,8 +174,7 @@ location it was deleted at. Live-scoped targets authorize live.
 Card authorization and change-viewer discovery share immutable edit and
 origin targets with inverse admission; mutation and draft transport
 journals are never authorization lineage. Card inverse rows are writer rows
-with no turn, and restoration correspondence comes from certified aliases on
-immutable parts, never equal text. A model write carries a
+with no turn. A model write carries a
 `ResponseAuthorship`: `response_id` keeps provider authorship. The command's id
 (`document_edits.command_id`) joins the text and tree receipts of one call.
 
@@ -194,11 +184,11 @@ Part disposition is computed once for each resolved destination.
 otherwise an active draft is pending and a gone draft is discarded. A
 revision mismatch between evidence and planning recaptures the bounded attempt.
 Closed origins are gone and never stand in for a destination.
-A part the kernel cannot reach in an open draft (a sibling change in its paragraph was applied or
-discarded since, or the writer typed over it) reads from its disposition first: applied is
-"Applied to the manuscript", discarded is "Discarded", and only a pending part reads "Stayed as you
-edited it". The planner decides these text-part causes once, for the per-edit omissions and the turn
-record (`turnSkipCause` words it for the turn protocol); the service does not derive them. A one-by-one discard in an open draft
+A part whose change no longer stands in an open draft (a sibling change in its paragraph was
+applied or discarded since, or the writer typed over it) reads from its disposition first: applied
+is "Applied to the manuscript", discarded is "Discarded", and only a pending part reads "Stayed as
+you edited it". The planner decides these text-part causes once, for the per-edit omissions and the
+turn record; the service does not derive them. A one-by-one discard in an open draft
 still reads edited: the draft keeps no mark that tells it from retyped text (#1361).
 Live destinations carry the captured physical source owner's lifecycle and the document's removal;
 the chat's query draft never decides availability for live text. A surviving draft
@@ -209,9 +199,9 @@ active origin draft, leaving live untouched and making a pending change against 
 The card's Undo takes an applied change out of Live and the draft (above).
 
 Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
-review base has no shown change and can read discarded. In an active draft the kernel decides
-Undo and Revert eligibility; a discarded or applied disposition
-chooses the copy only when the kernel skips a part, ahead of the edited-since reading, so an
+review base has no shown change and can read discarded. In an active draft a change that stands
+and sits in a pending change decides Undo and Revert eligibility; a discarded or applied
+disposition chooses the copy only when a part is skipped, ahead of the edited-since reading, so an
 applied part never reads as the writer's edit. Effective action consumption follows immutable receipts,
 regardless of whether those receipts currently contribute to review. Closed drafts are never
 writable. History derives its offered command from the same captured origin-resolved plan as the
@@ -277,8 +267,8 @@ are one step, taken together; `revert` names a handle and takes that receipt onl
 
 Every text inverse (model undo and revert, and the card) is one ordered
 stream of text steps (`domain/inverse-stream.ts`): each selected original edit is one step,
-with its action and its place on the history axis, planned against a simulation the steps
-before it advanced (simulated rows, one clock). A model count-N Undo records N separate
+with its action and its place on the history axis, planned against the text the steps
+before it leave (`planned` in the planner, one text per Live and per open draft). A model count-N Undo records N separate
 actions. The commit runs the steps in planned order (the card merges documents newest first). A draft's text commits as one checkpoint rewrite, at its plan's first step.
 A document removed at capture plans no live text (`document_deleted`);
 a draft that outlived the removal still takes its own inverse. Commit takes the attempt's
@@ -313,32 +303,16 @@ the card and `internal_error` ("the document changed while reversing; try again"
 for model Undo and Revert, never an invented refusal. Delivery runs
 after the commit, outside the scope.
 
-The card's chip answers from the same plan as the card's Undo, but a `preview` of it: `prepare`
-asks the kernel which edits an Undo would take (`PreparedEditRoots.preview`) and never builds
-the Undo, so the chip costs a classification per document instead of a full inverse (seconds for
-a turn of large documents). A preview builds only a part a later part of the selection is
-classified on, since its receipt joins the history that one is judged against; the last part
-is accepted when it classifies active. It admits and normalizes nothing, so it cannot answer
-differently from `compute` in two cases: the kernel's own checks throw, or the last part
-classifies active but `executeUndo` would return no updates (never seen in 62k random rows).
-Change `compute` and
-`preview` together, and check them against each other on random documents and peer edits. `prepare`
-plans a card's documents on a worker pool (`inverse-worker.ts`, two threads): the planner sends each
-document's live and draft updates, its history, the selection and the action id, and the worker's
-`runInverseJob` (agent-edit) rebuilds the documents and runs `compute`. The result is the same
-`ComputedInverse`, with plain objects where `compute` returns Yjs `ID`s. A worker that crashes or
-passes 120 s fails the command with the same 500 an in-process throw gives. The planner's own
-lineage is built only when something on the server classifies against it, because building one
-costs a string key per restored clock: it is not built for a plan that computes on a worker. The
-chip's `preview` stays in-process, one document per turn of the loop (`setImmediate`). The model's own
-`undo` plans one document at a time through `compute` on a scratch view and stays in-process.
+The card's chip answers from the same plan as the card's Undo (`prepare`): it reads each change's
+`stands` against the text and builds nothing, so the offer and the press cannot differ. The cost is
+one read of each document's blocks and about 2.5 ms per change, one document per turn of the loop
+(`setImmediate`). The model's `undo` plans one document at a time on the same reads.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`,
 `expired`, or `partial` with HTTP 200; callers retain
-those outcomes and refresh the turn query. Every skipped part carries a typed `cause`
-(`TurnInverseSkipCause`) and the app words it; a tree skip names the path its entry was shown
-at, its `op`, and `changed_since`, `purged` or `returned`.
+those outcomes and refresh the turn query. The outcome carries no per-part explanation: the
+card reads again and shows what is true.
 
 Each tree receipt's fate is decided once, from the walk's own answers for its records
 (`changeUndone` in `@meridian/project-tree`), and the planner, the reversal's status, the chip
@@ -354,8 +328,7 @@ its successors are read from, and it judges the sources that read names, until t
   reversal for it, the status is `reversed` when nothing else stayed, and the chip reads
   Undone. A receipt an earlier card Undo took counts the same, so a second Undo, concurrent or
   from a stale tab, answers `reversed` too; text an earlier card Undo took out does the same.
-- `changed_since` or `purged`: the receipt stays, a skip with that cause, in the chip's skips
-  and the Undo's alike. A reply whose only parts stayed answers `not_undone`.
+- `changed_since` or `purged`: the receipt stays, and nothing is said.
 - `closed`: an opposite record would change a closed owner's notes (an archived or deleted Work, a
   chat in Trash): the record stays, as in Un-Apply, and the skip is `returned` with `why` and the
   owner's name. A source with no `context_sources` row reads `purged`. The card's Undo and the
@@ -374,8 +347,5 @@ after every document outcome, and the press's status comes from one count of the
 stayed and failed across documents, tree and Works (`combineWorkReversalOutcome`). The reply's
 chip is composed once (`getTurnReceiptChip` there; the collab port's `getDocumentAndTreeChip`
 knows nothing of Works, so nothing else answers the card with it):
-Undo while any part acts, Undone when every part is taken, `partly` when some stayed, with the
-documents' and tree's skips; a Work has no skip kind of its own.
+Undo while any part acts, `undone` once a part was taken and none acts now.
 
-Live has unrelated Yjs identity, so skipped inverse parts can retain their cause
-without before/after snippets; never merge live to manufacture them.
