@@ -25,9 +25,9 @@ is held in the browser until after the Undo).
 Counted per kernel and per content: rows matching the oracle, glued words (a word between spaces
 that is neither vocabulary nor something the writer typed, so `garden.zq1` and `zq1The` both count),
 lost words (a typed word whose letters are gone), and rows where the Undo changes the text
-(kernel) or any change stands (content). The probe's rule line is the design's: no word lost by
-content that the kernel keeps, no glued word the kernel does not have, and content matching the
-oracle in no fewer rows.
+(kernel) or any change stands (content). The probe's rule line prints three booleans: no word lost by
+content that the kernel keeps (the design's), no glued word the kernel does not have, and content
+matching the oracle in no fewer rows (both added by the gate's brief and this probe).
 
 It needs no database, stack or browser and is not part of `pnpm check` or CI. Run it when the
 inverse kernel, `content-merge`, the writer or the editor binding changes, or stage 3 is reconsidered:
