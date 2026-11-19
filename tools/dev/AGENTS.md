@@ -88,7 +88,10 @@ stacks when `MemAvailable` is under `DEV_LOW_MEMORY_GB` (default 8).
 2. End anything still running from the checkout: the Nx daemon, `agent-browser`
    sessions, watchers.
 3. Remove the worktree, its database and its merged branch with
-   `pnpm dev:prune-worktrees -- --target <branch|path>`, `--dry-run` first.
+   `pnpm dev:prune-worktrees -- --target <branch|path>`, `--dry-run` first. Run it
+   in the foreground and read its exit. Don't wait on it with
+   `until ! pgrep -f "prune-worktrees..."`: the pattern matches the waiting shell's own
+   command line, so the loop never ends.
 4. For a detached checkout the tool refuses, run `pnpm dev --stop` in it, then
    `git worktree remove` it, and drop its database with `pnpm dev:gc-dbs`.
 
