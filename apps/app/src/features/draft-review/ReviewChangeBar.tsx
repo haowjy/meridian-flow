@@ -34,8 +34,8 @@ export function ReviewChangeBar({
       data-review-change-bar={change.id}
       className={cn(
         touch
-          ? "flex flex-col items-stretch gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-xs shadow-float"
-          : "flex w-full max-w-full flex-col items-stretch gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-xs shadow-float",
+          ? "flex min-w-min flex-col items-stretch gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2.5 text-xs shadow-float"
+          : "flex w-full min-w-min max-w-full flex-col items-stretch gap-2 rounded-lg border border-border bg-card px-1 py-1 pl-2 text-xs shadow-float",
         className,
       )}
     >
