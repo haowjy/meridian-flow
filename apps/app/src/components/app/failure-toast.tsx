@@ -82,7 +82,8 @@ const PHONE_OFFSET = {
 };
 
 // `pointer-events-auto`: an open modal sets `pointer-events: none` on the body, which the toast would inherit.
-// Sized to its words and centred (`inset-x-0 mx-auto w-fit`); `!` beats Sonner's phone rule that stretches each toast to the screen.
+// Sized to its words and centred (`inset-x-0 mx-auto w-fit`). The `!`s beat Sonner's phone rules, which
+// stretch each toast to the screen and give the list `width: 100%` on top of its side offsets.
 export function FailureToaster() {
   return (
     <Toaster
@@ -93,6 +94,7 @@ export function FailureToaster() {
       expand
       visibleToasts={3}
       gap={6}
+      className="max-[600px]:w-auto!"
       containerAriaLabel={t`Failures`}
       icons={{ error: <CircleAlert aria-hidden className="size-3.5 text-destructive" /> }}
       toastOptions={{
@@ -100,7 +102,7 @@ export function FailureToaster() {
         closeButtonAriaLabel: t`Dismiss`,
         classNames: {
           toast:
-            "pointer-events-auto inset-x-0 mx-auto flex h-8 w-fit! max-w-[min(24rem,100%)] items-center gap-2 rounded-full border border-border bg-card pr-1 pl-3 text-compact text-foreground shadow-float coarse:h-11",
+            "pointer-events-auto inset-x-0 mx-auto flex w-fit! max-w-[min(24rem,100%)] items-center gap-2 rounded-full border border-border bg-card py-px pr-1 pl-3 text-compact text-foreground shadow-float",
           icon: "flex shrink-0",
           content: "min-w-0",
           title: "truncate",
