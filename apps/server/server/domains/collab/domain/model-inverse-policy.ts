@@ -34,8 +34,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     const own = policy.own,
       actionId = randomUUID();
     const steps: InverseStep[] = [],
-      handles: string[] = [],
-      performed = { undo: [] as string[], revert: [] as string[] },
+      stepEntries: { kind: "undo" | "revert"; handle: string }[] = [],
       skipped: string[] = [],
       partial: string[] = [];
     const count = command.command === "revert" ? 1 : (command.count ?? 1);
@@ -56,9 +55,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
      */
     const stepAction = (kind: "undo" | "revert") =>
       kind === "undo" && steps.length ? randomUUID() : actionId;
-    const remember = (kind: "undo" | "revert", handle: string) => {
-      if (!performed[kind].includes(handle)) performed[kind].push(handle);
-    };
     const apply = (
       entry: Entry,
       selection: StoredInversePart[],
@@ -68,7 +64,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       if (destination.kind === "draft" && destination.state === "gone")
         throw new Error("Gone destination selected");
       const stepActionId = stepAction(kind);
-      remember(kind, entry.handle);
+      stepEntries.push({ kind, handle: entry.handle });
       const at = Math.max(...entry.parts.map((part) => part.id));
       const step = { destination, actionId: stepActionId, actionKind: kind, at };
       steps.push(
@@ -100,7 +96,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       const textPlan = modelTextPlan(entry, "revert");
       if ("status" in textPlan) return textPlan;
       skipped.push(...textPlan.omissions);
-      handles.push(entry.handle);
       if (!textPlan.selection.length)
         return {
           status: "nothing_to_revert",
@@ -120,7 +115,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
           };
         apply(entry, textPlan.selection, textPlan.actionKind, textPlan.destination);
-        handles.push(entry.handle);
       }
     if (!steps.length)
       return {
@@ -150,7 +144,26 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       plans: [inversePlan],
       sequence: steps.map((step) => ({ plan: inversePlan, step })),
     });
-    const parts = steps.reduce((n, step) => n + step.parts.length, 0);
+    // The answer is what the commit took: it plans again under the locks, and a write since the
+    // capture can leave a step less, or nothing, to take.
+    const planned = steps.reduce((n, step) => n + step.parts.length, 0);
+    const took = stepEntries.filter((_, i) => (committed.taken[i] ?? 0) > 0);
+    const parts = committed.taken.reduce((n, taken) => n + taken, 0);
+    if (!took.length) {
+      const [first] = stepEntries;
+      return command.command === "revert"
+        ? {
+            status: "nothing_to_revert",
+            message: `Nothing was reverted: none of ${first?.handle} remains to revert in ${document.uri}.${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`,
+          }
+        : {
+            status: "cant_undo_changed",
+            message: `Can't undo ${first?.handle}: none of that edit remains unchanged. Nothing was changed.`,
+          };
+    }
+    const performed = (kind: "undo" | "revert") => [
+      ...new Set(took.filter((entry) => entry.kind === kind).map((entry) => entry.handle)),
+    ];
     const destinations = new Map(
       committed.outcomes.map((outcome) => [outcome.branchId ?? "live", outcome]),
     );
@@ -192,11 +205,16 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
       message: [
         command.command === "revert"
-          ? `reverted: ${handles[0]} (${parts} of ${parts + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
+          ? `reverted: ${took[0]?.handle} (${parts} of ${planned + skipped.length} parts)${skipped.map((reason) => `\nnot reverted: ${reason}`).join("")}`
           : [
-              ...(performed.undo.length ? [`undone: ${performed.undo.join(", ")}`] : []),
-              ...(performed.revert.length ? [`reverted: ${performed.revert.join(", ")}`] : []),
-            ].join("\n") + (partial.length ? ` (${parts} of ${parts + partial.length} parts)` : ""),
+              ...(performed("undo").length ? [`undone: ${performed("undo").join(", ")}`] : []),
+              ...(performed("revert").length
+                ? [`reverted: ${performed("revert").join(", ")}`]
+                : []),
+            ].join("\n") +
+            (partial.length || parts < planned
+              ? ` (${parts} of ${planned + partial.length} parts)`
+              : ""),
         ...partial.map((reason) => `not undone: ${reason}`),
         ...(destinations.size > 1
           ? [

@@ -150,6 +150,8 @@ export interface TurnInverseStore {
     query: TurnInverseQuery;
   }): Promise<{
     handles: string[];
+    /** Parts each step of `sequence` took, in order: a step the committed text left nothing for took none. */
+    taken: number[];
     updates: Uint8Array[];
     /** Tree receipts of the reply that stand taken back after the command (a card's, never the model's). */
     treeReversed: number;

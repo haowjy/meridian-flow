@@ -73,8 +73,8 @@ dropped from the grants and never run: it is left alone, and the rest of the rep
 reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or deleted Work, a chat
 in Trash) is planned per target, not refused: the reversal lands Live and open targets and plans nothing
 for a closed one, and the card says nothing about it (its Undo is absent while the owner is
-closed). A reversal whose every target is closed answers `expired`. An owner that closes between the capture and the commit is a refusal naming `work_archived` or `chat_frozen`: the reversal is refused with that reason. A denial for another reason refuses the
-whole reversal (`permission_denied`), which the card shows as a failed press.
+closed). A reversal whose every target is closed answers `expired`. An owner that closes (or a branch that is purged) between the capture and the commit takes nothing, as one closed at the capture does: a text step's closed draft is dropped before the locks, and a closure the locks find rolls the commit back to a result that took nothing, so the card answers `expired` and the model what a fresh plan would. A denial for another reason refuses the
+whole reversal (`permission_denied`), which the card shows as a failed press. A drafted step is decided under the locks too: an Apply that lands after the capture moves the changes it took into Live, and the card's press takes them from there (`landedApplies`).
 A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
 `"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the

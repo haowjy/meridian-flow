@@ -38,7 +38,7 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
 import {
-  ApplyClickMalformed,
+  ApplyClickUnsynced,
   containsSnapshot,
   decodeClickedSnapshot,
 } from "../domain/apply-click.js";
@@ -234,19 +234,13 @@ async function untakenNotes(
 
 /**
  * The base and text of `draft` at the snapshot a Discard's ids were read at. A snapshot the draft
- * does not hold yet (the writer's room is ahead of what reached the server) names nothing here, so
- * the ids are read against the draft as it is.
+ * does not hold yet (the writer's room is ahead of what reached the server) is refused as the room
+ * Apply refuses it, and the client sends the same command again.
  */
 function cutOf(draft: Y.Doc, encoded: string | undefined) {
   if (!encoded) return undefined;
-  let snapshot: Y.Snapshot;
-  try {
-    snapshot = decodeClickedSnapshot(encoded);
-  } catch (cause) {
-    if (cause instanceof ApplyClickMalformed) return undefined;
-    throw cause;
-  }
-  if (!containsSnapshot(Y.snapshot(draft), snapshot)) return undefined;
+  const snapshot = decodeClickedSnapshot(encoded);
+  if (!containsSnapshot(Y.snapshot(draft), snapshot)) throw new ApplyClickUnsynced();
   const cut = Y.createDocFromSnapshot(draft, snapshot, new Y.Doc({ gc: false }));
   try {
     return {

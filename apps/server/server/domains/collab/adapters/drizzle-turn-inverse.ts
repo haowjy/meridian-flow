@@ -50,7 +50,7 @@ import {
   runEditAdmission,
 } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
+import { type Attempt, runAttempt } from "../domain/draft-attempts.js";
 import {
   draftBlocks,
   draftSchema,
@@ -366,15 +366,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     query: TurnInverseQuery,
     run: (documents: InverseDocument[]) => Promise<T>,
   ): Promise<T> {
-    return runBoundedAttempts({
-      bound: 1,
-      scope: (operation) => runInDrizzleSavepoint(input.db, operation),
-      isMiss: () => false,
-      run: (attempt) => capturedAttempt(query, run, attempt),
-      exhausted: () => {
-        throw new Error("An inverse has one attempt");
-      },
-    });
+    return runAttempt(
+      (operation) => runInDrizzleSavepoint(input.db, operation),
+      (attempt) => capturedAttempt(query, run, attempt),
+    );
   }
 
   async function capturedAttempt<T>(
@@ -492,10 +487,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       );
       const documents = [...planned.values()];
       const handles: string[] = [];
+      const taken: number[] = [];
       const deliveries: (() => Promise<void>)[] = [];
       // Off every lock: the tree receipts the reply left, which lists and Works they write.
       const tree = kind === "revert" ? NO_TREE_STEPS : await treePlanOf(query);
-      const grants = await admitInverse(sequence, query, userId, tree.documents);
+      const admission = await admitInverse(sequence, query, userId, tree.documents);
+      const { grants } = admission;
       const works = {
         drafts: attempt.draftIds,
         branches: tree.branches,
@@ -518,10 +515,40 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         for (const entry of documents) entry.live = (await materialize(entry.documentId)).doc;
         const runText = async () => {
           for (const { plan, step } of sequence) {
+            const { destination } = step;
+            if (
+              destination.kind === "draft" &&
+              destination.branchId &&
+              admission.closed.has(destination.branchId)
+            ) {
+              taken.push(0);
+              continue;
+            }
             const entry = planned.get(plan);
             if (!entry) throw new Error("A step's plan is not among the commit's plans");
-            const handle = await commitTextStep(entry, step, userId, query);
-            if (handle) handles.push(handle);
+            const done = await commitTextStep(entry, step, userId, query);
+            if (done.handle) handles.push(done.handle);
+            let parts = done.parts;
+            // The card's press is for what the reply proposed: an Apply that landed since the
+            // capture moved some of it into Live, where this press takes it from.
+            if (
+              step.kind === "content" &&
+              !query.model &&
+              !admission.liveDenied.has(entry.documentId)
+            ) {
+              const landed = await landedApplies(step);
+              if (landed.length) {
+                const back = await commitManuscriptStep(
+                  entry,
+                  { ...step, kind: "manuscript", parts: landed },
+                  userId,
+                  query,
+                );
+                if (back.handle) handles.push(back.handle);
+                parts += back.parts;
+              }
+            }
+            taken.push(parts);
           }
         };
         const runTree = async () => {
@@ -562,10 +589,23 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       } finally {
         for (const entry of documents) entry.live?.destroy();
       }
-      if (!admitted.ok) throw admitted.refusal;
+      if (!admitted.ok) {
+        // An owner archived or deleted since the capture closed its drafts: nothing is left to
+        // take there, as for a change that is no longer there.
+        if (!admitted.refusal.refused.every(closesOwner)) throw admitted.refusal;
+        return {
+          handles: [],
+          taken: sequence.map(() => 0),
+          updates: [],
+          treeReversed: 0,
+          reversed: new Map(documents.map((entry) => [entry.documentId, new Map()])),
+          outcomes: [],
+        };
+      }
       attempt.deliveries.push(...deliveries);
       return {
         handles,
+        taken,
         updates: documents.flatMap((entry) => entry.updates.map(({ update }) => update)),
         treeReversed,
         reversed: new Map(documents.map((entry) => [entry.documentId, entry.reversed])),
@@ -580,14 +620,27 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     query: TurnInverseQuery,
     userId: UserId | undefined,
     treeDocuments: readonly { documentId: string; branchId: BranchId | null; restore: boolean }[],
-  ): Promise<FileGrant<"edit">[] | null> {
+  ): Promise<{
+    grants: FileGrant<"edit">[] | null;
+    closed: ReadonlySet<BranchId>;
+    /** Documents whose Live the principal may not edit: an Apply that lands later is not taken back. */
+    liveDenied: ReadonlySet<DocumentId>;
+  }> {
+    const closed = new Set<BranchId>();
+    const liveDenied = new Set<DocumentId>();
     const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
     // Every inverse supplies its principal explicitly; an absent one here means a composition
     // bug, not live routing.
-    if (!principal) return null;
+    if (!principal) return { grants: null, closed, liveDenied };
     const requirements = new Map<
       string,
-      { documentId: DocumentId; branchId: BranchId | null; restore: boolean }
+      {
+        documentId: DocumentId;
+        branchId: BranchId | null;
+        restore: boolean;
+        tree: boolean;
+        optional: boolean;
+      }
     >();
     for (const { plan, step } of sequence) {
       const documentId = plan.document.documentId;
@@ -596,13 +649,31 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         documentId,
         branchId,
         restore: false,
+        tree: false,
+        optional: false,
       });
+      // A card's Undo of a drafted change also takes back what an Apply lands before the commit
+      // (`takeBackLanded`), where the writer may edit Live.
+      if (
+        step.kind === "content" &&
+        !query.model &&
+        !requirements.has(`${documentId}:live:content`)
+      )
+        requirements.set(`${documentId}:live:content`, {
+          documentId,
+          branchId: null,
+          restore: false,
+          tree: false,
+          optional: true,
+        });
       // A drafted change an Apply took is also taken out of Live.
       if (step.kind === "manuscript")
         requirements.set(`${documentId}:live:content`, {
           documentId,
           branchId: null,
           restore: false,
+          tree: false,
+          optional: false,
         });
     }
     // A tree change is taken back where it was made, by the one who may edit that document; a
@@ -612,6 +683,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         documentId: documentId as DocumentId,
         branchId,
         restore,
+        tree: true,
+        optional: false,
       });
     const admittedRequirements = [...requirements.values()];
     const branchIds = [
@@ -635,7 +708,15 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     for (const requirement of admittedRequirements) {
       const found = requirement.branchId ? byBranch.get(requirement.branchId) : undefined;
       const holder = found && holderOwner(found);
-      if (requirement.branchId && !holder) throw new TreeOwnersMoved();
+      // A text step's draft purged since the capture has nothing left to take: it answers as a
+      // change that is no longer there. A tree change's owner moving restarts the command.
+      if (requirement.branchId && !holder) {
+        if (!requirement.tree) {
+          closed.add(requirement.branchId);
+          continue;
+        }
+        throw new TreeOwnersMoved();
+      }
       const grant = await input.fileAccess.authorizeAt(
         principal,
         holder
@@ -652,10 +733,20 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           : { kind: "live" },
         "edit",
       );
-      if (isFileAccessDenied(grant)) throw new FileEditRefusedError([grant]);
+      if (isFileAccessDenied(grant)) {
+        if (requirement.optional) {
+          liveDenied.add(requirement.documentId);
+          continue;
+        }
+        if (requirement.branchId && !requirement.tree && closesOwner(grant)) {
+          closed.add(requirement.branchId);
+          continue;
+        }
+        throw new FileEditRefusedError([grant]);
+      }
       grants.push(grant);
     }
-    return grants;
+    return { grants, closed, liveDenied };
   }
 
   /**
@@ -706,6 +797,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     return wId === undefined ? "" : editHandle(wId);
   }
 
+  /** The parts of a content step that an Apply took after the capture, with the changes it took. */
+  async function landedApplies(step: Extract<InverseStep, { kind: "content" }>) {
+    const view = await readDisposition(step.destination.draftId);
+    return step.parts.flatMap((part) => {
+      if (part.appliedChanges?.size) return [];
+      const applied = view?.parts.find(
+        (one) => one.editId === part.editId && one.ordinal === part.ordinal,
+      )?.appliedChanges;
+      return applied?.size ? [{ part, only: new Set(applied.keys()) }] : [];
+    });
+  }
+
   /** Counts what a step committed where it landed. */
   function count(entry: PlannedInverse, branchId: BranchId | null, n: number) {
     entry.reversed.set(branchId, (entry.reversed.get(branchId) ?? 0) + n);
@@ -717,7 +820,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     step: InverseStep,
     userId: UserId | undefined,
     query: TurnInverseQuery,
-  ): Promise<string> {
+  ): Promise<{ handle: string; parts: number }> {
     return step.kind === "content"
       ? commitContentStep(entry, step, userId, query)
       : commitManuscriptStep(entry, step, userId, query);
@@ -733,7 +836,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     step: Extract<InverseStep, { kind: "content" }>,
     userId: UserId | undefined,
     query: TurnInverseQuery,
-  ): Promise<string> {
+  ): Promise<{ handle: string; parts: number }> {
     const { draftId, branchId } = step.destination;
     const taken = new Set<StoredInversePart>();
     let appended: Uint8Array[] = [];
@@ -788,7 +891,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     } finally {
       write.dispose();
     }
-    return wId === undefined || !taken.size ? "" : editHandle(wId);
+    return {
+      handle: wId === undefined || !taken.size ? "" : editHandle(wId),
+      parts: taken.size,
+    };
   }
 
   /**
@@ -804,7 +910,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     step: Extract<InverseStep, { kind: "manuscript" }>,
     userId: UserId | undefined,
     query: TurnInverseQuery,
-  ): Promise<string> {
+  ): Promise<{ handle: string; parts: number }> {
     const { document } = entry.plan;
     const live = entry.live;
     if (!live) throw new Error("A manuscript step runs inside the commit scope");
@@ -847,7 +953,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         write.dispose();
       }
     }
-    if (!back.taken.length) return "";
+    if (!back.taken.length) return { handle: "", parts: 0 };
     // The receipts are read against Live as it was before the write.
     const before = new Y.Doc({ gc: false });
     Y.applyUpdate(before, Y.encodeStateAsUpdate(live));
@@ -878,7 +984,16 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       before.destroy();
     }
     if (beforeState) entry.cut = { before: beforeState, after: Y.encodeStateAsUpdate(live) };
-    return recordStep(entry, step, { draftId: null, branchId: null, receipts }, userId, query);
+    return {
+      handle: await recordStep(
+        entry,
+        step,
+        { draftId: null, branchId: null, receipts },
+        userId,
+        query,
+      ),
+      parts: back.taken.length,
+    };
   }
 
   /** After every step: the document's delivery. */
@@ -928,6 +1043,12 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   );
   return service;
 }
+
+/** The refusal of an owner that was archived, deleted or frozen: its drafts take no more writes. */
+const closesOwner = (denial: { reason: string }) =>
+  denial.reason === "work_archived" ||
+  denial.reason === "work_deleted" ||
+  denial.reason === "chat_frozen";
 
 /** What a commit builds up for one document: where its steps landed, for delivery and the answer. */
 type PlannedInverse = {

@@ -445,6 +445,12 @@ export const applyCommandEffects = pgTable(
      * effect, so the card reads "applied" for them whatever the text does later.
      */
     carried: jsonb("carried").$type<[number, number][]>().notNull(),
+    /**
+     * Where the group sat, as its change's hash and the id of its first block: how a Redo finds a
+     * change only the writer made (`carried` finds an AI edit's), which an equal change elsewhere
+     * cannot take over.
+     */
+    place: text("place").notNull(),
     /** The command's base before its first group; stored once rather than once per group. */
     baseStart: jsonb("base_start").$type<unknown[]>(),
     /** This group's bounded change to the preceding committed base. */

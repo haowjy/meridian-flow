@@ -78,7 +78,7 @@ changes at the state the writer read them: an item with ids also sends that draf
 `snapshot`, and `discardChanges` resolves the ids in the draft at it, then merges what setting
 them back did there into the draft as it is now (`contentMerge`); a change the writer has
 written over since stays, and the item is answered `already` like any item that took nothing. A
-snapshot the server doesn't hold yet reads the ids against the draft as it is. The Work's records
+snapshot the server doesn't hold yet (`ApplyClickUnsynced`) is a 503 that stores nothing, as for a room Apply; the client waits for its typing to be acknowledged before it sends. The Work's records
 are taken as the Work holds them when it runs. The tree half of every Discard is the
 package's `discardDraft`, run with `treeListStore.submit` in each list the Work spans
 (`adapters/drizzle-branch-discard.ts`): the pending records are settled `discarded` with the
@@ -433,8 +433,8 @@ Finalized immutable documents share one lazy encoding through
 bytes and the final document, never an append callback or its previous replica;
 the replica itself owns no encoding accessor.
 
-Every draft write runs through `runBoundedAttempts`
-(`domain/draft-attempts.ts`), the one owner of a candidate's lifetime: capture
+Every draft write runs as an attempt (`runAttempt`, or `runBoundedAttempts` where a miss recaptures;
+`domain/draft-attempts.ts`), the one owner of a candidate's lifetime: capture
 and compute off every lock, one commit scope per attempt (a root transaction,
 or one savepoint inside an ambient one) opened before its first draft-store
 lock, and a miss that leaves that scope before the next capture. The attempt

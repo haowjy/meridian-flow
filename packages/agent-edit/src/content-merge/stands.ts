@@ -394,9 +394,12 @@ function read(
       added = whole.added;
     }
   }
-  const touches = touching(reading, change);
-  for (const index of holding(reading, change, memo.mine, touches)) removed.add(index);
-  if (touches) alignToChange(reading, removed, touches);
+  const place = touching(reading, change);
+  // A change whose block was joined or split away can be anywhere after a move: its words alone
+  // name the pending changes, and the distance to its surviving blocks only tells equal ones apart.
+  const gate = place && !place.joined ? (index: number) => place.rank(index) === 0 : null;
+  for (const index of holding(reading, change, memo.mine, gate)) removed.add(index);
+  if (place) alignToChange(reading, removed, place.rank);
   // An Undo that would add a pending change takes nothing back: it is not offered.
   return {
     state: memo.state === "stands" && added ? "altered" : memo.state,
@@ -407,23 +410,25 @@ function read(
 
 /**
  * Changes with equal ids (the same words changed in two paragraphs) cannot be told apart by their
- * hash, so the removal's alignment may name the wrong one. Of each such family the ones that touch
- * the change's blocks are the ones it sits in.
+ * hash, so the removal's alignment may name the wrong one. Of each such family the ones nearest the
+ * change's blocks (`rank`: 0 touches them, a larger number is further, infinite is unplaced) are the
+ * ones it sits in, when one is at most a block away.
  */
 function alignToChange(
   reading: Reading,
   removed: Set<number>,
-  touches: (index: number) => boolean,
+  rank: (index: number) => number,
 ): void {
   for (const index of [...removed]) {
     const family = reading.hashes
       .map((hash, at) => (hash === reading.hashes[index] ? at : -1))
       .filter((at) => at >= 0);
     if (family.length < 2) continue;
-    const mine = family.filter(touches);
-    if (!mine.length) continue;
+    const best = Math.min(...family.map(rank));
+    // Further than a neighbour, a move may have carried the change away: every equal one stays named.
+    if (best > 1) continue;
     for (const at of family) removed.delete(at);
-    for (const at of mine) removed.add(at);
+    for (const at of family.filter((member) => rank(member) === best)) removed.add(at);
   }
 }
 
@@ -539,25 +544,52 @@ function ownRuns(change: EditChange): Run[] {
 }
 
 /**
- * Which pending changes touch the blocks the change altered, by block id; null when a block of it
- * was split or joined away, which leaves no id to pair, so any change may be its own.
+ * How near each pending change is to the blocks the change altered, by block id: 0 when it touches
+ * them. A block of it that was split or joined away leaves no id to pair (`joined`), so its place is
+ * its surviving blocks and a pending change's rank is its distance from them. Null when none
+ * survives.
  */
-function touching(reading: Reading, change: EditChange): ((index: number) => boolean) | null {
-  const present = new Set(reading.text.map(idOf));
-  if (!change.after.every((block) => present.has(idOf(block)))) return null;
+function touching(
+  reading: Reading,
+  change: EditChange,
+): { rank: (index: number) => number; joined: boolean } | null {
+  const { text } = reading;
+  const { draft, base } = reading.pending.diff;
+  const present = new Set(text.map(idOf));
+  const joined = !change.after.every((block) => present.has(idOf(block)));
+  if (joined) {
+    const own = new Set([...change.before, ...change.after].map(idOf));
+    const kept = text.flatMap((block, index) => (own.has(idOf(block)) ? [index] : []));
+    if (!kept.length) return null;
+    return {
+      joined,
+      rank: (index) =>
+        Math.min(
+          ...reading.pending.groups[index].spans.flatMap(({ draft: range }) =>
+            kept.map((at) =>
+              at < range.from ? range.from - at : at >= range.to ? at - range.to + 1 : 0,
+            ),
+          ),
+        ),
+    };
+  }
   const same = (block: PMNode, others: readonly PMNode[]) =>
     others.some((other) => idOf(other) === idOf(block) && blocksEqual([other], [block]));
   const ids = new Set([
     ...change.before.filter((block) => !same(block, change.after)).map(idOf),
     ...change.after.filter((block) => !same(block, change.before)).map(idOf),
   ]);
-  const { draft, base } = reading.pending.diff;
   const hits = (blocks: readonly PMNode[], range: { from: number; to: number }) =>
     blocks.slice(range.from, range.to).some((block) => ids.has(idOf(block)));
-  return (index) =>
-    reading.pending.groups[index].spans.some(
-      (span) => hits(draft.blocks, span.draft) || hits(base.blocks, span.base),
-    );
+  return {
+    joined,
+    rank: (index) =>
+      reading.pending.groups[index].spans.some(
+        (span) => hits(draft.blocks, span.draft) || hits(base.blocks, span.base),
+      )
+        ? 0
+        : Number.POSITIVE_INFINITY,
+  };
 }
 
 /**

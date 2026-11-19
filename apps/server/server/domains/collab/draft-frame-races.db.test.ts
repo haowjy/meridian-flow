@@ -374,4 +374,31 @@ describe("writer frames racing rewrites (postgres)", () => {
       expect(await fixture.view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n\nExtra.\n");
     },
   );
+
+  it.each(["model", "card"] as const)(
+    "an inverse (%s) the commit takes nothing for, because the writer typed inside the change, does not report an undo",
+    async (door) => {
+      const draftId = await draftWithChange();
+      const remove = frameBeforeCommit(draftId, (fragment) => {
+        const paragraph = fragment.get(0) as Y.XmlElement;
+        for (const child of paragraph.toArray()) {
+          const text = child as Y.XmlText;
+          const at = text.toString().indexOf("Gamma");
+          if (at >= 0) {
+            text.insert(at + "Gamma".length, "s");
+            return;
+          }
+        }
+        throw new Error("the change's text is not in the first paragraph");
+      });
+      try {
+        if (door === "model")
+          expect(await modelUndo()).toMatchObject({ status: "cant_undo_changed" });
+        else expect(await cardUndo()).toMatchObject({ status: "expired" });
+      } finally {
+        remove();
+      }
+      expect(await fixture.view.draftMarkdown(draftId)).toContain("Gammas");
+    },
+  );
 });

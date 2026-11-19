@@ -1,7 +1,8 @@
 /**
  * The one body for text handed back to the writer: each passage with Copy, then what happened
  * and Dismiss, so Dismiss never clears words the writer has not seen. The schema repair's bar
- * opens it under Details; unsent typing shows only Copy and Dismiss in a toast.
+ * opens it under Details; unsent typing shows its words, clamped to two lines, with Copy and
+ * Dismiss in a toast.
  *
  * Copy is the point: it is the writer's way to keep the words. So it goes through the feature's
  * clipboard adapter and reports a refusal on that passage. (`CopyTextButton` swallows refusals.)
@@ -163,7 +164,8 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
  * Typing a room ended with, handed back in the app's toaster: the room is gone or reopened on the
  * server's text, so there is no place on screen to show it. It stays until dismissed, never timing
  * out: the writer is done with it once they copy its words or dismiss it (`typing.done`), and until
- * then a reload offers the words again. Done in another tab, it leaves this one too.
+ * then a reload offers the words again. Done in another tab, it leaves this one too. With no words
+ * there is nothing to hand back, so no toast.
  */
 export const unsentTypingToasts: UnsentTypingObserver = {
   show: notifyUnsentTyping,
@@ -180,7 +182,9 @@ const actedHere = new Set<string>();
  * later. A press that couldn't be stored keeps the toast with the failure line, to press again.
  */
 function notifyUnsentTyping(typing: UnsentTyping) {
+  if (typing.text === null) return;
   const id = `unsent:${typing.id}`;
+  const words = typing.text;
   let failed = false;
   const act = () => {
     actedHere.add(typing.id);
@@ -201,13 +205,13 @@ function notifyUnsentTyping(typing: UnsentTyping) {
     toast.custom(
       () => (
         <UnsentTypingToast
-          typing={typing}
+          typing={{ ...typing, text: words }}
           failed={failing}
           onCopied={() => void act()}
           onDismiss={() => void act().then((stored) => stored && toast.dismiss(id))}
         />
       ),
-      // Swiping it away would clear words the writer never read.
+      // Only Dismiss throws the words away: a swipe could do it by accident.
       { id, duration: Number.POSITIVE_INFINITY, dismissible: false },
     );
   };
@@ -220,7 +224,7 @@ function UnsentTypingToast({
   onCopied,
   onDismiss,
 }: {
-  typing: UnsentTyping;
+  typing: UnsentTyping & { text: string };
   /** Copy or Dismiss was pressed and couldn't be stored, so a reload would offer it again. */
   failed: boolean;
   onCopied: () => void;
@@ -230,7 +234,7 @@ function UnsentTypingToast({
     {
       occurrenceId: `unsent:${typing.id}`,
       rescue: { kind: "unsent-typing" as const, cause: typing.cause },
-      passages: typing.text === null ? [] : [typing.text],
+      passages: [typing.text],
     },
   ]);
   useCountRescues(counted);
@@ -241,28 +245,36 @@ function UnsentTypingToast({
       data-unsent-typing={typing.cause}
       className="flex w-full items-center gap-2 text-compact"
     >
-      <p className="min-w-0 flex-1 font-medium">
-        {failed ? <Trans>Didn't go through. Try again.</Trans> : <Trans>Unsent text</Trans>}
-      </p>
-      {typing.text === null ? null : (
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          className="shrink-0 coarse:h-11"
-          data-copy-rescued-passage
-          onClick={press}
+      <div className="min-w-0 flex-1">
+        <p
+          data-rescued-passage
+          className="line-clamp-2 break-words whitespace-pre-wrap text-foreground"
         >
-          {copy === "copied" ? <Check aria-hidden /> : <Copy aria-hidden />}
-          {copy === "copied" ? (
-            <Trans>Copied</Trans>
-          ) : copy === "blocked" ? (
-            <Trans>Couldn't copy</Trans>
-          ) : (
-            <Trans>Copy</Trans>
-          )}
-        </Button>
-      )}
+          {typing.text}
+        </p>
+        {failed ? (
+          <p className="text-destructive">
+            <Trans>Didn't go through. Try again.</Trans>
+          </p>
+        ) : null}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        className="shrink-0 coarse:h-11"
+        data-copy-rescued-passage
+        onClick={press}
+      >
+        {copy === "copied" ? <Check aria-hidden /> : <Copy aria-hidden />}
+        {copy === "copied" ? (
+          <Trans>Copied</Trans>
+        ) : copy === "blocked" ? (
+          <Trans>Couldn't copy</Trans>
+        ) : (
+          <Trans>Copy</Trans>
+        )}
+      </Button>
       <Button
         type="button"
         variant="outline"
