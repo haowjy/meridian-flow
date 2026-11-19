@@ -149,7 +149,7 @@ export function WorkCollection({
                 <RowWord
                   word={<Trans>Undo</Trans>}
                   label={t`Undo delete of ${name}`}
-                  sentence={t`Deleted just now. Undo puts it back.`}
+                  sentence={t`Deleted just now`}
                   onAction={() => deletion.undo(work)}
                   focus={{ take: () => takeWorkFocus(work.id), back: () => workRowOf(work.id) }}
                 />

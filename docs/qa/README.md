@@ -217,7 +217,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    `binary.md`, `page.html`, a `.txt` of invalid UTF-8 (`\xff\xfe\xfa\xfb…`), a good `.md`,
    a good `.docx` and a Chinese `.txt`. Done says 5 need a look; each of the first five
    opens as a card with Download (never "PK" or tags as text) and its See files line reads
-   "Couldn't turn this into a document. Kept as a file."; the names keep `.md`, `.txt`,
+   "Kept as a file"; the names keep `.md`, `.txt`,
    `.html`. The good `.md`, `.docx` and Chinese `.txt` open as prose.
    Then Rename (a name without a suffix keeps it: `binary.md` → `renamed` is `renamed.md`),
    Move into a folder, Copy, Delete and Restore each kept file at the root and in a folder:
@@ -234,18 +234,17 @@ worktree's API origin and inspect the rendered detail/open-list responses:
      `changed_after_upload` column), and the landed document keeps the old text:
      received bytes are never sent again.
    - Edit an awaiting file and let one Continue send it, then pause again and Continue
-     with the same folder. It still lists "Changed after you picked it."
+     with the same folder. It still lists "Changed"
      (`reason = changed_after_pick`): the second Continue must not clear a mark that was
      true. Keep one other file awaiting (fail its request) so the import stays uploading
      between Continues, then edit the file again and Continue: it lists both sentences
      (`changed_after_pick` and `changed_after_upload`). Revert it to the uploaded bytes and
-     Continue: only "Changed after you picked it." remains, because the file is not the
+     Continue: only "Changed" remains, because the file is not the
      one originally picked (its modified time changed). Check the rows after each step.
    - Pick a copy of the folder with later modified times and some files removed, then
      Pick again with the original after editing two files that landed from the copy. The
-     copy's marks clear; only the edits list, each with the "Edited after it uploaded"
-     sentence (a file that arrived from the copy and was then edited also lists "Changed
-     after you picked it", because the edit destroys the proof that mark was false). Pick
+     copy's marks clear; only the edits list, each with the "Edited after upload"
+     sentence (a file that arrived from the copy and was then edited also lists "Changed", because the edit destroys the proof that mark was false). Pick
      again must send the files the copy lacked.
    - `chmod 000` a received file and touch it, then Continue. Everything else still
      sends; the file keeps its reason and is not listed. Do the same to an awaiting file
@@ -258,7 +257,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
      sends, the import completes with no marks and Retry is never needed.
    - Click Import without them while the hash pass is still running (slow
      `Blob.prototype.arrayBuffer` for `File`s). The report's `POST …/picked` goes before
-     the skip, and the edited files still list "Edited after it uploaded".
+     the skip, and the edited files still list "Edited after upload".
    - Make a read never settle (`arrayBuffer` returning a pending promise for one edited
      received file, or `slice(0, 1)` for an awaiting one). After 30 seconds the file counts
      as unreadable: the report goes without it, or the send skips it. The import

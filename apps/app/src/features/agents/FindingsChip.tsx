@@ -14,7 +14,6 @@ export function FindingsChip({
   tone,
   word,
   heading,
-  sub,
   children,
   touch = false,
   label,
@@ -22,7 +21,6 @@ export function FindingsChip({
   tone: "destructive" | "warning" | "neutral";
   word: ReactNode;
   heading: string;
-  sub?: string;
   /** The list; given the popover's close, for an item that leaves it. */
   children: (close: () => void) => ReactNode;
   touch?: boolean;
@@ -68,7 +66,6 @@ export function FindingsChip({
         onClick={(event) => event.stopPropagation()}
       >
         <p className="px-2 pt-1 font-medium text-foreground text-sm">{heading}</p>
-        {sub ? <p className="px-2 pb-1 text-muted-foreground text-xs">{sub}</p> : null}
         {children(() => setOpen(false))}
       </PopoverContent>
     </Popover>

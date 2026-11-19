@@ -1,31 +1,8 @@
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { IMAGE_PROXY_MAX_BYTES, type ImageProxyReason } from "@meridian/contracts/protocol";
 import { ImageIcon, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { loadRemoteImage, useRemoteImageStatus } from "./remote-image";
-
-function refusalMessage(reason: ImageProxyReason | null): string {
-  switch (reason) {
-    case "too_large": {
-      const megabytes = IMAGE_PROXY_MAX_BYTES / (1024 * 1024);
-      return t`Too large to load (the limit is ${megabytes} MB).`;
-    }
-    case "not_image":
-      return t`That address is not an image.`;
-    case "not_allowed":
-      return t`That address is not allowed (private or local).`;
-    case "port":
-      return t`Only addresses on the standard web ports can be loaded.`;
-    case "unreachable":
-      return t`The server didn't answer.`;
-    case "timeout":
-      return t`The server took too long to answer.`;
-    case null:
-      return t`The image could not be loaded.`;
-  }
-}
 
 /** What a remote picture shows until the writer loads it: its address, and the button that loads it. */
 export function RemoteImagePlaceholder({ address, alt }: { address: string; alt: string }) {
@@ -44,7 +21,7 @@ export function RemoteImagePlaceholder({ address, alt }: { address: string; alt:
       </span>
       {status?.kind === "failed" ? (
         <span className="text-destructive text-xs" role="alert">
-          {refusalMessage(status.reason)}
+          <Trans>Couldn't load image</Trans>
         </span>
       ) : null}
       <Button

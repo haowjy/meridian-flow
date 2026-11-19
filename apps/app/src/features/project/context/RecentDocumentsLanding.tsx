@@ -329,7 +329,7 @@ function LandingEmpty({ onNewDocument }: { onNewDocument?: () => void }) {
         <Trans>Nothing opened yet</Trans>
       </p>
       <p className="mt-1 text-xs text-muted-foreground">
-        <Trans>Open a document from the project tree, or start a new one.</Trans>
+        <Trans>Open a document or start a new one</Trans>
       </p>
       <Button size="sm" className="mt-5" onClick={onNewDocument} disabled={!onNewDocument}>
         <FilePlus aria-hidden />

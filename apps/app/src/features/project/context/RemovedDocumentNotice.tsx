@@ -106,30 +106,24 @@ export function removedBeforeChangeSentence(name: string | null, voice: RemovalV
       const who = voice.name;
       if (voice.reason === "discarded")
         return name
-          ? t`${who} discarded ${name} from the draft before this change could be made.`
-          : t`${who} discarded this document from the draft before this change could be made.`;
-      return name
-        ? t`${who} deleted ${name} before this change could be made.`
-        : t`${who} deleted this document before this change could be made.`;
+          ? t`${who} discarded ${name} from the draft`
+          : t`${who} discarded this document from the draft`;
+      return name ? t`${who} deleted ${name}` : t`${who} deleted this document`;
     }
     case "agent": {
       const { chat } = voice;
       if (chat)
         return name
-          ? t`The AI in ${chat} deleted ${name} before this change could be made.`
-          : t`The AI in ${chat} deleted this document before this change could be made.`;
-      return name
-        ? t`The AI in a chat deleted ${name} before this change could be made.`
-        : t`The AI in a chat deleted this document before this change could be made.`;
+          ? t`The AI in ${chat} deleted ${name}`
+          : t`The AI in ${chat} deleted this document`;
+      return name ? t`The AI in a chat deleted ${name}` : t`The AI in a chat deleted this document`;
     }
     case "anonymous":
       if (voice.reason === "discarded")
         return name
-          ? t`${name} was discarded from the draft before this change could be made.`
-          : t`This document was discarded from the draft before this change could be made.`;
-      return name
-        ? t`${name} was deleted before this change could be made.`
-        : t`This document was deleted before this change could be made.`;
+          ? t`${name} was discarded from the draft`
+          : t`This document was discarded from the draft`;
+      return name ? t`${name} was deleted` : t`This document was deleted`;
   }
 }
 
@@ -189,23 +183,19 @@ export function deletedLiveSentence(
   const voice = removalVoice(record, chats);
   if (voice.kind === "person") {
     const { name } = voice;
-    return area
-      ? t`${name} deleted ${title} from ${area}. Applying brings it back.`
-      : t`${name} deleted ${title}. Applying brings it back.`;
+    return area ? t`${name} deleted ${title} from ${area}` : t`${name} deleted ${title}..`;
   }
   if (voice.kind === "agent") {
     const { chat } = voice;
     if (chat)
       return area
-        ? t`The AI in ${chat} deleted ${title} from ${area}. Applying brings it back.`
-        : t`The AI in ${chat} deleted ${title}. Applying brings it back.`;
+        ? t`The AI in ${chat} deleted ${title} from ${area}`
+        : t`The AI in ${chat} deleted ${title}`;
     return area
-      ? t`The AI in a chat deleted ${title} from ${area}. Applying brings it back.`
-      : t`The AI in a chat deleted ${title}. Applying brings it back.`;
+      ? t`The AI in a chat deleted ${title} from ${area}`
+      : t`The AI in a chat deleted ${title}`;
   }
-  return area
-    ? t`${title} was deleted from ${area}. Applying brings it back.`
-    : t`${title} was deleted. Applying brings it back.`;
+  return area ? t`${title} was deleted from ${area}` : t`${title} was deleted..`;
 }
 
 /** What a chip says when only a short sentence fits: the count and what happened. */

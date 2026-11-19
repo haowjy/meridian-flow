@@ -410,7 +410,7 @@ export function ChangesSource({
         {hasFiles && controller.frozen ? (
           <div className="px-2">
             <ListLine iconSlot>
-              <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
+              <Trans>This chat is in Trash</Trans>
             </ListLine>
           </div>
         ) : null}

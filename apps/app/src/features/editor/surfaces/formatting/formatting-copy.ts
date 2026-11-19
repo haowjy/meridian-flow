@@ -68,13 +68,7 @@ export function formattingBlockedMessage(
   subject: BlockedSubject,
   reason: FormattingBlockedReason | null,
 ): string | null {
-  if (reason === "clipboard-read-blocked") {
-    const shortcut = shortcutLabel("Mod+V");
-    return t`This browser will not hand the clipboard to the page. Press ${shortcut} to paste.`;
-  }
-  if (reason === "clipboard-write-blocked") {
-    const shortcut = shortcutLabel("Mod+C");
-    return t`This browser will not let the page write to the clipboard. Press ${shortcut} to copy.`;
-  }
+  if (reason === "clipboard-read-blocked" || reason === "clipboard-write-blocked")
+    return t`Clipboard unavailable`;
   return blockedReasonMessage(subject, reason);
 }

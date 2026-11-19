@@ -54,16 +54,11 @@ export function TrashDiscardRow({
         notice={
           !onUndo ? (
             // Restored elsewhere first: nothing here can put it back.
-            <RowWord tone="done" word={<Trans>Restored</Trans>} sentence={t`Restored just now.`} />
+            <RowWord tone="done" word={<Trans>Restored</Trans>} />
           ) : (
             <RowWord
               word={<Trans>Undo</Trans>}
               label={t`Undo restore of ${title}`}
-              sentence={
-                workName
-                  ? t`Restored just now: the drafts are back in ${workName}. Undo puts them back in Trash.`
-                  : t`Restored just now: the drafts are back. Undo puts them back in Trash.`
-              }
               pending={undo}
               onAction={onUndo}
             />

@@ -219,7 +219,7 @@ function UploadRow({
 const refuseUploadsDrops: EntriesRoute = {
   verdict: () => ({
     kind: "refuse",
-    label: t`Files move or copy out of Uploads; they can't be dropped into it`,
+    label: t`Files can't be dropped into Uploads`,
   }),
   drop: () => {},
 };

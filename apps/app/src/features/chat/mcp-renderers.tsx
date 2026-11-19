@@ -183,7 +183,7 @@ function McpCallDetail({ tool }: { tool: ToolView }) {
           ) : null}
           {reply.cut ? (
             <BoundLine>
-              <Trans>The reply was cut short: this is the part the AI read.</Trans>
+              <Trans>Reply cut short</Trans>
             </BoundLine>
           ) : null}
         </Part>
@@ -264,7 +264,7 @@ function ConnectionFixFor({
   if (standing.kind === "working" || standing.kind === "no_tools")
     return (
       <span className="text-compact text-muted-foreground">
-        <Trans>{name} answers now. Ask the AI to try again.</Trans>
+        <Trans>{name} connected</Trans>
       </span>
     );
   const action = standingAction(standing);

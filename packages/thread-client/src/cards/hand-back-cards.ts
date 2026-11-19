@@ -54,9 +54,7 @@ export function handBackCards(
         entry.targetExecutionId !== null &&
         running === entry.targetExecutionId
           ? "stop-failed"
-          : refused
-            ? "hand-back-refused"
-            : "hand-back-failed",
+          : "hand-back-failed",
       action: refused ? "dismiss" : "try_again",
       anchor: "composer",
       count: entry.count,

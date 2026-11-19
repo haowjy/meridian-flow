@@ -12,18 +12,15 @@ export function chatCardText(card: ChatCard): string {
     case "updates-disconnected":
       return t`Chat updates disconnected`;
     case "reply-failed":
-      return t`This response failed.`;
+      return t`Reply failed`;
     case "reply-declined":
-      return t`The AI provider turned this request down.`;
-    // The server owns the words of a compaction's and a brief's own failure.
+      return t`Reply declined`;
     case "compaction-failed":
-      return card.text ?? t`This conversation couldn't be compacted.`;
+      return t`Couldn't compact`;
     case "brief-failed":
-      return card.text ?? t`The handoff brief failed.`;
+      return t`Handoff failed`;
     case "retry-refused":
-      return t`Couldn't retry.`;
-    case "retry-refused-another-reply":
-      return t`Couldn't retry. Another reply started first.`;
+      return t`Couldn't retry`;
     case "retry-lost":
       return t`Couldn't start the retry.`;
     case "brief-retry-lost":
@@ -34,18 +31,13 @@ export function chatCardText(card: ChatCard): string {
       return t`Couldn't stop the reply.`;
     case "send-now-failed":
       return t`Couldn't send now.`;
-    case "hand-back-refused":
+    case "hand-back-failed":
       return plural(card.count, {
         one: "Couldn't move your queued message.",
         other: "Couldn't move your queued messages.",
       });
-    case "hand-back-failed":
-      return plural(card.count, {
-        one: "Couldn't move your queued message to the message box.",
-        other: "Couldn't move your queued messages to the message box.",
-      });
     case "usage-blocked":
-      return t`You're out of usage. Your messages will send when you add more.`;
+      return t`Out of usage`;
     case "send-failed":
       return t`Couldn't send.`;
     case "compact-enqueue-failed":

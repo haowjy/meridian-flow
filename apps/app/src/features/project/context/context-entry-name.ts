@@ -68,7 +68,7 @@ export function validateContextEntryName(
   if (raw !== trimmed) {
     return {
       level: "warning",
-      message: t`Leading or trailing whitespace detected in file or folder name.`,
+      message: t`Invalid name`,
     };
   }
   return null;

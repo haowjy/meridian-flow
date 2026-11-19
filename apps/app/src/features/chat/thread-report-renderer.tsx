@@ -75,9 +75,7 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
     <ReportContent
       report={read.report}
       empty={<Trans>No report text was returned.</Trans>}
-      message={
-        read.runningAgain ? t`This report is from its previous run. It's running again now.` : null
-      }
+      message={read.runningAgain ? t`Running again` : null}
       showStopMetadata={false}
       className="space-y-[var(--chat-space-block)] text-sm"
     />

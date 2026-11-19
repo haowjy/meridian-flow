@@ -289,7 +289,7 @@ describe("hand-back operation", () => {
       { copy: "hand-back-failed", action: "try_again" },
     ]);
     expect(handBackCards([{ ...base, status: "refused" }], rowsGone)).toMatchObject([
-      { copy: "hand-back-refused", action: "dismiss" },
+      { copy: "hand-back-failed", action: "dismiss" },
     ]);
   });
 

@@ -87,7 +87,7 @@ export function useWorkMetadataController(
           const sentence = workClosedSentence(cause.why);
           setClosed(sentence);
           announce(sentence);
-        } else fail(cause, workUpdateFailure(cause, t`Couldn’t save the goal. Try again.`));
+        } else fail(cause, workUpdateFailure(cause, t`Couldn't save the goal`));
       },
     );
     return true;

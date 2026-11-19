@@ -188,7 +188,7 @@ function ChatScreenLoaded({
       {isError ? (
         <div className="border-b border-destructive/40 bg-card px-4 py-2">
           <div className="mx-auto max-w-3xl">
-            <InlineErrorRow message={t`Couldn't load. Check your connection.`} onRetry={refetch} />
+            <InlineErrorRow message={t`Couldn't load`} onRetry={refetch} />
           </div>
         </div>
       ) : null}

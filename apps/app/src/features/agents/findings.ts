@@ -25,8 +25,7 @@ export function findingSentence(finding: AgentFinding): string {
       if (key === "model") return t`model must be a model's name, like model: sonnet.`;
       break;
     case "field.unknown":
-      if (key)
-        return t`${key} isn't a key Flow knows, so it has no effect. Check the spelling, or remove it.`;
+      if (key) return t`${key} isn't a known key, so it has no effect`;
       break;
     case "skill-ref.missing": {
       const skill = /references skill `([^`]+)`/.exec(finding.message)?.[1];
@@ -42,8 +41,8 @@ export function findingSentence(finding: AgentFinding): string {
     case "toml.invalid": {
       const at = /line (\d+), column (\d+)/.exec(finding.message);
       return at
-        ? t`mars.toml can't be read: line ${at[1]}, column ${at[2]} isn't valid TOML.`
-        : t`mars.toml can't be read: it isn't valid TOML.`;
+        ? t`mars.toml: invalid TOML at line ${at[1]}, column ${at[2]}`
+        : t`mars.toml: invalid TOML`;
     }
     case "flow.package-not-schema-1":
       return t`mars.toml needs schema = 1 under [package].`;

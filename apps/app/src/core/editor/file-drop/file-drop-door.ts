@@ -19,7 +19,7 @@ import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { UploadRefusedError } from "@/client/api/direct-upload";
 
-import { type UploadRun, uploads } from "@/core/uploads/upload-store";
+import { uploads } from "@/core/uploads/upload-store";
 import { fileTooLargeMessage } from "@/lib/upload-limit";
 
 import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
@@ -31,7 +31,7 @@ import { acceptsInlineImage, isImageFile } from "../images/image-workflow";
 import type { DropDoor } from "../landing/drop-plan";
 import { snapOutOfUnits } from "../landing/inline-snap";
 import type { Landing } from "../landing/point-landing";
-import { type FileDropHost, fileDropHost } from "./FileDropExtension";
+import { fileDropHost } from "./FileDropExtension";
 
 type FileLike = Pick<File, "type" | "name">;
 

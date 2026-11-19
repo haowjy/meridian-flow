@@ -125,5 +125,5 @@ Use [Failure cards](failure-cards.md) for shared card and live-region cases. Kee
 the queue-specific paths here: drop `send-now` and expect "Couldn't send now."
 with Try again or Dismiss; drop `stop` and expect "Couldn't stop the reply."
 with Try again; and drop a queued `/compact` row's `withdraw` request and expect
-"Couldn't stop the compaction." with Try again in that row. Restore `fetch` and
+"Couldn't stop the compaction" with Try again in that row. Restore `fetch` and
 confirm each retry completes once and removes its card.

@@ -73,15 +73,15 @@ function toolViews(
 
 export function createMcpConnections(deps: McpConnectionsDeps) {
   function parseUrl(raw: unknown): string {
-    if (typeof raw !== "string") throw new McpConnectionError("invalid", "The address is missing.");
+    if (typeof raw !== "string") throw new McpConnectionError("invalid", "Invalid address.");
     let url: URL;
     try {
       url = new URL(raw.trim());
     } catch {
-      throw new McpConnectionError("invalid", "That is not a web address.");
+      throw new McpConnectionError("invalid", "Invalid address.");
     }
-    const refusal = deps.addressRefusal(url);
-    if (refusal) throw new McpConnectionError("invalid", refusal);
+    if (deps.addressRefusal(url))
+      throw new McpConnectionError("invalid", "Needs an https address.");
     url.hash = "";
     return url.toString();
   }
@@ -151,7 +151,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
   async function owned(accountId: UserId, id: McpConnectionId): Promise<StoredConnection> {
     const stored = await deps.store.find(accountId, id);
     if (!stored || stored.row.deletedAt)
-      throw new McpConnectionError("not_found", "No such connection.");
+      throw new McpConnectionError("not_found", "Connection not found.");
     return stored;
   }
 
@@ -229,10 +229,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
       input: { name: string; url: string; token?: string; projectId?: ProjectId },
     ): Promise<{ connection: McpConnectionView; tools: McpToolView[] | null }> {
       if (!isMcpConnectionName(input.name))
-        throw new McpConnectionError(
-          "invalid",
-          "A name is 1 to 40 letters, digits, - or _, with no spaces.",
-        );
+        throw new McpConnectionError("invalid", "Invalid name.");
       const url = parseUrl(input.url);
       const id = randomUUID();
       const token = input.token?.trim();
@@ -282,7 +279,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
             : null;
       if (spec === undefined && sealedToken === undefined) return view(before, null);
       const after = await deps.store.edit(accountId, id, { spec, sealedToken });
-      if (!after) throw new McpConnectionError("not_found", "No such connection.");
+      if (!after) throw new McpConnectionError("not_found", "Connection not found.");
       // The old session is of the old address or token; every other process moves on by key.
       void deps.client.close(deps.sessionKey(before.row));
       // A new version has no result; the check that learns one runs in the background.
@@ -308,18 +305,14 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
     ): Promise<McpConnectionView> {
       const stored = await owned(accountId, id);
       const listing = await listingOf(stored);
-      if (!listing)
-        throw new McpConnectionError(
-          "not_listed",
-          "The server did not answer, so its tools could not be listed.",
-        );
+      if (!listing) throw new McpConnectionError("not_listed", "Couldn't list tools.");
       const effects = listing.tools.filter(
         (tool) => toolNames.includes(String(tool.name)) && !isReadOnly(tool),
       );
       if (effects.length > 0)
         throw new McpConnectionError(
           "not_read_only",
-          `Only read-only tools can be chosen for now: ${effects.map((tool) => String(tool.name)).join(", ")} can change things.`,
+          `Read-only tools only: ${effects.map((tool) => String(tool.name)).join(", ")}.`,
         );
       const made = makePin(listing, { tools: toolNames, pinnedAt: now().toISOString() });
       if ("problems" in made)
@@ -341,7 +334,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
 
     async undo(accountId: UserId, id: McpConnectionId): Promise<McpConnectionView> {
       const stored = await deps.store.find(accountId, id);
-      if (!stored) throw new McpConnectionError("not_found", "No such connection.");
+      if (!stored) throw new McpConnectionError("not_found", "Connection not found.");
       await deps.store.setRemoved(accountId, id, null);
       deps.statusChanged(stored.row);
       const fresh = (await deps.store.find(accountId, id)) ?? stored;

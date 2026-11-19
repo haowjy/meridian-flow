@@ -150,7 +150,7 @@ export function useIdentityCommit({
       );
       return { status: "committed" };
     } catch {
-      return { status: "error", message: t`Couldn't save this document's home. Try again.` };
+      return { status: "error", message: t`Couldn't save this document's home` };
     }
   };
 }

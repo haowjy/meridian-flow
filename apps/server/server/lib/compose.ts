@@ -602,7 +602,17 @@ export async function createProductionAppPorts(input: {
   const mcpConnections = createMcpConnections({
     store: mcpStore,
     client: mcpClient,
-    addressRefusal,
+    addressRefusal: (url) => {
+      const reason = addressRefusal(url);
+      if (reason)
+        emitEvent(eventSink, {
+          level: "warn",
+          source: "mcp.connection-address",
+          name: "McpAddressRefused",
+          payload: { host: url.hostname, reason },
+        });
+      return reason;
+    },
     cipher: createTokenCipher(resolveMcpTokenKey(environment)),
     sessionKey: (row) => sessionKey(row.accountId, row.id, row.settingsVersion),
     // A hint, then the app asks again; one hint per open project of the account.

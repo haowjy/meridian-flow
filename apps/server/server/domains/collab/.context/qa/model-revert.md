@@ -7,8 +7,7 @@ part reverts or skips independently. Skipped parts use their immutable
 current text.
 
 When every part is skipped, the status is `nothing_to_revert` and the failed
-step says, “That change wasn't reverted because its text changed or is already
-gone.” Undo uses the same part policy. `count` checks whole stack
+step says, “Couldn't revert” Undo uses the same part policy. `count` checks whole stack
 entries before writing; an excessive count changes nothing.
 
 ## Setup

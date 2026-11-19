@@ -260,13 +260,6 @@ function ReviewError({ props }: { props: EditorViewProps }) {
         <p className="font-medium text-foreground text-sm">
           <Trans>Couldn't open review mode.</Trans>
         </p>
-        <p className="text-muted-foreground text-xs">
-          {props.draftOnly ? (
-            <Trans>Try again, or close this tab. The draft stays in your list.</Trans>
-          ) : (
-            <Trans>Try again, or return to the live document.</Trans>
-          )}
-        </p>
         <div className="flex items-center justify-center gap-1.5">
           {props.reviewItemKey ? (
             <Button

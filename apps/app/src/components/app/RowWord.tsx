@@ -23,8 +23,8 @@ export function RowWord({
   ref,
 }: {
   word: ReactNode;
-  /** What happened, in one plain sentence; the button's description. */
-  sentence: ReactNode;
+  /** What happened, in one plain sentence; the button's description. Omit it when it would only repeat the word. */
+  sentence?: ReactNode;
   /** The button's name in full when the word alone doesn't say what it acts on ("Undo delete of Chapter 4"). */
   label?: string;
   /**
@@ -64,79 +64,81 @@ export function RowWord({
     onAction();
     if (follow && back) follow(back);
   };
-  return (
-    <Tooltip open={open} onOpenChange={setOpen}>
-      <TooltipTrigger asChild>
-        <button
-          ref={(element) => {
-            self.current = element;
-            if (typeof ref === "function") ref(element);
-            else if (ref) ref.current = element;
-          }}
-          type="button"
-          aria-label={label}
-          aria-describedby={described}
-          aria-disabled={pending || undefined}
-          data-row-word={tone}
-          className={cn(
-            "focus-ring flex shrink-0 select-none items-center gap-1 rounded-sm px-1.5 [-webkit-touch-callout:none] coarse:min-h-11 coarse:min-w-11 coarse:justify-center",
-            tone === "action"
-              ? "font-medium text-jade-text hover:underline underline-offset-2"
-              : "text-muted-foreground",
-            pending && "opacity-50",
-          )}
-          // A long press is the phone's hover: it must not open the row's own menu or a drag.
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onPointerDown={(event) => {
-            event.stopPropagation();
-            // A word with no action keeps its sentence open: Radix's close on press is skipped.
-            if (!onAction) event.preventDefault();
-            if (event.pointerType !== "touch") return;
-            endPress();
-            const held = {
-              long: false,
-              timer: window.setTimeout(() => {
-                held.long = true;
-                setOpen(true);
-              }, 450),
-            };
-            press.current = held;
-          }}
-          onPointerUp={endPress}
-          onPointerCancel={endPress}
-          onPointerLeave={(event) => {
-            endPress();
-            // A finger lifting leaves the button: the sentence a press opened stays.
-            if (event.pointerType === "touch") event.preventDefault();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            const long = press.current?.long;
-            press.current = null;
-            // The sentence this click keeps or opens is the word's own: Radix's close on click
-            // is skipped.
-            if (long || !onAction) event.preventDefault();
-            if (long) return;
-            if (!onAction) setOpen(true);
-            else if (!pending) act();
-          }}
-        >
-          {tone === "warning" ? (
-            <TriangleAlert aria-hidden className="size-3.5 text-warning-ink" />
-          ) : tone === "done" ? (
-            <Check aria-hidden className="size-3.5 text-jade-text" />
-          ) : null}
-          {/* In a row, as in LabelNote: the outer span takes the row's text size, so the word
+  const button = (
+    <button
+      ref={(element) => {
+        self.current = element;
+        if (typeof ref === "function") ref(element);
+        else if (ref) ref.current = element;
+      }}
+      type="button"
+      aria-label={label}
+      aria-describedby={sentence ? described : undefined}
+      aria-disabled={pending || undefined}
+      data-row-word={tone}
+      className={cn(
+        "focus-ring flex shrink-0 select-none items-center gap-1 rounded-sm px-1.5 [-webkit-touch-callout:none] coarse:min-h-11 coarse:min-w-11 coarse:justify-center",
+        tone === "action"
+          ? "font-medium text-jade-text hover:underline underline-offset-2"
+          : "text-muted-foreground",
+        pending && "opacity-50",
+      )}
+      // A long press is the phone's hover: it must not open the row's own menu or a drag.
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        // A word with no action keeps its sentence open: Radix's close on press is skipped.
+        if (!onAction) event.preventDefault();
+        if (event.pointerType !== "touch") return;
+        endPress();
+        const held = {
+          long: false,
+          timer: window.setTimeout(() => {
+            held.long = true;
+            setOpen(true);
+          }, 450),
+        };
+        press.current = held;
+      }}
+      onPointerUp={endPress}
+      onPointerCancel={endPress}
+      onPointerLeave={(event) => {
+        endPress();
+        // A finger lifting leaves the button: the sentence a press opened stays.
+        if (event.pointerType === "touch") event.preventDefault();
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        const long = press.current?.long;
+        press.current = null;
+        // The sentence this click keeps or opens is the word's own: Radix's close on click
+        // is skipped.
+        if (long || !onAction) event.preventDefault();
+        if (long) return;
+        if (!onAction) setOpen(true);
+        else if (!pending) act();
+      }}
+    >
+      {tone === "warning" ? (
+        <TriangleAlert aria-hidden className="size-3.5 text-warning-ink" />
+      ) : tone === "done" ? (
+        <Check aria-hidden className="size-3.5 text-jade-text" />
+      ) : null}
+      {/* In a row, as in LabelNote: the outer span takes the row's text size, so the word
               sits on the name's baseline rather than centred. Anywhere else it is text-xs like
               the chips and buttons it sits among, and the line keeps its height. */}
-          <span className="text-xs in-data-list-row:text-[length:inherit] in-data-list-row:leading-[inherit]">
-            <span className="text-xs">{word}</span>
-          </span>
-        </button>
-      </TooltipTrigger>
+      <span className="text-xs in-data-list-row:text-[length:inherit] in-data-list-row:leading-[inherit]">
+        <span className="text-xs">{word}</span>
+      </span>
+    </button>
+  );
+  if (!sentence) return button;
+  return (
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-64">
         {sentence}
       </TooltipContent>

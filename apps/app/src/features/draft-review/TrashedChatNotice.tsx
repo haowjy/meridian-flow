@@ -45,11 +45,11 @@ export function TrashedChatNotice({
           </Button>
         }
       >
-        <Trans>This chat is in Trash. Restore it to edit or apply its drafts.</Trans>
+        <Trans>This chat is in Trash</Trans>
       </DocumentNotice>
       {state === "failed" ? (
         <InlineErrorRow
-          message={<Trans>Couldn't restore the chat. Try again.</Trans>}
+          message={<Trans>Couldn't restore the chat</Trans>}
           className="px-0 pt-2 pb-0"
         />
       ) : null}

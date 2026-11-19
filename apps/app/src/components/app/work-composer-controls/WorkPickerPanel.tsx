@@ -77,18 +77,17 @@ export function deriveWorkPickerViewModel(
   return { ...rows, status: catalog.status };
 }
 
-const failureCopy = (failure: WorkPickerFailure) => {
+export const workFailureCopy = (failure: WorkPickerFailure) => {
   switch (failure.kind) {
     case "thread_busy":
-      return t`Wait for this response to finish, then try again.`;
+      return t`Reply in progress`;
     case "work_unavailable":
-      return t`That Work is no longer available. Choose another Work.`;
+      return t`Work unavailable`;
     case "current_work_missing":
-      return t`This chat's current Work could not be found. Refresh the page and try again.`;
+      return t`Work not found`;
     case "reconciled_not_current":
-      return t`The Work did not change. Try again.`;
     case "unconfirmed":
-      return t`The change could not be confirmed. Try again.`;
+      return t`Couldn't change Work`;
   }
 };
 
@@ -205,7 +204,7 @@ export function WorkPickerPanel({
                       error ? (
                         <InlineErrorRow
                           id={errorId}
-                          message={failureCopy(error)}
+                          message={workFailureCopy(error)}
                           className="px-[var(--chat-card-pad-x)] pt-[var(--chat-card-pad-y)] pb-0"
                         />
                       ) : null

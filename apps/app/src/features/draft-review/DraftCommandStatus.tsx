@@ -18,9 +18,7 @@ export function DeletedWord({ scheme }: { scheme: ProjectContextTreeScheme | nul
     <RowWord
       tone="note"
       word={<Trans>Deleted</Trans>}
-      sentence={
-        area ? t`Deleted from ${area}. Apply brings it back.` : t`Deleted. Apply brings it back.`
-      }
+      sentence={area ? t`Deleted from ${area}` : t`Deleted`}
     />
   );
 }

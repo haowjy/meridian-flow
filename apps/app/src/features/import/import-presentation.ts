@@ -87,20 +87,8 @@ export function importStatus({
 /** Results the writer has read once the popup closes on them. */
 export const READ_ON_CLOSE: ReadonlySet<ImportState> = new Set(["done", "needs-look", "expired"]);
 
-/** What a deleted destination means for this import, in the tense of its state. */
 function fallbackNote(state: ImportState): string | undefined {
-  switch (state) {
-    case "done":
-    case "needs-look":
-      return t`The destination was deleted. Added at the area root.`;
-    case "failed":
-      return t`The destination was deleted. Trying again adds it at the area root.`;
-    case "stop":
-    case "expired":
-      return undefined;
-    default:
-      return t`The destination was deleted. It will be added at the area root.`;
-  }
+  return state === "stop" || state === "expired" ? undefined : t`Destination deleted`;
 }
 export function importPresentation(summary: ImportSummary, local: LocalUpload) {
   const state = importState(summary, local);
@@ -119,13 +107,12 @@ export function importPresentation(summary: ImportSummary, local: LocalUpload) {
   const count = plural(files, { one: `${received} of # file`, other: `${received} of # files` });
   const rows: Record<
     ImportState,
-    { title: string; detail?: string; note?: string; progress?: number | "indeterminate" }
+    { title: string; detail?: string; progress?: number | "indeterminate" }
   > = {
     reading: { title: t`Reading ${name}`, progress: "indeterminate" },
     uploading: {
       title: t`Uploading ${name}`,
       detail: count,
-      note: t`Keep this tab open until the upload finishes.`,
       progress,
     },
     elsewhere: { title: t`Uploading in another window`, detail: count, progress },
@@ -160,7 +147,6 @@ export function importPresentation(summary: ImportSummary, local: LocalUpload) {
         one: `${prepared} of # file ready`,
         other: `${prepared} of # files ready`,
       }),
-      note: t`You can close this tab.`,
       progress: files ? ((prepared + skipped + failed) / files) * 100 : 0,
     },
     adding: { title: t`Adding ${name} to ${area}`, progress: 100 },
@@ -177,9 +163,9 @@ export function importPresentation(summary: ImportSummary, local: LocalUpload) {
     },
     failed: {
       title: t`Import didn't finish`,
-      detail: t`Nothing was added. Your files are kept for 7 days so you can try again.`,
+      detail: t`Nothing added`,
     },
-    expired: { title: t`Import discarded`, detail: t`It was waiting for 7 days.` },
+    expired: { title: t`Import discarded`, detail: t`Expired` },
   };
   return {
     state,

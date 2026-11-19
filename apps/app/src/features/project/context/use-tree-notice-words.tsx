@@ -265,24 +265,20 @@ function stepSentence(step: TreeStep, node: string): string {
   const was = step.was.get(node);
   switch (step.gesture) {
     case "delete":
-      return count > 1
-        ? t`Deleted ${count} items just now. Undo puts them back.`
-        : t`Deleted just now. Undo puts it back.`;
+      return count > 1 ? t`Deleted ${count} items just now` : t`Deleted just now`;
     case "rename": {
       const name = was?.name ?? "";
-      return t`Renamed from ${name} just now. Undo puts the old name back.`;
+      return t`Renamed from ${name} just now`;
     }
     case "move": {
-      if (count > 1) return t`Moved ${count} items just now. Undo puts them back.`;
+      if (count > 1) return t`Moved ${count} items just now`;
       const folder = was?.folder;
-      return folder
-        ? t`Moved from ${folder} just now. Undo puts it back.`
-        : t`Moved just now. Undo puts it back.`;
+      return folder ? t`Moved from ${folder} just now` : t`Moved just now`;
     }
     case "restore":
       return count > 1
-        ? t`Restored ${count} items from Trash just now. Undo puts them back in Trash.`
-        : t`Restored from Trash just now. Undo puts it back in Trash.`;
+        ? t`Restored ${count} items from Trash just now`
+        : t`Restored from Trash just now`;
     case "create":
       return "";
   }

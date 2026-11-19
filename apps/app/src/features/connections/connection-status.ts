@@ -13,8 +13,8 @@ export type ConnectionStanding =
   | { kind: "checking" }
   | { kind: "working"; tools: number }
   | { kind: "no_tools" }
-  | { kind: "problem"; status: "unreachable"; reason: string }
-  | { kind: "problem"; status: "needs_sign_in"; reason: string; tokenSet: boolean }
+  | { kind: "problem"; status: "unreachable" }
+  | { kind: "problem"; status: "needs_sign_in"; tokenSet: boolean }
   | { kind: "shadowed" };
 
 export function connectionStanding(
@@ -23,22 +23,21 @@ export function connectionStanding(
 ): ConnectionStanding {
   if (connection.shadowedBy) return { kind: "shadowed" };
   if (checking || connection.status === null) return { kind: "checking" };
-  if (connection.status === "unreachable")
-    return {
-      kind: "problem",
-      status: "unreachable",
-      reason: connection.statusReason ?? t`The server didn't answer.`,
-    };
+  if (connection.status === "unreachable") return { kind: "problem", status: "unreachable" };
   if (connection.status === "needs_sign_in")
     return {
       kind: "problem",
       status: "needs_sign_in",
-      reason: connection.statusReason ?? t`The server needs a valid token.`,
       tokenSet: connection.tokenSet,
     };
   return connection.pin
     ? { kind: "working", tools: connection.pin.tools.length }
     : { kind: "no_tools" };
+}
+
+/** A problem's category, all the writer is told: the server's reason stays in its logs. */
+export function problemWord(status: "unreachable" | "needs_sign_in"): string {
+  return status === "unreachable" ? t`Unreachable` : t`Needs sign-in`;
 }
 
 export function standingAction(standing: ConnectionStanding): ConnectionAction | null {
@@ -100,12 +99,5 @@ export function addressRefusal(address: string): string | null {
   } catch {
     return null;
   }
-  switch (mcpAddressProblem(url)) {
-    case "not_https":
-      return t`Flow connects only to https addresses, so the address must start with https://.`;
-    case "not_port_443":
-      return t`Flow connects only to port 443, so take the port out of the address.`;
-    case null:
-      return null;
-  }
+  return mcpAddressProblem(url) === null ? null : t`Needs an https address`;
 }
