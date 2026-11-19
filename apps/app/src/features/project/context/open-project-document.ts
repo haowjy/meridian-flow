@@ -540,7 +540,8 @@ export function ProjectDocumentNavigationProvider({
         refused: (outcome, retry) =>
           notifyFailure({
             key: `open-document:${projectId}`,
-            title: refusalTitle(outcome),
+            title: t`Couldn't open`,
+            detail: outcome,
             ...(outcome.reason === "lookup-failed"
               ? { action: { label: t`Retry`, run: retry } }
               : {}),
@@ -561,11 +562,6 @@ export function ProjectDocumentNavigationProvider({
       onClose: () => setUpload(null),
     }),
   );
-}
-
-function refusalTitle({ reason, name }: Extract<OpenDocumentOutcome, { kind: "refused" }>) {
-  if (reason === "gone") return t`Document is gone`;
-  return name ? t`Couldn't open ${name}` : t`Couldn't open document`;
 }
 
 export function useOpenProjectDocument(projectId: string | undefined): OpenProjectDocument {

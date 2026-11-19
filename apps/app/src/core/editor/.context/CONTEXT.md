@@ -483,8 +483,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   caret. Inline code is not a fence: a tree row or picture there snaps to the
   span's edge; a text slice stays in the span. A dragged file over a fence is
   refused (`Can’t put a file inside code`); a file the editor can't place shows
-  `File can’t go there` while dragging, and a picture that can't stand at the
-  caret shows `Picture can’t go there`. A drop never changes
+  `Can’t drop here` while dragging, and so does a picture that can't stand at the
+  caret. A drop never changes
   the rows or columns of any table (nested ones too) or spills out of its cell.
   One that would is refused: `Can’t put that in a
   table cell` when it lands in a cell, `Can’t move part of a table` when a
@@ -644,7 +644,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   offline reload, in a document purged before its room reconnects, comes back, and a room with no
   session in this tab is measured too. A copy with no mark (written before marks, or whose first
   mark write was lost) counts as marking nothing: all of it is offered. The
-  account lifetime offers the words in a failure pill, "Couldn't save edit · Copy · ×" (`unsentTypingToasts`,
+  account lifetime offers the words in a failure pill, "Couldn't save" with Copy (`unsentTypingToasts`,
   `features/editor/RescuedText.tsx`). A closed draft's copy also stays for an Undo of its Discard,
   which delivers it.
 - What it cannot reach: a read admission has no such loss (see the next section). A document no
@@ -727,7 +727,7 @@ from the wire alone, with nothing stored between handshakes.
   notice database after the copies, and only when no copy was left behind.
 - **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy (once
   the clipboard took the words) and close end the pill at once; when `done` rejects, the pill
-  comes back as "Didn't go through" (each show is a new sonner id, so a re-show is never dropped
+  comes back (each show is a new sonner id, so a re-show is never dropped
   as one still leaving), and the next press runs `act` again. A copy the browser refused brings
   it back as "Couldn't copy". Until one commits, the
   notice stays unacted, so a reload offers it again too.

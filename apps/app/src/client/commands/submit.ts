@@ -29,7 +29,8 @@ export async function submitCommand(
     if (!(cause instanceof JournalUnavailableError)) throw cause;
     notifyFailure({
       key: "command-journal",
-      title: t`Couldn’t save that change`,
+      title: t`Couldn't save`,
+      detail: cause,
     });
     return null;
   }

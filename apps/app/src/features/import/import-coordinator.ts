@@ -77,8 +77,8 @@ export class ImportCoordinator {
   }
   constructor(
     private readonly api: ImportApi,
-    /** An import that never started: it is gone. */
-    private readonly onRefused: () => void,
+    /** An import that never started: it is gone. `detail` is why, for the log. */
+    private readonly onRefused: (detail: unknown) => void,
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -352,16 +352,16 @@ export class ImportCoordinator {
       if (!this.live(record, attempt)) return;
       await this.create(record, attempt);
     } catch (error) {
-      if (this.live(record, attempt)) this.refuse(record);
+      if (this.live(record, attempt)) this.refuse(record, error);
     }
   }
   /** Nothing of this import reached the server, so nothing is left to come back to. */
-  private refuse(record: RecordState) {
+  private refuse(record: RecordState, detail: unknown) {
     this.retire(record);
     this.records.delete(record.view.importId);
     this.publish();
     this.nudge();
-    this.onRefused();
+    this.onRefused(detail);
   }
   private async create(record: RecordState, attempt: UploadAttempt) {
     const command = record.command;
@@ -386,7 +386,7 @@ export class ImportCoordinator {
           error.status < 500
         )
           record.creation = "local";
-        if (record.creation === "local") this.refuse(record);
+        if (record.creation === "local") this.refuse(record, error);
         else
           this.local(record, {
             phase: "stalled",

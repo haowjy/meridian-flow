@@ -88,7 +88,7 @@ export function ProjectContextRemovalController({
       signInRequired: () =>
         notifyFailure({
           key: "sign-in-expired",
-          title: t`Your sign-in expired`,
+          title: t`Sign-in expired`,
           action: { label: t`Log in`, run: logInAgain },
         }),
     });

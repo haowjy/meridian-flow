@@ -4,9 +4,7 @@
  * concerns. A Copy is a route, and its failure is a toast, with Retry unless sending it again
  * can't land it.
  */
-import { i18n } from "@lingui/core";
-import { plural, t } from "@lingui/core/macro";
-import type { Settlement } from "@meridian/contracts/commands";
+import { t } from "@lingui/core/macro";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -45,9 +43,7 @@ export type CopyContext = EntryContext & {
 /** A Copy the route refused: it has its own key, and Retry runs it again unless it is final. */
 type CopyFailure = {
   key: string;
-  sources: readonly string[];
-  /** Sending it again can't land it: the Work is closed, or the writer can't copy there. */
-  final: boolean;
+  error: unknown;
   copy: ReadyCopy;
 };
 
@@ -75,13 +71,6 @@ function isFinalRefusal(error: unknown): boolean {
   );
 }
 
-function copyFailureTitle(sources: readonly string[]): string {
-  const [only] = sources;
-  return sources.length === 1 && only
-    ? t`Couldn't copy ${only}`
-    : plural(sources.length, { one: "Couldn't copy # item", other: "Couldn't copy # items" });
-}
-
 /** Toasts a refused Copy; Retry, offered unless the refusal is final, runs it again. */
 function showCopyFailure(
   context: CopyContext,
@@ -90,32 +79,12 @@ function showCopyFailure(
 ): void {
   notifyFailure({
     key: failure.key,
-    title: copyFailureTitle(failure.sources),
-    action: failure.final
+    title: t`Couldn't copy`,
+    detail: failure.error,
+    action: isFinalRefusal(failure.error)
       ? undefined
       : { label: t`Retry`, run: () => void runCopy(context, failure.copy, selection) },
   });
-}
-
-/** What a Copy that left something undone says, in the writer's words; null when it left nothing. */
-export function copySettledNotice(settled: readonly Settlement[], copy: ReadyCopy): string | null {
-  const returned = settled.find((one) => one.rule === "returned");
-  if (returned) return t`Work closed, nothing copied`;
-  const left = settled.find((one) => one.rule === "left_out");
-  if (left?.why === "would_loop") return t`Can't copy a folder into itself`;
-  if (left) {
-    const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
-      left.items.map((item) => leftOutName(item, copy)),
-    );
-    return t`Couldn't copy ${names}`;
-  }
-  return null;
-}
-
-/** The writer's name for a left-out source: the selected row at that address, else the address's last segment. */
-function leftOutName(item: string, copy: ReadyCopy): string {
-  const row = copy.copies.find((one) => item.endsWith(one.place.path.replace(/^\/+/, "")));
-  return row?.name ?? decodeURIComponent(item.replace(/\/+$/, "").split("/").pop() ?? item);
 }
 
 export async function runCopy(
@@ -127,12 +96,14 @@ export async function runCopy(
   revealPlaced(copy.into, copies, selection);
   try {
     const settled = await answered;
-    const notice = copySettledNotice(settled, copy);
-    if (notice) {
+    // The Work closed, or a source was gone or would land inside itself: something wasn't copied.
+    const undone = settled.filter((one) => one.rule === "returned" || one.rule === "left_out");
+    if (undone.length > 0) {
       leaveSelections(copies);
       notifyFailure({
         key: entryToast(context.projectId, crypto.randomUUID()),
-        title: notice,
+        title: t`Couldn't copy`,
+        detail: undone,
       });
     }
   } catch (error) {
@@ -141,8 +112,7 @@ export async function runCopy(
       context,
       {
         key: entryToast(context.projectId, crypto.randomUUID()),
-        sources: copy.copies.map(({ name }) => name),
-        final: isFinalRefusal(error),
+        error,
         copy,
       },
       selection,

@@ -36,6 +36,12 @@ client contracts, stores and server-owned runtime behavior.
 - A row or menu shows only the actions that can succeed now; a fixed toolbar
   greys one instead, with the reason on hover. Feedback doesn't push content down
   ([copy and feedback][copy-and-feedback]).
+- A pill (`notifyFailure`, `EditorNoticePill`) is one short line naming the failure's category,
+  one wording per category: "Couldn't <verb>" for the writer's action (save, open, create, copy,
+  apply, discard, undo, redo, restore, import, upload, download, log out), "Sign-in expired",
+  "Can't drop here", "File too large", "Not an image". No cause, consequence or instruction:
+  the cause goes to the console (`detail`). No pill when the screen already shows the state, the
+  thing settles by itself, or the writer has nothing to do about it.
 - A list row is one line until it has something to say
   ([copy and feedback][copy-and-feedback]).
 

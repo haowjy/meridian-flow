@@ -1,11 +1,10 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
-import { plural } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { createdDraftId } from "@meridian/contracts";
 import { type AccountId, draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { getDraftMetadata, listOpenDrafts } from "@/client/api/branches-api";
-import { getTrashDiscards } from "@/client/api/projects-api";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -87,10 +86,8 @@ export class AccountFeatureLifetime {
       (records) =>
         notifyFailure({
           key: "tree-list-dropped",
-          title: plural(records.length, {
-            one: "Couldn't keep # change",
-            other: "Couldn't keep # changes",
-          }),
+          title: t`Couldn't save`,
+          detail: records,
         }),
       {
         localText: (documentId) => this.runtime.registry.localText(documentId as DocumentId),

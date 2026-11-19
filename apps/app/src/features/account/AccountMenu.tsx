@@ -37,10 +37,8 @@ export function AccountMenu() {
         if (!(error instanceof SignOutIncomplete)) reportError(error);
         notifyFailure({
           key: SIGN_OUT_FAILURE,
-          title:
-            error instanceof SignOutIncomplete && error.left === "unsent"
-              ? t`Couldn't log out: changes still sending`
-              : t`Couldn't log out: close other tabs`,
+          title: t`Couldn't log out`,
+          detail: error,
           action: { label: t`Retry`, run: leave },
         });
       },

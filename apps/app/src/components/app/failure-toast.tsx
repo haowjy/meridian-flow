@@ -3,7 +3,8 @@
  * failure that has no place of its own on a document or in the import popup; a success never
  * toasts. A failure stays until dismissed, except a `brief` one, a slip from the writer's own
  * action, which goes by itself. `visibleToasts` caps how many show at once. Every toast is one
- * floating pill of a few words: what failed, at most one action, and a close. It never explains.
+ * floating pill: the failure's category ("Couldn't apply", "Sign-in expired"), at most one action,
+ * and a close. Cause and consequence go to the console (`detail`), never into the pill.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
@@ -21,10 +22,11 @@ export function notifyFailure({
   action,
   onClose,
   brief,
+  detail,
 }: {
   /** This failure's own: a second toast under one key replaces the first. */
   key: string;
-  /** What failed, in a few words: "Couldn't move Chapter 3." A longer title is cut to one line. */
+  /** The failure's category: "Couldn't copy". A longer title is cut to one line. */
   title: ReactNode;
   /** The one way on: Retry where running it again can help, or what fixes it ("Log in"). */
   action?: { label: string; run: () => void | Promise<void> };
@@ -32,7 +34,10 @@ export function notifyFailure({
   onClose?: () => void;
   /** A one-line error that follows from the writer's action and loses nothing: it goes away soon. */
   brief?: true;
+  /** What went wrong, for whoever debugs it: logged, never shown. */
+  detail?: unknown;
 }) {
+  if (detail !== undefined) console.warn(`[failure] ${key}`, detail);
   dismissFailure(key);
   const owns = () => shown.get(key) === id;
   const id = toast.error(title, {

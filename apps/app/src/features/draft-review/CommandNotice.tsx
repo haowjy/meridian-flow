@@ -216,7 +216,7 @@ function useNoticeUndo() {
       if (answer === "failed") {
         notifyFailure({
           key: `undo-discard:${notice.id}`,
-          title: t`Couldn't undo that`,
+          title: t`Couldn't undo`,
           brief: true,
         });
         return;

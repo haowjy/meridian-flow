@@ -63,7 +63,7 @@ function ingressHost(editor: Editor | null): ImageIngressHost | null {
   const storage = imageIngressStorage(editor);
   if (!editor || !storage || !editor.isEditable) return null;
   if (!storage.host) {
-    storage.status.refuse(t`Images need a project`);
+    storage.status.refuse(t`Couldn't upload`);
     return null;
   }
   return storage.host;
@@ -111,7 +111,7 @@ function insertImageAtAnchor(editor: Editor, anchor: EditorAnchor, file: File): 
   if (!storage) return;
   const at = resolveAnchorIn(editor.state, anchor);
   if (!at || !acceptsInlineImage(editor.state.doc, at.from)) {
-    storage.status.refuse(t`Couldn't place picture`);
+    storage.status.refuse(t`Can’t drop here`);
     return;
   }
   insertImageFile(editor, file, { kind: "inline", pos: at.from });
@@ -123,7 +123,7 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
   const host = ingressHost(editor);
   if (!editor || !storage || !host) return;
   if (!isImageFile(file)) {
-    storage.status.refuse(t`${file.name} isn't an image`);
+    storage.status.refuse(t`Not an image`);
     return;
   }
   const at = resolveNodeHold(editor.state, target);
@@ -133,10 +133,7 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
   // into (a figure counts, and so does the inline picture). Nothing is opened
   // for a slot that went away while the chooser was up — no entry, no request,
   // and no asset the project has no use for.
-  if (!at || !node || objectSurfaceKind(node) !== "image") {
-    storage.status.refuse(t`Picture is gone`);
-    return;
-  }
+  if (!at || !node || objectSurfaceKind(node) !== "image") return;
   // The writer's own alt text outlives the picture it described only if they
   // wrote one; a slot that never had one takes the new file's name, as an insert
   // does.
@@ -183,7 +180,7 @@ function openImageFileUpload(
   const storage = imageIngressStorage(editor);
   if (!editor || !storage || !editor.isEditable) return;
   if (!isImageFile(file)) {
-    storage.status.refuse(t`${file.name} isn't an image`);
+    storage.status.refuse(t`Not an image`);
     return;
   }
   const host = ingressHost(editor);
@@ -196,7 +193,7 @@ function openImageFileUpload(
   const at = place(editor, alt, id);
   if (at === null) {
     sendIngressMessage(editor, { drop: id });
-    storage.status.refuse(t`Picture can't go there`);
+    storage.status.refuse(t`Can’t drop here`);
     return;
   }
   sendUpload(editor, host, id, file);

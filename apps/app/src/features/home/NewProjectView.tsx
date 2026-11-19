@@ -27,7 +27,7 @@ export function NewProjectView() {
         onClose={() => void router.navigate({ to: "/", replace: true })}
         onCreate={({ name }) =>
           create({ title: name }).catch(() =>
-            notifyFailure({ key: "project-create", title: t`Couldn’t create project` }),
+            notifyFailure({ key: "project-create", title: t`Couldn't create` }),
           )
         }
       />

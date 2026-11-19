@@ -162,28 +162,31 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
 }
 
 /**
- * Typing a room ended with, handed back as a failure pill: "Couldn't save edit · Copy · ×". The
+ * Typing a room ended with, handed back as a failure pill: "Couldn't save", Copy, close. The
  * room is gone or reopened on the server's text, so there is no place on screen for it. It stays
  * until the writer copies the words or closes it (`typing.done`), and until then a reload offers
  * the words again. Done in another tab, it leaves this one too. With no words there is nothing to
  * hand back, so no toast.
  */
 export const unsentTypingToasts: UnsentTypingObserver = {
-  show: (typing) => notifyUnsentTyping(typing, t`Couldn't save edit`),
+  show: (typing) => notifyUnsentTyping(typing, t`Couldn't save`),
   withdraw: (id) => dismissFailure(unsentKey(id)),
 };
 
 const unsentKey = (id: string) => `unsent:${id}`;
 
 /**
- * Copy or close ends it once its local write commits; a press that couldn't be stored, or a copy
- * the browser refused, brings the pill back to press again.
+ * Copy or close ends it; a press whose local write couldn't be stored, or a copy the browser
+ * refused, brings the pill back to press again.
  */
 function notifyUnsentTyping(typing: UnsentTyping, title: string) {
   const words = typing.text;
   if (words === null) return;
   const done = () =>
-    void typing.done().catch(() => notifyUnsentTyping(typing, t`Didn't go through`));
+    void typing.done().catch((error: unknown) => {
+      console.warn("[unsent-typing] couldn't record the press", error);
+      notifyUnsentTyping(typing, t`Couldn't save`);
+    });
   notifyFailure({
     key: unsentKey(typing.id),
     title: <CountedUnsentTyping typing={typing} words={words} title={title} />,

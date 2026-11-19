@@ -35,7 +35,6 @@ function UpdateWord() {
       type="button"
       onClick={reloadNow}
       aria-label={reload}
-      title={phase === "must-reload" ? t`Reloads when you pause` : undefined}
       className={`${WORD} cursor-pointer hover:text-foreground`}
     >
       <ReloadWords />
@@ -54,16 +53,12 @@ export function ReloadWords() {
 }
 
 function NotSentWord() {
-  const { notSent, paused } = useDriverSnapshot();
+  const { notSent } = useDriverSnapshot();
   if (!notSent) return null;
   return (
-    <span
-      role="status"
-      title={paused ? t`Sends after you log in` : t`Sends on its own`}
-      className={WORD}
-    >
+    <span role="status" className={WORD}>
       <CloudOff className="size-3" aria-hidden />
-      {paused ? t`Not sent, signed out` : t`Not sent`}
+      {t`Not sent`}
     </span>
   );
 }

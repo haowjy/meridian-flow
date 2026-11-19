@@ -11,6 +11,7 @@
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
+import { UploadRefusedError } from "@/client/api/direct-upload";
 
 import { type AnchorRange, anchorRange } from "../anchors";
 import type { UploadedImage } from "./image-ingress-ports";
@@ -60,7 +61,7 @@ export function startImageImport(
       const file = await host.fetchBytes({ url: pending.url, filename, signal: controller.signal });
       if (controller.signal.aborted) return;
       if (!file) {
-        storage.status.refuse(t`Couldn't import ${filename}`);
+        storage.status.refuse(t`Couldn't import`);
         sendIngressMessage(editor, { drop: id });
         return;
       }
@@ -75,8 +76,9 @@ export function startImageImport(
       landImport(editor, id, uploaded);
     } catch (error) {
       if (controller.signal.aborted) return;
+      console.warn("[image-import] failed", filename, error);
       storage.status.refuse(
-        error instanceof Error ? error.message : t`Couldn't import ${filename}`,
+        error instanceof UploadRefusedError ? error.message : t`Couldn't import`,
       );
       sendIngressMessage(editor, { drop: id });
     }
@@ -91,7 +93,7 @@ function landImport(editor: Editor, id: string, uploaded: UploadedImage): void {
   const link = resolvePendingImage(editor.state, entry);
   const imageType = editor.state.schema.nodes.image;
   if (!link || !imageType || !editor.isEditable) {
-    if (!link) storage.status.refuse(t`Link moved, ${entry.filename} not placed`);
+    if (!link) storage.status.refuse(t`Couldn't import`);
     sendIngressMessage(editor, { drop: id });
     return;
   }

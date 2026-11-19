@@ -14,9 +14,10 @@
 
 import { t } from "@lingui/core/macro";
 import { type ContextUriScheme, canonicalContextUri } from "@meridian/contracts/context-uri";
-import { ASSETS_FOLDER, classifyFiletype, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
+import { ASSETS_FOLDER, MAX_UPLOAD_BYTES } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { UploadRefusedError } from "@/client/api/direct-upload";
 
 import { type UploadRun, uploads } from "@/core/uploads/upload-store";
 import { fileTooLargeMessage } from "@/lib/upload-limit";
@@ -25,7 +26,6 @@ import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { documentReferenceNode } from "../extensions/at-reference/document-link-insertion";
 import { placeNodes } from "../extensions/reference-drop";
 import { imageIngressStorage } from "../images/image-ingress-runtime";
-import type { ImageIngressStore } from "../images/image-ingress-store";
 import { insertImageFile } from "../images/image-uploads";
 import { acceptsInlineImage, isImageFile } from "../images/image-workflow";
 import type { DropDoor } from "../landing/drop-plan";
@@ -104,21 +104,10 @@ function chipFor(
 
 type Reserved = { ok: true; name: string } | { ok: false; reason: unknown };
 
-/**
- * Sends the file. Text up to the text cap becomes an editable document, not a stored file, and
- * the chip links to it: the writer dropped a file and may expect a file, so say what it became
- * once the server has read the bytes and decided.
- */
-function sendRun(
-  host: FileDropHost,
-  documentId: string,
-  file: File,
-  status: ImageIngressStore | undefined,
-): UploadRun {
+/** Sends the file. Text up to the text cap becomes an editable document the chip links to. */
+function sendRun(host: FileDropHost, documentId: string, file: File): UploadRun {
   return async (signal, onProgress) => {
-    const result = await host.send({ documentId, file, signal, onProgress });
-    if (classifyFiletype(result.fileType).kind === "tracked")
-      status?.tell(t`Added ${file.name} to assets`);
+    await host.send({ documentId, file, signal, onProgress });
   };
 }
 
@@ -162,8 +151,11 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       const entry = entries[index];
       if (!entry) return;
       if (!outcome.ok) {
+        console.warn("[file-drop] upload refused", outcome.reason);
         status?.refuse(
-          outcome.reason instanceof Error ? outcome.reason.message : t`Upload didn’t start`,
+          outcome.reason instanceof UploadRefusedError
+            ? outcome.reason.message
+            : t`Couldn't upload`,
         );
         return;
       }
@@ -181,11 +173,11 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
         ready.map(({ node }) => node),
       );
     if (!placed) {
-      status?.refuse(t`File can’t go there`);
+      status?.refuse(t`Can’t drop here`);
     } else {
       // The entries exist before the chips do, so no chip ever draws a gap.
       for (const { documentId, file } of ready)
-        uploads.begin(documentId, host.hostDocumentId, sendRun(host, documentId, file, status));
+        uploads.begin(documentId, host.hostDocumentId, sendRun(host, documentId, file));
       placed.commit(editor.view);
     }
     pinAt(editor.state.selection.from);
@@ -197,7 +189,7 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       if (editor.isDestroyed) return;
       const at = here();
       if (!at) {
-        status?.refuse(t`File can’t go there`);
+        status?.refuse(t`Can’t drop here`);
         continue;
       }
       insertImageFile(editor, file, at);
@@ -205,11 +197,11 @@ async function dropFiles(editor: Editor, files: readonly File[], landing: Landin
       continue;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      status?.refuse(fileTooLargeMessage(file.name));
+      status?.refuse(fileTooLargeMessage());
       continue;
     }
     if (!host) {
-      status?.refuse(t`Can’t add files here`);
+      status?.refuse(t`Can’t drop here`);
       continue;
     }
     const documentId = crypto.randomUUID();

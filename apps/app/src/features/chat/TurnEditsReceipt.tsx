@@ -93,7 +93,7 @@ export function TurnEditsReceipt({
       const outcome = await turnMutation.mutateAsync({ turnId: turn.id });
       if (UNDO_FAILED.has(outcome.status)) throw new Error(outcome.status);
     } catch {
-      notifyFailure({ key: `undo:${turn.id}`, title: t`Couldn't undo that`, brief: true });
+      notifyFailure({ key: `undo:${turn.id}`, title: t`Couldn't undo`, brief: true });
     } finally {
       setPending(false);
     }
