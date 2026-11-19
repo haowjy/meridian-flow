@@ -237,8 +237,7 @@ export function createMcpConnections(deps: McpConnectionsDeps) {
       accountId: UserId,
       input: { name: string; url: string; token?: string; projectId?: ProjectId },
     ): Promise<{ connection: McpConnectionView; tools: McpToolView[] | null }> {
-      if (!isMcpConnectionName(input.name))
-        throw new McpConnectionError("invalid", "Invalid name");
+      if (!isMcpConnectionName(input.name)) throw new McpConnectionError("invalid", "Invalid name");
       const url = parseUrl(input.url);
       const id = randomUUID();
       const token = input.token?.trim();
