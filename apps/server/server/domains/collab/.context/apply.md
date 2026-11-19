@@ -128,7 +128,7 @@ Work, branch, list and document keys:
    and that nothing of this command deleted. A document is deleted by this command when a delete
    copy it appended covers it in live afterwards (`deletesCovering`, every covering delete, at
    each folder on the way up).
-4. Only those documents' drafts close, under the command's id.
+4. No draft closes: an Apply of a delete leaves the Work's drafts of that document open (below).
 5. Each open text half lands when its document stands in live: one this command deleted answers
    `already removed`, one whose create did not land `left_out needs` (its text stays pending with
    its draft). What the tree half answered never holds text back.

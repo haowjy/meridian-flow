@@ -334,7 +334,7 @@ belongs to its exact session binding, so replacement documents never inherit the
 A draft ends only when its Work or its document is purged (`ended`, Draft end in
 [state-machines.md](state-machines.md)); a Discard, a restore and an Apply of a delete leave it open.
 
-Trash lists each Discard and Restore brings it back (`restoreDiscard`, both halves onto the
+Trash lists each Discard of whole drafts (`whole`; a Discard of single changes is final but for its Undo) and Restore brings it back (`restoreDiscard`, both halves onto the
 Work's current branch): the notice's Undo, Trash's Restore and a row's Undo send that one command.
 Each Discard's restore has one progress, whatever sent it (`DiscardRestores` on the command
 owner, keyed by the Discard's command id): the notice and Trash's row read it, so a restore from
