@@ -147,8 +147,8 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
  * is skipped, not refused. A whole cut that names what to take (a Redo's, from its Un-Apply's own
- * records) takes the pending changes of the replica that hold a named AI change (`carried`, as
- * `[partId, index]`) or have a named id (`groupIds`, for a change no AI edit made), and passes
+ * records) takes the pending changes of the replica that hold named AI changes and nothing else
+ * (`carried`, as `[partId, index]`) or have a named id (`groupIds`, for a change no AI edit made), and passes
  * over the rest.
  */
 export type ApplyTextCut =
@@ -176,7 +176,8 @@ export type ApplyItemsClick = {
  * Apply again what the Un-Apply `redoOf` took back, which is all the browser says: the server
  * reads the Un-Apply's own records for the documents, groups and tree halves, so a change another
  * chat proposed since is never applied with it, and an identical change in two documents is
- * applied only in the one the Un-Apply took.
+ * applied only in the one the Un-Apply took. A pending change that has since merged with a
+ * neighbour the Un-Apply didn't take stays in Changes, where Apply still offers it.
  */
 export type RedoClick = {
   commandId: CommandId;

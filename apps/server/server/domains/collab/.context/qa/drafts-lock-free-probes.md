@@ -30,7 +30,7 @@ The [collab contracts][collab-context] define each guard. Sources are under
 | `live-duplicate-frame` | A duplicate live frame is journaled once. | Admit duplicate, concurrent, delete-only, and missing-predecessor updates, then repeat with a 10,000-item tail. |
 | `f1-inverse-grant` | Undo locks its grant's Work before its other locks. | Run Archive from the inverse confirmation and run inverse from the Archive boundary. |
 | `f1-inverse-deadlock` | Undo and a journal append do not deadlock. | Hold the document lock in Undo while a rival append starts for the same Work. |
-| `d22-concurrent-undo` | Captured fences order two Undos of one edit. | Hold two independent Undo operations at `inverse.beforeCommitScope`, for live and Work destinations. |
+| `d22-concurrent-undo` | Two Undos of one edit land once; both answer `success`. | Hold two independent Undo operations at `inverse.beforeCommitScope`, for live and Work destinations. |
 | `d23-archived-draft-rebases` | An archived Work draft keeps rebasing while its writer stays frozen. | Archive, commit a live edit, flush the background pull, write to the draft, then unarchive. |
 | `two-process-frames` | Two coordinators deliver one sequence point per frame. | Two stores and rooms commit frames over one database, then read each draft as a tab handshake does. |
 | `two-process-fold` | A content rebase delivers another process's committed row. | Pause A before append, commit `FOREIGN` from B, let A incorporate it, then type. |

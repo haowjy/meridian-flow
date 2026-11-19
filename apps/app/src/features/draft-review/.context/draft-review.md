@@ -189,8 +189,8 @@ Every Redo is one request that names its Un-Apply: `{ commandId, redoOf }` (`Red
 Apply route). The server reads what that Un-Apply took from its own records (`redoItems`: the
 effect rows it marked, with their draft, and its `treeUndone`), so a partial Ctrl+Z redoes only
 what it took back, a change another chat proposed since is never applied with it, and one made in
-two documents is applied only where the Un-Apply took it. A group the draft no longer holds is
-passed over, and a Redo that lands nothing ends, applying nothing else. The review's queue paints a
+two documents is applied only where the Un-Apply took it. A group the draft no longer holds, or that a neighbour the
+Un-Apply didn't take has merged into, is passed over, and a Redo that lands nothing ends, applying nothing else. The review's queue paints a
 Redo at once from the selection the Un-Apply took; what it sends is the id. Every port reads the
 same landed rule (`itemLanded`: the item's text or tree landed): an `applied` answer only says the
 command finished.

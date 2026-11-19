@@ -2820,6 +2820,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/editor/RescuedText.tsx
 msgid "Couldn't copy"
 msgstr ""
 
@@ -3114,6 +3115,10 @@ msgstr "无法读取来自 {line} 的报告"
 #: src/features/chat/command-descriptor.ts
 #~ msgid "Couldn't redo"
 #~ msgstr ""
+
+#: src/features/draft-review/apply-history.ts
+msgid "Couldn't redo that."
+msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
@@ -4573,8 +4578,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/editor/RescuedText.tsx
-msgid "It isn't in the document."
-msgstr ""
+#~ msgid "It isn't in the document."
+#~ msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "It may have moved or been removed."
@@ -6469,8 +6474,8 @@ msgid "Restoring"
 msgstr ""
 
 #: src/features/editor/RescuedText.tsx
-msgid "Restoring the draft from Trash brings it back too."
-msgstr ""
+#~ msgid "Restoring the draft from Trash brings it back too."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Restoring the drafts."
@@ -8752,6 +8757,10 @@ msgstr ""
 #~ msgid "Unsaved changes"
 #~ msgstr ""
 
+#: src/features/editor/RescuedText.tsx
+msgid "Unsent text"
+msgstr ""
+
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "Untitled"
 msgstr ""
@@ -9164,16 +9173,16 @@ msgid "Your imports in this project, with their controls."
 msgstr ""
 
 #: src/features/editor/RescuedText.tsx
-msgid "Your latest changes didn't reach the server before the document was removed."
-msgstr ""
+#~ msgid "Your latest changes didn't reach the server before the document was removed."
+#~ msgstr ""
 
 #: src/features/editor/RescuedText.tsx
-msgid "Your latest changes didn't reach the server before the draft closed."
-msgstr ""
+#~ msgid "Your latest changes didn't reach the server before the draft closed."
+#~ msgstr ""
 
 #: src/features/editor/RescuedText.tsx
-msgid "Your latest changes didn't reach the server before this document became read-only."
-msgstr ""
+#~ msgid "Your latest changes didn't reach the server before this document became read-only."
+#~ msgstr ""
 
 #: src/features/agents/AgentFileState.tsx
 msgid "Your latest edit isn't in use"
