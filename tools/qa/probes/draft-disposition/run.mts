@@ -49,7 +49,7 @@ try {
       },
       async recover() {},
     } as never,
-    draftCoordinator: { async deliverCommitted() {} } as never,
+    draftCoordinator: h.coordinator,
     resolveDocumentUri: async () => "project://probe.md",
     resolveLastDocumentUri: async () => null,
     async refreshDocument() {},
