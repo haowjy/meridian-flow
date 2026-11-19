@@ -2820,6 +2820,7 @@ msgstr "Couldn’t confirm this preference saved."
 #~ msgstr "Couldn't confirm whether this discarded. Check what is left before you try again."
 
 #: src/features/chat/command-descriptor.ts
+#: src/features/editor/RescuedText.tsx
 msgid "Couldn't copy"
 msgstr "Couldn't copy"
 
@@ -3114,6 +3115,10 @@ msgstr "Couldn't read report from {line}"
 #: src/features/chat/command-descriptor.ts
 #~ msgid "Couldn't redo"
 #~ msgstr "Couldn't redo"
+
+#: src/features/draft-review/apply-history.ts
+msgid "Couldn't redo that."
+msgstr "Couldn't redo that."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
@@ -4573,8 +4578,8 @@ msgstr "It finished before it could stop."
 #~ msgstr "It hides {hides}."
 
 #: src/features/editor/RescuedText.tsx
-msgid "It isn't in the document."
-msgstr "It isn't in the document."
+#~ msgid "It isn't in the document."
+#~ msgstr "It isn't in the document."
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "It may have moved or been removed."
@@ -6469,8 +6474,8 @@ msgid "Restoring"
 msgstr "Restoring"
 
 #: src/features/editor/RescuedText.tsx
-msgid "Restoring the draft from Trash brings it back too."
-msgstr "Restoring the draft from Trash brings it back too."
+#~ msgid "Restoring the draft from Trash brings it back too."
+#~ msgstr "Restoring the draft from Trash brings it back too."
 
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Restoring the drafts."
@@ -8752,6 +8757,10 @@ msgstr "Unsaved"
 #~ msgid "Unsaved changes"
 #~ msgstr "Unsaved changes"
 
+#: src/features/editor/RescuedText.tsx
+msgid "Unsent text"
+msgstr "Unsent text"
+
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "Untitled"
 msgstr "Untitled"
@@ -9164,16 +9173,16 @@ msgid "Your imports in this project, with their controls."
 msgstr "Your imports in this project, with their controls."
 
 #: src/features/editor/RescuedText.tsx
-msgid "Your latest changes didn't reach the server before the document was removed."
-msgstr "Your latest changes didn't reach the server before the document was removed."
+#~ msgid "Your latest changes didn't reach the server before the document was removed."
+#~ msgstr "Your latest changes didn't reach the server before the document was removed."
 
 #: src/features/editor/RescuedText.tsx
-msgid "Your latest changes didn't reach the server before the draft closed."
-msgstr "Your latest changes didn't reach the server before the draft closed."
+#~ msgid "Your latest changes didn't reach the server before the draft closed."
+#~ msgstr "Your latest changes didn't reach the server before the draft closed."
 
 #: src/features/editor/RescuedText.tsx
-msgid "Your latest changes didn't reach the server before this document became read-only."
-msgstr "Your latest changes didn't reach the server before this document became read-only."
+#~ msgid "Your latest changes didn't reach the server before this document became read-only."
+#~ msgstr "Your latest changes didn't reach the server before this document became read-only."
 
 #: src/features/agents/AgentFileState.tsx
 msgid "Your latest edit isn't in use"

@@ -194,13 +194,15 @@ export function compileClick(
       const ids = request.groupIds && new Set(request.groupIds);
       const carried = request.carried && new Set(request.carried.map((key) => key.join(":")));
       const named = ids || carried;
-      groupIds = projection.groups.flatMap((group, position) =>
-        !named ||
-        ids?.has(group.id) ||
-        carriedBy(reading, position).some((key) => carried?.has(key.join(":")))
+      // A group is re-applied by `carried` only while every AI change in it is one the Un-Apply took:
+      // a neighbour the writer never chose stays in Changes.
+      groupIds = projection.groups.flatMap((group, position) => {
+        if (!named || ids?.has(group.id)) return [group.id];
+        const keys = carriedBy(reading, position);
+        return carried && keys.length > 0 && keys.every((key) => carried.has(key.join(":")))
           ? [group.id]
-          : [],
-      );
+          : [];
+      });
       if (groupIds.length === 0) return { schema, groups: [] };
     } else groupIds = request.groupIds;
     const known = new Set(projection.groups.map((group) => group.id));

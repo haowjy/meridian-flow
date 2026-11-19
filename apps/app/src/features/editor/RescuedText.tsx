@@ -1,7 +1,7 @@
 /**
  * The one body for text handed back to the writer: each passage with Copy, then what happened
  * and Dismiss, so Dismiss never clears words the writer has not seen. The schema repair's bar
- * opens it under Details; unsent typing shows it in a toast.
+ * opens it under Details; unsent typing shows only Copy and Dismiss in a toast.
  *
  * Copy is the point: it is the writer's way to keep the words. So it goes through the feature's
  * clipboard adapter and reports a refusal on that passage. (`CopyTextButton` swallows refusals.)
@@ -85,7 +85,8 @@ export function RescuedText({
   );
 }
 
-function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: () => void }) {
+/** Copies `text`; `"copied"` shows for a moment, `"blocked"` stays until the next press. */
+function useCopyText(text: string | null, onCopied?: () => void) {
   const [copy, setCopy] = useState<"idle" | "copied" | "blocked">("idle");
   const resetRef = useRef<number | null>(null);
   useEffect(
@@ -94,6 +95,26 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
     },
     [],
   );
+  const press = () => {
+    if (!text) return;
+    void writeClipboardText(text).then((write) => {
+      // A pending Copied reset must not erase a later refusal.
+      if (resetRef.current !== null) window.clearTimeout(resetRef.current);
+      resetRef.current = null;
+      if (write.status !== "done") {
+        setCopy("blocked");
+        return;
+      }
+      setCopy("copied");
+      onCopied?.();
+      resetRef.current = window.setTimeout(() => setCopy("idle"), COPIED_RESET_MS);
+    });
+  };
+  return { copy, press };
+}
+
+function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: () => void }) {
+  const { copy, press } = useCopyText(text, onCopied);
 
   if (!text)
     return (
@@ -122,20 +143,7 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
           size="xs"
           className="shrink-0 coarse:h-11"
           data-copy-rescued-passage
-          onClick={() => {
-            void writeClipboardText(text).then((write) => {
-              // A pending Copied reset must not erase a later refusal.
-              if (resetRef.current !== null) window.clearTimeout(resetRef.current);
-              resetRef.current = null;
-              if (write.status !== "done") {
-                setCopy("blocked");
-                return;
-              }
-              setCopy("copied");
-              onCopied?.();
-              resetRef.current = window.setTimeout(() => setCopy("idle"), COPIED_RESET_MS);
-            });
-          }}
+          onClick={press}
         >
           {copy === "copied" ? <Check aria-hidden /> : <Copy aria-hidden />}
           {copy === "copied" ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
@@ -226,47 +234,44 @@ function UnsentTypingToast({
     },
   ]);
   useCountRescues(counted);
+  const { copy, press } = useCopyText(typing.text, onCopied);
   return (
     <div
       role="status"
       data-unsent-typing={typing.cause}
-      className="flex w-full flex-col gap-2 py-1 text-compact"
+      className="flex w-full items-center gap-2 text-compact"
     >
-      <p className="font-medium">
-        <UnsentTypingSentence cause={typing.cause} />
+      <p className="min-w-0 flex-1 font-medium">
+        {failed ? <Trans>Didn't go through. Try again.</Trans> : <Trans>Unsent text</Trans>}
       </p>
-      <RescuedText
-        passages={typing.text === null ? [] : [typing.text]}
-        note={
-          typing.text === null ? null : typing.cause === "closed" ? (
-            <Trans>Restoring the draft from Trash brings it back too.</Trans>
+      {typing.text === null ? null : (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="shrink-0 coarse:h-11"
+          data-copy-rescued-passage
+          onClick={press}
+        >
+          {copy === "copied" ? <Check aria-hidden /> : <Copy aria-hidden />}
+          {copy === "copied" ? (
+            <Trans>Copied</Trans>
+          ) : copy === "blocked" ? (
+            <Trans>Couldn't copy</Trans>
           ) : (
-            <Trans>It isn't in the document.</Trans>
-          )
-        }
-        onDismiss={onDismiss}
-        onCopied={onCopied}
-      />
-      {failed ? (
-        <InlineErrorRow message={<Trans>Didn't go through. Try again.</Trans>} className="p-0" />
-      ) : null}
+            <Trans>Copy</Trans>
+          )}
+        </Button>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="xs"
+        className="shrink-0 coarse:h-11"
+        onClick={onDismiss}
+      >
+        <Trans>Dismiss</Trans>
+      </Button>
     </div>
   );
-}
-
-function UnsentTypingSentence({ cause }: { cause: UnsentTyping["cause"] }) {
-  switch (cause) {
-    case "closed":
-      return <Trans>Your latest changes didn't reach the server before the draft closed.</Trans>;
-    case "removed":
-      return (
-        <Trans>Your latest changes didn't reach the server before the document was removed.</Trans>
-      );
-    case "owner-closed":
-      return (
-        <Trans>
-          Your latest changes didn't reach the server before this document became read-only.
-        </Trans>
-      );
-  }
 }
