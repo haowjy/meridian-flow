@@ -3,10 +3,13 @@
  * failure that has no place of its own on a document or in the import popup; a success never
  * toasts. A failure stays until dismissed, except a `brief` one, a slip from the writer's own
  * action, which goes by itself. `visibleToasts` caps how many show at once. Every toast is one
- * floating pill, so a brief error and a lasting one look alike.
+ * floating pill: the failure's category ("Couldn't apply", "Sign-in expired"), at most one action,
+ * and a close. Cause and consequence go to the console (`detail`), never into the pill. Closing
+ * only hides it: what it hands back stays until the writer acts on it.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
+import type { ReactNode } from "react";
 import { Toaster, toast } from "sonner";
 
 const BRIEF_MS = 5000;
@@ -17,36 +20,40 @@ const shown = new Map<string, string | number>();
 export function notifyFailure({
   key,
   title,
-  onRetry,
-  onClose,
+  action,
   brief,
+  detail,
+  body,
 }: {
   /** This failure's own: a second toast under one key replaces the first. */
   key: string;
-  /** Names what failed: "Couldn't move Chapter 3 to Act 2." */
-  title: string;
-  /** Only where running it again can help. */
-  onRetry?: () => void | Promise<void>;
-  /** The writer closed it. */
-  onClose?: () => void;
+  /** The failure's category: "Couldn't copy". A longer title is cut to one line. */
+  title: ReactNode;
+  /** The one way on: Retry where running it again can help, or what fixes it ("Log in"). */
+  action?: { label: string; run: () => void | Promise<void> };
   /** A one-line error that follows from the writer's action and loses nothing: it goes away soon. */
   brief?: true;
+  /** What went wrong, for whoever debugs it: logged, never shown. */
+  detail?: unknown;
+  /** Something the writer needs to reach under the title, such as words to select. */
+  body?: ReactNode;
 }) {
+  if (detail !== undefined) console.warn(`[failure] ${key}`, detail);
   dismissFailure(key);
   const owns = () => shown.get(key) === id;
   const id = toast.error(title, {
     duration: brief ? BRIEF_MS : Number.POSITIVE_INFINITY,
+    description: body,
+    className: body ? "rounded-xl! items-start! py-1.5!" : undefined,
     onDismiss: () => {
-      if (!owns()) return;
-      shown.delete(key);
-      onClose?.();
+      if (owns()) shown.delete(key);
     },
-    action: onRetry
+    action: action
       ? {
-          label: t`Retry`,
+          label: action.label,
           onClick: () => {
             if (owns()) shown.delete(key);
-            void onRetry();
+            void action.run();
           },
         }
       : undefined,
@@ -76,6 +83,8 @@ const PHONE_OFFSET = {
 };
 
 // `pointer-events-auto`: an open modal sets `pointer-events: none` on the body, which the toast would inherit.
+// Sized to its words and centred (`inset-x-0 mx-auto w-fit`). The `!`s beat Sonner's phone rules, which
+// stretch each toast to the screen and give the list `width: 100%` on top of its side offsets.
 export function FailureToaster() {
   return (
     <Toaster
@@ -85,19 +94,23 @@ export function FailureToaster() {
       closeButton
       expand
       visibleToasts={3}
+      gap={6}
+      className="max-[600px]:w-auto!"
       containerAriaLabel={t`Failures`}
-      icons={{ error: <CircleAlert aria-hidden className="size-4 text-destructive" /> }}
+      icons={{ error: <CircleAlert aria-hidden className="size-3.5 text-destructive" /> }}
       toastOptions={{
         unstyled: true,
         closeButtonAriaLabel: t`Dismiss`,
         classNames: {
           toast:
-            "pointer-events-auto flex w-full items-center gap-2 rounded-full border border-border bg-card py-1.5 pr-1.5 pl-4 text-sm text-foreground shadow-float",
+            "pointer-events-auto inset-x-0 mx-auto flex w-fit! max-w-[min(24rem,100%)] items-center gap-2 rounded-full border border-border bg-card py-px pr-1 pl-3 text-compact text-foreground shadow-float",
+          icon: "flex shrink-0",
           content: "min-w-0 flex-1",
-          title: "[overflow-wrap:anywhere]",
-          actionButton: "text-button shrink-0 text-sm coarse:min-h-11",
+          title: "truncate",
+          description: "mt-1.5 mb-0.5 w-full select-text",
+          actionButton: "text-button shrink-0 text-compact coarse:min-h-11",
           closeButton:
-            "focus-ring order-last flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground coarse:size-11",
+            "focus-ring order-last flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground coarse:size-11 [&_svg]:size-3",
         },
       }}
     />

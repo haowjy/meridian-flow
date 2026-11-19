@@ -161,7 +161,7 @@ export function FenceMenuItems({
           <FenceLanguageItems editor={editor} target={target} />
         </EditorMenuSubContent>
       </EditorMenuSub>
-      <EditorMenuItem onSelect={() => run(copyText(target.node.textContent), t`Code copied`)}>
+      <EditorMenuItem onSelect={() => run(copyText(target.node.textContent), "copy")}>
         <Copy aria-hidden />
         {t`Copy code`}
       </EditorMenuItem>

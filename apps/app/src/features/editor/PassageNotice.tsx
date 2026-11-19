@@ -20,7 +20,7 @@ export function PassageNotice({ documentId }: { documentId: string | null }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
       <EditorNoticePill
-        notice={{ tone: "done", message: t`That passage changed after this search.` }}
+        notice={{ tone: "done", message: t`Passage changed` }}
         className="slide-in-from-top-1"
       />
     </div>

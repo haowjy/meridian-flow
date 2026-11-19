@@ -131,7 +131,7 @@ export class ApplyEntries {
     if (undone.kind === "failed") {
       notifyFailure({
         key: `unapply:${this.commandId}`,
-        title: t`Couldn't undo that.`,
+        title: t`Couldn't undo`,
         brief: true,
       });
       this.enter();
@@ -163,7 +163,7 @@ export class ApplyEntries {
       if (landed === "failed") {
         notifyFailure({
           key: `redo:${this.commandId}`,
-          title: t`Couldn't redo that.`,
+          title: t`Couldn't redo`,
           brief: true,
         });
         this.end();

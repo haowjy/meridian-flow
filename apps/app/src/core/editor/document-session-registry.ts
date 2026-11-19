@@ -26,7 +26,7 @@ export type UnsentTypingCause = "closed" | "removed" | "owner-closed";
 /**
  * Typing a room ended with before the server acknowledged it, handed back once. `text` is null for
  * an `owner-closed` change that has no words (a deletion, a format change). `done` says the writer
- * is done with it (copied it, or dismissed it): until it resolves a reload offers its words again.
+ * copied it: until it resolves a reload offers its words again.
  * It rejects when that can't be stored, and the next call tries again.
  */
 export type UnsentTyping = Readonly<{
@@ -38,7 +38,7 @@ export type UnsentTyping = Readonly<{
 
 /**
  * What a tab shows of the account's hand-back notices. `show` once per notice; `withdraw` when
- * another tab's Copy or Dismiss settled one this tab still shows.
+ * another tab's Copy settled one this tab still shows.
  */
 export type UnsentTypingObserver = Readonly<{
   show: (typing: UnsentTyping) => void;
@@ -97,7 +97,7 @@ export interface LiveDocumentSessionRegistry {
   ): () => void;
   /**
    * The account's hand-back notices: words a room, live or draft, could not deliver (closed,
-   * removed, read-only), from any tab, until the writer copies or dismisses them in one. The first
+   * removed, read-only), from any tab, until the writer copies them in one. The first
    * observer starts the account's read of the notices stored before.
    */
   observeUnsentTyping(observer: UnsentTypingObserver): () => void;

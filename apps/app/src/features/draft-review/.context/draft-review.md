@@ -223,7 +223,7 @@ holds the nodes its answer says landed, not the ones pressed.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then the click
 settles `unsent` (its optimistic fold ends, so the change is pending again, and the commands behind
-it go), and the press shows one "Couldn't apply that." pill per branch. A timeout is not one of those failures: the Apply and Un-Apply requests
+it go), and the press shows one "Couldn't apply" pill per branch. A timeout is not one of those failures: the Apply and Un-Apply requests
 (`postCommand` in `branches-api.ts`) resend under the same id after a timeout and while the
 server answers `running`, so a large Apply stays `Applying` until its answer instead of
 stalling. Changes shows one "Applying" line while rows are hidden by an Apply in flight, and
@@ -295,7 +295,7 @@ sentence says it was applied, with where it is now when it moved (read by id fro
 removal sentence once it is in Trash or purged), and the Undo is the Apply's step on the sidebar's
 Undo stack, the one Ctrl+Z takes (`ApplyEntries.undo`; an Apply all's rows each take back the
 whole step). An Un-Apply that took something ends the applied notice; one that didn't reach the
-server toasts "Couldn't undo that." and leaves it. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
+server toasts "Couldn't undo" and leaves it. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
 removed-documents notice). Only the document's name shortens in a notice; its verb and Undo

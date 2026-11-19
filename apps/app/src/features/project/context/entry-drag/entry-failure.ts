@@ -1,11 +1,10 @@
 /**
  * How a tree Move, Copy or delete runs. A Move or delete is appended to the copy of the list and
  * cannot fail; the server's later `dropped` comes back as a settlement and shows on the row it
- * concerns. A Copy is a route, and its failure is a toast with Retry.
+ * concerns. A Copy is a route, and its failure is a toast, with Retry unless sending it again
+ * can't land it.
  */
-import { i18n } from "@lingui/core";
-import { plural, t } from "@lingui/core/macro";
-import type { Settlement } from "@meridian/contracts/commands";
+import { t } from "@lingui/core/macro";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -44,17 +43,8 @@ export type CopyContext = EntryContext & {
 /** A Copy the route refused: it has its own key, and Retry runs it again unless it is final. */
 type CopyFailure = {
   key: string;
-  sources: readonly string[];
-  destination: string | null;
-  refusal: CopyRefusal;
+  error: unknown;
   copy: ReadyCopy;
-};
-
-type CopyRefusal = {
-  /** The route's answer, in its words, when it gave one. */
-  reason: string | null;
-  /** Sending it again can't land it: the Work is closed, or the writer can't copy there. */
-  final: boolean;
 };
 
 /** The key of a project's failure, under that project's prefix (`entryToast(projectId)`). */
@@ -73,54 +63,12 @@ export function runMove(
   if (moved.length > 0) revealPlaced(move.to.parentId, moved, selection);
 }
 
-/** What the route said was wrong, when it said. */
-function refusalOf(error: unknown): CopyRefusal {
-  const retry = (reason: string | null) => ({ reason, final: false });
-  const final = (reason: string) => ({ reason, final: true });
-  if (!isMeridianApiError(error)) return retry(null);
-  const { details } = error;
-  const reason = details && typeof details === "object" && "reason" in details && details.reason;
-  if (reason === "source_behind") return retry(t`The latest edits hadn't reached the server.`);
-  switch (error.code) {
-    case "not_found":
-    case "stale_source":
-      return retry(t`A source is no longer there.`);
-    case "destination_missing":
-    case "stale_target":
-      return retry(t`The destination is no longer there.`);
-    case "permission_denied":
-      return final(t`You can't copy there.`);
-    case "work_archived":
-    case "work_deleted":
-      return final(t`The Work was closed.`);
-    case "work_missing":
-      return final(t`That Work isn't available.`);
-    default:
-      return retry(null);
-  }
-}
-
-function copyFailureTitle(
-  sources: readonly string[],
-  destination: string | null,
-  reason: string | null,
-): string {
-  const [only] = sources;
-  const said =
-    sources.length === 1 && only
-      ? destination
-        ? t`Couldn't copy ${only} to ${destination}.`
-        : t`Couldn't copy ${only}.`
-      : destination
-        ? plural(sources.length, {
-            one: `Couldn't copy # item to ${destination}.`,
-            other: `Couldn't copy # items to ${destination}.`,
-          })
-        : plural(sources.length, {
-            one: "Couldn't copy # item.",
-            other: "Couldn't copy # items.",
-          });
-  return reason ? `${said} ${reason}` : said;
+/** The route refused for good: the Work is closed, or the writer can't copy there. */
+function isFinalRefusal(error: unknown): boolean {
+  if (!isMeridianApiError(error)) return false;
+  return ["permission_denied", "work_archived", "work_deleted", "work_missing"].includes(
+    error.code,
+  );
 }
 
 /** Toasts a refused Copy; Retry, offered unless the refusal is final, runs it again. */
@@ -131,32 +79,12 @@ function showCopyFailure(
 ): void {
   notifyFailure({
     key: failure.key,
-    title: copyFailureTitle(failure.sources, failure.destination, failure.refusal.reason),
-    onRetry: failure.refusal.final
+    title: t`Couldn't copy`,
+    detail: failure.error,
+    action: isFinalRefusal(failure.error)
       ? undefined
-      : () => void runCopy(context, failure.copy, selection),
+      : { label: t`Retry`, run: () => void runCopy(context, failure.copy, selection) },
   });
-}
-
-/** What a Copy that left something undone says, in the writer's words; null when it left nothing. */
-export function copySettledNotice(settled: readonly Settlement[], copy: ReadyCopy): string | null {
-  const returned = settled.find((one) => one.rule === "returned");
-  if (returned) return t`That Work is closed, so nothing was copied.`;
-  const left = settled.find((one) => one.rule === "left_out");
-  if (left?.why === "would_loop") return t`A folder can't be copied into itself.`;
-  if (left) {
-    const names = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
-      left.items.map((item) => leftOutName(item, copy)),
-    );
-    return t`${names} is gone for good, so it wasn't copied.`;
-  }
-  return null;
-}
-
-/** The writer's name for a left-out source: the selected row at that address, else the address's last segment. */
-function leftOutName(item: string, copy: ReadyCopy): string {
-  const row = copy.copies.find((one) => item.endsWith(one.place.path.replace(/^\/+/, "")));
-  return row?.name ?? decodeURIComponent(item.replace(/\/+$/, "").split("/").pop() ?? item);
 }
 
 export async function runCopy(
@@ -168,12 +96,14 @@ export async function runCopy(
   revealPlaced(copy.into, copies, selection);
   try {
     const settled = await answered;
-    const notice = copySettledNotice(settled, copy);
-    if (notice) {
+    // The Work closed, or a source was gone or would land inside itself: something wasn't copied.
+    const undone = settled.filter((one) => one.rule === "returned" || one.rule === "left_out");
+    if (undone.length > 0) {
       leaveSelections(copies);
       notifyFailure({
         key: entryToast(context.projectId, crypto.randomUUID()),
-        title: notice,
+        title: t`Couldn't copy`,
+        detail: undone,
       });
     }
   } catch (error) {
@@ -182,9 +112,7 @@ export async function runCopy(
       context,
       {
         key: entryToast(context.projectId, crypto.randomUUID()),
-        sources: copy.copies.map(({ name }) => name),
-        destination: copy.destinationName,
-        refusal: refusalOf(error),
+        error,
         copy,
       },
       selection,

@@ -1,8 +1,8 @@
 /**
  * The one body for text handed back to the writer: each passage with Copy, then what happened
  * and Dismiss, so Dismiss never clears words the writer has not seen. The schema repair's bar
- * opens it under Details; unsent typing shows its words, clamped to two lines, with Copy and
- * Dismiss in a toast.
+ * opens it under Details. Unsent typing is a failure pill instead (`unsentTypingToasts`): its
+ * Copy takes the words without showing them, and only a refused Copy shows them here.
  *
  * Copy is the point: it is the writer's way to keep the words. So it goes through the feature's
  * clipboard adapter and reports a refusal on that passage. (`CopyTextButton` swallows refusals.)
@@ -10,11 +10,12 @@
  * Each rescue counts once where it is first shown (`useCountRescues`), through the client
  * diagnostics channel, with its sizes and never its words.
  */
+import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Check, Copy } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { useFailureLog } from "@/client/failures/failure-log";
+import { dismissFailure, notifyFailure } from "@/components/app/failure-toast";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import type { UnsentTyping, UnsentTypingObserver } from "@/core/editor/document-session-registry";
@@ -161,129 +162,78 @@ function RescuedPassage({ text, onCopied }: { text: string | null; onCopied?: ()
 }
 
 /**
- * Typing a room ended with, handed back in the app's toaster: the room is gone or reopened on the
- * server's text, so there is no place on screen to show it. It stays until dismissed, never timing
- * out: the writer is done with it once they copy its words or dismiss it (`typing.done`), and until
- * then a reload offers the words again. Done in another tab, it leaves this one too. With no words
- * there is nothing to hand back, so no toast.
+ * Typing a room ended with, handed back as a failure pill: "Couldn't save", Copy, close. The
+ * room is gone or reopened on the server's text, so there is no place on screen for it. Only a
+ * Copy that reached the clipboard ends it (`typing.done`): closing or swiping the pill only hides
+ * it, and a reload offers the words again. A refused Copy shows the words to select. Done in
+ * another tab, it leaves this one too. With no words there is nothing to hand back, so no toast.
  */
 export const unsentTypingToasts: UnsentTypingObserver = {
-  show: notifyUnsentTyping,
-  // The toaster is the page's: a toast acted on here stays, showing "Copied", whoever withdraws it.
-  withdraw: (id) => {
-    if (!actedHere.has(id)) toast.dismiss(`unsent:${id}`);
-  },
+  show: (typing) => notifyUnsentTyping(typing, "unsent"),
+  withdraw: (id) => dismissFailure(unsentKey(id)),
 };
 
-const actedHere = new Set<string>();
+const unsentKey = (id: string) => `unsent:${id}`;
 
-/**
- * Copy shows "Copied" at once; Dismiss closes the toast once its local write commits, a moment
- * later. A press that couldn't be stored keeps the toast with the failure line, to press again.
- */
-function notifyUnsentTyping(typing: UnsentTyping) {
-  if (typing.text === null) return;
-  const id = `unsent:${typing.id}`;
+/** `unsent`: the words wait behind Copy. `refused`: the browser refused Copy, so they show. */
+function notifyUnsentTyping(typing: UnsentTyping, state: "unsent" | "refused") {
   const words = typing.text;
-  let failed = false;
-  const act = () => {
-    actedHere.add(typing.id);
-    return typing.done().then(
-      () => {
-        if (failed) render(false);
-        return true;
-      },
-      () => {
-        actedHere.delete(typing.id);
-        render(true);
-        return false;
+  if (words === null) return;
+  const key = unsentKey(typing.id);
+  const copied = () =>
+    void typing.done().then(
+      () => dismissFailure(key),
+      (error: unknown) => {
+        console.warn("[unsent-typing] couldn't record the copy", error);
+        notifyUnsentTyping(typing, "unsent");
       },
     );
-  };
-  const render = (failing: boolean) => {
-    failed = failing;
-    toast.custom(
-      () => (
-        <UnsentTypingToast
-          typing={{ ...typing, text: words }}
-          failed={failing}
-          onCopied={() => void act()}
-          onDismiss={() => void act().then((stored) => stored && toast.dismiss(id))}
-        />
-      ),
-      // Only Dismiss throws the words away: a swipe could do it by accident.
-      { id, duration: Number.POSITIVE_INFINITY, dismissible: false },
-    );
-  };
-  render(false);
+  notifyFailure({
+    key,
+    title: (
+      <CountedUnsentTyping
+        typing={typing}
+        words={words}
+        title={state === "unsent" ? t`Couldn't save` : t`Couldn't copy`}
+      />
+    ),
+    ...(state === "unsent"
+      ? {
+          action: {
+            label: t`Copy`,
+            run: () =>
+              writeClipboardText(words).then((write) =>
+                write.status === "done" ? copied() : notifyUnsentTyping(typing, "refused"),
+              ),
+          },
+        }
+      : {
+          body: (
+            <ol>
+              <RescuedPassage text={words} onCopied={copied} />
+            </ol>
+          ),
+        }),
+  });
 }
 
-function UnsentTypingToast({
+/** The pill's words; counts the rescue the first time it shows. */
+function CountedUnsentTyping({
   typing,
-  failed,
-  onCopied,
-  onDismiss,
+  words,
+  title,
 }: {
-  typing: UnsentTyping & { text: string };
-  /** Copy or Dismiss was pressed and couldn't be stored, so a reload would offer it again. */
-  failed: boolean;
-  onCopied: () => void;
-  onDismiss: () => void;
+  typing: UnsentTyping;
+  words: string;
+  title: string;
 }) {
   const [counted] = useState(() => [
     {
-      occurrenceId: `unsent:${typing.id}`,
+      occurrenceId: unsentKey(typing.id),
       rescue: { kind: "unsent-typing" as const, cause: typing.cause },
-      passages: [typing.text],
+      passages: [words],
     },
   ]);
   useCountRescues(counted);
-  const { copy, press } = useCopyText(typing.text, onCopied);
-  return (
-    <div
-      role="status"
-      data-unsent-typing={typing.cause}
-      className="flex w-full items-center gap-2 text-compact"
-    >
-      <div className="min-w-0 flex-1">
-        <p
-          data-rescued-passage
-          className="line-clamp-2 break-words whitespace-pre-wrap text-foreground"
-        >
-          {typing.text}
-        </p>
-        {failed ? (
-          <p className="text-destructive">
-            <Trans>Didn't go through. Try again.</Trans>
-          </p>
-        ) : null}
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="xs"
-        className="shrink-0 coarse:h-11"
-        data-copy-rescued-passage
-        onClick={press}
-      >
-        {copy === "copied" ? <Check aria-hidden /> : <Copy aria-hidden />}
-        {copy === "copied" ? (
-          <Trans>Copied</Trans>
-        ) : copy === "blocked" ? (
-          <Trans>Couldn't copy</Trans>
-        ) : (
-          <Trans>Copy</Trans>
-        )}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="xs"
-        className="shrink-0 coarse:h-11"
-        onClick={onDismiss}
-      >
-        <Trans>Dismiss</Trans>
-      </Button>
-    </div>
-  );
+  return <span data-unsent-typing={typing.cause}>{title}</span>;
 }

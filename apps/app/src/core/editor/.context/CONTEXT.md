@@ -483,8 +483,8 @@ keyboard, pointer, drop, or draft-recovery answer.
   caret. Inline code is not a fence: a tree row or picture there snaps to the
   span's edge; a text slice stays in the span. A dragged file over a fence is
   refused (`Can’t put a file inside code`); a file the editor can't place shows
-  `A file can’t go there.` while dragging, and a picture that can't stand at the
-  caret shows `A picture cannot go there.` A drop never changes
+  `Can’t drop here` while dragging, and so does a picture that can't stand at the
+  caret. A drop never changes
   the rows or columns of any table (nested ones too) or spills out of its cell.
   One that would is refused: `Can’t put that in a
   table cell` when it lands in a cell, `Can’t move part of a table` when a
@@ -644,7 +644,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   offline reload, in a document purged before its room reconnects, comes back, and a room with no
   session in this tab is measured too. A copy with no mark (written before marks, or whose first
   mark write was lost) counts as marking nothing: all of it is offered. The
-  account lifetime shows the words in a toast (`unsentTypingToasts`,
+  account lifetime offers the words in a failure pill, "Couldn't save" with Copy (`unsentTypingToasts`,
   `features/editor/RescuedText.tsx`). A closed draft's copy also stays for an Undo of its Discard,
   which delivers it.
 - What it cannot reach: a read admission has no such loss (see the next section). A document no
@@ -696,7 +696,8 @@ from the wire alone, with nothing stored between handshakes.
     browser runs one at a time across tabs and workers, so two tabs holding the same words get
     one notice between them and a tab holding more gets a second notice with only the rest. It
     reads the words inside the transaction, from a scratch document of the caller's snapshot.
-  - `act(id)` on Copy or Dismiss marks it acted on: it drops the words and keeps the items, and
+  - `act(id)` on a Copy that reached the clipboard marks it acted on (closing the pill only hides
+    it): it drops the words and keeps the items, and
     nothing clears it. No path rewrites a notice's ranges, so no stale tab can take a fact back.
     Unacted notices carry a field a sparse index lists, so a tab's read costs the open notices,
     not the account's history.
@@ -725,17 +726,17 @@ from the wire alone, with nothing stored between handshakes.
   waiting for it, in any tab. No tab can know when the last such claim has run, so collecting acted notices by
   their copy's absence brought words back. Sign-out (`clearAll`) deletes the whole
   notice database after the copies, and only when no copy was left behind.
-- **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy shows
-  "Copied" at once; Dismiss closes the toast when `done` resolves, a local write's moment later
-  (sonner drops a toast re-shown under an id it is still removing, so a closed toast can't come
-  back). When `done` rejects, the toast stays with "Didn't go through. Try again.", and the next
-  press runs `act` again. Until one commits, the
+- **A press that isn't stored stays actionable.** `done` resolves when `act` commits. Copy (once
+  the clipboard took the words) and close end the pill at once; when `done` rejects, the pill
+  comes back (each show is a new sonner id, so a re-show is never dropped
+  as one still leaving), and the next press runs `act` again. A copy the browser refused brings
+  it back as "Couldn't copy". Until one commits, the
   notice stays unacted, so a reload offers it again too.
 - A session that opens a room's current incarnation reads the older ones no tab holds against
   its first handshake, claims what they hold beyond it (never a wordless toast, which only the
   current session's own edit earns), and deletes each one whose claim resolved.
-- Not done yet: the Discard's `returned` on replacement, and the reason in the toast sentence
-  (archived, deleted, trashed), both wait for never-refuse PR B's `read_only` frame.
+- Not done yet: the Discard's `returned` on replacement waits for never-refuse PR B's
+  `read_only` frame.
 
 ### Draft room retirement
 

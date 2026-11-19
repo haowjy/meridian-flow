@@ -203,9 +203,7 @@ function DiagramFace({
               {sourceOpen ? t`Hide source` : t`Edit source`}
             </EditorMenuItem>
             <EditorMenuSeparator />
-            <EditorMenuItem
-              onSelect={() => run(copyText(source), t`${provider.name} source copied`)}
-            >
+            <EditorMenuItem onSelect={() => run(copyText(source), "copy")}>
               <Copy aria-hidden />
               {t`Copy ${provider.name} source`}
             </EditorMenuItem>
@@ -213,7 +211,7 @@ function DiagramFace({
                 no image to hand over yet, and law 5 prefers the gap. */}
             {svg ? (
               <EditorMenuItem
-                onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), t`Image downloaded`)}
+                onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), "download")}
               >
                 <Download aria-hidden />
                 {t`Download image`}

@@ -118,8 +118,9 @@ export class DocumentSessionRegistry {
   /** Stops following the notice store; set when the first observer starts it. */
   private stopNotices: (() => void) | null = null;
   /**
-   * The stored notices shown in this tab, each once for the life of the page: Dismiss removes
-   * the toast before its `act` commits, and a read in between still finds it unacted.
+   * The stored notices shown in this tab, each once for the life of the page: a closed pill stays
+   * closed until a reload, and Copy removes it before its `act` commits, while a read in between
+   * still finds it unacted.
    */
   private readonly shownNotices = new Set<string>();
   /** Shown here and not acted on here: a tab that acts elsewhere takes these off this screen. */

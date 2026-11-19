@@ -26,7 +26,6 @@ import {
 } from "@/features/draft-review/tree-line";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { tabLocation } from "@/features/project/context/identity-location";
-import { useLiveDraftCue } from "@/features/project/context/LiveDraftNotice";
 import { deletedLiveSentence } from "@/features/project/context/RemovedDocumentNotice";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useShellTreeVersion } from "@/features/project/tree-version";
@@ -49,11 +48,9 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const chats = useCachedChatTitles();
   const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
-  // The page's notice says what the toggle's Work does to it on Live, and on Draft the page is that
-  // Work's draft: this says what other Works do.
-  const cue = useLiveDraftCue(projectId, tab);
+  // On Draft the page is the toggle's Work's draft: this says what other Works do.
   const shell = useShellTreeVersion();
-  const shown = shell?.showing === "draft" ? shell.ownerKey : cue?.ownerKey;
+  const shown = shell?.showing === "draft" ? shell.ownerKey : null;
   if (deleted) {
     const from = schemeLabel(item?.deletedFrom?.scheme);
     const sentence = deletedLiveSentence(

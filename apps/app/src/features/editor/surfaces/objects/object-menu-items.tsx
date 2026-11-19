@@ -99,14 +99,13 @@ export function objectRowItems({
         id: "copy",
         label: t`Copy ${provider.name} source`,
         icon: <Copy aria-hidden />,
-        onSelect: () =>
-          run(copyText(fenceSource(editor, target.pos)), t`${provider.name} source copied`),
+        onSelect: () => run(copyText(fenceSource(editor, target.pos)), "copy"),
       }
     : {
         id: "copy",
         label: t`Copy image`,
         icon: <Copy aria-hidden />,
-        onSelect: () => run(copyImageFrom(imageSource(target)), t`Image copied`),
+        onSelect: () => run(copyImageFrom(imageSource(target)), "copy"),
       };
 
   return [
@@ -172,21 +171,19 @@ export function ObjectMenuItems(context: ObjectVerbContext): ReactNode {
       {/* Absent, never dead: a diagram that has not rendered has no image to
           hand over yet (law 5). */}
       {svg ? (
-        <EditorMenuItem onSelect={() => run(copySvgImage(svg), t`Image copied`)}>
+        <EditorMenuItem onSelect={() => run(copySvgImage(svg), "copy")}>
           <ImageDown aria-hidden />
           {t`Copy image`}
         </EditorMenuItem>
       ) : null}
       {svg ? (
-        <EditorMenuItem
-          onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), t`Image downloaded`)}
-        >
+        <EditorMenuItem onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), "download")}>
           <Download aria-hidden />
           {t`Download image`}
         </EditorMenuItem>
       ) : null}
       {source ? (
-        <EditorMenuItem onSelect={() => run(downloadImageFrom(source), t`Image downloaded`)}>
+        <EditorMenuItem onSelect={() => run(downloadImageFrom(source), "download")}>
           <Download aria-hidden />
           {t`Download image`}
         </EditorMenuItem>

@@ -4,8 +4,8 @@
  * One shape for every transient status a surface has to report: a verb that
  * reached the clipboard, an export the browser refused, a picture it would not
  * take. Two tones, because "done" and "failed" are the only two answers a
- * writer needs from something that will be gone in a moment; a failure keeps
- * its reason, which is what law 5 asks of a refusal.
+ * writer needs from something that will be gone in a moment. A few words, one
+ * line: a longer message is cut, never wrapped.
  *
  * Presentation only, and deliberately placeless: it blocks nothing, moves no
  * line of the manuscript, and knows nothing about where it hangs. WHERE a
@@ -32,7 +32,7 @@ export function EditorNoticePill({
       role="status"
       data-editor-notice={notice.tone}
       className={cn(
-        "pointer-events-none animate-in whitespace-nowrap rounded-full border px-3 py-1 text-xs shadow-float fade-in-0",
+        "pointer-events-none max-w-[min(24rem,100%)] animate-in truncate rounded-full border px-3 py-1 text-xs shadow-float fade-in-0",
         notice.tone === "failed"
           ? "border-destructive-border bg-destructive-tint text-destructive"
           : "border-border bg-card text-muted-foreground",

@@ -123,7 +123,7 @@ own file drag adds nothing to what the door reads. Read the rows from `upload_in
    lane (`manuscript://assets/`). The two PDFs and any run of chips between pictures are one edit:
    one Undo.
 3. Include a file over 200 MB with others. Only that one is refused, with
-   **name is over 200 MB, so it can't be added.**; nothing is inserted or sent for it.
+   **File too large**; nothing is inserted or sent for it.
 4. Drop a 200 MB file and watch the chip: it fills left to right and reads `Uploading n%`, and
    settles to `BIN · 200 MB`. Its hint names only the destination while it uploads. In a second
    tab on the same document, the chip reads `Uploading` (from the sender's presence, not the

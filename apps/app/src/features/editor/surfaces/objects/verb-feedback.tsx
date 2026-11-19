@@ -9,9 +9,8 @@
  *
  * One answer, one place. Every door — a chip on the row, an item in a ⋯, an
  * item in the dialog — routes its promise through `run`, and the surface that
- * owns the verb renders the notice where the writer is already looking. The
- * failure keeps its reason: "the browser blocked the clipboard" and "this
- * browser cannot export this diagram" call for different next moves.
+ * owns the verb renders the notice where the writer is already looking: "Copied"
+ * or "Couldn't copy". Why it failed goes to the console.
  */
 
 import { t } from "@lingui/core/macro";
@@ -26,40 +25,18 @@ import {
   useAnchorRect,
 } from "@/features/editor/chrome";
 
-import { ExportError } from "./object-commands";
-
 /** Long enough to read one line while looking at what you just acted on. */
 const NOTICE_LIFETIME_MS = 2600;
 
 /** Runs a verb and keeps its answer, success or failure. */
-export type RunVerb = (work: Promise<unknown>, done: string) => void;
+export type RunVerb = (work: Promise<unknown>, verb: Verb) => void;
 
-/**
- * Why a verb failed, in the writer's terms.
- *
- * Named cases rather than the raw message: `NotAllowedError` and
- * `SecurityError` are the two the browser actually produces here, they mean
- * completely different things, and neither reads as English.
- */
-export function verbFailureMessage(error: unknown): string {
-  if (error instanceof ExportError) {
-    return error.kind === "unreadable"
-      ? t`That image could not be read.`
-      : t`This browser will not turn that into an image.`;
-  }
+type Verb = "copy" | "download";
 
-  const name = error instanceof Error ? error.name : "";
-  if (name === "NotAllowedError") {
-    return t`The browser blocked the clipboard. Check this site's permissions.`;
-  }
-  if (name === "SecurityError") {
-    // A canvas drawn from an SVG that reaches outside the page is tainted, and
-    // the export is refused at the last step. A diagram's source always copies,
-    // so the writer is pointed at the door that works.
-    return t`This browser will not export this diagram as an image. Copy the diagram source instead.`;
-  }
-  return t`That did not work.`;
-}
+const ANSWER = {
+  copy: { done: () => t`Copied`, failed: () => t`Couldn't copy` },
+  download: { done: () => t`Downloaded`, failed: () => t`Couldn't download` },
+} satisfies Record<Verb, { done: () => string; failed: () => string }>;
 
 export function useVerbFeedback(): {
   notice: EditorNotice | null;
@@ -74,12 +51,16 @@ export function useVerbFeedback(): {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  const run = useCallback((work: Promise<unknown>, done: string) => {
+  const run = useCallback((work: Promise<unknown>, verb: Verb) => {
     // Settled rather than awaited: a rejection that escapes here would be an
     // unhandled promise, which is the silent failure this exists to end.
     work.then(
-      () => setNotice({ tone: "done", message: done }),
-      (error: unknown) => setNotice({ tone: "failed", message: verbFailureMessage(error) }),
+      () => setNotice({ tone: "done", message: ANSWER[verb].done() }),
+      (error: unknown) => {
+        // The browser's reason (a blocked clipboard, a tainted canvas) is for the log.
+        console.warn(`[${verb}] failed`, error);
+        setNotice({ tone: "failed", message: ANSWER[verb].failed() });
+      },
     );
   }, []);
 
