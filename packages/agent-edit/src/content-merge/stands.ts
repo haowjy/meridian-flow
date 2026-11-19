@@ -178,8 +178,16 @@ function stateIn(schema: Schema, change: EditChange, at: Window | null): ChangeS
   // always keeps, which putting it back would sit beside: nothing to round-trip against.
   if (change.before.length === 0 && inverse.blocks.every((block) => block.content.size === 0))
     return "stands";
-  const back = contentMerge(schema, change.before, change.after, inverse.blocks);
-  return !back.conflicts.length && blocksEqual(back.blocks, at.blocks) ? "stands" : "altered";
+  // Words the writer typed at the very edge of the change sit on either side of it, and the merge
+  // puts the first-named side's insertion first: the change goes back as the text holds it when
+  // either side is named first.
+  const putBack = (live: readonly PMNode[], draft: readonly PMNode[]) => {
+    const back = contentMerge(schema, change.before, live, draft);
+    return !back.conflicts.length && blocksEqual(back.blocks, at.blocks);
+  };
+  return putBack(change.after, inverse.blocks) || putBack(inverse.blocks, change.after)
+    ? "stands"
+    : "altered";
 }
 
 /**

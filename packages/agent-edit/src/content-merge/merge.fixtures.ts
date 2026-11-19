@@ -2125,12 +2125,12 @@ export const CASES: Case[] = [
   },
   // Two one-sided changes a few tokens apart are one change the two diffs placed differently
   {
-    row: "live adds a heading, the draft typed the same words at the end of the paragraph before it",
+    row: "live opens a quote after a sentence's end, the draft ends the sentence with a full stop and the quote",
     name: "neighbouring-changes-joined",
-    base: "p#f:Fig | p#a:Hello there.",
-    live: "p#f:Fig | p#a:Hello there. | h2#b:The end.",
-    draft: "p#f:Fig | p#a:Well Hello there. The end.",
-    merged: "p:Fig | p:Well Hello there. | h2:The end.",
+    base: "p:garden slept! The broken",
+    live: 'p:garden slept!" The broken',
+    draft: 'p:garden slept." The broken',
+    merged: 'p:garden slept." The broken',
     conflicts: 0,
     rules: ["neighbouring-changes-joined"],
   },

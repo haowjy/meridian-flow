@@ -21,7 +21,7 @@ export const RULES = {
   "marks-merged":
     "Both sides only reformatted one word: each mark comes from the side that changed it.",
   "shared-edge-kept-once":
-    "One side inserted words the other side's replacement also starts or ends with: kept once.",
+    "One side inserted words the other side's replacement also starts or ends with: kept once. Punctuation alone is not a shared word.",
   "typed-at-end-of-deleted":
     "Words typed at the end of a paragraph the other side deleted are a clash, not a join onto the paragraph before.",
   "moved-text-dropped":
@@ -36,7 +36,7 @@ export const RULES = {
   // Whitespace
   "draft-wins-space": "Both sides changed the space before one word differently: the draft's.",
   "space-added-between-words":
-    "Two words no side had side by side get one space, except in scripts written without spaces.",
+    "A word no side had after the token before it gets a space when that token is a word or ends a clause or sentence, except in scripts written without spaces.",
   // Shape: a merged block the schema cannot hold as it is
   "mark-dropped": "A mark the merged block's type cannot hold is dropped.",
   "inline-moved-out": "An inline node the block cannot hold moves to a new paragraph after it.",
