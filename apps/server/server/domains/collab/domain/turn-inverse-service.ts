@@ -33,7 +33,6 @@ import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
-import { INVERSE_WORKERS } from "./inverse-worker.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
@@ -178,20 +177,18 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
  * on what the steps before it leave. A part an Undo already took out (the planner's `takenBy`)
  * is neither a step nor a skip: the card's own Undo is done with it, and the model's undo in the
  * same chat is part of what the chat did. `undoneByWriter` says the card's Undo was among them.
- * A `preview` plan has the steps and skips of the real one, but its steps carry no parts: the
- * chip needs the answer, not the Undo.
+ * The chip and the press plan the same way, so the card offers Undo exactly when a press takes
+ * something back.
  */
 async function prepare(
   store: TurnInverseStore,
   documents: InverseDocument[],
   query: TurnInverseQuery,
   actionId: string,
-  { preview = false }: { preview?: boolean } = {},
 ): Promise<{ plans: PreparedDocumentInverse[]; undoneByWriter: boolean }> {
   let undoneByWriter = false;
   const planOf = async (document: InverseDocument): Promise<PreparedDocumentInverse> => {
-    // A preview plans in-process, a document's lineage at a time: the server answers its other
-    // requests between documents.
+    // The server answers its other requests between documents.
     await setImmediate();
     const entryPlanner = createCapturedReversalPlanner(document, query);
     const targets = document.history.filter((part) => {
@@ -314,26 +311,8 @@ async function prepare(
     steps.sort((a, b) => b.at - a.at);
     return { document, steps, skips };
   };
-  // As many documents at once as the worker pool has threads. A planner keeps its lineage until
-  // its document is done, so a preview, which builds it here, would hold every document's if
-  // they all started at once.
   const plans: PreparedDocumentInverse[] = [];
-  let next = 0;
-  // One failed document ends every lane, so no more jobs go to the pool for a failed command.
-  let failed = false;
-  await Promise.all(
-    Array.from({ length: Math.min(INVERSE_WORKERS, documents.length) }, async () => {
-      while (next < documents.length && !failed) {
-        const at = next++;
-        try {
-          plans[at] = await planOf(documents[at] as InverseDocument);
-        } catch (error) {
-          failed = true;
-          throw error;
-        }
-      }
-    }),
-  );
+  for (const document of documents) plans.push(await planOf(document));
   return { plans, undoneByWriter };
 }
 
@@ -400,9 +379,6 @@ export function createTurnInverseService(store: TurnInverseStore) {
           documents,
           query,
           randomUUID(),
-          {
-            preview: true,
-          },
         );
         // A part an Undo took out has no skip, so the skips are the parts that stay.
         const skips = [...undo.flatMap((plan) => plan.skips), ...tree.stayed];

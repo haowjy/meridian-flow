@@ -1,7 +1,6 @@
 /** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply and Discard. */
 
 export { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
-export { appliedParts } from "./applied-parts.js";
 export {
   APPLY_RECORD_ROOT,
   type ApplyEntry,

@@ -91,21 +91,16 @@ command the writer pressed. A refused command
 never leaves the card unchanged.
 
 Undo reverses the turn's remaining edits where they are now: pending in the
-Work's document drafts, or live. Draft and live writes remain one atomic command. A change an
-Apply took is that Apply's: the card lists each Apply in force (`applied`, text and tree alike)
-and its Undo sends their Un-Applies after the reversal, through the tab's one owner of each Apply
-(`AppliedCommand`, [draft review](../../draft-review/.context/draft-review.md)). The card offers
-Undo for every Apply the server lists: that owner's state only blocks the press while a request
-of it is out, and passes over it while it waits for a closed owner. An editor's Ctrl+Z that took
-part of it back keeps that editor's Redo, and the card's press asks the server for the rest
-through an owner of its own. An Apply stays listed while any of its text is not taken back,
-including text an Un-Apply left because it was changed since: each press judges the text as it
-stands and says why it stayed ("Not undone. The change to Second stayed: it was changed since."),
-and a later Undo that restores those words lets the next press take them. The line is that
-press's answer, never stored. The receipt immediately shows Undoing while the command runs;
+Work's document drafts, or live. Draft and live writes remain one atomic command. The card takes back
+only this reply's own changes, applied ones included, and sends nothing else: the server reads each
+change of an edit from the text (a drafted change that stands, or an applied change the Apply's
+`carried` names and that still stands in the manuscript) and takes out what stands, leaving a
+word the writer typed over it. The card never takes back a whole Apply; a Changes row's Undo and
+Ctrl+Z do. Undo is offered only while a press would take something back. A change the writer typed
+inside is not taken, and the card has no Undo for it. The receipt immediately shows Undoing while the command runs;
 Yjs publishes the edit after durable commit and failures stay on the card.
-Inverse eligibility comes from the inverse kernel's identity classification.
-The derived applied/pending/discarded disposition chooses a skipped part's copy,
+Eligibility is the text's: a change stands when taking it out merges cleanly
+(`content-merge/stands.ts`). The derived applied/pending/discarded disposition chooses a skipped part's copy,
 never grants or refuses Undo. The word "Undone" counts only the writer's own Undo, text and
 tree alike: an undo the model made in the reply is part of what the reply did, so the card
 offers Undo for what still stands. Review text Discard is a separate local

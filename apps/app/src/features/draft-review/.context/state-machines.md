@@ -65,13 +65,14 @@ The pattern:
 ## An Apply's Undo
 
 One Apply as one state machine (`AppliedCommand` in `apply-history.ts`, its `state`). Every Undo
-of it is `ask`: the sidebar's Ctrl+Z asks it, and an applied row's or a chat card's Undo and
+of it is `ask`: the sidebar's Ctrl+Z asks it, and an applied row's Undo and
 Ctrl+Z in each editor showing one of its documents or the draft it came from, opened before the
 Apply or after, `press` it, which says the answer on the
 sidebar's rows too. Every Redo is that editor's. Nothing reaches the Apply except through its
 state: each surface derives what it shows from the state and keeps none (the history entries and
-`canUndo`, the sidebar's stack, the Changes row's Undo, the card's control and line, the held
-lines, and session retention).
+`canUndo`, the sidebar's stack, the Changes row's Undo, the held lines, and session retention). A
+chat card's Undo is not one of them: it is the server's `reverse_turn`, which reads each applied
+change from the Apply's `carried`.
 
 ```mermaid
 stateDiagram-v2
@@ -103,13 +104,11 @@ stateDiagram-v2
 - **The command in force keeps its id until the Redo's command lands.** The queue's handle names
   its latest click for the next Un-Apply (`current`) and publishes the Apply in force
   (`inForce`, which the port's `commandId` reads through `applyInForce()`) only once a replay lands, so
-  `AppliedCommands.find` reaches the same owner throughout and a card can't make a second one.
+  `AppliedCommands.find` reaches the same owner throughout.
 - **`taken` is the editor's Redo, not the Apply's last word.** An answer that took part and left
   a group changed since still leaves that group in force on the server, which keeps listing the
-  Apply on its cards. `AppliedCommands.find` returns no owner for a `taken` Apply, so a card's
-  press asks the server through an owner of its own while the editor keeps its Redo. A card lists
-  every Apply its receipt lists; the tab's owner only blocks the press while a request of it is
-  out, and passes over it while it waits for a closed owner.
+  Apply in force on the server until every group is taken back. `AppliedCommands.find` returns no
+  owner for a `taken` Apply while the editor keeps its Redo.
 - **The state places it on the sidebar's stack** (`Seat`): it sits there from in force until it
   is taken back or ends, and through an Un-Apply of it that is out, which a sidebar press goes
   past. Leaving ends every registration with it: the step, the watch on its tree half, the
@@ -130,7 +129,7 @@ stateDiagram-v2
 - **A band's Apply** joins the sidebar's stack as the same object when it is held with a tree
   change (`joinStack`, `placeOn`), since tree changes are undone there.
 - **One server port** (`serverPort`): the sidebar's, a band's once its review let go of the room,
-  and a card's own. A `conflict` answer (the Un-Apply's id is another command's) took nothing:
+  A `conflict` answer (the Un-Apply's id is another command's) took nothing:
   the press failed, and the next one sends a new id. The queue's port reads its `unsent` Un-Apply
   the same way.
 

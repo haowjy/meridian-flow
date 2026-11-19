@@ -63,6 +63,15 @@ While it runs, a slow Apply holds two pooled connections: the first request's, a
 parked for up to 5 s. The pool is 10 per instance, so about five slow Apply alls at once would
 starve every other request.
 
+Each group's effect row also records what the Apply did to the text it merged: `carried`, the
+changes of AI edits (`[partId, index]` of a `document_edit_parts` row and of the change in its
+`delta`) that sat in the applied change, read on the draft as the click found it
+(`compileClick`, `draft-changes.ts` `carriedBy`); and `live_delta`, the blocks of the manuscript
+the group changed, before and after (null when Live already held the text). `carried` is why the
+card reads "Applied" for a change whatever the text does later; `live_delta` is what Un-Apply takes
+out of Live. No Yjs item id is recorded: the draft's Apply record keeps only the command and group
+ids the browser's queue reads.
+
 The command stores one full starting base plus per-group deltas, not a full
 before/after document for every group. A later Un-Apply rebuilds the complete delta
 chain before selecting effects that remain active, so an earlier partial reversal
@@ -168,12 +177,12 @@ answer is `already { unapplied }`, and so is a second Un-Apply of a delete. When
 the Apply are gone (`treeHalfLostWithBranch`, read from the stored answer's `applied`), the document
 it moved or deleted is `left_out purged`; the route answers 404 for a purged Work before the command
 runs, so that path is reached only when a chat's lineage branch goes while its Work lives on. A text
-group with nothing left to reverse (a word in it holds writing made since) stays: it is named in
-`textSkipped` and its document in a `left_out changed_since` line, on every press. Nothing
-records the skip: it is a judgement of the text as it stands, and another Undo can bring the words
-back with their lineage (a later turn's card Undo), after which the same Un-Apply takes the group.
-So the chat card keeps listing an Apply until every group is taken back (`applyCommands`'
-`textTakenBack`), and each press answers why it took nothing. When every group stays and the tree
+group with nothing left to reverse stays: it is named in `textSkipped` and its document in a
+`left_out changed_since` line, on every press. Nothing records the skip: it is a judgement of the
+text as it stands. The Live half is a merge: the groups come out latest first, each when its
+`live_delta` still stands in Live (`changeStateIn`, the rule a draft Undo uses) and as `takeOut`, so
+a word the writer typed over an applied change is never removed. A group whose `live_delta` is null
+reverses with nothing written to Live. When every group stays and the tree
 half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
 the lists' keys, then the keys of the documents the Apply wrote text in or created (and of the
 drafts the Apply closed, below).

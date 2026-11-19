@@ -11,8 +11,7 @@ the inverse kernel only if it can). Both Undos run on the same writes:
 - **The kernel's Undo** is `computeInverse` over the receipt parts captured around each AI write.
 - **The content Undo** is the design's read: a change stands when its inverse merges without a
   conflict and putting it back gives the text again; the result is written with `writeBlocks`.
-  The probe carries its own copy of that read (the prototype's), because stage 1 has not put
-  `stands` into `content-merge/` yet; when it does, point the probe at it.
+  It is the server's own read (`changeStateIn` and `takeOut` in `content-merge/stands.ts`).
 
 Each row is played in three fresh worlds from one script: the kernel Undo, the content Undo, and
 the oracle (the same later typing and later AI edits without the AI edit being undone). A row is

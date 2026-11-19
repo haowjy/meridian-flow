@@ -501,8 +501,7 @@ Redo in flight, or ended is one value (`state`), and every surface derives from 
 step, each editor history's entry and its Undo button, the Changes row's "Undo applying", a chat
 card's control and line, the held lines, and session retention. No surface keeps a copy of what an
 answer said. Every Undo of it is its `ask` (the sidebar's Ctrl+Z), or its `press`, which asks and
-says the answer on the sidebar's rows (an applied row's Undo, a chat card's Undo through
-`card-unapply.ts`, Ctrl+Z in an editor showing one of its documents), and every Redo its `redo`. Its
+says the answer on the sidebar's rows (an applied row's Undo, Ctrl+Z in an editor showing one of its documents), and every Redo its `redo`. Its
 port carries the requests and their data and decides nothing: the server's by the command id
 (`serverPort`, the one every surface uses), or, for a band's Apply while the review shows the
 draft's room, its item queue's, so the review shows both at once. When the review lets go of the
@@ -556,15 +555,11 @@ tree change joins the sidebar's stack as the same object (`joinStack`): tree cha
 there. Session retention counts a held entry, and a hidden one that may come back (`hasEntries`); the Undo button skips both (`canUndo`).
 The press after an answer is a new Un-Apply; a resend after a lost answer is the same one.
 
-**A chat card's Undo** of applied changes is the Un-Apply of each Apply in force that took them
-(the receipt's `applied`, read by command id on the server), after the reversal of the reply's other
-changes; `reverse_turn` leaves applied parts to it, and running it first means it never sees a part
-the Un-Apply drafted again. An Apply the tab doesn't hold yet gets an `AppliedCommand` of its own
-(no editor, no step), so every card listing it reads one state: while it waits for a closed owner,
-each such card says so and offers no Undo for it, until the owner reopens. Once taken back, the cards
-read the server's chip again. The control reads "Undo Apply", with the whole Apply's count in its
-tooltip, when an Apply held more than this reply's changes. The server lists an Apply that took a
-reply's tree change alone too (`appliedBy`, every command per node).
+**A chat card's Undo** is the one `reverse_turn` command, and it takes back only its own reply's
+changes, applied ones included: the server reads each applied change from the Apply's `carried` and
+takes it out of the manuscript when it still stands there (`collab/.context/reversal.md`). The card
+holds no `AppliedCommand` and sends no Un-Apply; a Changes row's Undo and Ctrl+Z still take back the
+whole Apply.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

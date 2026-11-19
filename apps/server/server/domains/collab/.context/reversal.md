@@ -5,41 +5,55 @@ Undo/Revert. There is no Redo: the card's and the model's `redo` are gone, and t
 model writes the edit again (the writer asks it to). An inverse is an ordinary
 immutable journal edit; it never rewrites a target row or marks it reversed.
 
-## A drafted edit is text
+## An AI edit is text
 
-The card's state and Undo for a part written into an open draft read the part's `delta`, never its
-Yjs item ids (`domain/draft-changes.ts`, over `agent-edit/content-merge/stands.ts`). A change of the edit
-is proposed while it stands and sits in a pending change, altered when it sits in one but no longer
-stands, else out. A part with a change that stands is a `content` step of the reply's plan; its commit
-(`commitContentStep`) is an append under the draft's hold that takes out every change that still stands
-in the committed text and records one `undo` receipt naming the parts it took. A part the writer altered
-has no Undo (the card skips it as edited), and a part an Undo took stays a target only while a change of
-it is back in the draft, so Restore and a Discard's Undo bring the Undo back. The model's `undo` and
-`revert` of a part in an open draft are the same `content` step (`model-inverse-policy.ts`): the planner
-(`model-reversal-planner.ts`) judges each part by its delta against the draft's text, and an entry
-planned earlier in one command is judged on the text the earlier ones leave. A part the writer applied
-or typed inside is refused as changed. The kernel plans only Live parts (until stages 2a and 3): a
-draft has no Yjs lineage view, no `rewriteDraft` and no restoration links.
+The card's state and Undo read what an edit recorded, never Yjs item ids. Each AI write records its
+`delta` (the blocks it changed, before and after: `document_edit_parts.delta`), in a draft and in
+the manuscript alike. A change of the edit is one of the differences its delta cuts
+(`content-merge/stands.ts`). It **stands** in a text when the text holds it and merges it out
+cleanly (`changeState` against a draft's review base, `changeStateIn` for the manuscript), and a
+press writes only a change that stands and adds no pending change to Changes: one state for the
+offer and the press, so the card offers Undo exactly when a press takes something back.
 
-Undo is offered for a change, and a press writes, only when taking it out adds no pending change to
-Changes (`stands` in `agent-edit/content-merge/stands.ts`: one state for the offer and the press). A
-change whose removal would cut a pending change in two reads altered: Changes still lists it and its
-Discard works, and the card offers no Undo.
+One operation takes a change out wherever it is, `takeOut`: the merge of its inverse, as the pull
+would turn it around. The card's Undo plans (`prepare` in `domain/turn-inverse-service.ts`), in
+step order, newest edit first, each judged on what the steps before it leave:
+
+- **A change proposed in an open draft** (a `content` step): taken out of the draft's text as an
+  append under the draft's hold (`commitContentStep`), when it stands there and sits in a pending
+  change.
+- **A change an Apply took** (a `manuscript` step on the drafted part): the Apply's effect row
+  names it in `carried`; it is taken out of Live when it still stands there, and out of the draft's
+  base and text where it stands there (`takeBack` in `domain/draft-changes.ts`), so nothing is left
+  pending. A change the writer typed inside does not stand, and the card has no Undo for it.
+- **An edit the AI wrote straight into Live** (a `manuscript` step): taken out of Live when it
+  stands.
+
+A step records one receipt of kind `undo` that names the parts it took, so the card says
+"Undone" and a part an Undo took is not a target again until a change of it is back in a draft. The
+model's `undo` and `revert` of a part in an open draft are the same `content` step
+(`model-inverse-policy.ts`); the kernel plans only the model's Live parts (until stage 3).
 
 ```mermaid
 stateDiagram-v2
   [*] --> proposed: the AI's write lands in the draft
+  [*] --> live: the AI's write lands in the manuscript
+  proposed --> applied: Apply
+  applied --> proposed: Un-Apply
   proposed --> altered: the writer or a later reply changes its words, or taking it out would add a pending change
   altered --> proposed: the words are back as the edit wrote them
   proposed --> out: the card's Undo, the model's undo or revert, or a Discard of it
+  applied --> out: the card's Undo
+  live --> out: the card's Undo
   altered --> out: a Discard of it, or it is typed away
   out --> proposed: Restore of that Discard, or anything else that puts the words back
-  proposed --> applied: Apply
-  applied --> proposed: Un-Apply
 ```
 
-No code steps this machine: each change's state is read from its delta and the draft's text on every
-read, so it cannot go stale. `applied` still comes from the Apply record until stage 2a.
+No code steps this machine: each change's state is read on every read, so it cannot go stale.
+Applied is the effect row's `carried` while its `unapplied_by` is null; it is read from the
+database, not from the draft's text. The card's Undo of an applied change leaves the Apply in force
+(a Changes row's Undo and Ctrl+Z still take the rest of it back), and a row's Un-Apply of an Apply
+whose words the card already took out finds `live_delta` no longer standing and writes nothing.
 
 ## Commands and policy
 
@@ -176,8 +190,9 @@ immutable parts, never equal text. A model write carries a
 (`document_edits.command_id`) joins the text and tree receipts of one call.
 
 Part disposition is computed once for each resolved destination.
-`createDraftDispositionReader` reads receipts from that draft. Apply evidence
-wins; otherwise an active draft is pending and a gone draft is discarded. A
+`createDraftDispositionReader` reads receipts from that draft and the draft's Applies in force
+(`carried`). A part with a change an Apply took is applied (and names each change's Apply);
+otherwise an active draft is pending and a gone draft is discarded. A
 revision mismatch between evidence and planning recaptures the bounded attempt.
 Closed origins are gone and never stand in for a destination.
 A part the kernel cannot reach in an open draft (a sibling change in its paragraph was applied or
@@ -190,9 +205,9 @@ Live destinations carry the captured physical source owner's lifecycle and the d
 the chat's query draft never decides availability for live text. A surviving draft
 still ignores live removal and accepts its own inverse.
 
-Applied text is not a refusal. Model Undo and the card write its inverse as a forward
-`revert` in the active origin draft, leaving live untouched and making a pending change against
-the review base.
+Applied text is not a refusal. The model's Undo writes its inverse as a forward `revert` in the
+active origin draft, leaving live untouched and making a pending change against the review base.
+The card's Undo takes an applied change out of Live and the draft (above).
 
 Review disposition is not otherwise inverse eligibility: an effective Undo that restores the
 review base has no shown change and can read discarded. In an active draft the kernel decides
