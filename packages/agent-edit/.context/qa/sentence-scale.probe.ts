@@ -463,9 +463,8 @@ it("bench: the read for a card", { timeout: 600_000 }, () => {
       const start = performance.now();
       const reading = readDraft(schema, base, t);
       const diffMs = performance.now() - start;
-      (globalThis as any).__t = [0,0,0,0,0];
       cs.forEach((c, i) => memos.set(i, readChange(reading, c, memos.get(i)).memo));
-      return `${label} ${JSON.stringify((globalThis as any).__t.map((x: number) => Math.round(x)))} ${(performance.now() - start).toFixed(0)} ms (Changes diff ${diffMs.toFixed(0)})`;
+      return `${label} ${(performance.now() - start).toFixed(0)} ms (Changes diff ${diffMs.toFixed(0)})`;
     };
     const typed = (index: number) => (blocks: PMNode[]) =>
       blocks.map((b, i) => (i === index ? schema.nodes.paragraph.create(b.attrs, [schema.text(`${b.textContent} zz`)]) : b));

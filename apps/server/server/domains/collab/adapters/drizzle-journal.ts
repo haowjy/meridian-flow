@@ -1189,6 +1189,7 @@ async function captureLiveEdits(
           ).map((p, i) => ({
             ...p,
             origin: receipts[i].origin,
+            delta: receipts[i].delta,
           })),
         });
     } finally {

@@ -158,8 +158,10 @@ it("reads applied and discarded historical parts after close, independent of pla
       writeBlocks(f.doc.getXmlFragment("prosemirror"), pm, [para("The bright mountain waits.")]),
     );
     await f.save();
+    // Whether a change of an open draft's part still waits is `draft-changes.ts`'s read of its
+    // delta; this reader says only that no Apply took the part.
     expect((await review(f.draftId)).parts.find((p) => p.editId === discarded)?.disposition).toBe(
-      "discarded",
+      "pending",
     );
     const visibleClosed = await f.ai(23, "The bright mountain glows.");
     await f.save("closed");

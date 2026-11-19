@@ -546,6 +546,7 @@ CREATE TABLE "document_edit_parts" (
 	"targets" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"frontier" jsonb NOT NULL,
 	"aliases" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"delta" jsonb,
 	"origin" jsonb NOT NULL,
 	"draft_branch_id" uuid,
 	"purged_disposition" text,

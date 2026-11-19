@@ -102,7 +102,7 @@ function inverseService(harness: Harness, handle: string) {
       recover: async () => {},
       deliver: async () => {},
     } as never,
-    draftCoordinator: { async deliverCommitted() {} },
+    draftCoordinator: { async deliverCommitted() {} } as never,
     resolveDocumentUri: async () => `scratch://@${handle}/probe.md`,
     resolveLastDocumentUri: async () => null,
     refreshDocument: async () => {},

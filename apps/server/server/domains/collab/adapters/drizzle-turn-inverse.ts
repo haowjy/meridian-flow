@@ -6,8 +6,20 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
+import {
+  type ChangeRead,
+  changeState,
+  editChanges,
+  readDelta,
+  takeOut,
+} from "@meridian/agent-edit/content-merge";
+import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
-import { type ItemRanges, textInRanges } from "@meridian/agent-edit/yjs-mutation";
+import {
+  captureMutationUpdates,
+  type ItemRanges,
+  textInRanges,
+} from "@meridian/agent-edit/yjs-mutation";
 import type { BranchId, CommandId, DocumentId, DraftOwner, UserId } from "@meridian/contracts";
 import type { ApplyClickResult } from "@meridian/contracts/branches";
 import type { TurnInverseSkip } from "@meridian/contracts/protocol";
@@ -25,7 +37,7 @@ import {
   applyCommandTrees,
   commands as commandRows,
 } from "@meridian/database/schema";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
@@ -54,6 +66,7 @@ import {
 } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runBoundedAttempts } from "../domain/draft-attempts.js";
+import { isPending, readDraftChanges } from "../domain/draft-changes.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import {
   createDraftDispositionReader,
@@ -90,7 +103,7 @@ type Dependencies = {
   journal: UpdateJournal;
   drafts: DraftStore;
   coordinator: LiveDocumentCoordinator;
-  draftCoordinator: Pick<DraftCoordinator, "deliverCommitted">;
+  draftCoordinator: Pick<DraftCoordinator, "deliverCommitted" | "loadBase" | "prepareAppend">;
   onDraftCommitted(draftId: string): void;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   /** Where a document in Trash last stood, which names it while a Redo brings it back. */
@@ -109,6 +122,8 @@ type Dependencies = {
     "authorizeAt" | "authorize" | "confirmEdit" | "destinationAvailability"
   >;
 };
+
+const contentSchema = buildDocumentSchema();
 
 export function createDrizzleTurnInverseService(input: Dependencies) {
   const db = () => currentDrizzleDb(input.db);
@@ -151,6 +166,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           targets: documentEditParts.targets,
           frontier: documentEditParts.frontier,
           aliases: documentEditParts.aliases,
+          delta: documentEditParts.delta,
           origin: documentEditParts.origin,
           purgedDisposition: documentEditParts.purgedDisposition,
         },
@@ -304,7 +320,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               doc,
               name: name?.handle ?? "No Work",
               closed: closedOwnerOf(documentDraft.lifecycle),
-              waitingRemoved: [],
             });
           }
           document.drafts = drafts;
@@ -338,14 +353,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }
       const views = new Map<string, DraftDispositionView | null>();
       for (const draftId of dispositionDraftIds) views.set(draftId, await readDisposition(draftId));
-      const waitingParts = new Set<string>();
       const byPart = new Map<string, StoredInversePart["disposition"]>();
       const appliedByPart = new Map<string, string>();
       for (const view of views.values())
-        for (const part of view?.parts ?? []) {
-          if (part.waiting) waitingParts.add(`${part.editId}:${part.ordinal}`);
+        for (const part of view?.parts ?? [])
           if (part.appliedBy) appliedByPart.set(`${part.editId}:${part.ordinal}`, part.appliedBy);
-        }
       for (const view of views.values())
         for (const part of view?.parts ?? [])
           if (
@@ -360,9 +372,18 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const evidence = views.get(draftId);
           if (!evidence || evidence.draft.revision !== draft.documentDraft.revision)
             throw new InverseAttemptMiss();
-          draft.waitingRemoved = (evidence.projection?.groups ?? []).map(
-            (group) => group.excerpt.removed,
+        }
+        // What each change of a drafted AI edit is in its open draft: read from the edit's delta
+        // against the draft's text, never from item ids.
+        const changesOf = new Map<number, readonly ChangeRead[]>();
+        for (const [draftId, draft] of document.drafts) {
+          if (draft.documentDraft.status !== "active") continue;
+          const drafted = document.history.filter(
+            (part) => part.origin.kind === "pending" && part.origin.draftId === draftId,
           );
+          if (!drafted.length) continue;
+          for (const [id, read] of readDraftChanges(draft.doc, drafted).parts)
+            changesOf.set(id, read.changes);
         }
         document.history = document.history.map((part) => {
           if (part.origin.kind === "live") return { ...part, disposition: "pending" };
@@ -372,12 +393,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
               ? appliedByPart.get(`${part.editId}:${part.ordinal}`)
               : undefined;
           const destination = document.destinationOf(part.origin);
-          // An open draft's unapplied part stays pending: "not pending any more" also means the
-          // writer retyped it, which the receipt must call edited, not discarded.
+          const changes = changesOf.get(part.id);
           return {
             ...part,
             ...(appliedBy ? { appliedBy } : {}),
-            waiting: waitingParts.has(`${part.editId}:${part.ordinal}`),
+            ...(changes ? { changes, waiting: changes.some(isPending) } : { waiting: false }),
             disposition:
               classified === "applied"
                 ? classified
@@ -842,6 +862,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     userId: UserId | undefined,
     query: TurnInverseQuery,
   ): Promise<string> {
+    if (step.kind === "content") return commitContentStep(entry, step, userId, query);
     const { plan } = entry;
     const document = plan.document;
     const draft =
@@ -882,6 +903,63 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       userId,
       query,
     );
+  }
+
+  /**
+   * A drafted original's Undo, as an append under the draft's hold: each of its changes that
+   * still stands in the committed text is taken out, and one receipt of kind `undo` names the parts
+   * it took. A change that stopped standing between the capture and the hold is left whole.
+   */
+  async function commitContentStep(
+    entry: PlannedInverse,
+    step: Extract<InverseStep, { kind: "content" }>,
+    userId: UserId | undefined,
+    query: TurnInverseQuery,
+  ): Promise<string> {
+    const { draftId, branchId } = step.destination;
+    const taken = new Set<StoredInversePart>();
+    const base = await input.draftCoordinator.loadBase(draftId);
+    const write = input.draftCoordinator.prepareAppend(base, [], {
+      work: "active",
+      serverRow: () => ({
+        threadId: query.model ? query.threadId : null,
+        turnId: query.model ? query.turnId : null,
+        actorUserId: userId ?? null,
+        inverse: {
+          kind: step.actionKind,
+          actionId: step.actionId,
+          targets: [...taken].map((part) => ({ editId: part.editId, ordinal: part.ordinal })),
+        },
+      }),
+      authorServerRows(prefix) {
+        const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+        let blocks = readBlocks(fragment, contentSchema);
+        for (const part of step.parts) {
+          if (!part.delta) continue;
+          for (const change of editChanges(contentSchema, readDelta(contentSchema, part.delta)))
+            if (changeState(contentSchema, change, blocks) === "stands") {
+              blocks = takeOut(contentSchema, change, blocks);
+              taken.add(part);
+            }
+        }
+        if (!taken.size) return [];
+        return captureMutationUpdates(prefix, () =>
+          prefix.transact(() => writeBlocks(fragment, contentSchema, blocks)),
+        );
+      },
+    });
+    try {
+      const wrote = await write.persist();
+      write.transfer();
+      if (wrote) {
+        entry.contentDrafts.add(draftId);
+        count(entry, branchId, taken.size);
+        entry.outcomes.push({ documentId: entry.documentId, branchId, draftId });
+      }
+    } finally {
+      write.dispose();
+    }
+    return "";
   }
 
   /**
@@ -947,7 +1025,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   ): Promise<void> {
     const { plan } = entry;
     const document = plan.document;
-    const landed = new Set(entry.updates.map(({ draftId }) => draftId));
+    const landed = new Set<string | null>([
+      ...entry.updates.map(({ draftId }) => draftId),
+      ...entry.contentDrafts,
+    ]);
     if (!landed.size) return;
     deliveries.push(async () => {
       for (const draftId of landed) {

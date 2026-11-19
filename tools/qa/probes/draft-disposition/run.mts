@@ -47,7 +47,7 @@ try {
       },
       async recover() {},
     } as never,
-    draftCoordinator: { async deliverCommitted() {} },
+    draftCoordinator: { async deliverCommitted() {} } as never,
     resolveDocumentUri: async () => "project://probe.md",
     resolveLastDocumentUri: async () => null,
     async refreshDocument() {},

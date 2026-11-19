@@ -28,6 +28,32 @@ export type ChangeState = "stands" | "altered" | "out";
 
 const idOf = (block: PMNode) => block.attrs.id as string;
 
+/** An edit's delta as stored: ProseMirror JSON. */
+export interface StoredDelta {
+  before: Record<string, unknown>[];
+  after: Record<string, unknown>[];
+}
+
+/** What a write did to the text: the blocks it changed, before and after, with one block either side. Null when it changed nothing. */
+export function captureDelta(
+  before: readonly PMNode[],
+  after: readonly PMNode[],
+): StoredDelta | null {
+  if (blocksEqual(before, after)) return null;
+  const cut = narrow(before, after);
+  return {
+    before: cut.before.map((block) => block.toJSON()),
+    after: cut.after.map((block) => block.toJSON()),
+  };
+}
+
+export function readDelta(schema: Schema, stored: StoredDelta): EditDelta {
+  return {
+    before: stored.before.map((block) => schema.nodeFromJSON(block)),
+    after: stored.after.map((block) => schema.nodeFromJSON(block)),
+  };
+}
+
 /** The changes of an edit, cut by the rule Changes uses, as if this edit were alone. */
 export function editChanges(schema: Schema, delta: EditDelta): EditChange[] {
   const projection = projectReview(diffBlocks(delta.before, delta.after));
@@ -115,6 +141,10 @@ function stateIn(schema: Schema, change: EditChange, at: Window | null): ChangeS
   if (blocksEqual(inverse.blocks, at.blocks)) return "out";
   const forward = contentMerge(schema, change.before, change.after, at.blocks);
   if (!blocksEqual(forward.blocks, at.blocks)) return "out";
+  // A change that made the first blocks of an empty text comes out as the empty paragraph a text
+  // always keeps, which putting it back would sit beside: nothing to round-trip against.
+  if (change.before.length === 0 && inverse.blocks.every((block) => block.content.size === 0))
+    return "stands";
   const back = contentMerge(schema, change.before, change.after, inverse.blocks);
   return !back.conflicts.length && blocksEqual(back.blocks, at.blocks) ? "stands" : "altered";
 }

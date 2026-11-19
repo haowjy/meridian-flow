@@ -35,12 +35,12 @@ export interface DraftDispositionView {
   classifications: ReadonlyMap<string, ChangeClassification>;
   applyRecord: readonly ApplyEntry[];
   /**
-   * `waiting`: the part is a member of a change that waits in an open draft. `appliedBy`: the
-   * Apply command that took an applied part, which its Un-Apply takes back.
+   * `pending`: the part's draft is open and no Apply took it; whether a change of it still waits is
+   * `domain/draft-changes.ts`'s read. `appliedBy`: the Apply command that took an applied part,
+   * which its Un-Apply takes back.
    */
   parts: readonly (DraftReceiptPart & {
     disposition: PartDisposition;
-    waiting: boolean;
     appliedBy?: string;
   })[];
 }
@@ -62,7 +62,7 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
         projection: null,
         classifications: new Map(),
         applyRecord: [],
-        parts: cut.parts.map((part) => ({ ...part, disposition: "discarded", waiting: false })),
+        parts: cut.parts.map((part) => ({ ...part, disposition: "discarded" })),
       };
     }
     assertReadableDraft(draft);
@@ -87,9 +87,6 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
         ),
       );
       const classifications = classifyChanges(doc, projection, provenance, { record: true });
-      const pending = new Set<number>();
-      for (const change of classifications.values())
-        for (const member of change.members) pending.add(member);
       return {
         draft,
         provenance,
@@ -99,11 +96,10 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
         parts: parts.map((part, index) => ({
           ...part,
           ...(by[index] ? { appliedBy: by[index] } : {}),
-          waiting: part.status !== "applied" && draft.status === "active" && pending.has(index),
           disposition:
             part.status === "applied"
               ? "applied"
-              : draft.status === "active" && pending.has(index)
+              : draft.status === "active"
                 ? "pending"
                 : "discarded",
         })),

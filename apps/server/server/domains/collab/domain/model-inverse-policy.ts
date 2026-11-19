@@ -126,6 +126,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const at = Math.max(...entry.parts.map((part) => part.id));
         for (const edit of result.edits) {
           steps.push({
+            kind: "kernel",
             edit: { ...edit, actionId: stepActionId },
             destination,
             actionId: stepActionId,
@@ -149,6 +150,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               toolCallId: query.toolCallId ?? null,
               actor: "agent",
               wId: null,
+              delta: null,
               origin:
                 destination.kind === "draft"
                   ? {
@@ -220,7 +222,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           status: "nothing_to_revert",
           message: `Nothing is left to reverse in ${document.uri}. Nothing was changed.`,
         };
-      const text = steps.map((step) => step.edit);
+      const text = steps.flatMap((step) => (step.kind === "kernel" ? [step.edit] : []));
       // The cuts are taken before the commit, which applies the inverse to the view.
       const textDestinations = new Set(steps.map((step) => step.destination));
       const plannedDestinations = new Map<

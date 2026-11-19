@@ -17,6 +17,8 @@ export type PlannedInverse = {
   updates: { draftId: string | null; update: Uint8Array }[];
   drafts: Map<InverseDestination, PlannedDraft>;
   live: boolean;
+  /** Drafts a content step wrote into, for delivery. */
+  contentDrafts: Set<string>;
   source: "agent" | "writer";
   committed: ComputedInverseEdit[];
   reversed: Map<BranchId | null, number>;
@@ -41,6 +43,8 @@ export function planInverseDocument(
   const edits = new Map<ComputedInverseEdit, ComputedInverseEdit["parts"]>();
   const drafts = new Map<InverseDestination, PlannedDraft>();
   for (const step of plan.steps) {
+    // A step in an open draft is content: it is computed under the draft's hold, not here.
+    if (step.kind === "content") continue;
     let view = document.live;
     if (step.destination.kind === "draft") {
       if (step.destination.state === "gone")
@@ -91,6 +95,7 @@ export function planInverseDocument(
     updates: [],
     drafts,
     live: plan.steps.some((step) => step.destination.kind === "live"),
+    contentDrafts: new Set(),
     source: query.model ? "agent" : "writer",
     committed: [],
     reversed: new Map(),

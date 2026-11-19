@@ -7,6 +7,7 @@ export {
   type ChangeMemo,
   type ChangeRead,
   type ChangeState,
+  captureDelta,
   changeState,
   type EditChange,
   type EditDelta,
@@ -14,6 +15,8 @@ export {
   type Reading,
   readChange,
   readChangeWhole,
+  readDelta,
   readDraft,
+  type StoredDelta,
   takeOut,
 } from "./stands.js";
