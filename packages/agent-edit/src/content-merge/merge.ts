@@ -40,7 +40,7 @@ import {
   touch,
 } from "./merge-hunks.js";
 import { mergeOrder } from "./merge-order.js";
-import { settleWhitespace, unionInsertions } from "./merge-settle.js";
+import { isOneTextTwice, settleWhitespace, unionInsertions } from "./merge-settle.js";
 import { addCounts, type Fire, type RuleCounts, ruleCounter } from "./rules.js";
 import { settleStretches } from "./stretch.js";
 
@@ -580,7 +580,7 @@ function merge(
       orderConflict ||= nested.orderConflict;
       continue;
     }
-    if (lo === hi) {
+    if (lo === hi && !isOneTextTwice(liveVersion, draftVersion)) {
       merged.push(...unionInsertions(liveVersion, draftVersion, fire));
       continue;
     }

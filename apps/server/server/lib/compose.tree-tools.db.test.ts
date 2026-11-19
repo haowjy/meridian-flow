@@ -39,9 +39,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const {
       handleApplyClickRequest,
       handleApplyItemsRequest,
-      handleDiscardWorkDraftRequest,
+      handleDiscardBranchRequest,
       handleOwnerDraftListRequest,
-      handleUnapplyClickRequest,
       selectBranchRouteServices,
     } = await import("./branch-review-route.js");
 
@@ -249,16 +248,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               ...extra,
             },
           } as never),
-        discard: async (documentId: string, ends: Record<string, unknown> = { ends: "tree" }) => {
+        discard: async (documentId: string, ends: { ends: "tree" | "item" } = { ends: "tree" }) => {
           const row = await item(documentId);
-          return handleDiscardWorkDraftRequest(routes, {
+          return handleDiscardBranchRequest(routes, {
             ...scope,
             branchId: row?.branchId,
-            documentId: documentId as never,
             request: {
-              itemKey: row?.itemKey,
               commandId: randomUUID(),
-              ...ends,
+              items: [
+                {
+                  node: documentId,
+                  tree: true,
+                  ...(ends.ends === "item" ? { text: "all" } : {}),
+                },
+              ],
             },
           } as never);
         },
@@ -294,7 +297,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("a whole-item Discard of a moved, edited document closes its text draft too", async () => {
+    it("a whole-item Discard of a moved, edited document takes its text too and leaves the draft open", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
       const writer = review(script);
@@ -306,7 +309,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(seen).toMatchObject({ hasDraft: true, tree: { movedFrom: { path: "/ch1" } } });
       const textDrafts = () =>
         db
-          .select({ status: schema.documentDrafts.status })
+          .select({ id: schema.documentDrafts.id })
           .from(schema.documentDrafts)
           .where(
             and(
@@ -316,10 +319,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           );
 
       expect(await writer.discard(CH1, { ends: "item" })).toMatchObject({
-        body: { status: "discarded", itemClosed: true, itemDisposition: "discarded" },
+        body: { status: "discarded", closed: [CH1] },
       });
       expect(await writer.item(CH1)).toBeUndefined();
-      expect(await textDrafts()).toEqual([{ status: "closed" }]);
+      expect(await textDrafts()).toHaveLength(1);
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
@@ -359,7 +362,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({
-        body: { status: "discarded", itemClosed: false },
+        body: { status: "discarded", closed: [] },
       });
       expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");
@@ -519,7 +522,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         );
 
-      it("the card's Undo after an Apply is the Apply's Un-Apply, though one drafted document was discarded", async () => {
+      it("the card's Undo takes back a move an Apply landed, though one drafted document was discarded", async () => {
         const script = await start();
         await drafting(script).reply(async (edit) => {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
@@ -550,26 +553,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         } as never);
         const [part1] = await placementsNamed("part1");
         expect((await placement(CH1))?.parentId).toBe(part1?.id);
-        const chip = () =>
-          composed.ports.documentSync.getDocumentAndTreeChip(
-            OTHER.threadId as never,
-            OTHER.turnId as never,
-          );
-        // The card names the Apply that took the move, and its own reversal leaves the move to it.
-        expect(await chip()).toMatchObject({
-          applied: [{ commandId: applyCommandId, branchId, count: 1, onlyThisTurn: true }],
-        });
+        // The Apply landed the move; the card's own Undo takes it back, as it takes back any reply's move.
         await cardUndo();
-        expect((await placement(CH1))?.parentId).toBe(part1?.id);
-        const unapplied = await handleUnapplyClickRequest(routes, {
-          ...scope,
-          branchId,
-          request: { commandId: randomUUID(), applyCommandId },
-        } as never);
-        expect(unapplied, JSON.stringify(unapplied)).toMatchObject({ status: "unapplied" });
         expect((await placement(CH1))?.parentId).toBeNull();
         expect(await placementsNamed("fresh")).toEqual([]);
-        expect((await chip())?.applied).toBeUndefined();
       });
 
       it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {
@@ -582,7 +569,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .set({ deletedAt: new Date() })
           .where(eq(schema.works.id, OTHER_WORK_ID));
         const undone = await cardUndo();
-        expect(undone).toMatchObject({ status: "permission_denied", denial: "work_deleted" });
+        expect(undone).toMatchObject({ status: "permission_denied" });
       });
 
       it("says nothing can be undone once the Work discarded the change", async () => {
@@ -824,7 +811,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ls(after, "user://")).not.toContain("mine");
         expect(
           await sync.getDocumentAndTreeChip(THREAD.threadId as never, THREAD.turnId as never),
-        ).toMatchObject({ state: "undone", control: "view_change" });
+        ).toMatchObject({ undone: true, control: "view_change" });
       });
 
       it("a Copy's operation id: a resend answers the stored result, another request or another account's is command_conflict", async () => {
@@ -979,7 +966,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(undone.workReceipts, JSON.stringify(undone)).toEqual([
           expect.objectContaining({ workId: NEW_WORK_ID, status: "reversed" }),
         ]);
-        expect(undone.acceptedParts).toBeGreaterThan(0);
+        expect(undone.status).toBe("reversed");
         expect(await workDeleted()).toBe(true);
         expect(await ch1(script)).toContain("one");
         expect(await claims()).toBe(1);

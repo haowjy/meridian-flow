@@ -5,26 +5,18 @@
  * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/architecture/collaboration/turn-receipts.md#reversal-availability-is-the-servers)
  */
 import { randomUUID } from "node:crypto";
-import {
-  appendApplyRecord,
-  applyRecordOf,
-  REVIEW_BASE_FRAGMENT,
-  readBlocks,
-  writeBlocks,
-} from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { applyTextEdit } from "@meridian/agent-edit/test-support";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { setTestHook } from "../../shared/test-hooks.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
-import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
 import {
   ALPHA_ID,
@@ -37,6 +29,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/collab-postgres-harness.js";
+import { recordApply } from "./test-support/draft-classification.js";
 import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture, readDraftId } from "./test-support/turn-inverse-fixture.js";
 
@@ -221,7 +214,7 @@ describe("model document stack", () => {
       }
     },
   );
-  it("reverts applied text, and a card Undo racing an Apply reverts it forward", async () => {
+  it("leaves text the writer applied to the manuscript, and says so", async () => {
     const { harness, view, context, responseId } = await fixture();
     try {
       const core = view.collab.agentEdit();
@@ -236,18 +229,10 @@ describe("model document stack", () => {
       const draftId = await readDraftId(db, ALPHA_ID);
       const pm = buildDocumentSchema();
       const applyDraft = async (liveText: string) => {
-        const disposition = await createDraftDispositionReader(
-          createDrizzleDraftDispositionStore(db),
-        )(draftId);
-        if (!disposition) throw new Error("draft disposition missing");
         const { doc, snapshot } = await view.draftCoordinator.copyDraft(draftId);
         try {
           doc.clientID = 1;
           doc.transact(() => {
-            appendApplyRecord(
-              doc,
-              applyRecordOf(disposition.classifications, disposition.classifications.keys()),
-            );
             writeBlocks(
               doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
               pm,
@@ -265,6 +250,13 @@ describe("model document stack", () => {
             })
             .where(eq(schema.documentDrafts.id, draftId));
           await view.draftCoordinator.deliverCommitted(draftId);
+          await recordApply(db, {
+            draftId,
+            documentId: ALPHA_ID,
+            accountId: USER_ID,
+            projectId: PROJECT_ID,
+            store: createDrizzleDraftDispositionStore(db),
+          });
         } finally {
           doc.destroy();
         }
@@ -279,7 +271,7 @@ describe("model document stack", () => {
         });
       };
 
-      // The model's Undo of text the writer applied is a forward revert in the draft.
+      // Text the writer applied is in the manuscript: the model's Undo does not take it back.
       const secondContext = {
         ...context,
         responseIdentity: { modelResponseId: responseId },
@@ -288,43 +280,13 @@ describe("model document stack", () => {
       await core.read(address, secondContext);
       expect(await core.read({ ...address, format: "edits" }, context)).toMatchObject({
         status: "success",
-        result: { message: expect.stringMatching(/e1.*applied.*revert/) },
+        result: { message: expect.stringMatching(/e1.*applied.*none/) },
       });
       expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
-        status: "success",
-        result: { message: "reverted: e1" },
+        status: "cant_undo_changed",
       });
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+      expect(await view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
-
-      // Apply lands after the chip was offered and after the click's first capture. The retry
-      // must reclassify the pending pop as a forward revert instead of refusing the click.
-      expect(
-        await core.write(
-          { ...address, command: "replace", find: "Blue", content: "Green" },
-          secondContext,
-        ),
-      ).toMatchObject({ status: "success", writeId: "e3" });
-      expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, TURN_ID)).toMatchObject({
-        control: "undo",
-      });
-      let removeApplyHook = () => {};
-      removeApplyHook = setTestHook("inverse.beforeCommitScope", async () => {
-        removeApplyHook();
-        await applyDraft("Alpha Gamma.");
-      });
-      try {
-        expect(
-          await view.collab.reverseTurn({
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-            actor: { type: "user", userId: USER_ID },
-          }),
-        ).toMatchObject({ status: "reversed" });
-      } finally {
-        removeApplyHook();
-      }
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
       await harness.dispose();
     }
@@ -361,7 +323,7 @@ describe("model document stack", () => {
   });
 });
 
-it("model undo follows its edit to the draft, keeps the writer's typing, and refuses only after none remains", async () => {
+it("model undo of an edit the writer typed inside is refused and leaves the draft as it is", async () => {
   const { harness, view, context } = await fixture();
   try {
     const core = view.collab.agentEdit();
@@ -397,13 +359,9 @@ it("model undo follows its edit to the draft, keeps the writer's typing, and ref
     };
     await core.read({ ...command, format: "edits" }, liveContext);
     expect(await core.write({ ...command, command: "undo" }, liveContext)).toMatchObject({
-      status: "success",
-      result: { destination: "draft", draftWork: "w1" },
+      status: "cant_undo_changed",
     });
-    expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta!.\n\nBlue.\n");
-    expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
-      status: "nothing_to_undo",
-    });
+    expect(await view.draftMarkdown(draftId)).toBe("Alpha Ga!mma.\n\nBlue.\n");
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
   } finally {
     await harness.dispose();

@@ -5,9 +5,7 @@ import type { ListDiscardEntriesResponse } from "@meridian/contracts/branches";
 import { ArchiveRestore } from "lucide-react";
 import { RowWord } from "@/components/app/RowWord";
 import { ListRow } from "@/components/ui/list-row";
-import { restoreReturnedSentence } from "@/features/draft-review/CommandNotice";
 import type { DiscardRestoreState } from "@/features/draft-review/discard-restores";
-import { leftOutSentence } from "@/features/draft-review/ReviewMessageText";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { relativeTime } from "../../relative-time";
 
@@ -15,8 +13,8 @@ export type DiscardEntry = ListDiscardEntriesResponse["entries"][number];
 
 /**
  * A Discard in Trash: the drafts it took, by name, and the Work it took them from, its age at the
- * right; its menu restores them. What became of a restore is the row's word: restored (the row
- * stays, struck through), not restored and why, or Retry.
+ * right; its menu restores them. A restored row stays, struck through, with its Undo; a failed
+ * restore is the pill's.
  */
 export function TrashDiscardRow({
   entry,
@@ -37,36 +35,16 @@ export function TrashDiscardRow({
   onRestore: () => void;
   /** Undo of a restore made here: Discard the same drafts again. Absent until it can be sent. */
   onUndo?: () => void;
-  /** The Undo's Discard is on its way, or was refused. */
-  undo?: "sending" | "failed";
+  /** The Undo's Discard is on its way. */
+  undo?: boolean;
 }) {
   const title =
     names.length > 0
       ? new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(names)
       : t`Changes`;
   const icon = fileKindIcon(names[0] ?? "");
-  const detail = <span className="truncate">{discardedFrom(entry, names.length, workName)}</span>;
-  // Answered with nothing back: the entry has left Trash, and the row says why until it goes.
-  if (state?.kind === "left_out")
-    return (
-      <ListRow
-        gone
-        icon={icon}
-        title={title}
-        detail={detail}
-        notice={
-          <RowWord
-            tone="warning"
-            word={<Trans>Not restored</Trans>}
-            sentence={leftOutSentence(state.leftOut)}
-          />
-        }
-      />
-    );
+  const detail = <span className="truncate">{discardedFrom(names.length, workName)}</span>;
   if (state?.kind === "restored") {
-    // What stayed out is said beside what came back.
-    const said = (sentence: string) =>
-      state.leftOut > 0 ? `${sentence} ${leftOutSentence(state.leftOut)}` : sentence;
     return (
       <ListRow
         gone
@@ -74,31 +52,19 @@ export function TrashDiscardRow({
         title={title}
         detail={detail}
         notice={
-          undo === "failed" ? (
-            <RowWord
-              tone="warning"
-              word={<Trans>Retry</Trans>}
-              label={t`Retry undoing the restore of ${title}`}
-              sentence={t`Undo didn't go through. Try again.`}
-              onAction={onUndo}
-            />
-          ) : !onUndo ? (
+          !onUndo ? (
             // Restored elsewhere first: nothing here can put it back.
-            <RowWord
-              tone="done"
-              word={<Trans>Restored</Trans>}
-              sentence={said(t`Restored just now.`)}
-            />
+            <RowWord tone="done" word={<Trans>Restored</Trans>} sentence={t`Restored just now.`} />
           ) : (
             <RowWord
               word={<Trans>Undo</Trans>}
               label={t`Undo restore of ${title}`}
-              sentence={said(
+              sentence={
                 workName
                   ? t`Restored just now: the drafts are back in ${workName}. Undo puts them back in Trash.`
-                  : t`Restored just now: the drafts are back. Undo puts them back in Trash.`,
-              )}
-              pending={undo === "sending"}
+                  : t`Restored just now: the drafts are back. Undo puts them back in Trash.`
+              }
+              pending={undo}
               onAction={onUndo}
             />
           )
@@ -120,32 +86,16 @@ export function TrashDiscardRow({
       }}
       revealActions
       notice={
-        state?.kind === "failed" ? (
-          <RowWord
-            tone="warning"
-            word={<Trans>Retry</Trans>}
-            label={t`Retry restoring ${title}`}
-            sentence={t`Couldn't restore it. Retry tries again.`}
-            onAction={onRestore}
-          />
-        ) : state?.kind === "restoring" ? (
+        state?.kind === "restoring" ? (
           <RowWord word={<Trans>Restoring</Trans>} sentence={t`Restoring the drafts.`} pending />
-        ) : state?.kind === "returned" ? (
-          <RowWord
-            tone="warning"
-            word={<Trans>Not restored</Trans>}
-            sentence={restoreReturnedSentence(state.why)}
-          />
         ) : null
       }
     />
   );
 }
 
-/** What took them and from where: a Discard, or a restore that put an older draft back. */
-function discardedFrom(entry: DiscardEntry, count: number, workName: string | null): string {
-  if (entry.kind === "undo_discard")
-    return workName ? t`Replaced by a restore in ${workName}` : t`Replaced by a restore`;
+/** What took them and from where. */
+function discardedFrom(count: number, workName: string | null): string {
   if (count <= 1) return workName ? t`Draft discarded from ${workName}` : t`Draft discarded`;
   return workName
     ? plural(count, {

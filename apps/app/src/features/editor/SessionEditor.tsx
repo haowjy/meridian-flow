@@ -19,6 +19,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
+import { useRefreshTurnCardsOnEdit } from "@/client/query/useTurnLiveLineage";
 import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
@@ -172,15 +173,9 @@ function ActiveSessionEditorView({
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
   const removal = useRemovalRecord(projectId ?? "", removed ? documentId : null);
-  // A draft discarded elsewhere, or one whose document went to Trash, stays on screen read-only,
-  // as does a document removed elsewhere and still in Trash; the pill says so and restores it.
-  const commands = useOptionalDraftCommandOwner();
-  const room = inReview ? parseYjsRoomName(identity.roomName) : null;
-  const reviewDraft = room?.kind === "draft" ? room.draftId : null;
-  const endOf = () => (commands && reviewDraft ? commands.endOf(reviewDraft) : null);
-  const end = useSyncExternalStore(commands?.subscribe ?? subscribeNothing, endOf, endOf);
-  const trashedDraft = end === "in-trash" ? reviewDraft : null;
-  const documentInTrash = end === "document" || (removal?.kind === "removed" && removal.inTrash);
+  // A document removed elsewhere and still in Trash stays on screen read-only; the pill says so
+  // and restores it.
+  const documentInTrash = removal?.kind === "removed" && removal.inTrash;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -337,6 +332,7 @@ function ActiveSessionEditorView({
   });
 
   usePaintPending(editor === null);
+  useRefreshTurnCardsOnEdit(editor, documentId);
 
   useEffect(() => {
     editorRef.current = editor;
@@ -432,8 +428,8 @@ function ActiveSessionEditorView({
         {/* One status pill: the word count, and sync only when there is something
           to act on (offline / closed), see SyncStatus. Hidden while both are empty. */}
         <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex items-center gap-3 rounded-full border border-border-subtle bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-float empty:hidden">
-          {projectId && (trashedDraft || documentInTrash) ? (
-            <InTrashStatus projectId={projectId} documentId={documentId} draftId={trashedDraft} />
+          {projectId && documentInTrash ? (
+            <InTrashStatus documentId={documentId} />
           ) : (
             <SyncStatus session={session} onReopen={onReopen} removal={removal} />
           )}

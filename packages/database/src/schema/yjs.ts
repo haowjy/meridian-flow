@@ -21,7 +21,6 @@ import {
   index,
   integer,
   jsonb,
-  pgSequence,
   pgTable,
   primaryKey,
   text,
@@ -33,11 +32,10 @@ import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { branches } from "./branches";
 import { documents, projects } from "./content";
-import { documentEdits } from "./document-edits";
+import { documentEdits, type EditDeltaJson } from "./document-edits";
 import { users } from "./users";
 
 type DocumentDraftKind = "work_draft";
-type DocumentDraftStatus = "active" | "closed";
 type DraftWriteJournalSource = "agent" | "writer" | "server";
 
 export const documentDrafts = pgTable(
@@ -54,16 +52,6 @@ export const documentDrafts = pgTable(
       .$type<BranchId>()
       .notNull()
       .references(() => branches.id, { onDelete: "cascade" }),
-    status: text("status").$type<DocumentDraftStatus>().notNull().default("active"),
-    closedCause: text("closed_cause").$type<"discarded" | "document_removed" | "left_out">(),
-    /**
-     * The Discard or restore command that closed the draft, null for any other close. A restore
-     * reopens the same row and clears it (a `left_out` draft keeps it, so the retention purge still
-     * finds it); a retirement acts on the draft only while it still
-     * names the command it retires for. A command id, no foreign key: purging a command must not
-     * touch the draft.
-     */
-    closedBy: uuid("closed_by").$type<CommandId>(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
     /** Immutable live→draft block addresses captured when a Work draft is seeded. */
@@ -86,8 +74,7 @@ export const documentDrafts = pgTable(
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
     /**
-     * Bumped by every committed write to the draft: appends, checkpoint rewrites, closes, holds
-     * and row status changes. Rewrites are fenced by it; appends bump it without checking it, and
+     * Bumped by every committed write to the draft: appends, checkpoint rewrites and holds. Rewrites are fenced by it; appends bump it without checking it, and
      * the projection job writes `has_effect` at it without bumping it. Never reaches the client.
      */
     revision: bigint("revision", { mode: "number" }).notNull().default(0),
@@ -99,27 +86,13 @@ export const documentDrafts = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => [
-    uniqueIndex("document_drafts_active_branch_document")
+    uniqueIndex("document_drafts_branch_document")
       .on(table.documentId, table.branchId)
-      .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
-    index("document_drafts_closed_by").on(table.closedBy).where(sql`${table.closedBy} IS NOT NULL`),
-    index("document_drafts_active_work_draft_by_branch")
+      .where(sql`${table.kind} = 'work_draft'`),
+    index("document_drafts_work_draft_by_branch")
       .on(table.branchId, table.id)
-      .where(sql`${table.kind} = 'work_draft' AND ${table.status} = 'active'`),
+      .where(sql`${table.kind} = 'work_draft'`),
     check("document_drafts_kind_valid", sql`${table.kind} = 'work_draft'`),
-    check(
-      "document_drafts_closed_cause_presence",
-      sql`(${table.status} = 'closed') = (${table.closedCause} IS NOT NULL)`,
-    ),
-    check(
-      "document_drafts_closed_by_closed",
-      sql`${table.closedBy} IS NULL OR ${table.status} = 'closed'`,
-    ),
-    check(
-      "document_drafts_closed_cause_valid",
-      sql`${table.closedCause} IN ('discarded', 'document_removed', 'left_out')`,
-    ),
-    check("document_drafts_status_valid", sql`${table.status} IN ('active', 'closed')`),
     check(
       "document_drafts_seed_record_shape",
       sql`((${table.seedOrigins} IS NULL AND ${table.seedLiveRoom} IS NULL AND ${table.seedLiveSnapshot} IS NULL AND ${table.seedDraftSnapshot} IS NULL) OR (${table.kind} = 'work_draft' AND ${table.seedOrigins} IS NOT NULL AND ${table.seedLiveRoom} IS NOT NULL AND ${table.seedLiveSnapshot} IS NOT NULL AND ${table.seedDraftSnapshot} IS NOT NULL)) AND ((${table.seedLiveState} IS NULL AND ${table.seedLivePosition} IS NULL) OR (${table.seedLiveState} IS NOT NULL AND ${table.seedLivePosition} IS NOT NULL))`,
@@ -200,7 +173,6 @@ export const documentYjsUpdates = pgTable(
     batchOrdinal: integer("batch_ordinal").notNull().default(0),
     updateData: byteaColumn("update_data").notNull(),
     editId: uuid("edit_id").references(() => documentEdits.id, { onDelete: "set null" }),
-    editPartOrdinal: integer("edit_part_ordinal"),
     originType: text("origin_type"),
     actorUserId: uuid("actor_user_id")
       .$type<UserId>()
@@ -422,9 +394,31 @@ export const applyCommandTrees = pgTable(
   (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
 );
 
-/** The actual text effect of each frozen Apply group, independent of compactable journals. */
-export const unapplySequence = pgSequence("apply_command_effects_unapplied_seq");
+/**
+ * What a Discard took out of one draft: the blocks it changed, before and after, with one block
+ * either side (the shape of `document_edit_parts.delta`). It is the only copy of the discarded
+ * text, so Restore merges it back from here and the day-30 purge deletes it with the command.
+ */
+export const discardCommandEffects = pgTable(
+  "discard_command_effects",
+  {
+    commandId: uuid("command_id")
+      .$type<CommandId>()
+      .notNull()
+      .references(() => commands.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    draftId: text("draft_id").notNull(),
+    delta: jsonb("delta").$type<EditDeltaJson>().notNull(),
+    /** The Restore that ended this entry: it brought every change back, or none that could come. */
+    endedBy: uuid("ended_by").$type<CommandId>(),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.documentId] })],
+);
 
+/** The actual text effect of each frozen Apply group, independent of compactable journals. */
 export const applyCommandEffects = pgTable(
   "apply_command_effects",
   {
@@ -439,24 +433,32 @@ export const applyCommandEffects = pgTable(
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
     draftId: text("draft_id").notNull(),
-    /** Null means live already held the group's text: Un-Apply removes no live or base text. */
-    liveUpdateSeq: bigint("live_update_seq", { mode: "number" }),
+    /**
+     * What this group changed in the manuscript: the blocks before and after, with one unchanged
+     * block either side. Null means live already held the group's text, so Un-Apply removes no live
+     * or base text.
+     */
+    liveDelta: jsonb("live_delta").$type<EditDeltaJson | null>(),
+    /**
+     * The changes of AI edits this group took, as `[partId, index]`: the part of a
+     * `document_edit_parts` row and the index of the change in the part's delta. Written with the
+     * effect, so the card reads "applied" for them whatever the text does later.
+     */
+    carried: jsonb("carried").$type<[number, number][]>().notNull(),
+    /**
+     * Where the group sat, as its change's hash and the id of its first block: how a Redo finds a
+     * change only the writer made (`carried` finds an AI edit's), which an equal change elsewhere
+     * cannot take over.
+     */
+    place: text("place").notNull(),
     /** The command's base before its first group; stored once rather than once per group. */
     baseStart: jsonb("base_start").$type<unknown[]>(),
     /** This group's bounded change to the preceding committed base. */
     baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
     unappliedBy: uuid("unapplied_by").$type<CommandId>(),
-    /** Orders Un-Applies of one draft: taken from `unapplySequence` under the Work lock, since `commands.created_at` is the transaction start. */
-    unappliedSeq: bigint("unapplied_seq", { mode: "number" }),
-    /** True once this effect's base change has been taken back out of the draft; a closed draft's Un-Apply leaves it false until a reopen replays it. */
-    draftReversed: boolean("draft_reversed").notNull().default(false),
   },
   (table) => [
     primaryKey({ columns: [table.commandId, table.ordinal] }),
     uniqueIndex("apply_command_effects_group").on(table.commandId, table.documentId, table.groupId),
-    // A reopen finds the Un-Applies its draft waited on without scanning every effect stored.
-    index("apply_command_effects_unreplayed")
-      .on(table.draftId)
-      .where(sql`${table.unappliedBy} is not null and not ${table.draftReversed}`),
   ],
 );

@@ -49,11 +49,68 @@ export class NestedAttemptError extends Error {
   }
 }
 
+/** Opens one attempt: its `Attempt`, and how it ends. */
+function beginAttempt(scope: AttemptScope) {
+  // A nested owner would transfer its candidates when it ends, before the outer attempt can
+  // still roll its scope back: pass the outer `Attempt` down instead.
+  if (commitScopes.getStore()?.open) throw new NestedAttemptError();
+  const owned: AttemptCandidate[] = [];
+  let scoped = false;
+  const attempt: Attempt = {
+    own(candidate) {
+      owned.push(candidate);
+      return candidate;
+    },
+    commit(operation) {
+      if (scoped) throw new Error("An attempt has exactly one commit scope");
+      scoped = true;
+      const open = { open: true };
+      return commitScopes.run(open, () =>
+        scope(operation).finally(() => {
+          open.open = false;
+        }),
+      );
+    },
+  };
+  return {
+    attempt,
+    /** The attempt unwound: every candidate it owned is dropped. */
+    abandon: () => disposeAll(owned),
+    /** The attempt completed: its candidates transfer in the order it owned them. */
+    async complete() {
+      for (const [index, candidate] of owned.entries()) {
+        try {
+          await candidate.transfer();
+        } catch (cause) {
+          disposeAll(owned.slice(index + 1));
+          throw cause;
+        }
+      }
+    },
+  };
+}
+
+/** Runs `run` as one attempt: a throw unwinds it (scope rolled back, candidates disposed) and propagates. */
+export async function runAttempt<T>(
+  scope: AttemptScope,
+  run: (attempt: Attempt) => Promise<T>,
+): Promise<T> {
+  const open = beginAttempt(scope);
+  let result: T;
+  try {
+    result = await run(open.attempt);
+  } catch (cause) {
+    open.abandon();
+    throw cause;
+  }
+  await open.complete();
+  return result;
+}
+
 /**
- * Runs `run` up to `bound` times. A throw `isMiss` accepts unwinds the attempt (its scope
- * rolled back, its candidates disposed) and runs the next one from a fresh capture; after
- * the last, `exhausted` answers with the caller's policy. Any other throw unwinds and
- * propagates. A completed attempt transfers its candidates in the order it owned them.
+ * Runs `run` up to `bound` times. A throw `isMiss` accepts unwinds the attempt and runs the next
+ * one from a fresh capture; after the last, `exhausted` answers with the caller's policy. Any
+ * other throw unwinds and propagates.
  */
 export async function runBoundedAttempts<T>(spec: {
   bound: number;
@@ -62,45 +119,18 @@ export async function runBoundedAttempts<T>(spec: {
   run(attempt: Attempt): Promise<T>;
   exhausted(cause: unknown): T | Promise<T>;
 }): Promise<T> {
-  // A nested owner would transfer its candidates when it ends, before the outer attempt can
-  // still roll its scope back: pass the outer `Attempt` down instead.
-  if (commitScopes.getStore()?.open) throw new NestedAttemptError();
   for (let number = 1; ; number++) {
-    const owned: AttemptCandidate[] = [];
-    let scoped = false;
-    const attempt: Attempt = {
-      own(candidate) {
-        owned.push(candidate);
-        return candidate;
-      },
-      commit(operation) {
-        if (scoped) throw new Error("An attempt has exactly one commit scope");
-        scoped = true;
-        const scope = { open: true };
-        return commitScopes.run(scope, () =>
-          spec.scope(operation).finally(() => {
-            scope.open = false;
-          }),
-        );
-      },
-    };
+    const open = beginAttempt(spec.scope);
     let result: T;
     try {
-      result = await spec.run(attempt);
+      result = await spec.run(open.attempt);
     } catch (cause) {
-      disposeAll(owned);
+      open.abandon();
       if (!spec.isMiss(cause)) throw cause;
       if (number >= spec.bound) return spec.exhausted(cause);
       continue;
     }
-    for (const [index, candidate] of owned.entries()) {
-      try {
-        await candidate.transfer();
-      } catch (cause) {
-        disposeAll(owned.slice(index + 1));
-        throw cause;
-      }
-    }
+    await open.complete();
     return result;
   }
 }

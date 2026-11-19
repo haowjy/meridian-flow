@@ -3,11 +3,9 @@ import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useCallback, useMemo, useSyncExternalStore } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { type GoneRow, RowWord } from "@/components/app/RowWord";
-import { stayedSentence } from "@/core/project-tree/tree-left-sentence";
 import {
   type Bounce,
   endTreeNotice,
-  type Said,
   subscribeTreeNotices,
   type TreeStep,
   treeBounces,
@@ -174,20 +172,6 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
         />
       ));
     }
-    for (const { notice, list } of shown)
-      if (notice.kind === "said")
-        for (const said of notice.said)
-          put(
-            said.kind === "left" ? said.nodes.filter((node) => leftOn(said, node)) : said.nodes,
-            (node) => (
-              <SaidWord
-                key={node}
-                said={said}
-                node={node}
-                onRetry={(step) => void list.undo(step)}
-              />
-            ),
-          );
     return {
       end,
       header,
@@ -303,59 +287,3 @@ function stepSentence(step: TreeStep, node: string): string {
       return "";
   }
 }
-
-/**
- * What a press has to say on `node`'s row: a step it skipped, what an Un-Apply left of this row's
- * change, or an Apply it couldn't reach the server for.
- */
-function SaidWord({
-  said,
-  node,
-  onRetry,
-}: {
-  said: Said;
-  node: string;
-  onRetry: (step: Extract<Said, { kind: "failed" }>["step"]) => void;
-}) {
-  const { name } = said;
-  switch (said.kind) {
-    case "skipped":
-      return (
-        <RowWord
-          tone="warning"
-          word={<Trans>Skipped</Trans>}
-          sentence={t`Undo skipped your change to ${name}: it was changed again since.`}
-        />
-      );
-    case "left": {
-      const stayed = stayedSentence(said, node);
-      return said.taken === "nothing" ? (
-        <RowWord
-          tone="warning"
-          word={<Trans>Not undone</Trans>}
-          sentence={`${t`Not undone.`} ${stayed}`}
-        />
-      ) : (
-        <RowWord
-          tone="warning"
-          word={<Trans>Partly undone</Trans>}
-          sentence={`${t`Undid part of applying ${name}.`} ${stayed}`}
-        />
-      );
-    }
-    case "failed":
-      return (
-        <RowWord
-          tone="warning"
-          word={<Trans>Retry</Trans>}
-          label={t`Retry undoing applying ${name}`}
-          sentence={t`Undo didn't go through. Try again.`}
-          onAction={() => onRetry(said.step)}
-        />
-      );
-  }
-}
-
-/** Whether anything of `node`'s change stayed: a row taken back whole says nothing. */
-const leftOn = (said: Extract<Said, { kind: "left" }>, node: string) =>
-  said.leftOut.some((one) => one.node === node) || said.held.some((one) => one.node === node);

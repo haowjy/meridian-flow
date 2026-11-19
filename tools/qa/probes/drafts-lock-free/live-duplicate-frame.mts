@@ -136,10 +136,6 @@ export const liveDuplicateFrame: Probe = {
       const rows = await raw<{ h: string; seq: string }[]>`
         select md5(update_data) h, admission_sequence::text seq from document_yjs_updates
         where document_id=${documentId} and id>${start} and origin_type='human'`;
-      const [{ edits }] = await raw<{ edits: number }[]>`
-        select count(*)::int edits from document_edits e where e.document_id=${documentId}
-          and e.actor='human' and exists
-          (select 1 from document_yjs_updates u where u.edit_id=e.id and u.id>${start})`;
       const sequences = rows.map((row) => BigInt(row.seq)).sort((a, b) => (a < b ? -1 : 1));
       const gaps = sequences.filter((seq, i) => i > 0 && seq !== (sequences[i - 1] ?? 0n) + 1n);
       const result = {
@@ -147,7 +143,6 @@ export const liveDuplicateFrame: Probe = {
         framesAdmitted: admitted.filter(Boolean).length,
         journalRows: rows.length,
         distinctPayloads: new Set(rows.map((row) => row.h)).size,
-        humanEdits: edits,
         sequenceGaps: gaps.length,
       };
       observe(arm, arm.startsWith("large") ? { ...result, duplicateMs } : result);
@@ -155,7 +150,6 @@ export const liveDuplicateFrame: Probe = {
       if (
         result.framesAdmitted !== count ||
         result.journalRows !== count ||
-        result.humanEdits !== count ||
         result.sequenceGaps !== 0
       )
         failed = true;

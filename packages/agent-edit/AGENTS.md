@@ -1,7 +1,7 @@
 # @meridian/agent-edit
 
 Reusable Yjs editing core for the model's document `read` and `write`,
-write handles and forward inverses. A write commits at its tool call; the host
+write handles and the receipts their Undo reads. A write commits at its tool call; the host
 runs it as one command. Hosts supply
 the journal, coordinator, lifecycle, link and model ports; this package owns no
 Postgres, routes, auth or Project/Work concepts.

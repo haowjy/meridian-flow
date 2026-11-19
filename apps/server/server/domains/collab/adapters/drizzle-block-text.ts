@@ -94,7 +94,6 @@ export function createDrizzleBlockText(db: Database): BlockText {
                       and(
                         eq(documentDrafts.documentId, documents.id),
                         eq(documentDrafts.kind, "work_draft"),
-                        eq(documentDrafts.status, "active"),
                         eq(branches.status, "active"),
                         branchOwnedBy(draftOwner),
                       ),

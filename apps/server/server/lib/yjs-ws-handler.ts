@@ -371,9 +371,9 @@ async function classifyYjsConnectionAdmission(input: {
     const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
     if (!documentDraft) {
       // A browser connects as soon as it appends a document's `create` in a Work, which names the
-      // draft the server may not have made yet: it retries. A draft that was made and closed is
-      // refused for good.
-      if (await services.documentSync.draftExists(room.draftId)) refuse(WS_CLOSE.DRAFT_CLOSED);
+      // draft the server may not have made yet: it retries. A draft that exists and cannot be
+      // joined is refused for good.
+      if (await services.documentSync.draftExists(room.draftId)) refuse(WS_CLOSE.DRAFT_PURGED);
       refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
     }
     documentId = documentDraft.documentId;
@@ -468,7 +468,7 @@ async function enforceDraftHandshake(input: {
     }
     if (!active) {
       input.context?.draftSyncState?.set(key, "rejected");
-      refuse(WS_CLOSE.DRAFT_CLOSED);
+      refuse(WS_CLOSE.DRAFT_PURGED);
     }
     input.context?.draftSyncState?.set(key, "passed");
     return;
@@ -545,7 +545,7 @@ async function admitDraftSync(
     if (cause instanceof DraftPrefixMissingError) refuse(WS_CLOSE.DRAFT_PREFIX_MISSING, cause);
     if (cause instanceof DraftStaleUpdateError) {
       const resolved = await input.services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
-      if (!resolved) refuse(WS_CLOSE.DRAFT_CLOSED, cause);
+      if (!resolved) refuse(WS_CLOSE.DRAFT_PURGED, cause);
       const current = await findRoomAccess(input.services, input.userId, {
         kind: "draft",
         documentId: resolved.documentId,
@@ -770,7 +770,7 @@ export function createHocuspocus(
               serverSchemaVersion: cause.expectedVersion,
             });
           }
-          if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_CLOSED);
+          if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_PURGED);
           if (state) Y.applyUpdate(document, state);
           if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
         });
@@ -811,7 +811,7 @@ export function createHocuspocus(
           // A close can commit between admission and registration; the ended draft
           // must not take a late connection.
           if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
-            refuse(WS_CLOSE.DRAFT_CLOSED);
+            refuse(WS_CLOSE.DRAFT_PURGED);
           return;
         }
         try {

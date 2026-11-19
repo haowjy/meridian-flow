@@ -41,8 +41,6 @@ export function observeWorksReads(client: QueryClient, driver: CommandDriver): (
 type RequestWorksSnapshot = () => Promise<WorksSnapshot>;
 type ProjectState = {
   installedStart: number;
-  /** When the latest read that landed began (clock time): the cache holds Works at least that new. */
-  readAt: number;
   inFlight: Promise<WorksSnapshot> | null;
 };
 
@@ -67,7 +65,7 @@ function stateFor(client: QueryClient, projectId: string): ProjectState {
   }
   let state = byProject.get(projectId);
   if (!state) {
-    state = { installedStart: 0, readAt: 0, inFlight: null };
+    state = { installedStart: 0, inFlight: null };
     byProject.set(projectId, state);
   }
   return state;
@@ -98,7 +96,6 @@ function installSnapshot(
     throw new Error(`Works snapshot project mismatch: expected ${projectId}`);
   }
   const state = stateFor(client, projectId);
-  state.readAt = Math.max(state.readAt, start.at);
   const current = currentSnapshot(client, projectId);
   const ordering = current
     ? compareRevision(response.authorityRevision, current.authorityRevision)
@@ -110,11 +107,6 @@ function installSnapshot(
     return response;
   }
   return current ?? response;
-}
-
-/** When the latest Works read of this tab's that landed began; 0 when none has. */
-export function worksReadAt(client: QueryClient, projectId: string): number {
-  return stateFor(client, projectId).readAt;
 }
 
 function startAcquisition(

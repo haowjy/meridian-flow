@@ -76,7 +76,7 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
       if (cause instanceof DraftMissingError) return null;
       throw cause;
     });
-    if (base?.snapshot.status !== "active") return null;
+    if (!base) return null;
     reconcileRoom({ ...room, replica: base.replica });
     return base;
   }
@@ -136,7 +136,6 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
   ): Promise<{ result: T; write: PreparedDraftAppend | null }> {
     const base = await loadBase(draftId);
     const { snapshot } = base;
-    assertWritableDraft(snapshot);
     const replay = cloneReplica(base.replica);
     try {
       const { result, rows } = await run(replay, snapshot);
@@ -168,10 +167,4 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
 
     commitWriterUpdate: frames.commitWriterUpdate,
   };
-}
-
-function assertWritableDraft(snapshot: DraftSnapshot): void {
-  if (snapshot.status !== "active") {
-    throw new DraftStaleUpdateError(`Draft ${snapshot.draftId}`);
-  }
 }

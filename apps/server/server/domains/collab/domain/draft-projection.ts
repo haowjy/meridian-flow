@@ -194,9 +194,8 @@ export function createDraftProjection(input: {
       | { kind: "judged"; write: Parameters<DraftStore["writeEffect"]>[0] };
     try {
       judged = await input.coordinator.readDraft(draftId, async (doc, snapshot) => {
-        // A thread peer carries no effect; a closed draft is not a review member.
-        if (snapshot.kind !== "work_draft" || snapshot.status !== "active")
-          return { kind: "done" as const };
+        // A thread peer carries no effect.
+        if (snapshot.kind !== "work_draft") return { kind: "done" as const };
         const hasEffect = draftHoldsText(doc);
         return {
           kind: "judged" as const,

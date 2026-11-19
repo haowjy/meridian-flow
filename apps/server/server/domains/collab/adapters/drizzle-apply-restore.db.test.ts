@@ -66,7 +66,6 @@ import { createDrizzleDocumentCommands } from "./drizzle-document-commands.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 import { createDrizzleDraftStore } from "./drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
-import { createReopenDrafts } from "./drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./drizzle-work-branch-pending.js";
 
@@ -112,14 +111,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const branchTree = createDrizzleBranchTreeState(db, treeReader);
     const commands = createDrizzleDocumentCommands(db);
     const pending = createDrizzleWorkBranchPendingStore(db);
-    const reopen = createReopenDrafts(db, {
-      coordinator,
-      close: draftClose,
-      treeLists,
-      workProjection: projection,
-      live: persistence.journal,
-      scheduleLivePull: () => {},
-    });
     const applyService = createApplyClickService({
       commands,
       evidence: createDrizzleDraftDispositionStore(db),
@@ -127,13 +118,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection: projection,
         branches: workBranches,
         coordinator,
-        reopen,
         live: persistence.journal,
         liveCoordinator: { deliver: async () => {} },
         arrivals: { settle: async () => 0 },
         treeLists,
         tree: treeReader,
-        close: draftClose,
         onCommitted: async () => {},
         merged: () => {},
         measured: () => {},
@@ -148,7 +137,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection: projection,
         treeLists,
       }),
-      holdRetirement: draftClose.holdRetirement,
     });
     const undoDiscard = createUndoDiscardService({
       commands,
@@ -156,7 +144,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection: projection,
         branches: workBranches,
         treeLists,
-        reopen,
+        coordinator,
       }),
     });
     const identity = createBranchReviewIdentity({
@@ -363,7 +351,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
 
     async function discard(f: Fixture) {
       const commandId = randomUUID();
-      // A Restore of Discard all reopens the draft on the Work's new branch.
       const [{ branchId }] = await db
         .select({ branchId: documentDrafts.branchId })
         .from(documentDrafts)
@@ -372,14 +359,14 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         branchId,
         userId: USER,
         // Whole: an item Discard takes nothing from a draft its Applies emptied (it answers
-        // `overtaken applied`), and Discard all closes every draft of the branch.
+        // `overtaken applied`); Discard all finds nothing to take there either.
         selection: { kind: "whole" },
         command: {
           envelope: envelope("discard", commandId),
           result: () => ({ status: "discarded", branchId }) as never,
         },
       });
-      expect(out).toMatchObject({ branchClosed: true, settled: [] });
+      expect(out).toMatchObject({ settled: [] });
       return { commandId, branchId };
     }
     const envelope = (kind: string, commandId: string) =>
@@ -394,7 +381,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         request: { commandId: commandId as CommandId, discardCommandId: discarded.commandId },
       } as never)) as { status: string; restored: number };
       expect(out).toMatchObject({ status: "restored" });
-      expect(out.restored).toBeGreaterThan(0);
     }
 
     it("A1, A2 inside A1's text, Discard, Un-Apply both, Restore: the draft is what it is without the Discard", async () => {

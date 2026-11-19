@@ -19,7 +19,6 @@ import { DisclosureMark } from "@/components/ui/marks";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import {
   ApplyAllQuestion,
-  BounceChip,
   CommandNotice,
   type CommandQuestion,
   noticeAction,
@@ -168,11 +167,8 @@ export function ChangesSource({
   );
   const touch = useCoarsePointer();
   const drafts = useOwnerDrafts(projectId, ownerKey);
-  // A command in flight hides its row, until its delivery needs the writer's Retry.
-  const inFlight = (itemKey: string) => {
-    const state = controller.owner.state(itemKey);
-    return state.hidden && !state.stalled;
-  };
+  // A command in flight hides its row.
+  const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
   const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.draft.itemKey));
   const sources = useProjectTrees(projectId).sources;
   const schemeOfSource = (id: string) => sources.find((source) => source.id === id)?.scheme;
@@ -215,7 +211,6 @@ export function ChangesSource({
   const [asking, setAsking] = useState<{
     targets: readonly ReviewFileTarget[];
     folders: readonly string[];
-    name?: string;
     deleting: readonly ReviewFileTarget[];
     restoring: readonly ReviewFileTarget[];
   } | null>(null);
@@ -234,28 +229,19 @@ export function ChangesSource({
     targets.map((file) => ({ documentId: file.documentId, itemKey: file.draft.itemKey }));
   const everyDraft = draftsOf(files);
   // One command; it brings back a document live deleted before landing what the Work drafted.
-  const applyAll = (
-    targets: readonly ReviewFileTarget[],
-    folders: readonly string[],
-    name?: string,
-  ) => {
+  const applyAll = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
     hold();
     void controller.applyMany(
       draftsOf(targets).map((draft) => ({ draft, target: { kind: "draft" as const } })),
       folders,
-      name,
     );
   };
-  const startApply = (
-    targets: readonly ReviewFileTarget[],
-    folders: readonly string[],
-    name?: string,
-  ) => {
+  const startApply = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
     const restoring = targets.filter((file) => isDeletedLive(file.draft));
     const deleting = targets.filter((file) => file.draft.tree?.deleted === true);
     if (restoring.length > 0 || deleting.length > 0)
-      setAsking({ targets, folders, deleting, restoring, name });
-    else applyAll(targets, folders, name);
+      setAsking({ targets, folders, deleting, restoring });
+    else applyAll(targets, folders);
   };
   const untitled = t`Untitled document`;
   const names = (targets: readonly ReviewFileTarget[]) =>
@@ -277,7 +263,7 @@ export function ChangesSource({
         onKeep: () => setAsking(null),
         onConfirm: () => {
           setAsking(null);
-          applyAll(asking.targets, asking.folders, asking.name);
+          applyAll(asking.targets, asking.folders);
         },
         disabled: controller.dispositionLocked,
       }
@@ -352,14 +338,6 @@ export function ChangesSource({
     (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
   );
   const goneRows = shown.some((item) => item.gone);
-  // A Discard that discarded nothing says why on its rows; one with no row drawn here (Discard
-  // all names none) says it on the bar.
-  const barBounce =
-    notice?.kind === "discarded" &&
-    notice.status === "bounced" &&
-    !shown.some((item) => words.held(item.key))
-      ? notice
-      : null;
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
   const undone = useRef<string | null>(null);
   if (notice?.kind === "discarded" && notice.documentIds[0]) undone.current = notice.documentIds[0];
@@ -380,7 +358,7 @@ export function ChangesSource({
     <div ref={list} className="contents">
       <SourcePane
         label={scope.heading}
-        notice={treeWords.header ?? (barBounce ? <BounceChip notice={barBounce} /> : null)}
+        notice={treeWords.header}
         bar={
           question ? (
             <div className="min-w-0 flex-1">
@@ -448,15 +426,14 @@ export function ChangesSource({
         {hasFiles || goneRows ? (
           <ul className="flex flex-col px-2">
             {shown.map(({ row: item, gone }) => {
-              // A row a Discard took is struck through with its Undo; one an Apply took (its
-              // own, or one that reached it before the Discard) says what the Apply did, and
-              // opens the document where it is now.
+              // A row a Discard took is struck through with its Undo; one an Apply took has
+              // its Undo, and opens the document where it is now.
               if (gone)
                 return (
                   <li key={item.key} data-change-row={item.key} data-command-notice="row">
                     <ListRow
                       depth={item.depth}
-                      gone={notice?.kind === "discarded" && !notice.appliedFirst.includes(item.key)}
+                      gone={notice?.kind === "discarded"}
                       disabled={item.kind !== "file"}
                       onOpen={() => void openDocument({ documentId: item.key })}
                       icon={
@@ -509,7 +486,7 @@ export function ChangesSource({
                       !folder.fault &&
                       own.every((file) => hasApply(file.draft))
                     }
-                    onApply={(name) => startApply(own, folder.folders, name)}
+                    onApply={() => startApply(own, folder.folders)}
                     onDiscard={(name) => {
                       hold();
                       void controller.discardSelection({
@@ -737,7 +714,7 @@ function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>)
  * A folder the Work changes, heading what it holds: its name, what the Work does to it, why it
  * cannot land if it cannot, and × ✓ for it and everything listed under it; a click folds its
  * rows. A folder changed with no drafted document under it takes its × and ✓ alone. Its own
- * command's state (pending, refused, waiting for confirmation) shows under it, as a document's
+ * command's state (pending) shows under it, as a document's
  * does under its row.
  */
 function FolderGroupRow({
@@ -768,8 +745,8 @@ function FolderGroupRow({
   controller: WorkBranchCommands;
   touch: boolean;
   canApply: boolean;
-  /** `name`: the folder's, for what the Apply's Undo and the Discard's notice say. */
-  onApply: (name: string) => void;
+  onApply: () => void;
+  /** `name`: the folder's, for what the Discard's notice says. */
   onDiscard: (name: string) => void;
   /** The Work's branch, whose folder items hold the folder's command state. */
   branchId: string | null;
@@ -814,7 +791,7 @@ function FolderGroupRow({
             disabled={pending || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
             onDiscard={() => onDiscard(name)}
-            onApply={canApply ? () => onApply(name) : undefined}
+            onApply={canApply ? onApply : undefined}
           />
         }
         below={

@@ -24,11 +24,12 @@ observation per action, and exits nonzero on failure.
   restored.
 - Undo an applied AI write: `success`, reported as reverted in its originating
   draft, with a pending inverse change while the live manuscript stays unchanged.
-- Discard all across five drafts: every draft closes with cause `discarded`,
+- Discard all across five drafts: every draft stays open with its pending changes taken out,
   immutable parts and journal statuses stay unchanged, and historical Apply
-  evidence remains `applied` after close.
-- Revert on a closed draft of an applied write: `cant_undo_applied`, the user-applied
-  copy, unchanged live text, and no new immutable edit part.
+  evidence remains `applied`.
+- Revert on a draft of an applied write after a Discard: it reads from the text, so it offers
+  Revert only when that changes the text and adds no pending change; no new immutable edit part
+  otherwise.
 
 The runner creates review fragments, immutable AI receipts, and Apply records
 through production adapters. Receipts retain immutable origins; current text
@@ -46,6 +47,5 @@ added ", bright"), plus a `create`. In the chat's Changes list:
 2. Discard ", bright", the other two chapters' changes (one by one) and the created page
    (it asks first).
 3. Reload, expand "Edited 4 documents". It shows no Undo and the applied part says "Applied to
-   the manuscript"; the created page says "Discarded". The text parts discarded one by one still say
-   "Stayed as you edited it" (#1361). `GET /api/threads/<id>/turns/<turn>/live-lineage` carries the
-   same causes.
+   the manuscript"; the created page says "Discarded". `GET /api/threads/<id>/turns/<turn>/live-lineage` carries the
+   same one word per document in `receipt.drafts`.

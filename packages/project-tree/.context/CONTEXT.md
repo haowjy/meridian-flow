@@ -241,9 +241,7 @@ the replay uses them (package `AGENTS.md`).
   fact both touched; each pending record a copy overrides (same node, same fact: a rename's name
   and type, a move's place; a restore overrides a pending delete; a create or delete overrides
   nothing) is settled discarded under the restoring command, so restoring that command brings it
-  back as a copy that wins in turn. Nothing is refused. A copy whose node cannot be acted
-  on once the copies are in (purged, or its create is held by another Discard) is left out and
-  returned (`leftOut`, `why: "purged"`). A Discard restores once (`discardedBy(...).restored`); `discardedBy` lists what a
+  back as a copy that wins in turn. Nothing is refused. A Discard restores once (`discardedBy(...).restored`); `discardedBy` lists what a
   Discard settled and the nodes it created, for Trash.
 - **Settlements carry `command`** when a command made them, so Undo of an Apply and the restore
   of a Discard select by it.

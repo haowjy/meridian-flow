@@ -1,61 +1,40 @@
 /**
- * Restore of a Discard (design section 7), from the notice or from Trash: both halves of what the
- * command ended, in one command. The records it settled come back as pending copies in each list
- * the Work spans (`restoreDiscard`). Each text draft it closed (`closed_by` still names it) is
- * reopened by `reopenDrafts` as the same row in the Work's current branch, so its receipts,
- * authorship and seeds come back with it. A newer draft of the same document closes under this
- * command and becomes a member of its own entry: restoring that entry swaps back.
+ * Restore of a Discard (design section 5), from the notice, the editor's Ctrl+Z or Trash: both
+ * halves of what the command took, in one command. The records it settled come back as pending
+ * copies in each list the Work spans (`restoreDiscard`). Each change of a draft's recorded delta
+ * that still stands (read backwards) is merged back into the draft as an append; one the writer or
+ * the model has written over since stays out, and the draft's current words stand. An entry ends
+ * when a Restore brought all of it or none of it back.
  *
  * Lock order, after the command's claim: the Work (the Discard's branch names it), the owner's
- * active branch (made when a whole Discard closed the last one), the lists' keys, then the keys of
- * the documents the copies act on, then the draft rows.
+ * active branch, the lists' keys, then the keys of the documents the copies and effects act on,
+ * then the draft rows.
  */
 
-import type { BranchId, ProjectId } from "@meridian/contracts";
+import { readDelta, restoreChanges } from "@meridian/agent-edit/content-merge";
+import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
+import type { BranchId, DocumentId, ProjectId } from "@meridian/contracts";
 import type { UndoDiscardResult } from "@meridian/contracts/branches";
 import type { Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
-import { commands } from "@meridian/database/schema";
+import { commands, discardCommandEffects, documentDrafts } from "@meridian/database/schema";
 import { discardedBy, restoreDiscard } from "@meridian/project-tree";
-import { and, eq, sql } from "drizzle-orm";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
+import { draftSchema } from "../domain/draft-changes.js";
+import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import type { UndoDiscardCommand, UndoDiscardStore } from "../domain/undo-discard.js";
 import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
-import { ENTRY_KINDS } from "./drizzle-discard-entries.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
-import type { ReopenDrafts } from "./drizzle-reopen-drafts.js";
-
-const REOPENABLE: ReadonlySet<string> = new Set(ENTRY_KINDS);
-
-/** A restore of this command that brought something back or left it out as edited: stored with the Discard it named. */
-async function restoredBefore(
-  tx: ReturnType<typeof currentDrizzleDb>,
-  projectId: ProjectId,
-  userId: string,
-  request: UndoDiscardCommand["request"],
-): Promise<boolean> {
-  const [found] = await tx
-    .select({ id: commands.id })
-    .from(commands)
-    .where(
-      and(
-        eq(commands.projectId, projectId),
-        eq(commands.kind, "undo_discard"),
-        eq(commands.accountId, userId),
-        sql`${commands.outcome} -> 'result' ->> 'status' = 'restored'`,
-        sql`((${commands.outcome} -> 'result' ->> 'restored')::int > 0 or (${commands.outcome} -> 'result' ->> 'leftOut')::int > 0)`,
-        sql`${commands.outcome} -> 'result' ->> 'discardCommandId' = ${request.discardCommandId}`,
-      ),
-    )
-    .limit(1);
-  return found !== undefined;
-}
+import { writeTextAnswer } from "./drizzle-text-answer.js";
 
 export function createDrizzleUndoDiscard(
   db: Database,
@@ -63,27 +42,86 @@ export function createDrizzleUndoDiscard(
     workProjection: Pick<WorkProjectionMutation, "mutate" | "draftMembershipChanged">;
     branches: Pick<Branches, "ownerOf" | "ensureActiveForWrite">;
     treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
-    reopen: ReopenDrafts;
+    coordinator: Pick<DraftCoordinator, "loadBase" | "prepareAppend">;
   },
 ): UndoDiscardStore {
+  /**
+   * Merges each effect's changes that still stand back into its draft. The documents brought back,
+   * and the entries it ended: those with none of their changes left to bring, or all of them.
+   */
+  async function restoreText(
+    tx: ReturnType<typeof currentDrizzleDb>,
+    effects: readonly (typeof discardCommandEffects.$inferSelect)[],
+  ): Promise<{ brought: DocumentId[]; ended: DocumentId[] }> {
+    const brought: DocumentId[] = [];
+    const ended: DocumentId[] = [];
+    for (const effect of effects) {
+      const [draft] = await tx
+        .select({ id: documentDrafts.id })
+        .from(documentDrafts)
+        .where(eq(documentDrafts.id, effect.draftId));
+      // A draft the Work's purge deleted has nothing to merge into.
+      if (!draft) {
+        ended.push(effect.documentId);
+        continue;
+      }
+      let result: ReturnType<typeof restoreChanges> | null = null;
+      const write = deps.coordinator.prepareAppend(
+        await deps.coordinator.loadBase(effect.draftId),
+        [],
+        {
+          work: "active",
+          authorServerRows(prefix) {
+            const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+            result = restoreChanges(
+              draftSchema,
+              readDelta(draftSchema, effect.delta),
+              readBlocks(fragment, draftSchema),
+            );
+            if (!result.brought) return [];
+            const text = result.text;
+            return captureMutationUpdates(prefix, () =>
+              prefix.transact(() => writeBlocks(fragment, draftSchema, text)),
+            );
+          },
+        },
+      );
+      try {
+        await write.persist();
+        write.transfer();
+      } finally {
+        write.dispose();
+      }
+      const done = result as ReturnType<typeof restoreChanges> | null;
+      if (done?.brought) {
+        brought.push(effect.documentId);
+        // The draft holds changes again; its watermark stays stale and the projection judges it.
+        await writeTextAnswer(db, deps.treeLists, {
+          draftId: effect.draftId,
+          hasEffect: true,
+          hasEffectRevision: -1,
+          listsHeld: true,
+        });
+      }
+      if (!done?.brought || done.brought === done.total) ended.push(effect.documentId);
+    }
+    return { brought, ended };
+  }
+
   return {
     async run(command: UndoDiscardCommand): Promise<UndoDiscardResult> {
       const { branchId, userId, request, envelope } = command;
       const commandId = envelope.commandId;
-      /** Nothing came back, and `settled` says why. */
-      const nothing = (settled: Settlement[], leftOut = 0): UndoDiscardResult => ({
+      /** Nothing came back: the entry is gone, or its owner is closed (`settled` says that). */
+      const nothing = (settled?: Settlement[]): UndoDiscardResult => ({
         status: "restored",
         commandId,
         discardCommandId: request.discardCommandId,
         branchId,
         restored: 0,
-        swapped: 0,
-        leftOut,
         brought: { text: [], tree: [] },
-        settled,
+        ...(settled ? { settled } : {}),
       });
-      const purged = (items: string[] = []) =>
-        nothing([{ rule: "left_out", items, why: "purged" }]);
       return runDocumentCommand(
         db,
         envelope,
@@ -92,18 +130,18 @@ export function createDrizzleUndoDiscard(
             { branches: [branchId] },
             async (): Promise<UndoDiscardResult> => {
               const tx = currentDrizzleDb(db);
-              // It must be this account's own Discard, Restore or Un-Apply: Trash lists these and
-              // nothing else. None found is an entry the purge took, which is no refusal.
+              // It must be this account's own Discard: Trash lists these and nothing else. None
+              // found is an entry the purge took, which is no refusal.
               const [discard] = await tx
                 .select({ kind: commands.kind })
                 .from(commands)
                 .where(
                   and(eq(commands.id, request.discardCommandId), eq(commands.accountId, userId)),
                 );
-              if (!discard || !REOPENABLE.has(discard.kind)) return purged();
+              if (discard?.kind !== "discard") return nothing();
               // A purged Work's branches went with it: no row names an owner to lock or write.
               const owner = (await deps.branches.ownerOf(branchId))?.owner;
-              if (!owner) return purged();
+              if (!owner) return nothing();
               approveBranchWriteJoin();
               const target = await deps.branches.ensureActiveForWrite({
                 owner,
@@ -122,26 +160,25 @@ export function createDrizzleUndoDiscard(
                     ),
                   ),
               });
-              // The drafts the command closed on its own branch, still closed under it.
-              const drafts = await deps.reopen.closedBy(request.discardCommandId, branchId);
+              const recorded = await tx
+                .select()
+                .from(discardCommandEffects)
+                .where(eq(discardCommandEffects.commandId, request.discardCommandId));
+              const effects = recorded.filter((effect) => effect.endedBy === null);
               const documentIds = new Set<string>([
                 ...nodes,
-                ...drafts.map((draft) => draft.documentId),
+                ...effects.map((effect) => effect.documentId),
               ]);
               for (const node of [...documentIds].sort())
                 await lockDocumentMutation(tx, node as never);
 
-              let treeAlreadyRestored = false;
-              let foreignRecords = false;
               const { result } = await deps.treeLists.submit({
                 lists,
                 make: (ends) =>
                   ends.map(({ writer }) => {
                     const found = discardedBy(writer.doc, request.discardCommandId);
-                    if (found.restored) treeAlreadyRestored = true;
                     // Another Work's records, or none, are not this Discard's to restore.
                     const own = found.records.every((record) => record.draft === branchId);
-                    if (!own) foreignRecords = true;
                     return own
                       ? restoreDiscard(
                           writer,
@@ -157,59 +194,31 @@ export function createDrizzleUndoDiscard(
                 outcome === "already" ? [] : [outcome],
               );
 
-              const {
-                reopened,
-                swapped,
-                leftOut: edited,
-              } = await deps.reopen.reopen({
-                drafts,
-                target: target.id,
-                commandId,
-                owner,
-                leaveOutEdited: true,
-              });
+              const text = await restoreText(tx, effects);
+              if (text.ended.length > 0)
+                await tx
+                  .update(discardCommandEffects)
+                  .set({ endedBy: commandId })
+                  .where(
+                    and(
+                      eq(discardCommandEffects.commandId, request.discardCommandId),
+                      inArray(discardCommandEffects.documentId, text.ended),
+                    ),
+                  );
 
-              const leftOut = restoredTree.flatMap((one) => one.leftOut);
-              const editedChanges = edited.reduce((sum, one) => sum + one.changes, 0);
               const treeCopies = restoredTree.reduce((sum, one) => sum + one.copies.length, 0);
-              const settled: Settlement[] = [];
-              if (leftOut.length > 0)
-                settled.push({
-                  rule: "left_out",
-                  items: [...new Set(leftOut.map(({ record }) => record.node))],
-                  why: "purged",
-                });
-              if (edited.length > 0)
-                settled.push({
-                  rule: "left_out",
-                  items: edited.map(({ documentId }) => documentId),
-                  why: "changed_since",
-                });
-              // An entry with no member left: a restore took the members, or another Work holds
-              // the records, or what it held left with its document's purge.
-              if (treeCopies + reopened.length === 0 && leftOut.length === 0 && edited.length === 0)
-                settled.push(
-                  treeAlreadyRestored ||
-                    foreignRecords ||
-                    (await restoredBefore(tx, envelope.projectId, userId, request))
-                    ? { rule: "already", state: "restored" }
-                    : { rule: "left_out", items: [], why: "purged" },
-                );
               return {
                 status: "restored",
                 commandId,
                 discardCommandId: request.discardCommandId,
                 branchId: target.id as BranchId,
-                restored: treeCopies + reopened.length,
-                swapped,
-                leftOut: leftOut.length + editedChanges,
+                restored: treeCopies + text.brought.length,
                 brought: {
-                  text: reopened,
+                  text: text.brought,
                   tree: [
                     ...new Set(restoredTree.flatMap((one) => one.copies.map((copy) => copy.node))),
                   ],
                 },
-                ...(settled.length > 0 ? { settled } : {}),
               };
             },
             { requireActive: true, seam: true },

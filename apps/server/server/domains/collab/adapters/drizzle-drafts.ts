@@ -12,7 +12,6 @@ import {
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import { type BranchId, createdDraftId, type DraftOwner } from "@meridian/contracts";
-import type { DraftState } from "@meridian/contracts/branches";
 import { contextRootUri, isContextUriScheme } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -202,24 +201,6 @@ export function createDrizzleDraftStore(
     return row ? resolved(row) : null;
   }
 
-  async function findClosedOwnerDraft(
-    documentId: DocumentId,
-    owner: DraftOwner,
-  ): Promise<ResolvedDraft | null> {
-    const [row] = await selectDraft(currentDrizzleDb(db))
-      .where(
-        and(
-          eq(documentDrafts.documentId, documentId),
-          eq(documentDrafts.kind, "work_draft"),
-          eq(documentDrafts.status, "closed"),
-          branchOwnedBy(owner),
-        ),
-      )
-      .orderBy(desc(documentDrafts.updatedAt))
-      .limit(1);
-    return row ? resolved(mapDraft(row)) : null;
-  }
-
   async function activeDocumentDraft(
     documentId: DocumentId,
     branchId: BranchId,
@@ -230,7 +211,6 @@ export function createDrizzleDraftStore(
           eq(documentDrafts.documentId, documentId),
           eq(documentDrafts.branchId, branchId),
           eq(documentDrafts.kind, "work_draft"),
-          eq(documentDrafts.status, "active"),
         ),
       )
       .limit(1);
@@ -456,7 +436,6 @@ export function createDrizzleDraftStore(
         const committed = await appendRowsWithinTx(tx, {
           draftId: input.draftId,
           work: input.work,
-          draft: input.draft,
           base: input.base,
           async finalize(read) {
             prefix = { rows: read.tail.length, moved: read.checkpoint !== null };
@@ -561,7 +540,6 @@ export function createDrizzleDraftStore(
       .where(
         and(
           eq(documentDrafts.kind, "work_draft"),
-          eq(documentDrafts.status, "active"),
           lt(documentDrafts.hasEffectRevision, documentDrafts.revision),
           after
             ? sql`${position} < (${after.updatedAt}::timestamptz, ${after.draftId})`
@@ -631,24 +609,15 @@ export function createDrizzleDraftStore(
       return row ? mapDraft(row) : null;
     },
 
-    async draftStates(userId, draftIds) {
-      if (draftIds.length === 0) return {};
+    async openDraftIds(userId, draftIds) {
+      if (draftIds.length === 0) return [];
       const rows = await currentDrizzleDb(db)
-        .select({
-          id: documentDrafts.id,
-          status: documentDrafts.status,
-          cause: documentDrafts.closedCause,
-        })
+        .select({ id: documentDrafts.id })
         .from(documentDrafts)
         .innerJoin(branchRows, eq(branchRows.id, documentDrafts.branchId))
         .innerJoin(projects, eq(projects.id, branchRows.projectId))
         .where(and(inArray(documentDrafts.id, [...draftIds]), eq(projects.userId, userId)));
-      const states: Record<string, DraftState> = {};
-      for (const row of rows) {
-        if (row.status === "active") states[row.id] = "open";
-        else if (row.cause) states[row.id] = row.cause === "left_out" ? "discarded" : row.cause;
-      }
-      return states;
+      return rows.map((row) => row.id);
     },
 
     readDraftAt(draftId, since) {
@@ -717,47 +686,15 @@ export function createDrizzleDraftStore(
     },
 
     findOwnerDraft,
-    findClosedOwnerDraft,
 
     async listActiveWorkDraftIds(documentId) {
       const rows = await currentDrizzleDb(db)
         .select({ id: documentDrafts.id })
         .from(documentDrafts)
         .where(
-          and(
-            eq(documentDrafts.documentId, documentId),
-            eq(documentDrafts.kind, "work_draft"),
-            eq(documentDrafts.status, "active"),
-          ),
-        );
-      return rows.map((row) => row.id);
-    },
-
-    async listWorkDraftStates(documentId) {
-      const rows = await currentDrizzleDb(db)
-        .select({
-          draftId: documentDrafts.id,
-          status: documentDrafts.status,
-          cause: documentDrafts.closedCause,
-          closedBy: commands.kind,
-        })
-        .from(documentDrafts)
-        .leftJoin(commands, eq(commands.id, documentDrafts.closedBy))
-        .where(
           and(eq(documentDrafts.documentId, documentId), eq(documentDrafts.kind, "work_draft")),
         );
-      return rows.map(({ cause, closedBy, ...row }) => ({
-        ...row,
-        closedAs:
-          cause === null
-            ? null
-            : cause !== "document_removed" && closedBy === "discard"
-              ? ("discarded" as const)
-              : cause !== "document_removed" &&
-                  (closedBy === "undo_discard" || closedBy === "unapply")
-                ? ("replaced" as const)
-                : ("document_removed" as const),
-      }));
+      return rows.map((row) => row.id);
     },
 
     findBranchDraft: activeDocumentDraft,
@@ -787,8 +724,8 @@ export function assertDraftable(
   }
 }
 
-function resolved({ draftId, status, lifecycle, seed }: DraftSnapshot): ResolvedDraft {
-  return { draftId, status, lifecycle, seed };
+function resolved({ draftId, lifecycle, seed }: DraftSnapshot): ResolvedDraft {
+  return { draftId, lifecycle, seed };
 }
 
 class NoPrimaryWorkError extends Error {
@@ -854,10 +791,19 @@ async function recordAppendReceipts(
           ? (meta.authoringResponseId as import("@meridian/contracts").ModelResponseId)
           : undefined,
       toolCallId: journal.toolCallId,
-      actor: journal.source === "writer" ? "human" : journal.threadId ? "agent" : "system",
+      actor:
+        journal.source === "writer" || (journal.inverse && !journal.threadId)
+          ? "human"
+          : journal.threadId
+            ? "agent"
+            : "system",
       actorUserId: journal.actorUserId as import("@meridian/contracts").UserId | null | undefined,
+      ...(journal.inverse
+        ? { kind: journal.inverse.kind, actionId: journal.inverse.actionId }
+        : {}),
       receipts: group.parts.map((part, i) => ({
         ...part,
+        ...(journal.inverse ? { targets: journal.inverse.targets } : {}),
         origin: {
           kind: "pending" as const,
           draftId: input.draftId,

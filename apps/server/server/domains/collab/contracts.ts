@@ -1,7 +1,7 @@
 /** Public contracts for the collab domain. */
 import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
 import type { BranchId, CommandId, DraftOwner, LinkView } from "@meridian/contracts";
-import type { DiscardCommandResult, DraftState } from "@meridian/contracts/branches";
+import type { DiscardCommandResult } from "@meridian/contracts/branches";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
@@ -27,7 +27,7 @@ import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
 import type { WorkBranchDisposal } from "../projects/index.js";
 import type { AgentEditRouter } from "./domain/agent-edit-router.js";
-import type { DiscardItem, DiscardSelection } from "./domain/branch-discard.js";
+import type { DiscardSelection } from "./domain/branch-discard.js";
 import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
 import type { DraftReviewItem } from "./domain/branch-review-items.js";
 import type { Branches } from "./domain/branches.js";
@@ -118,12 +118,11 @@ export type CollabTransport = {
     /** The owner whose draft the room is; its lifecycle caps the room's access. */
     owner: DraftOwner;
     schemaVersion: CollabSchemaVersion;
-    status: "active";
   } | null>;
-  /** Whether the draft was ever made, closed or not: a created document's draft is named before it is. */
+  /** Whether the draft exists: a created document's draft is named before it is made. */
   draftExists(draftId: string): Promise<boolean>;
-  /** The state of each of these drafts in the user's projects: open, or why it closed; any other id is left out. */
-  draftStates(userId: UserId, draftIds: readonly string[]): Promise<Record<string, DraftState>>;
+  /** Which of these drafts are in the user's projects: a draft that is not listed is gone. */
+  openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusDraftState(draftId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {
@@ -467,6 +466,11 @@ export type DraftReviewApi = {
       accountId: UserId;
       branchId: BranchId;
     }): Promise<DocumentId[]>;
+    /** The items of an Apply that applies again what an Un-Apply took back. */
+    redoItems(input: {
+      unapplyCommandId: CommandId;
+      accountId: UserId;
+    }): Promise<import("@meridian/contracts/branches").ApplyItemsClick["items"]>;
   };
   /** The document half of Trash's Discard entries in a project; the tree answers its own half. */
   /** The day-30 purge of Trash's command entries (`drizzle-discard-purge.ts`); the rows removed. */
@@ -521,14 +525,6 @@ export type DraftReviewApi = {
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   /** `lookupCommand` for a resend: waits a while on a first request still running under the id. */
   awaitCommand(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
-  discardItem(input: {
-    /** The item as the route resolved it; a document the branch holds nothing on has no row to resolve. */
-    item: Pick<DraftReviewItem, "branchId" | "itemKey" | "documentId" | "origin">;
-    /** What ends (`DraftDiscardRequest`). */
-    ends: DiscardItem["ends"];
-    userId: UserId;
-    envelope: CommandEnvelope;
-  }): Promise<CommandOutcome>;
   /** The branch's Discard command (`BranchDiscardRequest`): all of it, or a selection of nodes. */
   discardBranch(input: {
     branchId: BranchId;

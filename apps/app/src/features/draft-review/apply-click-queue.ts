@@ -4,6 +4,7 @@ import type {
   ApplyClickAnswer,
   ApplyClickObservation,
   ApplyClickResult,
+  RedoClick,
   UnapplyClick,
   UnapplyClickAnswer,
   UnapplyClickResult,
@@ -59,7 +60,6 @@ type ApplyCommand = FrozenApply & {
   kind: "apply";
   sent: boolean;
   attempts: number;
-  stalled: boolean;
   closed: boolean;
   /** Its `acknowledged` settled: it may be sent once it is the head. */
   released: boolean;
@@ -80,13 +80,12 @@ export type UnapplyCommand = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   patchFor(groupIds: readonly string[]): readonly PMNode[];
-  /** What the answer took back (`held`: it left something for a closed owner). */
-  selectionChanged(groupIds: readonly string[], tree: boolean, held: boolean): void;
+  /** What the answer took back. */
+  selectionChanged(groupIds: readonly string[], tree: boolean): void;
   ready: Promise<boolean>;
   groupIds: Set<string>;
   sent: boolean;
   attempts: number;
-  stalled: boolean;
   answer?: UnapplyClickResult;
   /** The server's answer as it arrives, or how the command ended without one. */
   heard: Promise<UnapplyClickOutcome>;
@@ -115,8 +114,10 @@ type ScheduledApplyHandle = ApplyCommandHandle & {
   inForce: ApplyCommand;
   reversal: Promise<UnapplyClickOutcome>;
   replaySelection: string[];
-  /** The Un-Apply took this item's tree change back, so a Redo carries the tree cut again. */
+  /** The Un-Apply took this item's tree change back, so the Redo's painting shows it. */
   replayTree: boolean;
+  /** The Un-Apply sent, which the Redo names; null when it was cancelled before it was sent. */
+  unapplyId: string | null;
   pendingReplay: ApplyCommand | null;
 };
 
@@ -150,6 +151,7 @@ export class ApplyClickQueue {
       send(body: ApplyClick): Promise<ApplyClickAnswer>;
       lookup(body: ApplyClick): Promise<ApplyClickObservation>;
       unapply?(body: UnapplyClick): Promise<UnapplyClickAnswer>;
+      redo?(body: RedoClick): Promise<ApplyClickAnswer>;
       changed(): void;
     },
   ) {}
@@ -160,10 +162,6 @@ export class ApplyClickQueue {
 
   get unapplies(): UnapplyCommand[] {
     return this.commands.filter((command): command is UnapplyCommand => command.kind === "unapply");
-  }
-
-  get stalled(): boolean {
-    return this.commands[0]?.stalled ?? false;
   }
 
   get pending(): boolean {
@@ -182,10 +180,6 @@ export class ApplyClickQueue {
   enqueueHistory(input: {
     frozen: FrozenApply;
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    intent(): void;
-    /** A Redo's answer, landed or not: its item shows what of it stayed out. */
-    replayed(answer: ApplyClickOutcome): void;
-    unapplyRefused(answer: UnapplyClickOutcome): void;
   }): { outcome: Promise<ApplyClickOutcome>; handle: ApplyCommandHandle } {
     const initial = this.queueApply(input.frozen);
     this.startFeedback();
@@ -202,19 +196,22 @@ export class ApplyClickQueue {
       reversal: Promise.resolve({ status: "cancelled" }),
       replaySelection: [...initial.body.groupIds],
       replayTree: initial.body.tree === true,
+      unapplyId: null,
       pendingReplay: null,
       undo: () => {
-        input.intent();
         handle.pendingReplay = null;
         if (this.cancel(handle.current.body.commandId)) {
+          handle.unapplyId = null;
           handle.reversal = Promise.resolve({ status: "cancelled" });
           return handle.reversal;
         }
         handle.replaySelection = [...handle.current.body.groupIds];
         handle.replayTree = handle.current.body.tree === true;
+        const unapplyId = crypto.randomUUID();
+        handle.unapplyId = unapplyId;
         const inverse = this.queueUnapply({
           body: {
-            commandId: crypto.randomUUID(),
+            commandId: unapplyId,
             applyCommandId: handle.current.body.commandId,
           },
           draftId: handle.current.body.draftId ?? "",
@@ -231,13 +228,13 @@ export class ApplyClickQueue {
             return landed(answer);
           }),
           // A Redo pressed before the answer brings back only what the Un-Apply took back, and
-          // nothing when it took nothing or held something: a held Apply stays in force whole.
-          selectionChanged: (groupIds, tree, held) => {
+          // nothing when it took nothing.
+          selectionChanged: (groupIds, tree) => {
             handle.replaySelection = [...groupIds];
             handle.replayTree = tree;
             const replay = handle.pendingReplay;
             if (!replay || replay.sent) return;
-            if (held || (groupIds.length === 0 && !tree)) {
+            if (groupIds.length === 0 && !tree) {
               handle.pendingReplay = null;
               this.cancel(replay.body.commandId);
               return;
@@ -247,21 +244,25 @@ export class ApplyClickQueue {
           },
         });
         handle.reversal = inverse.outcome;
-        return inverse.heard.then((answer) => {
-          if (answer.status === "unsent") input.unapplyRefused(answer);
-          return answer;
-        });
+        return inverse.heard;
       },
       redo: () => {
-        input.intent();
         const before = handle.inForce;
+        const { unapplyId } = handle;
+        const sendRedo = this.port.redo?.bind(this.port);
         const replay = this.queueApply({
+          // What the review shows at once and records under its id. The Redo sent names only the
+          // Un-Apply: the server works out what it took back. An Apply cancelled before it was
+          // sent has no Un-Apply: the click goes again as it was frozen.
           body: {
             ...handle.current.body,
             commandId: crypto.randomUUID(),
             groupIds: [...handle.replaySelection],
             tree: handle.replayTree || undefined,
           },
+          ...(unapplyId && sendRedo
+            ? { send: (body) => sendRedo({ commandId: body.commandId, redoOf: unapplyId }) }
+            : {}),
           optimistic: handle.current.optimistic,
           patched: input.patchFor(handle.replaySelection),
           // Waits for the Un-Apply: one that did not land leaves the Apply standing, so the Redo
@@ -284,7 +285,6 @@ export class ApplyClickQueue {
             handle.current === replay
           )
             handle.current = before;
-          if (answer.status !== "cancelled") input.replayed(answer);
           return answer;
         });
       },
@@ -331,7 +331,6 @@ export class ApplyClickQueue {
       ...frozen,
       sent: false,
       attempts: 0,
-      stalled: false,
       closed: false,
       released: false,
       roomEnded: frozen.madeAfterRoomEnded === true,
@@ -361,7 +360,7 @@ export class ApplyClickQueue {
     patched: readonly PMNode[];
     groupIds: readonly string[];
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    selectionChanged(groupIds: readonly string[], tree: boolean, held: boolean): void;
+    selectionChanged(groupIds: readonly string[], tree: boolean): void;
     ready: Promise<boolean>;
   }): UnapplyCommand {
     let finish!: (result: UnapplyClickOutcome) => void;
@@ -378,7 +377,6 @@ export class ApplyClickQueue {
       groupIds: new Set(input.groupIds),
       sent: false,
       attempts: 0,
-      stalled: false,
       heard,
       hear,
       outcome,
@@ -404,15 +402,6 @@ export class ApplyClickQueue {
     } else if (head?.kind === "unapply") {
       this.reconcileUnapply(head, records);
     } else this.port.changed();
-  }
-
-  retry(): void {
-    const head = this.commands[0];
-    if (!head?.stalled) return;
-    head.stalled = false;
-    head.attempts = 0;
-    this.port.changed();
-    void this.dispatch(head);
   }
 
   cancel(commandId: string): boolean {
@@ -505,7 +494,7 @@ export class ApplyClickQueue {
   }
 
   private async dispatch(command: Command): Promise<void> {
-    if (this.request || this.commands[0] !== command || command.stalled) return;
+    if (this.request || this.commands[0] !== command) return;
     if (command.kind === "apply") await this.dispatchApply(command);
     else await this.dispatchUnapply(command);
   }
@@ -533,7 +522,7 @@ export class ApplyClickQueue {
         this.moveOn();
         return;
       }
-      // Unanswered, like a send: tried again, then stalled with Retry.
+      // Unanswered, like a send: tried again, then given up as unsent.
       if (!answered) {
         this.scheduleRetry(command);
         return;
@@ -606,7 +595,7 @@ export class ApplyClickQueue {
       if (this.commands[0] === command) this.settle(command, { status: "cancelled" });
       return;
     }
-    if (this.request || this.commands[0] !== command || command.stalled) return;
+    if (this.request || this.commands[0] !== command) return;
     this.request = command;
     command.sent = true;
     let answer: UnapplyClickAnswer | undefined;
@@ -623,16 +612,10 @@ export class ApplyClickQueue {
       const undone = textUndoneOf(answer, this.port.node);
       command.groupIds = new Set(undone);
       command.patched = command.patchFor(undone);
-      command.selectionChanged(
-        undone,
-        answer.treeUndone.includes(this.port.node),
-        (answer.held ?? []).length > 0,
-      );
-      // The answer is acted on now (notice, history, hand-over); the room only settles it. A text
-      // half that waits for its closed draft never leaves the room, so the answer settles it.
+      command.selectionChanged(undone, answer.treeUndone.includes(this.port.node));
+      // The answer is acted on now (notice, history, hand-over); the room only settles it.
       command.hear(answer);
-      if (answer.draftHalfWaits) this.settle(command, answer);
-      else this.reconcileUnapply(command);
+      this.reconcileUnapply(command);
       return;
     }
     if (answer?.status === "conflict") {
@@ -712,8 +695,13 @@ export class ApplyClickQueue {
 
   private scheduleRetry(command: Command): void {
     const delay = RETRY_DELAYS[command.attempts++];
-    if (delay === undefined) command.stalled = true;
-    else this.retryTimer = setTimeout(() => void this.dispatch(command), delay);
+    if (delay === undefined) {
+      // Out of retries: the click is given up as not sent, so the draft shows it still pending and
+      // the commands behind it go.
+      this.settle(command, { status: "unsent", commandId: command.body.commandId });
+      return;
+    }
+    this.retryTimer = setTimeout(() => void this.dispatch(command), delay);
     this.port.changed();
   }
 
@@ -735,6 +723,7 @@ export class ApplyClickQueue {
     return true;
   }
 
+  private settle(command: Command, result: ClickUnsent): void;
   private settle(command: ApplyCommand, result: ApplyClickOutcome): void;
   private settle(command: UnapplyCommand, result: UnapplyClickOutcome): void;
   private settle(command: Command, result: ApplyClickOutcome | UnapplyClickOutcome): void {

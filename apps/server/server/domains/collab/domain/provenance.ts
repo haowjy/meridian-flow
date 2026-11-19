@@ -7,14 +7,8 @@ import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
-export const PROVENANCE_TARGETS_TYPE = "__meridian_provenance_targets_v2";
-// Retained dev snapshots may contain this inert root; its facts are never read.
-export const PROVENANCE_RESERVED_TYPES = [
-  PROVENANCE_TARGETS_TYPE,
-  "__meridian_provenance_targets_v1",
-] as const;
 export const SERVER_OWNED_ROOTS = [REVIEW_BASE_FRAGMENT, APPLY_RECORD_ROOT] as const;
-const RESERVED_TYPE_NAMES = new Set<string>([...PROVENANCE_RESERVED_TYPES, ...SERVER_OWNED_ROOTS]);
+const RESERVED_TYPE_NAMES = new Set<string>(SERVER_OWNED_ROOTS);
 const RESERVED_CLIENT_IDS = new Set(
   Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),
 );
@@ -23,12 +17,6 @@ let provenanceEnumerationCount = 0;
 
 export type { DocumentAuthorityId } from "@meridian/contracts";
 export type SafetyBirthClass = "writer_protected" | "agent";
-
-export type ProvenanceTargetFactV1 = {
-  version: 1;
-  target: LineageRange;
-  root: LineageRange;
-};
 
 export type JournalReplayKey = {
   admissionSequence: bigint;
@@ -58,11 +46,6 @@ export type AttributedJournalRow = JournalReplayKey & {
   originType: string | null;
   actorUserId: string | null;
   update: Uint8Array;
-};
-
-export type RootLineageRun = {
-  target: LineageRange;
-  root: LineageRange;
 };
 
 /** Freezes first-birth attribution for checkpoint manifests. Later sync updates
@@ -98,36 +81,6 @@ export class ProvenanceMaterializationError extends Error {
   readonly name = "ProvenanceMaterializationError";
 }
 
-/** Materializes only the visible target-to-root relation. Attention policy
- * consumes this neutral relation without assigning destructive-safety classes. */
-export function materializeRootLineageForDoc(doc: Y.Doc): RootLineageRun[] {
-  const assignments = readTargetFacts(doc);
-  // Admission validates targets while they are visible. After deletion Yjs may
-  // discard the parent ancestry needed to re-prove historical fragment membership,
-  // but the immutable target clocks must remain valid for settlement replay.
-  const prose = allStringRanges(doc);
-  for (const range of visibleProseStringRanges(doc)) prose.add(range, true, () => true);
-  for (const fact of assignments.values()) {
-    if (!prose.covers(fact.target)) {
-      throw blocked("Explicit provenance target is outside the prosemirror fragment");
-    }
-  }
-
-  const visible: RootLineageRun[] = [];
-  for (const target of visibleProseStringRanges(doc)) {
-    for (let offset = 0; offset < target.length; offset += 1) {
-      const targetUnit = unit(target, offset);
-      const assignment = assignments.valueAt(targetUnit);
-      const rootUnit = assignment
-        ? unit(assignment.root, targetUnit.clock - assignment.target.clock)
-        : targetUnit;
-      appendRootLineageRun(visible, { target: targetUnit, root: rootUnit });
-    }
-  }
-
-  return visible;
-}
-
 export function birthClassFromAttribution(
   attribution: Pick<AttributedJournalRow, "originType" | "actorUserId">,
 ): SafetyBirthClass {
@@ -135,82 +88,8 @@ export function birthClassFromAttribution(
   return "agent";
 }
 
-/** Write-once target-keyed facts: independently authored ranges never share sequence anchors. */
-export function appendProvenanceFacts(
-  doc: Y.Doc,
-  input: { targets?: readonly ProvenanceTargetFactV1[] },
-): Uint8Array {
-  const before = Y.encodeStateVector(doc);
-  const targets = readTargetFacts(doc);
-  const newTargets = (input.targets ?? []).map(parseTargetFact);
-  for (const fact of newTargets) targets.add(fact.target, fact, sameTargetFact);
-  assertRootUnitInjectivity(doc, targets);
-  doc.transact(() => {
-    const map = doc.getMap(PROVENANCE_TARGETS_TYPE);
-    for (const fact of newTargets) {
-      const key = `${fact.target.clientID}:${fact.target.clock}`;
-      const prior = map.get(key);
-      if (prior !== undefined) {
-        if (!sameTargetFact(parseTargetFact(prior), fact))
-          throw blocked("Conflicting target assignment key");
-      } else map.set(key, fact);
-    }
-  }, "meridian-provenance-write");
-  primeReservedNamespaceIndex(doc);
-  return Y.encodeStateAsUpdate(doc, before);
-}
-
-function assertRootUnitInjectivity(
-  doc: Y.Doc,
-  assignments: RangeIndex<ProvenanceTargetFactV1>,
-): void {
-  const occupied = new Map<string, string>();
-  for (const target of visibleProseStringRanges(doc)) {
-    for (let offset = 0; offset < target.length; offset += 1) {
-      const targetUnit = unit(target, offset);
-      const assignment = assignments.valueAt(targetUnit);
-      const rootUnit = assignment
-        ? unit(assignment.root, targetUnit.clock - assignment.target.clock)
-        : targetUnit;
-      const rootKey = `${rootUnit.clientID}:${rootUnit.clock}`;
-      const targetKey = `${targetUnit.clientID}:${targetUnit.clock}`;
-      const existing = occupied.get(rootKey);
-      if (existing && existing !== targetKey) {
-        throw blocked("One provenance root unit cannot have two visible targets");
-      }
-      occupied.set(rootKey, targetKey);
-    }
-  }
-}
-
-/** Validates every reserved provenance fact against the complete visible prose graph. */
-export function validateProvenanceGraph(doc: Y.Doc): void {
-  const assignments = readTargetFacts(doc);
-  const prose = allStringRanges(doc);
-  for (const range of visibleProseStringRanges(doc)) prose.add(range, true, () => true);
-  for (const fact of assignments.values()) {
-    if (!prose.covers(fact.target)) {
-      throw blocked("Explicit provenance target is outside the prosemirror fragment");
-    }
-  }
-  assertRootUnitInjectivity(doc, assignments);
-}
-
 export class ReservedNamespaceAdmissionError extends Error {
   readonly name = "ReservedNamespaceAdmissionError";
-}
-
-function resolvedRootUnits(
-  assignments: RangeIndex<ProvenanceTargetFactV1>,
-  source: LineageRange,
-): LineageRange[] {
-  return Array.from({ length: source.length }, (_, offset) => {
-    const sourceUnit = unit(source, offset);
-    const assignment = assignments.valueAt(sourceUnit);
-    return assignment
-      ? unit(assignment.root, sourceUnit.clock - assignment.target.clock)
-      : sourceUnit;
-  });
 }
 
 /** Refresh outside writer admission, immediately after load or provenance writes. */
@@ -365,17 +244,6 @@ export function journalInsertionRanges(update: Uint8Array): LineageRange[] {
     }));
 }
 
-function readTargetFacts(doc: Y.Doc): RangeIndex<ProvenanceTargetFactV1> {
-  const index = new RangeIndex<ProvenanceTargetFactV1>("target assignment");
-  for (const [key, value] of doc.getMap(PROVENANCE_TARGETS_TYPE).entries()) {
-    const fact = parseTargetFact(value);
-    if (key !== `${fact.target.clientID}:${fact.target.clock}`)
-      throw blocked("Target assignment key does not name its target");
-    index.add(fact.target, fact, sameTargetFact);
-  }
-  return index;
-}
-
 class RangeIndex<T> {
   readonly #byClient = new Map<number, Array<{ range: LineageRange; value: T }>>();
   constructor(private readonly label: string) {}
@@ -419,64 +287,6 @@ class RangeIndex<T> {
     this.#byClient.set(range.clientID, entries);
     return added;
   }
-
-  valueAt(point: { clientID: number; clock: number }): T | undefined {
-    return this.#byClient
-      .get(point.clientID)
-      ?.find(({ range }) => point.clock >= range.clock && point.clock < end(range))?.value;
-  }
-
-  covers(range: LineageRange): boolean {
-    for (let clock = range.clock; clock < end(range); clock += 1) {
-      if (!this.valueAt({ clientID: range.clientID, clock })) return false;
-    }
-    return true;
-  }
-
-  *values(): Iterable<T> {
-    for (const entries of this.#byClient.values()) {
-      for (const entry of entries) yield entry.value;
-    }
-  }
-}
-
-function visibleProseStringRanges(doc: Y.Doc): LineageRange[] {
-  return visibleStringRanges(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME));
-}
-
-function visibleStringRanges(type: Y.XmlElement | Y.XmlText | Y.XmlFragment): LineageRange[] {
-  const ranges: LineageRange[] = [];
-  const visit = (current: Y.XmlElement | Y.XmlText | Y.XmlFragment): void => {
-    if (current instanceof Y.XmlText) {
-      for (let item = current._start; item; item = item.right) {
-        if (!item.deleted && item.content instanceof Y.ContentString) {
-          ranges.push({ clientID: item.id.client, clock: item.id.clock, length: item.length });
-        }
-      }
-      return;
-    }
-    for (const child of current.toArray()) {
-      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
-    }
-  };
-  visit(type);
-  return ranges;
-}
-
-function allStringRanges(doc: Y.Doc): RangeIndex<true> {
-  const index = new RangeIndex<true>("historical string target");
-  for (const structs of doc.store.clients.values()) {
-    for (const item of structs) {
-      // A gc-enabled writer's update carries GC structs for prose it deleted before syncing.
-      if (!(item instanceof Y.Item) || !(item.content instanceof Y.ContentString)) continue;
-      index.add(
-        { clientID: item.id.client, clock: item.id.clock, length: item.length },
-        true,
-        () => true,
-      );
-    }
-  }
-  return index;
 }
 
 type DecodedStruct = Y.Item | Y.GC | Y.Skip;
@@ -597,14 +407,6 @@ class ReservedRangeIndex {
   }
 }
 
-function parseTargetFact(value: unknown): ProvenanceTargetFactV1 {
-  if (!isRecord(value) || value.version !== 1) throw blocked("Invalid target assignment fact");
-  const target = parseRange(value.target);
-  const root = parseRange(value.root);
-  if (target.length !== root.length) throw blocked("Target assignment must preserve root length");
-  return { version: 1, target, root };
-}
-
 function parseRange(value: unknown): LineageRange {
   if (!isRecord(value)) throw blocked("Invalid lineage range");
   const { clientID, clock, length } = value;
@@ -620,25 +422,6 @@ function parseRange(value: unknown): LineageRange {
     throw blocked("Lineage range is outside safe integer bounds");
   }
   return { clientID: Number(clientID), clock: Number(clock), length: Number(length) };
-}
-
-function appendRootLineageRun(target: RootLineageRun[], unitRun: RootLineageRun): void {
-  const previous = target.at(-1);
-  if (
-    previous &&
-    previous.target.clientID === unitRun.target.clientID &&
-    end(previous.target) === unitRun.target.clock &&
-    previous.root.clientID === unitRun.root.clientID &&
-    end(previous.root) === unitRun.root.clock
-  ) {
-    previous.target.length += 1;
-    previous.root.length += 1;
-    return;
-  }
-  target.push({
-    target: { ...unitRun.target },
-    root: { ...unitRun.root },
-  });
 }
 
 function decodeAdmittedUpdate(update: Uint8Array): DecodedUpdate {
@@ -660,19 +443,8 @@ function decodedParent(item: Y.Item): unknown {
 function sameAttribution(left: AttributionRunV1, right: AttributionRunV1): boolean {
   return left.birthClass === right.birthClass && compareReplayKey(left.origin, right.origin) === 0;
 }
-function sameTargetFact(left: ProvenanceTargetFactV1, right: ProvenanceTargetFactV1): boolean {
-  return sameRange(left.target, right.target) && sameRange(left.root, right.root);
-}
-function sameRange(left: LineageRange, right: LineageRange): boolean {
-  return (
-    left.clientID === right.clientID && left.clock === right.clock && left.length === right.length
-  );
-}
 function rangesOverlap(left: LineageRange, right: LineageRange): boolean {
   return left.clientID === right.clientID && left.clock < end(right) && right.clock < end(left);
-}
-function unit(range: LineageRange, offset = 0): LineageRange {
-  return { clientID: range.clientID, clock: range.clock + offset, length: 1 };
 }
 function end(range: LineageRange): number {
   return range.clock + range.length;
@@ -704,46 +476,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 function blocked(message: string): ProvenanceMaterializationError {
   return new ProvenanceMaterializationError(message);
-}
-
-/** Server-computed restorations carry the source's already-normalized prose roots. */
-export function appendInverseRestorationFacts(
-  doc: Y.Doc,
-  aliases: readonly {
-    source: { client: number; clock: number };
-    target: { client: number; clock: number };
-    len: number;
-  }[],
-): void {
-  const assignments = readTargetFacts(doc);
-  const prose = allStringRanges(doc);
-  const targets: ProvenanceTargetFactV1[] = [];
-  for (const alias of aliases) {
-    for (let offset = 0; offset < alias.len; offset++) {
-      const target = {
-        clientID: alias.target.client,
-        clock: alias.target.clock + offset,
-        length: 1,
-      };
-      if (!prose.covers(target)) continue;
-      const source = {
-        clientID: alias.source.client,
-        clock: alias.source.clock + offset,
-        length: 1,
-      };
-      const root = resolvedRootUnits(assignments, source)[0];
-      const previous = targets.at(-1);
-      if (
-        previous &&
-        previous.target.clientID === target.clientID &&
-        end(previous.target) === target.clock &&
-        previous.root.clientID === root.clientID &&
-        end(previous.root) === root.clock
-      ) {
-        previous.target.length++;
-        previous.root.length++;
-      } else targets.push({ version: 1, target, root });
-    }
-  }
-  appendProvenanceFacts(doc, { targets });
 }

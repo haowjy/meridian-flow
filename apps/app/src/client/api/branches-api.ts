@@ -9,14 +9,12 @@ import type {
   BranchDiscardRequest,
   BranchDiscardResponse,
   DocumentDraftHintsResponse,
-  DraftDiscardRequest,
-  DraftDiscardResponse,
   DraftMetadataResponse,
-  DraftState,
   DraftStatesRequest,
   DraftStatesResponse,
   DraftsProvenanceRequest,
   DraftsProvenanceResponse,
+  RedoClick,
   ThreadDraftListResponse,
   UnapplyClick,
   UnapplyClickAnswer,
@@ -31,7 +29,6 @@ import {
   apiProjectBranchApplyPath,
   apiProjectBranchDiscardPath,
   apiProjectBranchDocumentDraftApplyPath,
-  apiProjectBranchDocumentDraftDiscardPath,
   apiProjectBranchDocumentDraftPath,
   apiProjectBranchUnapplyPath,
   apiProjectBranchUndoDiscardPath,
@@ -55,16 +52,16 @@ export async function listOwnerDrafts(projectId: string, owner: string): Promise
   };
 }
 
-/** The state of each of these draft ids the account has (open, or why it closed), asked in as many requests as the limit needs. */
-export async function listDraftStates(draftIds: string[]): Promise<Map<string, DraftState>> {
-  const states = new Map<string, DraftState>();
+/** Which of these draft ids the account still has, asked in as many requests as the limit needs. */
+export async function listOpenDrafts(draftIds: string[]): Promise<ReadonlySet<string>> {
+  const open = new Set<string>();
   for (let at = 0; at < draftIds.length; at += DRAFT_STATES_MAX) {
     const answer = await postJson<DraftStatesResponse>(apiDraftStatesPath(), {
       draftIds: draftIds.slice(at, at + DRAFT_STATES_MAX),
     } satisfies DraftStatesRequest);
-    for (const [id, state] of Object.entries(answer.states)) states.set(id, state);
+    for (const id of answer.open) open.add(id);
   }
-  return states;
+  return open;
 }
 
 /** The authorship evidence of an owner's drafts, many in one request. */
@@ -132,8 +129,8 @@ export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObs
     return { status: "none", commandId: body.commandId };
   return found.outcome.result as ApplyClickResult;
 }
-/** Several nodes, folders included, as one Apply command. */
-export function applyItems(projectId: string, branchId: string, body: ApplyItemsClick) {
+/** Several nodes, folders included, as one Apply command; or a Redo, which names an Un-Apply. */
+export function applyItems(projectId: string, branchId: string, body: ApplyItemsClick | RedoClick) {
   return postCommand<ApplyClickAnswer>(apiProjectBranchApplyPath(projectId, branchId), body);
 }
 /** Takes one Apply command back, every document and the tree, by its id. */
@@ -149,18 +146,8 @@ export function undoDiscard(projectId: string, branchId: string, body: UndoDisca
     signal: AbortSignal.timeout(10_000),
   });
 }
-export function discardDraftItem(draft: DraftAddress, body: DraftDiscardRequest) {
-  return postJson<DraftDiscardResponse>(
-    apiProjectBranchDocumentDraftDiscardPath(
-      draft.projectId,
-      branchOf(draft.itemKey),
-      draft.documentId,
-    ),
-    body,
-  );
-}
-/** The branch's Discard: Discard all, or a selection of nodes, as one command. */
-export function discardBranch(projectId: string, branchId: string, body: BranchDiscardRequest) {
+/** The one Discard: Discard all, or a selection of nodes and changes, as one command. */
+export function discard(projectId: string, branchId: string, body: BranchDiscardRequest) {
   return postJson<BranchDiscardResponse>(apiProjectBranchDiscardPath(projectId, branchId), body);
 }
 /** A draft's branch, named by its item key (`${branchId}:${documentId}`). */

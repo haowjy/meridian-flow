@@ -119,18 +119,9 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
 /**
  * Take back one Apply command: the surviving text groups of every document it applied, and
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
- * A tree fact something changed since stays (`left_out changed_since`), as does a created
- * document with text written since (`has_text`); a text group whose reversal would change a
- * word that holds writing made after the Apply stays applied: it is named in `textSkipped`,
- * its document in a `left_out changed_since` line with `tree: false`. Each press judges the text as
- * it stands, so a later press takes the group if its words came back (another Undo restored them).
- * A source whose Work was purged takes nothing back: `left_out purged`.
- *
- * Nothing that would change the notes of a closed owner (an archived or deleted Work, a chat in
- * Trash) is taken back: it is in `held`. Everything of the Apply still applied before this press
- * is in exactly one place: taken back (`textUndone`, `treeUndone`), left as it stands now
- * (`left_out`, `textSkipped`), or held. A text group an earlier Un-Apply took
- * back is in none. It took something back when `textUndone` or `treeUndone` is not empty.
+ * What something changed since, a group whose words hold later writing, a closed owner's notes and
+ * a purged Work's stay as they stand; each press judges the text as it is. It took something back
+ * when `textUndone` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
   commandId: CommandId;
@@ -141,39 +132,13 @@ export type UnapplyClickResult = {
   commandId: CommandId;
   /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
   branchId: BranchId;
-  /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
-  draftHalfWaits: boolean;
   /**
-   * The text groups taken back, and those left applied, per document: one change made in two
+   * The text groups taken back, per document: one change made in two
    * documents has one group id, and a press may take it back in one of them only.
    */
   textUndone: Array<{ node: string; groupIds: string[] }>;
-  textSkipped: Array<{ node: string; groupIds: string[] }>;
   /** The nodes with a tree fact this command took back (a restore it undid included). */
   treeUndone: string[];
-  /**
-   * What is still applied because taking it back would change a closed owner's notes, per node:
-   * `tree` when a tree fact of it is held, `groupIds` the text groups of it that are held. A node
-   * whose tree fact went back and whose text is held is here with `tree: false`. `owner` is the
-   * owner's name and `ownerKey` which owner it is, so a tab can tell from the Works and chats it
-   * holds whether that owner has reopened. The `returned` lines of `settled` are derived from it.
-   * The server always fills it; an answer stored before it existed has none, which reads as nothing
-   * held.
-   */
-  held?: Array<{
-    node: string;
-    tree: boolean;
-    groupIds: string[];
-    why: ClosedOwnerWhy;
-    owner?: string;
-    ownerKey: DraftOwnerKey;
-  }>;
-  /**
-   * `left_out` (what could not come back, one line per reason and half, `tree` saying which),
-   * `returned` (what stayed for a closed owner, with `items`), or `already` (nothing was taken
-   * back, left or held: everything was taken back before).
-   */
-  settled?: Settlement[];
 };
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
 
@@ -181,9 +146,10 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
  * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
- * is skipped, not refused. A whole cut with `groupIds` takes only the named groups the replica
- * holds and passes over the rest: a Redo names what its Un-Apply took back, so it never applies
- * a change its Undo didn't take.
+ * is skipped, not refused. A whole cut that names what to take (a Redo's, from its Un-Apply's own
+ * records) takes the pending changes of the replica that hold named AI changes and nothing else
+ * (`carried`, as `[partId, index]`) or sit at a named place (`places`, for a change no AI edit made), and
+ * passes over the rest.
  */
 export type ApplyTextCut =
   | {
@@ -193,7 +159,7 @@ export type ApplyTextCut =
       baseViewDelta: ApplySpanPatch[];
       groupIds: string[];
     }
-  | { draftId: string; whole: true; groupIds?: string[] };
+  | { draftId: string; whole: true; places?: string[]; carried?: [number, number][] };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
@@ -207,10 +173,21 @@ export type ApplyItemsClick = {
 };
 
 /**
- * Restore a Discard, from the notice right after it or from Trash: the Work gets fresh pending
- * copies of the tree records it settled, and the text drafts it closed reopen as the same rows
- * in the Work's current branch. `discardCommandId` may name a restore too, which swaps the text
- * it closed back in.
+ * Apply again what the Un-Apply `redoOf` took back, which is all the browser says: the server
+ * reads the Un-Apply's own records for the documents, groups and tree halves, so a change another
+ * chat proposed since is never applied with it, and an identical change in two documents is
+ * applied only in the one the Un-Apply took. A pending change that has since merged with a
+ * neighbour the Un-Apply didn't take stays in Changes, where Apply still offers it.
+ */
+export type RedoClick = {
+  commandId: CommandId;
+  redoOf: CommandId;
+};
+
+/**
+ * Restore a Discard, from the notice right after it, the editor's Ctrl+Z or Trash: the Work gets
+ * fresh pending copies of the tree records it settled, and each text change it took out is merged
+ * back into the draft where it still stands.
  */
 export type UndoDiscardClick = {
   commandId: CommandId;
@@ -219,35 +196,27 @@ export type UndoDiscardClick = {
 export type UndoDiscardResult = {
   status: "restored";
   commandId: CommandId;
-  /** The Discard (or earlier restore) this took the members of. */
+  /** The Discard this took the members of. */
   discardCommandId: CommandId;
-  /** The Work's current branch: where the copies and the reopened drafts are. */
+  /** The Work's current branch: where the tree copies are. */
   branchId: BranchId;
-  /** What came back: tree records copied and text drafts reopened. */
+  /** What came back: tree records copied and documents whose text changes were merged back. */
   restored: number;
-  /** Newer drafts of the same documents this restore closed, now members of its own entry. */
-  swapped: number;
-  /** What the Discard held that could not come back: a purged node or document, or the changes of a draft whose Live text was edited since. */
-  leftOut: number;
   /** The halves this restore brought back, by document: what an Undo of it takes back, and no more. */
   brought: { text: string[]; tree: string[] };
-  /**
-   * Why `restored` is 0: `returned` (the draft's owner is closed), `already` (a restore took the
-   * members), `left_out purged` (the entry is gone from Trash or what it held was purged), `left_out changed_since` (Live's text was edited over the draft: it stays closed, `items` names its documents, and the entry leaves Trash).
-   */
+  /** Why `restored` is 0 when the draft's owner is closed: `returned`. */
   settled?: Settlement[];
 };
 export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; commandId: CommandId };
 
 /**
- * The document half of a Trash entry for a Discard (or for a restore that swapped a newer draft
- * out): the command, and the text drafts it closed that are still closed. The tree half is the
- * tree's own answer for the same command id; an entry with no member in either is not listed.
+ * A Trash entry: one Discard of whole drafts, with the drafts it took text from that no Restore
+ * has ended. The tree half is the tree's own answer for the same command id; an entry with no
+ * member in either is not listed.
  */
 export type DiscardEntry = {
   commandId: CommandId;
-  kind: "discard" | "undo_discard" | "unapply";
-  /** When the command ran: the entry leaves Trash 30 days later. */
+  /** When the command ran: its entry leaves Trash 30 days later. */
   at: string;
   /** The branch the command ran on; Restore names it. */
   branchId: BranchId;
@@ -441,47 +410,22 @@ export type ModelEditOutcome =
 /** What a document command's row holds. */
 export type DocumentCommandOutcome = CommandOutcome<StoredDocumentCommandResult>;
 
-/** Whether a settled item left review, and how (applied if anything reached live). */
-export type DraftItemSettlement = {
-  itemClosed: boolean;
-  /** Present when `itemClosed`. */
-  itemDisposition?: "applied" | "discarded";
-};
-
 /**
- * What a Discard answers, item or selection: it never refuses. `settled` says what became of an
- * item this command did not take: `already` (a Discard took it), `overtaken` (an Apply did), or
- * `returned` (the owner is closed, nothing changed).
+ * What a Discard answers: it never refuses. `settled` says what became of an item this command did
+ * not take: `already` (a Discard took it), `overtaken` (an Apply did), or `returned` (the owner is
+ * closed, nothing changed).
  */
 export type DiscardOutcomeNotes = { settled?: Settlement[] };
 
-export type DraftDiscardResponse = {
-  status: "discarded";
-  branchId: BranchId;
-  itemKey: DraftItemKey;
-} & DraftItemSettlement &
-  DiscardOutcomeNotes;
-
 /**
- * One item's Discard on the server. `tree` ends only the branch's move or delete: a live chat's
- * Discard, whose text the writer reverts in the room. `item` ends everything the branch holds
- * on the document: a still-hidden creation, or a frozen owner's draft, whose room refuses the
- * writer's text. The URL names the branch.
- */
-export type DraftDiscardRequest = {
-  itemKey: DraftItemKey;
-  commandId: CommandId;
-  ends: "tree" | "item";
-};
-
-/**
- * `POST …/branches/:branchId/discard`, one server command either way. `all`: Discard all, every
- * change of the branch, which closes it; only an explicit `all` does that. `items`: any selection
- * of nodes, documents or folders (a folder group's ×, a folder changed alone), each ending as
- * `DraftDiscardRequest.ends` says; what stands on a node it discards goes with it (a document
- * moved into a folder the Work created). Its text halves close on the server, and Undo of a
- * Discard brings both halves back. Not strict at either level: a tab still on the old code sends
- * `draftSeenAt` on each item, and it is dropped, not a 400.
+ * `POST …/branches/:branchId/discard`, the one Discard, always one server command. `all`: Discard
+ * all, every change of the branch. `items`: any selection of nodes, documents or folders, each
+ * with what is taken from it: `tree`, its move, delete or creation; `text`, its text changes,
+ * `"all"` of them or those named by id (the ids Changes lists, which are content hashes, so a
+ * request needs no room open). What stands on a node it discards goes with it (a document moved
+ * into a folder the Work created). The text is merged into the draft, which stays open, and the
+ * command records what it took so that Restore can merge it back. Not strict at either level: a
+ * tab still on the old code sends extra fields, and they are dropped, not a 400.
  */
 export const BranchDiscardRequestSchema = z.union([
   z.object({ commandId: CommandIdSchema, all: z.literal(true) }),
@@ -489,25 +433,35 @@ export const BranchDiscardRequestSchema = z.union([
     commandId: CommandIdSchema,
     items: z
       .array(
-        z.object({
-          node: z.string().min(1),
-          ends: z.enum(["tree", "item"]),
-        }),
+        z
+          .object({
+            node: z.string().min(1),
+            tree: z.literal(true).optional(),
+            text: z.union([z.literal("all"), z.array(z.string().min(1)).min(1)]).optional(),
+            /**
+             * Base64 of the Yjs snapshot of the draft the named ids were read at: the server
+             * resolves the same changes there and takes them out of the draft as it is now.
+             */
+            snapshot: z.string().min(1).optional(),
+          })
+          .refine((item) => item.tree || item.text)
+          .refine((item) => !item.snapshot || Array.isArray(item.text)),
       )
       .min(1),
   }),
 ]);
 export type BranchDiscardRequest = z.infer<typeof BranchDiscardRequestSchema>;
 /**
- * `discarded` with `all` and no `closed` means the branch closed; with `items`, `closed` names
- * the selected nodes nothing of the branch remains on, those an earlier command took included
- * (`settled` says which). A closed owner's bounce carries `closed: []`.
+ * `closed` names the selected nodes nothing of the branch remains on, those an earlier command took
+ * included (`settled` says which). A closed owner's bounce carries `closed: []`.
  */
 export type BranchDiscardResponse = {
   status: "discarded";
   branchId: BranchId;
-  closed?: string[];
+  closed: string[];
+  /** It took whole drafts, or all of them: only such a Discard has a Trash entry. A change's is final but for its Undo. */
+  whole: boolean;
 } & DiscardOutcomeNotes;
 
 /** A Discard's terminal body, exactly what its 200 carries. */
-export type DiscardCommandResult = DraftDiscardResponse | BranchDiscardResponse;
+export type DiscardCommandResult = BranchDiscardResponse;

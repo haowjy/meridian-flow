@@ -40,6 +40,52 @@ merge attributes, merge block order (`mergeOrder`), align both sides to base as 
 moved text, then group the touching hunks into clusters and decide each, and last put whitespace
 back (`settleWhitespace`) and build blocks (`buildBlocks`).
 
+## Reading an AI edit against a text: `stands` and membership
+
+`content-merge/stands.ts` answers two questions about one change of an AI edit from the edit's recorded
+delta (`document_edit_parts.delta`: the blocks the write changed, before and after) and a text, with no
+Yjs item id:
+
+- **`changeState`**: `stands` when the text holds the whole change, the merge can take it out
+  (`contentMerge(after, before, window)` has no conflict, changes the window, and putting the change
+  back on its result gives the window again, with either side named first, since words typed at the
+  very edge of the change sit on either side of it) and taking it out adds no pending change (checked on the
+  result `takeOut` writes, when that has no conflict, so the check and the press are one merge); `altered` when
+  the text holds it changed, or when taking it out would leave Changes with a group it has not got (a
+  group cut in two, or one sitting where none went); `out` when it is gone. `takeOut` writes the
+  inverse for a change that stands. Undo is offered, and a press writes, only for `stands`: the
+  press and the offer read the same state. The manuscript has no review base, so its read is
+  `changeStateIn` (the same rule without the pending-change check), which an AI edit written into
+  Live, an applied change (the Apply's `carried`) and Un-Apply's `live_delta` all use;
+  `addsPendingChange` is the check an applied change's Undo makes on the draft it also writes.
+- **`readChange`**: which pending changes of Changes the change sits in. Forcing the change out
+  (`contentMerge(after, window, before)`, so `before` wins where the text was altered) alters the
+  pending changes whose hash goes. Joined with the pending changes that hold the change's words (or,
+  for a change with no words, its blocks or marks), for what the merge cannot pair: a paragraph the AI
+  wrote that Live joined into another, a stray quote mark. Equal hashes are paired in document order.
+  A change an Undo took (`taken`, from the Undo's record, never from the text) reads `out` and sits in
+  no pending change, whatever the text holds later: a later reply that proposes the same words must
+  not revive it. Two replies that propose the
+  very same words stay one change to this read.
+
+The removal diff covers the change's window (its blocks and one either side, with `base` cut to the
+blocks that pair with it by id); when they are not one run it diffs the whole document. A `ChangeMemo`
+keyed on the blocks a read looked at lets a re-read after a write elsewhere skip the merges.
+`.context/qa/sentence-scale.md` is the differential (misses, glue, a second press) and the cost bench
+(19,000 words, 75 changes: about 330 ms cold, 60 to 65 ms re-read).
+
+Known limits: the windowed read names fewer pending changes than the whole-document one (the whole read
+re-aligns the document tail). At four fresh seeds of 4,000 rows each, no Undo added a pending change,
+none left a change standing, and no second press changed the text; about 2 % of rows (64 to 86 per
+4,000) of that stress workload (a reply plus one to four later edits, many in the same paragraph) lose
+an Undo to the offer rule, mostly where taking the change out would cut a neighbouring pending change
+in two (the same words in two groups, which Changes would show as one card more). Dropping that rule
+adds real pending changes (8 rows per 4,000 at seed 300000). Four of 16,000 rows miss a pending
+change the edit caused (after a Live move and a join or split); the change
+then reads altered, so no Undo is offered. An Undo puts back `before` as the AI saw it, not as the
+review base holds it now; restoring the base's version of the touched blocks was tried and made a
+change still read as standing after its Undo more often, so it was not kept.
+
 ## Merge rules
 
 "Case" is a row of `CASES` in `merge.fixtures.ts`. The test fails when a row fires a rule it does
@@ -49,7 +95,7 @@ not list, or lists one it does not fire.
 
 | Rule | What it does | Code | Case |
 |---|---|---|---|
-| `draft-wins-text` | Both sides changed the same words differently: the draft's text stands. Covers a rewrite against a delete | the clash branch of `merge.ts` | `word-conflict`, `replace-vs-delete` |
+| `draft-wins-text` | Both sides changed the same words differently: the draft's text stands. Covers a rewrite against a delete, and two insertions at one point that are versions of one text (each has words of its own, fewer than the words they share: the draft's copy of words live cut and then restored, with one changed; the union would read "bright dim") | the clash branch of `merge.ts` | `word-conflict`, `replace-vs-delete` |
 | `whole-block-unit` | A figure or table is one token, so a change on both sides is one clash and the draft's whole block stands | same branch | `table-column-vs-row` |
 | `containers-merged` | Both sides changed a table kept as the same shape: rows and cells merge one by one, at every depth. Falls back to `whole-block-unit` when the shapes differ or the result is not a rectangle | `mergeContainers` | `table-cells` |
 | `draft-wins-stretch` | One side removed a block the other changed, or both changed which blocks are at one place (a split, a join, a move-in): the draft's blocks stand there | `settleStretches` in `stretch.ts` | `id-far-addition` |
@@ -59,10 +105,10 @@ not list, or lists one it does not fire.
 
 | Rule | What it does | Code | Case |
 |---|---|---|---|
-| `insertions-kept-both` | Both sides inserted at one point: both stay, live's first; a word both typed stays once | `unionInsertions` in `merge-settle.ts` | `insert-different` |
+| `insertions-kept-both` | Both sides inserted at one point: both stay, live's first; a word both typed stays once, a shared full stop or comma alone does not | `unionInsertions` in `merge-settle.ts` | `insert-different` |
 | `same-block-added-twice` | Both sides made the same block at one place (equal but for ids): one block, with live's id | `unifyAdded` | `id-typed-twice` |
 | `marks-merged` | Both sides only reformatted one word: each mark comes from the side that changed it | `mergeMarks` in `merge-hunks.ts` | `bold-vs-italic` |
-| `shared-edge-kept-once` | One side inserted words the other side's replacement also starts or ends with: kept once. Off, words double | `peel` | `shared-edge-kept-once` |
+| `shared-edge-kept-once` | One side inserted words the other side's replacement also starts or ends with: kept once (a shared full stop or comma alone is not a shared word: two sentences that each end in one are two sentences). Off, words double | `peel` | `shared-edge-kept-once` |
 | `typed-at-end-of-deleted` | Words typed at the end of a paragraph the other side deleted are a clash, not a join onto the paragraph before. Off, a word is joined onto a paragraph neither side joined it to | `typedAtEndOfDeleted`, through `touch` | `typed-at-end-of-deleted` |
 | `moved-text-dropped` | Live cut and pasted text (3 or more words, or a whole inserted run) whose source the draft changed: live's paste is left out and the draft's text stays at the source. The draft's own paste of text live changed stays and is not counted | `dropMovedText` | `live-moves-sentence-draft-edits-it` |
 | `neighbouring-changes-joined` | Two one-sided changes within three unchanged tokens are one change the two diffs placed differently. Off, words double | `coalesce` | `neighbouring-changes-joined` |
@@ -80,7 +126,7 @@ side where the same two tokens are neighbours is how the patch is put back, not 
 | Rule | What it does | Code | Case |
 |---|---|---|---|
 | `draft-wins-space` | Both sides changed the space before one word differently: the draft's | `settleWhitespace` | `draft-wins-space` |
-| `space-added-between-words` | Two words no side had side by side get one space, except in scripts written without spaces | `settleWhitespace` | `coords` |
+| `space-added-between-words` | A word that no side had after the token before it gets a space when that token is a word or ends a clause or sentence, except in scripts written without spaces | `settleWhitespace` | `coords` |
 
 **Shape** (`buildBlocks` in `diff/tokens.ts`; review's `composeHunks` shares it and does not count)
 
@@ -99,7 +145,10 @@ a count from production says it never fires.
 - `draftAbsorbsLive` decides that an overlap is no clash because the draft's text already holds live's
   change. It is part of how `draft-wins-text` counts.
 - The diff's own choices of where a change sits (`align`: `separateBlocks`, `canonicalize`,
-  `refine`) run on every diff, review's too.
+  `refine`) run on every diff, review's too. `canonicalize` puts a pure insertion or deletion, among its equal places, at the first that
+  starts a sentence (after a full stop, `!`, `?` or a block start), else the leftmost: a sentence
+  added after a full stop sits after it, not as ". Text" before it, so the writer's words typed
+  beside it begin at the same place and a full stop is not shared between two sentences.
 - The size limits (`coarse-diff`: a paragraph or run of changed paragraphs past 1,000 tokens, a
   diff past 4,000 keys, pairing past 40,000 block pairs) turn a diff into one whole replacement, so a
   change on both sides is one clash and the draft's text stands. `diff/tokens.ts` and `diff/align.ts`

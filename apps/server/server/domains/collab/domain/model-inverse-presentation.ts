@@ -51,16 +51,10 @@ export function textOmission(
   direction: Direction,
   omission: {
     ordinal: number;
-    cause:
-      | "paragraph_removed"
-      | "already_removed"
-      | "edited_since"
-      | "draft_archived"
-      | "discarded";
+    cause: "already_removed" | "edited_since" | "draft_archived" | "discarded";
   },
 ) {
   const words = {
-    paragraph_removed: "paragraph replaced or removed",
     already_removed: "already removed",
     edited_since: "edited since",
     draft_archived: "draft archived",

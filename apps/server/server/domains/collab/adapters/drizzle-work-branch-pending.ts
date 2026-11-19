@@ -6,7 +6,8 @@ import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { pendingDocuments, pendingFolders } from "../../context/tree/pending-documents.js";
-import { createDraftDispositionReader } from "../domain/draft-disposition.js";
+import { isPending, readDraftChanges } from "../domain/draft-changes.js";
+import { materializeDraftRead } from "../domain/draft-store.js";
 import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 
@@ -16,7 +17,7 @@ import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.
  * count by it, and the Works boundary reconciles each Work's stored count through it.
  */
 export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPendingStore {
-  const readDisposition = createDraftDispositionReader(createDrizzleDraftDispositionStore(db));
+  const evidence = createDrizzleDraftDispositionStore(db);
   return {
     async countPendingByOwners({ workIds, rootThreadIds }) {
       if (workIds.length === 0 && rootThreadIds.length === 0) return [];
@@ -120,7 +121,6 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
           and(
             eq(documentDrafts.branchId, branchId),
             eq(documentDrafts.kind, "work_draft"),
-            eq(documentDrafts.status, "active"),
             documentIds ? inArray(documentDrafts.documentId, [...documentIds]) : undefined,
           ),
         )
@@ -128,19 +128,29 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
 
       return rows.map((row) => ({ ...row, branchId }));
     },
+    /** The chats with a change in a pending change of the draft, and whether some pending change is no chat's. */
     async pendingWriters(draftId) {
-      const view = await readDisposition(draftId);
-      const members = new Set<number>();
-      for (const classification of view?.classifications.values() ?? [])
-        for (const member of classification.members) members.add(member);
-      const agentThreadIds = new Set<string>();
-      // Receipt order is newest first; classification member order need not be.
-      for (const [index, part] of (view?.parts ?? []).entries())
-        if (members.has(index) && part.owner) agentThreadIds.add(part.owner.threadId);
-      const unattributed = (view?.projection?.groups ?? []).some(
-        (group) => !view?.classifications.get(group.id)?.members.length,
-      );
-      return { threadIds: [...agentThreadIds], unattributed };
+      const cut = await evidence.capture(draftId);
+      if (!cut?.draft.checkpoint) return { threadIds: [], unattributed: false };
+      const doc = materializeDraftRead(cut.draft);
+      try {
+        const { reading, parts } = readDraftChanges(doc, cut.parts);
+        const threadIds = new Set<string>();
+        const held = new Set<number>();
+        for (const part of cut.parts) {
+          for (const change of parts.get(part.id)?.changes ?? []) {
+            if (!isPending(change)) continue;
+            if (part.owner) threadIds.add(part.owner.threadId);
+            for (const group of change.sitsIn) held.add(group);
+          }
+        }
+        return {
+          threadIds: [...threadIds],
+          unattributed: reading.pending.groups.some((_, index) => !held.has(index)),
+        };
+      } finally {
+        doc.destroy();
+      }
     },
   };
 }

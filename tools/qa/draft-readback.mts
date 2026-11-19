@@ -61,7 +61,6 @@ async function main(): Promise<void> {
     const report = {
       draftId,
       kind: documentDraft.kind,
-      status: documentDraft.status,
       lifecycle: documentDraft.lifecycle,
       revision: documentDraft.revision,
       checkpointRevision: documentDraft.checkpointRevision,

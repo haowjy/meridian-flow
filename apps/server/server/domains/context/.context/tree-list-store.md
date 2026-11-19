@@ -31,8 +31,7 @@ are the other two:
   copy this process changed and has not committed is never read: the list is loaded afresh. A
   `make` and a `view` are synchronous, so a copy is never seen half changed.
 - `resync(lists)` brings the rows to the list's replay when something the rows read changed outside
-  the list: a branch ended (a whole Discard, a Work purged), or a Work's text draft closed
-  (`DraftClose.closeDrafts`). It takes the keys, or finds them held. A draft opening changes no row:
+  the list: a branch ended (a Work purged). It takes the keys, or finds them held. A draft opening changes no row:
   the document must show in the Work's view for the draft to open.
 
 Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advisory lock

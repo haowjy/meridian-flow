@@ -1,7 +1,6 @@
 /** Open review ownership holds a stable room; projection readiness is independent of command delivery. */
 import { type Dispatch, useEffect, useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import { staysOnScreen } from "./draft-command-owner";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 import { useRoomBindings } from "./useRoomReview";
 
@@ -13,10 +12,10 @@ export function useReviewRoomOwner(input: {
 }) {
   const { review, dispatch } = input;
   const commands = useDraftCommandOwner();
-  // A draft discarded elsewhere, or whose document went to Trash, stays on screen with Restore.
+  // A hidden draft (a Discard in flight) or a gone one leaves the review.
   const leaves = () => {
     const command = commands.state(review?.itemKey ?? "");
-    return command.hidden || (command.ended !== null && !staysOnScreen(command.ended));
+    return command.hidden || command.ended;
   };
   const leaving = useSyncExternalStore(commands.subscribe, leaves, leaves);
   useEffect(() => {

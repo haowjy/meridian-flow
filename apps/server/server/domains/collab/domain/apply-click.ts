@@ -2,16 +2,16 @@
  * Apply compilation and command identity. A frozen cut is the writer's click on their room; a
  * whole cut is the server's replica on receipt. No live state or locks enter either.
  */
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import {
   type ApplyEntry,
-  applyRecordOf,
   applySpanPatches,
-  classifyChanges,
   composeHunks,
   diffBlocks,
   type Hunk,
   projectReview,
   REVIEW_BASE_FRAGMENT,
+  type ReviewGroup,
   readBlocks,
   type SpanPatch,
   validateSpanPatches,
@@ -30,6 +30,7 @@ import { CommandExistsError, replay } from "../../../shared/commands/command-rec
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
 import type { DocumentCommands } from "./document-commands.js";
+import { carriedBy, readChangesAt } from "./draft-changes.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
@@ -54,16 +55,12 @@ export type PreparedUnapply = {
     effects: {
       ordinal: number;
       groupId: string;
-      liveUpdateSeq: number | null;
+      /** What the group changed in the manuscript; null when it already held the text. */
+      liveDelta: StoredDelta | null;
       baseBefore: unknown[];
       baseAfter: unknown[];
     }[];
   }[];
-  /**
-   * Documents whose tree half the Apply made, and no list row says so now: the Work's purge took
-   * the rows. Un-Apply answers them `left_out purged`.
-   */
-  treeLost: string[];
   /** One per list the Apply settled records in: the list's state vector it left. */
   trees: {
     scope: "project" | "account";
@@ -88,7 +85,12 @@ type CompiledApplyGroup = {
   groupId: string;
   before: readonly PMNode[];
   patched: readonly PMNode[];
+  /** The draft's record of the Apply: which command took the group (the browser's queue reads it). */
   record: ApplyEntry;
+  /** The changes of AI edits that sat in this group, as `[partId, index]`, on the draft as the click found it. */
+  carried: [number, number][];
+  /** Where the group sat (`placeOf`). */
+  place: string;
 };
 /**
  * One item of an Apply with its cuts prepared: the text compiled against the draft's replica.
@@ -144,12 +146,12 @@ export class ApplyClickMalformed extends Error {}
 export class ApplyClickUnsynced extends Error {}
 
 /** Snapshot containment includes tombstones: a delete-only key must have been acknowledged too. */
-function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
+export function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
   for (const [client, clock] of clicked.sv) if (clock > (current.sv.get(client) ?? 0)) return false;
   return Y.equalDeleteSets(current.ds, Y.mergeDeleteSets([current.ds, clicked.ds]));
 }
 
-function decodeClickedSnapshot(encoded: string): Y.Snapshot {
+export function decodeClickedSnapshot(encoded: string): Y.Snapshot {
   try {
     const bytes = Buffer.from(encoded, "base64");
     if (bytes.toString("base64") !== encoded) throw new Error("Invalid base64");
@@ -159,13 +161,21 @@ function decodeClickedSnapshot(encoded: string): Y.Snapshot {
   }
 }
 
+/** A change's hash and the id of the first block it touches: an equal change elsewhere has another. */
+function placeOf(projection: ReturnType<typeof projectReview>, group: ReviewGroup): string {
+  const [span] = group.spans;
+  const { base, draft } = projection.diff;
+  const block = draft.blocks[span.draft.from] ?? base.blocks[span.base.from];
+  return `${group.id.replace(/~\d+$/, "")}@${block?.attrs.id}`;
+}
+
 export function compileClick(
   doc: Y.Doc,
   request: ApplyTextCut & { commandId: string },
-  provenance: {
-    userId: string;
-    parts: import("@meridian/agent-edit/diff").Provenance["parts"];
-  },
+  parts: readonly {
+    id: number;
+    delta: import("@meridian/agent-edit/content-merge").StoredDelta | null;
+  }[],
 ): CompiledClick {
   const current = Y.snapshot(doc);
   // A whole cut is the replica as received: no click froze it, so nothing can be unsynced.
@@ -187,15 +197,23 @@ export function compileClick(
       throw new ApplyClickMalformed();
     }
     const optimistic = applySpanPatches(base, patches, "base");
-    const projection = projectReview(
-      diffBlocks(optimistic, readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema)),
-    );
+    const draftText = readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+    const projection = projectReview(diffBlocks(optimistic, draftText));
+    const reading = readChangesAt(optimistic, draftText, parts);
     let groupIds: readonly string[];
     if ("whole" in request) {
-      const named = request.groupIds && new Set(request.groupIds);
-      groupIds = projection.groups.flatMap((group) =>
-        !named || named.has(group.id) ? [group.id] : [],
-      );
+      const places = request.places && new Set(request.places);
+      const carried = request.carried && new Set(request.carried.map((key) => key.join(":")));
+      const named = places || carried;
+      // A group is re-applied by `carried` only while every AI change in it is one the Un-Apply took:
+      // a neighbour the writer never chose stays in Changes.
+      groupIds = projection.groups.flatMap((group, position) => {
+        const keys = carriedBy(reading, position);
+        if (!named || (!keys.length && places?.has(placeOf(projection, group)))) return [group.id];
+        return carried && keys.length > 0 && keys.every((key) => carried.has(key.join(":")))
+          ? [group.id]
+          : [];
+      });
       if (groupIds.length === 0) return { schema, groups: [] };
     } else groupIds = request.groupIds;
     const known = new Set(projection.groups.map((group) => group.id));
@@ -205,12 +223,6 @@ export function compileClick(
       groupIds.some((id) => !known.has(id))
     )
       throw new ApplyClickMalformed();
-    const classifications = classifyChanges(
-      cut,
-      projection,
-      { ...provenance, snapshot },
-      { record: true },
-    );
     const chosen: Hunk[] = [];
     let before = optimistic;
     const groups = groupIds.map((groupId): CompiledApplyGroup => {
@@ -226,11 +238,12 @@ export function compileClick(
         groupId,
         before,
         patched,
-        record: {
-          ...applyRecordOf(classifications, [groupId]),
-          commandId: request.commandId,
-          groupId,
-        },
+        record: { base: [], settled: [], commandId: request.commandId, groupId },
+        carried: carriedBy(
+          reading,
+          projection.groups.findIndex((candidate) => candidate.id === groupId),
+        ),
+        place: placeOf(projection, group),
       };
       before = patched;
       return step;
@@ -273,17 +286,14 @@ export function createApplyClickService(input: {
           branchId: command.branchId,
         });
         // Receipts are captured after this replica, so they cover every item a contained click can name.
-        const captured =
-          base && base.snapshot.status !== "closed"
-            ? await input.evidence.capture(cut.draftId)
-            : null;
-        if (!base || !captured || captured.draft.documentDraft.status === "closed") {
+        const captured = base ? await input.evidence.capture(cut.draftId) : null;
+        if (!base || !captured) {
           prepared.push({ node: item.node, tree, text: null, closedDraftId: cut.draftId });
           continue;
         }
         let click: CompiledClick;
         try {
-          click = compileClick(base.replica.doc, { ...cut, commandId }, captured);
+          click = compileClick(base.replica.doc, { ...cut, commandId }, captured.parts);
         } finally {
           input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
         }

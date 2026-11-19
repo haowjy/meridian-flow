@@ -3,6 +3,8 @@
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Ordered draft segments install atomically
  */
+
+import { APPLY_RECORD_ROOT } from "@meridian/agent-edit/diff";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
@@ -16,7 +18,6 @@ import {
   testDraftRow,
 } from "../test-support/memory-draft-store.js";
 import { createDraftCoordinator } from "./draft-coordinator.js";
-import { PROVENANCE_TARGETS_TYPE } from "./provenance.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000501" as DocumentId;
 const WORK_ID = "00000000-0000-4000-8000-000000000502" as WorkId;
@@ -31,7 +32,7 @@ function docWithText(value: string): Y.Doc {
 function documentWithReservedFacts(): Y.Doc {
   const doc = docWithText("seed");
   const nested = new Y.Array<unknown>();
-  doc.getMap(PROVENANCE_TARGETS_TYPE).set("nested", nested);
+  doc.getMap(APPLY_RECORD_ROOT).set("nested", nested);
   nested.push(["authority fact"]);
   return doc;
 }
@@ -98,7 +99,7 @@ describe("DraftCoordinator", () => {
     const roomDocument = materialize(storedDraft(store, "work"));
     const hostileClient = materialize(storedDraft(store, "work"));
     const before = Y.encodeStateVector(hostileClient);
-    hostileClient.getMap(PROVENANCE_TARGETS_TYPE).delete("nested");
+    hostileClient.getMap(APPLY_RECORD_ROOT).delete("nested");
     const updateData = Y.encodeStateAsUpdate(hostileClient, before);
 
     const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
@@ -112,7 +113,7 @@ describe("DraftCoordinator", () => {
     ).rejects.toThrow("reserved provenance");
 
     expect(store.journal).toHaveLength(0);
-    expect(materialize(storedDraft(store, "work")).getMap(PROVENANCE_TARGETS_TYPE).size).toBe(1);
+    expect(materialize(storedDraft(store, "work")).getMap(APPLY_RECORD_ROOT).size).toBe(1);
   });
 
   it("journals only new multi-range deletions so replay reaches byte-identical state", async () => {

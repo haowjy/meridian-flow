@@ -1,5 +1,6 @@
 /** Detached historical draft and receipt evidence from one database snapshot. */
-import type { AttributionPart, Provenance } from "@meridian/agent-edit/diff";
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
+import type { AttributionPart } from "@meridian/agent-edit/diff";
 import type { EditOrigin } from "@meridian/contracts";
 import type { DraftRead } from "../draft-store.js";
 
@@ -15,20 +16,19 @@ export interface DraftReceiptPart extends AttributionPart {
   ordinal: number;
   origin: EditOrigin;
   owner: OwnerThread | null;
-}
-
-export interface DraftProvenance extends Provenance {
-  /** Apply evidence only; a non-applied part may ultimately be discarded. Use view.parts[].disposition. */
-  parts: readonly (DraftReceiptPart & { status: "pending" | "applied" })[];
+  /** What the part did to the text; null for a part written before deltas. */
+  delta: StoredDelta | null;
+  /** An Undo (or the writer's revert) took the part out of the text. */
+  taken: boolean;
 }
 
 export interface DraftDispositionCapture {
   draft: DraftRead;
-  /** Both durable byte fields are explicitly zero-length, not merely a missing checkpoint. */
-  contentReleased: boolean;
   userId: string;
   /** Latest first. The kernel receives the owner identity, not the subagent's identity. */
   parts: readonly DraftReceiptPart[];
+  /** The draft's Applies in force, oldest first, with the changes of parts each took. */
+  applied: readonly { commandId: string; carried: readonly (readonly [number, number])[] }[];
 }
 
 export interface DraftDispositionStore {

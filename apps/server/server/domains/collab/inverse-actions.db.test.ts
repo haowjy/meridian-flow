@@ -131,10 +131,10 @@ it.each(["live", "draft"] as const)(
           turnId: currentTurn,
           actor: { type: "user", userId: USER_ID },
         }),
-      ).toMatchObject({ status: "partial", acceptedParts: 1 });
+      ).toMatchObject({ status: "reversed" });
       expect(await text()).toBe("gold\n\npink\n\nblack\n");
       expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, currentTurn)).toMatchObject({
-        state: "partly",
+        undone: true,
         control: "view_change",
       });
     } finally {

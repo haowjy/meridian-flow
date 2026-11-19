@@ -295,7 +295,7 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 }
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
-  [WS_CLOSE.DRAFT_CLOSED.reason]: "closed",
+  [WS_CLOSE.DRAFT_PURGED.reason]: "closed",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
   [WS_CLOSE.DOCUMENT_DELETED.reason]: "removed",

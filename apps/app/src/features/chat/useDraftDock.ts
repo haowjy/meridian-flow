@@ -8,7 +8,6 @@ import { useDraftNotice } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { hasLine } from "@/features/draft-review/draft-notices";
-import { type BranchCommandFailure, isNote } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   listedItemChanges,
@@ -63,8 +62,6 @@ export function useDraftDock({
   const here =
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
   const notice = here && hasLine(here) ? here : null;
-  // A Discard a closed owner returned: a chip on the strip's controls, no line of its own.
-  const bounce = here && !hasLine(here) ? here : null;
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
@@ -149,9 +146,9 @@ export function useDraftDock({
   });
   const files = drafted.filter((file) => {
     const state = controller.owner.state(file.row.draft.itemKey);
-    // A command in flight hides its row, until its delivery needs the writer's Retry.
-    if (state.hidden && !state.stalled) return false;
-    return isOnStrip(file) || state.pending || state.failure;
+    // A command in flight hides its row.
+    if (state.hidden) return false;
+    return isOnStrip(file) || state.pending;
   });
   // What the Changes list holds beyond this chat's: its items (documents and folders), less the
   // documents the strip's Apply would empty. Counted over the listed drafts, not the rows on
@@ -218,17 +215,11 @@ export function useDraftDock({
     [actionableFiles, applicable, runner, controller.frozen],
   );
 
-  const fileFailures = (file: DockFile): BranchCommandFailure[] => {
-    const failure = controller.owner.state(file.row.draft.itemKey).failure;
-    return failure && !isNote(failure) ? [failure] : [];
-  };
-
   return {
     generating,
     controller,
     files,
     notice,
-    bounce,
     mounted: files.length > 0 || notice !== null,
     changeCount: totalChanges(files),
     /** The Changes list's items the strip's commands leave. */
@@ -256,7 +247,6 @@ export function useDraftDock({
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
     ownerKey,
-    fileFailures,
     review,
     imagePreview,
     closeImagePreview: () => setImagePreview(null),

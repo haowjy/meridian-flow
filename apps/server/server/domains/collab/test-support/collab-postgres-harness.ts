@@ -34,7 +34,6 @@ import {
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleAuthorityGenerationReader } from "../adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
-import { draftsStillClosedBy } from "../adapters/drizzle-draft-close.js";
 import { createDrizzleDraftReplayJournalReads } from "../adapters/drizzle-draft-journal-reads.js";
 import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
@@ -392,8 +391,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     {
       write: scopeModelEditWrite(
         createModelEditWriter({
-          read: modelEditRead,
-          evidence: modelEvidence,
           liveCore: runtime.liveUtilityCore,
           threadCore,
           branches: workBranches,
@@ -410,10 +407,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
               .where(eq(schema.documentDrafts.id, draftId))
               .for("update");
           },
-          roomsOf: async (documentId) => ({
-            liveRoom: liveRoom(documentId, await readAuthorityGeneration(documentId)),
-            drafts: await draftStore.listWorkDraftStates(documentId),
-          }),
+          liveRoomOf: async (documentId) =>
+            liveRoom(documentId, await readAuthorityGeneration(documentId)),
           afterLiveCommit: (documentId) =>
             deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
         }),
@@ -475,7 +470,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       async closeRemovedRooms(_documentIds, draftIds) {
         for (const draftId of draftIds) closeDraftRoom(draftId);
       },
-      stillClosedBy: (drafts) => draftsStillClosedBy(currentDrizzleDb(db), drafts),
     }),
     (error) => {
       throw error;
@@ -493,6 +487,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     commandDocuments: {
       ofApply: async () => [],
       ofDiscard: async () => [],
+      redoItems: async () => [],
     },
     listDiscards: async () => [],
     purgeDiscards: async () => 0,
@@ -515,7 +510,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         workProjection: createTestWorkProjectionMutation(db),
         treeLists,
       }),
-      holdRetirement: draftClose.holdRetirement,
     }),
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,

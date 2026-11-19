@@ -76,8 +76,7 @@ export function createDraftAheadRegistration(input: {
   }
 
   async function branchOfDraft(snapshot: DraftSnapshot) {
-    // An active work_draft draft's parent branch; a closed draft has no view to register in.
-    if (snapshot.kind !== "work_draft" || snapshot.status !== "active") return null;
+    if (snapshot.kind !== "work_draft") return null;
     const [branch] = await input.branches.byIds([snapshot.branchId]);
     return branch?.status === "active" ? branch : null;
   }

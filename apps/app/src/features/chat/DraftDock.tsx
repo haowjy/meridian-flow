@@ -7,7 +7,6 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
   ApplyAllQuestion,
-  BounceChip,
   CommandNotice,
   type CommandQuestion,
   noticeAction,
@@ -32,10 +31,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     deleting: readonly DockFile[];
     restoring: readonly DockFile[];
   } | null>(null);
-  const troubledFileCount = dock.files.filter(
-    (file) => file.status === "error" || dock.fileFailures(file).length > 0,
-  ).length;
-  // A refusal or a preview that did not load opens the strip so the writer sees it.
+  const troubledFileCount = dock.files.filter((file) => file.status === "error").length;
+  // A preview that did not load opens the strip so the writer sees it.
   useEffect(() => {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
@@ -85,7 +82,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     >
       {askingApply ? null : dock.showCommands ? (
         <>
-          <BounceChip notice={dock.bounce} />
           <ReviewActions
             scope={multi ? "all" : "change"}
             labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
@@ -116,11 +112,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           setExpanded((value) => !value);
         }}
         inline
-        // The chip joins the line, which gives up the name's room instead of wrapping.
-        className={cn(
-          "coarse:min-h-11",
-          dock.bounce ? "min-w-[4ch] flex-1 basis-0" : "min-w-[12ch] flex-auto",
-        )}
+        className="coarse:min-h-11 min-w-[12ch] flex-auto"
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">
@@ -237,7 +229,7 @@ function DockFileLine({
   const own = new Set(file.changes.map((change) => change.id));
   const items = view.items.filter(({ change }) => own.has(change.id));
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
-  // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
+  // A command's progress is the file's status line's (`DraftCommandStatus`), shown once.
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
   const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
   if (!summary && !expanded) return null;

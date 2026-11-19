@@ -22,8 +22,6 @@ export interface ModelEvidence {
     room: string,
     blockIds: readonly string[],
   ): Promise<{ blockId: string; recordedSeq: number; snapshot: Uint8Array }[]>;
-  /** Which of `rooms` the model saw most recently among `blockIds`: the room of the latest row. */
-  latestRoom(rooms: readonly string[], blockIds: readonly string[]): Promise<string | null>;
   /** Own shown links plus, for a fork, its source's at turns up to its cutoff, recursively. */
   forDocument(threadId: string, documentId: string): Promise<ShownLink[]>;
   /** Deletes what these threads were shown and the tool results their model edits stored, when the threads are deleted. */

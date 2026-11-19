@@ -12,10 +12,7 @@
  *
  * The bar lays the two parts out (`children` receives them). Label collapse and
  * invisible phone hit boxes belong to the review line (document-identity-row.css).
- *
- * Refusals are not here. The focused change's bar carries the open draft's;
- * the rest sit under the row (`DraftReviewFailureNotices`).
- */
+ * */
 
 import { t } from "@lingui/core/macro";
 import { Eye, EyeOff, List } from "lucide-react";
@@ -25,21 +22,11 @@ import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { BounceChip, useDocumentNotice } from "@/features/draft-review/CommandNotice";
 import { changeListLabel, DocumentChanges } from "@/features/draft-review/DocumentChanges";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
-import {
-  ReviewFailureNotices,
-  ReviewStateInline,
-} from "@/features/draft-review/ReviewHeaderNotices";
+import { ReviewStateInline } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
-import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
-import {
-  type ReviewHeaderModel,
-  useReviewFailures,
-  useReviewHeader,
-} from "@/features/draft-review/useReviewHeader";
+import { type ReviewHeaderModel, useReviewHeader } from "@/features/draft-review/useReviewHeader";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { focusIsFree, lastInputWasKeyboard, moveFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
@@ -85,9 +72,6 @@ export function DraftReviewBand({
   });
   const focusInControls = () => controlsRef.current?.contains(document.activeElement) ?? false;
   const { controller, view, locked, finished } = header;
-  // A Discard that discarded nothing (the closed Work returned it, or an Apply took it first),
-  // from this band or its change bar.
-  const bounce = useDocumentNotice(controller.projectId, props.documentId);
   const { status } = view;
   // The stepper walks the text changes; a pending move or delete is listed, not stepped to.
   const count = view.items.filter(({ change }) => !change.tree).length;
@@ -158,7 +142,6 @@ export function DraftReviewBand({
   const controls = (
     <span
       ref={controlsRef}
-      // Finished, its status line may hold a failure, which wraps across the line's width.
       className={cn(
         "ml-auto flex items-center gap-1.5 font-sans text-xs",
         finished ? "min-w-0 grow" : "shrink-0",
@@ -186,7 +169,6 @@ export function DraftReviewBand({
         </>
       ) : null}
       <ReviewStateInline
-        itemKey={itemKey}
         finished={finished}
         completing={header.completing}
         next={header.next}
@@ -194,9 +176,6 @@ export function DraftReviewBand({
         onOpenNext={(row) => header.openDraft(row, focusInControls())}
         onShowLive={header.showLive}
       />
-      {/* A Discard that discarded nothing says why, even once an Apply that took it first
-          finished the draft. */}
-      <BounceChip notice={bounce} />
       {finished ? null : (
         <ReviewActions
           scope="document"
@@ -267,32 +246,5 @@ function ShowChangesToggle({
     >
       <Icon aria-hidden />
     </IconButton>
-  );
-}
-
-/** The refusals no change bar shows, as lines under the identity row; nothing when there are none. */
-export function DraftReviewFailureNotices({
-  documentId,
-  itemKey,
-  onOpenDraft,
-}: {
-  documentId: string;
-  itemKey: string;
-  onOpenDraft: (row: ReviewFileTarget) => void;
-}) {
-  const { controller } = useDraftReview();
-  const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
-  if (!commandError && failedElsewhere.length === 0) return null;
-  return (
-    <div className="shrink-0 text-xs" data-draft-review-notices>
-      <ReviewFailureNotices
-        itemKey={itemKey}
-        commandError={commandError}
-        failedElsewhere={failedElsewhere}
-        onOpenNext={onOpenDraft}
-        className="px-4"
-      />
-    </div>
   );
 }

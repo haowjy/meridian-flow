@@ -208,7 +208,7 @@ export const effectProjection: Probe = {
             await runInDrizzleTransaction(harness.db, async () => {
               await harness.projection.lockWorks({ drafts: [draft.draftId] });
               await currentDrizzleDb(harness.db).execute(
-                sql`update document_drafts set status = 'closed', closed_cause = 'discarded' where id = ${draft.draftId}`,
+                sql`delete from document_drafts where id = ${draft.draftId}`,
               );
             });
             const locked = await workBadge(harness, draft.workId);

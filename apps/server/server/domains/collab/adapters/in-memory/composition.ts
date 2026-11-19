@@ -130,7 +130,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       headSchemaVersion: async () => null,
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
-      draftStates: hocuspocusPersistence.draftStates,
+      openDraftIds: hocuspocusPersistence.openDraftIds,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
@@ -297,6 +297,8 @@ function createInMemoryBranchStub(): CollabBranches {
     result: {
       status: "discarded",
       branchId: input.branchId as BranchId,
+      closed: [],
+      whole: false,
       settled: [{ rule: "already", state: "discarded" }],
     },
   });
@@ -324,10 +326,7 @@ function createInMemoryBranchStub(): CollabBranches {
           status: "unapplied",
           commandId: request.commandId,
           branchId: branchId as BranchId,
-          draftHalfWaits: false,
-          held: [],
           textUndone: [],
-          textSkipped: [],
           treeUndone: [],
         };
       },
@@ -336,6 +335,9 @@ function createInMemoryBranchStub(): CollabBranches {
           return [];
         },
         async ofDiscard() {
+          return [];
+        },
+        async redoItems() {
           return [];
         },
       },
@@ -391,7 +393,6 @@ function createInMemoryBranchStub(): CollabBranches {
       async awaitCommand() {
         return { kind: "none" };
       },
-      discardItem: (input) => gone(input.item),
       discardBranch: gone,
     },
   };

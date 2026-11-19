@@ -19,7 +19,7 @@ export function MobileChangeBar({
 }) {
   const item = view.items.find((candidate) => candidate.change.id === view.focused?.id);
   if (!item) return null;
-  const { change, draftFailure } = item;
+  const { change } = item;
   return (
     <div
       data-phone-change-bar
@@ -34,10 +34,7 @@ export function MobileChangeBar({
       <ReviewChangeBar
         touch
         change={change}
-        itemKey={view.itemKey ?? ""}
-        documentId={view.documentId}
         disabled={view.locked}
-        draftFailure={draftFailure}
         canApply={canApply}
         onApply={() => void view.apply(change)}
         onDiscard={() => void view.discard(change)}

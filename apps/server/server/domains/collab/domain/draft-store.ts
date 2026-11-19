@@ -4,13 +4,14 @@
  * materialization of one read. The coordinator and the storage adapters both build on this.
  */
 
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import type {
   BlockOriginMap,
   CapturedPart,
+  EditTarget,
   SemanticEditIRV1,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
-import type { ClosedDraftCause, DraftState } from "@meridian/contracts/branches";
 import type { DocumentId, ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import {
   COLLAB_SCHEMA_VERSION,
@@ -22,7 +23,6 @@ import type { BranchOwnerLifecycle } from "../../../shared/draft-owner.js";
 import { DocumentSchemaMajorMismatchError, isStaleSchema } from "./stale-schema.js";
 
 export type DraftKind = "work_draft";
-export type DraftStatus = "active" | "closed";
 
 export type DraftSeedRecord = {
   /** Draft canonical item id -> live canonical item id. */
@@ -61,13 +61,6 @@ export type DraftSnapshot = {
   workId: WorkId | null;
   rootThreadId: ThreadId | null;
   projectId: ProjectId;
-  status: DraftStatus;
-  /**
-   * Why a closed draft closed; null while active. A `document_removed` close outlives a restore.
-   * `left_out`: a Restore of the Discard that closed it answered for it and left it closed (Live
-   * was edited since). It is still the Discard's draft for the purge, no longer its Trash member.
-   */
-  closedCause: ClosedDraftCause | "left_out" | null;
   /** Bumped by every committed write to the draft; the fence of exact rewrites. */
   revision: number;
   /** The revision the checkpoint was written at. */
@@ -104,7 +97,7 @@ export type DraftRead = {
 export type AppendReceiptGroup = {
   /** The rows of the write, by index into the finalized rows. */
   rowIndexes: readonly number[];
-  parts: readonly CapturedPart[];
+  parts: readonly (CapturedPart & { delta?: StoredDelta | null })[];
 };
 
 /** A cursor a warm replica already holds, so a read ships only what came after it. */
@@ -123,6 +116,8 @@ export type AppendDraftJournalInput = {
   actorUserId?: string | null;
   updateMeta?: unknown;
   semanticEditIr?: SemanticEditIRV1;
+  /** The receipt's kind and the parts it took back, for an Undo or revert; a write otherwise. */
+  inverse?: { kind: "undo" | "revert"; actionId: string; targets: EditTarget[] };
 };
 
 /**
@@ -155,8 +150,6 @@ export type AppendRowsInput = {
   documentId: DocumentId;
   /** Background rebases keep archived drafts current; incoming edits require active Work. */
   work?: "active" | "any";
-  /** `any` appends to a closed draft too: a Restore finishing the Un-Applies of a draft it leaves out. */
-  draft?: "open" | "any";
   /** The checkpoint and highest row the caller's base replica holds. */
   base: DraftReadSince;
   /**
@@ -205,7 +198,7 @@ export type RewriteOutcome =
       checkpointRevision: number;
       seq: number;
     }
-  | { status: "moved" | "closed" };
+  | { status: "moved" | "gone" };
 
 /**
  * A stale draft and its keyset position in the sweep's order. `updatedAt` is the stored
@@ -216,8 +209,8 @@ export type StaleEffectCursor = { draftId: string; updatedAt: string };
 export type DraftStore = {
   /** The row only; content comes through `readDraftAt`. */
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
-  /** The state of each of these drafts in the user's projects: open, or why it closed; any other id is left out. */
-  draftStates(userId: UserId, draftIds: readonly string[]): Promise<Record<string, DraftState>>;
+  /** Which of these drafts are in the user's projects: a draft that is not listed is gone. */
+  openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
   /**
    * Which of these text ids a writer's journal row or a late-typing recovery row inserted

@@ -74,8 +74,7 @@ Disjoint paragraph probes took 18–29 ms around 1,000 words, versus up to 128 m
 diffed by `boundedDiff` (Myers, exact up to 1,000 edit operations, about 500 replaced words, since a replaced word is a
 delete and an insert; cost bounded by that distance, not by size), so one typo in a 10,000-word
 paragraph is one small hunk. Past 1,000 operations it is one replacement of what its ends do not
-share, and its hunks carry `approx`: the display draws them, but the edited-since check
-(`reopen`'s `leaveOutEdited`) takes an `approx` hunk, on either side, as "can't tell" and restores.
+share,.
 
 Evidence indexes live apart from classification. Only root writes invalidate the room
 indexes, before projection observers run; reads inside an open root transaction rebuild
@@ -135,9 +134,10 @@ character tombstones, cannot borrow another block's author. Only proven Undo del
 Discard base copies are excluded from that guard, so undoing Discard keeps the original
 byline.
 
-`appliedParts` associates positive Apply evidence with immutable receipt ranges. Any
-overlap is evidence, not full receipt coverage, and absence of a change alone never proves
-Apply: the host combines this with lifecycle and membership to tell pending from discarded.
+Whether a part was applied is not read from this evidence: the Apply records the changes it took
+(`apply_command_effects.carried`), and the card reads those. The Apply record's item ranges are
+no longer written (only its command and group ids); the classifier still reads what an older
+record holds, until the browser's byline classifier goes.
 
 ## Apply and local Discard are the same operation on two sides
 

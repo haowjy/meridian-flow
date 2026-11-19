@@ -1,18 +1,20 @@
 /**
  * The documents a command touched, from its own record: what a route must hold edit grants on
  * before Un-Apply or Undo of a Discard writes them. A folder has no document and no grant.
+ * `redoItems` reads the same records for a Redo: what an Un-Apply took back.
  */
 import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
+import type { ApplyItemsClick, UnapplyClickResult } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
 import {
   applyCommandEffects,
   applyCommandTrees,
   commands,
-  documentDrafts,
+  discardCommandEffects,
   documents,
 } from "@meridian/database/schema";
 import { discardedBy } from "@meridian/project-tree";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
@@ -58,7 +60,61 @@ export function createDrizzleCommandDocuments(
       return documentsAmong([...text.map((row) => row.id), ...trees.flatMap((row) => row.nodes)]);
     },
 
-    /** The documents a Discard command settled records of or closed text drafts on (the ones still closed by it). */
+    /**
+     * What an Un-Apply took back, as the items an Apply of it again sends: each document's text
+     * groups from the effect rows the Un-Apply marked, in the draft they were applied from, and
+     * the documents whose tree half it took back. Empty when it took nothing, or is not this
+     * account's.
+     */
+    async redoItems(input: {
+      unapplyCommandId: CommandId;
+      accountId: UserId;
+    }): Promise<ApplyItemsClick["items"]> {
+      const tx = currentDrizzleDb(db);
+      const [own] = await tx
+        .select({ outcome: commands.outcome })
+        .from(commands)
+        .where(
+          and(
+            eq(commands.id, input.unapplyCommandId),
+            eq(commands.accountId, input.accountId),
+            eq(commands.kind, "unapply"),
+          ),
+        );
+      if (!own || own.outcome.status === "never") return [];
+      const { treeUndone } = own.outcome.result as UnapplyClickResult;
+      const effects = await tx
+        .select({
+          documentId: applyCommandEffects.documentId,
+          draftId: applyCommandEffects.draftId,
+          place: applyCommandEffects.place,
+          carried: applyCommandEffects.carried,
+        })
+        .from(applyCommandEffects)
+        .where(eq(applyCommandEffects.unappliedBy, input.unapplyCommandId))
+        .orderBy(applyCommandEffects.documentId, applyCommandEffects.ordinal);
+      const items = new Map<string, ApplyItemsClick["items"][number]>();
+      for (const node of treeUndone) items.set(node, { node, tree: true });
+      for (const { documentId, draftId, place, carried } of effects) {
+        const held = items.get(documentId)?.text;
+        const named = held && "whole" in held ? held : null;
+        // A change an AI edit made is found again by the edit's change; one only the writer made,
+        // by its place.
+        items.set(documentId, {
+          node: documentId,
+          ...(items.get(documentId)?.tree ? { tree: true as const } : {}),
+          text: {
+            draftId,
+            whole: true,
+            places: [...(named?.places ?? []), ...(carried.length ? [] : [place])],
+            carried: [...(named?.carried ?? []), ...carried],
+          },
+        });
+      }
+      return [...items.values()];
+    },
+
+    /** The documents a Discard command settled records of or took text from. */
     async ofDiscard(input: {
       discardCommandId: CommandId;
       accountId: UserId;
@@ -66,15 +122,13 @@ export function createDrizzleCommandDocuments(
     }): Promise<DocumentId[]> {
       const tx = currentDrizzleDb(db);
       const text = await tx
-        .select({ id: documentDrafts.documentId })
-        .from(documentDrafts)
-        .innerJoin(commands, eq(commands.id, documentDrafts.closedBy))
+        .select({ id: discardCommandEffects.documentId })
+        .from(discardCommandEffects)
+        .innerJoin(commands, eq(commands.id, discardCommandEffects.commandId))
         .where(
           and(
-            eq(documentDrafts.closedBy, input.discardCommandId),
+            eq(discardCommandEffects.commandId, input.discardCommandId),
             eq(commands.accountId, input.accountId),
-            eq(documentDrafts.branchId, input.branchId),
-            ne(documentDrafts.closedCause, "left_out"),
           ),
         );
       const nodes = await deps.treeLists.read({

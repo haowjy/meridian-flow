@@ -39,7 +39,7 @@ const flush = async () => {
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-it("retries a lost answer with the identical body at 1/2/4 seconds, then stalls without sending its successor", async () => {
+it("retries a lost answer with the identical body at 1/2/4 seconds, then gives the click up as unsent and sends its successor", async () => {
   const send = vi
     .fn<(body: ApplyClick) => Promise<ApplyClickAnswer>>()
     .mockRejectedValue(new Error("lost"));
@@ -54,24 +54,9 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then stalls 
   await vi.advanceTimersByTimeAsync(2000);
   expect(send).toHaveBeenCalledTimes(3);
   await vi.advanceTimersByTimeAsync(4000);
-  expect(send).toHaveBeenCalledTimes(4);
-  expect(send.mock.calls.every(([request]) => request === first.body)).toBe(true);
-  send.mockResolvedValue({
-    status: "applied",
-    commandId: "first",
-    items: [{ node: "d", text: { landed: true } }],
-    applied: [],
-  });
-  queue.retry();
-  await flush();
-  queue.observe("draft", ["first"]);
-  await flush();
-  expect(await result).toEqual({
-    status: "applied",
-    commandId: "first",
-    items: [{ node: "d", text: { landed: true } }],
-    applied: [],
-  });
+  expect(send.mock.calls.slice(0, 4).every(([request]) => request === first.body)).toBe(true);
+  expect(await result).toEqual({ status: "unsent", commandId: "first" });
+  expect(send).toHaveBeenCalledTimes(5);
   expect(send.mock.calls.at(-1)?.[0].commandId).toBe("second");
   queue.destroy();
 });

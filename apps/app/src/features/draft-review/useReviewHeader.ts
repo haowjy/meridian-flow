@@ -9,12 +9,9 @@
  * sidebar's Changes tab (`ChangesSource`), not here.
  */
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef } from "react";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import { usePhoneShell } from "@/hooks/use-phone-shell";
 import { useDraftReview } from "./DraftReviewProvider";
-import { type BranchCommandFailure, isNote } from "./review-command-types";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
@@ -50,60 +47,12 @@ export type ReviewHeaderModel = {
 
   /** The last change's command is in flight: the review says so and is not finished. */
   completing: "apply" | "discard" | null;
-  /** What the last command on the open draft left on it (a refusal, a lost answer), when no change bar shows it. */
-  commandError: BranchCommandFailure | null;
-  /**
-   * The Work's other listed drafts that hold a refusal or a lost answer: Apply
-   * all moves on (or finishes) while its commands run, and a draft can be
-   * refused after the writer left it, so the review the writer is in must still
-   * say which drafts did not apply.
-   */
-  failedElsewhere: { row: ReviewFileTarget; failure: BranchCommandFailure }[];
   showLive: () => void;
   /** `takeFocus`: the writer's focus was in the controls, so it follows to what replaces them. */
   applyDraft: (takeFocus?: boolean) => void;
   /** Discard draft, at once: its notice has the Undo. */
   discardDraft: (takeFocus?: boolean) => void;
 };
-
-/**
- * What the Work's drafts hold as refused or lost, as the review of
- * (`documentId`, `itemKey`) reads it: its own draft's failure, and the other
- * listed drafts' separately (a draft the review moved on from still says it was
- * refused). Pure reads of the command records, so the identity row's notices
- * can read them beside the header model.
- *
- * Each failure shows once. While the focused change's bar is on screen
- * (`ReviewChangeBar`: always on a phone, with the marks on a desktop) it
- * carries the open draft's failure, and once no change is left the review's
- * status line does (`ReviewStateInline`), so `commandError` is only the fallback
- * for a review with changes and no bar showing.
- */
-export function useReviewFailures(input: {
-  documentId: string;
-  itemKey: string;
-  view: ReviewChangesView;
-}) {
-  const owner = useDraftCommandOwner();
-  const { controller, files } = useDraftReview();
-  const phone = usePhoneShell();
-  const snapshot = () => (input.itemKey ? owner.snapshot() : 0);
-  useSyncExternalStore(owner.subscribe, snapshot, snapshot);
-  const { view } = input;
-  const own = view.itemKey === input.itemKey;
-  const barCarries =
-    own && view.status === "ready" && Boolean(view.focused) && (phone || controller.marksVisible);
-  return {
-    commandError: barCarries || (own && view.finished) ? null : owner.state(input.itemKey).failure,
-    failedElsewhere: files.flatMap((row) => {
-      const failure = owner.state(row.draft.itemKey).failure;
-      // Another document's note beside what landed stays on that document.
-      return row.draft.itemKey !== input.itemKey && failure && !isNote(failure)
-        ? [{ row, failure }]
-        : [];
-    }),
-  };
-}
 
 export function useReviewHeader({
   documentId,
@@ -124,7 +73,6 @@ export function useReviewHeader({
   const ready = view.status === "ready";
   const locked = controller.dispositionLocked || view.status !== "ready";
   const { finished, completing } = view;
-  const { commandError, failedElsewhere } = useReviewFailures({ documentId, itemKey, view });
   const showLive = () => (onCloseDraftOnly ?? showDocumentLive)();
 
   // The item this header shows while it is mounted; null once the writer has left it.
@@ -157,8 +105,6 @@ export function useReviewHeader({
     canApply: ready && view.items.length > 0 && controller.canApply,
     finished,
     completing,
-    commandError,
-    failedElsewhere,
     showLive,
     applyDraft: (takeFocus) => dispose("apply", takeFocus === true),
     discardDraft: (takeFocus) => dispose("discard", takeFocus === true),

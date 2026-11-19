@@ -11,12 +11,11 @@ import {
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
 import { createDrizzleTurnInverseService } from "../../../../apps/server/server/domains/collab/adapters/drizzle-turn-inverse.ts";
 import { createDraftDispositionReader } from "../../../../apps/server/server/domains/collab/domain/draft-disposition.ts";
+import { recordApply } from "../../../../apps/server/server/domains/collab/test-support/draft-classification.ts";
 import { createAllowAllFileAccess } from "../../../../apps/server/server/domains/file-policy/index.ts";
 import { runWithEditConfirmation } from "../../../../apps/server/server/shared/edit-confirmation.ts";
 import { createTestRemovalDeps } from "../../../../apps/server/server/test-support/document-removal.ts";
 import {
-  appendApplyRecord,
-  applyRecordOf,
   REVIEW_BASE_FRAGMENT,
   readBlocks,
   writeBlocks,
@@ -27,7 +26,8 @@ import { createScratchDatabase, observe, openHarness, Y } from "../drafts-lock-f
 const pm = buildDocumentSchema();
 const scratch = await createScratchDatabase();
 const h = await openHarness(scratch.url);
-const read = createDraftDispositionReader(createDrizzleDraftDispositionStore(h.db));
+const store = createDrizzleDraftDispositionStore(h.db);
+const read = createDraftDispositionReader(store);
 const docs: Y.Doc[] = [];
 try {
   const work = await h.seedWork("g1-disposition");
@@ -47,7 +47,7 @@ try {
       },
       async recover() {},
     } as never,
-    draftCoordinator: { async deliverCommitted() {} },
+    draftCoordinator: h.coordinator,
     resolveDocumentUri: async () => "project://probe.md",
     resolveLastDocumentUri: async () => null,
     async refreshDocument() {},
@@ -127,7 +127,7 @@ try {
   discarded.doc.clientID = 654;
   discarded.text.delete(discarded.text.length - 3, 3);
   await discarded.save();
-  assert.equal((await read(discarded.draftId))?.parts[0].disposition, "discarded");
+  assert.equal((await read(discarded.draftId))?.parts[0].disposition, "pending");
   const discardedBefore = await h.readDraft(discarded.draftId);
   const discardResult = await discarded.command("revert");
   observe("revert discarded by edit", {
@@ -146,15 +146,9 @@ try {
   assert.match((await h.readDraft(deleted.draftId)).text, /The old mountain waits/);
 
   const applied = await fixture("applied");
-  const beforeApply = await read(applied.draftId);
-  assert(beforeApply);
-  // Build Apply evidence directly while lane A owns the HTTP Apply implementation.
+  // Build Apply evidence directly: the base moves to the draft's text and an effect row holds every change.
   applied.doc.clientID = 1;
   applied.doc.transact(() => {
-    appendApplyRecord(
-      applied.doc,
-      applyRecordOf(beforeApply.classifications, beforeApply.classifications.keys()),
-    );
     writeBlocks(
       applied.doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
       pm,
@@ -166,20 +160,21 @@ try {
     origin: "system",
     seq: 0,
   });
+  await recordApply(h.db, {
+    draftId: applied.draftId,
+    documentId: applied.documentId,
+    accountId: h.ids.user,
+    projectId: h.ids.project,
+    store,
+  });
   assert.equal((await read(applied.draftId))?.parts[0].disposition, "applied");
   const liveBefore = await h.liveText(applied.documentId);
   const undoResult = await applied.command("undo");
   observe("undo applied", { status: undoResult.status, message: undoResult.message });
-  assert.equal(undoResult.status, "success");
-  assert.match(undoResult.message, /reverted:/);
+  // Text the writer applied is in the manuscript: the model's Undo leaves it, in the draft and in Live.
+  assert.equal(undoResult.status, "cant_undo_changed");
   assert.equal(await h.liveText(applied.documentId), liveBefore);
-  assert.notEqual((await h.readDraft(applied.draftId)).text, liveBefore);
-  const afterRevert = await read(applied.draftId);
-  assert(afterRevert);
-  assert.equal(afterRevert.projection?.hasChanges, true);
-  assert.ok(
-    afterRevert.parts.some((p) => p.editId !== applied.editId && p.disposition === "pending"),
-  );
+  assert.equal((await h.readDraft(applied.draftId)).text, liveBefore);
 
   const closing = await Promise.all([fixture("close-one"), fixture("close-two")]);
   const partsBefore = await h.raw`select id,origin,effect from document_edit_parts order by id`;
@@ -192,42 +187,53 @@ try {
     workProjection: h.projection,
     treeLists: createTestRemovalDeps(h.db).treeLists,
   });
+  const discarding = h.discardCommand(work.branchId);
   await discard.discardLocked({
-    kernel: { branchId: work.branchId, selection: { kind: "whole" } },
-    command: h.discardCommand(work.branchId),
+    kernel: {
+      branchId: work.branchId,
+      selection: { kind: "whole" },
+      commandId: discarding.envelope.commandId,
+    },
+    command: discarding,
   });
   const closed =
-    await h.raw`select id,status,closed_cause from document_drafts where branch_id=${work.branchId} order by id`;
-  observe("Discard all draft lifecycle", closed);
+    await h.raw`select id from document_drafts where branch_id=${work.branchId} order by id`;
+  observe("Discard all leaves the drafts active", closed);
   assert.ok(closed.length >= 5);
-  assert.ok(closed.every((row) => row.status === "closed" && row.closed_cause === "discarded"));
+  // The Discard's own append records system receipts; every earlier receipt is untouched.
+  const partsAfter = await h.raw`select id,origin,effect from document_edit_parts order by id`;
+  assert.deepEqual(partsAfter.slice(0, partsBefore.length), [...partsBefore]);
   assert.deepEqual(
-    await h.raw`select id,origin,effect from document_edit_parts order by id`,
-    partsBefore,
+    (await h.raw`select id from draft_write_journal order by id`).slice(0, journalBefore.length),
+    [...journalBefore],
   );
-  assert.deepEqual(await h.raw`select id from draft_write_journal order by id`, journalBefore);
-  for (const f of closing)
-    assert.ok((await read(f.draftId))?.parts.every((p) => p.disposition === "discarded"));
+  // An open draft keeps its receipts pending after a Discard; the text reads as the base.
+  for (const f of closing) {
+    assert.ok((await read(f.draftId))?.parts.every((p) => p.disposition === "pending"));
+    assert.equal((await h.readDraft(f.draftId)).lifecycle, "active");
+  }
   assert.equal(
     (await read(applied.draftId))?.parts.find((p) => p.editId === applied.editId)?.disposition,
     "applied",
   );
   observe(
-    "closed historical Apply evidence",
-    "applied receipt retained; non-applied receipts discarded",
+    "Apply evidence",
+    "applied receipt retained; discarded receipts stay pending in an open draft",
   );
   const closedLive = await h.liveText(applied.documentId);
   const closedRevert = await applied.command("revert");
-  observe("closed draft never writable", {
+  observe("an applied draft is not reverted after a Discard", {
     status: closedRevert.status,
     message: closedRevert.message,
   });
-  assert.equal(closedRevert.status, "cant_undo_applied");
-  assert.match(closedRevert.message, /applied/i);
+  assert.equal(closedRevert.status, "nothing_to_revert");
   assert.equal(await h.liveText(applied.documentId), closedLive);
   assert.deepEqual(
-    await h.raw`select id,origin,effect from document_edit_parts order by id`,
-    partsBefore,
+    (await h.raw`select id,origin,effect from document_edit_parts order by id`).slice(
+      0,
+      partsBefore.length,
+    ),
+    [...partsBefore],
   );
   console.log("PASS G1 disposition and close");
 } finally {

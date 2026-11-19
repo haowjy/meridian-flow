@@ -23,7 +23,6 @@ import { createDrizzleBranchWriteBoundary } from "../../../../apps/server/server
 import { createDrizzleCommandDocuments } from "../../../../apps/server/server/domains/collab/adapters/drizzle-command-documents.ts";
 import { createDrizzleDocumentCommands } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-commands.ts";
 import { createDrizzleDraftDispositionStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-draft-disposition.ts";
-import { createReopenDrafts } from "../../../../apps/server/server/domains/collab/adapters/drizzle-reopen-drafts.ts";
 import { createDrizzleWorkBranchPendingStore } from "../../../../apps/server/server/domains/collab/adapters/drizzle-work-branch-pending.ts";
 import { createApplyClickService } from "../../../../apps/server/server/domains/collab/domain/apply-click.ts";
 import { createBranchReviewIdentity } from "../../../../apps/server/server/domains/collab/domain/branch-review-identity.ts";
@@ -152,14 +151,6 @@ async function fixture(
     workProjection: h.projection,
     branches: workBranches,
     coordinator: h.coordinator,
-    reopen: createReopenDrafts(h.db, {
-      coordinator: h.coordinator,
-      close: draftClose,
-      treeLists,
-      workProjection: h.projection,
-      live: h.persistence.journal,
-      scheduleLivePull: () => {},
-    }),
     live: h.persistence.journal,
     liveCoordinator: {
       deliver: async () => {
@@ -169,7 +160,6 @@ async function fixture(
     arrivals: { settle: async () => 0 },
     treeLists,
     tree: treeReader,
-    close: draftClose,
     onCommitted: async () => {},
     merged: () => {},
     measured: (m) => measure.push(m),
@@ -549,7 +539,7 @@ try {
     const f = await fixture(["Base."], ["Changed."]);
     const c = f.click();
     await applied(f, c);
-    await h.raw`update document_drafts set status='closed',closed_cause='discarded' where id=${f.draftId}`;
+    await h.raw`delete from document_drafts where id=${f.draftId}`;
     await applied(f, c);
     const next = f.click();
     next.request.commandId = randomUUID();
@@ -570,7 +560,7 @@ try {
     });
     f.close();
   });
-  await row("delayed deletion click stays bound to discarded draft after replacement", async () => {
+  await row("delayed deletion click after a Discard lands what it froze", async () => {
     const a = await fixture(["The big black cat sat."], ["The cat sat."]);
     const click = a.click();
     const discard = createDrizzleBranchDiscard(h.db, {
@@ -590,49 +580,12 @@ try {
       },
       command: discarding,
     });
-    const branch = await h.projection.mutate({ works: [a.workId] }, () =>
-      h.branches.ensureActiveLocked({
-        owner: { kind: "work", workId: a.workId },
-        projectId: h.ids.project,
-        createdBy: h.ids.user,
-        originThreadId: a.threadId,
-      }),
-    );
-    const b = await fixture(
-      ["The big black cat sat."],
-      ["The cat sat."],
-      { documentId: a.documentId, live: clone(a.live) },
-      { ...a, branchId: branch.id },
-    );
-    assert.notEqual(a.draftId, b.draftId);
-    assert.notEqual(a.branchId, b.branchId);
     const answer = await a.send(click);
-    console.log("delayed replacement answer", answer.status, await a.liveText());
-    // The Discard took the draft: the answer names it, so the writer is offered the reverse.
-    assert.deepEqual(answer, {
-      status: "applied",
-      commandId: click.request.commandId,
-      items: [
-        {
-          node: a.documentId,
-          text: {
-            landed: false,
-            settled: [
-              {
-                rule: "overtaken",
-                state: "discarded",
-                by: discarding.envelope.commandId,
-                item: a.documentId,
-              },
-            ],
-          },
-        },
-      ],
-      applied: [],
-    });
-    assert.deepEqual(await a.liveText(), ["The big black cat sat."]);
+    // The click froze the room before the Discard, so it lands what the writer saw then.
+    console.log("delayed click after Discard", answer.status, await a.liveText());
+    assert.equal(answer.status, "applied");
+    assert.deepEqual(await a.liveText(), ["The cat sat."]);
     a.close();
-    b.close();
   });
   await row("two Works merge distinct changes into one live paragraph", async () => {
     const a = await fixture(["The cat sat."], ["A cat sat."]);
@@ -838,8 +791,8 @@ try {
   const living = async (f: Awaited<ReturnType<typeof fixture>>) =>
     (await h.raw`select trash_record is null as living from tree_nodes where id=${f.documentId}`)[0]
       ?.living === true;
-  const draftStatus = async (f: Awaited<ReturnType<typeof fixture>>) =>
-    (await h.raw`select status from document_drafts where id=${f.draftId}`)[0].status;
+  const draftStays = async (f: Awaited<ReturnType<typeof fixture>>) =>
+    (await h.raw`select id from document_drafts where id=${f.draftId}`).length === 1;
   const restoredNote = (
     result: ApplyClickAnswer | CommandRunning,
     f: Awaited<ReturnType<typeof fixture>>,
@@ -855,7 +808,7 @@ try {
   await row("a document deleted live: its draft stays, Apply restores it then merges", async () => {
     const f = await fixture(["Base."], ["Changed."]);
     await deleteLive(f);
-    assert.equal(await draftStatus(f), "active");
+    assert.equal(await draftStays(f), true);
     const c = f.click();
     const result = await applied(f, c);
     assert.equal(restoredNote(result, f), true, JSON.stringify(result));
@@ -939,7 +892,7 @@ try {
         const original = f.send(c);
         await entered.wait;
         await applied(f, c);
-        await h.raw`update document_drafts set status='closed',closed_cause='discarded' where id=${f.draftId}`;
+        await h.raw`delete from document_drafts where id=${f.draftId}`;
         await h.raw`update branches set status='closed',closed_at=now() where id=${f.branchId}`;
         release.open();
         assert.equal((await original).status, "applied");
@@ -1023,7 +976,6 @@ try {
         answer.textUndone.flatMap((text) => text.groupIds),
         click.request.groupIds,
       );
-      assert.deepEqual(answer.textSkipped, []);
     }
     assert.deepEqual(await f.liveText(), ["The cat sat."]);
     const durable = await f.durable();
@@ -1076,7 +1028,6 @@ try {
       assert.equal(answer.status, "unapplied", JSON.stringify(answer));
       if (answer.status === "unapplied") {
         assert.equal(answer.textUndone[0]?.groupIds.length, 2);
-        assert.deepEqual(answer.textSkipped, []);
       }
       assert.deepEqual(await f.liveText(), ["The very cat sat.", "The dog slept."]);
       const durable = await f.durable();

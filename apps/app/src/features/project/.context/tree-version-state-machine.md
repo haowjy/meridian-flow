@@ -86,24 +86,19 @@ stateDiagram-v2
   notice ends at the next gesture or press, or when the writer opens a document from the tree.
   The stack is record ids per list copy, in memory; a reload empties it. A step `undoChange`
   refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. An Apply is one step in
-  either view (`AppliedCommand`, the one owner of the Apply's Undo): the press asks the server's
-  Un-Apply and is spent once the server answered, whatever it took back (all, part, or nothing,
-  `unappliedOf`), so it never falls through to an older step; on the Changes tab a press takes the
+  either view (`ApplyStep`, undone through `ApplyEntries`): the press asks the server's Un-Apply and
+  is spent once the server answered, so it never falls through to an older step; one that didn't
+  reach the server toasts and stays. On the Changes tab a press takes the
   latest step of any source. The applied rows in Changes carry the same step's Undo. An Apply step
   has two halves, from its answer: its text ends only by an Un-Apply, and its tree half ends by
   itself when `appliedNodes` (over the Apply's command and the restores its answer named) reads
-  empty in the list copies (`endWhenTakenBack`). With both ended it ends. The Apply's own state
-  puts it on the stack and takes it off, with its watch and its notice: a press goes past one whose
-  Un-Apply is out, and never reaches one that ended.
-- **A step that waits for a closed owner keeps its place.** An Un-Apply that held something for an
-  archived or deleted Work or a chat in Trash (`held`), or a tree step whose every record would
+  empty in the list copies (`endWhenTakenBack`). With both ended it ends. It sits on the stack
+  until an Un-Apply took something back or it ended.
+- **A step that waits for a closed owner keeps its place.** A tree step whose every record would
   change such an owner's notes, goes back where it was, and its rows say who it waits for ("The
   move stayed: Notes is archived. Unarchive it to undo this."). A press passes over it while every
   owner it waits for is closed (`waitsForClosed`) and takes the step before it; once one reopens,
-  the next press takes it. Closed is read in the tab (`useClosedOwners`), and for an Apply the held
-  answer counts until a read of the owner that started after the press lands (`readAt`); then the
-  tab's read decides, and an owner it can't tell about reads open, so a stale list costs one
-  answered press. A held line never shows when the owner reopened while the press was out.
+  the next press takes it. Closed is read in the tab at each press (`useClosedOwners`).
 - **A delete that hides nothing rests.** A delete's step whose records are in force but hide
   nothing now (an Apply brought back what it took, or a create keeps its folder standing) keeps its
   place too: a press passes over it and its rows offer no Undo (`rests`), until it hides something

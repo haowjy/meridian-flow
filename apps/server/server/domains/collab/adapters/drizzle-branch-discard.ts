@@ -1,31 +1,47 @@
 /**
- * Postgres Discard (contract §12): the locked kernel, `discardItems`' transaction around
- * it, and Work purge's disposal of a purged Work's branches (§2.6, F10), which runs the
- * same kernel inside purge's transaction after purge's own lifecycle proof.
+ * Postgres Discard (contract §12): the locked kernel, `discardItems`' transaction around it, and
+ * Work purge's disposal of a purged Work's branches (§2.6, F10).
  *
- * The tree half is the package's `discardDraft`, run through `treeListStore.submit` in each
- * list the Work spans: the Work's pending records are settled discarded with the command's id.
- * A drafted create then is in no view, and its document and text stay until retention purges
- * them; nothing here releases a document.
+ * A Discard is one command that writes text and records what it took. The tree half is the
+ * package's `discardDraft`, run through `treeListStore.submit` in each list the Work spans: the
+ * Work's pending records are settled discarded with the command's id. The text half merges the
+ * review base's side of the chosen changes into the draft as an append, under the draft's hold,
+ * and stores the delta in `discard_command_effects`, which Restore reads. The draft stays open.
+ * A drafted create is then in no view, and its document and text stay until retention purges them;
+ * nothing here releases a document.
  *
  * Lock order (`collab/.context/CONTEXT.md`), after the command's claim: the Work (purge: threads,
  * then the Work), the branch, the list's lock (inside `submit`), the item documents' mutexes
  * in ID order, then draft rows as the kernel writes them.
  *
- * Every draft the kernel closes retires after commit through the one close.
  */
 
+import { discardChanges, type StoredDelta } from "@meridian/agent-edit/content-merge";
+import {
+  blocksEqual,
+  REVIEW_BASE_FRAGMENT,
+  readBlocks,
+  writeBlocks,
+} from "@meridian/agent-edit/diff";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import type { BranchId, CommandId, UserId, WorkId } from "@meridian/contracts";
 import type { Settlement } from "@meridian/contracts/commands";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentDrafts } from "@meridian/database/schema";
+import { discardCommandEffects, documentDrafts } from "@meridian/database/schema";
 import { discardDraft, newId, pendingRecords, recordsOfItem } from "@meridian/project-tree";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
+import {
+  ApplyClickUnsynced,
+  containsSnapshot,
+  decodeClickedSnapshot,
+} from "../domain/apply-click.js";
 import type {
   BranchDiscardStore,
   DiscardEnded,
@@ -33,17 +49,18 @@ import type {
   DiscardKernelResult,
 } from "../domain/branch-discard.js";
 import type { Branches } from "../domain/branches.js";
+import { draftSchema } from "../domain/draft-changes.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import { draftHoldsText } from "../domain/draft-projection.js";
-import type { DraftCloseCause } from "../domain/draft-retirement.js";
 import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { treeListOfNode, treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { noteOf, type Settled, settlementOf } from "./drizzle-settlement-of.js";
+import { writeTextAnswer } from "./drizzle-text-answer.js";
 
 type KernelDeps = {
-  close: Pick<DraftClose, "closeDrafts">;
+  close: Pick<DraftClose, "endDrafts">;
   branches: Pick<Branches, "close">;
   treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
 };
@@ -103,53 +120,25 @@ async function discardTreeRecords(
 }
 
 /**
- * Closes the branch's drafts on these documents, or on all of them, each naming the Discard
- * command (`closed_by`), whose restore reopens them. Closing keeps each draft's bytes and apply
- * record: the receipt and model `write undo` read them to tell applied parts
- * (`cant_undo_applied`) from discarded ones (`cant_undo_discarded`).
+ * Work purge's disposal of one branch: every pending tree record of the Work is settled discarded
+ * in each list, its drafts' rooms are named for retirement (the purge's cascade deletes the rows:
+ * no writer is left to restore them), then the branch row closes. The caller holds the branch.
  */
-async function closeBranchDrafts(
+async function disposeBranchLocked(
   db: Database,
   deps: KernelDeps,
-  input: { branchId: BranchId; command?: string },
-  cause: Exclude<DraftCloseCause, object>,
-  documentIds?: readonly DocumentId[],
+  input: { branchId: BranchId },
 ): Promise<void> {
-  if (documentIds?.length === 0) return;
-  const { branchId } = input;
-  await deps.close.closeDrafts(
-    currentDrizzleDb(db),
-    documentIds ? { documentIds, branchId } : { branchId },
-    cause,
-    input.command as CommandId | undefined,
-  );
-}
-
-/**
- * The kernel's whole-branch arm: every pending tree record of the Work is settled discarded in
- * each list, its drafts close, then the branch row closes. The caller holds the branch.
- */
-async function discardWholeLocked(
-  db: Database,
-  deps: KernelDeps,
-  input: { branchId: BranchId; userId?: UserId; commandId?: string },
-): Promise<DiscardKernelResult> {
-  await discardTreeRecords(db, deps, { ...input, commandId: input.commandId ?? newId() });
-  await closeBranchDrafts(
-    db,
-    deps,
-    { branchId: input.branchId, command: input.commandId },
-    "branch_closed",
-  );
+  await discardTreeRecords(db, deps, { ...input, commandId: newId() });
+  await deps.close.endDrafts(currentDrizzleDb(db), { branchId: input.branchId });
   await deps.branches.close(input.branchId, new Date());
   // The branch ended and its drafts closed: the rows of its view go.
   await deps.treeLists.resync(await treeListsOfBranch(db, input.branchId));
-  return { closed: [], settled: [] };
 }
 
 /**
- * The branch's active text drafts on these documents, row-locked, each with whether it holds a
- * change at its committed revision. The projection's `has_effect` stands in only where its
+ * The branch's active text drafts on these documents, row-locked, each with its id and whether it
+ * holds a change at its committed revision. The projection's `has_effect` stands in only where its
  * watermark is that revision; a lagging one never decides, the draft's text is read.
  */
 async function lockActiveDrafts(
@@ -157,7 +146,7 @@ async function lockActiveDrafts(
   coordinator: Pick<DraftCoordinator, "loadBase">,
   branchId: BranchId,
   documentIds: readonly DocumentId[],
-): Promise<ReadonlyMap<DocumentId, { holdsText: boolean }>> {
+): Promise<ReadonlyMap<DocumentId, { id: string; holdsText: boolean }>> {
   const rows = await currentDrizzleDb(db)
     .select({
       id: documentDrafts.id,
@@ -171,15 +160,15 @@ async function lockActiveDrafts(
       and(
         eq(documentDrafts.branchId, branchId),
         eq(documentDrafts.kind, "work_draft"),
-        eq(documentDrafts.status, "active"),
         inArray(documentDrafts.documentId, [...documentIds]),
       ),
     )
     .orderBy(documentDrafts.id)
     .for("update");
-  const out = new Map<DocumentId, { holdsText: boolean }>();
+  const out = new Map<DocumentId, { id: string; holdsText: boolean }>();
   for (const row of rows)
     out.set(row.documentId, {
+      id: row.id,
       holdsText:
         row.judgedAt === row.revision
           ? row.hasEffect
@@ -243,6 +232,26 @@ async function untakenNotes(
   });
 }
 
+/**
+ * The base and text of `draft` at the snapshot a Discard's ids were read at. A snapshot the draft
+ * does not hold yet (the writer's room is ahead of what reached the server) is refused as the room
+ * Apply refuses it, and the client sends the same command again.
+ */
+function cutOf(draft: Y.Doc, encoded: string | undefined) {
+  if (!encoded) return undefined;
+  const snapshot = decodeClickedSnapshot(encoded);
+  if (!containsSnapshot(Y.snapshot(draft), snapshot)) throw new ApplyClickUnsynced();
+  const cut = Y.createDocFromSnapshot(draft, snapshot, new Y.Doc({ gc: false }));
+  try {
+    return {
+      base: readBlocks(cut.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema),
+      text: readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema),
+    };
+  } finally {
+    cut.destroy();
+  }
+}
+
 export type DrizzleBranchDiscard = BranchDiscardStore & {
   /** The locked kernel: the caller holds §14's locks and proved the Work's state. */
   kernel(input: DiscardKernelInput): Promise<DiscardKernelResult>;
@@ -251,7 +260,7 @@ export type DrizzleBranchDiscard = BranchDiscardStore & {
 export function createDrizzleBranchDiscard(
   db: Database,
   deps: KernelDeps & {
-    coordinator: Pick<DraftCoordinator, "loadBase">;
+    coordinator: Pick<DraftCoordinator, "loadBase" | "prepareAppend">;
     branches: Pick<Branches, "lockActive" | "close">;
     workProjection: Pick<WorkProjectionMutation, "mutate">;
   },
@@ -274,61 +283,142 @@ export function createDrizzleBranchDiscard(
     return { closed: documents, settled: await untakenNotes(db, deps, input.branchId, documents) };
   }
 
-  async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
+  /**
+   * Merges the review base's side of `text` into the draft, as an append under its row lock, and
+   * records what it took. Null when the draft held none of the changes.
+   */
+  async function discardText(input: {
+    commandId: string;
+    documentId: DocumentId;
+    draftId: string;
+    text: "all" | readonly string[];
+    snapshot?: string;
+  }): Promise<boolean> {
+    const base = await deps.coordinator.loadBase(input.draftId);
+    let taken: ReturnType<typeof discardChanges> = null;
+    let holds = true;
+    const write = deps.coordinator.prepareAppend(base, [], {
+      work: "active",
+      authorServerRows(prefix) {
+        const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+        const before = readBlocks(prefix.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema);
+        const text = readBlocks(fragment, draftSchema);
+        taken = discardChanges(
+          draftSchema,
+          before,
+          text,
+          input.text,
+          cutOf(prefix, input.snapshot),
+        );
+        if (!taken) return [];
+        const next = taken.text;
+        holds = !blocksEqual(before, next);
+        return captureMutationUpdates(prefix, () =>
+          prefix.transact(() => writeBlocks(fragment, draftSchema, next)),
+        );
+      },
+    });
+    try {
+      await write.persist();
+      write.transfer();
+    } finally {
+      write.dispose();
+    }
+    if (!taken) return false;
+    const tx = currentDrizzleDb(db);
+    await tx.insert(discardCommandEffects).values({
+      commandId: input.commandId as CommandId,
+      documentId: input.documentId,
+      draftId: input.draftId,
+      delta: (taken as { delta: StoredDelta }).delta,
+    });
+    // A draft left with nothing to review leaves the list at this commit, not at the judgement.
+    if (!holds) {
+      const [row] = await tx
+        .select({ revision: documentDrafts.revision })
+        .from(documentDrafts)
+        .where(eq(documentDrafts.id, input.draftId));
+      if (row)
+        await writeTextAnswer(db, deps.treeLists, {
+          draftId: input.draftId,
+          revision: row.revision,
+          hasEffect: false,
+          hasEffectRevision: row.revision,
+          textChanges: 0,
+          listsHeld: true,
+        });
+    }
+    return true;
+  }
+
+  /**
+   * Discard all: every pending tree record of the Work, and the text of every draft it has. The
+   * branch stays open; the drafts do too.
+   */
+  async function discardAll(input: DiscardKernelInput): Promise<DiscardKernelResult> {
     const { branchId } = input;
     const commandId = input.commandId ?? newId();
-    if (input.selection.kind === "whole")
-      return discardWholeLocked(db, deps, {
-        branchId,
-        userId: input.userId,
-        commandId: input.commandId,
-      });
+    const documents = (
+      await currentDrizzleDb(db)
+        .select({ documentId: documentDrafts.documentId })
+        .from(documentDrafts)
+        .where(and(eq(documentDrafts.branchId, branchId), eq(documentDrafts.kind, "work_draft")))
+    ).map((row) => row.documentId);
+    await lockItems(branchId, documents);
+    await discardTreeRecords(db, deps, { branchId, userId: input.userId, commandId });
+    const drafts = await lockActiveDrafts(db, deps.coordinator, branchId, documents);
+    for (const [documentId, draft] of drafts)
+      await discardText({ commandId, documentId, draftId: draft.id, text: "all" });
+    // The tree's rows are the ones the Work's view showed: they go with the records.
+    await deps.treeLists.resync(await treeListsOfBranch(db, branchId));
+    return { closed: documents, settled: [] };
+  }
+
+  async function kernel(input: DiscardKernelInput): Promise<DiscardKernelResult> {
+    const { branchId } = input;
+    if (input.selection.kind === "whole") return discardAll(input);
+    const commandId = input.commandId ?? newId();
     const { items } = input.selection;
     const documents = items.map((item) => item.documentId);
     // Before the records are written: the rows they write are the ones derivation locks under a
     // document's key.
     await lockItems(branchId, documents);
-    // The Work's records on these documents settle discarded, in the list that holds them. A
-    // created document is then in no view; it and its text stay until retention purges them.
-    const { had, created } = await discardTreeRecords(db, deps, {
-      branchId,
-      userId: input.userId,
-      commandId,
-      documents,
-    });
+    // The Work's records on the items that ask for them settle discarded, in the list that holds
+    // them. A created document is then in no view; it and its text stay until retention purges it.
+    const treeDocuments = items.filter((item) => item.tree).map((item) => item.documentId);
+    const { had, created } =
+      treeDocuments.length > 0
+        ? await discardTreeRecords(db, deps, {
+            branchId,
+            userId: input.userId,
+            commandId,
+            documents: treeDocuments,
+          })
+        : { had: new Set<DocumentId>(), created: new Set<DocumentId>() };
     const drafts = await lockActiveDrafts(db, deps.coordinator, branchId, documents);
-    // A tree-only Discard leaves the text to the writer's own Discard in the room; a whole-item
-    // Discard closes the document's text draft too. An item with no record and no changed draft
-    // has nothing for this command to take: `untaken` says what became of it.
-    const textClosed: DocumentId[] = [];
+    // An item with no record and no changed draft has nothing for this command to take:
+    // `untaken` says what became of it.
     const closed: DocumentId[] = [];
     const untaken: DocumentId[] = [];
     for (const item of items) {
       const id = item.documentId;
-      if (created.has(id)) {
-        closed.push(id);
-        continue;
-      }
-      const holdsText = drafts.get(id)?.holdsText ?? false;
-      if (item.ends === "tree") {
-        if (!had.has(id)) untaken.push(id);
-        else if (!holdsText) closed.push(id);
-        continue;
-      }
-      if (!had.has(id) && !holdsText) {
-        untaken.push(id);
-        continue;
-      }
-      if (drafts.has(id)) textClosed.push(id);
-      closed.push(id);
+      const draft = drafts.get(id);
+      // A creation only the Work shows goes whole.
+      const text = created.has(id) ? "all" : item.text;
+      const tookText =
+        text && draft
+          ? await discardText({
+              commandId,
+              documentId: id,
+              draftId: draft.id,
+              text,
+              ...(item.snapshot ? { snapshot: item.snapshot } : {}),
+            })
+          : false;
+      if (!had.has(id) && !tookText) untaken.push(id);
+      // Only a whole item leaves review; a tree-only Discard leaves a draft that holds text there.
+      else if (text === "all" || (!text && !draft?.holdsText)) closed.push(id);
     }
-    await closeBranchDrafts(
-      db,
-      deps,
-      { branchId, command: input.commandId },
-      "document_discarded",
-      [...new Set([...created, ...textClosed])],
-    );
     const settled = await untakenNotes(db, deps, branchId, untaken);
     return { closed: [...closed, ...untaken], settled };
   }
@@ -391,7 +481,7 @@ export function createDrizzleWorkBranchDisposal(
     const branchIds = owned.map((branch) => branch.id).sort();
     for (const branchId of branchIds) {
       if (await deps.branches.lockActive(branchId))
-        await discardWholeLocked(db, deps, { branchId });
+        await disposeBranchLocked(db, deps, { branchId });
     }
     return { releasedObjects: [] };
   }

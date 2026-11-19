@@ -4,17 +4,16 @@
  * they reset, and rebuilt on request. Draft rooms hold no lease. Retaining and
  * releasing only record ownership; a room opens on `get` or `rebuild`.
  *
- * A closed room keeps its local copy: a Discard can be undone (Undo Discard reopens the same draft
- * row, and the restarted session replays the copy into it), so the copy goes with its document
- * (`LocalDocumentCopies`), never with the room. Its session retires with the `closed` cause
- * (`closedCause`), which hands the copy's unsent words back as a notice and keeps the copy. It stays
- * closed until a restore reopens it; a
- * reader that comes to it meanwhile reads the session an owner still shows, if one does.
+ * A room closes only when its draft is deleted (its Work or document was purged). It keeps its
+ * local copy, which goes with its document (`LocalDocumentCopies`), never with the room. Its
+ * session retires with the `closed` cause (`closedCause`), which hands the copy's unsent words back
+ * as a notice and keeps the copy. A reader that comes to it meanwhile reads the session an owner
+ * still shows, if one does.
  *
  * A room whose updates the server kept refusing (`updatesRefused`), or whose draft the server
- * closed (`draftClosed`: it is in Trash), is not retired on that close: it stays open, read-only,
- * so its owner can show its text, until the owner rebuilds it (a restore reopened the draft) or
- * the last owner leaves, when it retires without the grace.
+ * closed (`draftClosed`), is not retired on that close: it stays open, read-only, so its owner can
+ * show its text, until the owner rebuilds it or the last owner leaves, when it retires without the
+ * grace.
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
@@ -23,7 +22,7 @@ import type { DocumentSessionTeardownOwner } from "./document-session-teardown-o
 import type { CopyHold } from "./local-document-copies";
 
 /** A draft room and the document it drafts: the room's copy is kept under the document, and goes with it. */
-/** How the server ended a draft: `closed` is a Discard (Restore from Trash reopens it), `removed` is its document going. */
+/** How the server ended a draft: `closed` is its Work going, `removed` is its document going. */
 export type DraftCloseCause = "closed" | "removed";
 
 export type DraftRoomRef = { roomKey: string; documentId: string };
@@ -72,7 +71,7 @@ export class DraftRoomPool {
     return this.documents.get(roomKey);
   }
 
-  /** Why the server closed this room's draft, until a restore reopens it. */
+  /** Why the server closed this room's draft. */
   closedCause(roomKey: string): DraftCloseCause | undefined {
     return this.closed.get(roomKey);
   }
@@ -168,16 +167,6 @@ export class DraftRoomPool {
     if (session && !(keptForOwner(session) && this.isRetained(roomKey)))
       this.retire(roomKey, session);
     await this.deps.teardownOwner.drainRoom({ kind: "draft", roomKey });
-  }
-
-  /**
-   * A restore reopened the draft: the next `get` opens its room again. Returns the closed session
-   * an owner still shows, for its transport to restart in place.
-   */
-  reopen(roomKey: string): DocumentSession | null {
-    this.closed.delete(roomKey);
-    const session = this.rooms.get(roomKey);
-    return session && draftClosed(session.getSnapshot().connectionState) ? session : null;
   }
 
   /** The account runtime is closing: forget every owner and retire every room. */

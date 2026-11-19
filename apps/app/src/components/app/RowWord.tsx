@@ -8,8 +8,7 @@ import { cn } from "@/lib/utils";
  * What a row says about what happened to it, in the row's trailing place (ListRow's `notice`),
  * never on a line of its own: "Undo" in jade, or a muted word with or without a mark ("Moved
  * back", "Applied", "Deleted"). Every short word on a row whose reason is a sentence is one, so
- * a phone reaches the sentence too. Hover, keyboard focus and a long press show the sentence ("Deleted just now.
- * Undo puts it back."); a click or a tap does the word's one action, and a word with none shows
+ * a phone reaches the sentence too. Hover, keyboard focus and a long press show the sentence ("Deleted"); a click or a tap does the word's one action, and a word with none shows
  * the sentence, which stays until the next tap elsewhere. The host decides how long the word
  * shows: until the writer's next action there, or leaving.
  */

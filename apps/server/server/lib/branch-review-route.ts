@@ -8,7 +8,6 @@
 
 import type { BranchId, CommandId, DraftOwner } from "@meridian/contracts";
 import {
-  type DraftItemKey,
   type DraftOwnerKey,
   draftItemKey,
   draftOwnerFromKey,
@@ -162,7 +161,7 @@ export async function requireListedOwner(
 
 // --- Request bodies ----------------------------------------------------------------------------
 
-const Base = {
+const _Base = {
   branchId: z.string().uuid(),
   itemKey: z.string().max(80),
   commandId: CommandIdSchema,
@@ -247,11 +246,6 @@ const ApplyTextBody = z.union([
   z.strictObject({
     draftId: z.string().min(1).max(128),
     whole: z.literal(true),
-    groupIds: z
-      .array(z.string().min(1))
-      .min(1)
-      .refine((ids) => new Set(ids).size === ids.length)
-      .optional(),
   }),
 ]);
 const ApplyItemsBody = z.strictObject({
@@ -278,20 +272,11 @@ const UndoDiscardBody = z.strictObject({
   commandId: CommandIdSchema,
   discardCommandId: CommandIdSchema,
 });
-// Not strict: a tab still on the old code sends `branchId` and `draftSeenAt` too, and they are dropped.
-const DiscardBody = z.object({
-  itemKey: Base.itemKey,
-  commandId: Base.commandId,
-  ends: z.enum(["tree", "item"]),
-});
-
 function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: string): z.infer<S> {
   const parsed = schema.safeParse(body ?? {});
   if (!parsed.success) throw createError({ statusCode: 400, message: `Invalid ${what} request` });
   return parsed.data;
 }
-
-export const parseDraftDiscardItem = (body: unknown) => parseBody(DiscardBody, body, "Discard");
 
 // --- Commands: envelope, lookup, outcome -------------------------------------------------------
 
@@ -579,21 +564,6 @@ async function pendingTreeChange(
 
 // --- Commands ----------------------------------------------------------------------------------
 
-/** Resolves a command's item for a URL document, or null when it is not that document's item. */
-async function commandItem(
-  deps: BranchRouteServices,
-  input: { branchId: BranchId; documentId: DocumentId; request: { itemKey: string } },
-): Promise<DraftReviewItem | null> {
-  const resolved = await deps.documentSync.draftReview.resolveItem({
-    itemKey: input.request.itemKey,
-  });
-  return resolved &&
-    resolved.documentId === input.documentId &&
-    resolved.branchId === input.branchId
-    ? resolved.item
-    : null;
-}
-
 /** What a command's pre-effect phase decided: its effect, and the grants it runs under. */
 type PreparedCommand = {
   grants: FileGrant<"edit" | "command">[];
@@ -698,7 +668,7 @@ async function applyItems(
 ): Promise<ApplyClickAnswer | CommandRunning> {
   const access = await requireBranchIdentity(deps, input);
   const { commandId } = envelope;
-  const lookup = async (): Promise<ApplyClickAnswer | null> =>
+  const _lookup = async (): Promise<ApplyClickAnswer | null> =>
     replay<ApplyClickResult>(
       await deps.documentSync.draftReview.lookupCommand(envelope),
       commandId,
@@ -838,16 +808,35 @@ async function branchCommand<Request extends { commandId: string }, Answer, Acce
   });
 }
 
-/** Apply any selection of nodes, a folder and what is under it, as one command. */
-export function handleApplyItemsRequest(
+const RedoBody = z.strictObject({ commandId: CommandIdSchema, redoOf: CommandIdSchema });
+
+/**
+ * Apply any selection of nodes, a folder and what is under it, as one command; or, with `redoOf`,
+ * what an Un-Apply took back, read from its own records (`commandDocuments.redoItems`). A Redo
+ * that finds nothing to apply answers with no item and stores nothing.
+ */
+export async function handleApplyItemsRequest(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },
 ): Promise<ApplyClickAnswer | CommandRunning> {
-  const { restore: _ignored, ...request } = parseBody(ApplyItemsBody, input.request, "Apply");
+  const redo = RedoBody.safeParse(input.request);
+  const request: ParsedApply = redo.success
+    ? {
+        commandId: redo.data.commandId as CommandId,
+        items: await deps.documentSync.draftReview.commandDocuments.redoItems({
+          unapplyCommandId: redo.data.redoOf as CommandId,
+          accountId: input.userId,
+        }),
+      }
+    : (({ restore: _ignored, ...parsed }) => parsed as ParsedApply)(
+        parseBody(ApplyItemsBody, input.request, "Apply"),
+      );
+  if (redo.success && request.items.length === 0)
+    return { status: "applied", commandId: request.commandId, items: [], applied: [] };
   return applyItems(
     deps,
     input,
-    request as ParsedApply,
+    request,
     envelopeOf(input, {
       commandId: request.commandId,
       kind: "apply",
@@ -1000,50 +989,8 @@ export function handleUndoDiscardRequest(
 }
 
 /**
- * Item Discard through the one kernel (§12.3): the move or delete only, or the whole item, as
- * the request says. A document deleted live authorizes through the draft (§13.3).
- */
-export async function handleDiscardWorkDraftRequest(
-  deps: BranchRouteServices,
-  input: CommandScope & {
-    documentId: DocumentId;
-    request: ReturnType<typeof parseDraftDiscardItem>;
-  },
-): Promise<CommandRouteResult> {
-  const { request } = input;
-  const { commandId: _, ...body } = request;
-  const envelope = envelopeOf(input, {
-    commandId: request.commandId,
-    kind: "discard",
-    branchId: input.branchId,
-    selectors: { itemKey: request.itemKey, documentId: input.documentId },
-    body,
-  });
-  return commandIngress(deps, input, envelope, async ({ owner }) => {
-    // An item the branch holds nothing on has no row to resolve or authorize: the kernel says what
-    // became of it.
-    const item = await commandItem(deps, input);
-    return {
-      grants: item && owner ? await discardGrants(deps, { ...input, owner, items: [item] }) : [],
-      effect: () =>
-        deps.documentSync.draftReview.discardItem({
-          item: item ?? {
-            branchId: input.branchId,
-            itemKey: request.itemKey as DraftItemKey,
-            documentId: input.documentId,
-            origin: "edited",
-          },
-          ends: request.ends,
-          userId: input.userId,
-          envelope,
-        }),
-    };
-  });
-}
-
-/**
- * The branch's Discard (§12.3), one server command: Discard all, which always closes the branch,
- * or a selection of nodes. A selected document needs the draft's grant, as an item Discard does;
+ * The Discard (§12.3), one server command: Discard all, or a selection of nodes, each with what is
+ * taken from it. A selected document needs the draft's grant, as an item Discard does;
  * a folder has no file of its own, and the branch's identity proved the writer owns the project.
  */
 export async function handleDiscardBranchRequest(
@@ -1090,8 +1037,9 @@ export async function handleDiscardBranchRequest(
         kind: "items",
         items: request.items.map((entry) => ({
           documentId: entry.node as DocumentId,
-          origin: byNode.get(entry.node)?.origin ?? "edited",
-          ends: entry.ends,
+          tree: entry.tree === true,
+          text: entry.text ?? null,
+          ...(entry.snapshot ? { snapshot: entry.snapshot } : {}),
         })),
       }),
     };
