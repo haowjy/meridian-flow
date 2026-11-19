@@ -156,7 +156,7 @@ export const d22ConcurrentUndo: Probe = {
   name: "d22-concurrent-undo",
   decision: "D22",
   expected:
-    "live and draft: both answer `success`; kinds `write, undo`; the text reverted once; no `40P01`",
+    "live and draft: one answers `success`, the other `cant_undo_changed` (the commit took nothing); kinds `write, undo`; the text reverted once; no `40P01`",
   async run(harness) {
     {
       const seeded = await seedModelLiveWrite(harness, "two-undo-live");
@@ -164,7 +164,7 @@ export const d22ConcurrentUndo: Probe = {
       const kinds = await editKinds(harness, seeded.documentId);
       const text = await harness.liveText(seeded.documentId);
       observe("live", { statuses, kinds, text });
-      assert.deepEqual(statuses, ["success", "success"]);
+      assert.deepEqual(statuses, ["cant_undo_changed", "success"]);
       assert.ok(
         statuses.every((status) => !/Error/.test(status)),
         statuses.join(", "),
@@ -190,7 +190,7 @@ export const d22ConcurrentUndo: Probe = {
       const kinds = await editKinds(harness, seeded.documentId);
       const draft = await harness.readDraft(seeded.draftId);
       observe("draft", { statuses, kinds, text: draft.text, revision: draft.revision });
-      assert.deepEqual(statuses, ["success", "success"]);
+      assert.deepEqual(statuses, ["cant_undo_changed", "success"]);
       assert.ok(
         statuses.every((status) => !/Error/.test(status)),
         statuses.join(", "),
