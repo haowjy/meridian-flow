@@ -85,7 +85,7 @@ export function DraftReviewBand({
   });
   const focusInControls = () => controlsRef.current?.contains(document.activeElement) ?? false;
   const { controller, view, locked, finished } = header;
-  // A Discard that discarded nothing (the closed Work returned it, or an Apply took it first),
+  // A Discard that discarded nothing (an Apply took it first),
   // from this band or its change bar.
   const bounce = useDocumentNotice(controller.projectId, props.documentId);
   const { status } = view;

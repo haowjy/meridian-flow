@@ -179,7 +179,6 @@ async function pendingText(tx: DrizzleDb, drafts: readonly string[]) {
       and(
         inArray(documentDrafts.branchId, [...drafts]),
         eq(documentDrafts.kind, "work_draft"),
-        eq(documentDrafts.status, "active"),
         // A draft an Apply emptied keeps nothing; one not judged since its last write may hold text.
         sql`(${documentDrafts.hasEffect} OR ${documentDrafts.hasEffectRevision} < ${documentDrafts.revision})`,
       ),

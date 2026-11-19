@@ -14,7 +14,6 @@
  * then the Work), the branch, the list's lock (inside `submit`), the item documents' mutexes
  * in ID order, then draft rows as the kernel writes them.
  *
- * Work purge's disposal alone still closes drafts, through the one close, after commit.
  */
 
 import { discardChanges, type StoredDelta } from "@meridian/agent-edit/content-merge";
@@ -55,7 +54,7 @@ import { noteOf, type Settled, settlementOf } from "./drizzle-settlement-of.js";
 import { writeTextAnswer } from "./drizzle-text-answer.js";
 
 type KernelDeps = {
-  close: Pick<DraftClose, "closeDrafts">;
+  close: Pick<DraftClose, "endDrafts">;
   branches: Pick<Branches, "close">;
   treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
 };
@@ -116,8 +115,8 @@ async function discardTreeRecords(
 
 /**
  * Work purge's disposal of one branch: every pending tree record of the Work is settled discarded
- * in each list, its drafts close (the Work is being deleted: no writer is left to restore them),
- * then the branch row closes. The caller holds the branch.
+ * in each list, its drafts' rooms are named for retirement (the purge's cascade deletes the rows:
+ * no writer is left to restore them), then the branch row closes. The caller holds the branch.
  */
 async function disposeBranchLocked(
   db: Database,
@@ -125,12 +124,7 @@ async function disposeBranchLocked(
   input: { branchId: BranchId },
 ): Promise<void> {
   await discardTreeRecords(db, deps, { ...input, commandId: newId() });
-  await deps.close.closeDrafts(
-    currentDrizzleDb(db),
-    { branchId: input.branchId },
-    "branch_closed",
-    undefined,
-  );
+  await deps.close.endDrafts(currentDrizzleDb(db), { branchId: input.branchId });
   await deps.branches.close(input.branchId, new Date());
   // The branch ended and its drafts closed: the rows of its view go.
   await deps.treeLists.resync(await treeListsOfBranch(db, input.branchId));
@@ -160,7 +154,6 @@ async function lockActiveDrafts(
       and(
         eq(documentDrafts.branchId, branchId),
         eq(documentDrafts.kind, "work_draft"),
-        eq(documentDrafts.status, "active"),
         inArray(documentDrafts.documentId, [...documentIds]),
       ),
     )
@@ -335,13 +328,7 @@ export function createDrizzleBranchDiscard(
       await currentDrizzleDb(db)
         .select({ documentId: documentDrafts.documentId })
         .from(documentDrafts)
-        .where(
-          and(
-            eq(documentDrafts.branchId, branchId),
-            eq(documentDrafts.kind, "work_draft"),
-            eq(documentDrafts.status, "active"),
-          ),
-        )
+        .where(and(eq(documentDrafts.branchId, branchId), eq(documentDrafts.kind, "work_draft")))
     ).map((row) => row.documentId);
     await lockItems(branchId, documents);
     await discardTreeRecords(db, deps, { branchId, userId: input.userId, commandId });

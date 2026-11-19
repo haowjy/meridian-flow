@@ -10,7 +10,6 @@ import type {
   BranchDiscardResponse,
   DocumentDraftHintsResponse,
   DraftMetadataResponse,
-  DraftState,
   DraftStatesRequest,
   DraftStatesResponse,
   DraftsProvenanceRequest,
@@ -52,16 +51,16 @@ export async function listOwnerDrafts(projectId: string, owner: string): Promise
   };
 }
 
-/** The state of each of these draft ids the account has (open, or why it closed), asked in as many requests as the limit needs. */
-export async function listDraftStates(draftIds: string[]): Promise<Map<string, DraftState>> {
-  const states = new Map<string, DraftState>();
+/** Which of these draft ids the account still has, asked in as many requests as the limit needs. */
+export async function listOpenDrafts(draftIds: string[]): Promise<ReadonlySet<string>> {
+  const open = new Set<string>();
   for (let at = 0; at < draftIds.length; at += DRAFT_STATES_MAX) {
     const answer = await postJson<DraftStatesResponse>(apiDraftStatesPath(), {
       draftIds: draftIds.slice(at, at + DRAFT_STATES_MAX),
     } satisfies DraftStatesRequest);
-    for (const [id, state] of Object.entries(answer.states)) states.set(id, state);
+    for (const id of answer.open) open.add(id);
   }
-  return states;
+  return open;
 }
 
 /** The authorship evidence of an owner's drafts, many in one request. */

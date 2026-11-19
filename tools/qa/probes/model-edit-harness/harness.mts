@@ -361,12 +361,11 @@ export async function draftDoc(h: Harness, draftId: string) {
 
 /** The document's Work drafts as stored, oldest first: each one's status and paragraphs. */
 export async function drafts(h: Harness, documentId: string) {
-  const found = await h.raw<{ id: string; status: string }[]>`
-    select id, status from document_drafts
+  const found = await h.raw<{ id: string }[]>`
+    select id from document_drafts
     where document_id=${documentId} and kind='work_draft' order by created_at, id`;
   return Promise.all(
     found.map(async (draft) => ({
-      status: draft.status,
       doc: paragraphs((await h.readDraft(draft.id)).text),
     })),
   );

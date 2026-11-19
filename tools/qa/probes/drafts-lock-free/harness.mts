@@ -149,7 +149,7 @@ export async function openHarness(
         kind: "discard" as const,
         digest: `probe-${branchId}`,
       },
-      result: () => ({ status: "discarded" as const, branchId, closed: [] }),
+      result: () => ({ status: "discarded" as const, branchId, closed: [], whole: true }),
     }),
     projection,
     seeds,

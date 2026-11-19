@@ -199,8 +199,7 @@ it("an already-connected live room sees Undo without a repairing read", async ()
     ).toMatchObject({ status: "success", phase: "committed" });
     // Reading the fixture creates an empty default draft. Retire it before observing the no-draft room.
     await db
-      .update(schema.documentDrafts)
-      .set({ status: "closed", closedCause: "discarded" })
+      .delete(schema.documentDrafts)
       .where(
         and(
           eq(schema.documentDrafts.documentId, ALPHA_ID),

@@ -271,11 +271,8 @@ export function createApplyClickService(input: {
           branchId: command.branchId,
         });
         // Receipts are captured after this replica, so they cover every item a contained click can name.
-        const captured =
-          base && base.snapshot.status !== "closed"
-            ? await input.evidence.capture(cut.draftId)
-            : null;
-        if (!base || !captured || captured.draft.documentDraft.status === "closed") {
+        const captured = base ? await input.evidence.capture(cut.draftId) : null;
+        if (!base || !captured) {
           prepared.push({ node: item.node, tree, text: null, closedDraftId: cut.draftId });
           continue;
         }

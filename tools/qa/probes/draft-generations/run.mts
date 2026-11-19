@@ -71,7 +71,7 @@ try {
   assert(restored.ok);
   assert.equal(restored.generation, head.generation + 1n);
   assert.equal(room.name, roomKey);
-  assert.equal((await h.store.getDraft(draft.draftId))?.status, "active");
+  assert.ok(await h.store.getDraft(draft.draftId));
   observe("live restore", { live: String(restored.generation), room: room.name });
 
   const offline = new Y.Doc({ gc: false });
@@ -112,7 +112,6 @@ try {
     createDraftRetirement({
       closeDraftRoom: (id) => closeDraftRooms(server.hocuspocus, id),
       closeRemovedRooms: async () => {},
-      stillClosedBy: async () => new Set(),
     }),
     (cause) => {
       throw cause;
@@ -143,7 +142,7 @@ try {
   });
   // A Discard appends the base side to the draft: its room stays open and the id is the same.
   assert.deepEqual(closes, []);
-  assert.equal((await h.store.getDraft(draft.draftId))?.status, "active");
+  assert.ok(await h.store.getDraft(draft.draftId));
   room.removeConnection(connection as never);
   observe("Discard all other tab after commit", closes);
   console.log("PASS G2 stable draft identity through Discard");

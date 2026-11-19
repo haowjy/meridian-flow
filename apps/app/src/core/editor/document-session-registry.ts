@@ -1,5 +1,4 @@
 /** Structural, lease-qualified session-registry surfaces. */
-import type { DraftState } from "@meridian/contracts/branches";
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
@@ -103,12 +102,8 @@ export interface LiveDocumentSessionRegistry {
    */
   observeUnsentTyping(observer: UnsentTypingObserver): () => void;
   closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void>;
-  /** Settles the draft copies no room here owns, once each, by the state `statesOf` reports for their drafts; see the implementation. */
-  sweepDraftCopies(
-    statesOf: (draftIds: string[]) => Promise<ReadonlyMap<string, DraftState>>,
-  ): Promise<void>;
-  /** A restore reopened the draft: its room may open again under the same id. */
-  reopenDraftRoom(roomKey: string): void;
+  /** Settles the draft copies no room here owns, once each, by the drafts `openOf` says the server still has; see the implementation. */
+  sweepDraftCopies(openOf: (draftIds: string[]) => Promise<ReadonlySet<string>>): Promise<void>;
   /**
    * The room ends for good and its typing is not handed back: its document was never made, and
    * the tab and the tree row offer those words from the local copy, which stays.

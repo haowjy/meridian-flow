@@ -66,7 +66,6 @@ import { createDrizzleDocumentCommands } from "./drizzle-document-commands.js";
 import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 import { createDrizzleDraftStore } from "./drizzle-drafts.js";
 import { createDrizzleCollabPersistence } from "./drizzle-journal.js";
-import { createReopenDrafts } from "./drizzle-reopen-drafts.js";
 import { createDrizzleUndoDiscard } from "./drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./drizzle-work-branch-pending.js";
 
@@ -112,13 +111,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     const branchTree = createDrizzleBranchTreeState(db, treeReader);
     const commands = createDrizzleDocumentCommands(db);
     const pending = createDrizzleWorkBranchPendingStore(db);
-    const reopen = createReopenDrafts(db, {
-      coordinator,
-      close: draftClose,
-      treeLists,
-      workProjection: projection,
-      scheduleLivePull: () => {},
-    });
     const applyService = createApplyClickService({
       commands,
       evidence: createDrizzleDraftDispositionStore(db),
@@ -126,13 +118,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection: projection,
         branches: workBranches,
         coordinator,
-        reopen,
         live: persistence.journal,
         liveCoordinator: { deliver: async () => {} },
         arrivals: { settle: async () => 0 },
         treeLists,
         tree: treeReader,
-        close: draftClose,
         onCommitted: async () => {},
         merged: () => {},
         measured: () => {},

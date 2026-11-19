@@ -11,7 +11,7 @@ import { createTrashRemovals } from "../domains/context/adapters/trash-removals.
 export function createTestRemovalDeps(db: Database) {
   const treeLists = createDrizzleTreeListStore({ db, journal: createDrizzleJournal(db) });
   return {
-    draftClose: createDraftClose({ treeLists }),
+    draftClose: createDraftClose(),
     treeLists,
     removals: createTrashRemovals(db),
   };

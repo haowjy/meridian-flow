@@ -121,7 +121,6 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
           and(
             eq(documentDrafts.branchId, branchId),
             eq(documentDrafts.kind, "work_draft"),
-            eq(documentDrafts.status, "active"),
             documentIds ? inArray(documentDrafts.documentId, [...documentIds]) : undefined,
           ),
         )

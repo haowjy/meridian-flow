@@ -156,27 +156,18 @@ const isDelete = (record: TreeRecord): record is Extract<TreeRecord, { type: "de
   record.type === "delete";
 
 /**
- * The text half, by draft row. Closed by a Discard or a restore's swap: `discarded`; by an
- * Apply's delete or a removal: `removed`; with no command, or no row: `purged`. Open: the
- * command of its latest effect still applied, as `applied`, else null.
+ * The text half, by draft row: the command of its latest effect still applied, as `applied`, else
+ * null. A draft with no row was purged: it is absent here.
  */
 async function textHalf(db: Database, draftIds: readonly string[]) {
   const out = new Map<string, NonNullable<ItemSettlement["text"]>>();
   if (draftIds.length === 0) return out;
   const tx = currentDrizzleDb(db);
   const rows = await tx
-    .select({
-      id: documentDrafts.id,
-      status: documentDrafts.status,
-      branchId: documentDrafts.branchId,
-      cause: documentDrafts.closedCause,
-      by: documentDrafts.closedBy,
-      byKind: commands.kind,
-    })
+    .select({ id: documentDrafts.id, branchId: documentDrafts.branchId })
     .from(documentDrafts)
-    .leftJoin(commands, eq(commands.id, documentDrafts.closedBy))
     .where(inArray(documentDrafts.id, [...draftIds]));
-  const open = rows.filter((row) => row.status === "active").map((row) => row.id);
+  const open = rows.map((row) => row.id);
   const effects = open.length
     ? await tx
         .selectDistinctOn([applyCommandEffects.draftId], {
@@ -191,25 +182,11 @@ async function textHalf(db: Database, draftIds: readonly string[]) {
         .orderBy(applyCommandEffects.draftId, desc(commands.createdAt))
     : [];
   for (const row of rows) {
-    if (row.status === "active") {
-      const effect = effects.find((one) => one.draftId === row.id);
-      out.set(row.id, {
-        open: true,
-        branchId: row.branchId,
-        last: effect ? { kind: "applied", by: effect.by } : null,
-      });
-      continue;
-    }
+    const effect = effects.find((one) => one.draftId === row.id);
     out.set(row.id, {
-      open: false,
+      open: true,
       branchId: row.branchId,
-      last: !row.by
-        ? { kind: "purged" }
-        : {
-            kind:
-              row.cause === "document_removed" || row.byKind === "apply" ? "removed" : "discarded",
-            by: row.by as CommandId,
-          },
+      last: effect ? { kind: "applied", by: effect.by } : null,
     });
   }
   return out;

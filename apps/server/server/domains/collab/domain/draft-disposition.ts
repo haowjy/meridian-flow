@@ -31,11 +31,9 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
     const cut = await store.capture(draftId);
     if (!cut) return null;
     const draft = cut.draft.documentDraft;
-    if (!cut.draft.checkpoint) {
-      // Only a terminal released creation may have no bytes; never manufacture an empty draft.
-      if (draft.status !== "closed" || !cut.contentReleased || cut.draft.tail.length)
-        throw new Error(`Missing draft checkpoint: ${draftId}`);
-    } else assertReadableDraft(draft);
+    // Never manufacture an empty draft.
+    if (!cut.draft.checkpoint) throw new Error(`Missing draft checkpoint: ${draftId}`);
+    assertReadableDraft(draft);
     // Effects arrive oldest first, so the later Apply wins a change two took.
     const takenBy = new Map<number, Map<number, string>>();
     for (const effect of cut.applied)
@@ -51,11 +49,7 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
         return {
           ...part,
           appliedChanges,
-          disposition: appliedChanges.size
-            ? "applied"
-            : draft.status === "active"
-              ? "pending"
-              : "discarded",
+          disposition: appliedChanges.size ? "applied" : "pending",
         };
       }),
     };

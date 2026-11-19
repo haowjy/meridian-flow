@@ -38,7 +38,6 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
         .select({
           draftId: documentDrafts.id,
           userId: projects.userId,
-          contentReleased: sql<boolean>`octet_length(${documentDrafts.state}) = 0 and octet_length(${documentDrafts.stateVector}) = 0`,
         })
         .from(documentDrafts)
         .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
@@ -142,7 +141,6 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
         // captured snapshot proves the remainder.
         out.set(id, {
           draft,
-          contentReleased: found.contentReleased,
           userId: found.userId,
           parts: parts.get(id) ?? [],
           applied: applied.get(id) ?? [],

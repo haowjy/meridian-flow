@@ -48,8 +48,7 @@ stateDiagram-v2
 - **An Undo waits for the Apply it takes back** and is sent when either half of that Apply
   landed; when neither did, the Undo ends `cancelled` without a request.
 - **An Undo's answer is acted on when it arrives** (`heard`): the notice, the history and a held
-  Apply's state don't wait for its rows to leave the room. One whose draft half waits for its
-  closed draft (`draftHalfWaits`) settles at once, since its rows never leave. A Redo pressed
+  Apply's state don't wait for its rows to leave the room. A Redo pressed
   before the answer narrows to what the Undo took back, and is cancelled when it took nothing or
   held something.
 - **`landed`** means the rows show the Apply happened but its answer was never read, or the
@@ -136,46 +135,28 @@ stateDiagram-v2
 The pattern:
 [a command that may have landed](../../../../../../.context/state-machines/command-that-may-have-landed.md).
 
-## Draft end and reopen
+## Draft end
 
 One draft's end, as this tab's `DraftCommandOwner` holds it (`ended` on `DraftCommandState`,
-keyed by draft id). It decides what every surface showing the draft does: the review owner, the
-route, the page's paint and the editor's status pill each read `ended`, and nothing else.
+keyed by draft id). A draft ends only when its Work or its document is purged: a Discard, a
+restore and an Apply of a delete all leave it open. It decides what every surface showing the
+draft does: the review owner, the route and the page's paint each read `ended`, and nothing else.
 
 ```mermaid
 stateDiagram-v2
   [*] --> open
   open --> checking: its room closed (4205 or 4208), or its metadata answered gone
-  open --> here: the close follows this tab's own Discard
-  checking --> open: the server holds the draft open (a restore arrived before the close)
-  checking --> in_trash: a Discard in Trash names the draft
-  checking --> document: its document is in Trash
-  checking --> other: anything else (a purge, a Work's branch closed)
-  checking --> checking: the read failed, or the document's place isn't read yet: ask again
-  in_trash --> open: fresh metadata shows it active (a restore, here or anywhere)
-  document --> open: fresh metadata shows it active
-  here --> open: fresh metadata shows it active
-  other --> open: fresh metadata shows it active
-  document --> other: its document left Trash (restored), which brings back no draft
+  checking --> open: the server holds the draft open
+  checking --> ended: the server has no such draft
+  checking --> checking: the read failed: ask again
+  ended --> [*]
 ```
 
 - **`checking` asks the server, never the order things arrived in** (`resolveEnd`, answered by
-  `AccountFeatureLifetime`): fresh draft metadata first, then Trash's Discard list, then where
-  the document stands. A restore whose answer beat the old close restarts the kept session in
-  place (`reopenDraftRoom`) instead of ending it. A failed read, or a document whose place
-  isn't read yet, decides nothing: the page keeps the draft and asks again, backing off from 1s
-  to 30s while a surface shows it, and on its next `gone` metadata answer.
-- **An answer speaks for when its read started** (`DraftMetadataAnswer.readAt`): the cache
-  takes a direct read only if it started after the stored answer, and `metadataActive` compares
-  `readAt` with `endedAt`, so a read in flight across a Discard can't reopen the draft.
-- **`in_trash` and `document` stay on screen** (`staysOnScreen`): the draft's text, read-only,
-  with the status pill's Restore (the Discard's, or the document's). `here` and `other` leave
-  for Live; `here` has its notice's Undo.
-- **Reopening needs an answer newer than the end** (`metadataActive` compares the answer's time
-  with `endedAt`): a cached active answer read before the close can't undo it. Two readers
-  deliver it: a surface holding the draft's room (`useRoomBindings`), and admission of a page
-  that names the draft (`reconcileClosed`), so a draft the writer's own Discard closed opens again
-  after a restore even when nothing held its room.
+  `AccountFeatureLifetime`): fresh draft metadata. A failed read decides nothing: the page keeps
+  the draft and asks again, backing off from 1s to 30s while a surface shows it, and on its next
+  `gone` metadata answer.
+- **`ended` is final** and the page leaves for Live: the draft's rows are deleted.
 - Apply sets `hidden` while it is queued, which leaves the review at once whatever `ended` turns
   out to be.
 
