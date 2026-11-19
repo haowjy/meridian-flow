@@ -217,9 +217,11 @@ async function prepare(
         undoneByWriter ||= takenBy.some((action) =>
           action.parts.every((undo) => undo.actor === "human"),
         );
-        // What stands in an open draft is read from the text, not from what an Undo recorded.
+        // What stands in an open draft is read from the text, not from what an Undo recorded: a
+        // part an Undo took stays a target only while a change of it is back in the draft.
         const destination = document.destinationOf(part.origin);
-        if (destination.kind !== "draft" || destination.state !== "active") return false;
+        if (destination.kind !== "draft" || destination.state !== "active" || !part.waiting)
+          return false;
       }
       return !document.createdInTurn;
     });

@@ -40,6 +40,33 @@ merge attributes, merge block order (`mergeOrder`), align both sides to base as 
 moved text, then group the touching hunks into clusters and decide each, and last put whitespace
 back (`settleWhitespace`) and build blocks (`buildBlocks`).
 
+## Reading an AI edit against a text: `stands` and membership
+
+`content-merge/stands.ts` answers two questions about one change of an AI edit from the edit's recorded
+delta (`document_edit_parts.delta`: the blocks the write changed, before and after) and a text, with no
+Yjs item id:
+
+- **`changeState`**: `stands` when the text holds the whole change and the merge can take it out
+  (`contentMerge(after, before, window)` has no conflict, changes the window, and putting the change
+  back on its result gives the window again); `altered` when the text holds it changed; `out` when it
+  is gone. `takeOut` writes the inverse for a change that stands.
+- **`readChange`**: which pending changes of Changes the change sits in. Forcing the change out
+  (`contentMerge(after, window, before)`, so `before` wins where the text was altered) alters the
+  pending changes whose hash goes. Joined with the pending changes that hold the change's words (or,
+  for a change with no words, its blocks or marks), for what the merge cannot pair: a paragraph the AI
+  wrote that Live joined into another, a stray quote mark. Equal hashes are paired in document order.
+
+The removal diff covers the change's window (its blocks and one either side, with `base` cut to the
+blocks that pair with it by id); when they are not one run it diffs the whole document. A `ChangeMemo`
+keyed on the blocks a read looked at lets a re-read after a write elsewhere skip the merges.
+`.context/qa/sentence-scale.md` is the differential (misses, glue, a second press) and the cost bench
+(19,000 words, 75 changes: about 310 ms cold, 55 to 65 ms re-read).
+
+Known limits: the windowed read names fewer pending changes than the whole-document one (the whole read
+re-aligns the document tail); 3 of 12,000 rows at seeds 100000+ still read a change as standing after its
+Undo (a second press changes the text); an Undo does not yet put back `before` as the base has it now,
+so after a partial Apply it can add a pending change (2 to 5 of 4,000 rows).
+
 ## Merge rules
 
 "Case" is a row of `CASES` in `merge.fixtures.ts`. The test fails when a row fires a rule it does

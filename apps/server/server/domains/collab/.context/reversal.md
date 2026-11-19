@@ -5,6 +5,18 @@ Undo/Revert. There is no Redo: the card's and the model's `redo` are gone, and t
 model writes the edit again (the writer asks it to). An inverse is an ordinary
 immutable journal edit; it never rewrites a target row or marks it reversed.
 
+## A drafted edit is text
+
+The card's state and Undo for a part written into an open draft read the part's `delta`, never its
+Yjs item ids (`domain/draft-changes.ts`, over `agent-edit/content-merge/stands.ts`). A change of the edit
+is proposed while it stands and sits in a pending change, altered when it sits in one but no longer
+stands, else out. A part with a change that stands is a `content` step of the reply's plan; its commit
+(`commitContentStep`) is an append under the draft's hold that takes out every change that still stands
+in the committed text and records one `undo` receipt naming the parts it took. A part the writer altered
+has no Undo (the card skips it as edited), and a part an Undo took stays a target only while a change of
+it is back in the draft, so Restore and a Discard's Undo bring the Undo back. Live parts and the model's
+`undo`/`revert` still use the kernel below until stages 2a and 3.
+
 ## Commands and policy
 
 `reverseThreadContext` is the whole-turn card command. Its authenticated POST
