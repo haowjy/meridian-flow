@@ -273,7 +273,7 @@ Discard all, a folder group and the review room all send it; nothing writes the 
 The writer sees the result first: the owner marks the targeted changes `discarding`, and the
 editor paints them as the base text they go back to (`setReviewDiscarded`, the inline-review
 plugin's `discarded` class) until the room has the server's write (`releaseWhenRoomHas`, which
-gives up after `ROOM_WRITE_WAIT_MS`). One command is one Ctrl+Z entry in the editor
+gives up after `ROOM_WRITE_WAIT_MS`). Named changes are read on the server at the room's snapshot, so the owner waits for the room's typing to be acknowledged (`whenCurrentChangesAcknowledged`, as a room Apply does) before it sends; a server still missing the snapshot answers 503 and the Discard does not run. One command is one Ctrl+Z entry in the editor
 (`captureApply`) and one notice with one Undo, which sends the Restore.
 
 ### Notices

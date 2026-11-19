@@ -148,8 +148,8 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
  * is skipped, not refused. A whole cut that names what to take (a Redo's, from its Un-Apply's own
  * records) takes the pending changes of the replica that hold named AI changes and nothing else
- * (`carried`, as `[partId, index]`) or have a named id (`groupIds`, for a change no AI edit made), and passes
- * over the rest.
+ * (`carried`, as `[partId, index]`) or sit at a named place (`places`, for a change no AI edit made), and
+ * passes over the rest.
  */
 export type ApplyTextCut =
   | {
@@ -159,7 +159,7 @@ export type ApplyTextCut =
       baseViewDelta: ApplySpanPatch[];
       groupIds: string[];
     }
-  | { draftId: string; whole: true; groupIds?: string[]; carried?: [number, number][] };
+  | { draftId: string; whole: true; places?: string[]; carried?: [number, number][] };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree

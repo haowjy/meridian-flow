@@ -8758,8 +8758,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/editor/RescuedText.tsx
-msgid "Unsent text"
-msgstr ""
+#~ msgid "Unsent text"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "Untitled"

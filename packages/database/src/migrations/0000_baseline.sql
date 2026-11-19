@@ -895,6 +895,7 @@ CREATE TABLE "apply_command_effects" (
 	"draft_id" text NOT NULL,
 	"live_delta" jsonb,
 	"carried" jsonb NOT NULL,
+	"place" text NOT NULL,
 	"base_start" jsonb,
 	"base_delta" jsonb NOT NULL,
 	"unapplied_by" uuid,

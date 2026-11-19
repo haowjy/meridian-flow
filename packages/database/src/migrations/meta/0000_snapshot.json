@@ -8995,6 +8995,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "place": {
+          "name": "place",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "base_start": {
           "name": "base_start",
           "type": "jsonb",

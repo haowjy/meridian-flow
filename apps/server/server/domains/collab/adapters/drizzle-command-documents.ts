@@ -87,7 +87,7 @@ export function createDrizzleCommandDocuments(
         .select({
           documentId: applyCommandEffects.documentId,
           draftId: applyCommandEffects.draftId,
-          groupId: applyCommandEffects.groupId,
+          place: applyCommandEffects.place,
           carried: applyCommandEffects.carried,
         })
         .from(applyCommandEffects)
@@ -95,18 +95,18 @@ export function createDrizzleCommandDocuments(
         .orderBy(applyCommandEffects.documentId, applyCommandEffects.ordinal);
       const items = new Map<string, ApplyItemsClick["items"][number]>();
       for (const node of treeUndone) items.set(node, { node, tree: true });
-      for (const { documentId, draftId, groupId, carried } of effects) {
+      for (const { documentId, draftId, place, carried } of effects) {
         const held = items.get(documentId)?.text;
         const named = held && "whole" in held ? held : null;
         // A change an AI edit made is found again by the edit's change; one only the writer made,
-        // by its id.
+        // by its place.
         items.set(documentId, {
           node: documentId,
           ...(items.get(documentId)?.tree ? { tree: true as const } : {}),
           text: {
             draftId,
             whole: true,
-            groupIds: [...(named?.groupIds ?? []), ...(carried.length ? [] : [groupId])],
+            places: [...(named?.places ?? []), ...(carried.length ? [] : [place])],
             carried: [...(named?.carried ?? []), ...carried],
           },
         });

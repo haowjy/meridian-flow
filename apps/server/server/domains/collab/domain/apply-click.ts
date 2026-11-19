@@ -11,6 +11,7 @@ import {
   type Hunk,
   projectReview,
   REVIEW_BASE_FRAGMENT,
+  type ReviewGroup,
   readBlocks,
   type SpanPatch,
   validateSpanPatches,
@@ -88,6 +89,8 @@ type CompiledApplyGroup = {
   record: ApplyEntry;
   /** The changes of AI edits that sat in this group, as `[partId, index]`, on the draft as the click found it. */
   carried: [number, number][];
+  /** Where the group sat (`placeOf`). */
+  place: string;
 };
 /**
  * One item of an Apply with its cuts prepared: the text compiled against the draft's replica.
@@ -158,6 +161,14 @@ export function decodeClickedSnapshot(encoded: string): Y.Snapshot {
   }
 }
 
+/** A change's hash and the id of the first block it touches: an equal change elsewhere has another. */
+function placeOf(projection: ReturnType<typeof projectReview>, group: ReviewGroup): string {
+  const [span] = group.spans;
+  const { base, draft } = projection.diff;
+  const block = draft.blocks[span.draft.from] ?? base.blocks[span.base.from];
+  return `${group.id.replace(/~\d+$/, "")}@${block?.attrs.id}`;
+}
+
 export function compileClick(
   doc: Y.Doc,
   request: ApplyTextCut & { commandId: string },
@@ -191,14 +202,14 @@ export function compileClick(
     const reading = readChangesAt(optimistic, draftText, parts);
     let groupIds: readonly string[];
     if ("whole" in request) {
-      const ids = request.groupIds && new Set(request.groupIds);
+      const places = request.places && new Set(request.places);
       const carried = request.carried && new Set(request.carried.map((key) => key.join(":")));
-      const named = ids || carried;
+      const named = places || carried;
       // A group is re-applied by `carried` only while every AI change in it is one the Un-Apply took:
       // a neighbour the writer never chose stays in Changes.
       groupIds = projection.groups.flatMap((group, position) => {
-        if (!named || ids?.has(group.id)) return [group.id];
         const keys = carriedBy(reading, position);
+        if (!named || (!keys.length && places?.has(placeOf(projection, group)))) return [group.id];
         return carried && keys.length > 0 && keys.every((key) => carried.has(key.join(":")))
           ? [group.id]
           : [];
@@ -232,6 +243,7 @@ export function compileClick(
           reading,
           projection.groups.findIndex((candidate) => candidate.id === groupId),
         ),
+        place: placeOf(projection, group),
       };
       before = patched;
       return step;

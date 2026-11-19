@@ -1070,7 +1070,19 @@ export class DraftCommandOwner {
         for (const ref of scope.values())
           this.setState(ref.itemKey, { hidden: false, discarding: null, failure });
     };
+    // Named changes are read on the server at the room's snapshot, so it must hold the writer's
+    // typing first, as a room Apply waits for. A room that ended is sent anyway: a server still
+    // missing the snapshot refuses it (503).
+    const acknowledged =
+      "all" in selection
+        ? []
+        : selection.items.flatMap(({ ref, snapshot, text }) =>
+            snapshot && text && text !== "all"
+              ? [this.byItem.get(ref.itemKey)?.binding?.session.whenCurrentChangesAcknowledged()]
+              : [],
+          );
     try {
+      await Promise.allSettled(acknowledged);
       const answer = await discardBranch(projectId, branchId, {
         commandId,
         ...("all" in selection

@@ -167,18 +167,11 @@ live restore records the Apply made (a "Restore and apply" brings a document out
 its copies), and the nodes it touched. Text half: `apply_command_effects`, one row per group per
 document. Un-Apply reverses all of it, across every document: `undoApply` in each list (the copies
 and the restores leave live), then each document's text groups. It runs the tree half before any
-write. A change it cannot take back (`changed_since`, `has_text` for a created document with text past
-its heads, `purged`) stays and is named in `settled` as `left_out`, one line per reason and half
-(`tree: true` for tree facts, `false` for text), so the app never guesses which half stayed. One
-something else already took back (a chat card's Undo of a rename: the copy is no longer in force)
-is `already { unapplied }` with the item. `treeUndone` names the nodes with a fact it took back, so it took something
-back when that or `textUndone` is not empty. When nothing was taken back, left or held, the
-answer is `already { unapplied }`, and so is a second Un-Apply of a delete. When the tree rows of
-the Apply are gone (`treeHalfLostWithBranch`, read from the stored answer's `applied`), the document
-it moved or deleted is `left_out purged`; the route answers 404 for a purged Work before the command
-runs, so that path is reached only when a chat's lineage branch goes while its Work lives on. A text
-group with nothing left to reverse stays: it is named in `textSkipped` and its document in a
-`left_out changed_since` line, on every press. Nothing records the skip: it is a judgement of the
+write. A change it cannot take back (a tree fact that changed since, a created document with text
+past its heads, a purged Work's records, a text group whose words hold later writing) stays as it
+stands, and the answer names only what it did take back: `textUndone` and `treeUndone`. Something
+an earlier press or another command took back is in neither, and so is what stayed; a press that
+took nothing is still `unapplied` with both empty. Nothing records a skip: each press judges the
 text as it stands. The Live half is a merge: the groups come out latest first, each when its
 `live_delta` still stands in Live (`changeStateIn`, the rule a draft Undo uses) and as `takeOut`, so
 a word the writer typed over an applied change is never removed. A group whose `live_delta` is null
@@ -279,28 +272,26 @@ whose folder's create is in archived notes says so and not `needs`. Apply answer
 `{ landed: false, settled: [returned] }`, the rest landing. The restore Apply makes so a document's
 text can land (`restoredByApply`) is made only for a document whose source is open.
 
-**Un-Apply's answer is a partition.** Everything of the Apply still applied before the press is in
-exactly one place: taken back (`textUndone`, `treeUndone`), left as the text and tree stand
-now (`left_out`, `textSkipped`), or held (`UnapplyClickResult.held`, one entry per node: `tree`
-when a tree fact of it is held, `groupIds` the text groups of it that are, `why`, `owner` and
-`ownerKey`). Something already taken back is in none; a text group an earlier Un-Apply took back is
-never held. Text is named per document (`{ node, groupIds }`): one change made in two documents
-has one group id, and a press can take it back in one of them and leave it in the other, so a
-Redo replays `(document, group)`, never the id alone. In `drizzle-apply-click.ts` `unapply`, under
-the locks:
+**Un-Apply's answer is what it took back.** `UnapplyClickResult` has `textUndone` (`{ node, groupIds }`
+per document: one change made in two documents has one group id, and a press can take it back in
+one of them and leave it in the other, so a Redo replays `(document, group)`, never the id alone)
+and `treeUndone` (the nodes with a tree fact taken back). A closed owner's notes and a closed
+source's text stay as they stand and are in neither; the writer reads what stayed from the review,
+not from this answer. In `drizzle-apply-click.ts` `unapply`, under the locks:
 
-1. The tree half runs first (`undoApply` with the judge). `left` for `closed` asks the judge again:
-   `closed` is a held entry with `tree`; `gone` is `left_out purged`. `already` is in no list.
-2. Then, per document, the text effects already taken back are dropped, and a document with none left
-   is skipped. For the rest, where the document stands *after* the tree half is read, and a closed
-   source holds every remaining group in that node's entry. Otherwise the inverse runs as before.
-   A node whose move back is held while its text, now in an open source, goes back is in
-   `textUndone` and in `held` with `tree: true` and no groups.
+1. The tree half runs first (`undoApply` with the judge): a record whose effect would change a
+   closed source stays.
+2. Then, per document, the text effects already taken back are dropped, and a document with none
+   left is skipped. For the rest, where the document stands *after* the tree half is read, and a
+   closed source's text stays. Otherwise the inverse runs as before.
 
-The `returned` lines in `settled` (one per owner and reason, with `owner` and `items`) are derived
-from `held`, for the words and for a tab opened before. `already { unapplied }` with no item is the
-answer only when nothing was taken back, held or left. Restore and Discard write no live file, so
-they judge the branch's owner only. A file in the project (no Work, no lineage) has no closed owner.
+A Redo names what an Un-Apply took, from the effect rows it marked (`unapplied_by`): an AI change
+by `carried`, a change only the writer made by its `place` (its hash and its first block's id), so
+an equal change elsewhere never takes its name. A Redo pressed before its Un-Apply answered waits
+for the answer on the client.
+
+Restore and Discard write no live file, so they judge the branch's owner only. A file in the project
+(no Work, no lineage) has no closed owner.
 
 The file policy's own owner reader (`loadPhysicalOwnership`, `file-policy/adapters/drizzle-file-facts.ts`)
 stays separate: a grant is about a document's content where it stands now, live's placement

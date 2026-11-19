@@ -22,7 +22,7 @@ The edit holds its document's lock while it plans, so a second connection or a p
 | Draft live pull in `readRoom` | `catchUp`, before the claim |
 | Ahead-ref registration (`register` throws in a transaction) | `registerInCommand`: namespace keys taken on the command's connection, after the document lock: the one place the order is reversed, because the refs a write mints are known only while it plans (lock order in `CONTEXT.md`) |
 | `runInRootDrizzleReadSnapshot` in address resolution | joins the command transaction |
-| The model undo's capture snapshot | gone: the capture is taken again under the commit's locks and compared (`confirmCapture`) |
+| The model undo's capture snapshot | the capture plans off the locks; the commit plans each step again under them and the answer reports what it took (`CommittedInverse.taken`) |
 
 Receipts (`document_edits.command_id`) take the id from `bindEditsToCommand`, bound by `run`, so text and tree receipts of one command share it without each writer passing it.
 

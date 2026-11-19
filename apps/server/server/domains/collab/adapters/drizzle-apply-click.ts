@@ -330,6 +330,7 @@ export function createDrizzleApplyClick(
             draftId: base.snapshot.draftId,
             liveDelta: liveEffect.delta,
             carried: group.carried,
+            place: group.place,
             baseStart: baseEffect.start,
             baseDelta: baseEffect.delta,
           };

@@ -90,6 +90,7 @@ export async function recordApply(
     liveDelta: null,
     baseDelta: [],
     carried,
+    place: "all",
   });
   return commandId;
 }
