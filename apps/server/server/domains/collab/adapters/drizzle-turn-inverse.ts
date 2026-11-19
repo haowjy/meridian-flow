@@ -65,6 +65,7 @@ import {
   type DraftDispositionView,
 } from "../domain/draft-disposition.js";
 import { type DraftStore, materializeDraftRead } from "../domain/draft-store.js";
+import { effectiveActionIndex, partKey } from "../domain/inverse-actions.js";
 import { createInverseDestinationResolver } from "../domain/inverse-draft-destination.js";
 import type { InverseStep } from "../domain/inverse-stream.js";
 import { liveRoom } from "../domain/observation-rooms.js";
@@ -327,7 +328,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
             (part) => part.origin.kind === "pending" && part.origin.draftId === draftId,
           );
           if (!drafted.length) continue;
-          for (const [id, read] of readDraftChanges(draft.doc, drafted).parts)
+          const took = effectiveActionIndex(document.history, new Set(drafted.map(partKey))).byPart;
+          const parts = drafted.map((part) => ({ ...part, taken: took.has(partKey(part)) }));
+          for (const [id, read] of readDraftChanges(draft.doc, parts).parts)
             changesOf.set(id, read.changes);
         }
         document.history = document.history.map((part) => {
