@@ -18,7 +18,7 @@ import {
 } from "@meridian/contracts/commands";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ApplyStep, Left, TreeFact, Unapplied } from "@/core/project-tree/tree-undo";
+import type { ApplyStep, Unapplied } from "@/core/project-tree/tree-undo";
 import type { AppliedCommand } from "./apply-history";
 import type { DiscardRestores } from "./discard-restores";
 
@@ -130,11 +130,13 @@ export function textUndoneOf(answer: UnapplyClickResult, node: string): string[]
  * What of an Apply landed, command-wide: its Undo step's two halves, and what the tree half did
  * to each node it landed on, from where live had it before and after (`did`).
  */
+export type TreeDid = "moved" | "renamed" | "restored" | "deleted" | "created" | null;
+
 export type ApplyHalves = {
   text: boolean;
   tree: boolean;
   restores: string[];
-  did: Record<string, TreeFact["did"]>;
+  did: Record<string, TreeDid>;
 };
 
 export function halvesOf(answer: ApplyClickResult): ApplyHalves {
@@ -174,7 +176,7 @@ export function unappliedOf(answer: UnapplyClickResult): Unapplied {
   };
 }
 
-function didOf(item: ApplyItemResult): TreeFact["did"] {
+function didOf(item: ApplyItemResult): TreeDid {
   const tree = item.tree;
   if (tree?.restore || tree?.settled?.some((one) => one.rule === "restored")) return "restored";
   const { from, to } = tree?.transition ?? { from: undefined, to: undefined };
@@ -279,12 +281,9 @@ export type DraftNotice =
       dismiss(): void;
     })
   | (Base & {
-      /**
-       * What Ctrl+Z on an Apply in an editor said, on that document: what stayed (`left`), or that
-       * the Un-Apply didn't reach the server, with its Retry.
-       */
+      /** Ctrl+Z on an Apply in an editor didn't reach the server: that document says so, with its Retry. */
       kind: "unapplied";
-      said: { kind: "left"; left: Left } | { kind: "failed"; name: string; retry(): void };
+      retry(): void;
       dismiss(): void;
     });
 
@@ -428,7 +427,7 @@ export class DraftNotices {
     answer: Unapplied | { taken: "failed" };
   }): () => void {
     const { step, answer } = input;
-    if (this.closed || answer.taken === "all" || answer.taken === "already") return () => {};
+    if (this.closed || answer.taken !== "failed") return () => {};
     const held = this.notices.get(input.ownerKey);
     if (held) this.drop(held);
     const id = this.nextId++;
@@ -438,13 +437,7 @@ export class DraftNotices {
       projectId: input.projectId,
       ownerKey: input.ownerKey,
       surface: { kind: "band", documentId: input.documentId },
-      said:
-        answer.taken === "failed"
-          ? { kind: "failed", name: step.name, retry: () => void step.press(null) }
-          : {
-              kind: "left",
-              left: { ...answer, name: step.name, nodes: step.nodes, facts: step.facts },
-            },
+      retry: () => void step.press(null),
       dismiss: () => this.endIf(input.ownerKey, id),
     });
     this.publish();

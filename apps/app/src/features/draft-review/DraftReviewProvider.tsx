@@ -162,10 +162,19 @@ export function useDraftReviewScopeValue({
         : null,
   });
 
+  // The cards' Undo depends on the text, so the writer's own typing refreshes them: in the
+  // manuscript, or in the open draft's review room.
+  const liveSession =
+    activeEditorProjection && !activeEditorProjection.inReview
+      ? activeEditorProjection.session
+      : null;
+  const reviewSession = roomOwner.session;
   useEffect(() => {
-    if (!threadId || !activeEditorProjection || activeEditorProjection.inReview) return;
-    const session = activeEditorProjection.session;
-    if (!session) return;
+    if (!threadId) return;
+    const documents = [liveSession?.document, reviewSession?.document].flatMap((doc) =>
+      doc ? [doc] : [],
+    );
+    if (documents.length === 0) return;
     let timer: number | null = null;
     const invalidateLineage = () => {
       if (timer != null) window.clearTimeout(timer);
@@ -174,12 +183,12 @@ export function useDraftReviewScopeValue({
         void queryClient.invalidateQueries({ queryKey: threadQueryKeys.liveLineageRoot(threadId) });
       }, 200);
     };
-    session.document.on("update", invalidateLineage);
+    for (const doc of documents) doc.on("update", invalidateLineage);
     return () => {
       if (timer != null) window.clearTimeout(timer);
-      session.document.off("update", invalidateLineage);
+      for (const doc of documents) doc.off("update", invalidateLineage);
     };
-  }, [activeEditorProjection, queryClient, threadId]);
+  }, [liveSession, reviewSession, queryClient, threadId]);
 
   const value = useMemo<DraftReviewContextValue>(
     () => ({

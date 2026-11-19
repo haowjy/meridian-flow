@@ -9,7 +9,6 @@ import type { DocumentApplyEntry, DocumentHistory } from "@/core/editor/editor-h
 import {
   type ApplyStep,
   type ClosedOwners,
-  firstPassOver,
   type Held,
   sayUnapplied,
   type Unapplied,
@@ -28,7 +27,7 @@ export type Histories = () => readonly (DocumentHistory | null)[];
 export type Answer = Unapplied | { taken: "failed" };
 
 /** What an Apply is, as its rows and notices name it, and its two halves. */
-export type ApplyInit = Pick<ApplyStep, "text" | "tree" | "sources" | "name" | "nodes" | "facts">;
+export type ApplyInit = Pick<ApplyStep, "text" | "tree" | "sources" | "name" | "nodes">;
 
 /**
  * What a Redo became: a new Apply command in force (`init`: what it landed, when that changed),
@@ -133,7 +132,7 @@ class SharedApply {
           undo: () => this.apply.press(history).then(() => !this.apply.inForce()),
           redo: () => this.apply.redo(),
           passedOver: () => this.apply.waits(),
-          passed: () => this.apply.passedBy(history),
+          passed: () => this.apply.passedBy(),
           dropped: () => this.apply.redoDropped(history),
         }),
       );
@@ -184,7 +183,6 @@ export class AppliedCommand implements ApplyStep {
   sources: readonly string[];
   name: string;
   nodes: readonly string[];
-  facts: ApplyStep["facts"];
   /** Changes with every transition, and with what the tab knows of a held Apply's owners. */
   revision = 0;
   private current: ApplyState = { kind: "in_force" };
@@ -218,7 +216,6 @@ export class AppliedCommand implements ApplyStep {
     this.sources = init.sources;
     this.name = init.name;
     this.nodes = init.nodes;
-    this.facts = init.facts;
     this.seat = hooks.seat;
     this.shared = new SharedApply(histories, this);
     this.sit();
@@ -260,14 +257,9 @@ export class AppliedCommand implements ApplyStep {
     return kind === "in_force" || kind === "failed" || kind === "held";
   }
 
-  /**
-   * An editor's Ctrl+Z passed over it for an older step: the first time for what it waits for
-   * now, that editor's document says who it waits for (`firstPassOver`).
-   */
-  passedBy(from: DocumentHistory): void {
+  /** An editor's Ctrl+Z passed over it for an older step: it reads again who it waits for. */
+  passedBy(): void {
     this.reread();
-    if (!firstPassOver(this)) return;
-    this.say({ from, answer: { taken: "nothing", leftOut: [], held: this.held }, step: this });
   }
 
   /** A session of one of its documents opened since it was applied: in force, it shows there. */
@@ -297,7 +289,7 @@ export class AppliedCommand implements ApplyStep {
     if (state.kind === "reapplying") return state.done.then(() => this.press(from));
     const sends = this.inForce() && !this.waits();
     const answer = this.ask(from);
-    if (sends && this.seat) void sayUnapplied(this.seat.session, this, answer, this.hooks.closed);
+    if (sends && this.seat) void sayUnapplied(this.seat.session, this, answer);
     return answer;
   }
 
@@ -476,20 +468,9 @@ export class AppliedCommand implements ApplyStep {
     for (const listener of [...this.listeners]) listener();
   }
 
-  /**
-   * Says `said` where it was pressed. A line naming who it waits for lasts while the Apply waits,
-   * and isn't said when an owner reopened while the press was out.
-   */
+  /** Says where it was pressed that the Un-Apply didn't reach the server. */
   private say(said: PressSaid): void {
-    const naming = said.answer.taken !== "failed" && said.answer.held.length > 0;
-    if (naming && !this.waits()) return;
-    const unsay = this.hooks.said?.(said);
-    if (!unsay || !naming) return;
-    const stop = this.subscribe(() => {
-      if (this.waits()) return;
-      stop();
-      unsay();
-    });
+    if (said.answer.taken === "failed") this.hooks.said?.(said);
   }
 }
 

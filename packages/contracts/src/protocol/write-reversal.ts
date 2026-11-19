@@ -1,8 +1,5 @@
 // Shared write reversal response contracts for context undo APIs.
 
-import type { ClosedOwnerWhy } from "../commands/index.js";
-import type { FileAccessDenial } from "./file-access.js";
-
 export type WriteErrorStatus =
   | "not_found"
   | "ambiguous_match"
@@ -59,71 +56,8 @@ export interface WorkReversalResult {
   message?: string;
 }
 
-/** A turn reversal that took nothing back: every part it held is a tree change that stayed. */
-export type TurnReversalStatus = WriteStatus | "not_undone";
-
-/** A move or restore that committed somewhere other than the recorded destination. */
-export type TreeReversalLanding = {
-  documentId: string;
-  action: "moved" | "restored";
-  requestedAt: string;
-  landedAt: string;
-};
-
-/** Why one part of a turn reversal stayed, for the app to word. */
-export type TurnInverseSkipCause =
-  | "applied"
-  | "discarded"
-  | "already_undone"
-  /** Text in a document that is deleted (or discarded) now. */
-  | "document_deleted"
-  | "document_discarded"
-  /** The document's owner is closed (Work archived or deleted, chat in Trash): nothing changed; `why` says which. */
-  | "returned"
-  | "paragraph_removed"
-  | "edited_since"
-  /** Text in a document whose restore in the same reversal couldn't run. */
-  | "not_restored";
-
-/**
- * A text part, by its excerpts; a tree change, by the path it was shown at and what it did. A
- * tree change stayed because a later change holds it (`changed_since`), its node is purged, or
- * taking it back would change a closed owner's notes (`returned`: `why` says which owner state,
- * `owner` names it).
- */
-export type TurnInverseSkip = {
-  documentId: string;
-  uri: string;
-  /** The part waits in or came from a draft: its row and its Work's review say what became of it. */
-  drafted?: true;
-} & (
-  | {
-      kind: "text";
-      before: string;
-      after: string;
-      cause: TurnInverseSkipCause;
-      /** Set when `cause` is `returned`. */
-      why?: ClosedOwnerWhy;
-    }
-  | {
-      kind: "tree";
-      at: string | null;
-      op: "create" | "move" | "delete" | "restore";
-      cause: "changed_since" | "purged" | "returned";
-      /** Set when `cause` is `returned`. */
-      why?: ClosedOwnerWhy;
-      /** Set when `cause` is `returned`: the Work or chat whose notes the change is in, by name. */
-      owner?: string;
-    }
-);
-
 export interface ReversalOutcome {
-  skips?: TurnInverseSkip[];
-  landings?: TreeReversalLanding[];
-  acceptedParts?: number;
-  status: TurnReversalStatus;
-  /** Why the file policy refused a `permission_denied` reversal, for the app to word. */
-  denial?: FileAccessDenial;
+  status: WriteStatus;
   documents: DocumentReversalResult[];
   workReceipts?: WorkReversalResult[];
   workError?: "execution_failed";

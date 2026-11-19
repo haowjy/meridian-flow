@@ -14,7 +14,6 @@ import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { RowWord } from "@/components/app/RowWord";
 import { WorkClosedChip } from "@/components/app/WorkClosedChip";
-import { unappliedSentence } from "@/core/project-tree/tree-left-sentence";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
   useAccountId,
@@ -159,24 +158,16 @@ export function DraftNoticeLine({
   const whereabouts = useWhereabouts(notice.projectId);
   if (!hasLine(notice)) return null;
   if (notice.kind === "unapplied") {
-    const { said } = notice;
-    return said.kind === "failed" ? (
+    return (
       <ActionNotice
         data-command-notice="unapply-failed"
         sentence={t`Undo didn't go through. Try again.`}
         onDismiss={notice.dismiss}
         failure={{
           message: t`Undo didn't go through. Try again.`,
-          onRetry: said.retry,
+          onRetry: notice.retry,
           onDismiss: notice.dismiss,
         }}
-        className={className}
-      />
-    ) : (
-      <ActionNotice
-        data-command-notice="unapplied"
-        sentence={unappliedSentence(said.left)}
-        onDismiss={notice.dismiss}
         className={className}
       />
     );

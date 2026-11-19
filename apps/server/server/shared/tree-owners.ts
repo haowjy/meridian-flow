@@ -5,7 +5,7 @@ import type { Database } from "@meridian/database";
 import { contextSources } from "@meridian/database/schema";
 import type { UndoAnswer, UndoReport } from "@meridian/project-tree";
 import { inArray } from "drizzle-orm";
-import { closedOwnerOf, mergeOwnerLocks, type OwnerLocks, ownerNames } from "./draft-owner.js";
+import { closedOwnerOf, mergeOwnerLocks, type OwnerLocks } from "./draft-owner.js";
 import { currentDrizzleDb, isInDrizzleTransaction } from "./drizzle-transaction.js";
 import { type LockedOwners, readOwners } from "./work-lifecycle-lock.js";
 
@@ -92,7 +92,7 @@ export function closedWhyOf(owner: SourceOwner, owners: LockedOwners): ClosedOwn
 }
 
 /** Why the owner of a closed source takes no change, the name it goes by, and which owner it is. */
-export type ClosedSource = { why: ClosedOwnerWhy; owner?: string; ownerKey: DraftOwnerKey };
+export type ClosedSource = { why: ClosedOwnerWhy; ownerKey: DraftOwnerKey };
 
 /**
  * What a source takes, judged under the owners' locks: `closed` (an archived or deleted Work, a
@@ -157,7 +157,6 @@ export async function treeOwners(
     workIds: sourceWorks,
     lineageRootIds: sourceLineages,
   });
-  const names = await ownerNames(db, { workIds: works, rootThreadIds: lineages });
   return {
     works,
     lineages,
@@ -185,11 +184,9 @@ export async function treeOwners(
         const why = closedWhyOf(owner, locked);
         if (!why) return null;
         const id = (owner.workId ?? owner.rootThreadId) as string;
-        const name = names.get(id);
         return {
           kind: "closed",
           why,
-          ...(name ? { owner: name } : {}),
           ownerKey: draftOwnerKey(
             owner.workId
               ? { kind: "work", workId: owner.workId as string }
@@ -238,12 +235,8 @@ export function answerOf(report: UndoReport, judge: TreeJudge): UndoAnswer {
   return source === undefined ? "undoes" : closedAnswer(judge, source);
 }
 
-export const returnedFor = (
-  { why, owner }: ClosedSource,
-  items?: readonly string[],
-): Settlement => ({
+export const returnedFor = ({ why }: ClosedSource, items?: readonly string[]): Settlement => ({
   rule: "returned",
   why,
-  ...(owner ? { owner } : {}),
   ...(items ? { items: [...items] } : {}),
 });

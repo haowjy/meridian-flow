@@ -811,7 +811,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ls(after, "user://")).not.toContain("mine");
         expect(
           await sync.getDocumentAndTreeChip(THREAD.threadId as never, THREAD.turnId as never),
-        ).toMatchObject({ state: "undone", control: "view_change" });
+        ).toMatchObject({ undone: true, control: "view_change" });
       });
 
       it("a Copy's operation id: a resend answers the stored result, another request or another account's is command_conflict", async () => {
@@ -966,7 +966,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(undone.workReceipts, JSON.stringify(undone)).toEqual([
           expect.objectContaining({ workId: NEW_WORK_ID, status: "reversed" }),
         ]);
-        expect(undone.acceptedParts).toBeGreaterThan(0);
+        expect(undone.status).toBe("reversed");
         expect(await workDeleted()).toBe(true);
         expect(await ch1(script)).toContain("one");
         expect(await claims()).toBe(1);

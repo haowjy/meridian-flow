@@ -995,7 +995,6 @@ export class DraftCommandOwner {
           sources: [],
           name: "",
           nodes: [ref.documentId],
-          facts: new Map(),
         },
         queuePort(handle, ref.documentId),
         histories.histories,

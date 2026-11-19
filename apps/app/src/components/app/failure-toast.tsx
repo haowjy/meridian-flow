@@ -1,12 +1,16 @@
 /**
  * Failure toasts: `notifyFailure` from anywhere, one `FailureToaster` at the app root. Only for a
  * failure that has no place of its own on a document or in the import popup; a success never
- * toasts. A failure stays until dismissed, and `visibleToasts` caps how many show at once.
+ * toasts. A failure stays until dismissed, except a `brief` one, a slip from the writer's own
+ * action, which goes by itself. `visibleToasts` caps how many show at once. Every toast is one
+ * floating pill, so a brief error and a lasting one look alike.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+
+const BRIEF_MS = 5000;
 
 /** The open toast under each key. Each toast has its own Sonner id: reusing one races its exit. */
 const shown = new Map<string, string | number>();
@@ -16,6 +20,7 @@ export function notifyFailure({
   title,
   onRetry,
   onClose,
+  brief,
 }: {
   /** This failure's own: a second toast under one key replaces the first. */
   key: string;
@@ -25,11 +30,13 @@ export function notifyFailure({
   onRetry?: () => void | Promise<void>;
   /** The writer closed it. */
   onClose?: () => void;
+  /** A one-line error that follows from the writer's action and loses nothing: it goes away soon. */
+  brief?: true;
 }) {
   dismissFailure(key);
   const owns = () => shown.get(key) === id;
   const id = toast.error(title, {
-    duration: Number.POSITIVE_INFINITY,
+    duration: brief ? BRIEF_MS : Number.POSITIVE_INFINITY,
     onDismiss: () => {
       if (!owns()) return;
       shown.delete(key);
@@ -87,7 +94,7 @@ export function FailureToaster() {
         closeButtonAriaLabel: t`Dismiss`,
         classNames: {
           toast:
-            "pointer-events-auto flex w-full items-center gap-2 rounded-md border border-border bg-card py-2 pr-2 pl-3 text-sm text-foreground shadow-float",
+            "pointer-events-auto flex w-full items-center gap-2 rounded-full border border-border bg-card py-1.5 pr-1.5 pl-4 text-sm text-foreground shadow-float",
           content: "min-w-0 flex-1",
           title: "[overflow-wrap:anywhere]",
           actionButton: "text-button shrink-0 text-sm coarse:min-h-11",

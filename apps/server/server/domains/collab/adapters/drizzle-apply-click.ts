@@ -128,7 +128,7 @@ function closedNotes(one: TreeItemFacts, judge: TreeJudge, node: string): Settle
   const fates = new Map<string, SourceFate>();
   for (const { why, source } of one.left) {
     const fate = why === "closed" && source !== undefined ? judge.fate(source) : null;
-    if (fate) fates.set(fate.kind === "gone" ? "gone" : `${fate.why}:${fate.owner ?? ""}`, fate);
+    if (fate) fates.set(fate.kind === "gone" ? "gone" : fate.why, fate);
   }
   return [...fates.values()].map((fate) => fateNote(fate, node));
 }
@@ -808,7 +808,6 @@ export function createDrizzleApplyClick(
                     tree,
                     groupIds,
                     why: owner.why,
-                    ...(owner.owner ? { owner: owner.owner } : {}),
                     ownerKey: owner.ownerKey,
                   })),
                   ...(settled.length ? { settled } : {}),
