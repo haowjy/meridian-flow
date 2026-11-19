@@ -5,7 +5,7 @@
  * action, which goes by itself. `visibleToasts` caps how many show at once. Every toast is one
  * floating pill: the failure's category ("Couldn't apply", "Sign-in expired"), at most one action,
  * and a close. Cause and consequence go to the console (`detail`), never into the pill. Closing
- * hides it and never discards anything: `onClose` must not throw away what the writer hasn't kept.
+ * only hides it: what it hands back stays until the writer acts on it.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
@@ -21,7 +21,6 @@ export function notifyFailure({
   key,
   title,
   action,
-  onClose,
   brief,
   detail,
   body,
@@ -32,8 +31,6 @@ export function notifyFailure({
   title: ReactNode;
   /** The one way on: Retry where running it again can help, or what fixes it ("Log in"). */
   action?: { label: string; run: () => void | Promise<void> };
-  /** The writer closed it. */
-  onClose?: () => void;
   /** A one-line error that follows from the writer's action and loses nothing: it goes away soon. */
   brief?: true;
   /** What went wrong, for whoever debugs it: logged, never shown. */
@@ -49,9 +46,7 @@ export function notifyFailure({
     description: body,
     className: body ? "rounded-xl! items-start! py-1.5!" : undefined,
     onDismiss: () => {
-      if (!owns()) return;
-      shown.delete(key);
-      onClose?.();
+      if (owns()) shown.delete(key);
     },
     action: action
       ? {
@@ -110,9 +105,9 @@ export function FailureToaster() {
           toast:
             "pointer-events-auto inset-x-0 mx-auto flex w-fit! max-w-[min(24rem,100%)] items-center gap-2 rounded-full border border-border bg-card py-px pr-1 pl-3 text-compact text-foreground shadow-float",
           icon: "flex shrink-0",
-          content: "min-w-0",
+          content: "min-w-0 flex-1",
           title: "truncate",
-          description: "mt-1.5 mb-0.5 w-[min(19rem,calc(100vw-6rem))] select-text",
+          description: "mt-1.5 mb-0.5 w-full select-text",
           actionButton: "text-button shrink-0 text-compact coarse:min-h-11",
           closeButton:
             "focus-ring order-last flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground coarse:size-11 [&_svg]:size-3",
