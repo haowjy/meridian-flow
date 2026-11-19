@@ -103,6 +103,8 @@ type Sub =
   | { k: "ap"; pid: string; id: string; next: string[][] }
   | { k: "iw"; a: Anchor; at: number; next: string }
   | { k: "dw"; a: Anchor; at: number }
+  | { k: "ie"; a: Anchor; next: string[]; glue: boolean }
+  | { k: "ib"; a: Anchor; next: string[]; glue: boolean }
   | { k: "split"; a: Anchor; id: string }
   | { k: "join"; pid: string }
   | { k: "move"; pid: string };
@@ -151,6 +153,19 @@ function applySub(m: Model, s: Sub): Model | null {
       return sw([sents[si], s.next]);
     case "iw":
       return sw([[...sents[si].slice(0, s.at), s.next, ...sents[si].slice(s.at)]]);
+    case "ie": {
+      // Typed straight after the sentence: a new sentence, or (glue) one with no space before the sentence after it.
+      const after = sents[si + 1];
+      if (s.glue && after) return setSents(m, pi, [...sents.slice(0, si + 1), [...s.next.slice(0, -1), `${s.next.at(-1)}${after[0]}`, ...after.slice(1)], ...sents.slice(si + 2)]);
+      return sw([sents[si], s.next]);
+    }
+    case "ib":
+      // Typed straight before the sentence: a new sentence, or (glue) words with no space after the one before.
+      if (s.glue && si > 0) {
+        const prev = sents[si - 1];
+        return setSents(m, pi, [...sents.slice(0, si - 1), [...prev.slice(0, -1), `${prev.at(-1)}${s.next[0]}`, ...s.next.slice(1)], ...sents.slice(si)]);
+      }
+      return sw([s.next, sents[si]]);
     case "dw":
       return sents[si].length < 3 ? null : sw([sents[si].filter((_, i) => i !== s.at)]);
     case "split":
@@ -211,6 +226,16 @@ function genWriter(r: R, m: Model, aim: Anchor[] | null): Op {
           ? { k, a, at }
           : { k, a, next: sentence(r) };
   return { who: "writer", subs: [sub], name: `writer:${k}${aimed ? "@ai" : ""}` };
+}
+/** Typing that touches the AI's sentence at its start or end, with or without a space, and goes no further in. */
+function genBoundary(r: R, m: Model, aim: Anchor[]): Op {
+  const a = r.pick(aim);
+  const p = m.find((x) => x.id === a.pid);
+  const typed = Array.from({ length: 1 + r.int(3) }, () => r.pick([...ADJ, ...NOUN]));
+  typed[typed.length - 1] += ".";
+  const glue = r.chance(0.4);
+  const k = r.pick(["ie", "ib"] as const);
+  return { who: "writer", subs: [{ k, a, next: typed, glue }], name: `writer:${k}${glue ? "-glued" : ""}${p ? "" : "?"}` };
 }
 function genLive(r: R, m: Model): Op {
   const p = r.pick(m);
@@ -304,8 +329,16 @@ function runRow(seedNo: number): Row | null {
     const was = new Set(sentencesOf(before));
     return fromPM(world.draft).flatMap((p) => p.sents.filter((s) => !was.has(s.join(" "))).map((s) => ({ pid: p.id, sent: s.join(" ") })));
   };
-  const later = 1 + r.int(4);
+  // A quarter of the rows have the writer only touch the AI's sentences at an edge (the owner's "next to").
+  const edgeOnly = r.chance(0.25) && aim().length > 0;
+  const later = edgeOnly ? 1 + r.int(2) : 1 + r.int(4);
   for (let i = 0; i < later; i++) {
+    if (edgeOnly) {
+      const targets = aim();
+      const op = targets.length ? genBoundary(r, fromPM(world.draft), targets) : null;
+      if (op && world.run(op)) ops.push(op);
+      continue;
+    }
     const kind = r.pick(["writer", "writer", "ai", "live", "live"] as const);
     const targets = r.chance(0.35) ? aim() : null;
     const op =
@@ -320,6 +353,7 @@ function runRow(seedNo: number): Row | null {
   const detail: Record<string, unknown> = {};
   const changes = changesOf(before, after);
   tally.push(`changes per edit: ${Math.min(changes.length, 4)}`);
+  const edgeRow = edgeOnly && ops.length > 1 && ops.slice(1).every((o) => /^writer:i[eb]/.test(o.name));
 
   // 1. Membership: which Changes groups hold the target's changes, against the oracle (independent rows).
   const G = groupsOf(world.base, world.draft).groups;
@@ -354,6 +388,11 @@ function runRow(seedNo: number): Row | null {
     tally.push(`WHOLE-doc membership (indep, ${states.every((x) => x === "stands") ? "all stand" : "some altered or out"}): ${missedRow.length ? "MISSED a group" : wholeExtra.length ? "named an extra group" : "exact"}`);
     if (missed.length) detail.missedRow = { missed: missed.map((i) => [groups[i].excerpt]), ops: ops.map((o) => o.name), start: textOf(world.draft), base: textOf(world.base), changes: changes.map((c) => [textOf([...c.before]), textOf([...c.after])]), states, oracle: textOf(oracle.draft) };
     if (missed.length || extra.length) detail.membership = { missed: missed.map((i) => groups[i].excerpt), extra: extra.map((i) => groups[i].excerpt) };
+  }
+  if (edgeRow) {
+    tally.push("EDGE row: writer only touched an edge");
+    if (states.some((x) => x !== "stands")) tally.push("EDGE row: a change reads altered or out (no Undo)");
+    if (states.every((x) => x === "stands")) tally.push("EDGE row: every change reads stands (Undo offered)");
   }
   // 2. A proposed change shows in Changes.
   changes.forEach((_, i) => {

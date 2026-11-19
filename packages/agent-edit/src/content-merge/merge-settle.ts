@@ -8,12 +8,21 @@ import { equalOrderedMatches } from "../ordered-matching.js";
 import { BASE, DRAFT, isSubsequence, LIVE, type MergedTok, type Origin } from "./merge-hunks.js";
 import type { Fire } from "./rules.js";
 
-/** Word-by-word union of two token runs; a shared word is kept once, in the draft's form. */
+/**
+ * Word-by-word union of two token runs; a shared word is kept once, in the draft's form. A shared
+ * punctuation mark counts only inside a run of shared tokens that holds a word: two sentences that
+ * each end in "." are two sentences, not one.
+ */
 function unionWords(live: MergedTok[], draft: MergedTok[]): MergedTok[] {
-  const matches = equalOrderedMatches(
+  const all = equalOrderedMatches(
     live.map((o) => coreKey(o.tok)),
     draft.map((o) => coreKey(o.tok)),
   );
+  const keep = all.map(([mi]) => isWordTok(live[mi].tok));
+  const next = (k: number) => all[k + 1]?.[0] === all[k][0] + 1 && all[k + 1][1] === all[k][1] + 1;
+  for (let k = 0; k + 1 < all.length; k++) if (next(k) && keep[k]) keep[k + 1] = true;
+  for (let k = all.length - 2; k >= 0; k--) if (next(k) && keep[k + 1]) keep[k] = true;
+  const matches = all.filter((_, k) => keep[k]);
   const out: MergedTok[] = [];
   let i = 0;
   let j = 0;
@@ -80,10 +89,14 @@ export function unionInsertions(live: MergedTok[], draft: MergedTok[], fire: Fir
 // Scripts written without spaces between words: gluing two of their segments is normal.
 const SPACELESS =
   /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Thai}\p{sc=Lao}\p{sc=Khmer}\p{sc=Myanmar}]/u;
-/** Two words that no side had side by side need a space between them, unless either is spaceless script. */
+/**
+ * Two tokens that no side had side by side need a space between them when the second is a word and
+ * the first is a word or ends a clause or sentence, unless either is spaceless script. The second
+ * has no space of its own when it began a paragraph on its side.
+ */
 const needsSpace = (prev: Tok, next: Tok) =>
-  isWordTok(prev) &&
   isWordTok(next) &&
+  (isWordTok(prev) || (prev.kind === "text" && /[.!?\u2026,;:]$/.test(prev.core))) &&
   !(prev.kind === "text" && SPACELESS.test(prev.core.at(-1) ?? "")) &&
   !(next.kind === "text" && SPACELESS.test(next.core[0] ?? ""));
 
