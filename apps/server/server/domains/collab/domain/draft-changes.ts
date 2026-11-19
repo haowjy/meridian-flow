@@ -70,10 +70,13 @@ export interface DraftChangeReading {
   parts: Map<number, DraftPartChanges>;
 }
 
-/** Reads every given part of a draft against the draft as it stands. A part with no delta reads as having no changes. */
+/**
+ * Reads every given part of a draft against the draft as it stands. A part with no delta reads as
+ * having no changes. `taken`: an Undo took the part out of the text.
+ */
 export function readDraftChanges(
   draft: Y.Doc,
-  parts: readonly { id: number; delta: StoredDelta | null }[],
+  parts: readonly { id: number; delta: StoredDelta | null; taken?: boolean }[],
 ): DraftChangeReading {
   const { base, text } = draftBlocks(draft);
   return readChangesAt(base, text, parts);
@@ -83,7 +86,7 @@ export function readDraftChanges(
 export function readChangesAt(
   base: readonly PMNode[],
   text: readonly PMNode[],
-  parts: readonly { id: number; delta: StoredDelta | null }[],
+  parts: readonly { id: number; delta: StoredDelta | null; taken?: boolean }[],
 ): DraftChangeReading {
   const reading = readDraft(schema, base, text);
   const out = new Map<number, DraftPartChanges>();
@@ -100,7 +103,7 @@ export function readChangesAt(
     out.set(part.id, {
       changes: cut.map((change, index) => {
         const key = `${part.id}:${index}`;
-        const read = readChange(reading, change, memos.get(key));
+        const read = readChange(reading, change, memos.get(key), part.taken);
         memos.set(key, read.memo);
         return read;
       }),
