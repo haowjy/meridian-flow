@@ -278,57 +278,59 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             )
           : null;
         const index = policy.actions.actions;
-        const lines = page.map((entry) => {
-          const undos = index.actions.filter((action) =>
-            entry.parts.some((part) => action.targets.has(key(part))),
-          );
-          const popped = index.byPart;
-          const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
+        const lines = await Promise.all(
+          page.map(async (entry) => {
+            const undos = index.actions.filter((action) =>
+              entry.parts.some((part) => action.targets.has(key(part))),
+            );
+            const popped = index.byPart;
+            const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
 
-          const applied = entry.parts.filter(
-            (part) => part.origin.kind === "pending" && part.disposition === "applied",
-          ).length;
-          const state = fullyUndone
-            ? undos.some((undo) =>
-                undo.parts.some(
-                  (part) => part.actor !== "agent" || part.threadId !== query.threadId,
-                ),
-              )
-              ? "undone by the user"
-              : "undone"
-            : applied
-              ? applied === entry.parts.length
-                ? "applied"
-                : `partly applied (${applied} of ${entry.parts.length})`
-              : entry.parts.every((part) => part.disposition === "discarded")
-                ? "discarded"
-                : entry.parts.some((part) => policy.changed(part))
-                  ? "changed"
-                  : entry.parts.some((part) => part.origin.kind === "pending")
-                    ? "pending"
-                    : "live";
-          let command = "none";
-          const revertPlan = policy.textPlan(entry, "revert");
-          const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
-          if (revert)
-            command =
-              revert === entry.parts.length
-                ? "revert"
-                : `revert ${revert} of ${entry.parts.length}`;
-          const appliedOrigin = entry.parts.some(
-            (part) => part.origin.kind === "pending" && part.disposition === "applied",
-          );
-          if (entry.id === topEntry?.id && undo?.status === "planned" && !appliedOrigin)
-            command = "undo";
-          const excerpt = store.describePart(document, entry.parts[0]);
-          const summary =
-            excerpt.before && excerpt.after
-              ? `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}`
-              : excerpt.after
-                ? `+ ${JSON.stringify(excerpt.after)}`
-                : `− ${JSON.stringify(excerpt.before)}`;
-          return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
-        });
+            const applied = entry.parts.filter(
+              (part) => part.origin.kind === "pending" && part.disposition === "applied",
+            ).length;
+            const state = fullyUndone
+              ? undos.some((undo) =>
+                  undo.parts.some(
+                    (part) => part.actor !== "agent" || part.threadId !== query.threadId,
+                  ),
+                )
+                ? "undone by the user"
+                : "undone"
+              : applied
+                ? applied === entry.parts.length
+                  ? "applied"
+                  : `partly applied (${applied} of ${entry.parts.length})`
+                : entry.parts.every((part) => part.disposition === "discarded")
+                  ? "discarded"
+                  : entry.parts.some((part) => policy.changed(part))
+                    ? "changed"
+                    : entry.parts.some((part) => part.origin.kind === "pending")
+                      ? "pending"
+                      : "live";
+            let command = "none";
+            const revertPlan = policy.textPlan(entry, "revert");
+            const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;
+            if (revert)
+              command =
+                revert === entry.parts.length
+                  ? "revert"
+                  : `revert ${revert} of ${entry.parts.length}`;
+            const appliedOrigin = entry.parts.some(
+              (part) => part.origin.kind === "pending" && part.disposition === "applied",
+            );
+            if (entry.id === topEntry?.id && undo?.status === "planned" && !appliedOrigin)
+              command = "undo";
+            const excerpt = await store.describePart(document, entry.parts[0]);
+            const summary =
+              excerpt.before && excerpt.after
+                ? `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}`
+                : excerpt.after
+                  ? `+ ${JSON.stringify(excerpt.after)}`
+                  : `− ${JSON.stringify(excerpt.before)}`;
+            return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
+          }),
+        );
         const shownDestination = topEntry?.parts[0]
           ? document.destinationOf(topEntry.parts[0].origin)
           : policy.queryDestination;

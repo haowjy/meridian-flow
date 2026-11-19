@@ -299,6 +299,11 @@ msgstr "{0} ({message} Click to retry, or remove it to send.)"
 msgid "{0} additional balance"
 msgstr "{0} additional balance"
 
+#. placeholder {0}: subject.count
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{0} discarded."
+msgstr "{0} discarded."
+
 #. placeholder {0}: dock.files.length
 #: src/features/chat/DraftDock.tsx
 #~ msgid "{0} documents"
@@ -306,8 +311,8 @@ msgstr "{0} additional balance"
 
 #. placeholder {0}: subject.count
 #: src/features/draft-review/CommandNotice.tsx
-msgid "{0} drafts discarded."
-msgstr "{0} drafts discarded."
+#~ msgid "{0} drafts discarded."
+#~ msgstr "{0} drafts discarded."
 
 #. placeholder {0}: list(names)
 #: src/features/chat/subagent/DeliveryEventRows.tsx
@@ -914,6 +919,10 @@ msgstr "{name} discarded {title} from the draft."
 #: src/features/project/context/RemovedDocumentNotice.tsx
 msgid "{name} discarded this document from the draft."
 msgstr "{name} discarded this document from the draft."
+
+#: src/features/draft-review/CommandNotice.tsx
+msgid "{name} discarded."
+msgstr "{name} discarded."
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "{name} is gone from Trash."
@@ -1671,6 +1680,7 @@ msgstr "Appearance and behavior settings."
 #~ msgstr "applied"
 
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Applied"
 msgstr "Applied"
 
@@ -1695,8 +1705,8 @@ msgstr "Applied {what}"
 #~ msgstr "Applied just now: its changes are in the manuscript."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applied just now."
-msgstr "Applied just now."
+#~ msgid "Applied just now."
+#~ msgstr "Applied just now."
 
 #: src/features/chat/turn-receipt-copy.ts
 #~ msgid "Applied to the manuscript"
@@ -2153,8 +2163,8 @@ msgid "Change reference"
 msgstr "Change reference"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Change to {name} discarded."
-msgstr "Change to {name} discarded."
+#~ msgid "Change to {name} discarded."
+#~ msgstr "Change to {name} discarded."
 
 #: src/features/connections/ConnectionPanel.tsx
 msgid "Change tools"
@@ -2249,8 +2259,8 @@ msgid "Changes in {name}"
 msgstr "Changes in {name}"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Changes in {name} discarded."
-msgstr "Changes in {name} discarded."
+#~ msgid "Changes in {name} discarded."
+#~ msgstr "Changes in {name} discarded."
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changes in this chat"
@@ -3304,6 +3314,7 @@ msgstr "Couldn't undo"
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/apply-history.ts
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Couldn't undo that."
 msgstr "Couldn't undo that."
 
@@ -3714,24 +3725,25 @@ msgstr "Discard this chat's changes to {name}"
 #~ msgstr "discarded"
 
 #: src/features/chat/TurnEditsReceipt.tsx
+#: src/features/draft-review/CommandNotice.tsx
 msgid "Discarded"
 msgstr "Discarded"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Discarded {count} changes just now. Undo brings them all back."
-msgstr "Discarded {count} changes just now. Undo brings them all back."
+#~ msgid "Discarded {count} changes just now. Undo brings them all back."
+#~ msgstr "Discarded {count} changes just now. Undo brings them all back."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Discarded {what}"
 msgstr "Discarded {what}"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Discarded just now. Undo brings it back."
-msgstr "Discarded just now. Undo brings it back."
+#~ msgid "Discarded just now. Undo brings it back."
+#~ msgstr "Discarded just now. Undo brings it back."
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Discarded the changes in {name} just now. Undo brings them back."
-msgstr "Discarded the changes in {name} just now. Undo brings them back."
+#~ msgid "Discarded the changes in {name} just now. Undo brings them back."
+#~ msgstr "Discarded the changes in {name} just now. Undo brings them back."
 
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Discarding"
@@ -3819,8 +3831,8 @@ msgid "Draft discarded from {workName}"
 msgstr "Draft discarded from {workName}"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Draft of {name} discarded."
-msgstr "Draft of {name} discarded."
+#~ msgid "Draft of {name} discarded."
+#~ msgstr "Draft of {name} discarded."
 
 #: src/features/project/mobile/MobileReviewHeader.tsx
 msgid "Draft review"
@@ -6483,7 +6495,6 @@ msgstr "Resume my documents on any device"
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/draft-review/CommandNotice.tsx
 #: src/features/draft-review/DraftCommandStatus.tsx
 #: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
@@ -6501,12 +6512,12 @@ msgid "Retry"
 msgstr "Retry"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Retry bringing back {count} changes"
-msgstr "Retry bringing back {count} changes"
+#~ msgid "Retry bringing back {count} changes"
+#~ msgstr "Retry bringing back {count} changes"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Retry bringing back {name}"
-msgstr "Retry bringing back {name}"
+#~ msgid "Retry bringing back {name}"
+#~ msgstr "Retry bringing back {name}"
 
 #: src/features/draft-review/DocumentChangeRows.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
@@ -8604,7 +8615,6 @@ msgid "Undo delete of {title}"
 msgstr "Undo delete of {title}"
 
 #: src/features/chat/thread-controls/control-copy.ts
-#: src/features/draft-review/CommandNotice.tsx
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
 msgid "Undo didn't go through. Try again."
 msgstr "Undo didn't go through. Try again."

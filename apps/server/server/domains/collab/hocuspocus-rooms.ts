@@ -20,7 +20,7 @@ export function closeDraftRooms(hocuspocus: Hocuspocus | null, draftId: string):
 export function closeRoom(
   hocuspocus: Hocuspocus,
   document: Document,
-  close: { code: number; reason: string } = WS_CLOSE.DRAFT_CLOSED,
+  close: { code: number; reason: string } = WS_CLOSE.DRAFT_PURGED,
 ): void {
   if (hocuspocus.documents.get(document.name) !== document) return;
   for (const connection of document.getConnections()) {

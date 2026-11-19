@@ -40,7 +40,8 @@ import type { InverseStep } from "./inverse-stream.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
-export type StoredInversePart = CapturedPart & {
+/** A stored edit part without its update bytes: `describePart` reads those for the few it shows. */
+export type StoredInversePart = Omit<CapturedPart, "update"> & {
   id: number;
   editId: string;
   ordinal: number;
@@ -166,7 +167,7 @@ export interface TurnInverseStore {
   describePart(
     document: InverseDocument,
     part: StoredInversePart,
-  ): { before: string; after: string };
+  ): Promise<{ before: string; after: string }>;
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId">;
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>

@@ -332,7 +332,7 @@ function ActiveSessionEditorView({
   });
 
   usePaintPending(editor === null);
-  useRefreshTurnCardsOnEdit(editor);
+  useRefreshTurnCardsOnEdit(editor, documentId);
 
   useEffect(() => {
     editorRef.current = editor;

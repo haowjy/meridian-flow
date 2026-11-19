@@ -119,18 +119,9 @@ export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; command
 /**
  * Take back one Apply command: the surviving text groups of every document it applied, and
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
- * A tree fact something changed since stays (`left_out changed_since`), as does a created
- * document with text written since (`has_text`); a text group whose reversal would change a
- * word that holds writing made after the Apply stays applied: it is named in `textSkipped`,
- * its document in a `left_out changed_since` line with `tree: false`. Each press judges the text as
- * it stands, so a later press takes the group if its words came back (another Undo restored them).
- * A source whose Work was purged takes nothing back: `left_out purged`.
- *
- * Nothing that would change the notes of a closed owner (an archived or deleted Work, a chat in
- * Trash) is taken back: it is in `held`. Everything of the Apply still applied before this press
- * is in exactly one place: taken back (`textUndone`, `treeUndone`), left as it stands now
- * (`left_out`, `textSkipped`), or held. A text group an earlier Un-Apply took
- * back is in none. It took something back when `textUndone` or `treeUndone` is not empty.
+ * What something changed since, a group whose words hold later writing, a closed owner's notes and
+ * a purged Work's stay as they stand; each press judges the text as it is. It took something back
+ * when `textUndone` or `treeUndone` is not empty.
  */
 export type UnapplyClick = {
   commandId: CommandId;
@@ -141,36 +132,13 @@ export type UnapplyClickResult = {
   commandId: CommandId;
   /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
   branchId: BranchId;
-  /** A text draft the Apply wrote in was closed: its half of the Un-Apply waits for a reopen. */
   /**
-   * The text groups taken back, and those left applied, per document: one change made in two
+   * The text groups taken back, per document: one change made in two
    * documents has one group id, and a press may take it back in one of them only.
    */
   textUndone: Array<{ node: string; groupIds: string[] }>;
-  textSkipped: Array<{ node: string; groupIds: string[] }>;
   /** The nodes with a tree fact this command took back (a restore it undid included). */
   treeUndone: string[];
-  /**
-   * What is still applied because taking it back would change a closed owner's notes, per node:
-   * `tree` when a tree fact of it is held, `groupIds` the text groups of it that are held. A node
-   * whose tree fact went back and whose text is held is here with `tree: false`. `ownerKey` is which owner it is, so a tab can tell from the Works and chats it
-   * holds whether that owner has reopened. The `returned` lines of `settled` are derived from it.
-   * The server always fills it; an answer stored before it existed has none, which reads as nothing
-   * held.
-   */
-  held?: Array<{
-    node: string;
-    tree: boolean;
-    groupIds: string[];
-    why: ClosedOwnerWhy;
-    ownerKey: DraftOwnerKey;
-  }>;
-  /**
-   * `left_out` (what could not come back, one line per reason and half, `tree` saying which),
-   * `returned` (what stayed for a closed owner, with `items`), or `already` (nothing was taken
-   * back, left or held: everything was taken back before).
-   */
-  settled?: Settlement[];
 };
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
 

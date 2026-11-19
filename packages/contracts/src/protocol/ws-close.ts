@@ -6,8 +6,8 @@ export const WS_CLOSE = {
   AUTH_FAILED: { code: 4401, reason: "auth_failed" },
   AUTH_ERROR: { code: 1011, reason: "auth_error" },
   PERMISSION_DENIED: { code: 4403, reason: "permission-denied" },
-  /** Terminal: this draft ended. The transport reason names its close cause. */
-  DRAFT_CLOSED: { code: 4205, reason: "discarded" },
+  /** Terminal: the draft's row was purged with its Work, so its room is gone. Never reconnect. */
+  DRAFT_PURGED: { code: 4205, reason: "purged" },
   /**
    * A draft update arrived before the update it depends on reached the draft's journal. Not a
    * refusal: the client reconnects and its next handshake's SyncStep2 carries the missing prefix.

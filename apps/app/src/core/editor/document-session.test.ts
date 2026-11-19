@@ -239,9 +239,9 @@ describe("DocumentSession status derivation", () => {
 
     current().emit({
       kind: "reset",
-      reason: WS_CLOSE.DRAFT_CLOSED.reason,
+      reason: WS_CLOSE.DRAFT_PURGED.reason,
       disposition: "closed",
-      code: WS_CLOSE.DRAFT_CLOSED.code,
+      code: WS_CLOSE.DRAFT_PURGED.code,
     });
 
     expect(session.getSnapshot()).toMatchObject({

@@ -47,10 +47,9 @@ stateDiagram-v2
   reversed are gone.
 - **An Undo waits for the Apply it takes back** and is sent when either half of that Apply
   landed; when neither did, the Undo ends `cancelled` without a request.
-- **An Undo's answer is acted on when it arrives** (`heard`): the notice, the history and a held
-  Apply's state don't wait for its rows to leave the room. A Redo pressed
-  before the answer narrows to what the Undo took back, and is cancelled when it took nothing or
-  held something.
+- **An Undo's answer is acted on when it arrives** (`heard`): the notice and the history don't wait
+  for its rows to leave the room. A Redo pressed before the answer narrows to what the Undo took
+  back, and is cancelled when it took nothing.
 - **`landed`** means the rows show the Apply happened but its answer was never read, or the
   queue was destroyed while the command waited on its rows. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.

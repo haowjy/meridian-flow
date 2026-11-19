@@ -6,10 +6,9 @@
  * - `rebuilding`: the previous session is still being torn down, or a retry asked again. The read joins
  *   the pool's one rebuild and becomes `usable` again.
  * - `fenced`: a schema reset, a room whose updates the server kept refusing (`updatesRefused`), or a
- *   draft the server closed (`draftClosed`, in Trash). Its terminal session is kept so an editor can
- *   paint it read-only with its notice, and it is never a target for a command. `retry()` rebuilds
- *   a refused one, which resends its edits from IndexedDB; a restore restarts a closed one's
- *   transport in place, and it reads `usable` again.
+ *   draft the server purged with its Work (`draftClosed`). Its terminal session is kept so an
+ *   editor can paint it read-only with its notice, and it is never a target for a command.
+ *   `retry()` rebuilds a refused one, which resends its edits from IndexedDB.
  * - `unavailable`: the room was superseded, or the session ended. Ask what the draft is now.
  * - `error`: opening or rebuilding the room failed. `retry()` asks again.
  *

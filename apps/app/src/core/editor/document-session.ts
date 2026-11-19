@@ -127,7 +127,7 @@ export type HandshakeDifference = { lacking: Uint8Array; server: Uint8Array };
 export type DocumentSessionAccess = "edit" | "read";
 
 export type DocumentSessionResetReason =
-  | typeof WS_CLOSE.DRAFT_CLOSED.reason
+  | typeof WS_CLOSE.DRAFT_PURGED.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
   /** The document was deleted or discarded; its rooms never reopen. */
@@ -141,10 +141,7 @@ export type DocumentSessionResetReason =
  */
 export type ResetDisposition = "schema" | "removed" | "closed";
 
-/**
- * The server closed the draft (a Discard, here or anywhere): its room is in Trash. Its owner may
- * keep showing its text read-only until a restore reopens it.
- */
+/** The server purged the draft with its Work (`WS_CLOSE.DRAFT_PURGED`); its owner may keep showing its text read-only. */
 export function draftClosed(state: DocumentSessionConnectionState | null | undefined): boolean {
   return state?.kind === "reset" && state.disposition === "closed";
 }
@@ -575,7 +572,7 @@ export class DocumentSession {
     if (this.destroyed || this.transportState?.kind === "reset") return;
     this.transportState = {
       kind: "reset",
-      reason: WS_CLOSE.DRAFT_CLOSED.reason,
+      reason: WS_CLOSE.DRAFT_PURGED.reason,
       disposition: "closed",
     };
     this.localPeers?.stop();
