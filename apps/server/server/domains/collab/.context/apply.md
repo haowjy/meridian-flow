@@ -8,8 +8,7 @@ room: snapshot, `baseViewDelta`, `groupIds`; the server refuses `unsynced` when 
 lacks the snapshot, and `malformed` for a group the cut's projection doesn't have. A whole cut
 (`{draftId, whole: true}`) is what a tab with no room open sends (Changes rows, folders, Apply
 all): `compileClick` cuts at the replica `loadBase` returned, with an empty `baseViewDelta`, and
-takes every group of that projection, or, with `groupIds` (a Redo naming what its Un-Apply took
-back), the named groups the projection holds, passing over the rest. A whole cut with no group
+takes every group of that projection, or, with `groupIds` (a Redo: `redoOf` on the Apply route has the server read what the Un-Apply took from the effect rows it marked, `redoItems`), the named groups the projection holds, passing over the rest. A whole cut with no group
 compiles to an empty click; the adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and
 the Un-Apply records are the same for both.
 
@@ -119,7 +118,7 @@ Work, branch, list and document keys:
    ranks the records the press saw (`recordsAdmittedAfter` drops the rest): the node's own, and a
    folder delete whose cascade names it while the folder is still above it in the Work's view. No
    cut (an old tab): the node's own records win. `noteOf` turns a fact into a line (`already` for
-   the asked kind, `overtaken` with `by` for the other, `left_out purged` for none). Discard's
+   the asked kind, `overtaken` for the other, `left_out purged` for none). Discard's
    per-item answer (B4) reads the same.
 2. The text half is open when its cut compiled and its draft is the open row of this branch;
    otherwise its line is fixed now.

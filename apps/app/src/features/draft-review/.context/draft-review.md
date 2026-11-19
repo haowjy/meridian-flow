@@ -178,26 +178,22 @@ member ends cancelled, and that is not the command's answer); groups are enqueue
 each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
 the same id.
 
-An editor text Apply gives that editor's history the Undo and Redo callbacks of the
-schedule-owned command handle. The handle owns command identity, reversal outcome and
-replay selection; the mounted history owns only navigation. Undo moves the history cursor
-synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. The
-schedule retries the targeted Apply before the inverse when its delivery is unknown and
-withholds later commands behind any stalled intent. The Un-Apply goes when either half of
-the Apply landed: a landed rename with settled text still has something to take back. Redo
-queues a new Apply for the text groups the server actually reversed in this document
-(`textUndoneOf`), and the tree cut when the Un-Apply's `treeUndone` names the item.
+An editor text Apply gives that editor's history one entry (`ApplyEntries`, `apply-history.ts`) whose
+Undo and Redo go through the schedule-owned command handle (`queuePort`). Undo moves the history
+cursor synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. The schedule
+retries the targeted Apply before the inverse when its delivery is unknown and withholds later
+commands behind any stalled intent. The Un-Apply goes when either half of the Apply landed: a
+landed rename with settled text still has something to take back.
 
-Every other Redo is the same rule on the server's port: the Un-Apply's answer is the Redo's whole
-selection (`againOf`), never the Apply's original choice, so a partial Ctrl+Z redoes only what it
-took back. Text is read per document (`textUndone`): one change made in two documents has one
-group id, and an Un-Apply that took it back in only one of them redoes it there alone. It is a whole cut that names those groups (`ApplyTextCut` with `groupIds`), cut on
-receipt from the draft as the server holds it, plus the tree cut of each node in `treeUndone`: a
-group the draft no longer holds (a card's Undo took the proposal away) is passed over, and a Redo
-that lands nothing is lost and ends, applying nothing else. Every port reads the same landed rule
-(`itemLanded`: the item's text or tree landed): an `applied` answer only says the command finished. The strip's and sidebar's Applies send
-it as `again` targets through the item queues (`rememberApply`), a band's once its review let go
-of the room through `serverBandPort`.
+Every Redo is one request that names its Un-Apply: `{ commandId, redoOf }` (`RedoClick`, on the
+Apply route). The server reads what that Un-Apply took from its own records (`redoItems`: the
+effect rows it marked, with their draft, and its `treeUndone`), so a partial Ctrl+Z redoes only
+what it took back, a change another chat proposed since is never applied with it, and one made in
+two documents is applied only where the Un-Apply took it. A group the draft no longer holds is
+passed over, and a Redo that lands nothing ends, applying nothing else. The review's queue paints a
+Redo at once from the selection the Un-Apply took; what it sends is the id. Every port reads the
+same landed rule (`itemLanded`: the item's text or tree landed): an `applied` answer only says the
+command finished.
 
 Existence of a deleted document is its own fact, never read from a name conflict.
 An Apply brings a deleted document back to land what the click carries for it: the click
@@ -207,16 +203,9 @@ heads-up, not a precondition. The account owner keeps the answer's `restored`
 fact, so an editor Apply keeps its result after navigation.
 
 An Apply never answers refused. The answer is `applied` with one entry per item in `items`,
-each half `landed` or settled with lines (`itemOf`). `outcomeOf` reads them: an item with a
-landed half is `done` (an Undo step and the applied facts) and carries every line of both
-halves beside it, so a landed delete with a left-out rename reads as applied, with the line;
-an item with neither half landed is `settled`. Every `overtaken` or `left_out` line, with its
-half and the command that overtook it, becomes the item's `apply-left-out` state
-(`overtaken_discarded`, `overtaken_removed`, `left_out_<why>`), and the surfaces show one
-sentence per distinct reason: as a note (`InlineErrorRow`'s `note`) when the other half landed,
-as an error when neither did. `already` and `restored` are quiet. `viewOf` is the one place a settlement line becomes what
-is shown, a closed owner's `returned` included; `settledOf` gives every line of a flat answer
-(Discard, Restore, Un-Apply) that names an item. A click whose room cannot acknowledge it
+each half `landed` or settled (`itemOf`). `outcomeOf` reads them: an item with a landed half is
+`done` (an Undo step and the applied facts); an item with neither half landed is `settled`. What
+stayed out says nothing, and the item stays in Changes. A click whose room cannot acknowledge it
 settles `unsent` on the client. The press sends `saw`, the cut the cached draft list came
 with, frozen with the click; a 503 (the server lacks something the press saw) is an unknown
 delivery the queue retries with the same id. An Apply goes on the Undo stack only when an
@@ -226,12 +215,9 @@ taken back never falls through to the next older step.
 A Discard never refuses either, and its answer is read per item the same way (`discardAnswer`
 in `draft-command-owner.ts`): an item it took, or one an earlier Discard took (`already`, quiet),
 leaves review, a created document's tab closing either way. The outcome carries what the answer
-says of the items sent (`took`: the ones it didn't take, and of those the ones an Apply took
-first), and the notice lists only what it took (`DraftNotices.answered`): its struck rows and its
-Undo are the answer's, never the press's. An item an Apply took first says "Applied first" where
-the writer pressed: on its row while the list draws it, else as the chip a bounce shows (the
-Changes bar, the strip, the band, or the change card pressed, where a closed owner's bounce
-goes) when the Discard took nothing else. A move's Discard that also writes its own text is two
+says of the items sent (`took`: the ones it didn't take), and the notice lists only what it took
+(`DraftNotices.answered`): its struck rows and its Undo are the answer's, never the press's. An item an
+Apply took first just isn't listed; nothing says so. A move's Discard that also writes its own text is two
 shares of the notice, the room's and the server's, and only the server's answer narrows. The command is `done`,
 with its Undo, when it took any item, and `settled` when it took none. An Apply's Undo step
 holds the nodes its answer says landed, not the ones pressed.
@@ -299,18 +285,17 @@ main's band or Recently opened (`landing`); the sidebar's rows carry their own (
 tree's interactions page). A page whose document a Discard took away
 (a Work's new document) shows the Discard's notice, Undo included, while it holds the document
 (`discarding`); after that it says the document was discarded from the draft. A newer Apply or
-Discard by the owner replaces it; only a bounced one (below) has a timer; a reload starts empty. Each notice records
+Discard by the owner replaces it; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
 there. In the Changes list a notice is said on its rows, never as a line (`useDraftNoticeWords`,
 `RowWord`): every row a Discard took stays struck through with Undo, in the place the list
 showed it when the writer pressed (the list is held at the press, per owner, so a switch of list
 keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedFact.step`): the
-sentence says it was applied, with where it is now (read by id from the tree, the removal sentence once it is in Trash or purged), the name a clash gave it or that it came back
-to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
-takes (`AppliedCommand.press`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
-answers ends the applied notice, so its result shows on the rows as a press's does: nothing, when it
-took everything back or left something as it was (an Un-Apply never says why); "Retry", when it
-didn't reach the server (`unappliedOf`, in `draft-notices.ts`, is the one reading of an Un-Apply answer). The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
+sentence says it was applied, with where it is now when it moved (read by id from the tree, the
+removal sentence once it is in Trash or purged), and the Undo is the Apply's step on the sidebar's
+Undo stack, the one Ctrl+Z takes (`ApplyEntries.undo`; an Apply all's rows each take back the
+whole step). An Un-Apply that took something ends the applied notice; one that didn't reach the
+server toasts "Couldn't undo that." and leaves it. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
 the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
 removed-documents notice). Only the document's name shortens in a notice; its verb and Undo
@@ -429,70 +414,32 @@ the same item FIFO.
 An item with a tree line is discarded by the same one command with `tree: true`, so its Undo
 takes back both halves.
 
-Each Apply is one state machine, `AppliedCommand` (`apply-history.ts`, drawn in
-[state-machines.md](state-machines.md)): in force, failed, held, Un-Apply in flight, taken back,
-Redo in flight, or ended is one value (`state`), and every surface derives from it: the sidebar's
-step, each editor history's entry and its Undo button, the Changes row's "Undo applying", a chat
-card's control and line, the held lines, and session retention. No surface keeps a copy of what an
-answer said. Every Undo of it is its `ask` (the sidebar's Ctrl+Z), or its `press`, which asks and
-says the answer on the sidebar's rows (an applied row's Undo, Ctrl+Z in an editor showing one of its documents), and every Redo its `redo`. Its
-port carries the requests and their data and decides nothing: the server's by the command id
-(`serverPort`, the one every surface uses), or, for a band's Apply while the review shows the
-draft's room, its item queue's, so the review shows both at once. When the review lets go of the
-room (Draft view to Live) the band's Apply switches to the server's port (`serverBandPort`): the
-queue settles an Un-Apply only by watching that room. `owner.applied` (`AppliedCommands`) holds every Apply of the tab, found by its
-command in force while the tab answers for its Undo (not once an editor's press took it back: what
-the server still keeps of it is the server's to answer), and tells readers when any of them changes.
+An Apply is held in the browser as its command id and nothing else (`ApplyEntries`,
+[state-machines.md](state-machines.md)): one entry in each live history of its documents, and a
+step on the sidebar's stack. Every Undo of it is `undo(from)`: the sidebar's Ctrl+Z, an applied
+row's Undo, or Ctrl+Z in an editor showing one of its documents; every Redo is the editor's.
+`ApplyPort` carries the two requests by id: the server's (`serverPort`, the one every surface uses),
+or, for a band's Apply while the review shows the draft's room, its item queue's (`queuePort`), so
+the review shows both at once. When the review lets go of the room (Draft view to Live) the band's
+entry switches to the server's port. `owner.applied` holds every entry, so a session that opens
+after the Apply gets it (`observeHistories`), and ends them with the owner.
 
-**Redo during an Un-Apply** chains on that attempt's answer: it goes on only when the answer took the
-Apply back (`takenBack`: something went, nothing held), and otherwise the Apply still in force is the
-one the answer says (held, failed, or ended). The command in force keeps its id until its replacement
-lands (the queue's `inForce`), so every lookup by that id finds the same owner while the Redo is
-out. A Redo that lands puts the Apply back in force, and the owner, not the port, shows it again in
-every live history at its place and puts it back on the sidebar's stack. Taken back, it ends when its
-editor drops the Redo (new typing clears it).
+**Redo during an Un-Apply** waits for that answer and goes on only when it took something back. A
+Redo that lands makes the new command the one in force and shows the entry again in every live
+history and on the sidebar's stack. Taken back, the entry ends when its editor drops the Redo (new
+typing clears it). Ctrl+Z in one history moves its entry to Redo and hides it in the others; a press
+from elsewhere leaves no Redo and ends every entry; a press that didn't reach the server shows it
+again everywhere and toasts. Nothing is held for a closed owner: an Un-Apply takes what it can,
+and what a closed owner keeps stays applied.
 
 An Apply made in the sidebar, a chat's strip or Changes is also the sidebar's step
-(`rememberApply`, `core/project-tree/tree-undo.ts`). Its state puts it on the stack and takes it off
-(`Seat`): there while in force or asked, gone once taken back or ended, with its watches and its
-notice. Its press is spent once the server answers, whatever it took back, and what it couldn't take back (text edited since, a tree change named by a
-`left_out` line) is said on the rows it stayed on (`unappliedOf`). A band's Apply is on no stack
-until it holds a tree change (below).
-
-The histories this tab holds for an Apply's documents show it as one entry (`SharedApply`): each
-document's live session (`registry.history`, by the document's id: a shown editor or an open tab),
-and the draft room it was applied from (by the room's name), where an editor open on the draft stays
-after the Apply ("No changes left"); a band's reads its reviewing editor instead. A session that opens
-after the Apply gets it too: the registry says when one opens (`observeHistories`), and the owner has
-each Apply in force enter the histories it now finds (`AppliedCommands.rejoin`), oldest first. Ctrl+Z in
-one moves its entry to Redo and hides it in the others. Taken back, the entry stays in that history's
-Redo and hidden in the others, so a Redo that lands shows it everywhere again; a press from elsewhere
-leaves no Redo and ends every entry; a press that didn't reach the server or was held shows it again
-everywhere at its place. A press from an editor that left something, or failed, says so on that
-document's identity row (`DraftNotices.showPress`, with Retry).
-
-**Held for a closed owner.** An Un-Apply that would change a closed owner's notes (an archived or
-deleted Work, a chat in Trash) leaves that part applied and names it in `held`. Any held answer,
-whatever else it took, leaves the Apply in force (`held`) at its place, in the sidebar's stack and in
-every history, with no Redo: a held part can't be redone over. A press passes over it while every
-owner it waits for is closed (`waits`), then takes it once one reopens. Closed is read in the tab
-(`useClosedOwners`: the Works list, each lineage's `frozen`, the sources that ended; one reader per
-project, since an Apply outlives the component that applied it). The answer is evidence too, which
-the Apply keeps until a read of that owner lands that started after the press was sent (`readAt`, the
-read's start, which the reader keeps itself: the cache drops a lineage's list nothing shows). After
-that the tab's read decides, and an owner it can't tell about reads open, so a stale list costs one
-answered press. The reader is asked to read those owners again. Owner changes and
-answers both re-derive every surface at once: the toolbar's Undo, the Changes row's "Undo applying"
-(hidden while it waits, so the sidebar's held line shows on the row), the card's line, and the held
-lines, which never show when the owner reopened while the press was out. A band's held Apply with a
-tree change joins the sidebar's stack as the same object (`joinStack`): tree changes are undone
-there. Session retention counts a held entry, and a hidden one that may come back (`hasEntries`); the Undo button skips both (`canUndo`).
-The press after an answer is a new Un-Apply; a resend after a lost answer is the same one.
+(`rememberApply`, `core/project-tree/tree-undo.ts`): on the stack from when it landed until an
+Un-Apply took something back or it ended, with its watch on its tree half and its notice.
 
 **A chat card's Undo** is the one `reverse_turn` command, and it takes back only its own reply's
 changes, applied ones included: the server reads each applied change from the Apply's `carried` and
 takes it out of the manuscript when it still stands there (`collab/.context/reversal.md`). The card
-holds no `AppliedCommand` and sends no Un-Apply; a Changes row's Undo and Ctrl+Z still take back the
+holds no Apply entry and sends no Un-Apply; a Changes row's Undo and Ctrl+Z still take back the
 whole Apply.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
