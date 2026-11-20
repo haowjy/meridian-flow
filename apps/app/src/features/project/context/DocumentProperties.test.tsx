@@ -169,9 +169,7 @@ it("shows unreadable YAML as written, with a plain note", async () => {
   await show(async (root) => {
     expect(toggle()?.textContent).toBe("PropertiesCouldn't be read");
     await act(async () => toggle()?.click());
-    expect(root.textContent).toContain(
-      "These properties couldn't be read, so they're shown as written.",
-    );
+    expect(root.textContent).toContain("Couldn't read properties");
     expect(root.querySelector("pre")?.textContent).toBe("title: [unclosed\n");
   });
 });
@@ -187,7 +185,7 @@ it("says when properties are too large to show in full, and shows their start", 
   await show(async (root) => {
     expect(toggle()?.textContent).toBe("PropertiesToo large to show");
     await act(async () => toggle()?.click());
-    expect(root.textContent).toContain("These properties are too large to show in full.");
+    expect(root.textContent).toContain("Too large to show");
     expect(root.querySelector("pre")?.textContent).toBe("title: start\n");
   });
 });

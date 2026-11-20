@@ -77,10 +77,7 @@ export function ProjectRouteBoundary({
                 </Button>
               </div>
             ) : issue === "resource-viewing" ? (
-              <Trans>
-                Viewing chat resources is not available yet. These files remain available to your
-                chats and AI tools.
-              </Trans>
+              <Trans>Not available</Trans>
             ) : issue === "error" ? (
               <Trans>This destination couldn’t load.</Trans>
             ) : removed ? (

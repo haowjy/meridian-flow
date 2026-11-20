@@ -350,7 +350,7 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
       <section className="space-y-4" aria-label={t`All your devices`}>
         <PreferenceGroupHeading
           title={<Trans>All your devices</Trans>}
-          description={<Trans>These preferences follow your account wherever you sign in.</Trans>}
+          description={<Trans>Saved to your account</Trans>}
         />
         <div className={rowClassName}>
           <span className={labelClassName}>
@@ -410,7 +410,7 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
       >
         <PreferenceGroupHeading
           title={<Trans>This device</Trans>}
-          description={<Trans>These preferences stay on this device to suit your screen.</Trans>}
+          description={<Trans>Saved on this device only</Trans>}
         />
         <div className={rowClassName}>
           <span className={labelClassName}>
@@ -449,7 +449,7 @@ function StatsForNerdsRow() {
             <Trans>Stats for nerds</Trans>
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            <Trans>Shows token counts and the model on each reply and compaction</Trans>
+            <Trans>Show token counts and the model on each reply</Trans>
           </p>
         </div>
         <Switch

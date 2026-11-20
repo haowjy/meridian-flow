@@ -6,7 +6,7 @@
  * first from the response and then from the snapshot. A refusal (409: the chat
  * moved on first; or the server is shutting down) wrote nothing: the stand-in
  * goes and the snapshot refreshes to show the true state. The refusal is a fact this hook
- * holds (`outcomes`); `chatCards` makes it the temporary "Couldn't retry." card on the pressed
+ * holds (`outcomes`); `chatCards` makes it the temporary "Couldn't retry" card on the pressed
  * turn. It clears at the writer's next Retry or send, or when a reply completes that wasn't
  * complete at the refusal (read from the stored turns' status; a reply that fails or is
  * cancelled leaves it). A lost request is the same kind of fact: the entry is kept, failed,
@@ -335,7 +335,7 @@ export function useRetryStandIns(input: {
 
   const retry = useCallback<RetryStandIns["retry"]>(
     (from, build) => {
-      // One clearing rule: any next action of the writer drops every "Couldn't retry." card.
+      // One clearing rule: any next action of the writer drops every "Couldn't retry" card.
       retireRefusals("retried");
       const lostEntry = localRef.current.find(
         (entry) => entry.from === from.id && entry.request === "failed",

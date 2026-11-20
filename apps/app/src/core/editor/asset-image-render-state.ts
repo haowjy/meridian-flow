@@ -360,7 +360,7 @@ export function useAssetImageRenderState(input: {
       setState({
         kind: "error",
         url: null,
-        message: t`This stored figure needs a project before it can be rendered.`,
+        message: t`This figure needs a project to render`,
       });
       return;
     }

@@ -74,7 +74,7 @@ export function TrashedDocument({
       <MainSurface joined className="p-4">
         <p className={role.emptyLine}>
           {standing.kind === "purged" ? (
-            <Trans>Gone for good: this document was emptied from Trash.</Trans>
+            <Trans>Emptied from Trash</Trans>
           ) : (
             <Trans>No longer available</Trans>
           )}

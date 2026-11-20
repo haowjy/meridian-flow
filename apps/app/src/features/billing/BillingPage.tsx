@@ -159,12 +159,6 @@ export function BillingPage() {
           <h1 className={role.pageHeading}>
             <Trans>Billing</Trans>
           </h1>
-          <p className="text-muted-foreground">
-            <Trans>
-              Your monthly plan covers included usage. Top up extra usage any time to keep going
-              past your plan.
-            </Trans>
-          </p>
         </header>
 
         <CheckoutReturnNotice status={checkoutReturn} />
@@ -207,9 +201,6 @@ export function BillingPage() {
               <h2 className={role.sectionHeading}>
                 <Trans>Extra usage</Trans>
               </h2>
-              <p className="text-sm text-muted-foreground">
-                <Trans>Top up any time. Extra usage carries over month to month.</Trans>
-              </p>
             </div>
             <article className="surface-card p-5">
               <ExtraUsagePicker

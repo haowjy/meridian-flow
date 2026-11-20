@@ -339,9 +339,7 @@ export const noticeAction = (container: HTMLElement) =>
 export type InArea = { name: string; scheme: ProjectContextTreeScheme | null | undefined };
 
 /** The names joined per area, in the order each area first appears. */
-function byArea(
-  documents: readonly InArea[],
-): { area: string | null; names: string; count: number }[] {
+function byArea(documents: readonly InArea[]): { area: string | null; names: string }[] {
   const groups = new Map<string | null, string[]>();
   for (const { name, scheme } of documents) {
     const area = schemeLabel(scheme);
@@ -351,7 +349,6 @@ function byArea(
   return [...groups].map(([area, names]) => ({
     area,
     names: list.format(names),
-    count: names.length,
   }));
 }
 
@@ -372,14 +369,10 @@ export function ApplyAllQuestion({
   );
   const sentences = [
     ...(deleting.length > 0 ? [t`Applying deletes ${deletes}.`] : []),
-    ...byArea(restoring).map(({ area, names, count }) =>
+    ...byArea(restoring).map(({ area, names }) =>
       area
-        ? count === 1
-          ? t`Applying brings back ${names}, which was deleted from ${area}.`
-          : t`Applying brings back ${names}, which were deleted from ${area}.`
-        : count === 1
-          ? t`Applying brings back ${names}, which was deleted.`
-          : t`Applying brings back ${names}, which were deleted.`,
+        ? t`Applying brings back ${names}, deleted from ${area}`
+        : t`Applying brings back ${names}`,
     ),
   ];
   return <>{sentences.join(" ")}</>;

@@ -18,6 +18,7 @@ import {
   addressRefusal,
   type ConnectionAction,
   type ConnectionStanding,
+  problemWord,
   standingAction,
   timeAgo,
 } from "./connection-status";
@@ -82,15 +83,10 @@ function StandingSentence({
       sentence = t`Checking that it answers…`;
       break;
     case "shadowed":
-      sentence = t`Not used in this project: this project's own ${shadowName ?? connection.name} stands in for it.`;
+      sentence = t`Replaced by this project's own ${shadowName ?? connection.name}`;
       break;
     case "problem":
-      sentence =
-        standing.status === "unreachable"
-          ? checked
-            ? t`Can't be reached. ${standing.reason} Tried ${checked}.`
-            : t`Can't be reached. ${standing.reason}`
-          : standing.reason;
+      sentence = problemWord(standing.status);
       break;
     case "no_tools":
       sentence = checked ? t`Connected, checked ${checked}.` : t`Connected.`;
@@ -332,11 +328,7 @@ function ToolsPart({
           </ul>
         ) : (
           <p className="text-xs text-muted-foreground">
-            {connection.status === "connected" ? (
-              <Trans>None yet.</Trans>
-            ) : (
-              <Trans>None yet. Its tools can be chosen once it answers.</Trans>
-            )}
+            <Trans>None yet</Trans>
           </p>
         )}
         {pinned.length > 0 || connection.status === "connected" ? (
@@ -369,7 +361,7 @@ function ToolsPart({
         />
       ) : listing.isError || (listing.isSuccess && listing.data.tools === null) ? (
         <InlineErrorRow
-          message={listing.data?.connection.statusReason ?? t`The server didn't list its tools.`}
+          message={t`Couldn't list tools`}
           onRetry={() => void listing.refetch()}
           className="px-0"
         />

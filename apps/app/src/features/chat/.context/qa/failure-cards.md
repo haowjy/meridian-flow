@@ -25,15 +25,13 @@ shows a lost Retry or a failed Stop).
 ## FC-01: the failed reply
 
 `./mf thread send "$T" "write" --mock '[{"error":{"status":500,"message":"boom"}}]'`. The latest
-reply has a card anchored on it, "This response failed." with Retry (a provider decline reads "The AI provider turned this
-request down."). Send another message: the card and the failed row are gone, and the live region is
+reply has a card anchored on it, "Reply failed" with Retry (a provider decline reads "Reply declined"). Send another message: the card and the failed row are gone, and the live region is
 empty. `./mf thread view` printed `card reply-failed on turn <id> [retry] <id>` before.
 
 ## FC-02: a refused Retry
 
 With a failed reply open, wrap `fetch` to answer the `/retry` POST with 409 and press Retry. A second
-card, "Couldn't retry. Another reply started first.", sits on the failed reply under its own card
-(plain "Couldn't retry." for another refusal). Make the next message fail: the refusal stays alone on
+card, "Couldn't retry", sits on the failed reply under its own card (the same card for any refusal). Make the next message fail: the refusal stays alone on
 the past reply. Make the next reply complete: it goes. Pressing Retry or sending also clears it.
 
 ## FC-03: a lost Retry
@@ -52,8 +50,7 @@ and press Enter twice:
 ./mf mock script '[{"error":{"status":500,"message":"summary boom"}}]' --match 'Conversation transcript'
 ```
 
-The divider keeps its neutral "Compaction" label and fold icon; only its card says "This conversation couldn't be compacted. Try
-again." with a Try again button. Clear both scripts (`./mf mock clear --id`) and press Try again: a new
+The divider keeps its neutral "Compaction" label and fold icon; only its card says "Couldn't compact" with a Try again button. Clear both scripts (`./mf mock clear --id`) and press Try again: a new
 compaction runs and completes, the failed one and its card go. An autocompaction's failure shows no
 card (the failed reply under the newest message carries it).
 
@@ -74,8 +71,8 @@ generating brief. Restore `fetch` and press Try again: the brief stops and the c
 - **Stop:** drop the chat's `stop` POST and press Stop on a running reply: "Couldn't stop the reply."
   appears above the box and in the live region. Restore `fetch` and press Try again. The card goes;
   `document.body.innerText` and every `[aria-live]` hold no "Couldn't stop the reply."
-- **A reply failure:** fail a reply while the chat is open: the live region says "This response
-  failed." once. Send another message: it is empty.
+- **A reply failure:** fail a reply while the chat is open: the live region says "Reply failed"
+  once. Send another message: it is empty.
 - **On load:** reload a chat whose latest reply failed. The card shows and the live region stays empty.
 
 ## FC-07: unavailable feed and correlated diagnostics

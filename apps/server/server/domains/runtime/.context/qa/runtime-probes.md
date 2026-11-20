@@ -45,7 +45,7 @@ RETRY=$(node -p 'crypto.randomUUID()')
 Expect no provider call during the idle interval. The first Retry creates one
 new failed assistant after the unchanged original; replay returns the same
 turn. A queued compact runs after the failure. In the browser, a provider 404
-shows “The AI provider turned this request down.” and Retry; a later message
+shows “Reply declined” and Retry; a later message
 removes the old failure line, while an inherited read-only failure has no Retry.
 
 ## RP-2: Commands wait for messages

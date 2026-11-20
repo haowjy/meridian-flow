@@ -102,7 +102,7 @@ function OpenPicker({
   const source = useProjectMenuSource({ projectId, title: "", own, scratch });
   // Opens at the row's own folder, except in an area that takes no changes: the root then.
   const openAt = own && source.own.writable ? source.own.openAt(entry.path) : [];
-  const unavailable = t`This location is unavailable. Refresh and try again.`;
+  const unavailable = t`This location is unavailable`;
 
   const several = picked !== undefined && picked.length > 1;
   // A row inside a selected folder goes with that folder, never on its own.

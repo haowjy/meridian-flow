@@ -71,8 +71,7 @@ revisions.
   package is out of use, its count in place of "Saved" ("4 unavailable · Undo"; the count every
   level says, read with `troubleAfterSave`, what a Save makes of each file, so it is the same
   before the server answers and after the files are read again); its list names each such file
-  with what keeps it out ("Left out:", "Your latest edit isn't in use:", "New chats can't start
-  it:"), then what was saved and the Save's notes. A failed Save reads "2 problems" on a sidebar
+  with what keeps it out ("Left out:", "Your latest edit isn't in use:"), then what was saved and the Save's notes. A failed Save reads "2 problems" on a sidebar
   row and "cw-skills can't be saved: 2 problems" elsewhere, opening each finding with a way to
   its file; then "Undone" (inside the changes count’s popover on package rows to keep
   the name readable), or Retry when the request got no answer. The word is shown at once

@@ -345,7 +345,7 @@ export function ChatView({
       {
         slug: "compact",
         name: t`Compact conversation`,
-        description: t`Summarize earlier messages so the model has room to keep going`,
+        description: t`Summarize earlier messages`,
         run: (instructions) => {
           requestTailFollow();
           enqueueControl(instructions ? { kind: "compact", instructions } : { kind: "compact" });

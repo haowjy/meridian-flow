@@ -165,9 +165,7 @@ function ManageWorksDialog({ projectId, onClose }: { projectId: string; onClose:
             </DialogTitle>
           </div>
           <DialogDescription className="sr-only">
-            <Trans>
-              Create, rename, archive, restore and delete Works, and review their changes.
-            </Trans>
+            <Trans>Manage Works and review their changes</Trans>
           </DialogDescription>
         </DialogHeader>
         {/* The bleed is the room the Work list's rows reach into (-mx-2), so it never scrolls sideways. */}

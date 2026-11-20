@@ -9,7 +9,7 @@ mode the writes go straight to live. Either way the writer can undo them.
 
 Does: chooses a Work, the task this session belongs to, from the picker under the project name. "None" is the row for no Work.
 
-Sees: the picker keeps the choice, which decides which chats and drafts the sidebar shows. A new chat's composer has its own Work control; if that Work becomes unavailable the composer says "Your selected Work is unavailable. Choose another Work, or None."
+Sees: the picker keeps the choice, which decides which chats and drafts the sidebar shows. A new chat's composer has its own Work control; if that Work becomes unavailable the composer says "Selected Work unavailable."
 
 - Map: [project](../app.md#project), [projects](../server-workspace.md#projects)
 - Machines: [Work archive and delete](../../../apps/server/server/domains/projects/.context/state-machines.md)

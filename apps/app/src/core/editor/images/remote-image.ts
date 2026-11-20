@@ -11,7 +11,6 @@
 import {
   apiImageProxyPath,
   IMAGE_PROXY_REASON_HEADER,
-  type ImageProxyReason,
   imageProxyReason,
 } from "@meridian/contracts/protocol";
 import { useSyncExternalStore } from "react";
@@ -42,11 +41,7 @@ export function clipboardRemoteSource(value: string | null): string | null {
   }
 }
 
-export type RemoteImageStatus =
-  | { kind: "loading" }
-  | { kind: "loaded" }
-  /** `null` when the proxy never answered (offline, signed out). */
-  | { kind: "failed"; reason: ImageProxyReason | null };
+export type RemoteImageStatus = { kind: "loading" } | { kind: "loaded" } | { kind: "failed" };
 
 const statuses = new Map<string, RemoteImageStatus>();
 const listeners = new Set<() => void>();
@@ -63,17 +58,20 @@ export async function loadRemoteImage(address: string): Promise<void> {
   try {
     const response = await fetch(apiImageProxyPath(address));
     if (!response.ok) {
-      setStatus(address, {
-        kind: "failed",
-        reason: imageProxyReason(response.headers.get(IMAGE_PROXY_REASON_HEADER)),
-      });
+      console.warn(
+        "Remote image refused",
+        address,
+        imageProxyReason(response.headers.get(IMAGE_PROXY_REASON_HEADER)),
+      );
+      setStatus(address, { kind: "failed" });
       return;
     }
     // Read to the end so the browser keeps the answer for the `<img>` that follows.
     await response.blob();
     setStatus(address, { kind: "loaded" });
-  } catch {
-    setStatus(address, { kind: "failed", reason: null });
+  } catch (error) {
+    console.warn("Remote image fetch failed", address, error);
+    setStatus(address, { kind: "failed" });
   }
 }
 

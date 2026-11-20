@@ -70,7 +70,7 @@ export function ProjectLibrary() {
                 <Trans>No projects yet</Trans>
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                <Trans>Create a project for your first book, series, or story world.</Trans>
+                <Trans>Create your first project</Trans>
               </p>
             </div>
           ) : (

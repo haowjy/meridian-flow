@@ -32,14 +32,7 @@ export const CHECKOUT_RETURN_RECONCILE_INTERVAL_MS = 1_500;
 /** How long a returned success stays "reconciling" before the honest timeout. */
 export const CHECKOUT_RETURN_TIMEOUT_MS = 15_000;
 
-export type CheckoutReturnStatus =
-  | "idle"
-  | "cancelled"
-  | "portal"
-  | "reconciling"
-  | "confirmed"
-  | "timeout"
-  | "unverified";
+export type CheckoutReturnStatus = "idle" | "reconciling" | "confirmed" | "timeout" | "unverified";
 
 /**
  * How the page left for Stripe. A portal handoff reuses the checkout cancel

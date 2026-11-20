@@ -109,8 +109,8 @@ function settleUnanswered(tool: ToolView): void {
   if (tool.result !== null || tool.isError) return;
   tool.result =
     tool.status === "partial"
-      ? { code: TOOL_NOT_RUN_CODE, message: "This call did not run: the reply ended first." }
-      : { code: TOOL_STOPPED_CODE, message: "The reply ended before this call answered." };
+      ? { code: TOOL_NOT_RUN_CODE, message: "Didn't run." }
+      : { code: TOOL_STOPPED_CODE, message: "Stopped." };
   tool.isError = true;
   tool.status = "complete";
 }

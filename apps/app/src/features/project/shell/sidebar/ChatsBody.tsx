@@ -462,11 +462,7 @@ function DeletedRow({
             word={failed ? <Trans>Retry</Trans> : <Trans>Undo</Trans>}
             tone={failed ? "warning" : "action"}
             label={failed ? t`Retry restoring ${title}` : t`Undo delete of ${title}`}
-            sentence={
-              failed
-                ? t`Couldn't restore ${title}. Retry tries again.`
-                : t`Deleted just now. Undo puts it back.`
-            }
+            sentence={failed ? t`Couldn't restore` : t`Deleted just now`}
             pending={notice.status === "restoring"}
             onAction={onUndo}
           />
@@ -519,7 +515,7 @@ const ChatRow = memo(function ChatRow({
       <TitleEditSlot
         titleKey={`chat:${chat.id}`}
         label={t`Rename chat`}
-        failure={() => t`Couldn’t rename this chat. Try again.`}
+        failure={() => t`Couldn't rename this chat`}
         rename={rename}
         maxLength={THREAD_TITLE_MAX_LENGTH}
         fieldClassName="h-7 px-1.5 text-sm"
@@ -540,7 +536,7 @@ const ChatRow = memo(function ChatRow({
                   tone="warning"
                   word={<Trans>Retry</Trans>}
                   label={t`Retry deleting ${title}`}
-                  sentence={t`Couldn't delete this chat. Retry tries again.`}
+                  sentence={t`Couldn't delete`}
                   onAction={() => deletes.delete(chat.id, title, placeOf(chat.id))}
                 />
               ) : null
@@ -576,7 +572,7 @@ const ChatRow = memo(function ChatRow({
                 <AskOnce
                   className="px-1.5 pb-1"
                   touch={touch}
-                  sentence={t`Delete this chat? Its reply is still running and will stop.`}
+                  sentence={t`Stop and delete?`}
                   keep={t`Keep`}
                   confirm={t`Delete`}
                   returnFocus={() =>

@@ -100,7 +100,7 @@ function DiffView({ saved, now }: { saved: string | null; now: string | null }) 
   if (both && saved === now)
     return (
       <p role="status" className={cn(role.emptyLine, "px-4 py-3")}>
-        <Trans>No differences: this file matches its saved version.</Trans>
+        <Trans>No differences from the saved version</Trans>
       </p>
     );
   const sides = { saved: saved !== null, now: now !== null };

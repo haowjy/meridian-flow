@@ -292,9 +292,7 @@ export function documentToolFailureCopy(tool: ToolView, chats: ChatTitles): stri
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
     }
     case "ambiguous_match":
-      return name
-        ? t`The requested passage in ${name} wasn't specific enough.`
-        : t`The requested passage wasn't specific enough.`;
+      return name ? t`Couldn't match a passage in ${name}` : t`Couldn't match a passage`;
   }
   // A read changes nothing, so the change-shaped copy below never fits it.
   if (tool.toolName === "read") {
@@ -304,19 +302,15 @@ export function documentToolFailureCopy(tool: ToolView, chats: ChatTitles): stri
   }
   switch (status) {
     case "cant_undo_applied":
-      return t`That change can't be undone here because it was already applied to your manuscript.`;
     case "cant_undo_discarded":
-      return t`That change can't be undone because it was discarded.`;
     case "cant_undo_changed":
-      return t`That change can't be undone because the text changed afterwards.`;
     case "purged":
-      return t`That change can't be undone because what it changed is gone.`;
     case "insufficient_undo":
-      return t`There isn't enough left to undo.`;
+      return t`Couldn't undo`;
     case "nothing_to_revert":
-      return t`That change wasn't reverted because its text changed or is already gone.`;
+      return t`Couldn't revert`;
     case "work_archived":
-      return t`That change can't be made because this Work's drafts are archived.`;
+      return t`Work archived`;
     case "permission_denied":
       return name ? t`${name} can't be changed.` : t`That document can't be changed.`;
     case "partial_failure":
@@ -383,11 +377,11 @@ function returnedWriteCopy(
     case "document_removed":
       return removedBeforeChangeSentence(name, removalVoice(documentFailureRemoval(tool), chats));
     case "work_archived":
-      return t`This Work is archived, so its drafts take no new text and the change wasn't kept.`;
+      return t`Work archived`;
     case "work_deleted":
-      return t`This Work is deleted, so its drafts take no new text and the change wasn't kept.`;
+      return t`Work deleted`;
     case "block_gone":
-      return t`That paragraph was deleted, merged or moved before the change was made, so it wasn't kept. The AI carries on from the document as it stands.`;
+      return t`Paragraph gone`;
     default:
       return name ? t`That change wasn't kept in ${name}.` : t`That change wasn't kept.`;
   }

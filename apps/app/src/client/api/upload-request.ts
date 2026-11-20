@@ -16,9 +16,7 @@ export const jsonPost = (body: unknown): RequestInit => ({
 export async function uploadResponse<T>(request: Promise<Response>): Promise<T> {
   const value = await request.catch((cause: unknown) => {
     // `fetch` rejects with a bare TypeError ("Failed to fetch") when the network is down.
-    throw cause instanceof TypeError
-      ? new Error(t`Couldn't reach the server. Check your connection.`, { cause })
-      : cause;
+    throw cause instanceof TypeError ? new Error(t`Couldn't reach the server`, { cause }) : cause;
   });
   const payload = await readResponsePayload(value);
   if (!value.ok) {

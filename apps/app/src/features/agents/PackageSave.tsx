@@ -85,14 +85,7 @@ export function PackageSave({
         ? word.kind !== "saved"
         : status && failsSave(status);
   const changes =
-    status && counted ? (
-      <PackageChanges
-        projectId={projectId}
-        pkg={pkg}
-        status={status}
-        undone={look === "package" && word?.kind === "undone"}
-      />
-    ) : null;
+    status && counted ? <PackageChanges projectId={projectId} pkg={pkg} status={status} /> : null;
   return (
     <span className="flex min-w-0 shrink-0 items-center gap-1" data-package-save>
       {before}
@@ -126,12 +119,7 @@ function StateAndSave({
           pkg={pkg}
           findings={problems}
           word={problemsWord(pkg, problems.length, look)}
-          heading={t`Saving ${label} fails until these are fixed`}
-          sub={
-            status.savedAt
-              ? t`New chats keep the version saved before.`
-              : t`New chats can't use ${label} until it is saved.`
-          }
+          heading={t`Can't save ${label}`}
         />
       ) : look === "file" ? (
         <PackageChanges
@@ -223,11 +211,6 @@ function Word({
           findings={problems}
           word={problemsWord(pkg, problems.length, look)}
           heading={t`${label} wasn't saved`}
-          sub={
-            word.outcome.savedBefore
-              ? t`Your edits are in the files. New chats keep the version saved before until these are fixed and it is saved again.`
-              : t`Your edits are in the files. New chats can't use ${label} until these are fixed and it is saved.`
-          }
         />
       );
     }
@@ -235,11 +218,7 @@ function Word({
       return (
         <>
           {look === "file" ? (
-            <RowWord
-              tone="done"
-              word={<Trans>Undone</Trans>}
-              sentence={t`Back to the previous saved version, with its text merged into your files. What you changed since is kept, so the package reads Unsaved until it is saved.`}
-            />
+            <RowWord tone="done" word={<Trans>Undone</Trans>} sentence={t`Undone`} />
           ) : null}
           <SaveButton label={label} onSave={onSave} />
         </>
@@ -250,7 +229,7 @@ function Word({
           tone="warning"
           word={<Trans>Retry</Trans>}
           label={t`Retry saving ${label}`}
-          sentence={t`Couldn't reach the server, so nothing was saved. Retry tries again.`}
+          sentence={t`Couldn't save`}
           onAction={onSave}
         />
       );
@@ -289,9 +268,7 @@ function problemsWord(pkg: PackageRef, count: number, look: PackageSaveLook): Re
 }
 
 function savedSentence(word: Extract<PackageWord, { kind: "saved" }>): ReactNode {
-  const said = word.settled
-    ? t`Saved just now. New chats use it; chats already running keep the version they started with.`
-    : t`Saving. New chats will use it; chats already running keep the version they started with.`;
+  const said = word.settled ? t`Saved` : t`Saving`;
   const notes = savedNotes(word) ?? [];
   return (
     <>
@@ -312,18 +289,16 @@ function PackageProblems({
   findings,
   word,
   heading,
-  sub,
 }: {
   projectId: string;
   pkg: PackageRef;
   findings: readonly AgentFinding[];
   word: ReactNode;
   heading: string;
-  sub?: string;
 }) {
   const openFile = useOpenAgentFile(projectId);
   return (
-    <FindingsChip tone="destructive" word={word} heading={heading} sub={sub}>
+    <FindingsChip tone="destructive" word={word} heading={heading}>
       {(close) => (
         <FindingList
           pkg={pkg}
@@ -369,8 +344,7 @@ function OutOfUseChip({
     <FindingsChip
       tone={out.tone}
       word={out.word}
-      heading={held ? heldSummary(outcome).heading : t`Saved ${label}`}
-      sub={t`Fix these and save ${label} again.`}
+      heading={held ? heldHeading(outcome) : t`Saved ${label}`}
     >
       {(close) => (
         <>
@@ -396,9 +370,9 @@ function OutOfUseChip({
                 </button>
                 <span className="block text-muted-foreground">
                   {trouble.kind === "not-in-use" ? (
-                    <Trans>Your latest edit isn't in use:</Trans>
+                    <Trans>Not in use:</Trans>
                   ) : trouble.runtime ? (
-                    <Trans>New chats can't start it:</Trans>
+                    <Trans>Can't start:</Trans>
                   ) : (
                     <Trans>Left out:</Trans>
                   )}
@@ -450,29 +424,19 @@ export function changeLine({ path, change }: AgentFileChange): string {
 }
 
 /**
- * The heading and sub-line for what a Save kept out of use, naming the items: the AI's card says
+ * The heading for what a Save kept out of use, naming the items: the AI's card says
  * them, and a package's Save chip says the heading.
  */
-export function heldSummary(outcome: SaveOutcome): { heading: string; sub: string } {
+export function heldHeading(outcome: SaveOutcome): string {
   const label = packageLabel(outcome);
   const items = [...outcome.kept, ...outcome.leftOut];
   const names = listOf(items.map((file) => agentsFileOf(file)?.slug ?? file));
   const allLeftOut = outcome.kept.length === 0;
-  if (outcome.outcome === "unchanged")
-    return {
-      heading: t`Nothing new saved in ${label}`,
-      sub: t`Your edits to ${names} aren't in use until each problem is fixed and ${label} is saved again.`,
-    };
-  return {
-    heading: allLeftOut
-      ? t`Saved ${label} without ${names}`
-      : outcome.leftOut.length === 0
-        ? t`Saved ${label}, but not the latest edit of ${names}`
-        : t`Saved ${label}, but not ${names}`,
-    sub: allLeftOut
-      ? t`New chats can't use ${names} until each problem is fixed and ${label} is saved again.`
-      : t`Where an item had a good save, new chats keep using it until each problem is fixed and ${label} is saved again.`,
-  };
+  if (outcome.outcome === "unchanged") return t`Nothing new saved in ${label}`;
+  if (allLeftOut) return t`Saved ${label} without ${names}`;
+  return outcome.leftOut.length === 0
+    ? t`Saved ${label}, but not the latest edit of ${names}`
+    : t`Saved ${label}, but not ${names}`;
 }
 
 function listOf(items: string[]): string {

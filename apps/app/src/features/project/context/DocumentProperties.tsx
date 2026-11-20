@@ -147,11 +147,9 @@ function PropertiesBody({
       <div className="flex flex-col gap-2 pt-1">
         <p className="text-xs text-muted-foreground">
           {properties.truncated ? (
-            <Trans>
-              These properties are too large to show in full. The start is shown as written.
-            </Trans>
+            <Trans>Too large to show</Trans>
           ) : (
-            <Trans>These properties couldn't be read, so they're shown as written.</Trans>
+            <Trans>Couldn't read properties</Trans>
           )}
         </p>
         <YamlBlock text={properties.text} />

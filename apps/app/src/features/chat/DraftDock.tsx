@@ -81,16 +81,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
       onClick={(event) => event.stopPropagation()}
     >
       {askingApply ? null : dock.showCommands ? (
-        <>
-          <ReviewActions
-            scope={multi ? "all" : "change"}
-            labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
-            density="full"
-            disabled={!dock.canCommand}
-            onDiscard={dock.discard}
-            onApply={dock.canApply ? startApply : undefined}
-          />
-        </>
+        <ReviewActions
+          scope={multi ? "all" : "change"}
+          labels={stripLabels(dock.files.length, only?.name ?? "", dock.changeCount)}
+          density="full"
+          disabled={!dock.canCommand}
+          onDiscard={dock.discard}
+          onApply={dock.canApply ? startApply : undefined}
+        />
       ) : null}
     </div>
   );

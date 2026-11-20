@@ -115,7 +115,7 @@ function SchemaFenceNotice({
         </Button>
       }
     >
-      <Trans>Editing paused. This chapter needs a newer version of Meridian.</Trans>
+      <Trans>Editing paused</Trans>
     </NoticeBar>
   );
 }

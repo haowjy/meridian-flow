@@ -792,11 +792,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               }}
               disabled={stopInProgress}
               label={
-                stopInProgress
-                  ? t`Stopping`
-                  : stopStatus === "failed"
-                    ? t`Couldn't stop. Try again.`
-                    : t`Stop`
+                stopInProgress ? t`Stopping` : stopStatus === "failed" ? t`Couldn't stop` : t`Stop`
               }
               className="relative rounded-full"
             >

@@ -15,6 +15,7 @@ import {
   type ConnectionAction,
   type ConnectionStanding,
   connectionStanding,
+  problemWord,
   standingAction,
   toolCount,
 } from "./connection-status";
@@ -135,7 +136,7 @@ export function RemovedConnectionRow({
           <RowWord
             word={<Trans>Undo</Trans>}
             label={t`Undo remove of ${connection.name}`}
-            sentence={t`Removed. Undo brings it back with its tools and token.`}
+            sentence={t`Removed`}
             tone={failure ? "warning" : "action"}
             pending={undoing}
             onAction={onUndo}
@@ -164,9 +165,9 @@ function rowDetail(standing: ConnectionStanding, shadowName: string | null): Rea
     case "shadowed":
       return shadowName ? t`This project's own ${shadowName} is used here.` : null;
     case "no_tools":
-      return t`No tools chosen, so it isn't in your chats.`;
+      return t`No tools chosen`;
     case "problem":
-      return standing.status === "unreachable" ? t`Can't be reached` : standing.reason;
+      return problemWord(standing.status);
     default:
       return null;
   }

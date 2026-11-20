@@ -36,11 +36,9 @@ export function WorkingSetSyncPreferenceRow() {
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {!preference.available ? (
-              <Trans>
-                Your saved preference is unavailable. Sync is paused until retry succeeds.
-              </Trans>
+              <Trans>Sync error</Trans>
             ) : (
-              <Trans>Reopens the documents you had open when you switch devices.</Trans>
+              <Trans>Reopen your open documents on another device</Trans>
             )}
           </p>
         </div>

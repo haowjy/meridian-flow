@@ -184,7 +184,7 @@ describe("useCheckoutReturn", () => {
 
     await act(async () => root.render(<Probe />));
 
-    expect(status()).toBe("cancelled");
+    expect(status()).toBe("idle");
     expect(refetches.balance).not.toHaveBeenCalled();
     expect(readCheckoutBaseline(window.sessionStorage)).toBeNull();
     expect(window.location.search).not.toContain("checkout=");

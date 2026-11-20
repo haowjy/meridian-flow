@@ -8,7 +8,11 @@ import { ThreadWorkOutcomeUnconfirmedError } from "@/client/query/thread-work-bi
 import { type NormalizedCommit, useRebindThreadWork } from "@/client/query/useRebindThreadWork";
 import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement } from "@/client/stores";
-import type { WorkCatalogView, WorkPickerOperation } from "@/components/app/work-composer-controls";
+import {
+  type WorkCatalogView,
+  type WorkPickerOperation,
+  workFailureCopy,
+} from "@/components/app/work-composer-controls";
 import {
   type ComposerWorkBindingState,
   initialComposerWorkBindingState,
@@ -101,7 +105,7 @@ export function useComposerWorkBinding({
           dispatch({
             type: "change.notCurrent",
             requestId: request.id,
-            message: t`The Work did not change. Try again.`,
+            message: t`Couldn't change Work`,
           });
           return "stay" as const;
         }
@@ -121,25 +125,19 @@ export function useComposerWorkBinding({
           message: t`This chat now uses ${naming.current(commit.work)}.`,
         });
       } catch (cause) {
+        console.warn("Couldn't change this chat's Work", cause);
         let failure: WorkBindingFailure;
-        let message: string;
         if (isMeridianApiError(cause) && cause.code === "thread_busy") {
           failure = { kind: "thread_busy" };
-          message = t`Wait for this response to finish, then try again.`;
         } else if (isMeridianApiError(cause) && cause.code === "work_unavailable") {
           failure = { kind: "work_unavailable" };
-          message = t`That Work is no longer available. Choose another Work.`;
           worksQuery.refetch();
         } else if (isMeridianApiError(cause) && cause.code === "thread_work_missing") {
           failure = { kind: "current_work_missing" };
-          message = t`This chat's current Work could not be found. Refresh the page and try again.`;
         } else {
           failure = { kind: "unconfirmed" };
-          message =
-            cause instanceof ThreadWorkOutcomeUnconfirmedError
-              ? t`The change could not be confirmed. Try again.`
-              : t`The change could not be confirmed. Try again.`;
         }
+        const message = workFailureCopy(failure);
         dispatch({ type: "change.refused", requestId: request.id, failure, message });
         return "stay" as const;
       }

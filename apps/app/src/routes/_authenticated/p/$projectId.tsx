@@ -58,7 +58,7 @@ function ProjectLoadError() {
     <main className="grid h-full place-items-center bg-background text-foreground">
       <div className="flex flex-col items-center gap-3" role="alert">
         <p>
-          <Trans>This project couldn’t load. It may be unavailable.</Trans>
+          <Trans>This project couldn’t load</Trans>
         </p>
         <Button variant="outline" onClick={() => void router.invalidate()}>
           <Trans>Retry</Trans>

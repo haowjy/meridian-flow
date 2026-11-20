@@ -21,7 +21,7 @@ Sees: the project library, with a default project that holds a first `Chapter 1`
 
 ## Create a project
 
-Does: presses "Create a project" ("Create a project for your first book, series, or story world.") and then "Create project".
+Does: presses "Create a project" ("Create your first project.") and then "Create project".
 
 Sees: the new project opens at once, before the server has answered. A pending note, a failure, Retry and Discard appear on the new project.
 

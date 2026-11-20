@@ -30,8 +30,7 @@ idempotency key on each drain, as above; replaying a key does not drain again.
 
 1. Send in the existing chat and from New chat. Both keep the writer's words;
    New chat navigates to its created chat immediately.
-2. Above the message box, expect a red error card "You're out of usage. Your
-   messages will send when you add more." with an Add usage button, in the composer's card
+2. Above the message box, expect a red error card "Out of usage" with an Add usage button, in the composer's card
    stack. Each pending writer message is only the dotted queued bubble (accessible name
    "Your message, queued") with no visible label; the card says why.
 3. Add usage opens Settings → Usage. The card has no Dismiss X. The message

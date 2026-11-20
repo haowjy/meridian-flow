@@ -164,9 +164,6 @@ export function ConnectionsSection() {
         <h2 className={role.sectionHeading}>
           <Trans>Connections</Trans>
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          <Trans>Services the AI can look things up in while you write.</Trans>
-        </p>
       </header>
 
       {adding.kind === "closed" && list.isSuccess ? <div className="mb-5">{addButton}</div> : null}
@@ -266,18 +263,7 @@ export function ConnectionsSection() {
                 </ul>
                 {shown.length === 0 && !connecting ? (
                   <p className={role.emptyLine}>
-                    {group.level === "account" ? (
-                      projectId ? (
-                        <Trans>None yet. A connection here is in every project's chats.</Trans>
-                      ) : (
-                        <Trans>
-                          None yet. Add a research index, your notes or a story wiki, and the AI can
-                          use its tools in your chats.
-                        </Trans>
-                      )
-                    ) : (
-                      <Trans>None yet. A connection here is only in this project's chats.</Trans>
-                    )}
+                    <Trans>None yet</Trans>
                   </p>
                 ) : null}
               </section>

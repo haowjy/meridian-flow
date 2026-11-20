@@ -143,11 +143,11 @@ export function FollowOutcomeContent({
       {creation ? null : (
         <DialogDescription>
           {outcome.state === "checking" ? (
-            <Trans>Looking for the document this link names.</Trans>
+            <Trans>Looking…</Trans>
           ) : outcome.state === "failed" ? (
-            <Trans>The project could not be reached. The link itself is fine.</Trans>
+            <Trans>Project unavailable</Trans>
           ) : (
-            <Trans>It may have moved or been removed.</Trans>
+            <Trans>Not found</Trans>
           )}
         </DialogDescription>
       )}
@@ -160,10 +160,7 @@ export function FollowOutcomeContent({
       />
 
       {failedToCreate ? (
-        <InlineErrorRow
-          message={<Trans>The document could not be created. Try again.</Trans>}
-          className="p-0"
-        />
+        <InlineErrorRow message={<Trans>Couldn't create</Trans>} className="p-0" />
       ) : null}
 
       <DialogFooter>
