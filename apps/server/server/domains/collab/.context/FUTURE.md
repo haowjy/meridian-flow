@@ -28,8 +28,8 @@ position with attribution.
 
 ## Edit bytes stay on parts
 
-`document_edit_parts.update` duplicates a journal row on purpose. Live compaction
-deletes those rows, and undo, revert and Apply need the bytes afterwards. Dropping
+`document_edit_parts.update` duplicates a journal row on purpose. A live compaction (none
+exists) would delete those rows, and undo, revert and Apply need the bytes afterwards. Dropping
 the column first needs a retention floor for every receipted origin, one resolver
 for all its readers, and a failure path for a missing origin.
 

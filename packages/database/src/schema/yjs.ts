@@ -265,7 +265,6 @@ export const documentYjsHeads = pgTable(
     schemaVersion: integer("schema_version")
       .notNull()
       .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
-    retiredThroughSeq: bigint("retired_through_seq", { mode: "number" }).notNull().default(0),
     latestUpdateSeq: bigint("latest_update_seq", { mode: "number" }).notNull().default(0),
     latestStateVector: byteaColumn("latest_state_vector"),
     /** No foreign key: checkpoints reference their head, and a cycle has no delete order. */

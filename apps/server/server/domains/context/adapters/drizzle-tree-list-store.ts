@@ -138,23 +138,18 @@ export function createDrizzleTreeListStore(deps: {
   const listeners = new Set<(committed: CommittedTreeUpdate) => void>();
   const advancedListeners = new Set<(listId: string) => void>();
 
-  /** The journal's newest row, and the newest row it may have folded into a checkpoint. */
-  async function journalBounds(tx: DrizzleDb, listId: string) {
-    const [row] = await tx.execute<{ retired: number; head: number }>(sql`
-      SELECT h.retired_through_seq::int AS retired,
-        coalesce((SELECT max(u.id) FROM document_yjs_updates u
-          WHERE u.document_id = h.document_id), 0)::int AS head
-      FROM document_yjs_heads h WHERE h.document_id = ${listId}::uuid`);
-    return { retired: row?.retired ?? 0, head: row?.head ?? 0 };
+  /** The journal's newest row. */
+  async function journalHead(tx: DrizzleDb, listId: string): Promise<number> {
+    const [row] = await tx.execute<{ head: number }>(sql`
+      SELECT coalesce(max(u.id), 0)::int AS head FROM document_yjs_updates u
+      WHERE u.document_id = ${listId}::uuid`);
+    return row?.head ?? 0;
   }
 
   async function copyAtHead(tx: DrizzleDb, listId: string, owner: object): Promise<Copy> {
     let copy = copies.get(listId);
     if (copy && copy.pending !== null && copy.pending !== owner) copy = undefined;
-    const { retired, head } = await journalBounds(tx, listId);
-    // Rows up to `retired` may be gone into a checkpoint: a copy behind them cannot catch up
-    // from the rows that remain.
-    if (copy && copy.seq < retired) copy = undefined;
+    const head = await journalHead(tx, listId);
     if (copy) {
       if (head > copy.seq) {
         // Caught up from the journal's new rows, not from the start.
@@ -343,8 +338,8 @@ export function createDrizzleTreeListStore(deps: {
     },
 
     readSince: async ({ listId, afterSeq }) => {
-      const { retired, head } = await journalBounds(db as DrizzleDb, listId);
-      if (afterSeq > 0 && afterSeq >= retired) {
+      const head = await journalHead(db as DrizzleDb, listId);
+      if (afterSeq > 0) {
         const rows = await journal.readUpdates(listId, afterSeq, head);
         return {
           seq: head,

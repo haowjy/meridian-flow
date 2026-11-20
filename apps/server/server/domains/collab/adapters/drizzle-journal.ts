@@ -6,11 +6,7 @@ import type {
   PersistedUpdate,
   UpdateMeta,
 } from "@meridian/agent-edit/integration";
-import {
-  captureEditParts,
-  isDocumentNotFoundError,
-  SavePreconditionRefused,
-} from "@meridian/agent-edit/integration";
+import { captureEditParts, SavePreconditionRefused } from "@meridian/agent-edit/integration";
 import type { DocumentAuthorityId, ModelResponseId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
@@ -62,7 +58,6 @@ import {
   initializeHead,
   insertFreshHeads,
   readDocumentAuthorityHead,
-  retireThrough,
 } from "./drizzle-document-authority-head.js";
 import { captureReceiptRows, recordDocumentEdit } from "./drizzle-document-edits.js";
 import { parseAttributionManifest } from "./drizzle-provenance.js";
@@ -864,87 +859,6 @@ export function createDrizzleJournal(
         const existing = await latestCheckpoint(txDb, docId, captured);
         if (existing && existing.upToSeq >= upToSeq) return;
         await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured, true);
-      });
-    },
-
-    async compact(docId, before) {
-      return db.transaction(async (tx) => {
-        const txDb = tx as JournalDb;
-        await lockDocumentMutation(txDb, docId);
-        const authorityHead = await readDocumentAuthorityHead(txDb, docId, {
-          notPurged: true,
-        }).catch((cause: unknown) => {
-          // A removed document keeps its history as the removal left it.
-          if (isDocumentNotFoundError(cause) && cause.removal) return null;
-          throw cause;
-        });
-        if (!authorityHead) return { updatesFolded: 0 };
-        const [checkpoint] = await txDb
-          .select()
-          .from(documentYjsCheckpoints)
-          .where(
-            and(
-              eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
-              eq(documentYjsCheckpoints.authorityId, authorityHead.authorityId),
-              eq(documentYjsCheckpoints.authorityGeneration, authorityHead.generation),
-            ),
-          )
-          .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
-          .limit(1);
-        const checkpointSeq = checkpoint?.upToSeq ?? 0;
-        // Compaction folds a contiguous seq prefix, so every retained update sits strictly
-        // above the latest compacted checkpoint; reconstruction can safely start from the
-        // newest checkpoint below the earliest retained update.
-        const candidateRows = await txDb
-          .select()
-          .from(documentYjsUpdates)
-          .where(
-            and(
-              eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-              eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
-              eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
-              gt(documentYjsUpdates.id, checkpointSeq),
-            ),
-          )
-          .orderBy(asc(documentYjsUpdates.id));
-        const firstRetainedIndex = candidateRows.findIndex((row) => row.createdAt >= before);
-        const foldRows =
-          firstRetainedIndex === -1 ? candidateRows : candidateRows.slice(0, firstRetainedIndex);
-
-        let compactedThroughSeq = checkpointSeq;
-        if (foldRows.length > 0) {
-          const doc = createCollabYDoc({ gc: false });
-          if (checkpoint) Y.applyUpdate(doc, toBytes(checkpoint.state));
-          for (const row of foldRows) Y.applyUpdate(doc, toBytes(row.updateData));
-          compactedThroughSeq = foldRows.at(-1)?.id ?? checkpointSeq;
-          await insertCheckpoint(
-            txDb,
-            docId,
-            Y.encodeStateAsUpdate(doc),
-            compactedThroughSeq,
-            "compact",
-            authorityHead,
-          );
-        }
-
-        if (compactedThroughSeq > 0) {
-          // Advance the head past every retired prefix, even when an ordinary checkpoint
-          // already covers it and this compaction folds no new rows.
-          await retireThrough(txDb, docId, compactedThroughSeq);
-
-          await txDb
-            .delete(documentYjsUpdates)
-            .where(
-              and(
-                eq(documentYjsUpdates.documentId, asDocumentId(docId)),
-                eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
-                eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
-                lte(documentYjsUpdates.id, compactedThroughSeq),
-              ),
-            );
-        }
-
-        return { updatesFolded: foldRows.length };
       });
     },
   };

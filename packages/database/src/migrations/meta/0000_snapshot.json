@@ -9883,13 +9883,6 @@
           "notNull": true,
           "default": 3001000
         },
-        "retired_through_seq": {
-          "name": "retired_through_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "latest_update_seq": {
           "name": "latest_update_seq",
           "type": "bigint",

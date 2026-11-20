@@ -14,11 +14,10 @@ import {
   documentAuthority,
   RetiredDocumentHandleError,
 } from "./domain/document-handle.js";
-import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.js";
+import { DraftStaleUpdateError } from "./domain/draft-store.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
-import { testDraftRow } from "./test-support/memory-draft-store.js";
 
 const DRAFT_ID = "draft-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
@@ -588,7 +587,6 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
       createInMemoryJournal().captureCheckpoint(docId, authority),
     ),
     storeCheckpoint: vi.fn(async () => undefined),
-    compact: vi.fn(async () => ({ updatesFolded: 0 })),
   };
 }
 

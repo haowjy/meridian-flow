@@ -93,13 +93,12 @@ focused resets no delete order.
 `tree_node_ids` holds the claim on every node id any list has made: its primary key is the
 claim, taken by one insert in the admitting transaction, and `tree_nodes` / `branch_tree_nodes`
 reference `(id, list_id)` in it, so a row cannot be written for another list's id. They are the
-project tree's rows, written only by the tree list store (domains/context). Compaction retires update prefixes through the generation-local
-`retired_through_seq`. A checkpoint row with `background` set (a room store, or an empty
+project tree's rows, written only by the tree list store (domains/context). Live journal rows are never deleted
+short of a purge or generation replacement. A checkpoint row with `background` set (a room store, or an empty
 seed's placeholder) deletes the document's other background rows in its own transaction;
 seeds with content, explicit checkpoints and restore installs survive until document
-cascade. Retention reads the column, never `reason`, which is free text. Lazy checkpoint cuts validate their captured suffix floor
-against `retired_through_seq` after fetching inputs and again under the
-persistence lock; generation replacement resets it. Schema versions are packed
+cascade. Retention reads the column, never `reason`, which is free text. Lazy checkpoint cuts validate their captured authority and
+generation after fetching inputs and again under the persistence lock. Schema versions are packed
 only inside Drizzle adapters and must use the shared packer (no second literal);
 a `COLLAB_SCHEMA_VERSION` bump updates both Postgres column defaults and regenerates
 the baseline. The checkpoint range capture function stays one SQL

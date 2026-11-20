@@ -133,18 +133,6 @@ export async function advanceHead(
   if (!updated) throw await refusedAuthority(db, documentId);
 }
 
-/** Compaction retired the journal prefix through `seq`; the floor only rises. */
-export async function retireThrough(
-  db: AuthorityHeadDb,
-  documentId: string,
-  seq: number,
-): Promise<void> {
-  await db
-    .update(documentYjsHeads)
-    .set({ retiredThroughSeq: sql`greatest(${documentYjsHeads.retiredThroughSeq}, ${seq})` })
-    .where(holdsText(documentId));
-}
-
 /**
  * A document's current head without materializing a missing one. `notPurged` reads it only when
  * the document may change: under the caller's lock, every door that changes retained history
@@ -281,7 +269,6 @@ export async function replaceGeneration(
       .set({
         authorityGeneration: generation,
         nextAdmissionSequence: 1n,
-        retiredThroughSeq: 0,
         latestUpdateSeq: checkpoint.upToSeq,
         latestStateVector: checkpoint.stateVector,
         latestCheckpointId: installed.id,
