@@ -205,6 +205,9 @@ export function usePressCommands({
     ): CommandStart => {
       if (locked || !driver) return blocked();
       notices.end(ownerKey);
+      // Named as listed now: the press takes the rows out of the list as it is sent.
+      const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
+      const named = (node: string) => names.get(node) ?? "";
       const outcome = press(verdict, nodes, driver).then((pressed) => {
         const sent = nodes === "all" ? (pressed?.result.items.map((item) => item.node) ?? []) : nodes;
         const answer = outcomeOf(pressed, sent);
@@ -220,7 +223,7 @@ export function usePressCommands({
             facts: changed.map((documentId) => ({
               documentId,
               kind: "applied" as const,
-              name: nameOf(documentId),
+              name: named(documentId),
               step,
             })),
           });
@@ -229,7 +232,7 @@ export function usePressCommands({
           const [first] = changed;
           const part: DiscardPart = {
             documentId: input.documentId ?? first ?? "",
-            name: input.name ?? nameOf(input.documentId ?? first ?? ""),
+            name: input.name ?? named(input.documentId ?? first ?? ""),
             scope: input.folder ? "folder" : "draft",
             ...(changed.length > 1 ? { count: changed.length } : {}),
             covers: changed,

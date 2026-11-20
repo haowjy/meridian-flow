@@ -14,7 +14,7 @@ import { useDraftCommandState } from "./draft-changes";
 import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
 import type { DraftRef } from "./review-command-types";
-import type { ReviewChange } from "./review-model";
+import { itemChange, type ReviewChange } from "./review-model";
 import { useRoomReview } from "./useRoomReview";
 
 type ReviewRead = {
@@ -38,7 +38,9 @@ function useSuggestionRead(draft: DraftRef | null, host: HostEditor | null): Rev
   const listed = useOwnerDraftList(draft?.projectId ?? "", draft?.ownerKey ?? "", Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
   const read = useSuggestionChanges(draft ? editor : null, draft?.ownerKey ?? "", item);
-  return { status: !draft ? "idle" : read.ready ? "ready" : "loading", changes: read.changes };
+  // A document only the Work holds is plain text: the document itself is its one change.
+  const changes = item?.wholeItem ? [itemChange(item)] : read.changes;
+  return { status: !draft ? "idle" : read.ready || item?.wholeItem ? "ready" : "loading", changes };
 }
 const noSubscription = () => () => undefined;
 const noEditor = () => null;

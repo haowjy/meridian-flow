@@ -346,7 +346,16 @@ async function classifyYjsConnectionAdmission(input: {
     // A document in Trash still takes text until its node is purged, so the room reads
     // through Trash like a restore; a purged or unplaced document has no facts and is refused.
     fileTarget = { kind: "restore", documentId };
-    const found = await findRoomAccess(services, userId, fileTarget);
+    let found = await findRoomAccess(services, userId, fileTarget);
+    // Suggestion mode: a document only a Work holds is Live text that Work's view reads.
+    for (const owner of found ? [] : await services.documentSync.workOnlyOwners(documentId)) {
+      const target: FileTarget = { kind: "draft", documentId, owner };
+      found = await findRoomAccess(services, userId, target);
+      if (found) {
+        fileTarget = target;
+        break;
+      }
+    }
     if (!found) {
       // A browser connects as soon as it appends a document's `create`, which the server may not
       // have admitted yet: it retries. A purged document is refused for good.

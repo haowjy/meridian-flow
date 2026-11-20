@@ -6,7 +6,8 @@
  * is the tree's create, not marks.
  */
 import { liveView, type View } from "@meridian/suggestions";
-import { useLayoutEffect, useMemo } from "react";
+import type { Editor } from "@tiptap/core";
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { editorMountKey, type EditorMountIdentity } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -47,6 +48,19 @@ export function SuggestionEditorView(props: EditorViewProps) {
     if (!review) return;
     setInlineReviewShown(props.documentId, review.itemKey, session !== null);
   }, [setInlineReviewShown, props.documentId, review?.itemKey, session]);
+  // The review reads the editor once it holds the document: a pin restored against an editor
+  // still empty would find none of its changes.
+  const [constructed, setConstructed] = useState<Editor | null>(null);
+  const synced = useSyncExternalStore(
+    (listener) => session?.subscribe(listener) ?? (() => undefined),
+    () => session?.getSnapshot().status === "synced",
+  );
+  const holds = synced || props.localContentReady === true;
+  useEffect(() => {
+    if (!constructed || !holds || !hostEditor) return;
+    hostEditor.set(constructed);
+    return () => hostEditor.set(null, constructed);
+  }, [constructed, holds, hostEditor]);
   const editor = useHostEditor();
   const { changes } = useOpenReviewChanges(controller, { enabled: owner !== "" });
   useSuggestionReviewFocus({
@@ -76,7 +90,7 @@ export function SuggestionEditorView(props: EditorViewProps) {
               focusKey={props.focusKey}
               inMain={props.inMain}
               suggestion={{ view, marks: controller.marksVisible }}
-              onConstructed={(editor, was) => hostEditor?.set(editor, was)}
+              onConstructed={setConstructed}
             />
           </div>
         </PaintScope>

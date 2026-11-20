@@ -221,6 +221,7 @@ export function ContextDocumentHost({
       documentId={document.documentId}
       // Suggestion mode: a document only a Work has is plain text in its Live room.
       liveRoom={liveness === "live" || suggestionModeEnabled}
+      workOnly={suggestionModeEnabled && draftOnly}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}

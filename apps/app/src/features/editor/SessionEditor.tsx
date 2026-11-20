@@ -76,7 +76,7 @@ type SessionEditorProps = {
   /** Review's addressed document record; live surfaces derive this from their catalog. */
   holderUri?: string | null;
   /** An addressed construction receipt; null withdraws this editor's receipt. */
-  onConstructed?: (editor: Editor | null, was?: Editor) => void;
+  onConstructed?: (editor: Editor | null) => void;
   /** The document this editor serves; it claims that document's focus-on-open intent. */
   focusKey?: string;
   /** Main's document: the caret main gives (`joinMain`) goes here, never to a side or a sheet. */
@@ -408,7 +408,7 @@ function ActiveSessionEditorView({
   useEffect(() => {
     if (!editor) return;
     constructionCallback.current?.(editor);
-    return () => constructionCallback.current?.(null, editor);
+    return () => constructionCallback.current?.(null);
   }, [editor]);
 
   useEffect(

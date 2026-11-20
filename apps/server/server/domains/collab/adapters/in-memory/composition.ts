@@ -137,6 +137,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
       // Nothing is removed in memory.
+      workOnlyOwners: async () => [],
       roomRemoval: async () => null,
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       admitDraftWriterUpdate: hocuspocusPersistence.admitDraftWriterUpdate,
