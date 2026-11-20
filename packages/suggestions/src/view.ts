@@ -54,16 +54,18 @@ export function kindOf(marks: readonly Mark[], block: Node, view: View): RunKind
   if (owner === "hidden") return "hidden";
   if (owner === "own") return "own-ins";
   let ownDel = false;
+  let ownIns = false;
   for (const mark of marks) {
     const attrs = mark.attrs as SuggestionAttrs;
     if (mark.type.name === "suggest_ins") {
-      // A discarded Work's insertion is absent everywhere.
-      if (!present(attrs, view)) return "hidden";
-      return attrs.work === view.work ? "own-ins" : "hidden";
+      // Another Work's insertion, or a discarded Work's, is absent.
+      if (!mine(attrs, view)) return "hidden";
+      ownIns = true;
     }
     if (mark.type.name === "suggest_del" && mine(attrs, view)) ownDel = true;
   }
-  return ownDel ? "own-del" : "live";
+  // An own insertion a later turn removes reads as a deletion: shown struck, absent once applied.
+  return ownDel ? "own-del" : ownIns ? "own-ins" : "live";
 }
 
 export function runs(block: Node, view: View): Run[] {

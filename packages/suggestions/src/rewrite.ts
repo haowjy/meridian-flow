@@ -320,12 +320,44 @@ function suggestRemoval(
   const work = pieces(out.doc, from, to, view).filter((piece) => !inOwn(piece.from));
   for (const piece of work.reverse()) {
     if (piece.kind === "live") out.addMark(piece.from, piece.to, del);
-    else if (piece.kind === "own-ins") out.delete(piece.from, piece.to);
+    else if (piece.kind === "own-ins") retract(out, piece.from, piece.to, del, attrs);
   }
   for (const block of own.reverse()) {
     const a = out.mapping.map(block.pos, 1);
     out.delete(a, a + block.node.nodeSize);
   }
+}
+
+/**
+ * Remove the view's own insertion in `[from, to)`. One the same turn wrote, or the writer's (no
+ * turn), goes. An earlier turn's stays under this turn's deletion: rejecting this turn, as the
+ * card's Undo does, brings it back.
+ */
+function retract(out: Transaction, from: number, to: number, del: Mark, attrs: SuggestionAttrs) {
+  const ranges: Array<[number, number, boolean]> = [];
+  out.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isInline) return true;
+    const ins = node.marks.find((mark) => mark.type.name === "suggest_ins");
+    const layered = attrs.turn !== null && ins?.attrs.turn !== attrs.turn;
+    ranges.push([Math.max(from, pos), Math.min(to, pos + node.nodeSize), layered]);
+    return false;
+  });
+  for (const [a, b, layered] of ranges.reverse()) {
+    if (layered) out.addMark(a, b, del);
+    else out.delete(a, b);
+  }
+}
+
+/** The id of the view's own insertion an edit over `[from, to)` replaces, from an earlier turn. */
+function replacedId(doc: Node, from: number, to: number, view: View): string | null {
+  let id: string | null = null;
+  doc.nodesBetween(from, to, (node, _pos, parent) => {
+    if (id || !node.isInline || !parent) return !id;
+    if (kindOf(node.marks, parent, view) !== "own-ins") return false;
+    id = (node.marks.find((mark) => mark.type.name === "suggest_ins")?.attrs.id as string) ?? null;
+    return false;
+  });
+  return id;
 }
 
 /** Inside a stretch of its own deletion, typing goes to the stretch's end. */
@@ -368,7 +400,11 @@ function replaceInWork(
   }
   const attrs: SuggestionAttrs = {
     ...author,
-    id: continuedId(out.doc, from, author) ?? continuedId(out.doc, to, author) ?? newChangeId(),
+    id:
+      continuedId(out.doc, from, author) ??
+      continuedId(out.doc, to, author) ??
+      (author.turn === null ? null : replacedId(out.doc, from, to, view)) ??
+      newChangeId(),
   };
   const schema = out.doc.type.schema;
   const joining = startBlock.pos !== endBlock.pos;

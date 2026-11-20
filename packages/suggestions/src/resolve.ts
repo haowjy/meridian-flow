@@ -1,7 +1,7 @@
 import type { Mark, Node } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
 import { RAW_META } from "./rewrite.js";
-import { blockKind, type SuggestionAttrs, type View } from "./view.js";
+import { blockKind, kindOf, type SuggestionAttrs, type View } from "./view.js";
 
 /** Which suggestions an accept or reject takes: one change, a Work's turn, or a whole Work's. */
 export type Filter = { id: string } | { work: string } | { turn: string };
@@ -47,7 +47,9 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
       const delMark = child.marks.find(
         (m) => m.type === del && matches(m.attrs as SuggestionAttrs, filter),
       );
-      if (!delMark) wholly = false;
+      // Whole means all of its Live text: another suggestion's insertion goes with the block.
+      const otherIns = !insMark && child.marks.some((m) => m.type === ins);
+      if (insMark || (!delMark && !otherIns)) wholly = false;
       if (insMark) action === "accept" ? unmark.push([from, to, insMark]) : remove.push([from, to]);
       if (delMark) action === "accept" ? remove.push([from, to]) : unmark.push([from, to, delMark]);
     });
@@ -111,6 +113,12 @@ export function list(doc: Node, view: View): Change[] {
     }
     block.forEach((child, offset) => {
       const from = blockPos + 1 + offset;
+      // An insertion a later turn of this view removes again is in neither column.
+      if (
+        child.marks.some((m) => m.type.name === "suggest_ins") &&
+        kindOf(child.marks, block, view) === "own-del"
+      )
+        return;
       for (const mark of child.marks) {
         const attrs = mark.attrs as SuggestionAttrs;
         if (attrs.work !== view.work || view.hidden.has(attrs.work)) continue;
