@@ -1954,12 +1954,12 @@ msgid "Copy reference"
 msgstr "Copy reference"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Copy takes the name you typed."
-msgstr "Copy takes the name you typed."
+#~ msgid "Copy takes the name you typed."
+#~ msgstr "Copy takes the name you typed."
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Copy takes what you typed."
-msgstr "Copy takes what you typed."
+#~ msgid "Copy takes what you typed."
+#~ msgstr "Copy takes what you typed."
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Copy the name you typed"
@@ -1974,8 +1974,8 @@ msgid "Copy to…"
 msgstr "Copy to…"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Copy what you typed"
-msgstr "Copy what you typed"
+#~ msgid "Copy what you typed"
+#~ msgstr "Copy what you typed"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying"
@@ -4279,8 +4279,8 @@ msgid "Not created"
 msgstr "Not created"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Not created:"
-msgstr "Not created:"
+#~ msgid "Not created:"
+#~ msgstr "Not created:"
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not deleted"
@@ -4322,8 +4322,12 @@ msgid "Not renamed"
 msgstr "Not renamed"
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Not renamed:"
-msgstr "Not renamed:"
+#~ msgid "Not renamed:"
+#~ msgstr "Not renamed:"
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not renamed: {closed} Copy takes the name you typed."
+msgstr "Not renamed: {closed} Copy takes the name you typed."
 
 #: src/features/chat/AssistantTurnActions.tsx
 msgid "Not reported"

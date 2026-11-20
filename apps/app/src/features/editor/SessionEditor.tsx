@@ -35,7 +35,7 @@ import {
   useAccountId,
 } from "@/features/project/context/account-feature-context";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
-import { useRemovalRecord } from "@/features/project/context/use-removal-record";
+import { useRemovalAnswer } from "@/features/project/context/use-removal-answer";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { focusIsFree } from "@/lib/focus-follow";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
@@ -168,7 +168,7 @@ function ActiveSessionEditorView({
   const removed =
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
-  const removal = useRemovalRecord(projectId ?? "", removed ? documentId : null);
+  const removal = useRemovalAnswer(projectId ?? "", removed ? documentId : null);
   // A document removed elsewhere and still in Trash stays on screen read-only; the pill says so
   // and restores it.
   const documentInTrash = removal?.kind === "removed" && removal.inTrash;

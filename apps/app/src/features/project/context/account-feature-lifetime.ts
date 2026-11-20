@@ -87,7 +87,6 @@ export class AccountFeatureLifetime {
           detail: records,
         }),
       {
-        localText: (documentId) => this.runtime.registry.localText(documentId as DocumentId),
         endCreatedDraftRoom: (documentId) =>
           void this.runtime.registry
             .abandonDraftRoom(draftRoomName(createdDraftId(documentId as DocumentId)))

@@ -148,10 +148,6 @@ export type AppliedFact = { documentId: string; step?: ApplyEntries } & (
   | { kind: "landed"; uri: string; name: string }
 );
 
-/** A notice with something to say on a line: a plain Apply's is said only on its rows. */
-export const hasLine = (notice: DraftNotice): boolean =>
-  notice.kind !== "applied" || notice.facts.some((fact) => fact.kind !== "applied");
-
 type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
 
 export class DraftNotices {

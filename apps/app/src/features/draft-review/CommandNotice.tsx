@@ -23,7 +23,7 @@ import {
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { type AppliedFact, type DraftNotice, hasLine } from "./draft-notices";
+import type { AppliedFact, DraftNotice } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
@@ -130,20 +130,13 @@ export function DraftNoticeLine({
   useLingui();
   const undo = useNoticeUndo();
   const openDocument = useOpenProjectDocument(notice.projectId);
-  const whereabouts = useWhereabouts(notice.projectId);
-  if (!hasLine(notice)) return null;
+  const landed = useLandedNow(notice);
   if (notice.kind === "applied") {
-    // A document gone since is left out: there is nothing to say of where it landed.
-    const facts = notice.facts.flatMap((fact): AppliedFact[] => {
-      if (fact.kind === "applied") return [];
-      const now = whereabouts(fact.documentId);
-      return now.kind === "removed" ? [] : [factNow(fact, now)];
-    });
-    const landed = facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
+    if (landed.length === 0) return null;
     const [only] = landed;
     // The bare "Now in X." only when the Apply landed one document: with others it needs its name.
-    const single = only && notice.facts.filter((fact) => fact.kind === "landed").length === 1;
-    const name = only ? documentDisplayName(only.uri) : "";
+    const single = notice.facts.filter((fact) => fact.kind === "landed").length === 1;
+    const name = documentDisplayName(only.uri);
     // One landing names the document on its Open; the line says where it went. Several say it
     // once per place, so the line holds at sidebar width.
     const sentence = (single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)).join(
@@ -305,9 +298,31 @@ function useWhereabouts(projectId: string): (documentId: string) => Whereabouts 
   };
 }
 
+type Landed = Extract<AppliedFact, { kind: "landed" }>;
+
+/**
+ * What an Apply landed, each fact as its document stands now. A document gone since is left out:
+ * there is nothing to say of where it landed. A notice that is not an Apply has none.
+ */
+function useLandedNow(notice: DraftNotice | null): Landed[] {
+  const whereabouts = useWhereabouts(notice?.projectId ?? "");
+  if (notice?.kind !== "applied") return [];
+  return notice.facts.flatMap((fact) => {
+    if (fact.kind !== "landed") return [];
+    const now = whereabouts(fact.documentId);
+    return now.kind === "removed" ? [] : [factNow(fact, now)];
+  });
+}
+
+/** The notice, if it has a line to say: a plain Apply's is said only on its rows, and a landing in a document since deleted says nothing. */
+export function useNoticeLine(notice: DraftNotice | null): DraftNotice | null {
+  const landed = useLandedNow(notice);
+  return notice && (notice.kind !== "applied" || landed.length > 0) ? notice : null;
+}
+
 /** The fact as the document stands now: a landing names where it is. */
-function factNow(fact: AppliedFact, now: Whereabouts): AppliedFact {
-  if (now.kind !== "placed" || fact.kind !== "landed") return fact;
+function factNow(fact: Landed, now: Whereabouts): Landed {
+  if (now.kind !== "placed") return fact;
   return { ...fact, uri: now.uri, name: documentDisplayName(now.uri) };
 }
 

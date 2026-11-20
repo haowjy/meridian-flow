@@ -183,7 +183,7 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `abandonDraftRoom` ends the room of a document's create the server dropped (its draft was
   never made, so the room would only retry `DOCUMENT_UNKNOWN`): the tree list's dropped stamp
   calls it (`watchBounces`). Its session is marked dropped already, so its retire says nothing:
-  the tab and the tree row offer those words from the local copy. Such a draft never answers
+  the tree list's own "Couldn't save" pill is the one telling. Such a draft never answers
   active, so it never reopens.
 - Typing a closed draft's room never sent is dropped with one "Couldn't save" pill (see "Unsent
   typing dropped").
@@ -613,7 +613,7 @@ keyboard, pointer, drop, or draft-recovery answer.
 Typing that has nowhere to go is lost, and the writer is told once: one "Couldn't save" pill, with no
 Copy and no words, and nothing stored. `DocumentSessionRegistry.observeDroppedTyping` calls its
 observers each time words are dropped (the account lifetime shows the pill under one key, so
-repeats merge into one). A change with no words (a deletion, a format change) is dropped silently.
+a repeat replaces it). A change with no words (a deletion, a format change) is dropped silently.
 
 - **What the server has.** Each copy holds a mark in its `custom` store (`server-mark.ts`): a Yjs
   state vector of what the server is known to hold. The transport reads one off each socket's
@@ -709,7 +709,8 @@ from the wire alone, with nothing stored between handshakes.
 - Terminal `4205` (`closed`) and `4208` (`removed`) end the session's transport; its cache
   stays, and a retained session stays readable until its owner releases it or a restore
   restarts it. Once its last owner releases it, it retires on the next task, not after the
-  grace, and its retirement drops typing that just left the screen. Dropping never
+  grace. A closed draft's retirement drops typing that just left the screen; a removed
+  document's typing is dropped once, by `clearLocalCopy` at its purge. Dropping a closed draft's typing never
   deletes the copy: Undo Discard reopens the same draft row, and the restarted session replays the
   copy into it, so the writer may see the pill and also get the words back. The copy goes with the
   document's purge. `closeDraftRoom` lets the session the pool
@@ -717,8 +718,7 @@ from the wire alone, with nothing stored between handshakes.
   and, with no session, drops the copy's typing itself. A draft copy no page opened is
   found at start: once at idle after the account lifetime opens (cancelled if the lifetime
   closes), `sweepDraftCopies` lists the draft copies not yet swept and asks `POST /api/drafts/states`
-  for each draft's state. A closed draft's copy has its words beyond the server's mark dropped
-  (a Discard, or the document went). An open draft's copy that holds typing
+  for each draft's state. A closed draft's copy is left as it is. An open draft's copy that holds typing
   beyond its mark (an Apply left the draft with no changes, so nothing lists it and nothing
   reopens its room) has its room opened through the draft pool under a `sweep:` owner until the
   server acknowledges, then released, so the typing is delivered and shows as a change by the

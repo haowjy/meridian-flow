@@ -120,13 +120,13 @@ mounted.
 
 A presented document that something else deleted or discarded closes, and nothing is said: no
 sentence, chip or toast names who removed it. Who deleted a document is a fact only where the
-writer opened a list of them (the Trash row, `TrashedDocument.tsx`, with `removal-voice.ts`).
+writer opened a list of them (the Trash row, `TrashedDocument.tsx`).
 Two owners:
 
 - **The list's standing.** `ProjectStandings.standing(projectId, documentId)` reads the replay of
   the project's list (and the account's, for `user://`): `in-tree`, `in-trash`, `purged`,
   `not-in-list`, or `waiting` until the list has been read. Nothing is polled and nothing is
-  stamped. `useRemovalRecord` is the React reader: `SessionEditor`, the review room owner and the
+  stamped. `useRemovalAnswer` is the React reader: `SessionEditor`, the review room owner and the
   reopened review address.
 - **The observer.** `observeListRemovals` (`list-removal-observer.ts`, mounted per project by
   `ProjectContextRemovalController`) watches the documents the app holds (views, recent routes,

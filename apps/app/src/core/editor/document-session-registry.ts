@@ -28,8 +28,6 @@ export interface LiveDocumentSessionRegistry {
   clearLocalCopy(documentId: DocumentId): Promise<void>;
   /** True once no open session has unsent edits the server could still acknowledge; false if some remain at the deadline. */
   settleUnsentEdits(timeoutMs: number): Promise<boolean>;
-  /** The words this browser holds of the document in its local copies, open or not; null with none. */
-  localText(documentId: DocumentId): Promise<string | null>;
   /** Calls `observer` with the documents this browser holds a copy of for the account, open or not, and again as they change. */
   observeLocalCopies(observer: (documents: ReadonlySet<DocumentId>) => void): () => void;
   get(lease: LiveDocumentSessionLease): DocumentSession;

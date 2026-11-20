@@ -158,9 +158,8 @@ or its Scratch, raced or not. The record is sent like any other; the server stam
 ("Work was closed"), every replay leaves it out, and the row goes back to how it stood. The row
 says so in lead 5's shape (`core/project-tree/tree-bounces.ts` hears the stamp arrive and
 `useTreeNoticeWords` puts the word on the row): a created row stays where the writer made it,
-struck through, with "Copy" when the writer typed into it (Copy puts the text from the document's
-local copy on the clipboard; hover "Not created: <Work> was closed. Copy takes what you typed.")
-or "Not created" ("<Work> was closed."). A renamed row reads its old name with "Copy" (the name the
+struck through, with "Not created" ("<Work> was closed."; what was typed into it is dropped, with
+the "Couldn't save" pill). A renamed row reads its old name with "Copy" (the name the
 writer typed); a moved or deleted row reads as it stood with "Not moved" or "Not deleted". Each
 word is on its own row only (a row inside a closed folder gets none and the folder doesn't open),
 the later of two words on one row wins, and the words last as the tree's notice does: until the

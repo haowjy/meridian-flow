@@ -3,11 +3,8 @@ import { Trans } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
-import type { Bounce } from "@/core/project-tree/tree-undo";
 import { DraftNoticeLine, useDiscardingNotice } from "@/features/draft-review/CommandNotice";
 import { MainSurface } from "@/features/editor/MainSurface";
-import { bounceSaying } from "../context/use-tree-notice-words";
-import { useShellTreeVersion } from "../tree-version";
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
 
@@ -32,11 +29,9 @@ export type ProjectRouteMask = {
   onRetry?: () => void;
   /**
    * An unavailable destination whose document was removed shows the Discard's notice, with its
-   * Undo, while one can bring it back. One the server never created (`bounce`: its Work was
-   * closed) says so, with what the writer typed and the row's Copy. A deleted one says nothing
-   * of its own.
+   * Undo, while one can bring it back. A deleted one says nothing of its own.
    */
-  removed?: { documentId: string; bounce?: Bounce };
+  removed?: { documentId: string };
 };
 
 export function ProjectRouteBoundary({
@@ -92,39 +87,11 @@ export function ProjectRouteBoundary({
   );
 }
 
-function RemovedDestination({ removed }: { removed: { documentId: string; bounce?: Bounce } }) {
+function RemovedDestination({ removed }: { removed: { documentId: string } }) {
   const discarded = useDiscardingNotice(removed.documentId);
-  if (removed.bounce) return <NotCreatedDestination bounce={removed.bounce} />;
   return discarded ? (
     <DraftNoticeLine notice={discarded} className="max-w-md" />
   ) : (
     <Trans>This destination is unavailable.</Trans>
-  );
-}
-
-function NotCreatedDestination({ bounce }: { bounce: Bounce }) {
-  const { word, sentence, copy } = bounceSaying(bounce, useShellTreeVersion()?.name ?? null);
-  return (
-    <div className="flex max-w-xl flex-col items-center gap-3">
-      <p className="break-words">
-        {copy ? (
-          sentence
-        ) : (
-          <>
-            {word}. {sentence}
-          </>
-        )}
-      </p>
-      {bounce.typed ? (
-        <div className="max-h-64 w-full overflow-y-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-4 py-3 text-left text-foreground">
-          {bounce.typed}
-        </div>
-      ) : null}
-      {copy ? (
-        <Button size="sm" variant="outline" aria-label={copy.label} onClick={copy.take}>
-          {copy.word}
-        </Button>
-      ) : null}
-    </div>
   );
 }

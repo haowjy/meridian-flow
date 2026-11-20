@@ -188,9 +188,8 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
 
 /**
  * What a bounced change says: what didn't happen ("Not created", "Not renamed", "Not moved", "Not
- * deleted"), why, and the Copy it offers when the writer typed something it can hand back (a
- * created document's text, a rename's name). `work` is the Work that was closed, when the shell
- * knows it. A row's word and a not-created document's tab say it the same.
+ * deleted"), why, and the Copy it offers for a rename's name. `work` is the Work that was closed,
+ * when the shell knows it.
  */
 export function bounceSaying(
   bounce: Bounce,
@@ -203,16 +202,13 @@ export function bounceSaying(
   const closed = work ? t`${work} was closed.` : t`The Work was closed.`;
   const { record, typed } = bounce;
   if (typed) {
-    const created = record.type === "create";
-    const lead = created ? t`Not created:` : t`Not renamed:`;
-    const takes = created ? t`Copy takes what you typed.` : t`Copy takes the name you typed.`;
     const word = <Trans>Copy</Trans>;
     return {
       word,
-      sentence: `${lead} ${closed} ${takes}`,
+      sentence: t`Not renamed: ${closed} Copy takes the name you typed.`,
       copy: {
         word,
-        label: created ? t`Copy what you typed` : t`Copy the name you typed`,
+        label: t`Copy the name you typed`,
         take: () => void navigator.clipboard.writeText(typed),
       },
     };

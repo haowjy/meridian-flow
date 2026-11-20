@@ -370,7 +370,7 @@ read-only refuses it (`read_only`) and the list re-reads, so a stale `frozen: fa
 shows a revert the room drops. The freeze itself closes the socket with `ACCESS_CHANGED`,
 which marks the room read-only at once. An unacknowledged revert is found at the read admission's
 handshake: the room is replaced by one loaded from the server, so the revert's change is back in
-the list, and its typing (not a Discard, which has no words) is handed back. Until the Discard's
+the list, and its typing (not a Discard, which has no words) is dropped with one "Couldn't save". Until the Discard's
 `returned` answer on replacement lands (it needs the closed-Work notices of never-refuse PR B),
 the Discard's local write is simply gone with the old room and shows no chip.
 

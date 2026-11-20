@@ -62,17 +62,12 @@ export class DocumentSessionRegistry {
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
     (session) => {
-      // A room that ended for good (its draft closed or its document was removed) drops its unsent
-      // typing when the session retires, not at the reset: a session kept on screen still shows
-      // that text, and a restore that restarts it delivers it. The copy stays: Undo Discard
-      // reopens a closed draft and replays it. A draft the server closed counts whatever ended
-      // the session's socket first.
-      const { resetDisposition } = session;
-      if (
-        this.draftRooms.closedCause(session.roomKey) ||
-        resetDisposition === "closed" ||
-        resetDisposition === "removed"
-      )
+      // A closed draft drops its unsent typing when its session retires, not at the reset: a session
+      // kept on screen still shows that text, and a restore that restarts it delivers it. The copy
+      // stays: Undo Discard reopens the draft and replays it. A draft the server closed counts
+      // whatever ended the session's socket first. A removed document's copy is dropped by
+      // `clearLocalCopy` alone, when the list purges it, so each copy is told once.
+      if (this.draftRooms.closedCause(session.roomKey) || session.resetDisposition === "closed")
         void this.dropUnsent(session).catch(reportError);
     },
   );
@@ -153,7 +148,6 @@ export class DocumentSessionRegistry {
     this.liveRooms.delete(documentId);
     if (state?.session) {
       await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, state.session);
-      await this.dropping.get(state.session);
     }
     await this.teardownOwner.drainRoom({ kind: "live", roomKey: documentId });
     (await state?.hold)?.release();
@@ -191,14 +185,6 @@ export class DocumentSessionRegistry {
         }),
     );
     return (await Promise.all(settled)).every(Boolean);
-  }
-
-  localText(documentId: DocumentId): Promise<string | null> {
-    // A copy that can't be read is a tab without the typed words, not a failed bounce.
-    return this.copies.text(documentId).catch((error: unknown) => {
-      reportError(error);
-      return null;
-    });
   }
 
   /** Calls `observer` with the documents this browser holds a copy of for the account, and again as they change. */

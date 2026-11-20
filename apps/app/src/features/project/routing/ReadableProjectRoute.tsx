@@ -33,8 +33,7 @@ import {
 } from "../context/account-feature-context";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { useDocumentStanding } from "../context/use-document-standing";
-import { useDroppedCreate } from "../context/use-dropped-create";
-import { useRemovalRecord } from "../context/use-removal-record";
+import { useRemovalAnswer } from "../context/use-removal-answer";
 import { ProjectView } from "../ProjectView";
 import { useDraftTreeVersion } from "../tree-version";
 import { useWorkScopeState } from "../use-work-scope";
@@ -492,17 +491,15 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           : "unavailable"
         : undefined;
   // A review address names its document: when it is unavailable because the
-  // document was removed, the destination shows what its removal left (a Discard's Undo, an
-  // uncreated document's words). A plain path names no document once nothing lives there, so
+  // document was removed, the destination shows what its removal left (a Discard's Undo). A plain path names no document once nothing lives there, so
   // it stays "unavailable".
   const removedDocumentId =
     documentIssue === "unavailable" && address.itemKey ? (closingDocumentId ?? null) : null;
-  const removedDestination = useRemovalRecord(projectId, removedDocumentId);
-  const notCreated = useDroppedCreate(projectId, removedDocumentId);
+  const removalNow = useRemovalAnswer(projectId, removedDocumentId);
   const reviewGone =
     !!address.itemKey &&
     (closingDocumentId == null ||
-      (reviewed?.status === "gone" && removedDestination?.kind === "available"));
+      (reviewed?.status === "gone" && removalNow?.kind === "available"));
   useLayoutEffect(() => {
     if (!reviewGone || !navigation) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
@@ -662,17 +659,12 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
             routeIssues={{
               main: mainIssue,
               // Loading until the removal lookup answers, so the destination
-              // never says "unavailable", then what its removal left.
+              // never says "unavailable" first.
               editor:
-                removedDocumentId !== null && removedDestination === undefined
-                  ? "loading"
-                  : editorIssue,
+                removedDocumentId !== null && removalNow === undefined ? "loading" : editorIssue,
               removed:
-                removedDestination?.kind === "removed" && removedDocumentId
-                  ? {
-                      documentId: removedDocumentId,
-                      ...(notCreated ? { bounce: notCreated } : {}),
-                    }
+                removalNow?.kind === "removed" && removedDocumentId
+                  ? { documentId: removedDocumentId }
                   : undefined,
             }}
             onRetryEditorRoute={retryEditorAddress}

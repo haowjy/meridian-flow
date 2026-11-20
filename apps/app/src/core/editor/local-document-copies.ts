@@ -288,35 +288,6 @@ export class LocalDocumentCopies {
     };
   }
 
-  /**
-   * The words this browser holds of the document, read from its rooms' current copies (live, or a
-   * Work's draft room) under a shared hold, so no tab deletes one while it is read; the longest
-   * wins. Null with none.
-   */
-  async text(documentId: DocumentId): Promise<string | null> {
-    const idb = this.idb;
-    const names = (await this.names()).filter((name) => {
-      const { key, incarnation } = parseName(name);
-      return documentOf(name, this.accountId) === documentId && incarnation === this.current(key);
-    });
-    if (!idb || names.length === 0) return null;
-    const holds = await Promise.all(names.map((name) => this.acquire(name)));
-    try {
-      const texts = await Promise.all(
-        names.map(async (name) => {
-          const loaded = await load(idb, name);
-          return loaded && readCopy(loaded.update, documentText);
-        }),
-      );
-      return texts.reduce<string | null>(
-        (longest, text) => (text && text.length > (longest?.length ?? 0) ? text : longest),
-        null,
-      );
-    } finally {
-      for (const hold of holds) hold.release();
-    }
-  }
-
   /** `run` with every one of `names` locked exclusively; undefined when `ifAvailable` and one is held. */
   private async exclusively<T>(
     names: readonly string[],
@@ -438,8 +409,7 @@ export class LocalDocumentCopies {
         .filter((name) => name.startsWith(prefix))
         .map((name) => this.deleteDatabase(name)),
     );
-    const cleared = results.every(Boolean);
-    return cleared;
+    return results.every(Boolean);
   }
 
   private async namesOf(documentId: DocumentId): Promise<string[]> {

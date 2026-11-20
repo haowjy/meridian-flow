@@ -4,10 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
-import { useDraftNotice } from "@/features/draft-review/CommandNotice";
+import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
-import { hasLine } from "@/features/draft-review/draft-notices";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   listedItemChanges,
@@ -61,7 +60,7 @@ export function useDraftDock({
   const owned = useDraftNotice(controller.ownerKey);
   const here =
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
-  const notice = here && hasLine(here) ? here : null;
+  const notice = useNoticeLine(here);
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;

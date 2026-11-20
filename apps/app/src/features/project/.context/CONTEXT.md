@@ -142,7 +142,7 @@ for any document, tab or not ([editor context](../../../core/editor/.context/CON
 session teardown"). A kept return measured about 80 ms (16%) faster than a remount on a 4,000-word
 document, which is all the kept host buys now. A parked host (`SlotGrid`) keeps the size of the slot it left and sets
 `content-visibility: hidden`, so an edit into the kept document lays out nothing until it returns. The kept document is mounted but not presented:
-it reviews nothing, admits nothing, writes neither pin nor address, raises no removed notice and
+it reviews nothing, admits nothing, writes neither pin nor address, and
 is not on screen for removals or availability. A close, a Discard and a removal `forget` the
 document through the removal coordinator, so nothing picks it again and its host unmounts (taking
 its draft-only presentation with it). Nothing here is persisted.

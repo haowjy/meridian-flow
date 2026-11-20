@@ -70,7 +70,7 @@ stateDiagram-v2
   active one does; a create, rename, move or delete there is sent like any other, the server stamps
   it `dropped` ("Work was closed"), every replay leaves it out, and its row says so
   (`core/project-tree/tree-bounces.ts`, `use-tree-notice-words.tsx`: a created row stays struck
-  through with "Copy" or "Not created", another row reads as it stood with "Copy", "Not moved" or
+  through with "Not created", another row reads as it stood with "Copy", "Not moved" or
   "Not deleted"). On a deleted Work's Draft no tree offers a control, New document is not offered
   and the identity bar's placement field doesn't open (`TreeVersion.ended`). Its Scratch on Live reads and
   offers no change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
