@@ -6,7 +6,9 @@
  * in this view. A tree-only move changes the spelling and so the token, though
  * the holder's bytes did not change. It walks Yjs, never a ProseMirror
  * projection, and is computed in the same synchronous block as the render or
- * apply it identifies. It is a freshness signal, never a write refusal.
+ * apply it identifies. It is a freshness signal, never a write refusal. A Work's
+ * read appends the Work's key: every Work reads the one Live document through its own
+ * view, so the same bytes read differently.
  */
 import { createHash } from "node:crypto";
 import { bodyRange } from "@meridian/agent-edit";
@@ -38,6 +40,16 @@ export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
     .update(Uint8Array.of(0))
     .update(JSON.stringify([...triples].sort()), "utf8")
     .digest("base64url")}`;
+}
+
+/** A revision as `work`'s view reads it; Live's (`null`) stays as it is. */
+export function viewRevision(revision: string, work: string | null): string {
+  return work ? `${revision}:${work}` : revision;
+}
+
+/** A read whose revision names `work`'s view. */
+export function inView<T extends { revision: string | null }>(read: T, work: string | null): T {
+  return work && read.revision ? { ...read, revision: viewRevision(read.revision, work) } : read;
 }
 
 /**

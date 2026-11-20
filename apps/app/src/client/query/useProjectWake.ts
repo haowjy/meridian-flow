@@ -57,22 +57,14 @@ export function useProjectWake(projectId: string): void {
       draftsRefreshing = true;
       const all = owners.has(undefined);
       const named = [...owners].filter((owner): owner is string => owner !== undefined);
-      const reads = (all ? [undefined] : named).flatMap((owner) => [
+      const reads = (all ? [undefined] : named).map((owner) =>
         queryClient.invalidateQueries({
           queryKey:
             owner === undefined
               ? projectQueryKeys.ownerDraftsOf(projectId)
               : projectQueryKeys.ownerDrafts(projectId, owner),
         }),
-        // Which drafts are open is each draft's metadata too: a restore elsewhere reopens one
-        // this tab holds as ended, and its rows and rooms follow the fresh answer.
-        queryClient.invalidateQueries({
-          queryKey:
-            owner === undefined
-              ? projectQueryKeys.draftMetadataOf(projectId)
-              : projectQueryKeys.ownerDraftMetadataOfOwner(projectId, owner),
-        }),
-      ]);
+      );
       // A Work's count and lifecycle are the Works list's: the picker and Changes read them there.
       if (all || named.some((owner) => workIdOfDraftOwnerKey(owner)))
         reads.push(repairWorksSnapshot(queryClient, projectId));

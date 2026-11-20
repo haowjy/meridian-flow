@@ -52,10 +52,10 @@ export function hasApply(
 }
 
 /**
- * Whether the item's review has no room: a delete, or a move with no text draft. Its review is the
- * live document with the branch's tree line, so no review session ever binds.
+ * Whether the item is only a tree change: a delete, or a move with no suggestions. Its review is
+ * the live document with the branch's tree line.
  */
-export function reviewHasNoRoom(
+export function isTreeOnly(
   item: Pick<
     ThreadDraftListItem,
     "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft"
@@ -64,7 +64,20 @@ export function reviewHasNoRoom(
   return item.tree?.deleted === true || (!item.hasDraft && hasTreeLine(item));
 }
 
-/** The tree line as a review row: one change with no text frame, keyed apart from text. */
+/**
+ * Whether the item opens as a document: it holds suggestions, the Work created it (plain Live
+ * text), or it is only a tree change. Otherwise it is a picture the Work added, shown as a preview.
+ */
+export function opensAsDocument(
+  item: Pick<
+    ThreadDraftListItem,
+    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft" | "binary"
+  >,
+): boolean {
+  return item.hasDraft || (item.isNew && !item.binary) || isTreeOnly(item);
+}
+
+/** The tree line as a review row: one change with no text, keyed apart from text. */
 export function treeChange(
   item: Pick<ThreadDraftListItem, "itemKey">,
   line: TreeLine,
@@ -81,7 +94,6 @@ export function treeChange(
     members: [],
     attributed: false,
     spans: [],
-    frame: null,
     tree: line,
     whole: true,
   };

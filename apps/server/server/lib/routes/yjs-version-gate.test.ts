@@ -1,4 +1,4 @@
-/** Connect-time schema compatibility behavior for live and Work-draft Yjs rooms.
+/** Connect-time schema compatibility behavior for live Yjs rooms.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Yjs version subprotocol, unstamped admission, and generation plumbing
@@ -16,7 +16,6 @@ import { createInMemoryEventSink } from "../../domains/observability/index.js";
 import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
 import { createHocuspocus } from "../yjs-ws-handler.js";
 
-const draftRoomName = "draft:draft_1";
 const liveDocumentName = "00000000-0000-4000-8000-000000000101";
 const userId = "00000000-0000-4000-8000-000000000102";
 const version = (major: number, minor: number, patch = 0): CollabSchemaVersion => ({
@@ -29,31 +28,18 @@ const SENTINEL_SCHEMA_VERSION = version(0, 0, 0);
 const OTHER_MAJOR_HEAD = version(COLLAB_SCHEMA_VERSION.major + 1, 0);
 
 function versionGateServices(
-  input: {
-    liveHead?: CollabSchemaVersion | null;
-    draftHead?: CollabSchemaVersion;
-    liveGeneration?: bigint;
-  } = {},
+  input: { liveHead?: CollabSchemaVersion | null; liveGeneration?: bigint } = {},
 ) {
   const documentSync = {
     roomRemoval: vi.fn(async () => null),
     ensureDocumentAuthority: vi.fn(async () => {}),
     bindHocuspocus: vi.fn(),
     headSchemaVersion: vi.fn(async () => (input.liveHead === undefined ? null : input.liveHead)),
-    resolveDraftHocuspocusRoom: vi.fn(async (draftId: string, generation: number) => ({
-      draftId,
-      documentId: liveDocumentName,
-      owner: { kind: "work" as const, workId: "00000000-0000-4000-8000-000000000107" },
-      generation,
-      schemaVersion: input.draftHead ?? COLLAB_SCHEMA_VERSION,
-      status: "active" as const,
-    })),
     validateHocuspocusDocument: vi.fn(async () => {}),
     currentLiveGeneration: vi.fn(async () => input.liveGeneration ?? 1n),
     admitLiveWriterUpdate: vi.fn(async () => ({
       admitted: true as const,
     })),
-    catchUpDraft: vi.fn(async () => undefined),
   };
   return {
     liveDocuments: {
@@ -205,42 +191,11 @@ describe("Yjs connect-time schema version gate", () => {
     expect(services.documentSync.admitLiveWriterUpdate).not.toHaveBeenCalled();
   });
 
-  it("gates draft rooms at the same strict monotonic edge", async () => {
-    const hocuspocus = createHocuspocus(
-      versionGateServices({ draftHead: COLLAB_SCHEMA_VERSION }) as never,
-      createYjsRoomAccessIndex(),
-    );
-    const staleClientContext = connectContext(SENTINEL_SCHEMA_VERSION);
-
-    await expect(
-      hocuspocus.configuration.onConnect?.({
-        connectionConfig: connectionConfig(),
-        documentName: draftRoomName,
-        context: staleClientContext,
-      } as never),
-    ).rejects.toMatchObject({ code: 4406, reason: "client-schema-superseded" });
-    expect(staleClientContext.closeTransport).toHaveBeenCalledWith({
-      code: 4406,
-      reason: "client-schema-superseded",
-    });
-    await expect(
-      hocuspocus.configuration.onConnect?.({
-        connectionConfig: connectionConfig(),
-        documentName: draftRoomName,
-        context: connectContext(COLLAB_SCHEMA_VERSION),
-      } as never),
-    ).resolves.toBeUndefined();
-  });
-
-  it("refuses major-mismatched live and draft heads per connection", async () => {
-    const majorMismatchHead = OTHER_MAJOR_HEAD;
-    const services = versionGateServices({
-      liveHead: majorMismatchHead,
-      draftHead: majorMismatchHead,
-    });
+  it("refuses a major-mismatched live head per connection", async () => {
+    const services = versionGateServices({ liveHead: OTHER_MAJOR_HEAD });
     const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
 
-    for (const room of [liveDocumentName, draftRoomName]) {
+    for (const room of [liveDocumentName]) {
       const context = connectContext(COLLAB_SCHEMA_VERSION);
       await expect(
         hocuspocus.configuration.onConnect?.({
@@ -276,32 +231,29 @@ describe("Yjs connect-time schema version gate", () => {
     });
   });
 
-  it.each([
-    ["live", liveDocumentName],
-    ["draft", draftRoomName],
-  ])("keeps the typed stale-head close on the %s document-load guard", async (_kind, room) => {
-    const services = versionGateServices({ liveHead: null });
-    Object.assign(services.documentSync, {
-      loadHocuspocusDocument: vi.fn(async () => {
-        throw staleSchemaError();
-      }),
-      loadHocuspocusDraftState: vi.fn(async () => {
-        throw staleSchemaError();
-      }),
-    });
-    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
-    const context = connectContext(COLLAB_SCHEMA_VERSION);
+  it.each([["live", liveDocumentName]])(
+    "keeps the typed stale-head close on the %s document-load guard",
+    async (_kind, room) => {
+      const services = versionGateServices({ liveHead: null });
+      Object.assign(services.documentSync, {
+        loadHocuspocusDocument: vi.fn(async () => {
+          throw staleSchemaError();
+        }),
+      });
+      const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
+      const context = connectContext(COLLAB_SCHEMA_VERSION);
 
-    await expect(
-      hocuspocus.configuration.onLoadDocument?.({
-        documentName: room,
-        document: new Y.Doc({ gc: false }),
-        context,
-      } as never),
-    ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
-    expect(context.closeTransport).toHaveBeenCalledWith({
-      code: 4407,
-      reason: "document-schema-stale",
-    });
-  });
+      await expect(
+        hocuspocus.configuration.onLoadDocument?.({
+          documentName: room,
+          document: new Y.Doc({ gc: false }),
+          context,
+        } as never),
+      ).rejects.toMatchObject({ code: 4407, reason: "document-schema-stale" });
+      expect(context.closeTransport).toHaveBeenCalledWith({
+        code: 4407,
+        reason: "document-schema-stale",
+      });
+    },
+  );
 });

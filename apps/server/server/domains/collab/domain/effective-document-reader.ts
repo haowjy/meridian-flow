@@ -1,5 +1,4 @@
-/** Effective document reads for non-tool callers: the same room copy a model call would read. */
-import { writeBlocks } from "@meridian/agent-edit/diff";
+/** Effective document reads for non-tool callers: the same view a model call would read. */
 import {
   type AgentEditCodecFactory,
   type DocHandle,
@@ -8,15 +7,9 @@ import {
   unwrapDoc,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { type DraftOwner, draftOwnerKey, type LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { settledAheads } from "@meridian/markup/links";
-import {
-  buildDocumentSchema,
-  PROSEMIRROR_FRAGMENT_NAME,
-  withBlockIds,
-} from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -25,17 +18,13 @@ import type {
   EffectiveReadVersion,
   HashlineRead,
   SyncError,
-  WorkDraftMissing,
 } from "../contracts.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { WorkViews } from "./agent-edit-runtime.js";
 import type { Branches } from "./branches.js";
-import { documentRevision, readHashlines } from "./document-revision.js";
+import { documentRevision, inView, readHashlines, viewRevision } from "./document-revision.js";
 import { isCodeDocument } from "./document-schema-type.js";
-import type { DraftCoordinator } from "./draft-coordinator.js";
-import type { DraftPullService } from "./draft-pulls.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 import type { BlockText } from "./ports/block-text.js";
 import type { DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -45,20 +34,18 @@ type EffectiveReadInput = {
 } & EffectiveReadVersion;
 
 export function createEffectiveDocumentReader(input: {
-  drafts: ApplicationDraftStore;
-  draftCoordinator: Pick<DraftCoordinator, "copyDraft" | "loadBase" | "prepareAppend">;
   blockText: BlockText;
-  draftPulls: Pick<DraftPullService, "catchUpDraft">;
   agentEdit: AgentEditRouter;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
+  /** Live's view. */
   model: YProsemirrorDocumentModel;
-  /** Suggestion mode (prototype): a Work's draft is Live read through the Work's view. */
-  workView?: WorkViews | null;
+  /** A Work's draft is Live read through the Work's view. */
+  workView: WorkViews;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
   branches: Pick<Branches, "viewForOwner">;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
-}): Omit<DraftPeerShadowAccess, "draftCreatedDocuments"> {
+}): Omit<DraftPeerShadowAccess, "seedWorkCreates" | "writeWorkCreatedContent"> {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
@@ -73,62 +60,38 @@ export function createEffectiveDocumentReader(input: {
   }
 
   /**
-   * Reads the document's effective Y.Doc for this command: the room copy a model call would
-   * read (the thread's Work draft, or live). Choosing the content source never chooses the view: every source renders through
-   * the same `read`, which spells in the command's own view. `model` reads the content: in
-   * suggestion mode, a Work's (`owner`) draft is the Live room through that Work's view.
+   * Reads the document's Live room through the view of `owner`'s Work, or Live's view. Choosing
+   * the content view never chooses the link view: every source renders through the same `read`,
+   * which spells in the command's own view.
    */
   async function readEffective<T>(
     command: EffectiveReadInput,
-    read: (doc: DocHandle, model: YProsemirrorDocumentModel) => Promise<T>,
+    read: (doc: DocHandle, model: YProsemirrorDocumentModel, work: string | null) => Promise<T>,
     owner: DraftOwner | undefined = command.destination === "draft" ? command.owner : undefined,
   ): Promise<Result<T, SyncError>> {
-    const viewed = owner && input.workView ? input.workView.model(draftOwnerKey(owner)) : null;
+    const work = owner ? draftOwnerKey(owner) : null;
+    const model = work ? input.workView.model(work) : input.model;
     let room: Awaited<ReturnType<AgentEditRouter["readRoom"]>>;
     try {
-      room = await input.agentEdit.readRoom({
-        documentId: command.documentId,
-        threadId: command.threadId,
-        live: command.destination === "live" || viewed !== null,
-      });
+      room = await input.agentEdit.readRoom({ documentId: command.documentId });
     } catch (cause) {
       if (isDocumentNotFoundError(cause))
         return Err({ code: "not_found", documentId: command.documentId });
       throw cause;
     }
     try {
-      return Ok(await read(toDocHandle(room.doc), viewed ?? input.model));
+      return Ok(await read(toDocHandle(room.doc), model, work));
     } finally {
       room.dispose();
-    }
-  }
-
-  /**
-   * A Work's draft room as the Work holds it: found by the Work and the document alone, with
-   * no reading chat and no reply's staged writes. A Work that never drafted the document is `draft_not_found`; callers decide
-   * whether to fall back to live.
-   */
-  async function readWorkDraft<T>(
-    command: { documentId: DocumentId; owner: DraftOwner },
-    read: (doc: DocHandle) => Promise<T>,
-  ): Promise<Result<T, WorkDraftMissing>> {
-    const draft = await input.drafts.findOwnerDraft(command.documentId, command.owner);
-    if (!draft) return Err({ code: "draft_not_found", documentId: command.documentId });
-    await input.draftPulls.catchUpDraft(draft.draftId);
-    const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
-    try {
-      return Ok(await read(toDocHandle(doc)));
-    } finally {
-      doc.destroy();
     }
   }
 
   return {
     async readEffectiveRevision(command) {
       try {
-        const result = await readEffective(command, async (handle) => {
+        const result = await readEffective(command, async (handle, _model, work) => {
           const doc = unwrapDoc(handle);
-          return documentRevision(doc, await spelling(command, doc));
+          return viewRevision(documentRevision(doc, await spelling(command, doc)), work);
         });
         return result.ok ? result.value : null;
       } catch {
@@ -140,114 +103,62 @@ export function createEffectiveDocumentReader(input: {
         draftOwner: version.destination === "draft" ? version.owner : null,
       }),
     readStoredWordCounts: (documentIds) => input.blockText.wordCounts(documentIds),
-    catchUpDraft(draftId) {
-      return input.draftPulls.catchUpDraft(draftId);
-    },
-    async readOwnerMarkdown({ documentId, owner }) {
-      // In suggestion mode a Work's text is Live through its view, never an older draft.
-      const draft = input.workView ? null : await input.drafts.findOwnerDraft(documentId, owner);
-      if (!draft)
-        return readEffective(
-          { documentId, destination: "live" },
-          async (doc, model) =>
-            input.documents.serializeVersionedDocument(
+    readOwnerMarkdown: ({ documentId, owner }) =>
+      readEffective(
+        { documentId, destination: "live" },
+        async (doc, model, work) =>
+          inView(
+            await input.documents.serializeVersionedDocument(
               documentId,
               unwrapDoc(doc),
               { kind: "live" },
               model,
             ),
-          owner,
-        );
-      await input.draftPulls.catchUpDraft(draft.draftId);
-      const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
-      try {
-        return Ok(
-          await input.documents.serializeVersionedDocument(
-            documentId,
-            doc,
-            await input.branches.viewForOwner(owner),
+            work,
           ),
-        );
-      } finally {
-        doc.destroy();
-      }
-    },
+        owner,
+      ),
     readEffectiveMarkdown(command) {
-      return readEffective(command, async (doc, model) =>
-        input.documents.serializeVersionedDocument(
-          command.documentId,
-          unwrapDoc(doc),
-          await viewOf(command),
-          model,
+      return readEffective(command, async (doc, model, work) =>
+        inView(
+          await input.documents.serializeVersionedDocument(
+            command.documentId,
+            unwrapDoc(doc),
+            await viewOf(command),
+            model,
+          ),
+          work,
         ),
       );
     },
-    async readEffectiveBlocks(command) {
-      const project =
-        (version: "live" | "draft") =>
-        async (
-          handle: DocHandle,
-          model: YProsemirrorDocumentModel = input.model,
-        ): Promise<EffectiveBlocksRead> => {
+    readEffectiveBlocks(command) {
+      return readEffective(
+        { documentId: command.documentId, destination: "live" },
+        async (handle, model, work): Promise<EffectiveBlocksRead> => {
           const doc = unwrapDoc(handle);
           const scope = await spelling(command, doc);
           const blocks = model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
           return {
             content: blocks,
-            version,
-            revision: documentRevision(doc, scope),
+            version: work ? "draft" : "live",
+            revision: viewRevision(documentRevision(doc, scope), work),
             holderUri: scope.holder.uri,
             stateVector: Y.encodeStateVector(doc),
             aheadSettlements: settledAheads(blocks, scope),
           };
-        };
-      if (command.destination === "draft" && !input.workView) {
-        const draft = await readWorkDraft(command, project("draft"));
-        if (draft.ok) return draft;
-      }
-      return readEffective(
-        { documentId: command.documentId, destination: "live" },
-        project("live"),
+        },
         command.destination === "draft" ? command.owner : undefined,
       );
     },
     readEffectiveHashlines(command) {
-      return readEffective(command, async (handle, model): Promise<HashlineRead> => {
+      return readEffective(command, async (handle, model, work): Promise<HashlineRead> => {
         const doc = unwrapDoc(handle);
         const [scope, verbatim] = await Promise.all([
           spelling(command, doc),
           isCodeDocument(input.resolveFiletype, command.documentId),
         ]);
-        return readHashlines(doc, scope, model, input.codec, verbatim);
+        return inView(readHashlines(doc, scope, model, input.codec, verbatim), work);
       });
-    },
-    async writeCreatedDraftContent(created) {
-      const schema = buildDocumentSchema();
-      for (const { documentId, branchId, content } of created) {
-        const draft = await input.drafts.findBranchDraft(documentId, branchId);
-        if (!draft) throw new Error(`No created draft for ${documentId}`);
-        const base = await input.draftCoordinator.loadBase(draft.draftId);
-        const write = input.draftCoordinator.prepareAppend(base, [], {
-          async authorServerRows(doc) {
-            return captureMutationUpdates(doc, () =>
-              doc.transact(() => {
-                writeBlocks(
-                  doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-                  schema,
-                  content.blocks.map(withBlockIds),
-                );
-              }),
-            );
-          },
-        });
-        try {
-          if (!(await write.persist()))
-            throw new Error(`Created draft content was contained for ${documentId}`);
-          await write.transfer();
-        } finally {
-          write.dispose();
-        }
-      }
     },
   };
 }

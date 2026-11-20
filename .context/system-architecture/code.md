@@ -152,7 +152,7 @@ Plans, lowers and describes one model write on a document room, and builds the i
 
 ## suggestions
 
-A Work's draft stored as suggestion marks inside the Live document, behind `FLOW_SUGGESTIONS` / `VITE_FLOW_SUGGESTIONS` until the draft documents go.
+A Work's draft, stored as suggestion marks inside the Live document.
 
 One decision table (`kindOf`) says what a view shows and what an edit there does; `rewrite` applies it to any ProseMirror transaction, so the editor's typing and the model's writes take the same path. Discard is `reject`. Imports no workspace code and no Yjs: agent-edit's `resolveStored` writes a verdict to a Y.Doc, the same way in the tab, the press and card Undo.
 

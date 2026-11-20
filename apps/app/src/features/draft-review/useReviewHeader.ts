@@ -64,7 +64,7 @@ export function useReviewHeader({
   const { controller, files, showLive: showDocumentLive } = useDraftReview();
   const view = useReviewChanges(controller, { enabled: Boolean(itemKey) });
 
-  // Only a file with text has a review to move to: a move or delete alone has no draft room.
+  // Only a file with suggestions has a review to move to: a move or delete alone has none.
   const next = nextReviewFile(
     files.filter((file) => file.draft.hasDraft || file.documentId === documentId),
     documentId,

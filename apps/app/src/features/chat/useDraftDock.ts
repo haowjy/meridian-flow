@@ -4,7 +4,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
@@ -14,13 +13,12 @@ import {
   type ReviewChange,
   targetOfChanges,
 } from "@/features/draft-review/review-model";
-import { hasApply, hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
-import { useRoomReviews } from "@/features/draft-review/useRoomReview";
-import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
+import { hasApply, hasTreeLine, opensAsDocument } from "@/features/draft-review/tree-line";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
 import { useWorkScope } from "@/features/project/use-work-scope";
+import { useBoundWorkBranchCommands } from "@/features/suggestion-review/usePressCommands";
 import {
   type DockFile,
   dockFile,
@@ -29,15 +27,6 @@ import {
   totalChanges,
   wholeDockFile,
 } from "./draft-dock-files";
-
-/**
- * Rows that hold a review room, for their change-level detail and per-change commands: the first
- * eight, and every row whose draft is shared (see `isSharedDraft`). A room is a WebSocket, and a
- * chat that touched hundreds of drafts must not open them all (#1688): the rest read the owner
- * list and take whole-draft commands, as Changes does, which is exactly this chat's changes
- * because nobody else wrote in them.
- */
-const ROOM_ROWS = 8;
 
 export type DraftDockModel = ReturnType<typeof useDraftDock>;
 
@@ -88,74 +77,28 @@ export function useDraftDock({
     seenWaiting.current = waiting;
     refreshTurnCards(queryClient);
   }, [queryClient, waiting]);
-  const targets = useMemo(
-    () =>
-      candidates
-        .filter((row) => row.draft.hasDraft && row.draft.tree?.deleted !== true)
-        .map((row) => ({
-          projectId,
-          ownerKey,
-          documentId: row.documentId,
-          itemKey: row.draft.itemKey,
-        })),
-    [candidates, projectId, ownerKey],
-  );
-  // The open review keeps its own refresh; the strip refreshes the rest. Suggestion mode has no
-  // draft rooms: every row is its whole document, pressed (`usePressCommands`).
-  const roomed = useMemo(
-    () =>
-      suggestionModeEnabled
-        ? []
-        : targets.filter(
-            (target, index) =>
-              index < ROOM_ROWS ||
-              isSharedDraft(
-                candidates.find((row) => row.draft.itemKey === target.itemKey)?.draft,
-                threadId,
-              ),
-          ),
-    [targets, candidates, threadId],
-  );
-  const reads = useRoomReviews(roomed);
   const untitled = t`Document`;
-  const roomIndex = (itemKey: string) => roomed.findIndex((target) => target.itemKey === itemKey);
   const drafted = candidates.map((row) => {
-    const isWhole =
-      row.draft.hasDraft && row.draft.tree?.deleted !== true && roomIndex(row.draft.itemKey) < 0;
-    if (isWhole) {
+    // A document with text is pressed whole; one another chat drafted too is reviewed in the
+    // Changes list, not pressed from here as this chat's.
+    if (row.draft.hasDraft && row.draft.tree?.deleted !== true) {
       const file = wholeDockFile(row, reviewFileTargetName(row, untitled));
-      // A press takes the whole document: one another chat drafted too is reviewed in the
-      // Changes list, not pressed from here as this chat's.
-      const shared = suggestionModeEnabled && isSharedDraft(row.draft, threadId);
-      return controller.owner.state(row.draft.itemKey).discarding || shared
+      return isSharedDraft(row.draft, threadId)
         ? { ...file, count: 0, actionable: [], alone: false }
         : file;
     }
-    const read = reads[roomIndex(row.draft.itemKey)];
-    const withoutText = row.draft.hasDraft === false || row.draft.tree?.deleted === true;
-    const file = dockFile(
+    // A move or a delete: its tree line is its one change.
+    return dockFile(
       row,
       reviewFileTargetName(row, untitled),
-      {
-        status: withoutText ? "ready" : (read?.status ?? "loading"),
-        items: listedItemChanges(row.draft, read?.listedChanges ?? []).map((change) => ({
-          change,
-        })),
-
-        retry: read?.retry,
-      },
+      listedItemChanges(row.draft, []),
       threadId,
     );
-    return controller.owner.state(row.draft.itemKey).discarding
-      ? { ...file, actionable: [] }
-      : file;
   });
-  const files = drafted.filter((file) => {
-    const state = controller.owner.state(file.row.draft.itemKey);
-    // A command in flight hides its row.
-    if (state.hidden) return false;
-    return isOnStrip(file) || state.pending;
-  });
+  // A press in flight hides its rows.
+  const files = drafted.filter(
+    (file) => !controller.owner.state(file.row.draft.itemKey).hidden && isOnStrip(file),
+  );
   // What the Changes list holds beyond this chat's: its items (documents and folders), less the
   // documents the strip's Apply would empty. Counted over the listed drafts, not the rows on
   // screen, so an Apply in flight doesn't count its own documents as more.
@@ -167,9 +110,7 @@ export function useDraftDock({
         ? reviewCount(shell, work)
         : null;
   const more =
-    workCount === null || drafted.some((file) => file.status !== "ready")
-      ? 0
-      : Math.max(0, workCount - drafted.filter((file) => file.alone).length);
+    workCount === null ? 0 : Math.max(0, workCount - drafted.filter((file) => file.alone).length);
 
   const actionableFiles = files.filter((file) =>
     file.whole ? file.count > 0 : file.actionable.length > 0,
@@ -177,8 +118,8 @@ export function useDraftDock({
 
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
-      // A draft-only picture has no review room: it opens as a preview.
-      if (!file.row.draft.hasDraft && !reviewHasNoRoom(file.row.draft)) {
+      // A draft-only picture opens as a preview; a created document opens like any other.
+      if (!opensAsDocument(file.row.draft)) {
         if (file.row.draft.binary)
           setImagePreview({
             projectId,
@@ -237,8 +178,7 @@ export function useDraftDock({
       if (work && shell?.ownerKey !== ownerKey) setWorkId(work.id);
       useSidebarTabs.getState().reveal("changes");
     },
-    /** Unread previews keep the controls visible but disabled until their scope is known. */
-    showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
+    showCommands: actionableFiles.length > 0,
     canApply:
       controller.canApply &&
       applicable.some(
@@ -246,9 +186,7 @@ export function useDraftDock({
           (!file.row.draft.hasDraft && file.row.draft.isNew) ||
           hasTreeLine(file.row.draft) ||
           isDeletedLive(file.row.draft) ||
-          (file.whole
-            ? file.row.draft.textChanges > 0
-            : (reads[roomIndex(file.row.draft.itemKey)]?.frame?.groups.length ?? 0) > 0),
+          (file.whole && file.row.draft.textChanges > 0),
       ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,

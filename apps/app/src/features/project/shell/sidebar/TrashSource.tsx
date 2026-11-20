@@ -1,8 +1,9 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { useQueryClient } from "@tanstack/react-query";
 import { Folder } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { useCommandDriver } from "@/client/commands/driver-context";
+import { rediscard } from "@/client/query/press-commands";
 import {
   type TrashEntry,
   useDocumentTrash,
@@ -10,13 +11,11 @@ import {
 } from "@/client/query/useDocumentTrash";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
-import { discardDrafts } from "@/features/draft-review/useWorkBranchCommands";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
-import { useDraftCommandOwner } from "../../context/account-feature-context";
 import { useEntryMenu } from "../../context/ContextEntryActions";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { schemeLocation } from "../../context/context-schemes";
@@ -226,8 +225,7 @@ function useTrashDiscardRows(projectId: string) {
   const trees = useProjectTrees(projectId);
   const { works, deleted, nameOf } = useWorks(projectId);
   const { states, restore } = useRestoreDiscard(projectId);
-  const queryClient = useQueryClient();
-  const owner = useDraftCommandOwner();
+  const driver = useCommandDriver();
   const restored = useRef(
     new Map<string, { entry: DiscardEntry; listedThen: ReadonlySet<string> }>(),
   );
@@ -248,7 +246,7 @@ function useTrashDiscardRows(projectId: string) {
         listedThen: new Set(listed.map(keyOf)),
       });
   }
-  // A new Discard of a restored draft is the next thing done to it: the restore's Undo ends.
+  // A new Discard of a restored document is the next thing done to it: the restore's Undo ends.
   for (const [commandId, { entry: held, listedThen }] of restored.current) {
     const took = new Set(documentsOf(held));
     if (
@@ -281,47 +279,39 @@ function useTrashDiscardRows(projectId: string) {
     isError: query.isError,
     refetch: query.refetch,
     undoing,
-    /** The Undo of a restore made here: the drafts go back to Trash as a new Discard entry. */
+    /** The Undo of a restore made here: the documents go back to Trash as a new Discard entry. */
     undoOf: (entry: DiscardEntry) => {
       const state = states.get(entry.commandId);
-      if (state?.kind !== "restored" || !state.branchId || !entry.workId) return undefined;
-      const { branchId, brought } = state;
-      const ownerKey = workOwnerKey({ id: entry.workId });
+      if (state?.kind !== "restored" || !driver) return undefined;
+      const { brought } = state;
+      if (!brought.text.length && !brought.tree.length) return undefined;
       return () => {
         if (undoing.has(keyOf(entry))) return;
         mark(keyOf(entry), true);
-        void discardDrafts(queryClient, owner, {
-          projectId,
-          ownerKey,
-          branchId,
-          items: [...new Set([...brought.text, ...brought.tree])].map((documentId) => ({
-            documentId,
-            tree: brought.tree.includes(documentId),
-            text: brought.text.includes(documentId),
-          })),
-        }).then((outcome) => {
-          // A refused Discard is the owner's pill; the row stays restored, with its Undo.
-          if (outcome.kind === "done")
+        void rediscard(driver, { projectId, owner: entry.owner, brought }).then((done) => {
+          if (done)
             // The restored row gives way to the new entry the refetch lists.
             restored.current.delete(keyOf(entry));
+          else
+            notifyFailure({
+              key: `rediscard:${entry.commandId}`,
+              title: t`Couldn't undo`,
+              brief: true,
+            });
           mark(keyOf(entry), false);
         });
       };
     },
     restore: (entry: DiscardEntry) => {
       restored.current.clear();
-      void restore({
-        commandId: entry.commandId,
-        branchId: entry.branchId,
-        documentIds: documentsOf(entry),
-      });
+      void restore({ commandId: entry.commandId, owner: entry.owner });
     },
   };
 }
 
 const keyOf = (entry: DiscardEntry) => entry.commandId;
 
-/** What a Discard took: its drafts' documents and every node its tree half settled. */
+/** What a Discard took: the documents whose suggestions it rejected and every node its tree half settled. */
 const documentsOf = (entry: DiscardEntry) => [
-  ...new Set([...entry.drafts.map((draft) => draft.documentId), ...entry.tree.nodes]),
+  ...new Set([...entry.documents, ...entry.tree.nodes]),
 ];

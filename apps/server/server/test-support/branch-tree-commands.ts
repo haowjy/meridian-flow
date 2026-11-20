@@ -1,21 +1,10 @@
-/**
- * The branch-tree DB tests' command verbs (contract §16.1): a model's replies, the writer's
- * route cores, readers' ports, and review commands, all driving the composed production
- * runtime (the real tool executor, route cores and ports) over a `BranchTreeWorld`.
- *
- * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
- * the other project sources, or `user://` for the writer's personal source.
- */
-
-import { randomUUID } from "node:crypto";
 import {
-  type BranchId,
   type DocumentId,
   type DocumentLinkAnswer,
   draftOwnerKey,
   type WorkId,
 } from "@meridian/contracts";
-import type { DiscardCommandResult, ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { canonicalContextUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
@@ -30,7 +19,6 @@ import {
 import type { ContextPort, GrepQuery } from "../domains/context/ports/context-port.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
 import {
-  handleDiscardBranchRequest,
   handleOwnerDraftListRequest,
   selectBranchRouteServices,
 } from "../lib/branch-review-route.js";
@@ -81,15 +69,10 @@ export interface ScenarioWriter {
   /** The writer saves the whole document live, as the editor's Markdown save does. */
   write(path: string, markdown: string): Promise<void>;
   /**
-   * The writer types in this document's draft review room: `edit` changes a
-   * copy of the draft, and its update goes through the room's durable admission.
-   * Returns the draft.
+   * The writer types in the document's live room: `edit` changes a copy of the room, and its
+   * update goes through the room's durable admission, as a tab's does.
    */
-  editDraft(
-    work: ScenarioWork,
-    documentId: DocumentId,
-    edit: (doc: Y.Doc) => void,
-  ): Promise<{ draftId: string }>;
+  editLive(documentId: DocumentId, edit: (doc: Y.Doc) => void): Promise<void>;
 }
 
 /** What a reader sees through its context port: a writer's live port, or a Work thread's. */
@@ -110,15 +93,6 @@ export interface BranchTreeCommands {
   model(work: ScenarioWork): ScenarioModel;
   writer: ScenarioWriter;
   view(of: ScenarioWork | "live"): ScenarioView;
-  /**
-   * Discard through the route cores: `"all"` is Discard all for the Work's active branch
-   * (or `branchId`); a list is the per-document Discard of each, in order.
-   */
-  discard(
-    work: ScenarioWork,
-    items: "all" | readonly DocumentId[],
-    options?: { branchId?: string },
-  ): Promise<DiscardCommandResult | DiscardCommandResult[]>;
   /**
    * Work purge (§2.6): the writer deletes the Work, its deletion ages past the cutoff, and
    * the purge sweep runs.
@@ -152,8 +126,6 @@ export interface BranchTreeCommands {
     href: string;
     holder: { uri: string; id: DocumentId };
   }): Promise<{ id: string; inBranch?: true } | string>;
-  /** The Work branch's draft of this document, as its review room names it. */
-  documentDraft(work: ScenarioWork, documentId: DocumentId): Promise<{ draftId: string }>;
 }
 
 /** The review item of `documentId`; throws when the list has none. */
@@ -335,36 +307,33 @@ export function branchTreeCommands(
       });
       if (!written.ok) throw new Error(JSON.stringify(written.error));
     },
-    async editDraft(work, documentId, edit) {
-      const sync = ports().documentSync;
-      const room = await documentDraft(work, documentId);
-      // The room holds the draft as it is; the writer's tab edits its own copy and sends the difference.
+    async editLive(documentId, edit) {
+      const { ports, hocuspocus } = composed().runtime;
+      const sync = ports.documentSync;
+      await sync.ensureDocumentAuthority(documentId);
+      // The room holds the document as it is; the writer's tab edits its own copy and sends the difference.
       const document = new Y.Doc({ gc: false });
-      const loaded = await sync.loadHocuspocusDraftState(room.draftId);
-      if (loaded) Y.applyUpdate(document, loaded.state);
+      const state = await sync.loadHocuspocusDocument(documentId, document);
+      if (state) Y.applyUpdate(document, state);
       const tab = new Y.Doc({ gc: false });
       Y.applyUpdate(tab, Y.encodeStateAsUpdate(document));
       edit(tab);
-      await sync.admitDraftWriterUpdate({
-        draftId: room.draftId,
-        update: Y.encodeStateAsUpdate(tab, Y.encodeStateVector(document)),
-        origin: { type: "user", userId },
-        document,
-      });
-      return { draftId: room.draftId };
+      hocuspocus.documents.set(documentId, document as never);
+      try {
+        await sync.admitLiveWriterUpdate({
+          documentId,
+          document,
+          update: Y.encodeStateAsUpdate(tab, Y.encodeStateVector(document)),
+          origin: { type: "user", userId },
+          expectedGeneration: await sync.currentLiveGeneration(documentId),
+        });
+      } finally {
+        hocuspocus.documents.delete(documentId);
+        document.destroy();
+        tab.destroy();
+      }
     },
   };
-
-  async function documentDraft(work: ScenarioWork, documentId: DocumentId) {
-    const review = ports().documentSync.draftReview;
-    const item = await review.resolveItemByDocument({
-      owner: { kind: "work", workId: work.id },
-      documentId,
-    });
-    if (!item) throw new Error(`No draft of ${documentId} in ${work.handle}`);
-    if (!item.draftId || !item.item.hasDraft) throw new Error("Missing draft room");
-    return { draftId: item.draftId };
-  }
 
   function view(of: ScenarioWork | "live"): ScenarioView {
     const portFor = async (): Promise<ContextPort> => {
@@ -414,23 +383,6 @@ export function branchTreeCommands(
     };
   }
 
-  /** Each document's review item in the Work, then `run` on it. */
-  async function eachItem(
-    work: ScenarioWork,
-    documentIds: readonly DocumentId[],
-    verb: string,
-    run: (item: { documentId: DocumentId; branchId: string; itemKey: string }) => Promise<unknown>,
-  ) {
-    for (const documentId of documentIds) {
-      const item = await ports().documentSync.draftReview.resolveItemByDocument({
-        owner: { kind: "work", workId: work.id },
-        documentId,
-      });
-      if (!item) throw new Error(`No draft of ${documentId} to ${verb}`);
-      await run({ documentId, branchId: item.branchId, itemKey: item.itemKey });
-    }
-  }
-
   const routes = () => selectBranchRouteServices(composed().runtime.app);
 
   function review(work: ScenarioWork) {
@@ -439,50 +391,6 @@ export function branchTreeCommands(
       owner: draftOwnerKey({ kind: "work", workId: work.id }),
       userId,
     });
-  }
-
-  async function discard(
-    work: ScenarioWork,
-    items: "all" | readonly DocumentId[],
-    options: { branchId?: string; ends?: "tree" | "item" } = {},
-  ) {
-    if (items === "all") {
-      const branchId =
-        options.branchId ??
-        (await ports().documentSync.branches.activeForOwner({ kind: "work", workId: work.id }))?.id;
-      if (!branchId) throw new Error(`${work.handle} has no branch to discard`);
-      return (
-        await handleDiscardBranchRequest(routes(), {
-          projectId,
-          branchId: branchId as BranchId,
-          userId,
-          request: { all: true, commandId: randomUUID() },
-        })
-      ).body;
-    }
-    const results: DiscardCommandResult[] = [];
-    await eachItem(work, items, "discard", async ({ documentId, branchId }) => {
-      results.push(
-        (
-          await handleDiscardBranchRequest(routes(), {
-            projectId,
-            branchId: branchId as BranchId,
-            userId,
-            request: {
-              commandId: randomUUID(),
-              items: [
-                {
-                  node: documentId,
-                  tree: true,
-                  ...(options.ends === "tree" ? {} : { text: "all" as const }),
-                },
-              ],
-            },
-          })
-        ).body,
-      );
-    });
-    return results;
   }
 
   async function purge(work: ScenarioWork) {
@@ -500,8 +408,6 @@ export function branchTreeCommands(
     model,
     writer,
     view,
-    documentDraft,
-    discard,
     purge,
     review,
     items: async (work) => (await review(work)).items,

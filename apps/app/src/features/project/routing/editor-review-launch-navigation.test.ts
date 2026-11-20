@@ -3,7 +3,6 @@
 import "fake-indexeddb/auto";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";
-import { setDocumentView } from "@/client/project-shell/document-views";
 import { createEditorDocumentCommand } from "./editor-document-command";
 import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
@@ -14,7 +13,6 @@ const workId = "700db898-57fb-4ffa-8366-46ad6a3880be";
 function setup(
   path = `/p/${projectId}/chats`,
   addressDocumentId?: string,
-  draftOnly: readonly string[] = [],
   presented: readonly never[] = [],
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
@@ -38,8 +36,6 @@ function setup(
     cut < 0 ? parseProjectAddress(path) : parseProjectAddress(path.slice(0, cut), path.slice(cut));
   if (parsed.kind !== "valid") throw new Error("Invalid fixture address");
   const open = createEditorDocumentCommand({
-    projectId,
-    accountId: "writer",
     read: () => ({
       navigation,
       address: parsed.address,
@@ -48,7 +44,6 @@ function setup(
       addressDocumentId,
     }),
     presented: () => presented,
-    isDraftOnly: (documentId) => draftOnly.includes(documentId),
   });
   return { open, history };
 }
@@ -79,7 +74,6 @@ describe("review launch navigation", () => {
     const { open, history } = setup(
       `/p/${projectId}/editor/manuscript/Scene.md?owner=work:${workId}&item=branch-hidden:doc-hidden`,
       "doc-hidden",
-      ["doc-hidden"],
       [hidden],
     );
     const live = { ...(hidden as object), documentId: "doc-live" } as never;
@@ -88,28 +82,5 @@ describe("review launch navigation", () => {
       { document: live },
     );
     expect(history.location.href).not.toContain("item=");
-  });
-
-  it("reopening a draft-only document keeps its review identity (item=), since no live document exists", async () => {
-    const { open, history } = setup(undefined, undefined, ["doc-1"]);
-    setDocumentView("writer", projectId, "doc-1", {
-      pin: { ownerKey: `work:${workId}`, itemKey: "branch-1:doc-1" },
-    });
-    const tab = {
-      kind: "tracked" as const,
-      documentId: "doc-1",
-      scheme: "manuscript" as const,
-      path: "Scene",
-      name: "Scene",
-      editable: true,
-      filetype: "markdown" as const,
-      schemaType: "document" as const,
-    } as never;
-    const result = await open(
-      { scheme: "manuscript", path: "Scene", documentId: "doc-1" },
-      { document: tab },
-    );
-    expect(result.kind).toBe("applied");
-    expect(history.location.href).toContain("item=branch-1");
   });
 });

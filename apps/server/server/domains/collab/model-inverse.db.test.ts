@@ -5,16 +5,12 @@
  * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/architecture/collaboration/turn-receipts.md#reversal-availability-is-the-servers)
  */
 import { randomUUID } from "node:crypto";
-import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
-import { applyTextEdit } from "@meridian/agent-edit/test-support";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { eq } from "drizzle-orm";
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
-import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
@@ -29,9 +25,8 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/collab-postgres-harness.js";
-import { recordApply } from "./test-support/draft-classification.js";
-import { draftContent } from "./test-support/draft-store-seam.js";
-import { inverseFixture, readDraftId } from "./test-support/turn-inverse-fixture.js";
+import { pressDriver } from "./test-support/press-requests.js";
+import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
 const fixture = () => inverseFixture(db);
@@ -184,7 +179,6 @@ describe("model document stack", () => {
               context,
             ),
           ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
-        const draftId = await readDraftId(db, ALPHA_ID);
         let call = 0;
         const write = async (count?: number) =>
           view.collab.agentEdit().write(
@@ -198,14 +192,14 @@ describe("model document stack", () => {
             context,
           );
         expect(await write(4)).toMatchObject({ status: "insufficient_undo" });
-        expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
+        expect(await view.workMarkdown()).toBe("Alpha Azure.\n\nBlue.\n");
         if (schedule === "count") {
           expect(await write(3)).toMatchObject({ status: "success" });
-          expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+          expect(await view.workMarkdown()).toBe("Alpha Beta.\n\nBlue.\n");
         } else {
           for (const text of ["Silver", "Gold", "Beta"]) {
             expect(await write()).toMatchObject({ status: "success" });
-            expect(await view.draftMarkdown(draftId)).toBe(`Alpha ${text}.\n\nBlue.\n`);
+            expect(await view.workMarkdown()).toBe(`Alpha ${text}.\n\nBlue.\n`);
           }
         }
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
@@ -214,7 +208,7 @@ describe("model document stack", () => {
       }
     },
   );
-  it("leaves text the writer applied to the manuscript, and says so", async () => {
+  it("leaves text the writer applied to the manuscript", async () => {
     const { harness, view, context, responseId } = await fixture();
     try {
       const core = view.collab.agentEdit();
@@ -226,48 +220,10 @@ describe("model document stack", () => {
           context,
         ),
       ).toMatchObject({ status: "success", writeId: "e1" });
-      const draftId = await readDraftId(db, ALPHA_ID);
-      const pm = buildDocumentSchema();
-      const applyDraft = async (liveText: string) => {
-        const { doc, snapshot } = await view.draftCoordinator.copyDraft(draftId);
-        try {
-          doc.clientID = 1;
-          doc.transact(() => {
-            writeBlocks(
-              doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
-              pm,
-              readBlocks(doc.getXmlFragment("prosemirror"), pm),
-            );
-          });
-          await db
-            .update(schema.documentDrafts)
-            .set({
-              state: Buffer.from(Y.encodeStateAsUpdate(doc)),
-              stateVector: Buffer.from(Y.encodeStateVector(doc)),
-              revision: snapshot.revision + 1,
-              checkpointRevision: snapshot.revision + 1,
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.documentDrafts.id, draftId));
-          await view.draftCoordinator.deliverCommitted(draftId);
-          await recordApply(db, {
-            draftId,
-            documentId: ALPHA_ID,
-            accountId: USER_ID,
-            projectId: PROJECT_ID,
-            store: createDrizzleDraftDispositionStore(db),
-          });
-        } finally {
-          doc.destroy();
-        }
-        await view.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
-          const block = view.model.getBlocks(doc)[0];
-          if (!block) throw new Error("live block missing");
-          const before = Y.encodeStateVector(doc);
-          applyTextEdit(block, { from: 0, to: view.model.getText(block).length }, liveText);
-          const update = Y.encodeStateAsUpdate(doc, before);
-          if (update.length)
-            await view.persistence.journal.append(ALPHA_ID, update, { origin: "system", seq: 0 });
+      const applyDraft = async () => {
+        expect(await pressDriver(view.collab.presses).apply(ALPHA_ID)).toMatchObject({
+          status: "pressed",
+          items: [{ node: ALPHA_ID, text: true }],
         });
       };
 
@@ -276,16 +232,17 @@ describe("model document stack", () => {
         ...context,
         responseIdentity: { modelResponseId: responseId },
       };
-      await applyDraft("Alpha Gamma.");
+      await applyDraft();
       await core.read(address, secondContext);
       expect(await core.read({ ...address, format: "edits" }, context)).toMatchObject({
         status: "success",
-        result: { message: expect.stringMatching(/e1.*applied.*none/) },
+        // The press changed the suggestion into Live text: the edit no longer stands as written.
+        result: { message: expect.stringMatching(/e1.*changed.*none/) },
       });
       expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
         status: "cant_undo_changed",
       });
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
+      expect(await view.workMarkdown()).toBe("Alpha Gamma.\n\nBlue.\n");
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
     } finally {
       await harness.dispose();
@@ -306,9 +263,8 @@ describe("model document stack", () => {
         { ...address, command: "replace", find: "Gold", content: "Silver" },
         initial,
       );
-      const draftId = await readDraftId(db, ALPHA_ID);
       const prose = () =>
-        destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.draftMarkdown(draftId);
+        destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.workMarkdown();
       const responseIdentity = { modelResponseId: responseId };
       const inverse = { ...initial, responseIdentity };
       const write = (count: number) => core.write({ ...address, command: "undo", count }, inverse);
@@ -329,25 +285,18 @@ it("model undo of an edit the writer typed inside is refused and leaves the draf
     const core = view.collab.agentEdit();
     const command = { documentId: ALPHA_ID, file: "alpha.md" };
     await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
-    const draftId = await readDraftId(db, ALPHA_ID);
-    const [documentDraft] = await db
-      .select()
-      .from(schema.documentDrafts)
-      .where(eq(schema.documentDrafts.id, draftId));
-    const doc = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
+    // The writer types inside the model's suggested text, in the one Live document.
+    await view.liveCoordinator.withDocument(ALPHA_ID, async (doc) => {
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
-      const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.draftCoordinator.appendWriterFrame({
-        draftId: documentDraft.id,
-        updateData: Y.mergeUpdates(updates),
-        actorUserId: USER_ID,
+      const raw = (text.toDelta() as { insert: string }[]).map((part) => part.insert).join("");
+      const at = raw.indexOf("Gamma") + 2;
+      const updates = captureMutationUpdates(doc, () => text.insert(at, "!"));
+      await view.persistence.journal.append(ALPHA_ID, Y.mergeUpdates(updates), {
+        origin: `human:${USER_ID}`,
+        seq: 0,
       });
-    } finally {
-      doc.destroy();
-    }
+    });
     const liveContext = {
       ...context,
       responseIdentity: undefined,
@@ -360,7 +309,7 @@ it("model undo of an edit the writer typed inside is refused and leaves the draf
     expect(await core.write({ ...command, command: "undo" }, liveContext)).toMatchObject({
       status: "cant_undo_changed",
     });
-    expect(await view.draftMarkdown(draftId)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    expect(await view.workMarkdown()).toBe("Alpha Ga!mma.\n\nBlue.\n");
     expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
   } finally {
     await harness.dispose();

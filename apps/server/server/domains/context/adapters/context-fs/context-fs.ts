@@ -100,7 +100,7 @@ export interface ContextFSDeps {
     Pick<CollabDomain, "refreshDocumentProjection"> &
     Pick<
       DraftPeerShadowAccess,
-      | "writeCreatedDraftContent"
+      | "writeWorkCreatedContent"
       | "readEffectiveHashlines"
       | "readEffectiveMarkdown"
       | "readStoredGrepTexts"

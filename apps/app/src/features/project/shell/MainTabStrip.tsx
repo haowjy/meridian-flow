@@ -47,7 +47,6 @@ import { useAccountId } from "../context/account-feature-context";
 import { documentPlace } from "../context/context-schemes";
 import { useReferenceDrag } from "../context/entry-drag/reference-source";
 import { tabSubject } from "../context/tab-subject";
-import { useIsDraftOnly } from "../context/use-is-draft-only";
 import { useChatNavigation } from "../routing/chat-navigation";
 import {
   type OpenContextRoute,
@@ -384,16 +383,11 @@ function DocumentTabChip({
   const drafts = useOwnerDrafts(projectId, paint.draft?.ownerKey ?? null);
   const file = paint.draft ? drafts.fileForDocument(document.documentId) : null;
   const reviewing = active && paint.showing === "draft";
-  const isDraftOnly = useIsDraftOnly(projectId);
   const drag = useReferenceDrag(
-    tabSubject(
-      document,
-      {
-        reviewing,
-        view: file && paint.draft ? draftCopyView(file, paint.draft.ownerKey) : null,
-      },
-      isDraftOnly(document.documentId),
-    ),
+    tabSubject(document, {
+      reviewing,
+      view: file && paint.draft ? draftCopyView(file, paint.draft.ownerKey) : null,
+    }),
   );
   const heldWidth = useHeldTabWidth();
   const closeByPointer = (chip: HTMLElement | null) => {

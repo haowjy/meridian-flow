@@ -150,7 +150,6 @@ function reviewChange(change: Change, titles: ReadonlyMap<string, string>): Revi
     members: chats.map((chat) => chat.chatId),
     attributed: true,
     spans: [],
-    frame: null,
   };
 }
 
@@ -196,7 +195,7 @@ export function useSuggestionReviewFocus({
       if (!controller.marksVisible) return;
       const target = (event.target as Element | null)?.closest(`[${SUGGESTION_CHANGE_ATTR}]`);
       const id = target?.getAttribute(SUGGESTION_CHANGE_ATTR);
-      if (id) reportFocusedChange({ documentId, itemKey }, { id, frame: null });
+      if (id) reportFocusedChange({ documentId, itemKey }, { id });
     };
     const dom = live.view.dom;
     dom.addEventListener("click", onClick);

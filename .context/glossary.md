@@ -34,7 +34,8 @@ is in the [knowledge base](https://github.com/haowjy/meridian-flow-docs/blob/mai
   review) or **Auto-apply** (straight to live).
 - **Receipt.** The card on a reply that lists the documents it edited and carries Undo.
 - **Room.** The server's in-memory session for one Yjs document, which browsers join over a
-  WebSocket. A **draft room** is the room for one draft.
+  WebSocket. A Work's view of a document has no room of its own: it is the Live room, painted
+  with the Work's suggestions.
 - **Tree list.** The project's tree as an append-only list of records in a Yjs document. Each
   browser holds a copy and replays it into the tree the writer sees; the server stores the same
   list and writes the tree's rows from it.

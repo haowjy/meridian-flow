@@ -1,5 +1,12 @@
 # agent-edit diff — the review model
 
+Drafts are gone: a Work's draft is suggestion marks in the Live document (`packages/suggestions`).
+What still runs from this model is the block diff, the review projection and composition, which
+the card's and the model's Undo use (`content-merge/stands.ts`) and the saved diff paints. The
+draft Y.Doc parts below (`review_base`, the Apply record, restorations, local Discard, attribution)
+describe code nothing calls now; its deletion is listed in
+[collab's TODO](../../../apps/server/server/domains/collab/.context/TODO.md).
+
 `src/diff/` is the pure text model behind draft review, content Apply and local Discard.
 It depends on ProseMirror and Yjs only, so the browser and the server import the same
 functions and agree on what a draft has changed. The three-way merge of a draft with live is
@@ -134,10 +141,8 @@ character tombstones, cannot borrow another block's author. Only proven Undo del
 Discard base copies are excluded from that guard, so undoing Discard keeps the original
 byline.
 
-Whether a part was applied is not read from this evidence: the Apply records the changes it took
-(`apply_command_effects.carried`), and the card reads those. The Apply record's item ranges are
-no longer written (only its command and group ids); the classifier still reads what an older
-record holds, until the browser's byline classifier goes.
+Whether a part was applied is not read from this evidence: an applied suggestion is Live text, and
+the card's Undo takes it back as a Live edit.
 
 ## Apply and local Discard are the same operation on two sides
 

@@ -4,36 +4,19 @@
  * - Checkpoints carry attribution manifests
  */
 
-import type { DocumentRevision } from "@meridian/contracts";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
   type AuthorityGenerationReplacementPort,
-  admitSegmentRows,
   DocumentMutationPolicyError,
   replaceAuthorityGeneration,
-  replicateFrozenSource,
 } from "./document-mutation-policy.js";
-import type { AppendDraftJournalInput } from "./draft-store.js";
 import { primeReservedNamespaceIndex, validateClientUpdateAdmission } from "./provenance.js";
-
-const revision = "revision-1" as DocumentRevision;
 
 function updateWith(value: string): Uint8Array {
   const doc = new Y.Doc({ gc: false });
   doc.getText("prosemirror").insert(0, value);
   return Y.encodeStateAsUpdate(doc);
-}
-
-function fullReplacementIr() {
-  return {
-    version: 1 as const,
-    documentId: "doc-1",
-    inputRevision: revision,
-    scope: [],
-    intent: { kind: "fullScopeFreshReplacement" as const, payload: "agent" },
-    deleted: [],
-  };
 }
 
 describe("document mutation policy operations", () => {
@@ -57,39 +40,6 @@ describe("document mutation policy operations", () => {
     expect(() => validateClientUpdateAdmission(room, mixed)).toThrow("deletes reserved");
     peer.destroy();
     room.destroy();
-  });
-
-  it("validates a semantic edit's IR before any of its rows applies", () => {
-    const target = new Y.Doc({ gc: false });
-    const before = Y.encodeStateAsUpdate(target);
-    const row: AppendDraftJournalInput = {
-      draftId: "draft-1",
-      source: "agent",
-      updateData: updateWith("agent"),
-      semanticEditIr: fullReplacementIr(),
-    };
-
-    expect(() => admitSegmentRows(target, "doc-2", [row])).toThrow("different document");
-    expect(Y.encodeStateAsUpdate(target)).toEqual(before);
-  });
-
-  it("replicates a live state that holds a writer's garbage-collected structs", () => {
-    // A writer's gc-enabled editor collects prose it deleted before syncing, so its update
-    // carries GC structs that the live document keeps verbatim.
-    const writer = new Y.Doc();
-    const paragraph = new Y.XmlElement("paragraph");
-    paragraph.push([new Y.XmlText("draft")]);
-    writer.getXmlFragment("prosemirror").push([paragraph, new Y.XmlElement("paragraph")]);
-    writer.getXmlFragment("prosemirror").delete(0, 1);
-    const live = new Y.Doc({ gc: false });
-    const writerUpdate = Y.encodeStateAsUpdate(writer);
-    expect(validateClientUpdateAdmission(live, writerUpdate)).toEqual({ reservedClientId: null });
-    Y.applyUpdate(live, writerUpdate);
-    const target = new Y.Doc({ gc: false });
-
-    replicateFrozenSource(live, target);
-
-    expect(Y.encodeStateVector(target)).toEqual(Y.encodeStateVector(live));
   });
 
   it("rejects Y.Doc-only checkpoints rather than re-minting provenance", async () => {

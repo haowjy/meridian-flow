@@ -28,7 +28,7 @@ import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./copy-tree
 type ContextFsCopyDeps = CopyTreeDeps & {
   store: ContextDocumentStore;
   documentSync: CopyTreeDeps["documentSync"] &
-    Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
+    Pick<DraftPeerShadowAccess, "writeWorkCreatedContent">;
 };
 
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {

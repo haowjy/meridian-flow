@@ -10,12 +10,7 @@
 
 import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import {
-  applyCommandTrees,
-  documentDrafts,
-  documentYjsUpdates,
-  draftWriteJournal,
-} from "@meridian/database/schema";
+import { applyCommandTrees } from "@meridian/database/schema";
 import {
   applyDraft,
   covers,
@@ -26,17 +21,15 @@ import {
   recordsOfItem,
   type TreeRecord,
 } from "@meridian/project-tree";
-import { and, eq, inArray, max } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { SourceFate, TreeJudge } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
-import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
+import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { type IdentityStatus, LIVE_TREE, type TreeReader } from "../../context/tree/tree-view.js";
-import { ApplyClickUnsynced, type TreeCut } from "../domain/apply-click.js";
+import { PressUnsynced, type TreeCut } from "../domain/press.js";
 import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
-import { cutOf } from "./drizzle-settlement-of.js";
 
 /** One item of an Apply as the tree half reads it. */
 export type TreeApplyItem = {
@@ -159,7 +152,7 @@ export function createApplyTreeOperations(input: {
           const list = lists[at] as TreeList;
           const saw = cutOf(click.saw, list.kind, end);
           // A press that saw records this copy lacks is not yet a cut of it: wait for the sync.
-          if (saw && !covers(writer.doc, saw)) throw new ApplyClickUnsynced();
+          if (saw && !covers(writer.doc, saw)) throw new PressUnsynced();
           const pending = pendingRecords(writer.doc, branchId);
           const draft = writer.view({ draft: branchId });
           const mine = items.filter((it) => it.list === list);
@@ -276,9 +269,6 @@ export function createApplyTreeOperations(input: {
           branchId,
           scope: row.scope,
           mark: Buffer.from(row.mark),
-          createdHeads: Object.fromEntries(
-            row.created.map((node) => [node, { live: 0, draft: 0 }]),
-          ),
           restored: row.restored,
           nodes: row.nodes,
         })),
@@ -300,66 +290,11 @@ export function createApplyTreeOperations(input: {
     return facts;
   }
 
-  /**
-   * The journal rows each created document has once the command's text is in: Un-Apply leaves
-   * a created document with more (`has_text`, from `textWrittenSince`).
-   */
-  async function recordCreatedHeads(commandId: CommandId): Promise<void> {
-    const tx = currentDrizzleDb(input.db);
-    const rows = await tx
-      .select({ scope: applyCommandTrees.scope, heads: applyCommandTrees.createdHeads })
-      .from(applyCommandTrees)
-      .where(eq(applyCommandTrees.commandId, commandId));
-    for (const { scope, heads } of rows) {
-      const nodes = Object.keys(heads) as DocumentId[];
-      if (nodes.length === 0) continue;
-      await tx
-        .update(applyCommandTrees)
-        .set({ createdHeads: await journalHeads(tx, nodes) })
-        .where(and(eq(applyCommandTrees.commandId, commandId), eq(applyCommandTrees.scope, scope)));
-    }
-  }
-
-  return { lockItems, apply, recordCreatedHeads };
+  return { lockItems, apply };
 }
 
-type Tx = ReturnType<typeof currentDrizzleDb>;
-
-/** The highest live and draft journal row of each document (0 for none). */
-async function journalHeads(tx: Tx, documentIds: readonly DocumentId[]) {
-  const live = await tx
-    .select({ id: documentYjsUpdates.documentId, head: max(documentYjsUpdates.id) })
-    .from(documentYjsUpdates)
-    .where(inArray(documentYjsUpdates.documentId, [...documentIds]))
-    .groupBy(documentYjsUpdates.documentId);
-  const draft = await tx
-    .select({ id: documentDrafts.documentId, head: max(draftWriteJournal.id) })
-    .from(draftWriteJournal)
-    .innerJoin(documentDrafts, eq(documentDrafts.id, draftWriteJournal.draftId))
-    .where(inArray(documentDrafts.documentId, [...documentIds]))
-    .groupBy(documentDrafts.documentId);
-  const liveHead = new Map(live.map((row) => [row.id as string, Number(row.head ?? 0)]));
-  const draftHead = new Map(draft.map((row) => [row.id as string, Number(row.head ?? 0)]));
-  return Object.fromEntries(
-    documentIds.map((id) => [id, { live: liveHead.get(id) ?? 0, draft: draftHead.get(id) ?? 0 }]),
-  );
-}
-
-/**
- * The documents recorded in `heads` that have text written since: a live or draft journal row
- * past what the Apply left. The caller holds their document keys.
- */
-export async function textWrittenSince(
-  db: Database,
-  heads: Record<string, { live: number; draft: number }>,
-): Promise<Set<string>> {
-  const nodes = Object.keys(heads) as DocumentId[];
-  if (nodes.length === 0) return new Set();
-  const now = await journalHeads(currentDrizzleDb(db), nodes);
-  return new Set(
-    nodes.filter((node) => {
-      const [was, is] = [heads[node], now[node]];
-      return !was || !is || is.live > was.live || is.draft > was.draft;
-    }),
-  );
+/** The vector of `cut` for the list `end` copies; none when the cut names another list. */
+function cutOf(cut: TreeCut | undefined, scope: TreeList["kind"], end: ListWriter) {
+  const one = cut?.[scope];
+  return one && one.list === end.list ? one.vector : undefined;
 }

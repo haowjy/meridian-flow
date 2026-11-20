@@ -22,80 +22,11 @@ export interface ObservationFrontier {
   position?: number;
 }
 
-/** A lookup-resolved cut may carry a one-call bridge from a live observation into its draft seed. */
-export interface ResolvedObservationFrontier extends ObservationFrontier {
-  attributionBridge?: SeedAttributionBridge;
-}
-
-export interface SeedAttributionBridge {
-  sourceRoom: string;
-  sourceSnapshot: Uint8Array;
-  /** Available for seeds created after this feature; absent legacy seeds report conservatively. */
-  sourceCut?: { state: Uint8Array; after: number; through: number };
-  /** Source canonical item id -> target canonical item id. */
-  targetBySource: Readonly<Record<string, string>>;
-  /** Every revision-0 target when a legacy seed cannot explain the live-to-seed gap. */
-  unattributedTargets?: readonly string[];
-}
-
-interface SeedFrontierProjection {
-  sourceRoom: string;
-  sourceSnapshot: Uint8Array;
-  sourceAttribution?: { state: Uint8Array; position: number };
-  targetRoom: string;
-  targetSnapshot: Uint8Array;
-  targetPosition: number;
-  /** Target canonical item id -> source canonical item id. */
-  origins: ReadonlyMap<string, string>;
-}
-
-/**
- * Project a live observation onto a Work draft's revision-0 seed. An exact source cut maps
- * directly. When live advanced before seeding, revision 0 is still the planning base and the
- * projected frontier carries the bounded source interval needed to attribute that gap.
- */
-export function projectSeedFrontier(
-  frontier: ObservationFrontier | null,
-  seed: SeedFrontierProjection,
-): ResolvedObservationFrontier | null {
-  if (!frontier || frontier.room !== seed.sourceRoom) return null;
-  const observed = decodeSnapshot(frontier.snapshot);
-  const source = decodeSnapshot(seed.sourceSnapshot);
-  if (!observed || !source || !containsSnapshot(source, observed)) return null;
-  const targetBySource = new Map([...seed.origins].map(([target, origin]) => [origin, target]));
-  const exact = Y.equalSnapshots(observed, source);
-  const sourceCut =
-    frontier.position !== undefined &&
-    seed.sourceAttribution &&
-    frontier.position <= seed.sourceAttribution.position
-      ? {
-          state: seed.sourceAttribution.state,
-          after: frontier.position,
-          through: seed.sourceAttribution.position,
-        }
-      : null;
-  return {
-    room: seed.targetRoom,
-    snapshot: seed.targetSnapshot,
-    position: seed.targetPosition,
-    ...(!exact
-      ? {
-          attributionBridge: {
-            sourceRoom: seed.sourceRoom,
-            sourceSnapshot: frontier.snapshot,
-            targetBySource: Object.fromEntries(targetBySource),
-            ...(sourceCut ? { sourceCut } : { unattributedTargets: [...seed.origins.keys()] }),
-          },
-        }
-      : {}),
-  };
-}
-
 /**
  * A host's lookup of the model's latest frontier for a room. Never throws: an
  * unavailable frontier is `null`, the empty one.
  */
-export type FrontierLookup = (room: string) => Promise<ResolvedObservationFrontier | null>;
+export type FrontierLookup = (room: string) => Promise<ObservationFrontier | null>;
 
 /**
  * A call's lookups. `recording` chains what a result records (a sibling call's
@@ -391,17 +322,6 @@ function below(ranges: readonly Range[], limit: number): Range[] {
   return ranges.flatMap(([start, end]): Range[] =>
     start < limit ? [[start, Math.min(end, limit)]] : [],
   );
-}
-
-/**
- * `doc` as the frontier saw it: the document a Work draft seeds from, so a write the model
- * planned on that view lands in a draft that lacks what the writer typed since. Null when
- * the history behind the cut is gone.
- */
-export function docAtFrontier(doc: Y.Doc, frontier: ObservationFrontier): Y.Doc | null {
-  const observed = decodeSnapshot(frontier.snapshot);
-  if (!observed || !containsSnapshot(Y.snapshot(doc), observed)) return null;
-  return Y.createDocFromSnapshot(doc, observed, new Y.Doc({ gc: false }));
 }
 
 /** A planning frontier is usable only in its room and when all its history survives. */

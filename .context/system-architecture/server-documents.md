@@ -4,7 +4,7 @@ The domains that hold a writer's text and decide who may change it. When the mod
 
 ```mermaid
 flowchart LR
-  collab["collab<br/><small>live Yjs rooms, drafts, the write journal</small>"]:::domain
+  collab["collab<br/><small>live Yjs rooms, the press, the write journal</small>"]:::domain
   context["context<br/><small>document addresses and the file tree</small>"]:::domain
   file-policy["file-policy<br/><small>who may read or write a document</small>"]:::domain
   conversation["conversation<br/><small>the model's tool calls</small>"]:::context
@@ -31,9 +31,9 @@ flowchart LR
 
 ## collab
 
-Live documents: Yjs rooms, the write journal, drafts, branches and Apply, and in suggestion mode the press (Apply or Discard over a Work's text and tree, and its Undo).
+Live documents: Yjs rooms, the write journal, branches, and the press (Apply or Discard over a Work's suggestions and tree, and its Undo).
 
-Runs the Hocuspocus rooms for live documents and drafts, and keeps the write journal, the inverses Undo applies, receipts and checkpoints. A write is journaled before the room accepts it.
+Runs the Hocuspocus rooms for live documents, presses a Work's suggestions (Apply, Discard), and keeps the write journal, the inverses Undo applies, receipts and checkpoints. A write is journaled before the room accepts it.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/collab`

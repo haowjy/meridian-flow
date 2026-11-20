@@ -1,7 +1,7 @@
 /** Writer receipt and failed-response policies over the stored edit parts. */
 import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
-import type { ChangeRead, StoredDelta } from "@meridian/agent-edit/content-merge";
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import { readBlocks } from "@meridian/agent-edit/diff";
 import {
   type CapturedPart,
@@ -9,15 +9,7 @@ import {
   type EditTarget,
   editHandle,
 } from "@meridian/agent-edit/integration";
-import type {
-  BranchId,
-  DocumentId,
-  EditOrigin,
-  ThreadId,
-  TurnId,
-  UserId,
-} from "@meridian/contracts";
-import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
+import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type {
   DocumentRemovalRecord,
   DocumentReversalResult,
@@ -31,12 +23,8 @@ import type * as Y from "yjs";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Learned } from "../../../shared/tree-owners.js";
 import type { Principal } from "../../file-policy/index.js";
-import { draftBlocks, draftSchema, isPending, takeBack } from "./draft-changes.js";
-import type { PartDisposition } from "./draft-disposition.js";
-import type { DraftSnapshot } from "./draft-store.js";
-import { effectiveActionIndex, partKey } from "./inverse-actions.js";
-import type { InverseDestination } from "./inverse-draft-destination.js";
-import type { InverseStep } from "./inverse-stream.js";
+import type { InverseDestination, InverseStep } from "./inverse-stream.js";
+import { inverseSchema, takeBack } from "./inverse-text.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
@@ -56,15 +44,8 @@ export type StoredInversePart = Omit<CapturedPart, "update"> & {
   actor: "agent" | "human" | "system";
   wId: number | null;
   origin: EditOrigin;
-  disposition: PartDisposition;
   /** The edit's recorded delta (an AI write only); what its changes are read from. */
   delta: StoredDelta | null;
-  /** What each change of a drafted part is in its draft now, read at the capture. */
-  changes?: readonly ChangeRead[];
-  /** A change of this part sits in a pending change of its open draft. */
-  waiting?: boolean;
-  /** The changes of the part an Apply in force took, by index in its delta, with the Apply's command. */
-  appliedChanges?: ReadonlyMap<number, string>;
 };
 export type TurnInverseQuery = {
   threadId: ThreadId;
@@ -72,7 +53,6 @@ export type TurnInverseQuery = {
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   model?: boolean;
-  draftId?: string | null;
   /** The documents to reverse; the turn's every document when absent (a model's undo names its own). */
   documentIds?: DocumentId[];
   /** The path the model named, for a document no visible path holds (a deleted one). */
@@ -103,19 +83,10 @@ export type InverseDocument = {
   /** The card's Undo deletes this created document, leaving its text intact. */
   createdInTurn: boolean;
   history: StoredInversePart[];
-  drafts: ReadonlyMap<
-    string,
-    {
-      documentDraft: DraftSnapshot;
-      doc: Y.Doc;
-      name: string;
-      closed: ClosedOwnerWhy | null;
-    }
-  >;
-  /** Per-source scratch views reused while this capture describes history and skip excerpts. */
-  excerptViews: Map<Y.Doc, Y.Doc>;
-  /** The sole captured destination resolution used by planning and presentation. */
-  destinationOf(origin: EditOrigin): InverseDestination;
+  /** A scratch copy of Live, made once while this capture describes history. */
+  excerptView: Y.Doc | null;
+  /** Where every step of this document writes, as the capture found it. */
+  destination: InverseDestination;
 };
 export type PreparedDocumentInverse = {
   document: InverseDocument;
@@ -133,7 +104,7 @@ export interface TurnInverseStore {
   ): Promise<T>;
   /**
    * The Works and lineages a card reversal's commit locks, as `commit` would find them: the
-   * documents' drafts, the reply's tree receipts and the grants of every document it writes.
+   * reply's tree receipts and the grants of every document it writes.
    * Read with no lock, for the caller to lock them first and declare them in the query.
    * Throws `TreeOwnersMoved` when the documents move under the read.
    */
@@ -161,16 +132,10 @@ export interface TurnInverseStore {
     updates: Uint8Array[];
     /** Tree receipts of the reply that stand taken back after the command (a card's, never the model's). */
     treeReversed: number;
-    /** Text parts committed, by document and then by where they landed: the branch whose draft took them, null for live. */
-    reversed: ReadonlyMap<DocumentId, ReadonlyMap<BranchId | null, number>>;
-    /** The cuts around the one draft write a lone document's content step committed. */
+    /** Text parts committed, by document. */
+    reversed: ReadonlyMap<DocumentId, number>;
+    /** Live around a lone document's model Undo, for the model's echo. */
     cut?: { before: Uint8Array; after: Uint8Array };
-    /** The destinations that actually committed. */
-    outcomes: readonly {
-      documentId: DocumentId;
-      branchId: BranchId | null;
-      draftId: string | null;
-    }[];
   }>;
   describePart(
     document: InverseDocument,
@@ -184,16 +149,14 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
   part.turnId === query.turnId;
 
 /**
- * Each document's ordered steps, for both command and chip; each step lands where its original
- * did, live or in its draft. Each of the turn's original edits is one step, newest first, judged
- * on what the steps before it leave. A part an Undo already took out (the planner's `takenBy`)
- * is neither a step nor a skip: the card's own Undo is done with it, and the model's undo in the
- * same chat is part of what the chat did. `undoneByWriter` says the card's Undo was among them.
- * The chip and the press plan the same way, so the card offers Undo exactly when a press takes
- * something back.
+ * Each document's ordered steps, for both command and chip. Each of the turn's original edits is
+ * one step, newest first, judged on what the steps before it leave. A part an Undo already took
+ * out (the planner's `takenBy`) is neither a step nor a skip: the card's own Undo is done with
+ * it, and the model's undo in the same chat is part of what the chat did. `undoneByWriter` says
+ * the card's Undo was among them. The chip and the press plan the same way, so the card offers
+ * Undo exactly when a press takes something back.
  */
 async function prepare(
-  store: TurnInverseStore,
   documents: InverseDocument[],
   query: TurnInverseQuery,
   actionId: string,
@@ -210,11 +173,7 @@ async function prepare(
         undoneByWriter ||= takenBy.some((action) =>
           action.parts.every((undo) => undo.actor === "human"),
         );
-        // What stands in an open draft is read from the text, not from what an Undo recorded: a
-        // part an Undo took stays a target only while a change of it is back in the draft.
-        const destination = document.destinationOf(part.origin);
-        if (destination.kind !== "draft" || destination.state !== "active" || !part.waiting)
-          return false;
+        return false;
       }
       return !document.createdInTurn;
     });
@@ -230,9 +189,8 @@ async function prepare(
     const steps: InverseStep[] = [];
     // The text each step is judged on is what the steps before it leave, as its commit will find it.
     let manuscript: readonly PMNode[] = originals.length
-      ? readBlocks(document.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema)
+      ? readBlocks(document.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), inverseSchema)
       : [];
-    const drafted = new Map<string, { base: readonly PMNode[]; text: readonly PMNode[] }>();
     for (const { at, parts } of originals) {
       const entry = {
         id: parts[0]?.editId ?? "",
@@ -241,59 +199,14 @@ async function prepare(
       };
       const planned = entryPlanner.turnTextPlan(entry, query);
       if (!planned) continue;
-      const { destination, actionKind } = planned;
-      const selection = planned.selection as StoredInversePart[];
-      if (destination.kind === "draft" && destination.state === "active") {
-        // An open draft's proposed changes are taken out as content: a change that stands and sits
-        // in a pending change. The changes an Apply took go out of Live, and out of the draft where
-        // they stand there, when they stand in Live and taking them out adds no pending change.
-        const draft =
-          drafted.get(destination.draftId) ??
-          draftBlocks(document.drafts.get(destination.draftId)?.doc);
-        const back = takeBack(
-          manuscript,
-          draft,
-          selection.flatMap((part) =>
-            part.appliedChanges?.size
-              ? [{ part, delta: part.delta, only: new Set(part.appliedChanges.keys()) }]
-              : [],
-          ),
-        );
-        manuscript = back.live;
-        drafted.set(destination.draftId, {
-          base: back.base ?? draft.base,
-          text: back.text ?? draft.text,
-        });
-        const backed = new Set(back.taken.map(({ part }) => part));
-        const standing = (part: StoredInversePart) =>
-          part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false;
-        const proposed = selection.filter(standing);
-        if (proposed.length)
-          steps.push({ kind: "content", parts: proposed, destination, actionId, actionKind, at });
-        if (backed.size)
-          steps.push({
-            kind: "manuscript",
-            parts: back.taken.map(({ part, only }) => ({ part, only })),
-            destination,
-            actionId,
-            actionKind,
-            at,
-          });
-        continue;
-      }
-      const back = takeBack(
-        manuscript,
-        null,
-        selection.map((part) => ({ part, delta: part.delta })),
-      );
+      const back = takeBack(manuscript, planned.selection);
       manuscript = back.live;
       if (back.taken.length)
         steps.push({
-          kind: "manuscript",
-          parts: back.taken.map(({ part }) => ({ part })),
-          destination,
+          parts: back.taken,
+          destination: planned.destination,
           actionId,
-          actionKind,
+          actionKind: planned.actionKind,
           at,
         });
     }
@@ -317,48 +230,6 @@ function inSequence(plans: readonly PreparedDocumentInverse[]) {
 }
 const hasSteps = (plans: PreparedDocumentInverse[]) => plans.some((plan) => plan.steps.length > 0);
 
-const SETTLED_LAST: Record<TurnDraftState, number> = {
-  discarded: 0,
-  undone: 1,
-  applied: 2,
-  pending: 3,
-};
-
-/**
- * What became of this reply's change in each drafted document, one word each: still a draft
- * while a change of it sits in a pending change (it stands, or the writer altered it), else
- * applied if any part was, else undone if the card's Undo took it, else discarded. A document's
- * text and tree halves fold into the less settled one. Another reply's waiting change in the
- * same draft does not count.
- */
-function draftStates(
-  documents: readonly InverseDocument[],
-  query: TurnInverseQuery,
-  treeStates: Record<string, TurnDraftState>,
-): TurnReceiptChip["drafts"] {
-  const states: Record<string, TurnDraftState> = {};
-  for (const document of documents) {
-    const drafted = document.history.filter(
-      (part) => targetsTurn(part, query) && part.origin.kind === "pending",
-    );
-    if (!drafted.length) continue;
-    // An applied change an Undo took out of the manuscript is out, whatever the Apply still says.
-    const took = effectiveActionIndex(document.history, new Set(drafted.map(partKey))).byPart;
-    states[document.documentId] = drafted.some((part) => part.waiting)
-      ? "pending"
-      : drafted.some((part) => part.disposition === "applied" && !took.has(partKey(part)))
-        ? "applied"
-        : drafted.some((part) => took.has(partKey(part)))
-          ? "undone"
-          : "discarded";
-  }
-  for (const [id, state] of Object.entries(treeStates)) {
-    const was = states[id];
-    if (!was || SETTLED_LAST[state] > SETTLED_LAST[was]) states[id] = state;
-  }
-  return Object.keys(states).length ? states : undefined;
-}
-
 export function createTurnInverseService(store: TurnInverseStore) {
   return {
     ...createModelInversePolicy(store),
@@ -373,13 +244,8 @@ export function createTurnInverseService(store: TurnInverseStore) {
         const treeStates = await store.treeDraftStates(query);
         if (!documents.length && !tree.acting && !tree.taken && !Object.keys(treeStates).length)
           return null;
-        const drafts = draftStates(documents, query, treeStates);
-        const { plans: undo, undoneByWriter } = await prepare(
-          store,
-          documents,
-          query,
-          randomUUID(),
-        );
+        const drafts = Object.keys(treeStates).length ? treeStates : undefined;
+        const { plans: undo, undoneByWriter } = await prepare(documents, query, randomUUID());
         if (hasSteps(undo) || tree.acting) return { control: "undo", drafts };
         return {
           control: "view_change",
@@ -401,7 +267,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
       query: TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } },
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
-        const { plans, undoneByWriter } = await prepare(store, documents, query, randomUUID());
+        const { plans, undoneByWriter } = await prepare(documents, query, randomUUID());
         const tree = await store.treeSteps(query);
         const treeSteps = tree.acting + tree.taken;
         if (!query.documentIds && !plans.length && !treeSteps)
@@ -415,34 +281,25 @@ export function createTurnInverseService(store: TurnInverseStore) {
                 query,
                 userId: query.actor.type === "user" ? (query.actor.userId as UserId) : undefined,
               })
-            : {
-                treeReversed: 0,
-                reversed: new Map<DocumentId, ReadonlyMap<BranchId | null, number>>(),
-              };
-        const reversedAt = (plan: PreparedDocumentInverse) =>
-          [...(committed.reversed.get(plan.document.documentId) ?? [])].flatMap(([branchId, n]) =>
-            n > 0 ? [branchId] : [],
-          );
+            : { treeReversed: 0, reversed: new Map<DocumentId, number>() };
         const accepted =
-          committed.treeReversed +
-          [...committed.reversed.values()].reduce(
-            (n, byDestination) => [...byDestination.values()].reduce((m, count) => m + count, n),
-            0,
-          );
+          committed.treeReversed + [...committed.reversed.values()].reduce((n, m) => n + m, 0);
         // Text an earlier card Undo took out is taken back too: this Undo has nothing left to do.
         return {
           status: accepted || undoneByWriter ? "reversed" : "expired",
-          // One row per destination a document's steps reversed in; a document with no text to
+          // One row per document whose text the steps reversed; a document with no text to
           // reverse (it left, or comes back, with its node) has none.
           documents: plans.flatMap((plan): DocumentReversalResult[] =>
-            reversedAt(plan).map((branchId) => ({
-              documentId: plan.document.documentId,
-              uri: plan.document.uri,
-              destination: branchId
-                ? { kind: "draft" as const, branchId }
-                : { kind: "live" as const },
-              status: "reversed" as const,
-            })),
+            (committed.reversed.get(plan.document.documentId) ?? 0) > 0
+              ? [
+                  {
+                    documentId: plan.document.documentId,
+                    uri: plan.document.uri,
+                    destination: { kind: "live" as const },
+                    status: "reversed" as const,
+                  },
+                ]
+              : [],
           ),
         };
       });

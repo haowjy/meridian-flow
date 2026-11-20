@@ -146,8 +146,8 @@ export function setDocumentView(
 }
 
 /**
- * A Work pick: a view on one of the picked Work's drafts (`ownerKey`) stays on it, and so does a
- * document with no Live version (`keepsDraft`); every other view showing a draft returns to Live.
+ * A Work pick: a view on one of the picked Work's drafts (`ownerKey`) stays on it; every other
+ * view showing a draft returns to Live.
  * Returns whether a page live also has stayed on the Work's draft: the toggle then lands on Draft,
  * because the scope's drafts of such pages show only on Draft (`shownDraft`).
  */
@@ -155,7 +155,6 @@ export function pickWorkViews(
   accountId: string,
   projectId: string,
   ownerKey: string | null,
-  keepsDraft: (documentId: string) => boolean,
 ): boolean {
   const views = read(accountId, projectId);
   let changed = false;
@@ -163,9 +162,8 @@ export function pickWorkViews(
   const next: Record<string, DocumentView> = {};
   for (const [documentId, view] of Object.entries(views)) {
     const onWork = ownerKey !== null && view.pin?.ownerKey === ownerKey;
-    const draftOnly = keepsDraft(documentId);
-    onWorkDraft ||= onWork && !draftOnly;
-    if (view.version === "draft" && !onWork && !draftOnly) {
+    onWorkDraft ||= onWork;
+    if (view.version === "draft" && !onWork) {
       changed = true;
       if (!view.showChanges) next[documentId] = { version: "live", showChanges: false };
     } else next[documentId] = view;
@@ -176,25 +174,17 @@ export function pickWorkViews(
 
 /**
  * A draft has ended (Applied, Discarded, or closed elsewhere): every view pinned to it drops the
- * pin, or moves to the draft `successor` names for its document. The version stays: an open
+ * pin. The version stays: an open
  * review of the ended draft keeps its editor until Live.
  */
-export function endPin(
-  accountId: string,
-  projectId: string,
-  pin: DraftPin,
-  successor: (documentId: string) => DraftPin | null = () => null,
-): void {
+export function endPin(accountId: string, projectId: string, pin: DraftPin): void {
   const views = read(accountId, projectId);
   const next: Record<string, DocumentView> = {};
   let changed = false;
   for (const [documentId, view] of Object.entries(views)) {
     if (view.pin?.ownerKey === pin.ownerKey && view.pin.itemKey === pin.itemKey) {
       changed = true;
-      const moved = successor(documentId);
-      next[documentId] = moved
-        ? { version: "draft", pin: moved, showChanges: view.showChanges }
-        : { version: view.version, showChanges: view.showChanges };
+      next[documentId] = { version: view.version, showChanges: view.showChanges };
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
@@ -210,8 +200,7 @@ const verifyKey = (projectId: string, ownerKey: string, itemKey: string) =>
  * draft has ended (Applied, Discarded, or gone in another tab). The read is taken as this tab
  * knows it: a document open here is listed by its editor's changes (`withTabChangeCounts`), and a
  * draft this browser's create makes (`created`) stays, since the server may not have heard of it.
- * A failed read clears nothing. Concurrent calls for one item share one read; the first one's
- * `successor` decides.
+ * A failed read clears nothing. Concurrent calls for one item share one read.
  */
 export function verifyPin(
   queryClient: QueryClient,
@@ -219,7 +208,6 @@ export function verifyPin(
   projectId: string,
   pin: DraftPin,
   created: (itemKey: string) => boolean,
-  successor?: (documentId: string) => DraftPin | null,
 ): void {
   const key = verifyKey(projectId, pin.ownerKey, pin.itemKey);
   if (verifying.has(key)) return;
@@ -242,7 +230,7 @@ export function verifyPin(
       ).some((row) => row.itemKey === pin.itemKey)
     )
       return;
-    endPin(accountId, projectId, pin, successor);
+    endPin(accountId, projectId, pin);
   });
   verifying.set(key, check);
   void check.finally(() => verifying.delete(key));
@@ -267,14 +255,5 @@ export function useDocumentView(
     (listener) => subscribe(accountId, projectId, listener),
     () => (documentId ? readDocumentView(accountId, projectId, documentId) : DEFAULT_DOCUMENT_VIEW),
     () => DEFAULT_DOCUMENT_VIEW,
-  );
-}
-
-/** Every view of a project that differs from the default, re-read when one changes. */
-export function useDocumentViews(accountId: string, projectId: string): Views {
-  return useSyncExternalStore(
-    (listener) => subscribe(accountId, projectId, listener),
-    () => read(accountId, projectId),
-    () => EMPTY,
   );
 }

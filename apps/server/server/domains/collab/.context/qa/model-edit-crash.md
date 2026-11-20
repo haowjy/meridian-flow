@@ -6,7 +6,7 @@ the evidence rows (observation frontiers) each end up exactly once ([design][des
 [model edits](../model-edits.md), [recovery](../../../runtime/.context/recovery.md)).
 
 ```sh
-pnpm test:probes model-edit-kills model-edit-takeover model-edit-drafts model-edit-tree model-edit-evidence model-edit-locks
+pnpm test:probes model-edit-kills model-edit-takeover model-edit-tree model-edit-evidence model-edit-locks
 ```
 
 (`pnpm test:probes` runs every `tools/qa/probes/<name>/run.mts`, as CI does; names pick some.) Each
@@ -16,9 +16,8 @@ probe makes and drops its own `lfd_probe_*` database and runs in under a minute.
 |---|---|
 | `model-edit-kills` | A write to a live document at each step: before the response is stored, before and after the claim, before and after the commit, around the result block, between two calls, an old process held alive, a repeated key, a tool timeout before and after the claim. |
 | `model-edit-takeover` | A stale process storing a response or a result block after its run was taken over; the sweep; recovery waiting on a held key; two chats on one document; a chat card's Undo sent twice after a kill. |
-| `model-edit-drafts` | The same steps in draft mode, plus a writer typing during the edit, a Discard between two calls, a write after a Discard (answered `returned`, stored once as a `done` row), a new draft after a Discard, two chats on one Work's draft. |
 | `model-edit-tree` | `move`, `delete`, `create`, `copy` and the model's `undo` killed after commit; a refused `create`; an aborted `create`; a duplicate call id; all four tree calls in a draft-mode chat. |
-| `model-edit-locks` | The lock order (`../CONTEXT.md`): a draft-mode chat's first write racing an Undo for its Work, a writer typing while an Undo captures, and a card Undo's Work receipt waiting on a Work whose holder then wants the document. The probe holds a lock on its own connection to line the racers up. |
+| `model-edit-locks` | The lock order (`../CONTEXT.md`): a writer typing while an Undo captures, and a card Undo's Work receipt waiting on a Work whose holder then wants the document. The probe holds a lock on its own connection to line the racers up. |
 | `model-edit-evidence` | What the model was shown: an edit's frontier survives a kill after commit, a read's is lost between its block and `resultStored`. |
 
 ## The harness
@@ -29,11 +28,10 @@ probe makes and drops its own `lfd_probe_*` database and runs in under a minute.
   with a pool of `max: 2` (a second connection held under a lock hangs the probe instead of
   production), the mock model, and the Hocuspocus gateway. The parent drives it with JSON lines
   on stdin: queue a scripted reply, arm a test hook point, send a message, run the recovery
-  lanes once, resolve a key, send a card's Undo, Discard a Work's branch, shorten a tool's
-  timeout.
+  lanes once, resolve a key, send a card's Undo, shorten a tool's timeout.
 - `harness.mts` is the parent: it seeds a Work, chats and documents by SQL, bundles the child
   with esbuild (a tsx boot takes 8 s, the bundle 1 s), spawns children, and asserts on rows
-  (`state`, `drafts`, `frontierSources`).
+  (`state`, `frontierSources`).
 
 A case sends a message as the writer, so the run starts as the chat route starts it (admission,
 inbox, run claim, orchestrator). The mock model's replies are scripted per response, with each
@@ -55,7 +53,7 @@ response's id and the call id, so cases share no command rows.
 connections than 2, for a case that runs two commands in one process (`model-edit-locks`).
 
 Hook points are in `shared/test-hooks.ts`: `response.beforeStore`, `command.*`,
-`draft.append.beforeCommit`, `inverse.afterCaptureRead`, `block.*` and `recovery.beforeResolve`.
+`inverse.afterCaptureRead`, `block.*` and `recovery.beforeResolve`.
 The `command.*` points fire for every command kind (`runCommand`), so a chat card's Undo passes
 them too, twice: its documents' command, then its Work receipts' command.
 

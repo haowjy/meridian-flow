@@ -23,7 +23,6 @@ import {
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
-import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
@@ -667,12 +666,11 @@ export async function createProductionAppPorts(input: {
     db,
     journal: createDrizzleJournal(db),
     // Collab is composed below, before anything can submit or admit a record.
-    draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
+    seedWorkCreates: (created) => documentSync.seedWorkCreates(created),
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
     liveChangedUnder: (branchIds) => workProjectionMutation.liveChangedUnder(branchIds),
     fileAccessChanges,
   });
-  const draftClose = createDraftClose();
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
@@ -689,7 +687,6 @@ export async function createProductionAppPorts(input: {
     eventSink,
     notices,
     workProjectionMutation,
-    draftClose,
     treeLists,
     removals: createTrashRemovals(db),
     liveTextHints: createAgentFilesHints({ db, backgroundTasks, wake: projectWakeHub, eventSink }),
@@ -828,7 +825,7 @@ export async function createProductionAppPorts(input: {
       db,
       objectStore,
       eventSink,
-      drafts: documentSync.documentPurgeDraftDisposal,
+      purges: documentSync.documentPurgeDisposal,
       tree: treeLists,
     }),
     projectContextAvailability,

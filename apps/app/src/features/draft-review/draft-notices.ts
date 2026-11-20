@@ -5,11 +5,6 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
-import type {
-  ApplyClickResult,
-  ApplyItemResult,
-  UnapplyClickResult,
-} from "@meridian/contracts/branches";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ApplyEntries } from "./apply-history";
 import type { DiscardRestores } from "./discard-restores";
@@ -32,39 +27,6 @@ export type NoticeSubject =
   | { kind: "draft" | "change" | "folder" | "deleted"; name: string }
   | { kind: "drafts"; count: number }
   | { kind: "deletes"; count: number };
-
-/** An Apply's answer for one item: each half landed or settled. */
-export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult | undefined {
-  return answer.items.find((item) => item.node === node);
-}
-
-/** Whether something of `node` landed, text or tree: `applied` alone says the command finished. */
-export function itemLanded(answer: ApplyClickResult, node: string): boolean {
-  const item = itemOf(answer, node);
-  return item?.text?.landed === true || item?.tree?.landed === true;
-}
-
-/** The text groups of `node` an Un-Apply took back. */
-export function textUndoneOf(answer: UnapplyClickResult, node: string): string[] {
-  return answer.textUndone.find((text) => text.node === node)?.groupIds ?? [];
-}
-
-/** What of an Apply landed, command-wide: its Undo step's two halves. */
-export type ApplyHalves = {
-  text: boolean;
-  tree: boolean;
-  restores: string[];
-};
-
-export function halvesOf(answer: ApplyClickResult): ApplyHalves {
-  return {
-    text: answer.items.some((item) => item.text?.landed),
-    tree: answer.items.some((item) => item.tree?.landed),
-    restores: answer.items.flatMap((item) =>
-      item.tree?.landed && item.tree.restore ? [item.tree.restore] : [],
-    ),
-  };
-}
 
 /**
  * What a Discard's answer says of the documents and folders it was sent: `untaken`, the ones it

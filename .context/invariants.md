@@ -14,7 +14,7 @@ receives and the history keeps.
 
 **How.** An edit is appended to the document's journal before it is applied, broadcast
 or acknowledged, under a per-document lock and admission sequence
-(`apps/server/server/domains/collab/live-room.ts`, `draft-room.ts`, `adapters/drizzle-journal.ts`).
+(`apps/server/server/domains/collab/live-room.ts`, `adapters/drizzle-journal.ts`).
 A cold load replays the journal above the last checkpoint, and checkpoints come only
 from the journal. Server documents keep Yjs history (`gc: false`). Mechanism and reasons:
 the KB's `wiki/architecture/collaboration/durability-and-honest-outcomes.md`; contracts:
@@ -59,18 +59,17 @@ sink built without it writes raw payloads. `errorMessage` is free text by design
 
 ## Marks and receipts say truthfully who did what
 
-**How.** Draft review attributes changes in the browser with
-`packages/agent-edit/src/diff/attribution.ts`. Every edit, undo, revert and
+**How.** A suggestion carries its author (`Authors` in `packages/suggestions`), and the review
+names it. Every edit, undo, revert and
 rollback writes an immutable receipt naming its actor (`document_edits`); an inverse
-is an ordinary forward edit with its own receipt. Apply records its settlement in one
+is an ordinary forward edit with its own receipt. A press records its text effects in one
 commit. Contracts: `apps/server/server/domains/collab/.context/reversal.md` and
 `apply.md`; reasons: the KB's `wiki/architecture/collaboration/draft-review.md` and
 `turn-receipts.md`.
 
 **Checked by** `packages/agent-edit/src/diff/attribution.test.ts` and the collab DB
-tests: `inverse-attribution`, `model-inverse`, `turn-inverse`, `response-rollback`,
-`draft-disposition` and `branch-tree.apply-placement`.
+tests: `inverse-attribution`, `model-inverse` and `turn-inverse`.
 
-**Gaps.** What the browser displays is unchecked. Live documents carry no marks.
+**Gaps.** What the browser displays is unchecked.
 Cut-and-pasted text reads as the writer's (#889). Five receipt families have separate shapes,
 and nothing cross-checks them.

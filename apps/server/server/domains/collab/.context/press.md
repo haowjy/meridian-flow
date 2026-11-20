@@ -1,6 +1,6 @@
-# The press (suggestion mode)
+# The press
 
-With `FLOW_SUGGESTIONS=1`, a Work's draft is suggestion marks in each Live document
+A Work's draft is suggestion marks in each Live document
 (`packages/suggestions`) plus the Work's pending tree records. Apply or Discard pressed on
 documents, folders or the whole Work is one command, `press`, over both halves
 (`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`).
@@ -30,6 +30,14 @@ has no branch row.
   is `ApplyClickUnsynced` (503, nothing stored); the command driver resends.
 - Lock order is the Apply click's: Works, branch, lists, documents in id order, then writes.
   Deliveries and the derivation hook run after commit.
+
+## Trash
+
+Trash lists each press Discard that still holds something (`drizzle-discard-entries.ts`): an entry
+is the press's command with the documents its text effects touched and its tree records. An
+entry whose effects and records were all taken back by its Undo is not listed. Restore from Trash
+is the press's `unpress`, so it is once-only like any Undo; the client's Undo of a Restore is a
+new Discard press of what came back.
 
 ## Undo and Redo
 
@@ -66,9 +74,10 @@ a Discard closes the room and its Undo opens it again.
 
 ## Not covered yet
 
-- Trash's discard list reads `draft_discards`, so a press Discard does not show there; Undo is
-  the press's own.
 - No per-document grant check: the press is the Work owner's, like Apply all.
 - A press Apply leaves `apply_command_trees.created_heads` as the tree Apply's placeholders:
   the press never calls `recordCreatedHeads`, since its Undo keeps every created document in
   Live. Anything that comes to read those heads for a press must record them first.
+- Trash's Restore of a Discard and the Discard notice's Undo are two client paths over one
+  server `unpress`, which runs once: whichever runs second finds nothing. A `rediscard` (the
+  client's Undo of a Restore) of a node whose Discard took only text presses the whole node.

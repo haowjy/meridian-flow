@@ -56,9 +56,9 @@ export function useTabChangeCounts(): Counts {
   return useSyncExternalStore(subscribe, tabChangeCounts, tabChangeCounts);
 }
 
-/** A row the server lists for its suggestions alone: no draft room, tree change or whole item. */
+/** A row the server lists for its suggestions alone: no tree change or whole item. */
 const suggestionsOnly = (row: ThreadDraftListItem) =>
-  row.hasDraft && row.draftId === null && !row.wholeItem && !row.tree && !row.deletedLive;
+  row.hasDraft && !row.wholeItem && !row.tree && !row.deletedLive;
 
 /** `owner`'s rows as this tab's open editors hold their documents. */
 export function withTabChangeCounts(

@@ -32,12 +32,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
-import {
-  useWorkBranchCommands,
-  type WorkBranchCommands,
-} from "@/features/draft-review/useWorkBranchCommands";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
+import {
+  usePressCommands,
+  type WorkBranchCommands,
+} from "@/features/suggestion-review/usePressCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { cn } from "@/lib/utils";
 import { ContextTreePanel } from "../../context/ContextTreePanel";
@@ -371,7 +371,7 @@ export function SourcesBody({
   const source =
     tabs.includes(picked) || (foot as readonly SourceKey[]).includes(picked) ? picked : fallback;
   if (source !== picked) setPicked(source);
-  const changesCommands = useWorkBranchCommands({
+  const changesCommands = usePressCommands({
     projectId,
     work: changes.work,
     ownerKey: changes.ownerKey,

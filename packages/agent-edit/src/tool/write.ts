@@ -35,10 +35,7 @@ export interface WriteTool {
   /**
    * A host's read of the document a call would see: the room copy. The caller disposes it.
    */
-  readRoom(
-    docId: string,
-    scope: { workDraftId?: string },
-  ): Promise<{ doc: Y.Doc; room: string | null; dispose(): void }>;
+  readRoom(docId: string): Promise<{ doc: Y.Doc; room: string | null; dispose(): void }>;
 }
 
 export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
@@ -151,12 +148,8 @@ export function createWriteTool(options: CreateWriteToolOptions): WriteTool {
   return {
     read,
     write,
-    async readRoom(docId, { workDraftId }) {
-      const room = await openRoom(options.coordinator, {
-        docId,
-        commandName: "read",
-        ...(workDraftId ? { workDraftId } : {}),
-      });
+    async readRoom(docId) {
+      const room = await openRoom(options.coordinator, { docId, commandName: "read" });
       if (isInternalWriteResult(room)) throw new DocumentNotFoundError(docId);
       return room;
     },

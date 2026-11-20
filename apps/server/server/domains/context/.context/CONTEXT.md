@@ -316,26 +316,22 @@ one source's tree contributes.
   placement destination that cannot take a copy; `permission_denied` for a destination the
   writer cannot command; uploads as the destination (by path or by folder identity), a malformed
   path or state vector, and a vector sent for a folder, which the route refuses before the domain
-  runs. A draft view names its Work and no chat: the server reads that Work's active draft of
-  the document, else the latest one a Discard or a delete closed (its bytes are retained), else
-  the live document (the Work never drafted it, so the draft view showed live); a Work outside
-  the project is refused as `work_missing`. A draft source reads the Work's tree by id, so a
-  folder copies with the documents the Work places in it, and a node the Work does not place
-  is left out as purged. The one name outcome left to the address-model
+  runs. A draft view names its Work and no chat: the server reads the document through that Work's
+  view of Live (Live with the Work's suggestions taken); a Work outside the project is refused
+  as `work_missing`. A draft source reads the Work's tree by id, so a folder copies with the
+  documents the Work places in it, a document only the Work has included, and a node the Work
+  does not place is left out as purged. The one name outcome left to the address-model
   research is `conflict` (a copy id another row holds).
 - A client-held source sends its Yjs state vector with a document source (a folder source
-  with a vector is a 400). The vector is compared with the room of the view being read, live
-  or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to
+  with a vector is a 400). The vector is compared with the document's Live room, whichever view
+  is read: a Work's view has no room of its own. When the cut lacks updates it names, the read waits up to 2 s for the room to
   catch up, then answers a 503 `io_error` with `reason: "source_behind"` ("The source has edits the
   server has not received yet"): retryable and never recorded, so the same id may be sent
   again, and distinct from a transport failure. The browser sends the vector of every open document (`openStateVector` on the session
-  registry: the live room, or for a draft view the one open draft room of the document) and sends
+  registry: its Live room) and sends
   the same Copy again, backing off from 0.5 s to 5 s, for as long as the answer is
   `source_behind` (`execute-copy.ts`): typing a tab holds always reaches the server
-  (`findings/unsynced-probe.md`), so the wait ends. A draft view's vector has not been run against a
-  live draft tab yet: confirm it there first.
-- A document that exists only in a Work's draft is not in the live tree, so it cannot be a
-  source yet (left out as purged).
+  (`findings/unsynced-probe.md`), so the wait ends.
 - There is no Undo command: Copy's Undo is ordinary deletion of the identities it created.
 
 ## Catalog and publication
@@ -404,10 +400,10 @@ a later occupant never captures it, nothing rebinds it, and a paste copies it
 as is. A branch's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
 capture each other's waiting refs; a soft-deleted Work keeps its identity and
-its files until the purge, so refs to its address bind while it is deleted. Refs in a draft's text register globally
-and best effort (an agent's mint, a link typed in the review room, and Apply's
-prerequisite for the drafts it publishes); a failed registration never fails
-Apply. The context link-scope adapter must receive the same scope instance as
+its files until the purge, so refs to its address bind while it is deleted. Refs in a Work's suggestions, or in a
+document only a Work has, register globally and best effort: an agent's mint at its write, and
+a link the writer types when the document's derivation runs (`registerUnregistered`, any
+document a view still shows); a failed registration never fails the write. The context link-scope adapter must receive the same scope instance as
 collab, whose [document authority notes](../../collab/.context/document-authority-and-schema.md)
 hold the scope rules.
 

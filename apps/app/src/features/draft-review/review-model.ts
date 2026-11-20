@@ -1,10 +1,9 @@
-/** Browser-computed groups shared by rows, editor focus, counts and commands. Attribution only overlays them. */
+/** The review's changes shared by rows, editor focus, counts and commands. Attribution only overlays them. */
 import type { Author, ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import type { ReviewFrame } from "./review-frame";
 import { type TreeLine, treeChange, treeLineOf } from "./tree-line";
 
-export type ReviewFocus = { id: string; frame: ReviewFrame | null };
+export type ReviewFocus = { id: string };
 export type ChatRef = {
   chatId: string;
   title: string;
@@ -24,30 +23,12 @@ export interface ReviewChange extends ChangeAttribution {
   kind: ReviewGroup["kind"];
   excerpt: ReviewGroup["excerpt"];
   spans: ReviewSpan[];
-  frame: ReviewFrame | null;
   /** Unknown membership must not be read as a known-empty chat. B3c supplies the overlay. */
   attributed: boolean;
   /** The branch's move or delete of the document: a row of its own, with no text frame. */
   tree?: TreeLine;
   /** The change is the item itself (a creation, a picture, a move or a delete), not some of its text. */
   whole?: true;
-}
-
-export function reviewChanges(
-  frame: ReviewFrame,
-  attribution: ReadonlyMap<string, ChangeAttribution> = new Map(),
-): ReviewChange[] {
-  return frame.groups.map((group) => ({
-    id: group.id,
-    kind: group.kind,
-    excerpt: group.excerpt,
-    byline: attribution.get(group.id)?.byline ?? [],
-    chats: attribution.get(group.id)?.chats ?? [],
-    members: attribution.get(group.id)?.members ?? [],
-    attributed: attribution.has(group.id),
-    spans: group.spans,
-    frame,
-  }));
 }
 
 /** Items with no text (pictures and empty creations) are still one review row. */
@@ -63,7 +44,6 @@ export function itemChange(
     members: [],
     attributed: false,
     spans: [],
-    frame: null,
     whole: true,
   };
 }
@@ -94,36 +74,15 @@ export const changeTone = (change: Pick<ReviewChange, "excerpt">): "add" | "remo
   change.excerpt.inserted ? "add" : "remove";
 
 export const resolveFocusedChange = (changes: readonly ReviewChange[], focus: ReviewFocus | null) =>
-  changes.find((change) => change.id === focus?.id && change.frame?.diff === focus.frame?.diff) ??
-  null;
+  changes.find((change) => change.id === focus?.id) ?? null;
 
 /**
- * Changes are named by id, in the frame the writer chose on. With a room open a command reads the
- * room when it runs and maps the ids to it (`readChosen`), never refusing because the room moved:
- * the draft's base follows Live about 2 s behind. Without a room, `frame` is the cut it sends. A
- * tree line is the item's move or delete: alone (`tree`), or with text groups (`groups.tree`).
+ * What a press of a review row takes: the item's whole draft (`draft`), or only its tree line, the
+ * item's move or delete (`tree`). One change in the text is the editor's (`useSuggestionChanges`).
  */
-export type TextTarget =
-  | { kind: "groups"; frame: ReviewFrame; groupIds: string[]; tree?: true }
-  /**
-   * Every change of the draft. `draftId` is the list's: with no room open, the server applies
-   * that draft's changes as it holds them on receipt.
-   */
-  | { kind: "draft"; draftId?: string };
-/** Some of a draft's changes, which a Discard writes back in the draft's room. */
-export type GroupsTarget = Extract<TextTarget, { kind: "groups" }>;
-export type ChangeTarget = TextTarget | { kind: "tree" };
-export type ApplyTarget = ChangeTarget;
+export type ChangeTarget = { kind: "draft" } | { kind: "tree" };
 export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget {
-  const text = changes.filter((change) => !change.tree);
-  const tree = text.length < changes.length;
-  const frame = text[0]?.frame;
-  if (frame)
-    return {
-      kind: "groups",
-      frame,
-      groupIds: text.map((change) => change.id),
-      ...(tree ? { tree: true as const } : {}),
-    };
-  return tree && text.length === 0 ? { kind: "tree" } : { kind: "draft" };
+  return changes.length > 0 && changes.every((change) => change.tree)
+    ? { kind: "tree" }
+    : { kind: "draft" };
 }

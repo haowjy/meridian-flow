@@ -1,15 +1,15 @@
 /**
- * A reply's drafted writes and the branch they land in (contract §2.5, ledger K-1, K-2): a read never makes a branch, draft or peer; the first write does.
+ * A reply's drafted writes and the branch they land in (contract §2.5, ledger K-1, K-2): a read never makes a branch; the first write does.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - lazy branch, draft, and peer provisioning on first write (kb/wiki/architecture/collaboration/drafts-and-branches.md#where-a-write-goes)
+ * - lazy branch provisioning on first write (kb/wiki/architecture/collaboration/drafts-and-branches.md#where-a-write-goes)
  */
 
 import type { DocumentId, WorkId } from "@meridian/contracts";
 import { toolContentText } from "@meridian/contracts/threads";
 import { createDb } from "@meridian/database";
-import { branches, documentDrafts, draftWriteJournal, users } from "@meridian/database/schema";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { branches, documentEdits, users } from "@meridian/database/schema";
+import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   type BranchTreeScenario,
@@ -66,17 +66,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .orderBy(asc(branches.createdAt));
     }
 
-    async function draftsOf(documentId: DocumentId) {
-      return db
-        .select({
-          kind: documentDrafts.kind,
-          branchId: documentDrafts.branchId,
-        })
-        .from(documentDrafts)
-        .where(eq(documentDrafts.documentId, documentId))
-        .orderBy(asc(documentDrafts.kind));
-    }
-
     /** One reply that read the chapter and staged a drafted replacement in it. */
     async function _staged(
       scenario: BranchTreeScenario,
@@ -104,34 +93,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .map(({ documentId }) => documentId),
     ];
 
-    /** The agent rows saved into this branch's draft on the document. */
-    async function savedRows(branchId: string, documentId: DocumentId) {
-      const drafts = await db
-        .select({ id: documentDrafts.id })
-        .from(documentDrafts)
-        .where(
-          and(
-            eq(documentDrafts.branchId, branchId),
-            eq(documentDrafts.documentId, documentId),
-            eq(documentDrafts.kind, "work_draft"),
-          ),
-        );
-      if (drafts.length === 0) return [];
-      return db
-        .select({ id: draftWriteJournal.id })
-        .from(draftWriteJournal)
-        .where(
-          and(
-            inArray(
-              draftWriteJournal.draftId,
-              drafts.map(({ id }) => id),
-            ),
-            eq(draftWriteJournal.source, "agent"),
-          ),
-        );
-    }
+    /** The model's edits of the document. */
+    const editsOf = (documentId: DocumentId) =>
+      db
+        .select({ id: documentEdits.id })
+        .from(documentEdits)
+        .where(and(eq(documentEdits.documentId, documentId), eq(documentEdits.actor, "agent")));
 
-    it("K-2: a read in a draft-mode Work with no branch makes no branch or draft; the first write does", async () => {
+    it("K-2: a read in a draft-mode Work with no branch makes no branch; the first write does", async () => {
       const scenario = await start();
       const work = await scenario.work("Ascension", "draft");
       const chapter = await liveChapter(scenario, "ch1.md");
@@ -146,7 +115,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .soft(String(toolContentText(read.content)), "its content is the live base")
         .toContain("Writer opening.");
       expect.soft(await branchesOf(work), "the read made no branch").toEqual([]);
-      expect.soft(await draftsOf(chapter), "and no draft").toEqual([]);
 
       const write = await reply.call("write", {
         command: "replace",
@@ -159,11 +127,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(made, "the first write made the branch")
         .toEqual([{ id: expect.any(String), status: "active" }]);
-      const branchId = made[0]?.id;
-      expect
-        .soft(await draftsOf(chapter), "and the branch's draft")
-        .toEqual([{ kind: "work_draft", branchId }]);
-      expect.soft(await savedRows(branchId ?? "", chapter), "in the draft").toHaveLength(1);
+      expect.soft(await editsOf(chapter), "and the edit is recorded").toHaveLength(1);
     });
   });
 }

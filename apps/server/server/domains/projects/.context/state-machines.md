@@ -21,7 +21,7 @@ stateDiagram-v2
 
 - **Every lifecycle write locks the Work row and publishes `{ workId }` through
   `FileAccessChanges` in the same transaction.** That publication is what makes the Work's
-  notes, uploads and draft rooms reconnect at their new access level; without it an archived Work
+  notes, uploads and the documents only it has reconnect at their new access level; without it an archived Work
   stays writable in tabs that are already open. Purge included, each also wakes the project's
   browsers with the Work's `draft-owner-hint` after commit (`WorkProjectionMutation.lifecycleChanged`),
   the hint a moved pending count sends, so another device's Works list and picker follow at once.

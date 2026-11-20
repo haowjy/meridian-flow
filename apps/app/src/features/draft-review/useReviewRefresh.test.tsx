@@ -27,15 +27,13 @@ afterEach(async () => {
 });
 
 const review = { documentId: "document-a", itemKey: "draft-a" };
-const metadataKey = projectQueryKeys.ownerDraftMetadata("p", "work:w", "document-a", "draft-a");
+const listKey = projectQueryKeys.ownerDrafts("p", "work:w");
 
 function Owner() {
   useReviewRefresh({
     projectId: "p",
     ownerKey: "work:w",
     review,
-    runtime: null,
-    session: null,
     liveSession: sessions.get("room-a"),
   });
   return null;
@@ -46,7 +44,7 @@ async function mountOwner(run: (invalidated: () => string[]) => Promise<void>) {
   const invalidated: string[] = [];
   vi.spyOn(client, "invalidateQueries").mockImplementation(async (filters) => {
     invalidated.push(
-      JSON.stringify(filters?.queryKey) === JSON.stringify(metadataKey) ? "metadata" : "list",
+      JSON.stringify(filters?.queryKey) === JSON.stringify(listKey) ? "list" : "other",
     );
   });
   await withReactRoot(
@@ -74,13 +72,12 @@ describe("useReviewRefresh", () => {
         await wait(200);
       }
       // 6s of writing with no pause longer than 200ms: it read along the way.
-      expect(invalidated().filter((kind) => kind === "metadata").length).toBeGreaterThanOrEqual(2);
+      expect(invalidated().filter((kind) => kind === "list").length).toBeGreaterThanOrEqual(2);
     });
   });
 
   it("still reads a room change seen just before the live room re-binds", async () => {
-    // A pull reaches the draft room; the Works catalog wake it raises re-renders the
-    // editor, which briefly drops and re-binds its live room.
+    // A Works catalog wake re-renders the editor, which briefly drops and re-binds its live room.
     const client = new QueryClient();
     const invalidate = vi.spyOn(client, "invalidateQueries").mockResolvedValue();
     let rebind!: (bound: boolean) => void;
@@ -91,8 +88,6 @@ describe("useReviewRefresh", () => {
         projectId: "p",
         ownerKey: "work:w",
         review,
-        runtime: null,
-        session: null,
         liveSession: bound ? sessions.get("room-a") : null,
       });
       return null;
@@ -107,7 +102,7 @@ describe("useReviewRefresh", () => {
         await act(async () => rebind(false));
         await act(async () => rebind(true));
         await wait(400);
-        expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: metadataKey }));
+        expect(invalidate).toHaveBeenCalledWith(expect.objectContaining({ queryKey: listKey }));
       },
     );
   });

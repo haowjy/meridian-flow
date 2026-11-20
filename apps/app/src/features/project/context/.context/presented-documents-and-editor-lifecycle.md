@@ -59,27 +59,14 @@ the session paints from the browser's local copy and its room connects when the 
 session in place of the cached one, and shows the session's own connection state. A failed binding
 offers Retry; the phone's document host (`DocumentHost`, phone presentation) uses the same binding.
 
-A draft-only document (a new document proposed in a branch, or one live deleted
-while a Work's draft still has it) opens no live binding at
-all: it is absent from the live SQL tree and the server refuses a room for it,
-so review hosts the draft room alone (`liveRoom` only when `useDraftOnlyPresentation`
-answers `live`) and a failed draft room offers Retry or closing the document, never a
-fallback to an empty live editor. Draft-only is a property of the mounted host (or a live delete's hold), not of
-the document's descriptor: the evidence is the draft the document's view pins (its row says `isNew` or
-`deletedLive`), and every way of opening a draft-created document pins its draft. The
-host presents the document in `DraftOnlyPresentations` under a token minted per mount
-and stays draft-only until settlement promotes it, so a Discard never flips it to a live
-room the server refuses. The phone hosts it through the same `DocumentHost`, so a phone
-mount presents in the registry like a desktop one. Both shells find the document through
-`route-document-owner.ts`: the bound identity in the live tree, then the document the
-answered address names (`addressedDocument`, built from the address's draft row when
-live lacks it), before any path occupant. A plain path never settles on a draft-only
-document; only its address with `owner` and
-`item` reaches it.
-Once live has the document (Apply, or a restore), settlement promotes the presentation
-and this host opens its live room like any other document. Whether that open is
-slow, fails, or disconnects is the host's business and never changes whether
-Apply completed.
+A document that exists only in a Work (a new document the Work created) opens in its Live room
+like any other: its text is plain Live text, and the project's list doesn't have it, so the host
+admits it as the Work's (`workOnly`, from the pin's row saying `isNew`) and the Yjs gateway
+admits the room for that Work. Both shells find the document through `route-document-owner.ts`:
+the bound identity in the live tree, then the document the answered address names
+(`addressedDocument`, built from the address's draft row when live lacks it), before any path
+occupant. A plain path never settles on a Work-only document; only its address with `owner` and
+`item` reaches it. Once Apply makes it live, the same room stays open.
 
 ## Editor versus chat resources
 
@@ -126,8 +113,7 @@ Two owners:
 - **The list's standing.** `ProjectStandings.standing(projectId, documentId)` reads the replay of
   the project's list (and the account's, for `user://`): `in-tree`, `in-trash`, `purged`,
   `not-in-list`, or `waiting` until the list has been read. Nothing is polled and nothing is
-  stamped. `useRemovalAnswer` is the React reader: `SessionEditor`, the review room owner and the
-  reopened review address.
+  stamped. `useRemovalAnswer` is the React reader: `SessionEditor` and the reopened review address.
 - **The observer.** `observeListRemovals` (`list-removal-observer.ts`, mounted per project by
   `ProjectContextRemovalController`) watches the documents the app holds (views, account recents,
   retained sessions) and applies what the list says as one batch through
@@ -155,8 +141,7 @@ document's edits removes nothing. Discard is a server command, not a record the 
 
 A document in Trash still takes text: the live room admits it until its node is purged and
 closes (`4208`) at the purge. Typing into a document someone else deleted is saved into it, and a
-restore brings it back. A host still open on a purged room says nothing (`SyncStatus`). Draft rooms carry
-no document identity in the registry, so their review owner closes and rebuilds them itself.
+restore brings it back. A host still open on a purged room says nothing (`SyncStatus`).
 
 Reopening a review address whose document was removed shows what the removal left: a Discard's
 notice with its Undo, or an uncreated document's words (item key parsed by
@@ -170,24 +155,8 @@ copy (`local-document-copies.ts`).
 
 ### Multi-Work review representations
 
-A presented document carries no review state.
-Which draft a document shows is its view's pin; whether live lacks it is
-`DraftOnlyPresentations` (`features/draft-review/draft-only-presentations.ts`). Two things
-present a document there: a host mount, under a token minted per mount, and a live delete's
-hold, one entry per held draft. Settlement (`DraftOnlySettlement`) settles both the same way,
-so neither can outlive what it stands for: it promotes on the replay's evidence checked against a
-fresh read, and ends a presentation only on that presentation's own answer, when its
-draft's metadata says `gone` or the document's view no longer pins it (a Discard of the last
-change leaves the draft active and empty). An ended document moves to the scope's draft of it
-when there is one (the view's pin, and main's address with it), and closes otherwise.
-
-One document has at most one host. When live deletes a document, the removal
-coordinator asks which drafts of it some surface holds open (`boundDrafts`, never the review
-list, which lags about a second) and keeps only the one the document's view pins: a draft held
-open but not shown paints nothing. It records a hold for that draft (`holdRemovedLive`); the
-removal plan leaves held documents alone (`held`) and ends the rest. The hold ends when
-the coordinator commits an `available` command for the document (a restore, an Apply that
-brought it back) or when its draft ends. Promotion back to live otherwise needs the document
-in the live tree: the standing says `in-tree` once the replay places it, and the replay keeps a
-deleted document's node in Trash, so knowing the id alone is not "live again". Restoring a saved review already queries the saved review Work and matches
-both draft and document within that list.
+A presented document carries no review state. Which Work's view a document shows is its view's
+pin. Whether it exists only in that Work comes from the pin's row in the owner's draft list
+(`useDocumentLiveness`: a drafted create, or a delete Live made): such a page offers Close where
+others offer Back to live. A live delete of a document closes its view like any removal; a
+Work's suggestions in it stay in the document and come back with a Restore.

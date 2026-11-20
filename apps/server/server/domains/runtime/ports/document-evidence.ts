@@ -1,6 +1,6 @@
 /**
  * What the model was shown of documents, kept by the document side: the frontier each result
- * block showed (per room: `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`) and
+ * block showed (per room: `live:<documentId>:<authorityGeneration>`) and
  * the links it was shown. The runtime never writes the tables. An edit's evidence is recorded by
  * the document side in the edit's own transaction; a read's, and a writer turn's reference
  * blocks', are handed over with `resultStored` once their blocks are stored. Every lookup names the

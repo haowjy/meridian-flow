@@ -7,8 +7,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import type { BranchId } from "@meridian/contracts";
-import { parseYjsRoomName } from "@meridian/contracts/protocol";
+import { type BranchId, draftOwnerKey } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -18,7 +17,6 @@ import {
   withBlockIds,
 } from "@meridian/prosemirror-schema";
 import { updateYFragment } from "@tiptap/y-tiptap";
-import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { createAllowAllFileAccess } from "../../../domains/file-policy/index.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
@@ -27,18 +25,16 @@ import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
-import { createDrizzleBranchDiscard } from "../adapters/drizzle-branch-discard.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "../adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
-import { createDrizzleAuthorityGenerationReader } from "../adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
-import { createDrizzleDraftReplayJournalReads } from "../adapters/drizzle-draft-journal-reads.js";
 import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
+import { createDrizzlePress } from "../adapters/drizzle-press.js";
 import { createDrizzleReversalLocks } from "../adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnInverseService } from "../adapters/drizzle-turn-inverse.js";
 import {
@@ -47,17 +43,12 @@ import {
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import type { RoutedWriteContext } from "../domain/agent-edit-cores.js";
 import { createAgentEditRouter } from "../domain/agent-edit-router.js";
-import { createBranchDiscard } from "../domain/branch-discard.js";
 import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
 import { createBranches } from "../domain/branches.js";
 import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
-import { DraftNotFoundError } from "../domain/draft-resolver.js";
-import { createDraftRetirement } from "../domain/draft-retirement.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import { createModelEditRead, createModelEditWriter } from "../domain/model-edit-write.js";
-import { liveRoom } from "../domain/observation-rooms.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
-import { createThreadCores } from "../thread-cores.js";
 import { modelWrite } from "./model-write.js";
 
 const { createDb } = await import("@meridian/database");
@@ -92,7 +83,6 @@ const { branchFolderIds, createDrizzleBranchTreeState } = await import(
 );
 const { createDrizzleBranchTreeActors } = await import("../adapters/drizzle-branch-tree-actors.js");
 const { treeSeeder } = await import("../../../test-support/tree-seed.js");
-const { createFixtureDraftStore } = await import("./fixture-draft-store.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
   "../adapters/hocuspocus-coordinator.js"
@@ -104,10 +94,6 @@ const {
 } = await import("../adapters/agent-edit-observability.js");
 const { createAgentEditRuntime } = await import("../domain/agent-edit-runtime.js");
 const { scopeAgentEdit } = await import("../domain/document-link-scope-doors.js");
-const { createDraftCoordinator } = await import("../domain/draft-coordinator.js");
-const { createDraftPullService } = await import("../domain/draft-pulls.js");
-const { createDraftProjection } = await import("../domain/draft-projection.js");
-const { settleBefore } = await import("./converged-review.js");
 const { createDocumentWriteHookRunner } = await import(
   "../domain/document-projection-refresher.js"
 );
@@ -251,9 +237,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     owner: { kind: "work", workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID },
     ownerHandle: "atomicity-work",
   } as const;
-  const persistence = createDrizzleCollabPersistence(db, (documentId) =>
-    draftPulls.liveCommitted(documentId),
-  );
+  const persistence = createDrizzleCollabPersistence(db);
   const _testJournal = grantedJournal(persistence.journal);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({
@@ -264,47 +248,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     store: createDrizzleBranchStore(db),
     boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
-  // One closer for the harness's drafts, Discard and removals; its retirement binds below.
-  const { draftClose, treeLists, removals } = createTestRemovalDeps(db);
-  const draftStore = createFixtureDraftStore(db, {
-    close: draftClose,
-    workProjection: createTestWorkProjectionMutation(db),
-    treeLists,
-    live: {
-      journal: persistence.journal,
-    },
-    branches: workBranches,
-  });
-  const draftCoordinator = createDraftCoordinator({
-    onAppendCommitted: (draftId) => draftEffects.markDirty(draftId),
-    store: draftStore,
-    attemptScope: (operation) => runInDrizzleSavepoint(db, operation),
-  });
-  const draftPulls = createDraftPullService({
-    outsideTransaction: runOutsideWrite,
-    draftCoordinator,
-    // The draft rooms a test opened on the fake Hocuspocus.
-    openDraftRooms: async (documentId) => {
-      const open = [...hocuspocus.documents.keys()].flatMap((name) => {
-        const room = parseYjsRoomName(name);
-        return room?.kind === "draft" ? [room.draftId] : [];
-      });
-      const own = await Promise.all(
-        open.map(async (id) =>
-          (await draftStore.getDraft(id))?.documentId === documentId ? id : null,
-        ),
-      );
-      return own.filter((id): id is string => id !== null);
-    },
-    liveJournal: persistence.journal,
-  });
-  const draftEffects = createDraftProjection({
-    coordinator: draftCoordinator,
-    store: draftStore,
-    outsideTransaction: runOutsideWrite,
-  });
+  const { treeLists, removals } = createTestRemovalDeps(db);
   const notices = createDrizzleNoticePort(db);
-  const durableDraftJournalReadStore = createDrizzleDraftReplayJournalReads(db);
   const durableWorkBranchPendingStore = createDrizzleWorkBranchPendingStore(db);
   const events: Array<{
     name: string;
@@ -343,10 +288,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     diagnostics: projectionDiagnostics,
   });
   const observability = createAgentEditObservabilityOptions({ eventSink });
-  const modelDocumentEdits = createModelDocumentEdits({
-    service: () => turnInverse,
-    drafts: draftStore,
-  });
+  const modelDocumentEdits = createModelDocumentEdits({ service: () => turnInverse });
   const runtime = createAgentEditRuntime({
     documentEdits: modelDocumentEdits,
     links,
@@ -371,36 +313,14 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     inTransaction: isInDrizzleTransaction,
   });
   const projections = { refresh: runDocumentWriteHook };
-  const threadCore = createThreadCores({
-    documentEdits: modelDocumentEdits,
-    journal: persistence.journal,
-    drafts: draftStore,
-    draftCoordinator,
-    draftPulls,
-    draftJournal: durableDraftJournalReadStore,
-    model: runtime.model,
-    codec: runtime.codec,
-    codecFor: runtime.codecFor,
-    links,
-    aheadRefs: UNSUPPORTED_AHEAD_REFS,
-    observability,
-  });
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEditRouter = createAgentEditRouter({
-    branches: workBranches,
-    drafts: draftStore,
     liveUtilityCore: runtime.liveUtilityCore,
-    threadCore,
+    workView: runtime.workView,
+    branches: workBranches,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
   const modelEditRead = createModelEditRead(agentEdit.read);
-  const ensureWorkDraft = ({
-    documentId,
-    branchId,
-  }: {
-    documentId: DocumentId;
-    branchId: string;
-  }) => draftStore.ensureLiveDocumentDraft({ documentId, branchId: branchId as never });
   const modelEvidence = createDrizzleModelEvidence(db);
   const modelEdits = createDrizzleModelEdits(
     db,
@@ -408,49 +328,25 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       write: scopeModelEditWrite(
         createModelEditWriter({
           liveCore: runtime.liveUtilityCore,
-          threadCore,
+          workView: runtime.workView,
           branches: workBranches,
           fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
           enterLiveSeam: (documentId) => enterLiveWriteSeam(db, documentId),
           enterDraftSeam: async () => {
             await lockSeamWorks(db, []);
           },
-          ensureWorkDraft,
           existsOnlyInWork: async () => false,
-          lockDraft: async (draftId) => {
-            await currentDrizzleDb(db)
-              .select({ id: schema.documentDrafts.id })
-              .from(schema.documentDrafts)
-              .where(eq(schema.documentDrafts.id, draftId))
-              .for("update");
-          },
-          liveRoomOf: async (documentId) =>
-            liveRoom(documentId, await readAuthorityGeneration(documentId)),
-          draftBehindLive: (documentId) =>
-            deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
         }),
         links,
       ),
       read: modelEditRead,
-      catchUp: async (documentId, threadId) => {
-        try {
-          const draft = await draftStore.resolveWorkDraftForThread(documentId, threadId);
-          await draftPulls.catchUpDraft(draft.draftId);
-        } catch (cause) {
-          if (!(cause instanceof DraftNotFoundError)) throw cause;
-        }
-      },
     },
     modelEvidence,
   );
-  const readAuthorityGeneration = createDrizzleAuthorityGenerationReader(db);
   const turnInverse = createDrizzleTurnInverseService({
-    onDraftCommitted: (draftId) => draftEffects.markDirty(draftId),
     db,
     journal: persistence.journal,
-    drafts: draftStore,
     coordinator: liveCoordinator,
-    draftCoordinator,
     resolveDocumentUri,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
@@ -473,50 +369,15 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   });
   const reviewItems = createBranchReviewItems({
     tree: createDrizzleBranchTreeState(db, createTreeReader(db)),
-    drafts: (branchId, documentIds) =>
-      durableWorkBranchPendingStore.listBranchDraftMetadata(branchId, documentIds),
-    pendingWriters: durableWorkBranchPendingStore.pendingWriters,
+    text: (branchId, documentIds) =>
+      durableWorkBranchPendingStore.listBranchTextChanges(branchId, documentIds),
     treeActors: createDrizzleBranchTreeActors(db, treeLists),
   });
-  // The harness keeps no draft rooms but the fake hocuspocus's: retirement closes those and
-  // the pooled cores' thread state.
-  const closeDraftRoom = (draftId: string) => {
-    for (const roomId of [...hocuspocus.documents.keys()]) {
-      if (roomId !== `draft:${draftId}`) continue;
-      hocuspocus.documents.get(roomId)?.destroy();
-      hocuspocus.documents.delete(roomId);
-    }
-  };
-  draftClose.bindRetirement(
-    createDraftRetirement({
-      closeDraftRoom,
-      async closeRemovedRooms(_documentIds, draftIds) {
-        for (const draftId of draftIds) closeDraftRoom(draftId);
-      },
-    }),
-    (error) => {
-      throw error;
-    },
-  );
   const lookups = createDrizzleCollabLookups(db);
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
-    apply: async () => {
-      throw new Error("Apply is not configured in the collab fixture");
-    },
-    unapplyClick: async () => {
-      throw new Error("Un-Apply click is not configured in the collab fixture");
-    },
-    commandDocuments: {
-      ofApply: async () => [],
-      ofDiscard: async () => [],
-      redoItems: async () => [],
-    },
     listDiscards: async () => [],
     purgeDiscards: async () => 0,
-    undoDiscard: async () => {
-      throw new Error("Undo of a Discard is not configured in the collab fixture");
-    },
     branches: workBranches,
     reviewItems,
     folderIds: (branchId) => branchFolderIds(db, branchId),
@@ -524,18 +385,17 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     treeCut: async () => ({}),
     pending: durableWorkBranchPendingStore,
     identity,
-    discard: createBranchDiscard({
-      // No Work projection in this harness: pending counts aren't under test.
-      store: createDrizzleBranchDiscard(db, {
-        coordinator: draftCoordinator,
-        close: draftClose,
-        branches: workBranches,
-        workProjection: createTestWorkProjectionMutation(db),
-        treeLists,
-      }),
-    }),
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,
+  });
+  const presses = createDrizzlePress(db, {
+    workProjection: createTestWorkProjectionMutation(db),
+    branches: workBranches,
+    live: persistence.journal,
+    liveCoordinator,
+    treeLists,
+    tree: createTreeReader(db),
+    onCommitted: async () => {},
   });
   // Tests mint a destination grant without a target; a write's grant names its document. A
   // write is the model's tool call as the chat loop sends it: one command, one transaction.
@@ -568,9 +428,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
     ...branches,
+    presses,
   };
-  // Review membership is projected after an append commits; review reads wait for it.
-  settleBefore(collab.draftReview, draftEffects.flush);
 
   // The host's frontier store: a seeded write plans on the view its read showed.
   const shownFrontiers = new Map<string, ObservationFrontier>();
@@ -581,23 +440,23 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     return outcome;
   }
 
+  const scenario = options.ids ?? DEFAULT_SCENARIO_IDS;
+  const workKey = draftOwnerKey({ kind: "work", workId: scenario.WORK_ID });
   /**
-   * The Work draft a draft-mode write ensures before its room read. A read
-   * never makes them (S1), so a fixture that seeds drafted content provisions them first.
+   * The document's live authority and the Work's branch, which a draft-mode write ensures
+   * before its read; a fixture that seeds drafted content provisions them first.
    */
   async function provisionDraft(documentId: DocumentId = ALPHA_ID) {
     await persistence.seeds.seedInitialDocument(
       documentId,
       Y.encodeStateAsUpdate(new Y.Doc({ gc: false })),
     );
-    const scenario = options.ids ?? DEFAULT_SCENARIO_IDS;
-    const branch = await workBranches.ensureActiveForWrite({
+    return workBranches.ensureActiveForWrite({
       owner: { kind: "work", workId: scenario.WORK_ID },
       projectId: scenario.PROJECT_ID as never,
       threadId: THREAD_ID,
       userId: USER_ID as never,
     });
-    return ensureWorkDraft({ documentId, branchId: branch.id });
   }
 
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
@@ -623,24 +482,25 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     );
   }
 
+  /** The document as the scenario's Work reads it: Live with its suggestions taken. */
+  const workMarkdown = (documentId: DocumentId = ALPHA_ID) =>
+    liveCoordinator.withDocument(documentId, async (doc) =>
+      serializeMarkdown(doc, runtime.workView.model(workKey)),
+    );
+
   return {
-    draftMarkdown: (draftId: string) =>
-      draftCoordinator.readDraft(draftId, async (doc) => serializeMarkdown(doc)),
+    workMarkdown,
     seedWriterDocument,
     crossWorkProbeFixture: () => ({
       provisionDraft,
       runtime,
       links,
-      draftPulls,
       db,
       schema,
       persistence,
       liveCoordinator,
       collab,
-      draftStore,
-      draftCoordinator,
-      draftMarkdown: (draftId: string) =>
-        draftCoordinator.readDraft(draftId, async (doc) => serializeMarkdown(doc)),
+      workMarkdown,
       hocuspocus,
       model,
       markupCodec,
@@ -648,26 +508,21 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     }),
     /** Stop producers and join their work before test reset or pool shutdown. */
     async dispose() {
-      await Promise.all([draftPulls.shutdown(), draftEffects.dispose()]);
       liveCoordinator.stop();
       for (const doc of hocuspocus.documents.values()) doc.destroy();
       hocuspocus.documents.clear();
       hocuspocus.broadcasts.length = 0;
     },
-    /** Cancels future pulls while a race fixture keeps the rest of its runtime active. */
-    cancelScheduledPulls: () => {
-      draftPulls.cancelScheduledPulls();
-    },
-    /** Waits for every draft-effect judgement the test's writes scheduled. */
-    settleDraftEffects: () => draftEffects.flush(),
     liveMarkdown: (documentId: DocumentId) =>
-      liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
+      liveCoordinator.withDocument(documentId, async (doc) =>
+        serializeMarkdown(doc, runtime.model),
+      ),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,
   };
 }
 
-function serializeMarkdown(doc: Y.Doc): string {
-  const nodes = model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
+function serializeMarkdown(doc: Y.Doc, view: typeof model): string {
+  const nodes = view.projectBlocks(toDocHandle(doc)).map((block) => block.node);
   return nodes.length === 0 ? "" : markupCodec.serialize(nodes, UNSCOPED_DOCUMENT_LINKS);
 }
 

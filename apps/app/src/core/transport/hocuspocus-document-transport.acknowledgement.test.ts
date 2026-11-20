@@ -188,13 +188,9 @@ describe("document transport server acknowledgement", () => {
     expect(harness.acknowledged).toBe(true);
   });
 
-  // A draft room's server sequences each Update on the bytes it already has,
-  // so the handshake upload (SyncStep2) goes first there; a live room keeps the
-  // provider's order, whose SyncStep2 its server marks for collision reconciliation.
-  it.each([
-    [ROOM, ["update", "update", "update", "step2"]],
-    ["draft:draft-1", ["step2", "update", "update", "update"]],
-  ] as const)(
+  // A live room keeps the provider's order, whose SyncStep2 its server marks for collision
+  // reconciliation.
+  it.each([[ROOM, ["update", "update", "update", "step2"]]] as const)(
     "is not saved in %s until every offline-queued update is acknowledged",
     async (roomName, order) => {
       harness.destroy();

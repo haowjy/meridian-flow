@@ -1,30 +1,28 @@
-/** Review composition over a warm live editor and the scope owner's addressed branch binding. */
-
-import { Trans } from "@lingui/react/macro";
-import { canonicalContextUri } from "@meridian/contracts";
-import { type Filetype, WS_CLOSE, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+/**
+ * The document body: one Live editor, whatever the review. While the document
+ * shows a Work's draft (its paint names the Work's item), the editor shows the Work's view: Live
+ * with that Work's suggestions, and what the writer types becomes its suggestions. A document
+ * that exists only in the Work is plain Live text, so it opens in the Live view: its pending state
+ * is the tree's create, not marks.
+ */
+import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { liveView, type View } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
-import { Button } from "@/components/ui/button";
-import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
+import type { DocumentSession } from "@/core/editor/document-session";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import type { InlineDraftReview } from "@/features/draft-review/draft-review-session";
-import { ReviewActions } from "@/features/draft-review/ReviewActions";
-import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
+import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
+import { useHostEditor, useHostEditorStore } from "@/features/suggestion-review/host-editor";
+import { usePublishChangeCounts } from "@/features/suggestion-review/usePublishChangeCounts";
+import { useSuggestionReviewFocus } from "@/features/suggestion-review/useSuggestionChanges";
 import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./SessionEditor";
-import { SuggestionEditorView } from "./SuggestionEditorView";
-import { useInlineReviewFocus } from "./useInlineReviewFocus";
-import { useInlineReviewSync } from "./useInlineReviewSync";
 
 export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   documentId: string;
   reviewReadOnly?: boolean;
-  draftOnly?: boolean;
-  onCloseDraftOnly?: () => void;
-  /** Exact host-owned live/local session; absent for a draft-only destination. */
+  /** The host-owned live/local session; absent while it opens. */
   session?: DocumentSession;
   bindingKey?: string;
   detached?: boolean;
@@ -40,292 +38,95 @@ export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {
   inMain?: boolean;
 };
 
-const REVIEW_MARKS_WAIT_MS = 1500;
-
-/** What the editor body shows: the card only for a failed review room. */
-type EditorSurface = "pending" | "review-error" | `live:${string}` | `review:${string}`;
-
 export function EditorView(props: EditorViewProps) {
-  return suggestionModeEnabled ? (
-    <SuggestionEditorView {...props} />
-  ) : (
-    <DraftEditorView {...props} />
-  );
-}
-
-function DraftEditorView(props: EditorViewProps) {
-  const { controller, roomOwner, fileForDocument } = useDraftReview();
-  // Resolve once against the canonical scope binding, never host-mirrored room/Work fields.
+  const { controller, fileForDocument } = useDraftReview();
+  const hostEditor = useHostEditorStore();
   const requestedItemKey = props.reviewItemKey ?? null;
   const review =
     controller.inlineReview?.documentId === props.documentId &&
     controller.inlineReview.itemKey === requestedItemKey
       ? controller.inlineReview
       : null;
-  const reviewRequested = requestedItemKey !== null;
-  const reviewFile = review ? fileForDocument(review.documentId) : null;
-  const reviewLocation = reviewFile?.contextLocation ?? null;
-  // A drafted delete, or a move with no text, has no review room: its branch tree row is the
-  // change, while the live document remains the body the writer reviews. Treat that validated
-  // identity as a shown review once the live session is ready instead of leaving the editor
-  // pending.
-  const treeOnlyReview =
-    review?.itemKey !== undefined && !!reviewFile && reviewHasNoRoom(reviewFile.draft);
-  // A move with no text is the live text in its drafted place: it takes typing, as a page the
-  // draft doesn't touch does. A drafted delete is read until it is applied or discarded.
-  const liveTakesTyping = !reviewRequested || (treeOnlyReview && !reviewFile?.draft.tree?.deleted);
-  const reviewHolderUri = reviewLocation
-    ? canonicalContextUri(reviewLocation.scheme, reviewLocation.path)
-    : null;
-  const sharedIdentity = {
+  const file = fileForDocument(props.documentId);
+  // As the host opens its room (`ContextDocumentHost`): the Work's row says the Work made it.
+  const workOnly = file?.draft.isNew === true;
+  const owner = requestedItemKey && !workOnly ? controller.ownerKey : "";
+  // The phone reviews without typing; it types again once the review closes.
+  const reviewReadOnly = props.reviewReadOnly === true && requestedItemKey !== null;
+  const view = useMemo<View>(() => (owner ? { work: owner } : liveView), [owner]);
+  const session = props.session ?? null;
+  const identity: EditorMountIdentity = {
     documentId: props.documentId,
     projectId: props.projectId,
     viewingOwner: controller.ownerKey || undefined,
     schemaType: props.schemaType ?? "document",
     filetype: props.filetype,
     collaborationDecorations: props.showCollaborationDecorations ?? true,
-  } as const;
-  const liveIdentity: EditorMountIdentity = {
-    ...sharedIdentity,
     bindingKey: props.bindingKey,
-    surface: "live",
     detached: props.detached ?? false,
   };
-  const identity: EditorMountIdentity | null =
-    review && roomOwner.roomName
-      ? {
-          ...sharedIdentity,
-          surface: "review",
-          roomName: roomOwner.roomName,
-          ownerKey: controller.ownerKey,
-          itemKey: review.itemKey,
-        }
-      : null;
-  const surfaceOptions: EditorSurfaceOptions = {
-    editable: props.editable,
-    showToolbar: props.showToolbar,
-    active: props.active,
-    ariaLabel: props.ariaLabel,
-    localContentReady: props.localContentReady,
-  };
-  const liveSession = props.session ?? null;
-  const [marksWaitOverFor, setMarksWaitOverFor] = useState<string | null>(null);
-  const reviewSession = identity ? roomOwner.session : null;
-  const reviewKey =
-    identity && reviewSession ? `${editorMountKey(identity)}|${reviewSession.document.guid}` : null;
-  const [constructed, setConstructed] = useState<{
-    key: string;
-    editor: Editor;
-    modelReady: boolean;
-  } | null>(null);
-  const constructionTarget = useRef(reviewKey);
-  constructionTarget.current = reviewKey;
-  const reviewEditor = constructed?.key === reviewKey ? constructed.editor : null;
-  const reviewPainted = reviewEditor !== null;
-  // Cached preview availability does not certify a replacement editor's projection.
-  const marksReady = constructed?.key === reviewKey && constructed.modelReady;
-  const settledEnough = marksReady;
-  // The editor existing is not enough: the review shows with its marks, in one
-  // frame, so the writer never sees the draft text unmarked.
-  const reviewVisible = reviewPainted && (settledEnough || marksWaitOverFor === reviewKey);
-  const reviewOnLiveDocument = treeOnlyReview && liveSession !== null;
-  useEffect(() => {
-    if (!reviewPainted || settledEnough || !reviewKey) return;
-    const timer = window.setTimeout(() => setMarksWaitOverFor(reviewKey), REVIEW_MARKS_WAIT_MS);
-    return () => window.clearTimeout(timer);
-  }, [reviewPainted, settledEnough, reviewKey]);
-
-  const [reviewSnapshot, setReviewSnapshot] = useState<{
-    session: DocumentSession | null;
-    snapshot: DocumentSessionSnapshot | null;
-  }>({ session: null, snapshot: null });
-  useLayoutEffect(
-    () =>
-      reviewSession?.subscribe((snapshot) =>
-        setReviewSnapshot({ session: reviewSession, snapshot }),
-      ),
-    [reviewSession],
-  );
-  const snapshot =
-    reviewSnapshot.session === reviewSession
-      ? reviewSnapshot.snapshot
-      : reviewSession?.getSnapshot();
-  const schemaStale =
-    snapshot?.connectionState?.kind === "reset" &&
-    snapshot.connectionState.reason === WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason;
-  // Only a failed review room is terminal. A draft-only tab whose route has no
-  // review item yet is `pending`; a gone draft is the lifecycle closing its tab.
-  const terminal = (review && roomOwner.error) || schemaStale;
-
-  // Review chrome (the header, its change list, the phone's sheet) shows with
-  // the review body and never before it, and then stays for the draft, even
-  // if the body is rebuilt. A layout effect, so the
-  // controller's update lands before paint, in the same frame as the body swap.
-  const chromeShown =
-    (reviewVisible || reviewOnLiveDocument || review?.shown === true) && !terminal;
+  // The review's chrome (band, list, phone sheet) shows once the editor that holds it does.
   const { setInlineReviewShown } = controller;
   useLayoutEffect(() => {
     if (!review) return;
-    setInlineReviewShown(props.documentId, review.itemKey, chromeShown);
-  }, [setInlineReviewShown, props.documentId, review?.itemKey, chromeShown]);
-  const liveKey = liveSession ? `${editorMountKey(liveIdentity)}|${liveSession.document.guid}` : "";
-  const surface: EditorSurface = terminal
-    ? "review-error"
-    : reviewVisible
-      ? `review:${reviewKey}`
-      : (reviewRequested && !treeOnlyReview) || !liveSession
-        ? "pending"
-        : `live:${liveKey}`;
-  const liveVisible = surface.startsWith("live:");
-  const reviewOnScreen = surface.startsWith("review:");
-
+    setInlineReviewShown(props.documentId, review.itemKey, session !== null);
+  }, [setInlineReviewShown, props.documentId, review?.itemKey, session]);
+  // The review reads the editor once it holds the document: a pin restored against an editor
+  // still empty would find none of its changes.
+  const [constructed, setConstructed] = useState<Editor | null>(null);
+  const synced = useSyncExternalStore(
+    (listener) => session?.subscribe(listener) ?? (() => undefined),
+    () => session?.getSnapshot().status === "synced",
+  );
+  const holds = synced || props.localContentReady === true;
+  useEffect(() => {
+    if (!constructed || !holds || !hostEditor) return;
+    hostEditor.set(constructed);
+    return () => hostEditor.set(null, constructed);
+  }, [constructed, holds, hostEditor]);
+  usePublishChangeCounts(props.documentId, holds ? constructed : null);
+  const editor = useHostEditor();
+  const { changes } = useOpenReviewChanges(controller, { enabled: owner !== "" });
+  useSuggestionReviewFocus({
+    editor: owner ? editor : null,
+    documentId: props.documentId,
+    itemKey: review?.itemKey ?? null,
+    changes,
+  });
+  const surface = session ? `live:${editorMountKey(identity)}|${session.document.guid}` : "pending";
   return (
     <>
-      <PaintCapture surface={surface} state={surface === "pending" ? "pending" : "painted"} />
-      {terminal ? (
-        schemaStale ? (
-          <p data-document-schema-stale>
-            <Trans>This chapter is temporarily unavailable</Trans>
-          </p>
-        ) : (
-          <ReviewError props={props} />
-        )
-      ) : null}
-      {surface === "pending" ? <PendingEditorShell {...surfaceOptions} /> : null}
-      {liveSession ? (
-        <PaintScope active={liveVisible}>
-          <div data-editor-surface="live" className={liveVisible ? "contents" : "hidden"}>
+      <PaintCapture surface={surface} state={session ? "painted" : "pending"} />
+      {session ? (
+        <PaintScope active>
+          <div data-editor-surface="live" className="contents">
             <SessionEditor
-              key={liveKey}
-              identity={liveIdentity}
-              surfaceOptions={{
-                ...surfaceOptions,
-                editable: liveTakesTyping ? props.editable : false,
-                held: !liveVisible || !liveTakesTyping,
-              }}
-              session={liveSession}
-              focusKey={props.focusKey}
-              inMain={props.inMain}
-            />
-          </div>
-        </PaintScope>
-      ) : null}
-      {!terminal && identity && review && reviewSession && reviewKey ? (
-        <PaintScope active={reviewOnScreen}>
-          <div
-            key={reviewKey}
-            data-editor-surface="review"
-            className={reviewOnScreen ? "contents" : "hidden"}
-          >
-            <SessionEditor
+              key={surface}
               identity={identity}
-              session={reviewSession}
-              holderUri={reviewHolderUri}
+              surfaceOptions={{
+                editable: props.editable && !reviewReadOnly,
+                showToolbar: props.showToolbar && !reviewReadOnly,
+                active: props.active,
+                ariaLabel: props.ariaLabel,
+                localContentReady: props.localContentReady,
+              }}
+              session={session}
               focusKey={props.focusKey}
               inMain={props.inMain}
-              surfaceOptions={{
-                ...surfaceOptions,
-                editable:
-                  !props.reviewReadOnly && roomOwner.inputEligible && reviewPainted
-                    ? props.editable
-                    : false,
-                showToolbar: !props.reviewReadOnly && surfaceOptions.showToolbar,
-              }}
-              onConstructed={(editor) => {
-                if (!editor) {
-                  setConstructed((current) => (current?.key === reviewKey ? null : current));
-                } else if (constructionTarget.current === reviewKey) {
-                  setConstructed({ key: reviewKey, editor, modelReady: false });
-                }
-              }}
-            />
-            <ReviewRuntime
-              review={review}
-              session={reviewSession}
-              editor={reviewEditor}
-              onModelAvailable={() => {
-                setConstructed((current) =>
-                  current?.key === reviewKey && !current.modelReady
-                    ? { ...current, modelReady: true }
-                    : current,
-                );
-              }}
+              suggestion={{ view, marks: controller.marksVisible }}
+              onConstructed={setConstructed}
             />
           </div>
         </PaintScope>
-      ) : null}
+      ) : (
+        <PendingEditorShell
+          editable={props.editable}
+          showToolbar={props.showToolbar}
+          active={props.active}
+          ariaLabel={props.ariaLabel}
+          localContentReady={props.localContentReady}
+        />
+      )}
     </>
   );
-}
-
-function ReviewError({ props }: { props: EditorViewProps }) {
-  const { controller, roomOwner, showLive } = useDraftReview();
-  // Desktop draft-only failures retain review until Close. Phone server documents
-  // can return to live; phone draft-only destinations reuse the desktop close policy.
-  const closeUnavailable = props.draftOnly ? props.onCloseDraftOnly : showLive;
-  return (
-    <div className="flex min-h-0 flex-1 items-center justify-center p-6">
-      <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-float">
-        <p className="font-medium text-foreground text-sm">
-          <Trans>Couldn't open review mode.</Trans>
-        </p>
-        <div className="flex items-center justify-center gap-1.5">
-          {props.reviewItemKey ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="secondary"
-              onClick={() => {
-                roomOwner.reopen();
-                controller.enterInlineReview(props.documentId, props.reviewItemKey as string);
-              }}
-            >
-              <Trans>Retry</Trans>
-            </Button>
-          ) : null}
-          {/* With no review read, Discard still goes to the server, and its notice has the Undo. */}
-          {props.reviewItemKey &&
-          controller.inlineReview?.documentId === props.documentId &&
-          controller.inlineReview.itemKey === props.reviewItemKey ? (
-            <ReviewActions
-              scope="document"
-              named
-              disabled={controller.dispositionLocked}
-              onDiscard={() =>
-                void controller.discard(props.documentId, props.reviewItemKey as string)
-              }
-            />
-          ) : null}
-          <Button type="button" size="xs" variant="ghost" onClick={closeUnavailable}>
-            {props.draftOnly ? <Trans>Close</Trans> : <Trans>Back to live</Trans>}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Only a review mounts the projection and focus subscriptions. */
-function ReviewRuntime({
-  review,
-  session,
-  editor,
-  onModelAvailable,
-}: {
-  review: InlineDraftReview;
-  session: DocumentSession;
-  editor: Editor | null;
-  onModelAvailable: () => void;
-}) {
-  useInlineReviewSync({
-    editor,
-    session,
-    onInlineModelAvailable: onModelAvailable,
-  });
-  useInlineReviewFocus({
-    editor,
-    documentId: review.documentId,
-    itemKey: review.itemKey,
-  });
-  return null;
 }

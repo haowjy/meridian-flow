@@ -27,7 +27,7 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
 import { trashActorsOf } from "../adapters/trash-removals.js";
-import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/document-trash.js";
+import type { DocumentPurgeDisposal, DocumentTrash } from "../ports/document-trash.js";
 import { type TreeList, type TreeListStore, TreeRefusal } from "../ports/tree-list-store.js";
 import { type Released, releaseDocumentContent } from "./release-document-content.js";
 import { retentionHolds } from "./retention-holds.js";
@@ -69,7 +69,7 @@ export function createDrizzleDocumentTrash(deps: {
   db: Database;
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
-  drafts: DocumentPurgeDraftDisposal;
+  purges: DocumentPurgeDisposal;
   tree: Pick<TreeListStore, "submit">;
 }): DocumentTrash {
   const objects = createObjectRelease({
@@ -288,7 +288,7 @@ export function createDrizzleDocumentTrash(deps: {
             };
           },
         });
-        if ((await deps.drafts.settle(taken.documentIds)) === "pending")
+        if ((await deps.purges.settle(taken.documentIds)) === "pending")
           throw new TreeRefusal("held");
         await deps.tree.submit({
           lists: [list],
@@ -366,7 +366,7 @@ export function createDrizzleDocumentTrash(deps: {
           .where(and(eq(documents.id, documentId), unviewedBefore(cutoff)))
           .limit(1);
         if (!still) return null;
-        if ((await deps.drafts.settle([documentId])) === "pending") return null;
+        if ((await deps.purges.settle([documentId])) === "pending") return null;
         // The list that holds its create says the content is gone: the browsers keeping a copy
         // of a Discarded document delete it on this record, the one fact they can trust.
         await deps.tree.submit({

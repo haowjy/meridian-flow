@@ -36,8 +36,8 @@ a Work (`origin_work_id`) or a conversation lineage (`origin_root_thread_id`,
 no foreign key), enforced by `branches_one_owner`.
 `branches.pending_document_count` and `pending_folder_count` are its own counts;
 `works` carries the sums over its active branches.
-`document_drafts` stores document versions, with writes in
-`draft_write_journal`; `branch_tree_changes` belongs to the whole branch. `commands` holds one row
+A Work's text draft is suggestion marks in the Live document; `press_text_effects` keeps each
+press's text change for its Undo. `branch_tree_changes` belongs to the whole branch. `commands` holds one row
 per command sent as a request, of any kind (documents, Work, project), inserted first in the
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
 its project and chat, so a resend of a create cannot create twice.
@@ -68,8 +68,8 @@ JSON-looking scalar strings into other values.
 
 Undo records an inverse as a new edit rather than rewriting history. Immutable
 `document_edits` and `document_edit_parts` retain the original edit, its author
-and the inverse needed to take it back. A drafted part keeps the branch its draft was in
-(`draft_branch_id`, no foreign key), so its turn's card still finds its owner after the draft row is gone.
+and the inverse needed to take it back. Every part is a Live edit (`origin` is `live`): a drafted
+write's suggestions are marks in the Live document.
 
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on

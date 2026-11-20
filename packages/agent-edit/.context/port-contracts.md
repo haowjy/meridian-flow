@@ -13,11 +13,10 @@ lineage.
 
 ## `DocumentCoordinator`
 
-**`readRoom`.** A rejected entry leaves the scope and never reappears. A live host
-reads without taking the document's mutex; a draft host rebases live into the Work
-draft first, then copies the Work draft replica.
+**`readRoom`.** A rejected entry leaves the scope and never reappears. The host reads the
+document's Live room without taking its mutex; a Work's view is the model's, over that same copy.
 
-**`prepareSave`.** It reconciles as `readRoom` does; a live host keeps every entry.
+**`prepareSave`.** It reconciles as `readRoom` does and keeps every entry.
 The host installs a write at root commit, never at `transfer`, or at once outside a
 transaction. `persist` captures the save's cut inside the append, where the host
 serializes it, before its transaction commits, for every outcome (appended,
@@ -28,16 +27,12 @@ the report, not the write.
 
 **`SavePrecondition`.** A check before the lock would let two concurrent creates,
 or a create and a writer's frame, both land, so nothing judges it before the append,
-and a failure appends nothing even inside an ambient transaction. A live host's
-`appendBatch` judges it on each document's state under the lock. A draft host
-finalizes its append under the draft row lock against the committed prefix, which
-is its cut and what `finalizeAppend` judges; a fully contained append's before and
-after are both that prefix.
+and a failure appends nothing even inside an ambient transaction. The host's
+`appendBatch` judges it on each document's state under the lock.
 
-Neither host fences a WebSocket transport from this port: nothing applies to a live
+The host does not fence a WebSocket transport from this port: nothing applies to a live
 room inside a transaction. See the [WebSocket concurrency
 contract](../../../apps/server/server/domains/collab/.context/websocket-concurrency.md).
-Whole Discard retires only the addressed draft.
 
 ## `AgentEditCodec`
 

@@ -10,7 +10,7 @@ import {
 import type { Mark as PMMark, Node as PMNode } from "@tiptap/pm/model";
 import { Mapping, StepMap } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { createBarSlotElement } from "../inline-review/removal-widget";
+import { createBarSlotElement } from "./bar-slot";
 
 /** The change a review's mark at a DOM element belongs to: its bar and focus find it by this. */
 export const SUGGESTION_CHANGE_ATTR = "data-review-change";

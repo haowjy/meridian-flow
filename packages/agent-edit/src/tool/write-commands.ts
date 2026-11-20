@@ -85,14 +85,10 @@ export function createWriteCommands(deps: {
 
   /** The call's room copy, disposed when `use` settles; a door that can't read answers its result. */
   async function withRoom(
-    input: Omit<RoomCallInput, "workDraftId"> & { context: WriteContext },
+    input: RoomCallInput,
     use: (room: RoomCopy) => Promise<InternalWriteResult>,
   ): Promise<InternalWriteResult> {
-    const { context, ...call } = input;
-    const room = await openRoom(options.coordinator, {
-      ...call,
-      ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
-    });
+    const room = await openRoom(options.coordinator, input);
     if (isInternalWriteResult(room)) return room;
     try {
       return await use(room);
@@ -108,7 +104,7 @@ export function createWriteCommands(deps: {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    return withRoom({ docId: address.documentId, commandName: "read", context }, async (room) => {
+    return withRoom({ docId: address.documentId, commandName: "read" }, async (room) => {
       const links = await openCommandLinks(options, {
         documentId: address.documentId,
         docs: [room.doc],
@@ -233,7 +229,6 @@ export function createWriteCommands(deps: {
       {
         docId: address.documentId,
         commandName: command.command,
-        context,
       },
       async (room) => {
         const overwriting = command.overwrite === true;
@@ -362,7 +357,7 @@ export function createWriteCommands(deps: {
     }
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const actor = mutationActor(session, address.documentId, context);
-    return withRoom({ docId: address.documentId, commandName: command.command, context }, (room) =>
+    return withRoom({ docId: address.documentId, commandName: command.command }, (room) =>
       withPlanDoc(room, address.documentId, context, actor, async (planDoc) => {
         const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
         const links = await openCommandLinks(options, {
@@ -550,7 +545,6 @@ export function createWriteCommands(deps: {
         },
       },
       ifOccupied: edit.ifOccupied,
-      ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
     });
     if (isInternalWriteResult(saved)) return saved;
     // The echo and frontier show the room as the save left it.
@@ -628,15 +622,13 @@ export function createWriteCommands(deps: {
         ...(context.turnId ? { ownActorTurnIds: new Set([context.turnId]) } : {}),
         ...(options.coordinator.concurrentUpdatesForReport
           ? {
-              loadConcurrent: ({ baseline, after, through, attributionBridge }) =>
+              loadConcurrent: ({ baseline, after, through }) =>
                 options.coordinator.concurrentUpdatesForReport?.({
                   docId: documentId,
                   doc: room.doc,
                   baselineDoc: baseline,
                   after,
                   through,
-                  ...(attributionBridge ? { attributionBridge } : {}),
-                  ...(context.workDraftId ? { access: { workDraftId: context.workDraftId } } : {}),
                 }) ?? Promise.resolve([]),
             }
           : {}),

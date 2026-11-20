@@ -1,6 +1,6 @@
 /**
  * ContextDocumentHost — one editable document in a view: its session, its
- * editor, and the review room the controller asks for.
+ * editor, and the review the controller asks for.
  *
  * Main's document, the side's document, the kept one and the phone render
  * through this, each inside its own review (`DocumentReviewProvider`), and differ only in
@@ -24,20 +24,14 @@ import type {
   DocumentSessionAccess,
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
+import { isTreeOnly } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { MainSurface } from "@/features/editor/MainSurface";
 import { useHostDocumentPaint } from "../DocumentReview";
-import {
-  useContextRemovalCoordinator,
-  useLiveDocumentSessionRegistry,
-} from "./account-feature-context";
 import { DESKTOP_DOCUMENT_PRESENTATION, type DocumentPresentation } from "./document-presentation";
 import { OpenDocumentSessionBoundary } from "./open-document-session";
-import { useDraftOnlyPresentation } from "./use-draft-only-presentation";
 import type { LiveDocumentBindingState } from "./use-live-document-binding";
 
 export type EditableOpenDocument = Extract<OpenDocument, { kind: "tracked" | "new" }>;
@@ -53,7 +47,6 @@ export type ContextDocumentHostProps = {
    */
   readOnly?: boolean;
   presentation?: DocumentPresentation;
-  onCloseDraftOnly?: () => void;
   /** Main's document: the focus main gives goes to its editor or its failure (`joinMain`). */
   inMain?: boolean;
 };
@@ -64,11 +57,9 @@ export function ContextDocumentHost({
   active,
   readOnly = false,
   presentation = DESKTOP_DOCUMENT_PRESENTATION,
-  onCloseDraftOnly,
   inMain = false,
 }: ContextDocumentHostProps) {
-  const removal = useContextRemovalCoordinator();
-  const { controller, fileForDocument, reviewRoomNameForDraft } = useDraftReview();
+  const { controller, fileForDocument } = useDraftReview();
   const bindingKeys = useRef(new WeakMap<object, string>());
   // The host's own review: the one it has open, else the draft its view paints. While the paint
   // is held (the pinned owner's list is loading) the pin already names the item, so the live
@@ -81,17 +72,14 @@ export function ContextDocumentHost({
       : paint?.showing === "pending"
         ? (paint.view.pin?.itemKey ?? null)
         : (paint?.draft?.itemKey ?? null);
-  const reviewRoomName = selectedReviewItemKey
-    ? reviewRoomNameForDraft(document.documentId, selectedReviewItemKey)
-    : null;
   const selectedReviewFile =
     selectedReviewItemKey && typeof fileForDocument === "function"
       ? fileForDocument(document.documentId)
       : null;
   const treeOnlyReview =
     selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
-    reviewHasNoRoom(selectedReviewFile.draft);
-  const reviewItemKey = reviewRoomName || treeOnlyReview ? selectedReviewItemKey : null;
+    isTreeOnly(selectedReviewFile.draft);
+  const reviewItemKey = treeOnlyReview ? selectedReviewItemKey : null;
   // The pinned draft's list could not be read: say so here rather than paint Live under the pin.
   const queryClient = useQueryClient();
   const pinnedOwner = paint?.showing === "failed" ? (paint.view.pin?.ownerKey ?? null) : null;
@@ -101,10 +89,6 @@ export function ContextDocumentHost({
           queryKey: projectQueryKeys.ownerDrafts(projectId, pinnedOwner),
         })
     : null;
-  // A draft-only document has no live room until settlement promotes it, and the server refuses
-  // one: review hosts the draft room alone. While the pinned draft's row is unread, neither opens.
-  const liveness = useDraftOnlyPresentation(projectId, document);
-  const draftOnly = liveness === "draft-only";
   // `readOnly` is the owner's scope (archived or trashed freezes it); the presentation decides whether
   // this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
@@ -118,7 +102,7 @@ export function ContextDocumentHost({
     const failed = sessionFailed || retryDraftList !== null;
     const retry = retryDraftList ?? retrySession;
     const failureReason = retryDraftList ? null : sessionFailure;
-    const hosted = session !== null || draftOnly || Boolean(selectedReviewItemKey);
+    const hosted = session !== null || Boolean(selectedReviewItemKey);
     const surface = failed ? "failed" : hosted ? "painted" : "pending";
     let bindingKey: string | undefined;
     if (session) {
@@ -168,8 +152,6 @@ export function ContextDocumentHost({
                 <RoomScopeCatalogCheck
                   projectId={projectId}
                   session={session}
-                  reviewRoomName={reviewRoomName}
-                  reviewOwner={controller.ownerKey}
                   readOnly={readOnly}
                 />
               ) : null}
@@ -184,10 +166,6 @@ export function ContextDocumentHost({
                 )}
               />
               <EditorView
-                draftOnly={draftOnly}
-                onCloseDraftOnly={
-                  onCloseDraftOnly ?? (() => removal.writerClose(projectId, document))
-                }
                 projectId={projectId}
                 documentId={document.documentId}
                 focusKey={document.documentId}
@@ -219,10 +197,9 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      // Suggestion mode: a document only a Work has is plain text in its Live room, open while the
-      // Work has it: a Discard closes the room, and its Undo opens it again.
-      liveRoom={liveness === "live" || suggestionModeEnabled}
-      workOnly={suggestionModeEnabled && fileForDocument(document.documentId)?.draft.isNew === true}
+      // A document only a Work has is plain text in its Live room, open while the Work has it: a
+      // Discard closes the room, and its Undo opens it again.
+      workOnly={fileForDocument(document.documentId)?.draft.isNew === true}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
@@ -241,43 +218,28 @@ function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]
  * names a scope that `readOnly` doesn't show, this tab's Works catalog or the review owner's
  * draft list is behind (another tab archived the Work or trashed the chat), and the notice,
  * its way back and `readOnly` all come from them. Asked on activation and on each named
- * scope; this tab's own commands never ask, because the room's next scope confirms them. A
- * review watches the draft's room, never the live one it reviews against; the host's
- * `readOnly` is the review's while it shows one.
+ * scope; this tab's own commands never ask, because the room's next scope confirms them.
  */
 function RoomScopeCatalogCheck({
   projectId,
   session,
-  reviewRoomName,
-  reviewOwner,
   readOnly,
 }: {
   projectId: string;
-  /** Null while a draft-only document is hosted by its draft room alone. */
   session: DocumentSession | null;
-  reviewRoomName: string | null;
-  /** The owner key of the review room's drafts. */
-  reviewOwner: string | null;
   readOnly: boolean;
 }) {
   const queryClient = useQueryClient();
-  const registry = useLiveDocumentSessionRegistry();
   const [access, setAccess] = useState<DocumentSessionAccess | null>(null);
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
-  useEffect(() => {
-    const observer = (snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access);
-    return reviewRoomName
-      ? registry.observeDraftRoom(reviewRoomName, observer)
-      : session?.subscribe(observer);
-  }, [registry, reviewRoomName, session]);
+  useEffect(
+    () => session?.subscribe((snapshot: DocumentSessionSnapshot) => setAccess(snapshot.access)),
+    [session],
+  );
   useEffect(() => {
     if (access === null || (access === "read") === readOnlyRef.current) return;
     void refreshWorksSnapshot(queryClient, projectId).catch(() => undefined);
-    if (reviewRoomName && reviewOwner)
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.ownerDrafts(projectId, reviewOwner),
-      });
-  }, [access, projectId, queryClient, reviewRoomName, reviewOwner]);
+  }, [access, projectId, queryClient]);
   return null;
 }

@@ -102,63 +102,6 @@ export function apiProjectDraftsPath(projectId: string, owner: string): string {
   return `${apiProjectPath(projectId)}/drafts?owner=${encodeURIComponent(owner)}`;
 }
 
-/** The authorship evidence of an owner's drafts, many in one request. */
-export function apiProjectDraftsProvenancePath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/drafts/provenance`;
-}
-
-/** The state, open or closed, of the account's drafts: a start-time read of the drafts this browser holds copies of. */
-export function apiDraftStatesPath(): string {
-  return "/api/drafts/states";
-}
-
-/** Commands address the branch; the server reads its owner from the branch row. */
-export function apiProjectBranchPath(projectId: string, branchId: string): string {
-  return `${apiProjectPath(projectId)}/branches/${branchId}`;
-}
-
-/** Observes one command by its client-minted id: the stored outcome, or `none`. */
-export function apiCommandPath(commandId: string): string {
-  return `/api/commands/${commandId}`;
-}
-
-/** Settles one command id for good: the stored outcome, or a stored `never`. */
-export function apiCommandResolvePath(commandId: string): string {
-  return `${apiCommandPath(commandId)}/resolve`;
-}
-
-/** Discard all: one command over the whole branch. */
-export function apiProjectBranchDiscardPath(projectId: string, branchId: string): string {
-  return `${apiProjectBranchPath(projectId, branchId)}/discard`;
-}
-
-export function apiProjectBranchDocumentDraftPath(
-  projectId: string,
-  branchId: string,
-  documentId: string,
-): string {
-  return `${apiProjectBranchPath(projectId, branchId)}/documents/${documentId}/draft`;
-}
-
-export function apiProjectBranchDocumentDraftApplyPath(
-  projectId: string,
-  branchId: string,
-  documentId: string,
-): string {
-  return `${apiProjectBranchDocumentDraftPath(projectId, branchId, documentId)}/apply`;
-}
-
-export function apiProjectBranchApplyPath(projectId: string, branchId: string): string {
-  return `${apiProjectBranchPath(projectId, branchId)}/apply`;
-}
-
-export function apiProjectBranchUnapplyPath(projectId: string, branchId: string): string {
-  return `${apiProjectBranchPath(projectId, branchId)}/unapply`;
-}
-
-export function apiProjectBranchUndoDiscardPath(projectId: string, branchId: string): string {
-  return `${apiProjectBranchPath(projectId, branchId)}/undo-discard`;
-}
 /** (user, project)-scoped UI preferences — user resolved from auth. */
 
 /** A chat's lineage by its first chat's id: handle and title, even when that chat is trashed. */
@@ -169,11 +112,6 @@ export function apiProjectContextLineagePath(projectId: string, rootThreadId: st
 /** The sources the account can read in one project. */
 export function apiProjectContextSourcesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/context/sources`;
-}
-
-/** A chat's uploads with when each was attached: `ChatUploadsResult`. */
-export function apiProjectContextChatUploadsPath(projectId: string, chatId: string): string {
-  return `${apiProjectPath(projectId)}/context/chat-uploads?chatId=${encodeURIComponent(chatId)}`;
 }
 
 export function apiProjectDocumentReadPath(projectId: string, documentId: string): string {
@@ -356,10 +294,6 @@ export function apiThreadTranscriptPath(
   if (opts?.range) query.set("range", opts.range);
   const search = query.toString();
   return `${API_THREADS_PATH}/${threadId}/transcript${search ? `?${search}` : ""}`;
-}
-
-export function apiThreadsWsPath(): string {
-  return API_THREADS_WS_PATH;
 }
 
 export function apiBillingBalancePath(): string {

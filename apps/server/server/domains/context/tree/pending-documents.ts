@@ -8,9 +8,8 @@
  * - any other row the Work changed: it shows the document differently from live (a move,
  *   rename, reorder, or a document live has in Trash that the Work keeps because it has a change
  *   on it). A row that differs only in a twin's suffix is not one (`changed` is false).
- * - an active text draft with an effect, or the Work's suggestions in the Live document, on a
- *   document the Work's tree shows: a drafted delete, or a document in no view, hides the text
- *   changes everywhere.
+ * - the Work's suggestions in the Live document, on a document the Work's tree shows: a drafted
+ *   delete, or a document in no view, hides the text changes everywhere.
  *
  * A write and its undo net to no changed row, so they net to no item. The Work's review count adds the
  * folders its rows change (`pendingFolders`), stored beside the documents' so a surface can name
@@ -53,15 +52,12 @@ export function pendingDocuments(branches: SQL, documentId?: DocumentId): SQL {
 }
 
 /**
- * The documents a Work has text changes in, as `(branch_id, document_id)`: an active text draft
- * with an effect, or the Work's suggestions in the Live document (suggestion mode, counted by the
- * document's derivation in `document_block_rooms.pending_changes`).
+ * The documents a Work has text changes in, as `(branch_id, document_id)`: the Work's suggestions
+ * in the Live document, counted by the document's derivation in
+ * `document_block_rooms.pending_changes`.
  */
-function pendingText(branches: SQL): SQL {
-  return sql`SELECT dd.branch_id, dd.document_id FROM document_drafts dd
-      WHERE dd.kind = 'work_draft' AND dd.has_effect AND dd.branch_id IN (${branches})
-    UNION
-    SELECT b.id AS branch_id, r.document_id FROM branches b
+export function pendingText(branches: SQL): SQL {
+  return sql`SELECT b.id AS branch_id, r.document_id FROM branches b
       JOIN document_block_rooms r ON r.pending_changes ? ${ownerKeyOfBranch(sql`b`)}
       WHERE b.id IN (${branches})
         AND (r.pending_changes -> ${ownerKeyOfBranch(sql`b`)} ->> 'changes')::int > 0`;

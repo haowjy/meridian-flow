@@ -27,21 +27,10 @@
  * it), and each of its handshakes says what the document holds that the server
  * lacks (`handshake-difference.ts`); the session decides what to do with that.
  *
- * A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), Live or
- * draft. One reconnects and resends, as any close does; after `MAX_UPDATE_REFUSALS` in a row with
+ * A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`). One
+ * reconnects and resends, as any close does; after `MAX_UPDATE_REFUSALS` in a row with
  * no acknowledgement between them, the room ends `UPDATES_REFUSED` instead of
  * resending forever, and the session's owner replaces it (`DocumentSession.holdsUndeliverableEdits`).
- *
- * A draft room's handshake upload goes first. The client's SyncStep2 is the
- * whole Y.Doc diffed against the server's state vector, so it carries every
- * byte the server lacks, including edits replayed before this transport
- * existed. Updates offered on an open socket before its SyncStep2 (the offline
- * queue's flush, keys typed during the handshake) would reach the server ahead
- * of the bytes they depend on; the socket holds them and releases them, in
- * order, right after the SyncStep2. Only transmission waits, never typing.
- * Live rooms keep the provider's order: their server marks the SyncStep2 for
- * offline collision reconciliation, and moving queued bytes into it would
- * change what is reconciled.
  */
 import {
   HocuspocusProvider,
@@ -58,7 +47,6 @@ import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   accessChangedWhy,
   type ChangeEventWsMessage,
-  encodeCatchUpWsMessage,
   isAccessChangedClose,
   parseYjsStatelessMessage,
   WS_CLOSE,
@@ -66,7 +54,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import type { Awareness } from "y-protocols/awareness";
-import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
+import { messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import {
   type DocumentSessionAccess,
@@ -102,14 +90,6 @@ const TERMINAL_DENIAL_CODES = new Set<number>([
 const SOCKET_OPEN = 1;
 
 const MAX_UPDATE_REFUSALS = 3;
-// No signal says a `catch_up` will go unanswered: a server older than the message ignores it, and
-// a pull can wait on the draft's row lock. A normal answer takes under 100 ms; past this bound the
-// Undo decides from what the room holds, as it does offline.
-const CATCH_UP_WAIT_MS = 3000;
-
-function isDraftRoom(roomName: string): boolean {
-  return roomName.startsWith("draft:");
-}
 
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private permanentlyDestroyed = false;
@@ -119,10 +99,6 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private readonly difference: HandshakeDifferenceReader;
   private readonly serverHas: ServerHasTracker;
   private readonly onServerFrame: (frame: Uint8Array) => void;
-  private readonly handshakeUploadFirst: boolean;
-  // Per socket: whether its SyncStep2 has been written, and the Updates held until then.
-  private handshakeUploaded = false;
-  private heldUpdates: Uint8Array[] = [];
 
   constructor(
     configuration: ConstructorParameters<typeof HocuspocusProviderWebsocket>[0],
@@ -130,14 +106,12 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     difference: HandshakeDifferenceReader,
     serverHas: ServerHasTracker,
     onServerFrame: (frame: Uint8Array) => void,
-    handshakeUploadFirst: boolean,
   ) {
     super(configuration);
     this.acknowledgement = acknowledgement;
     this.difference = difference;
     this.serverHas = serverHas;
     this.onServerFrame = onServerFrame;
-    this.handshakeUploadFirst = handshakeUploadFirst;
   }
 
   // The provider emits "open" only after this listener (registered in the base
@@ -145,7 +119,6 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   // 4.3 also clears retry cancellation on native open, before the first frame
   // settles the attempt. Keep it until resolution so retry-now can fence that loop.
   override async onOpen(event: Event) {
-    this.dropHeldUpdates();
     this.acknowledgement.beginConnection();
     this.difference.reset();
     this.serverHas.reset();
@@ -165,36 +138,12 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
       if (this.acknowledgement.readOnly && readDocumentSyncType(message) === messageYjsUpdate)
         return;
       const open = this.webSocket?.readyState === SOCKET_OPEN;
-      if (open && this.handshakeUploadFirst && !this.handshakeUploaded) {
-        const syncType = readDocumentSyncType(message);
-        if (syncType === messageYjsUpdate) {
-          this.heldUpdates.push(message);
-          return;
-        }
-        if (syncType === messageYjsSyncStep2) {
-          this.acknowledgement.noteFrameSent(message);
-          this.serverHas.noteFrameSent(message);
-          super.send(message);
-          this.handshakeUploaded = true;
-          const released = this.heldUpdates;
-          this.heldUpdates = [];
-          for (const update of released) this.send(update);
-          return;
-        }
-      }
       if (open) {
         this.acknowledgement.noteFrameSent(message);
         this.serverHas.noteFrameSent(message);
       } else this.acknowledgement.noteFrameQueued(message);
     }
     super.send(message);
-  }
-
-  // A socket that closes before its SyncStep2 never writes what it held; the
-  // next socket's SyncStep2 carries those bytes.
-  private dropHeldUpdates(): void {
-    this.handshakeUploaded = false;
-    this.heldUpdates = [];
   }
 
   override onMessage(event: MessageEvent) {
@@ -229,7 +178,6 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   }
 
   override onClose(parameters: onCloseParameters): void {
-    this.dropHeldUpdates();
     const shouldConnect = this.shouldConnect;
     // Retain library cleanup/status/queue semantics, but own its otherwise
     // untracked delayed-close timer. The abortable retry still owns failures
@@ -290,7 +238,6 @@ function terminalState(reason: string, code?: number): DocumentSessionConnection
 }
 
 const RESET_DISPOSITIONS: Readonly<Record<DocumentSessionResetReason, ResetDisposition>> = {
-  [WS_CLOSE.DRAFT_PURGED.reason]: "closed",
   [WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason]: "schema",
   [WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason]: "schema",
   [WS_CLOSE.DOCUMENT_DELETED.reason]: "removed",
@@ -358,7 +305,6 @@ export function createHocuspocusDocumentTransport({
     }),
     serverHas,
     handleServerFrame,
-    isDraftRoom(roomName),
   );
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.
@@ -408,7 +354,6 @@ export function createHocuspocusDocumentTransport({
     document.off("update", handleDocumentUpdate);
     stopHints();
     acknowledgement.terminate();
-    endCatchUps();
     publish(state);
     provider.destroy();
     websocket.destroy();
@@ -418,10 +363,7 @@ export function createHocuspocusDocumentTransport({
     if (terminal || destroyed) return;
     // Cleared before the status goes out so no subscriber sees "offline" with a
     // stale "saved". The tracker restarts on the next socket open.
-    if (status !== WebSocketStatus.Connected) {
-      acknowledgement.endConnection();
-      endCatchUps();
-    }
+    if (status !== WebSocketStatus.Connected) acknowledgement.endConnection();
     publish(mapStatus(status));
   }
 
@@ -474,8 +416,7 @@ export function createHocuspocusDocumentTransport({
 
   // A read admission's document can no longer upload, so a change it did not make while drawing
   // asks for one handshake, and that handshake decides. The server's answer is applied with the
-  // provider as origin, so this cannot loop; on a draft room each handshake costs the server a
-  // reconcile, hence one per task.
+  // provider as origin, so this cannot loop; one per task.
   let handshakeRequested = false;
   function requestHandshake(): void {
     if (handshakeRequested || terminal || destroyed || !acknowledgement.readOnly) return;
@@ -515,33 +456,9 @@ export function createHocuspocusDocumentTransport({
       publishTerminal({ kind: "terminal", reason: UPDATES_REFUSED, code: event.code });
   }
 
-  // Each `catch_up` sent on this connection, by id, until its answer, the socket's end, or
-  // CATCH_UP_WAIT_MS.
-  const catchUps = new Map<number, () => void>();
-  let catchUpId = 0;
-  function endCatchUps(): void {
-    for (const settle of catchUps.values()) settle();
-  }
-  function catchUpWithLive(): Promise<void> {
-    if (terminal || destroyed || websocket.status !== WebSocketStatus.Connected || !provider.synced)
-      return Promise.resolve();
-    const id = ++catchUpId;
-    return new Promise<void>((resolve) => {
-      const timer = setTimeout(settle, CATCH_UP_WAIT_MS);
-      function settle(): void {
-        clearTimeout(timer);
-        catchUps.delete(id);
-        resolve();
-      }
-      catchUps.set(id, settle);
-      provider.sendStateless(encodeCatchUpWsMessage(id));
-    });
-  }
-
   function handleStateless({ payload }: onStatelessParameters): void {
     const message = parseYjsStatelessMessage(payload);
-    if (message?.type === "caught_up") catchUps.get(message.id)?.();
-    else if (message?.type === "read_only") publishAccess("read", message.why ?? null);
+    if (message?.type === "read_only") publishAccess("read", message.why ?? null);
     else if (message?.type === "change_event")
       for (const listener of changeEventListeners) listener(message);
   }
@@ -586,7 +503,6 @@ export function createHocuspocusDocumentTransport({
   return {
     serverOrigin: provider,
     requestHandshake,
-    catchUpWithLive,
     unacknowledgedUpdates: () => outbox,
     whenCurrentChangesAcknowledged: () => acknowledgement.whenCurrentChangesAcknowledged(),
     get synced() {
@@ -636,7 +552,6 @@ export function createHocuspocusDocumentTransport({
       stopHints();
       document.off("update", handleDocumentUpdate);
       acknowledgement.terminate();
-      endCatchUps();
       provider.destroy();
       websocket.destroy();
       listeners.clear();

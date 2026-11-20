@@ -132,19 +132,7 @@ export function createWorkBranchFixture(db: Database) {
       .values({ threadId: THREAD_ID, workId: WORK_ID, projectId: PROJECT_ID, isPrimary: true });
   }
 
-  async function currentDraftId(
-    collab: ReturnType<typeof createTestCollab>,
-    documentId: string,
-  ): Promise<string> {
-    const draft = await collab.draftReview.resolveItemByDocument({
-      owner: { kind: "work", workId: WORK_ID as never },
-      documentId: documentId as never,
-    });
-    if (!draft?.draftId) throw new Error(`missing reviewable draft for ${documentId}`);
-    return draft.draftId;
-  }
-
-  return { hocuspocus, createTestCollab, reset, dispose, currentDraftId };
+  return { hocuspocus, createTestCollab, reset, dispose };
 }
 
 function fakeHocuspocus() {

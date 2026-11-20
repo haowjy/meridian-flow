@@ -12,10 +12,7 @@ import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import {
-  claimDocumentTarget,
-  whenReviewEditorMounted,
-} from "@/core/editor/reading-position-navigation";
+import { claimDocumentTarget, whenEditorMounted } from "@/core/editor/reading-position-navigation";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";
@@ -121,7 +118,7 @@ export function ReviewLaunchProvider({
           reportRouteSettlement(projectId, target, result.kind, attempt + 1);
           if (result.kind === "failed") throw result.error;
           if (result.kind === "applied") {
-            await whenReviewEditorMounted(target.documentId, AbortSignal.timeout(5_000));
+            await whenEditorMounted(target.documentId, AbortSignal.timeout(5_000));
             return;
           }
           if (result.kind !== "superseded" || sequence.current !== launch) return;

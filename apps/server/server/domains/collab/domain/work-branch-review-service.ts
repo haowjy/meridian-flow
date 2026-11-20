@@ -1,19 +1,9 @@
-/** Work draft listing, idempotent Discard, and the frozen Apply command. */
+/** A Work's review list, its counts and the commands it is read under. */
 import type { BranchId, DraftOwner } from "@meridian/contracts";
-import type {
-  DiscardCommandResult,
-  ThreadDraftListItem,
-  TreeSaw,
-} from "@meridian/contracts/branches";
+import type { ThreadDraftListItem, TreeSaw } from "@meridian/contracts/branches";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import {
-  type CommandEnvelope,
-  CommandExistsError,
-  replay,
-} from "../../../shared/commands/command-record.js";
-import type { CollabBranches, CommandOutcome, ModelDraftRow } from "../contracts.js";
-import type { BranchDiscard, DiscardResult } from "./branch-discard.js";
+import type { CollabBranches, ModelDraftRow } from "../contracts.js";
 import type { BranchReviewIdentity } from "./branch-review-identity.js";
 import type { BranchReviewItems, DraftReviewItem } from "./branch-review-items.js";
 import type { Branches } from "./branches.js";
@@ -24,14 +14,9 @@ export function createWorkBranchReviewService(input: {
   branches: Pick<Branches, "activeForOwner" | "ownerOf">;
   reviewItems: BranchReviewItems;
   identity: BranchReviewIdentity;
-  discard: BranchDiscard;
   commands: DocumentCommands;
-  apply: CollabBranches["draftReview"]["apply"];
-  unapplyClick: CollabBranches["draftReview"]["unapplyClick"];
-  undoDiscard: CollabBranches["draftReview"]["undoDiscard"];
   listDiscards: CollabBranches["draftReview"]["listDiscards"];
   purgeDiscards: CollabBranches["draftReview"]["purgeDiscards"];
-  commandDocuments: CollabBranches["draftReview"]["commandDocuments"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   folderIds(branchId: BranchId): Promise<{ id: string }[]>;
   /** The cut the branch's rows are read at: call it before reading them. */
@@ -46,51 +31,10 @@ export function createWorkBranchReviewService(input: {
     return { branchId: branch.id, items: await input.reviewItems.list(branch.id) };
   }
 
-  async function known(envelope: CommandEnvelope): Promise<CommandOutcome | null> {
-    const stored = replay<DiscardCommandResult>(
-      await input.commands.lookup(envelope),
-      envelope.commandId,
-    );
-    if (!stored) return null;
-    return stored.status === "conflict" ? { kind: "conflict" } : { kind: "result", result: stored };
-  }
-
-  /**
-   * The command's answer once the call has finished: what it stored if it stored anything
-   * (a Discard, or its stored refusal), else the result this call computed. Every pre-effect
-   * refusal comes through here, so an id that committed meanwhile answers its own outcome.
-   */
-  async function answer(
-    envelope: CommandEnvelope,
-    computed: DiscardCommandResult,
-  ): Promise<CommandOutcome> {
-    return (await known(envelope)) ?? { kind: "result", result: computed };
-  }
-
-  /** Runs an effect that may lose the id to another request. */
-  async function effect(
-    envelope: CommandEnvelope,
-    run: () => Promise<DiscardCommandResult>,
-  ): Promise<CommandOutcome> {
-    try {
-      return await answer(envelope, await run());
-    } catch (cause) {
-      if (cause instanceof CommandExistsError) {
-        const winner = await known(envelope);
-        if (winner) return winner;
-      }
-      throw cause;
-    }
-  }
-
   return {
     draftReview: {
-      apply: input.apply,
-      unapplyClick: input.unapplyClick,
-      undoDiscard: input.undoDiscard,
       listDiscards: input.listDiscards,
       purgeDiscards: input.purgeDiscards,
-      commandDocuments: input.commandDocuments,
       async list(command) {
         const { items } = await ownerItems(command.owner);
         return items.map(
@@ -126,34 +70,9 @@ export function createWorkBranchReviewService(input: {
       resolveItemByDocument: (command) => input.identity.resolveReviewItemByDocument(command),
       lookupCommand: (envelope) => input.commands.lookup(envelope),
       awaitCommand: (envelope) => input.commands.await(envelope),
-      async discardBranch(command) {
-        const { envelope, branchId, selection } = command;
-        const first = await known(envelope);
-        if (first) return first;
-        const settled = (ended: DiscardResult): DiscardCommandResult => ({
-          status: "discarded",
-          branchId,
-          closed: [...ended.closed],
-          whole: selection.kind === "whole" || selection.items.every((item) => item.text === "all"),
-          ...notesOf(ended),
-        });
-        return effect(envelope, async () =>
-          settled(
-            await input.discard.discardItems({
-              branchId,
-              selection,
-              userId: command.userId,
-              command: { envelope, result: settled },
-            }),
-          ),
-        );
-      },
     },
   };
 }
-
-const notesOf = (ended: DiscardResult) =>
-  ended.settled.length > 0 ? { settled: ended.settled } : {};
 
 export function reviewContextLocation(uri: string | null): ThreadDraftListItem["contextLocation"] {
   if (!uri) return null;

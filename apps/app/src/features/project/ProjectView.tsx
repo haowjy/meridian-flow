@@ -20,18 +20,16 @@ import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { patchAccountRecentsFromDocuments } from "@/client/recents";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
-import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
 import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
-import {
-  useWorkBranchCommands,
-  type WorkBranchCommands,
-} from "@/features/draft-review/useWorkBranchCommands";
 import { ImportProvider } from "@/features/import/ImportProvider";
+import {
+  usePressCommands,
+  type WorkBranchCommands,
+} from "@/features/suggestion-review/usePressCommands";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import {
   useAccountId,
   useDraftCommandOwner,
-  useOptionalDraftOnlyPresentations,
   useOptionalPresentedDocuments,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
@@ -119,7 +117,6 @@ export function ProjectView(props: ProjectViewProps) {
   const projectTitle = cachedProject?.title ?? props.project.title;
   const renameProject = useRenameProject(cachedProject ?? props.project);
   const accountId = useAccountId();
-  const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   useProjectWake(props.projectId);
   const presented = useOptionalPresentedDocuments();
   useEffect(() => {
@@ -128,22 +125,14 @@ export function ProjectView(props: ProjectViewProps) {
         accountId,
         props.projectId,
         (presented?.documents(props.projectId) ?? []).flatMap((tab) => {
-          const address = recentAddressFromTab(
-            tab,
-            draftOnlyDocuments?.isDraftOnly(props.projectId, tab.documentId) ?? false,
-          );
+          const address = recentAddressFromTab(tab);
           return address ? [{ documentId: tab.documentId, name: tab.name, address }] : [];
         }),
       );
     };
     patchRecents();
-    const stopPresented = presented?.subscribe(patchRecents);
-    const stopDraftOnly = draftOnlyDocuments?.subscribe(patchRecents);
-    return () => {
-      stopPresented?.();
-      stopDraftOnly?.();
-    };
-  }, [accountId, draftOnlyDocuments, presented, props.projectId]);
+    return presented?.subscribe(patchRecents);
+  }, [accountId, presented, props.projectId]);
   const worksQuery = useWorks(props.projectId);
   const { works, noWork } = worksQuery;
   const editorScope = useWorkScopeState(props.projectId);
@@ -365,7 +354,7 @@ function HydratedReviewControllers({
   const chatWork = chatThread?.workId
     ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
     : null;
-  const chatCommands = useWorkBranchCommands({
+  const chatCommands = usePressCommands({
     projectId: props.projectId,
     work: chatWork,
     ownerKey: chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null),
@@ -402,7 +391,6 @@ function HydratedReviewControllers({
   return (
     <ChatThreadNavigationProvider onOpenThread={openThread}>
       <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
-        <DraftOnlySettlement projectId={props.projectId} />
         <LiveTabsProvider projectId={props.projectId}>
           <TreeVersionProvider projectId={props.projectId} chatThreadId={chatThreadId}>
             {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}

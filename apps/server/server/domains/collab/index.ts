@@ -14,7 +14,6 @@ export {
   remapCopiedBlocks,
 } from "./domain/copied-blocks.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
-export { DraftPrefixMissingError, DraftStaleUpdateError } from "./domain/draft-store.js";
 export {
   type BindHolder,
   type BindMarkdownInput,

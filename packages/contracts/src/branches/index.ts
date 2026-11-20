@@ -2,5 +2,4 @@
 
 export * from "./owner.js";
 export * from "./press.js";
-export * from "./provenance.js";
 export * from "./review.js";

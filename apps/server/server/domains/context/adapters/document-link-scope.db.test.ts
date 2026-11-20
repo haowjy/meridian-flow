@@ -381,6 +381,7 @@ if (!RUN) {
           },
         },
         viewFor: liveViewFor,
+        work: null,
       });
       await scopes.within({ projectId: "test-project" }, async () => {
         await port.prepare({ documentId: HOLDER, docs: [] });

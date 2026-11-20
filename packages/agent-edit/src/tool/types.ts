@@ -96,10 +96,6 @@ export interface WriteContext {
   tool_use_id?: string;
   /** The response the write is authored in. */
   responseIdentity?: ResponseAuthorship;
-  /** Host-routed: the Work draft a draft call reads and saves (`DocumentAccess.workDraftId`). */
-  workDraftId?: string;
-  /** Version requested at the routing boundary, independent of the view used to render links. */
-  documentVersion?: "live" | "draft";
   /** The writing thread's top chat handle: bare `uploads://` links written fresh are stored qualified to it. */
   uploadsChat?: string;
   /** A read also returns the selected blocks as nodes (`WriteOutcome.nodes`), for a copy. */

@@ -42,4 +42,3 @@ the cover, before paint, told how far the reader scrolled it.
 The real page and copy are inert during a hold; the copy is unannounced, excludes
 inactive scopes and strips ids. Editor scroll offsets survive. Page focus moves
 to the host's status line, then returns to the frame; outside focus stays put.
-The review room's paint receipt separately governs input eligibility.

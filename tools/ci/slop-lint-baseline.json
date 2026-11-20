@@ -158,11 +158,6 @@
         "count": 2
       },
       {
-        "path": "apps/app/src/features/draft-review/apply-click-queue.ts",
-        "line": "} catch {",
-        "count": 4
-      },
-      {
         "path": "apps/app/src/features/editor/clipboard.ts",
         "line": "} catch {",
         "count": 1
@@ -422,11 +417,6 @@
       {
         "path": "apps/app/src/client/chat-submissions/deleted-chat.test.ts",
         "line": "await new Promise((resolve) => setTimeout(resolve, 1));",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/collab/adapters/draft-journal-reads.db.test.ts",
-        "line": "setTimeout(() => resolve(\"waiting for a connection\"), 1500),",
         "count": 1
       },
       {

@@ -1,6 +1,6 @@
 /**
- * List the project's Discard entries in Trash: each Discard of whole drafts that still has text a
- * Restore hasn't ended or tree records no restore has taken.
+ * List the project's Discard entries in Trash: each press Discard that still has text or tree
+ * records its Undo hasn't taken back.
  */
 import type { ListDiscardEntriesResponse } from "@meridian/contracts/branches";
 import { defineEventHandler, getRouterParam } from "nitro/h3";
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event): Promise<ListDiscardEntriesRespo
     entries: listed.flatMap((entry, at) => {
       const taken = halves.flatMap((half) => (half[at] && !half[at].restored ? [half[at]] : []));
       const records = taken.reduce((sum, half) => sum + half.records.length, 0);
-      if (entry.drafts.length === 0 && records === 0) return [];
+      if (entry.documents.length === 0 && records === 0) return [];
       const nodes = new Set(taken.flatMap((half) => half.records.map((record) => record.node)));
       return [
         {

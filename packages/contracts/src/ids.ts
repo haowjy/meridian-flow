@@ -10,19 +10,8 @@ export type DocumentId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
 /** A `branches` row: one Work branch, the unit Discard all closes. */
 export type BranchId = string;
-/** One document's pending `work_draft` version inside a branch. */
-export type DraftId = string;
 /** `${branchId}:${documentId}`: the client's one review identity for a document of a branch. */
 export type DraftItemKey = string;
-
-/**
- * The draft a document's `create` in a Work makes, named by the document: the client that wrote
- * the create opens its room before the server has admitted it, as a live document's room is
- * named by its id. A node is created once, so its create makes at most one such draft.
- */
-export function createdDraftId(documentId: DocumentId): DraftId {
-  return `draft_${documentId}`;
-}
 
 /** The one builder of a draft item key, for text and binary items alike. */
 export function draftItemKey(branchId: BranchId, documentId: DocumentId): DraftItemKey {

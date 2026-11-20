@@ -118,11 +118,10 @@ export function createDrizzleTreeListStore(deps: {
   db: Database;
   journal: CollabJournal;
   /**
-   * Makes the Yjs authority and the Work text draft of each drafted document in the admitting
-   * transaction, under the list's key, so the document opens on Draft as soon as its create is
-   * admitted. Collab's (`draftCreatedDocuments`); a composition without collab makes rows only.
+   * Makes the Live Yjs authority of each drafted document in the admitting transaction, under
+   * the list's key, so the document opens in its Work as soon as its create is admitted. Collab's (`seedWorkCreates`); a composition without collab makes rows only.
    */
-  draftCreatedDocuments?: (created: readonly DraftedDocument[]) => Promise<void>;
+  seedWorkCreates?: (created: readonly DraftedDocument[]) => Promise<void>;
   /**
    * A Work's or lineage's review count follows its branch's rows, which a tree commit may change
    * outside any Work lock: the Works boundary recounts them once the commit lands.
@@ -317,7 +316,7 @@ export function createDrizzleTreeListStore(deps: {
         ? [{ documentId: record.node as DocumentId, branchId: record.draft as BranchId }]
         : [],
     );
-    if (drafted.length > 0) await deps.draftCreatedDocuments?.(drafted);
+    if (drafted.length > 0) await deps.seedWorkCreates?.(drafted);
     const committed = { listId, update, seq };
     const owner = copy.pending;
     runAfterDrizzleCommit(async () => {

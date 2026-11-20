@@ -1,5 +1,5 @@
 /**
- * Suggestion mode: the card's Undo of a turn whose edits are still suggestions rejects them, as a
+ * The card's Undo of a turn whose edits are still suggestions rejects them, as a
  * client of the document would, under the Live edit grant the Live inverse asks the presser for.
  * Text the writer typed beside them is untouched. The documents where the turn left no suggestion
  * (it wrote Live there, or they were applied or discarded) go to the Live inverse. The card offers

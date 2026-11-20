@@ -5,14 +5,9 @@
  * of a branch goes through `branchOwnerSql`, so a lineage branch (null `origin_work_id`) can't
  * be mistaken for a purged Work's.
  */
-import {
-  type BranchId,
-  type DraftOwner,
-  type DraftOwnerKey,
-  draftOwnerKey,
-} from "@meridian/contracts";
+import { type DraftOwner, type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
-import { branches, documentDrafts, threads } from "@meridian/database/schema";
+import { branches, threads } from "@meridian/database/schema";
 import { and, eq, inArray, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
@@ -203,30 +198,4 @@ export class LineageDraftsUnavailableError extends Error {
     super("Chat drafts are unavailable because no chat in their lineage is live");
     this.name = "LineageDraftsUnavailableError";
   }
-}
-
-export type BranchDraftRef = {
-  id: string;
-  branchId: BranchId;
-  workId: string | null;
-  rootThreadId: string | null;
-};
-
-/** The named drafts that exist, each with its branch and that branch's owner columns. */
-export async function branchDraftRefs(
-  db: DrizzleDb,
-  draftIds: readonly string[],
-): Promise<BranchDraftRef[]> {
-  if (draftIds.length === 0) return [];
-  const rows = await currentDrizzleDb(db)
-    .select({
-      id: documentDrafts.id,
-      branchId: documentDrafts.branchId,
-      workId: branches.originWorkId,
-      rootThreadId: branches.originRootThreadId,
-    })
-    .from(documentDrafts)
-    .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
-    .where(inArray(documentDrafts.id, [...new Set(draftIds)]));
-  return rows;
 }

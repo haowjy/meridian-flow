@@ -10,10 +10,6 @@ export type CommandBody<T extends object = object> = T & { commandId: CommandId 
 
 /** Which kind of command a `commandId` was recorded for. */
 export const COMMAND_KINDS = [
-  "apply",
-  "unapply",
-  "discard",
-  "undo_discard",
   "model_edit",
   "reverse_turn",
   "copy",

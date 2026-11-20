@@ -54,7 +54,6 @@ import {
   identityCommitMayNavigate,
   identityCommitRoute,
 } from "./use-identity-commit";
-import { useIsDraftOnly } from "./use-is-draft-only";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
 
 export type DocumentPlace = MountedPlace;
@@ -116,13 +115,11 @@ export function DocumentHost(props: DocumentHostProps) {
  */
 function useCurrentDescriptor(projectId: string, tab: OpenDocument, main: boolean): OpenDocument {
   const trees = useProjectTrees(projectId);
-  const isDraftOnly = useIsDraftOnly(projectId);
   if (main) return tab;
   const found = trees.find(tab.documentId);
   const placed = placeTab(
     found && { scheme: found.source.scheme, file: found.file, owner: ownerOfSource(found.source) },
     trees.isComplete,
-    isDraftOnly(tab.documentId),
   );
   return placed.kind === "projected" ? placed.document : tab;
 }
@@ -158,7 +155,7 @@ function MainDocumentBinding({
       return;
     }
     if (recorded.current === document.documentId) return;
-    const opening = recentOpening(projectId, document, new Date().toISOString(), false);
+    const opening = recentOpening(projectId, document, new Date().toISOString());
     if (!opening) return;
     recorded.current = document.documentId;
     record(opening);

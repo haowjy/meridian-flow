@@ -40,9 +40,6 @@ import { DIRECT_WRITE_ORIGIN, endUndoStep } from "../../editor-history";
 import { type Paint, paintAll, repaint, SUGGESTION_CHANGE_ATTR } from "./suggestion-paint";
 import "./suggestion-mode.css";
 
-/** The marks always exist (the schema is shared); only the behaviour is behind the flag. */
-export const suggestionModeEnabled = import.meta.env.VITE_FLOW_SUGGESTIONS === "1";
-
 /**
  * What the editor shows (`Paint`), who writes this tab's suggestions in it, whether changes are
  * marked at all (off: the view reads as if applied), and its paint.
@@ -271,7 +268,7 @@ export const SuggestionModeExtension = Extension.create({
 
   addKeyboardShortcuts() {
     return {
-      "Mod-Alt-m": () => suggestionModeEnabled && this.editor.commands.addComment(),
+      "Mod-Alt-m": () => this.editor.commands.addComment(),
     };
   },
 
@@ -291,7 +288,6 @@ export const SuggestionModeExtension = Extension.create({
   },
 
   addProseMirrorPlugins() {
-    if (!suggestionModeEnabled) return [];
     return [
       new Plugin<ModeState>({
         key: suggestionModeKey,

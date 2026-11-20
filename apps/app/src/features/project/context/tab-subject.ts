@@ -11,9 +11,8 @@ import type { ReferenceSubject } from "./entry-drag/reference-source";
 export function tabSubject(
   tab: OpenDocument,
   review: { reviewing: boolean; view: CopyContextEntryView | null },
-  draftOnly: boolean,
 ): ReferenceSubject | null {
-  if (tab.kind === "new" || draftOnly) return null;
+  if (tab.kind === "new") return null;
   if (review.reviewing && !review.view) return null;
   return {
     ref: { kind: "file", id: tab.documentId },
