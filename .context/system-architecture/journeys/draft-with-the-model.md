@@ -1,8 +1,8 @@
 # Draft with the model
 
 A writer asks the model for a chapter, watches it work, then reviews what it drafted and applies it
-or throws it away. The chat is in Draft mode: the model writes into a draft, a pending version of
-the document, and nothing reaches the live document until the writer applies it. In Auto-apply
+or throws it away. The chat is in Draft mode: the model's writes land in the live document as the Work's
+suggestions, marked and not yet part of the text, until the writer applies them. In Auto-apply
 mode the writes go straight to live. Either way the writer can undo them.
 
 ## Pick the Work
@@ -48,7 +48,7 @@ Does: opens the Changes tab in the sidebar, which appears in the strip while the
 Sees: the Work's drafted documents with a pending count, and "Apply all" and "Discard all", with the same two on each row. A folder the Work changes heads the documents under it ("New", "Was Arc 2", "Moving into Book One"), with × and ✓ for all of them; a new document's row says where it lands ("New in Manuscript/Arc 3"); a change that cannot land says why in a red line, and still does after Apply. Under None it lists the drafts of the open chat only. When the picked Work has nothing to review and another Work does, the empty list names that Work and its count, and picking it switches the sidebar to it.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab)
-- Machines: [Draft and branch](../../../apps/server/server/domains/collab/.context/state-machines.md), [Draft review](../../../apps/app/src/features/draft-review/.context/state-machines.md)
+- Machines: [Branch](../../../apps/server/server/domains/collab/.context/state-machines.md), [Draft review](../../../apps/app/src/features/draft-review/.context/state-machines.md)
 
 ## See the Work's tree
 
@@ -57,7 +57,7 @@ Does: picks the Work's draft in the sidebar's version chip beside Changes, which
 Sees: every sidebar source turns to the Work's tree on a grey review ground, at once (the browser replays it from its copy of the list), and the open page switches to its draft if it has one. A click opens a document on its draft; a rename, move or new document goes into the Work's draft. The chip now reads "Draft"; picking Live in it brings back live, and the page with it. On Live, a jade dot marks each row the Work changes, and a page the Work drafts opens live with its chip neutral and a jade dot; the chip's menu lists the draft. Picking a version in the chip, or opening a change from Changes, moves the toggle with it. Ctrl+Z in the sidebar takes back the writer's latest tree change in the source on screen, made in the view on screen; a change someone has changed since is skipped with a notice.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab)
-- Machines: [Draft and branch](../../../apps/server/server/domains/collab/.context/state-machines.md), [Draft review](../../../apps/app/src/features/draft-review/.context/state-machines.md)
+- Machines: [Branch](../../../apps/server/server/domains/collab/.context/state-machines.md), [Draft review](../../../apps/app/src/features/draft-review/.context/state-machines.md)
 
 - Map: [project](../app.md#project), [core-tree-list](../app-core.md#core-tree-list)
 - Machines: [Sidebar version](../../../apps/app/src/features/project/.context/tree-version-state-machine.md)
@@ -66,19 +66,19 @@ Sees: every sidebar source turns to the Work's tree on a grey review ground, at 
 
 Does: opens a drafted document.
 
-Sees: a Draft chip in the toolbar and a line of review controls above the page. "Show changes" turns the diff on and off, and the Live menu lists every draft of the page.
+Sees: a Draft chip in the toolbar and a line of review controls above the page. The Work's suggestions are marked in the text: insertions green, deletions red. "Show changes" turns the marks on and off, and the Live menu lists every Work with changes to the page. Typing there is the writer's own suggestion in that Work.
 
 - Map: [editor](../app-documents.md#editor), [draft-review](../app-documents.md#draft-review), [file-policy](../server-documents.md#file-policy)
-- Machines: [Draft room read](../../../apps/app/src/core/editor/.context/state-machines.md)
+- Machines: [Document session status](../../../apps/app/src/core/editor/.context/state-machines.md)
 
 ## Apply or discard
 
 Does: presses Apply (the filled green button) or Discard (quiet text).
 
-Sees: after Apply, the live page has the model's text. After Discard, the draft is gone and the live page is unchanged; discarding a text draft does not ask first, and a notice reads "Draft of … discarded." with Undo.
+Sees: after Apply, the suggestions become the page's text. After Discard, they are gone and the page reads as it did; Discard does not ask first, and a notice reads "Draft of … discarded." with Undo. A Discard of a whole document, folder or Work is also listed in Trash, where Restore brings it back.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab), [agent-edit](../code.md#agent-edit)
-- Machines: [Apply click command](../../../apps/app/src/features/draft-review/.context/state-machines.md)
+- Machines: [An Apply's Undo](../../../apps/app/src/features/draft-review/.context/state-machines.md), [Press text effect](../../../apps/server/server/domains/collab/.context/state-machines.md)
 
 ## Undo
 
@@ -87,4 +87,4 @@ Does: presses Undo on the reply's receipt, the card that lists every document th
 Sees: what the reply wrote is reversed, wherever it now is. The receipt stays.
 
 - Map: [chat](../app-conversation.md#chat), [collab](../server-documents.md#collab), [agent-edit](../code.md#agent-edit)
-- Machines: [Draft write journal row](../../../apps/server/server/domains/collab/.context/state-machines.md)
+- Machines: [Press text effect](../../../apps/server/server/domains/collab/.context/state-machines.md)

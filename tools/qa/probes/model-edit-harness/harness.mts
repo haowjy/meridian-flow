@@ -12,9 +12,8 @@ import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
-import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import { modelEditIds } from "../../../../apps/server/server/shared/model-edit-ids.ts";
-import { createScratchDatabase, openHarness } from "../drafts-lock-free/harness.mts";
+import { createScratchDatabase, openHarness } from "./scratch.mts";
 
 export { createScratchDatabase, openHarness };
 
@@ -211,7 +210,7 @@ export async function seedWorkWithChats(
 }
 
 /**
- * The drafts harness over `url`, shaped like a project the app made: the source is named
+ * The scratch harness over `url`, shaped like a project the app made: the source is named
  * `manuscript` so a model's `manuscript://` paths resolve, and the project has its "no Work" row
  * (a model's `undo` reads it).
  */
@@ -330,25 +329,6 @@ export async function state(h: Harness, threadId: string, documentId: string) {
     ).map((edit) => edit.call),
     commands: await commandStatuses(h, threadId),
   };
-}
-
-/** A writer's replica of the draft as committed now; the caller destroys it. */
-export async function draftDoc(h: Harness, draftId: string) {
-  const read = await h.store.readDraftAt(draftId);
-  if (!read) throw new Error(`Draft ${draftId} is missing`);
-  return materializeDraftRead(read);
-}
-
-/** The document's Work drafts as stored, oldest first: each one's status and paragraphs. */
-export async function drafts(h: Harness, documentId: string) {
-  const found = await h.raw<{ id: string }[]>`
-    select id from document_drafts
-    where document_id=${documentId} and kind='work_draft' order by created_at, id`;
-  return Promise.all(
-    found.map(async (draft) => ({
-      doc: paragraphs((await h.readDraft(draft.id)).text),
-    })),
-  );
 }
 
 /** The probe's source's documents whose name starts with `prefix`: by name, and whether each is in Trash. */

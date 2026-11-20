@@ -1,6 +1,6 @@
 # App: documents
 
-The editing screens. A document opens from the workspace in main's tab row, or beside a chat (1); the editor binds a document session from the core (2); the core connects the Yjs socket to the server (3) and the server's updates, the writer's and the model's, come back through it (4). A draft is shown through `draft-review`, which opens the draft's room (5) and derives Changes from the draft's text. Back to the [app](app.md).
+The editing screens. A document opens from the workspace in main's tab row, or beside a chat (1); the editor binds a document session from the core (2); the core connects the Yjs socket to the server (3) and the server's updates, the writer's and the model's, come back through it (4). A Work's draft is suggestion marks in that same Live document: `draft-review` reads its Changes from the editor's session (5). Back to the [app](app.md).
 
 ```mermaid
 flowchart LR
@@ -15,13 +15,13 @@ flowchart LR
   project -->|"1. opens a document in main or beside a chat"| editor
   editor -->|"2. binds the document session"| core
   core -->|"3. connects the Yjs socket"| server
-  server -->|"4. sends live and draft updates"| core
-  draft-review -->|"5. opens the draft room"| core
+  server -->|"4. sends the document's updates"| core
+  draft-review -->|"5. reads the Work's suggestions from the session"| core
   editor -->|"shows review controls from"| draft-review
   editor -->|"follows links with"| links
   conversation -->|"shows Drafted-documents cards from"| draft-review
   editor -->|"renders with"| shared
-  note1["draft-review is where the model's edits become something the writer decides on: Changes it derives from the draft, then Apply, Discard or Undo."]:::note
+  note1["draft-review is where the model's edits become something the writer decides on: the Work's suggestions as Changes, then Apply, Discard or Undo."]:::note
   note1 -.- draft-review
 ```
 
@@ -38,11 +38,11 @@ Binds the document session, chooses live or review presentation and mounts the t
 
 ## draft-review
 
-Review of a draft: Changes, Apply, Discard, Undo.
+Review of a Work's draft: Changes, Apply, Discard, Undo.
 
-Review is derived from the draft's text, not from stored change records. In suggestion mode the
-same surfaces read the Work's suggestions in the Live editor and press Apply or Discard on the
-server (`suggestion-review`).
+A change is a run of the Work's suggestion marks in the Live document, read from the host's
+editor (`suggestion-review`). Apply or Discard of one change is an editor transaction; of a
+document, folder or Work it is a press on the server.
 
 - Kind: feature
 - Paths: `apps/app/src/features/draft-review`, `apps/app/src/features/suggestion-review`

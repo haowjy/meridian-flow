@@ -1,8 +1,7 @@
 # @meridian/suggestions
 
 A Work's draft of a document, stored as that Work's suggestion marks inside the one Live
-document. Behind `FLOW_SUGGESTIONS` (server) and `VITE_FLOW_SUGGESTIONS` (app) until the draft
-documents are deleted; with both off nothing reads these marks.
+document. This is the only draft there is.
 
 - Pure ProseMirror: no Yjs, no workspace imports. Code that reads or writes a Y.Doc's suggestions
   goes through agent-edit: `suggesting-model.ts` (the model's view) and `stored-suggestions.ts`

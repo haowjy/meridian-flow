@@ -61,43 +61,6 @@ stateDiagram-v2
   [thread-client](../../../../../../packages/thread-client/.context/state-machines.md); the
   document transport is the publisher of `reset` and `unauthorized`.
 
-## Draft room read
-
-Whether a draft's room can be shown and acted on (`DraftRoomState` in `draft-room-read.ts`).
-The room is the Yjs room `draft:<draftId>`, which review opens instead of the live document's.
-
-```mermaid
-stateDiagram-v2
-  [*] --> rebuilding
-  rebuilding --> usable: the room is rebuilt and bound
-  rebuilding --> error: the rebuild threw
-  usable --> fenced: this tab's document schema no longer fits the room (also asks the app to reload)
-  usable --> fenced: the server refused its updates three times in a row, until a new session replaces it
-  usable --> fenced: the server ended the draft (its Work or document was purged; 4205, or its answer first)
-  usable --> usable: admitted read-only holding the writer's unsent edits; a new session replaces it
-  usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
-  fenced --> usable: the session reports usable again
-  error --> rebuilding: retry
-  unavailable --> rebuilding: retry
-```
-
-- **Commands act only on `usable`** (`usable()`). The editor still shows a `fenced` room,
-  read-only with its notice: a schema fence, or "This document is in Trash" with Restore. A
-  command on it would write what the server has refused.
-- **A closed draft stays closed.** The pool keeps a retained closed room's session
-  (`draftClosed`; `endClosed` when the server's answer came before the socket's close) and
-  refuses to open its id again: a draft ends only when it is deleted.
-- **An access change is not a state.** A 4409 reconnects the same session, which stays
-  `usable`; the server's new scope only makes it read-only or writable again. A new session
-  replaces the room when it holds the writer's edits the server will never take: a read
-  admission's handshake shows some (`usable → usable`), or the server refused its updates
-  (`fenced`, then `usable` on the new session). The pool's `replace` opens a session on the next copy
-  incarnation (read-only from its first frame), and `readDraftRoom` binds it on the registry's
-  replacement notice (never on the old session's `destroyed`, which a removed room also sends).
-- **Retry from `unavailable` works only when the room can be opened again.** A room the pool
-  holds closed stays unavailable.
-- A rebuild result is used only if it is still the newest attempt and the read is not disposed.
-
 ## Account session runtime
 
 Whether the account's document sessions take new work (`AccountDocumentSessionRuntime` in
@@ -111,7 +74,7 @@ stateDiagram-v2
   closing --> closed: providers and sessions drained
 ```
 
-- **`closing` refuses new work and lets go of what is held.** `release` and `releaseDraftRooms` still run, so a view unmounting during the close does not leak a hold.
+- **`closing` refuses new work and lets go of what is held.** `release` still runs, so a view unmounting during the close does not leak a hold.
 - **Closing the runtime does not delete local copies.** A copy goes at the node's purge or when
   access is lost (`local-document-copies.ts`); closing ends the sessions and the copies stay for
   the next sign-in of the same account. The decision also names sign-out as deleting them; the

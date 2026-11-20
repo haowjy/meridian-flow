@@ -22,12 +22,6 @@ head row `FOR UPDATE`, before the command reads anything, so a keystroke cannot 
 command's read and its rows, below the command's own ids and outside its recorded cut. Typing
 holds only the row; commands hold both, always the key first.
 
-A draft room's frame is judged and stored the same way (`admitDraftWriterUpdate`, then
-`DraftStore.appendWriterRow`): the draft row's revision bump, which carries the Work-is-active
-predicate and holds the row to the commit, and one insert. The draft's committed replica is not
-touched; commands catch it up from the tail. A frame that finds the draft closed or its Work
-inactive closes the socket `4409`; any other failure closes `1013`.
-
 Access is decided when the socket opens and ends when the gateway closes it: a frame takes
 no edit grant and locks no Work. Document sockets register under their Work and lineage owners,
 their project and their document (`accessKeys` in `yjs-ws-handler.ts`), so an archive, a project's

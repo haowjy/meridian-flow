@@ -64,10 +64,9 @@ index rather than a second document list.
 
 ## Review and paint continuity
 
-Review projects the mounted draft text against its server-owned `review_base`, the live text used for comparison. Removed base
-text is red and struck; inserted draft text is green, including writer edits.
-Attribution supplies bylines without partitioning changes. Removed-text widgets
-are not manuscript content. Desktop review is editable; phone review is
+Review paints the Work's suggestions in the Live editor (`SuggestionModeExtension`): a
+deletion is red and struck, an insertion green, the writer's own typing in the Work's view
+included. Attribution supplies bylines without partitioning changes. Desktop review is editable; phone review is
 read-only. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 

@@ -36,8 +36,8 @@ a Work (`origin_work_id`) or a conversation lineage (`origin_root_thread_id`,
 no foreign key), enforced by `branches_one_owner`.
 `branches.pending_document_count` and `pending_folder_count` are its own counts;
 `works` carries the sums over its active branches.
-`document_drafts` stores document versions, with writes in
-`draft_write_journal`; `branch_tree_changes` belongs to the whole branch. `commands` holds one row
+A Work's text draft is suggestion marks in the Live document; `press_text_effects` keeps each
+press's text change for its Undo. `branch_tree_changes` belongs to the whole branch. `commands` holds one row
 per command sent as a request, of any kind (documents, Work, project), inserted first in the
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
 its project and chat, so a resend of a create cannot create twice.

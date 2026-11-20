@@ -1,15 +1,7 @@
 # collab FUTURE
 
-These are deferred improvements, not current contracts. Preserve the existing
-draft row ordering and live authority fences while pursuing them.
-
-## Intent-aware manifest command
-
-Unify manifest reconciliation and mutation behind one intent-aware command in
-`composition.ts` and `adapters/drizzle-drafts.ts`. The command must
-distinguish a legacy raw row from a not-yet-recorded draft create without
-using caller ordering as domain semantics. `domain/ports/work-branch-pending-store.ts`
-remains the independent pending-review authority.
+These are deferred improvements, not current contracts. Preserve the live authority fences
+while pursuing them.
 
 ## Restoring an earlier version
 
@@ -33,9 +25,6 @@ deletes those rows, and undo, revert and Apply need the bytes afterwards. Droppi
 the column first needs a retention floor for every receipted origin, one resolver
 for all its readers, and a failure path for a missing origin.
 
-Folded `draft_write_journal` rows can't be pruned either:
-`listConcurrentJournalRows` feeds attribution and reads from `after: 0`.
-
 ## Large-history recovery
 
 Measure idle recovery query plans with settled history before adding a partial
@@ -53,7 +42,7 @@ which persistence or lock boundary dominates.
 `domain/provenance.ts` now indexes incoming structs for both admission walks
 (#975). Measure ordinary typing with the memoized general walk alone; if it
 is sufficient, delete `isPlainProseFastPath` and its duplicate root/anchor and
-delete checks. Preserve committed-prefix validation under the draft row hold.
+delete checks.
 
 ## Turn tree lines: a move out and back reads as a position change
 
