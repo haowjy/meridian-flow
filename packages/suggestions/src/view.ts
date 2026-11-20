@@ -253,7 +253,7 @@ export function visibleSlice(slice: Slice, parent: Node, view: View): Slice {
     fragment.forEach((node) => {
       if (node.isInline) {
         if (visible(kindOf(node.marks, parent, view))) nodes.push(node);
-      } else if (blockKind(node, view) !== "hidden") {
+      } else if (blockKind(node, view) !== "hidden" && !removedIn(node, view)) {
         nodes.push(node.copy(keep(node.content, node)));
       }
     });

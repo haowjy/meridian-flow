@@ -99,7 +99,7 @@ describe("durable document derivations", () => {
   // The document's prose is one block: these cases are about cuts and certification, not blocks.
   const proseBlocks: ReadCut = async (_id, doc) => {
     if (fail) throw new Error("deriver unavailable");
-    return { blocks: [proseBlock(doc.getText("prose").toString())], pendingWorks: [] };
+    return { blocks: [proseBlock(doc.getText("prose").toString())], links: [], pendingWorks: [] };
   };
   const service = createDocumentDerivationService({
     deferred: () => {},

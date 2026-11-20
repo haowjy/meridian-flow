@@ -15,10 +15,11 @@
  * The searchable projection is the delicate part. It must find exactly what the
  * server's search would find, and nothing the writer did not write: text either
  * side of a line break or an image is not one word, and case folding is neither
- * length-preserving nor context-free in every language. Text the editor's view
- * hides (another Work's suggestion) is not there.
+ * length-preserving nor context-free in every language. Only the text the view
+ * reads is there (`@meridian/suggestions`): not another Work's insertion, not
+ * the view's own deletion, not a block it removes.
  */
-import { blockKind, kindOf, type View } from "@meridian/suggestions";
+import { blockKind, kindOf, removedIn, type View, visible } from "@meridian/suggestions";
 import type { Node as PMNode } from "@tiptap/pm/model";
 
 export type TextRange = { from: number; to: number };
@@ -32,16 +33,18 @@ export type PassageResolution =
   | { kind: "stale" };
 
 /**
- * Resolve a searched passage against live text, as `view` shows it. `block` is
+ * Resolve a searched passage against live text, as `view` reads it. `hashed` is
  * the span the block hash resolved to, or null when the hash no longer names a
  * live block.
  */
 export function resolvePassage(
   doc: PMNode,
-  block: TextRange | null,
+  hashed: TextRange | null,
   term: string,
   view: View,
 ): PassageResolution {
+  // A block the view does not read is as good as gone.
+  const block = hashed && shown(doc, hashed, view) ? hashed : null;
   if (block) {
     const inside = findTerm(doc, term, block, view);
     if (inside.length > 0) return { kind: "block", ranges: inside };
@@ -53,6 +56,16 @@ export function resolvePassage(
   // The block is still there but the term isn't found in it: the server's term is the writer's
   // text, which formatting marks can split across nodes. The block is the promise left to keep.
   return block ? { kind: "block", ranges: [block] } : { kind: "stale" };
+}
+
+function shownBlock(node: PMNode, view: View): boolean {
+  return !("sug" in node.attrs) || (blockKind(node, view) !== "hidden" && !removedIn(node, view));
+}
+
+/** Whether the block at `range` is one the view reads. */
+function shown(doc: PMNode, range: TextRange, view: View): boolean {
+  const node = doc.nodeAt(range.from);
+  return !node || shownBlock(node, view);
 }
 
 /**
@@ -68,7 +81,7 @@ function findTerm(doc: PMNode, term: string, range: TextRange, view: View): Text
   if (from >= to) return found;
 
   doc.nodesBetween(from, to, (node, pos) => {
-    if ("sug" in node.attrs && blockKind(node, view) === "hidden") return false;
+    if (!shownBlock(node, view)) return false;
     if (!node.isTextblock) return true;
     for (const run of textRuns(node, pos + 1, view)) {
       let index = run.folded.indexOf(needle);
@@ -116,8 +129,8 @@ type TextRun = { folded: string; source: TextRange[] };
  * than reporting a position we cannot justify. Marks also cut text into
  * several nodes, which is why this walks children instead of `textContent`.
  *
- * **Hidden text is skipped, not a break.** On screen the words either side of
- * another Work's insertion touch, as they do in the text the server searched.
+ * **Text the view does not read is skipped, not a break.** The words either
+ * side of another Work's insertion touch in the text the server searched.
  */
 function textRuns(block: PMNode, start: number, view: View): TextRun[] {
   const runs: TextRun[] = [];
@@ -137,7 +150,7 @@ function textRuns(block: PMNode, start: number, view: View): TextRun[] {
   };
 
   block.forEach((child) => {
-    if (kindOf(child.marks, block, view) === "hidden") {
+    if (!visible(kindOf(child.marks, block, view))) {
       offset += child.nodeSize;
       return;
     }

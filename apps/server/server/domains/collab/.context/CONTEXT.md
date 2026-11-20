@@ -650,7 +650,7 @@ One function, `grepBlocksOf` (`domain/grep-blocks.ts`), projects a doc into bloc
 destination-free markdown and grep text. The derivation hashes and stores it; `readHashlines`
 adds bodies and links. That shared path is why the stored and room-copy texts agree.
 
-`document_hash` is the ordered block `content_hash` list plus the certified link facts;
+`document_hash` is the ordered block `content_hash` list plus the link facts Live reads;
 `updated_at` moves only when it changes, so an extractor bump or a move is not an edit.
 `content_hash` is the hash of the block's destination-free markdown, not of its text, so
 a formatting-only edit still counts as an edit. A block's `text` is the destination-free

@@ -71,17 +71,25 @@ have something to reject.
 ## Readers
 
 Every reader of a document's text reads a view: `viewBlock`, `viewDoc` for a whole document,
-`visibleSlice` for a selection, `kindOf` where positions in the stored document matter. The
-Markdown codecs throw on a suggestion mark, so a reader that skips the view fails loudly. The
+`visibleSlice` for a selection, `kindOf` and `visible` where positions in the stored document
+matter. A view reads `live` and `own-ins` text, and no block that is another Work's or that the
+view removes. The Markdown codecs throw on a suggestion mark, so a reader that skips the view
+fails loudly; a reader of plain text does not, which is where to look for the next miss. The
 server's one way to a view is the runtime's `model` (Live) or `workView.model(work)`; the
-browser's is `suggestionView(state)`, the view the editor shows.
+browser's is `suggestionView(state)`, the view the editor shows, and `shownText(state, from,
+to)` for a range's words with their positions back in the stored document.
 
 | Reader | View | Why |
 |---|---|---|
 | Export, the frozen and Markdown reads, derived blocks and word counts, `ls -v` | Live | What the project is until someone applies |
 | AI `read`, `grep`, copy from a Work | The chat's Work | The AI works on its own draft; `grep` skips stored text for a Work in `pending_works` |
-| Editor word count, search passage landing | The editor's | What the writer is looking at |
-| Trash preview | Live | A deleted document has no Work open on it |
+| Editor word count, search passage landing, link form and dragged link name | The editor's | What the writer is looking at |
+| Trash preview, an untitled document's suggested name | Live | No Work's draft is open on it |
+| The derivation's `document_hash` (behind `updated_at`) | Live | A Work's suggestion is not an edit to the document |
+
+A passage landing resolves in the editor's view, which can differ from the view the search ran
+in: a Work's hit in text the editor shows only in Draft reads as changed until the writer
+switches. A code block takes no marks, so its text holds no suggestion.
 
 Read from the stored document on purpose, because none of them shows text as the document's:
 `document_links` (ahead-ref registration needs every Work's links), the view revision

@@ -9,7 +9,8 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { extractStoredLinks } from "@meridian/markup/stored-links";
+import { walkLinkOccurrences } from "@meridian/markup/links";
+import { extractStoredLinks, type StoredLinkOccurrence } from "@meridian/markup/stored-links";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
@@ -31,8 +32,12 @@ import type {
  */
 export type ReadCut = (documentId: DocumentId, doc: Y.Doc) => Promise<CutRead>;
 
-/** A cut's blocks as Live reads them, and the Works whose views read it otherwise. */
-export type CutRead = { blocks: DerivedBlock[]; pendingWorks: string[] };
+/** A cut as Live reads it (its blocks and links), and the Works whose views read it otherwise. */
+export type CutRead = {
+  blocks: DerivedBlock[];
+  links: StoredLinkOccurrence[];
+  pendingWorks: string[];
+};
 
 export function createDocumentDerivationService(input: {
   store: DocumentDerivationStore;
@@ -125,19 +130,18 @@ export async function deriveDocumentOutputs(
   doc: Y.Doc,
   readCut: ReadCut,
 ): Promise<DocumentDerivationOutputs> {
-  const { blocks, pendingWorks } = await readCut(cut.documentId, doc);
-  const links = !cut.holderUri
-    ? []
-    : deriveDocumentLinkRows({
-        occurrences: extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)),
-        holderUri: cut.holderUri,
-      });
+  const read = await readCut(cut.documentId, doc);
+  const { blocks, pendingWorks } = read;
+  const rows = (occurrences: readonly StoredLinkOccurrence[]) =>
+    cut.holderUri ? deriveDocumentLinkRows({ occurrences, holderUri: cut.holderUri }) : [];
+  // Every Work's links, for ahead registration; only Live's say whether the document was edited.
+  const links = rows(extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)));
   return {
     blocks,
     wordCount: blocks.reduce((sum, block) => sum + countWords(block.text), 0),
     pendingWorks,
     documentBytes: blocks.reduce((sum, block) => sum + Buffer.byteLength(block.text, "utf8"), 0),
-    documentHash: documentHash(blocks, links),
+    documentHash: documentHash(blocks, rows(read.links)),
     links,
   };
 }
@@ -156,14 +160,20 @@ export function createCutReader(deps: {
   return async (documentId, doc) => {
     const verbatim = await isCodeDocument(deps.resolveFiletype, documentId);
     const { model, codec } = deps.runtime();
-    const blocks = grepBlocksOf(doc, model, codec.markup, verbatim).map(
-      ({ block, destinationFree, text }) => ({
+    const read = grepBlocksOf(doc, model, codec.markup, verbatim);
+    return {
+      blocks: read.map(({ block, destinationFree, text }) => ({
         id: blockItemIdKey(block.id),
         text,
         contentHash: sha256(destinationFree),
-      }),
-    );
-    return { blocks, pendingWorks: [...storedPendingWorks(doc, model.schema)].sort() };
+      })),
+      links: walkLinkOccurrences(read.map(({ block }) => block.node)).map(({ kind, attrs }) => ({
+        kind,
+        ref: attrs.ref,
+        href: attrs.href,
+      })),
+      pendingWorks: [...storedPendingWorks(doc, model.schema)].sort(),
+    };
   };
 }
 
