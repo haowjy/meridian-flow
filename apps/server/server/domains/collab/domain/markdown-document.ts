@@ -25,7 +25,6 @@ import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
-import { hiddenWorks, viewBlocks } from "@meridian/suggestions";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -243,9 +242,7 @@ export function createMarkdownDocumentEngine(
     links: DocumentLinkScope,
     codec: MarkupCodec = deps.codec,
   ): string {
-    return projectBlocks(documentId, doc, (stored) => {
-      // The Markdown is Live: no Work's pending suggestion, and no discarded one.
-      const blocks = viewBlocks(stored, { work: null, hidden: hiddenWorks(doc) });
+    return projectBlocks(documentId, doc, (blocks) => {
       if (blocks.length === 0) return "";
       if (schemaType === "code") return blocks[0]?.textContent ?? "";
       return codec.serialize(blocks, links);

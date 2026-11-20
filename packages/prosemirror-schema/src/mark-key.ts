@@ -13,12 +13,6 @@ export function yjsMarkKey(mark: Mark): string {
   return `${mark.type.name}--${hashOfJSON(mark.toJSON())}`;
 }
 
-/** The mark name a stored text attribute key names: the inverse of `yjsMarkKey`'s prefix. */
-export function markNameOfYjsKey(key: string): string {
-  const match = /^(.*)--[a-zA-Z0-9+/=]{8}$/.exec(key);
-  return match ? match[1] : key;
-}
-
 function hashOfJSON(json: unknown): string {
   const digest = sha256.digest(buf.encodeAny(json));
   for (let i = 6; i < digest.length; i++) digest[i % 6] = digest[i % 6] ^ digest[i];

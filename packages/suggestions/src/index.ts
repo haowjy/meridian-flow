@@ -3,10 +3,10 @@ export { type Author, newChangeId, RAW_META, rewrite } from "./rewrite.js";
 export {
   blockKind,
   discard,
-  HIDDEN_ROOT,
   hiddenWorks,
   kindOf,
   liveView,
+  observeHidden,
   type Run,
   type RunKind,
   restore,

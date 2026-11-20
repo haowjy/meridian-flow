@@ -410,7 +410,8 @@ function keptUnits(
   // Keyed as the binding stores them, so two marks of one type that may overlap stay two.
   const names = new Set<string>();
   for (const marks of [...marksA, ...marksB])
-    for (const mark of marks ?? []) names.add(yjsMarkKey(mark));
+    for (const mark of marks ?? [])
+      if (mark.type.spec.markdown !== false) names.add(yjsMarkKey(mark));
   const value = (marks: readonly Mark[], key: string) => {
     const mark = marks.find((candidate) => yjsMarkKey(candidate) === key);
     return mark ? JSON.stringify(mark.attrs) : null;

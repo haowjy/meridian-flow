@@ -95,12 +95,24 @@ export function viewBlocks(blocks: readonly Node[], view: View): Node[] {
 
 /** One top-level block in a view, or null when the view does not contain it. */
 export function viewBlock(block: Node, view: View): Node | null {
+  if (!carriesSuggestion(block)) return block;
   if (blockKind(block, view) === "hidden") return null;
   const content = viewContent(block, view);
   // A block whose whole text the view proposes to remove is removed.
   if (content === null) return null;
   const attrs = block.attrs.sug ? { ...block.attrs, sug: null } : block.attrs;
   return block.type.create(attrs, content, block.marks);
+}
+
+function carriesSuggestion(block: Node): boolean {
+  if (block.attrs.sug) return true;
+  let found = false;
+  block.descendants((node) => {
+    if (found) return false;
+    if (node.marks.some(isSuggestionMark)) found = true;
+    return !found;
+  });
+  return found;
 }
 
 /** A node's content in a view; null for a textblock whose whole text the view removes. */
@@ -176,12 +188,14 @@ export function visibleSlice(slice: Slice, parent: Node, view: View): Slice {
 }
 
 /** The document's root that lists, by Work, the drafts discarded in it. */
-export const HIDDEN_ROOT = "suggest_hidden";
+const HIDDEN_ROOT = "suggest_hidden";
 
 type HiddenMap = {
   keys(): IterableIterator<string>;
   set(work: string, at: number): unknown;
   delete(work: string): void;
+  observe(listener: () => void): void;
+  unobserve(listener: () => void): void;
 };
 
 /** Works whose suggestions in this document are discarded: absent from every view. */
@@ -196,4 +210,15 @@ export function discard(doc: { getMap(name: string): HiddenMap }, work: string):
 
 export function restore(doc: { getMap(name: string): HiddenMap }, work: string): void {
   doc.getMap(HIDDEN_ROOT).delete(work);
+}
+
+/** Calls `onChange` with the discarded Works whenever they change; returns the unsubscribe. */
+export function observeHidden(
+  doc: { getMap(name: string): HiddenMap },
+  onChange: (hidden: Set<string>) => void,
+): () => void {
+  const map = doc.getMap(HIDDEN_ROOT);
+  const listener = () => onChange(hiddenWorks(doc));
+  map.observe(listener);
+  return () => map.unobserve(listener);
 }

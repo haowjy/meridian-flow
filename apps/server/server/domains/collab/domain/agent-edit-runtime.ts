@@ -59,13 +59,15 @@ export function createAgentEditRuntime(input: {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodecFactory(markupCodec);
-  const model = yProsemirrorModel(schema);
-  // Suggestion mode (prototype): the agent reads and writes Live through the Live view, which
-  // keeps every Work's suggestions where they are; a Work's write goes into Live as that Work's
-  // suggestions (`suggestionCore`). Writers that replace stored blocks keep `model`.
+  const storedModel = yProsemirrorModel(schema);
+  // Suggestion mode (prototype): `model` is the Live view for every reader and writer of Live; it
+  // keeps every Work's suggestions where they are. A Work's write goes into Live as that Work's
+  // suggestions (`suggestionCore`). A whole replacement (restore) through it keeps Live's text
+  // and drops the document's pending suggestions.
   const suggestionMode = process.env.FLOW_SUGGESTIONS === "1";
   const viewModel = (work: string | null, author: Author | null) =>
-    suggestingModel(model, (doc) => ({ work, hidden: hiddenWorks(doc) }), author);
+    suggestingModel(storedModel, (doc) => ({ work, hidden: hiddenWorks(doc) }), author);
+  const model = suggestionMode ? viewModel(null, null) : storedModel;
   /** A code document's text is one code block, not Markdown: its codec reads and writes it so. */
   const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> => {
     const filetype = await codeFiletypeOf(input.resolveDocumentFiletype, documentId);
@@ -88,12 +90,10 @@ export function createAgentEditRuntime(input: {
       model: coreModel,
       ...input.observability,
     });
-  const liveUtilityCore = asLiveAgentEditCore(
-    liveCoreOver(suggestionMode ? viewModel(null, null) : model),
-  );
-  /** A core over Live that reads a Work's view and, given an author, writes its suggestions. */
+  const liveUtilityCore = asLiveAgentEditCore(liveCoreOver(model));
+  /** A core over Live that reads a Work's view and writes its suggestions as `author`. */
   const suggestionCore = suggestionMode
-    ? (work: string, author: Author | null) => liveCoreOver(viewModel(work, author))
+    ? (work: string, author: Author) => liveCoreOver(viewModel(work, author))
     : null;
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({

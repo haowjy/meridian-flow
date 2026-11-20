@@ -60,7 +60,7 @@ export type ModelEditWriteDeps = {
   suggestionCore?: SuggestionCore | null;
 };
 
-export type SuggestionCore = (work: string, author: Author | null) => AgentEditCore;
+export type SuggestionCore = (work: string, author: Author) => AgentEditCore;
 
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
   function threadCoreFor(given: WriteContext): AgentEditCore {

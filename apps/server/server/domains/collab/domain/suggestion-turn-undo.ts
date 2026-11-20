@@ -1,8 +1,8 @@
 /**
  * Suggestion mode (prototype): the card's Undo of a turn whose edits are still suggestions rejects
  * them, as a client of the document would: read the stored document, reject the turn's marks, write
- * the blocks back. Text the writer typed beside them is untouched. A turn that left no suggestion
- * (it wrote Live) is undone the existing way.
+ * the blocks back. Text the writer typed beside them is untouched. The documents where the turn
+ * left no suggestion (it wrote Live there) are undone the existing way.
  */
 import { writeBlocks } from "@meridian/agent-edit/diff";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
@@ -70,7 +70,11 @@ export function createSuggestionTurnUndo(deps: {
         status: "reversed" as const,
       });
     }
-    if (documents.length === 0) return deps.reverseLiveTurn(query);
-    return { status: "reversed", documents };
+    const rejected = new Set(documents.map((document) => document.documentId));
+    const rest = documentIds.filter((documentId) => !rejected.has(documentId));
+    if (rejected.size === 0) return deps.reverseLiveTurn(query);
+    if (rest.length === 0) return { status: "reversed", documents };
+    const live = await deps.reverseLiveTurn({ ...query, documentIds: rest });
+    return { ...live, status: "reversed", documents: [...documents, ...live.documents] };
   };
 }

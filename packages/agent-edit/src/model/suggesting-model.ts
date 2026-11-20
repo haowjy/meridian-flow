@@ -95,17 +95,21 @@ export function suggestingModel(
       const other = ops.filter((op) => !textOps.includes(op as Extract<EditOp, { kind: "text" }>));
       if (other.length > 0) {
         const applied = base.applyOps(doc, block, other);
+        written(unwrapBlock(block).doc as Y.Doc);
         if (!applied.ok || textOps.length === 0) return applied;
       }
       if (textOps.length === 0) return { ok: true };
-      const current = other.length > 0 ? stored(block) : before;
+      const current = stored(block);
       const after = rewritten(current, textOps, view, author, schema);
       if (!after) return refused("the write does not fit the block");
-      return applyRawOps(unwrapBlock(block), lowerBlock(current, after));
+      const applied = applyRawOps(unwrapBlock(block), lowerBlock(current, after));
+      written(unwrapBlock(block).doc as Y.Doc);
+      return applied;
     },
 
     insertBlocks(doc, after, parsed) {
       const view = viewOf(unwrapDoc(doc));
+      written(unwrapDoc(doc));
       if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
       const sug = { ...author, work: view.work, id: newChangeId() };
       return base.insertBlocks(doc, after, {
@@ -119,6 +123,7 @@ export function suggestingModel(
     deleteBlock(doc, block) {
       const view = viewAt(block);
       const node = stored(block);
+      written(unwrapDoc(doc));
       if (view.work === null || !author || blockKind(node, view) === "own") {
         base.deleteBlock(doc, block);
         return;
@@ -179,6 +184,11 @@ function rawUnit(units: readonly Run[], unit: number, side: "start" | "end"): nu
  * this per block, and a projection reads the whole fragment.
  */
 const projections = new WeakMap<Y.Doc, Map<Y.XmlElement, PMNode>>();
+
+/** A write inside the model's transaction, which `afterTransaction` has not seen yet. */
+function written(doc: Y.Doc): void {
+  projections.delete(doc);
+}
 
 function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
   const doc = element.doc as Y.Doc;

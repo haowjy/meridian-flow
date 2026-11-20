@@ -4,7 +4,15 @@
  * Ctrl+Z takes them back. Discard hides the Work's suggestions in this document; Restore shows them.
  */
 import { Trans } from "@lingui/react/macro";
-import { type Change, discard, HIDDEN_ROOT, list, restore, type View } from "@meridian/suggestions";
+import {
+  type Change,
+  discard,
+  hiddenWorks,
+  list,
+  observeHidden,
+  restore,
+  type View,
+} from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo, useState } from "react";
 import type * as Y from "yjs";
@@ -21,13 +29,8 @@ export function SuggestionBand({
   ownerKey: string;
   accountId: string;
 }) {
-  const hiddenMap = doc.getMap<number>(HIDDEN_ROOT);
-  const [hidden, setHidden] = useState(() => new Set(hiddenMap.keys()));
-  useEffect(() => {
-    const update = () => setHidden(new Set(hiddenMap.keys()));
-    hiddenMap.observe(update);
-    return () => hiddenMap.unobserve(update);
-  }, [hiddenMap]);
+  const [hidden, setHidden] = useState(() => hiddenWorks(doc));
+  useEffect(() => observeHidden(doc, setHidden), [doc]);
   const [showDraft, setShowDraft] = useState(false);
   const view = useMemo<View>(
     () => ({ work: showDraft ? ownerKey : null, hidden }),

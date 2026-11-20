@@ -253,7 +253,8 @@ const customMarks = {
   suggest_ins: suggestionMark(),
   suggest_del: suggestionMark(),
   // A comment's anchor; its body lives outside the document.
-  comment: { attrs: { id: { default: null } }, inclusive: false, excludes: "" },
+  // `markdown: false`: Markdown cannot write it, so a model's write, planned in Markdown, leaves it alone.
+  comment: { attrs: { id: { default: null } }, inclusive: false, excludes: "", markdown: false },
 } satisfies Record<string, MarkSpec>;
 
 function suggestionMark(): MarkSpec {

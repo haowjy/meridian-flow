@@ -83,7 +83,11 @@ export function createAgentEditRouter(input: {
       if (input.suggestionCore && version === "draft" && grant.destination.kind === "draft") {
         const destination = grant.destination;
         const outcome = await input
-          .suggestionCore(draftOwnerKey(destination.owner), null)
+          .suggestionCore(draftOwnerKey(destination.owner), {
+            chat: context.threadId ?? null,
+            turn: null,
+            by: "agent",
+          })
           .read(command, {
             ...context,
             linkView: { kind: "live" },
