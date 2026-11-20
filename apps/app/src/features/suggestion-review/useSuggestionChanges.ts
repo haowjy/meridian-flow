@@ -6,7 +6,6 @@
  * owner's list.
  */
 import { t } from "@lingui/core/macro";
-import type { Author } from "@meridian/agent-edit/diff";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type Change, list, sameValue } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
@@ -14,7 +13,7 @@ import type { Node } from "@tiptap/pm/model";
 import { startTransition, useEffect, useMemo, useState } from "react";
 import { authorsIn, SUGGESTION_CHANGE_ATTR } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import type { ChatRef, ReviewChange } from "@/features/draft-review/review-model";
+import type { BylineEntry, ChatRef, ReviewChange } from "@/features/draft-review/review-model";
 import { resolveFocusedChange } from "@/features/draft-review/review-model";
 
 /**
@@ -120,14 +119,14 @@ export function useSuggestionChanges(
   }, [doc, editor, work, actors]);
 }
 
-/** As a draft's excerpt reads (`agent-edit`'s review): one line, clipped. */
+/** One line, clipped to 120 characters. */
 function excerptOf(text: string): string {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > 120 ? `${line.slice(0, 119).trimEnd()}…` : line;
 }
 
 function reviewChange(change: Change, titles: ReadonlyMap<string, string>): ReviewChange {
-  const byline: Author[] = [];
+  const byline: BylineEntry[] = [];
   const chats: ChatRef[] = [];
   if (change.chat && change.turn) {
     byline.push({ kind: "thread", threadId: change.chat, turnId: change.turn });
@@ -142,14 +141,12 @@ function reviewChange(change: Change, titles: ReadonlyMap<string, string>): Revi
   const inserted = excerptOf(change.inserted);
   return {
     id: change.id,
-    kind: "change",
     // A change of a block's kind alone (a heading's level, a list) has no words to quote.
     excerpt: removed || inserted ? { removed, inserted } : { removed: "", inserted: t`Formatting` },
     byline,
     chats,
     members: chats.map((chat) => chat.chatId),
     attributed: true,
-    spans: [],
   };
 }
 

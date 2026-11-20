@@ -7,7 +7,7 @@
 import { fragmentOf, toDocHandle, yProsemirrorModel } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { mdxCodec } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryEventSink } from "../../observability/index.js";
@@ -87,7 +87,7 @@ async function seedCode(setupResult: ReturnType<typeof setup>, source = "const a
 describe("code document serialization", () => {
   it("returns corrupt_state when tracked metadata names a registered non-tracked filetype", async () => {
     const subject = setup("png");
-    const projection = createCollabYDoc({ gc: false });
+    const projection = new Y.Doc({ gc: false });
 
     await expect(
       subject.engine.setMarkdown({
@@ -179,7 +179,7 @@ describe("checkpoint restore", () => {
     const live = subject.coordinator.ensureEmpty(DOCUMENT_ID);
     const liveBefore = Y.encodeStateAsUpdate(live);
     const journalBefore = (await subject.journal.read(DOCUMENT_ID)).updates.length;
-    const snapshot = createCollabYDoc({ gc: false });
+    const snapshot = new Y.Doc({ gc: false });
     model.insertBlocks(toDocHandle(snapshot), null, { blocks: [invalidWidthTable()] });
 
     await expect(
@@ -208,7 +208,7 @@ describe("schema-aware serialization purity", () => {
     vi.spyOn(subject.eventSink, "emit").mockImplementation(() => {
       throw new Error("sink-failed");
     });
-    const input = createCollabYDoc({ gc: false });
+    const input = new Y.Doc({ gc: false });
     const paragraph = new Y.XmlElement("paragraph");
     paragraph.insert(0, [new Y.XmlText("kept prose")]);
     const unknown = new Y.XmlElement("sidebar");
@@ -231,7 +231,7 @@ describe("schema-aware serialization purity", () => {
 
   it("reads adjacent texts as one run without repairing them", async () => {
     const subject = setup("md");
-    const input = createCollabYDoc({ gc: false });
+    const input = new Y.Doc({ gc: false });
     const paragraph = new Y.XmlElement("paragraph");
     paragraph.insert(0, [new Y.XmlText("a"), new Y.XmlText("b")]);
     fragmentOf(input).insert(0, [paragraph]);

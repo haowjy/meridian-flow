@@ -2434,6 +2434,7 @@ msgstr "Couldn't switch Work"
 #: src/features/draft-review/apply-history.ts
 #: src/features/draft-review/CommandNotice.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
+#: src/features/suggestion-review/usePressCommands.ts
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
 

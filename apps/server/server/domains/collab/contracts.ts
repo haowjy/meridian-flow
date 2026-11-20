@@ -107,7 +107,6 @@ export type AdmitLiveWriterUpdateResult = { admitted: true } | { admitted: false
 
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
-  primeReservedNamespaceIndex(document: Y.Doc): void;
   headSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   admitLiveWriterUpdate(input: {

@@ -67,9 +67,11 @@ commit. Contracts: `apps/server/server/domains/collab/.context/reversal.md` and
 `apply.md`; reasons: the KB's `wiki/architecture/collaboration/draft-review.md` and
 `turn-receipts.md`.
 
-**Checked by** `packages/agent-edit/src/diff/attribution.test.ts` and the collab DB
-tests: `inverse-attribution`, `model-inverse` and `turn-inverse`.
+**Checked by** the collab DB tests: `inverse-attribution`, `model-inverse` and
+`turn-inverse`. `packages/suggestions/src/turn-undo.test.ts` resolves suggestions by the
+turn their author entry names.
 
-**Gaps.** What the browser displays is unchecked.
+**Gaps.** What the browser displays is unchecked, and no test checks that a suggestion's author
+entry names the writer or chat that made it.
 Cut-and-pasted text reads as the writer's (#889). Five receipt families have separate shapes,
 and nothing cross-checks them.

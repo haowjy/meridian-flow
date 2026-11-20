@@ -6,10 +6,13 @@ import type { DocumentApplyEntry, DocumentHistory } from "@/core/editor/editor-h
 export type Histories = () => readonly (DocumentHistory | null)[];
 
 /**
- * What a press of Undo came to: `failed`, it never reached the server; else the Undo the server
- * answered (`unapplyId`) and whether it took anything back.
+ * What a press of Undo came to: `failed`, it never reached the server (`told`: the writer was
+ * told already, when it couldn't be saved to send); else the Undo the server answered
+ * (`unapplyId`) and whether it took anything back.
  */
-export type Undone = { kind: "failed" } | { kind: "answered"; unapplyId: string; took: boolean };
+export type Undone =
+  | { kind: "failed"; told?: true }
+  | { kind: "answered"; unapplyId: string; took: boolean };
 
 /** What a Redo landed: the new Apply's command id. */
 export type Redone = { commandId: string };
@@ -105,11 +108,12 @@ export class ApplyEntries {
 
   private answered(undone: Undone, from: DocumentHistory | null): void {
     if (undone.kind === "failed") {
-      notifyFailure({
-        key: `unapply:${this.commandId}`,
-        title: t`Couldn't undo`,
-        brief: true,
-      });
+      if (!undone.told)
+        notifyFailure({
+          key: `unapply:${this.commandId}`,
+          title: t`Couldn't undo`,
+          brief: true,
+        });
       this.enter();
       return;
     }

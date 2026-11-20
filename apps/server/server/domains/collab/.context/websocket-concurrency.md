@@ -6,7 +6,7 @@ an `await` rechecks durable authority synchronously before applying or broadcast
 Concurrent-change reporting may degrade without affecting apply authority.
 
 A live-room writer frame is judged in the room's memory, in `admitLiveWriterUpdate`: contained
-(acknowledged, nothing stored), a reserved client id or server-owned root (the socket closes), a
+(acknowledged, nothing stored), a
 gap (the frame starts past the room's clock for one of its clients: `1013`, and the reconnect's
 handshake carries the prefix), or new, trimmed to what the room lacks. A new frame is stored by
 `LiveWriterJournal.appendWriterUpdate` before Hocuspocus applies, broadcasts and acknowledges it,

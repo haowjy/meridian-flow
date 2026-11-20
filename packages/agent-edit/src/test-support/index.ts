@@ -9,8 +9,5 @@ export {
   renderedBlockBodies,
 } from "../tool/test-support/assertions.js";
 export { harness as createWriteToolHarness } from "../tool/test-support/write-tool-harness.js";
-export {
-  InMemoryAgentEditJournal,
-  type InMemoryAgentEditJournalOptions,
-} from "./in-memory-agent-edit.js";
+export { InMemoryAgentEditJournal } from "./in-memory-agent-edit.js";
 export { applyTextEdit } from "./text-edit.js";

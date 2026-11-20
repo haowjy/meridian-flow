@@ -10,7 +10,6 @@ export {
 export {
   type ApplyResult,
   appliedCreates,
-  appliedNodes,
   applyDraft,
   covers,
   type DiscardedBy,

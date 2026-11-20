@@ -316,6 +316,9 @@ identity in anchors or holds.
 - A Work's view paints its suggestions (`SuggestionModeExtension`): deletions red and
   insertions green. Attribution is a byline/membership overlay; it never chooses a third paint
   colour or splits boxes.
+  After an edit it repaints only the blocks the edit reached (`suggestion-paint.ts`); the repaint
+  fuzz (`qa/repaint-fuzz.md`) checks that against a full paint. Run it by hand when the paint
+  changes.
 - Keep the custom `math_display` node; do not install TipTap mathematics nodes
   that are absent from the shared schema.
 

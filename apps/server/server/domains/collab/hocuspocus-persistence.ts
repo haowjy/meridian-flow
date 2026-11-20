@@ -21,7 +21,6 @@ type HocuspocusPersistenceDeps = {
    */
   afterCallerCommit?(callback: () => void): void;
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
-  emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
 };
 
 export type HocuspocusPersistenceService = Pick<

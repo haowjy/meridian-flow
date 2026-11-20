@@ -24,7 +24,6 @@ describe("Yjs reconnect writer admission", () => {
       journal,
       hocuspocus: () => server?.hocuspocus ?? null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     const writerFrames: Array<{ syncType: number; update: Uint8Array; admitted: boolean }> = [];
 
@@ -127,6 +126,5 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
     readUpdates: vi.fn(async () => []),
     captureCheckpoint: vi.fn(async () => null),
     storeCheckpoint: vi.fn(async () => undefined),
-    compact: vi.fn(async () => ({ updatesFolded: 0 })),
   };
 }

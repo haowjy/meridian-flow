@@ -40,20 +40,6 @@ export function createRoomDeliveryDiagnostics(eventSink?: EventSink): RoomDelive
   };
 }
 
-export function createAgentEditInvariantDiagnostic(
-  eventSink?: EventSink,
-): (payload: Record<string, unknown>) => void {
-  return (payload) => {
-    if (!eventSink) return;
-    emitEvent(eventSink, {
-      level: "error",
-      source: "collab.agent_edit",
-      name: "invariant_violation",
-      payload,
-    });
-  };
-}
-
 export function createDocumentProjectionDiagnostics(
   eventSink?: EventSink,
 ): DocumentProjectionDiagnostics {

@@ -29,7 +29,6 @@ import type { NoticePort } from "../notices/index.js";
 import { type EventSink, emitEvent } from "../observability/index.js";
 import type { WorkProjectionMutation } from "../projects/index.js";
 import {
-  createAgentEditInvariantDiagnostic,
   createAgentEditObservabilityOptions,
   createDocumentProjectionDiagnostics,
   createMarkdownSerializationAnomalyObserver,
@@ -103,7 +102,6 @@ import { createEffectiveDocumentReader } from "./domain/effective-document-reade
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
 import { createModelEditRead, createModelEditWriter } from "./domain/model-edit-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
-import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import { createReversalNoticePort } from "./domain/reversal-notices.js";
 import { createSuggestionTurnUndo } from "./domain/suggestion-turn-undo.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
@@ -315,7 +313,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       runAfterDrizzleCommit(callback);
     },
     readAuthorityHeadGeneration: readAuthorityGeneration,
-    emitAgentEditInvariantViolation: createAgentEditInvariantDiagnostic(deps.eventSink),
   });
 
   const treeHistory = createDrizzleTreeHistory(
@@ -445,7 +442,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
-      primeReservedNamespaceIndex,
       headSchemaVersion: persistence.journal.headSchemaVersion,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,

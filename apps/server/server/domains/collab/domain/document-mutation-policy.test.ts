@@ -11,7 +11,6 @@ import {
   DocumentMutationPolicyError,
   replaceAuthorityGeneration,
 } from "./document-mutation-policy.js";
-import { primeReservedNamespaceIndex, validateClientUpdateAdmission } from "./provenance.js";
 
 function updateWith(value: string): Uint8Array {
   const doc = new Y.Doc({ gc: false });
@@ -20,28 +19,6 @@ function updateWith(value: string): Uint8Array {
 }
 
 describe("document mutation policy operations", () => {
-  it("admits reconnect tombstones of server roots but refuses a new base deletion", () => {
-    const room = new Y.Doc({ gc: false });
-    room.clientID = 1;
-    room.getArray("review_base").push(["old", "current"]);
-    primeReservedNamespaceIndex(room);
-    const peer = new Y.Doc({ gc: false });
-    Y.applyUpdate(peer, Y.encodeStateAsUpdate(room));
-    peer.clientID = 123456;
-    peer.getArray("review_base").delete(0, 1);
-    const deletion = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(room));
-    expect(() => validateClientUpdateAdmission(room, deletion)).toThrow("deletes reserved");
-    room.getArray("review_base").delete(0, 1);
-    peer.getText("prosemirror").insert(0, "typing after reconnect");
-    const reconnect = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(room));
-    expect(validateClientUpdateAdmission(room, reconnect)).toEqual({ reservedClientId: null });
-    peer.getArray("review_base").delete(0, 1);
-    const mixed = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(room));
-    expect(() => validateClientUpdateAdmission(room, mixed)).toThrow("deletes reserved");
-    peer.destroy();
-    room.destroy();
-  });
-
   it("rejects Y.Doc-only checkpoints rather than re-minting provenance", async () => {
     const port = replacementPort({
       loadCheckpoint: vi.fn(async () => ({

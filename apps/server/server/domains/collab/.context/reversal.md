@@ -117,7 +117,7 @@ drafted write's suggestions from the items the write inserted (`writeVerdict`): 
 rule the planning view uses to drop a rejected suggestion (`verdicts` in `withdrawRejected`):
 struck text decides, else whether what the write added is gone, else whether the block holds an
 attribute proposal's values. Model actions
-cannot use a reconstruction endpoint, reversal table, or reserved client. A
+cannot use a reconstruction endpoint or reversal table. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack
 commands. A card Undo pops the turn's poppable stack prefix and writes forward reverts for its

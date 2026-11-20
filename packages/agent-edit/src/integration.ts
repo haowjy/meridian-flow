@@ -91,7 +91,6 @@ export {
   type StaticDocumentLinksOptions,
 } from "./ports/static-document-links.js";
 export type {
-  CompactionResult,
   JournalSnapshot,
   PersistedUpdate,
   UpdateMeta,

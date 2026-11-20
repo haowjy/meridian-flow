@@ -189,8 +189,6 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
         room,
         update: input.update,
         key: input.documentId,
-        origin: input.origin,
-        subject: { documentId: input.documentId },
       });
       // Reconnects replay state the room already holds: acknowledged, nothing stored.
       if (!novel) return { admitted: false };

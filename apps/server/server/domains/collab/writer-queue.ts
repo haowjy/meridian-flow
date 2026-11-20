@@ -1,14 +1,9 @@
 /** The persistence queue every room's writer frames and checkpoints are counted in. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import { RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
-import type { CollabPersistenceMetrics, UpdateOrigin } from "./contracts.js";
-import {
-  novelToRoom,
-  ReservedWriterClientIdError,
-  WriterFrameGapError,
-} from "./domain/document-mutation-policy.js";
+import type { CollabPersistenceMetrics } from "./contracts.js";
+import { novelToRoom, WriterFrameGapError } from "./domain/document-mutation-policy.js";
 
 type PendingAppend = {
   documentId: string;
@@ -21,7 +16,6 @@ export type WriterQueue = ReturnType<typeof createWriterQueue>;
 export function createWriterQueue(deps: {
   hocuspocus(): Hocuspocus | null;
   eventSink?: EventSink;
-  emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
 }) {
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
@@ -68,34 +62,20 @@ export function createWriterQueue(deps: {
     },
 
     /**
-     * What of a writer's frame the room lacks, or null when it holds all of it. A reserved
-     * authorship refusal or a frame that starts past the room's clock throws: the socket closes
-     * and the reconnect's handshake carries what is missing.
+     * What of a writer's frame the room lacks, or null when it holds all of it. A frame that
+     * starts past the room's clock throws: the socket closes and the reconnect's handshake
+     * carries what is missing.
      */
     judge(input: {
       room: Y.Doc;
       update: Uint8Array;
       /** What the queue counts the frame's refusals under. */
       key: string;
-      origin: UpdateOrigin;
-      subject: { documentId: string };
     }): Uint8Array | null {
       try {
         return novelToRoom(input.room, input.update);
       } catch (cause) {
-        if (cause instanceof WriterFrameGapError) {
-          recordDropped(input.key);
-        } else if (cause instanceof ReservedWriterClientIdError) {
-          recordDropped(input.key);
-          deps.emitAgentEditInvariantViolation({
-            message: `Rejected connection update for ${input.subject.documentId}: Yjs clientID ${cause.clientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
-            ...input.subject,
-            originType: input.origin.type,
-            reservedClientId: cause.clientId,
-            reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
-          });
-          throw new Error("reserved-writer-client-id");
-        }
+        if (cause instanceof WriterFrameGapError) recordDropped(input.key);
         throw cause;
       }
     },

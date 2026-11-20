@@ -1,13 +1,12 @@
 /** Replay immutable journal inputs cooperatively, without taking database locks. */
 import { setImmediate } from "node:timers/promises";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
 export async function materializeCheckpoint(
   base: Uint8Array | null,
   updates: readonly Uint8Array[],
 ): Promise<Uint8Array> {
-  const doc = createCollabYDoc({ gc: false });
+  const doc = new Y.Doc({ gc: false });
   try {
     if (base) Y.applyUpdate(doc, base);
     let yieldAt = performance.now() + 5;

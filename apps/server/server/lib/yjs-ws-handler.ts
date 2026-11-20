@@ -38,6 +38,7 @@ import {
 } from "../domains/file-policy/index.js";
 import {
   emitEvent,
+  errorMessageOf,
   runWithEventCorrelation,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
@@ -434,11 +435,29 @@ export async function admitWriterSync(input: {
       expectedGeneration: input.expectedGeneration,
     });
   } catch (cause) {
-    refuse(WRITER_ADMISSION_FAILED, cause);
+    refuseWriterSync(input, room, cause);
   }
 }
 
-const WRITER_ADMISSION_FAILED = { code: 1013, reason: "writer-journal-admission-failed" } as const;
+/** The client reconnects and its handshake carries what the journal lacks. */
+function refuseWriterSync(
+  input: Pick<Parameters<typeof admitWriterSync>[0], "services" | "syncType">,
+  room: ParsedYjsRoom,
+  cause: unknown,
+): never {
+  emitEvent(input.services.eventSink, {
+    level: "warn",
+    source: "collab.hocuspocus",
+    name: "writer_admission.refused",
+    correlation: { documentId: room.documentId },
+    payload: {
+      syncType: input.syncType,
+      ...unknownToEventPayload(cause),
+      ...errorMessageOf(cause),
+    },
+  });
+  refuse(WS_CLOSE.WRITER_ADMISSION_FAILED, cause);
+}
 
 type WriterSyncInput = Pick<
   Parameters<typeof admitWriterSync>[0],
@@ -605,7 +624,6 @@ export function createHocuspocus(
             });
           }
           if (state) Y.applyUpdate(document, state);
-          services.documentSync.primeReservedNamespaceIndex(document);
         });
       });
     },
