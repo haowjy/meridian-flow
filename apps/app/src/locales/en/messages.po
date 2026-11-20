@@ -4928,8 +4928,8 @@ msgid "Reject"
 msgstr "Reject"
 
 #: src/features/editor/SuggestionBand.tsx
-msgid "Reject all"
-msgstr "Reject all"
+#~ msgid "Reject all"
+#~ msgstr "Reject all"
 
 #: src/features/chat/ChatCards.tsx
 msgid "Reload"
@@ -5082,7 +5082,6 @@ msgstr "Response complete"
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/editor/InTrashStatus.tsx
-#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/TrashedDocument.tsx
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
