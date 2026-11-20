@@ -608,7 +608,8 @@ and watermark pair and not warm-room bytes. It covers every journal row at or
 below its cut. Materialize outside the persistence lock, then revalidate
 identity and generation under lock. A stale checkpoint returns
 `stale_generation`; it does not manufacture a successful checkpoint ID.
-Live journal rows are never deleted (only a purge or a generation replacement ends them):
+Live journal rows are deleted only by a purge (a generation replacement keeps the old rows but
+never reads them again):
 the model's report of what changed since its last read attributes each
 change from the rows after its frontier, however old. A background checkpoint
 (`storeCheckpoint`, `background` set) deletes the document's other background

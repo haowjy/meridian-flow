@@ -93,8 +93,8 @@ focused resets no delete order.
 `tree_node_ids` holds the claim on every node id any list has made: its primary key is the
 claim, taken by one insert in the admitting transaction, and `tree_nodes` / `branch_tree_nodes`
 reference `(id, list_id)` in it, so a row cannot be written for another list's id. They are the
-project tree's rows, written only by the tree list store (domains/context). Live journal rows are never deleted
-short of a purge or generation replacement. A checkpoint row with `background` set (a room store, or an empty
+project tree's rows, written only by the tree list store (domains/context). Live journal rows are deleted only by a
+purge; a generation replacement keeps the old generation's rows unread. A checkpoint row with `background` set (a room store, or an empty
 seed's placeholder) deletes the document's other background rows in its own transaction;
 seeds with content, explicit checkpoints and restore installs survive until document
 cascade. Retention reads the column, never `reason`, which is free text. Lazy checkpoint cuts validate their captured authority and

@@ -136,7 +136,7 @@ export async function advanceHead(
 /**
  * A document's current head without materializing a missing one. `notPurged` reads it only when
  * the document may change: under the caller's lock, every door that changes retained history
- * (checkpoints, compaction, version replacement) asks for it.
+ * (checkpoints, version replacement) asks for it.
  */
 export async function findDocumentAuthorityHead(
   db: AuthorityHeadDb,

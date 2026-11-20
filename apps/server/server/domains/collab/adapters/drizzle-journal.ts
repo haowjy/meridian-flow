@@ -786,8 +786,8 @@ export function createDrizzleJournal(
         .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
         .limit(1)
         .as("checkpoint");
-      // One statement observes authority, checkpoint and tail together. A compaction may
-      // delete the folded rows, or a restore replace the authority, between separate reads.
+      // One statement observes authority, checkpoint and tail together. A restore may replace
+      // the authority between separate reads.
       const rows = await readDb
         .select({
           authorityId: documentYjsHeads.authorityId,
