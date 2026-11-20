@@ -1817,5 +1817,525 @@
         }
       }
     }
+  },
+  {
+    "version": {
+      "major": 3,
+      "minor": 3,
+      "patch": 0
+    },
+    "compatibilityNote": "Adds `sugAttrs` (default null) to every block that has `sug`: a Work's pending change to a Live block's attributes. Additive. A 3.2 client must not edit a 3.3 head, since its binding would drop the attribute; the minor fence already refuses it.",
+    "surface": {
+      "fragmentName": "prosemirror",
+      "nodes": {
+        "code_block": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "language": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sug": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sugAttrs": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "text*"
+        },
+        "doc": {
+          "attrs": {},
+          "content": "block+"
+        },
+        "figure": {
+          "attrs": {
+            "alt": {
+              "hasDefault": true,
+              "default": null
+            },
+            "caption": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "label": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "src": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sug": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sugAttrs": {
+              "hasDefault": true,
+              "default": null
+            },
+            "uploadToken": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "hard_break": {
+          "attrs": {},
+          "content": null
+        },
+        "horizontal_rule": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sug": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sugAttrs": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "image": {
+          "attrs": {
+            "alt": {
+              "hasDefault": true,
+              "default": null
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "src": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "title": {
+              "hasDefault": true,
+              "default": null
+            },
+            "uploadToken": {
+              "hasDefault": true,
+              "default": null
+            },
+            "width": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "jsx_container": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "name": {
+              "hasDefault": false
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "props": {
+              "hasDefault": true,
+              "default": {}
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sug": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sugAttrs": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "block+"
+        },
+        "jsx_leaf": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "name": {
+              "hasDefault": false
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "props": {
+              "hasDefault": true,
+              "default": {}
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sug": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sugAttrs": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "text*"
+        },
+        "paragraph": {
+          "attrs": {
+            "align": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "level": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sug": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sugAttrs": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "inline*"
+        },
+        "table": {
+          "attrs": {
+            "align": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sug": {
+              "hasDefault": true,
+              "default": null
+            },
+            "sugAttrs": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "table_row+"
+        },
+        "table_cell": {
+          "attrs": {
+            "alignment": {
+              "hasDefault": true,
+              "default": null
+            },
+            "colspan": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "colwidth": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "rowspan": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "block+"
+        },
+        "table_header": {
+          "attrs": {
+            "alignment": {
+              "hasDefault": true,
+              "default": null
+            },
+            "colspan": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "colwidth": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "rowspan": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "block+"
+        },
+        "table_row": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "(table_header | table_cell)+"
+        },
+        "text": {
+          "attrs": {},
+          "content": null
+        }
+      },
+      "marks": {
+        "code": {
+          "attrs": {},
+          "content": null
+        },
+        "comment": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "em": {
+          "attrs": {},
+          "content": null
+        },
+        "link": {
+          "attrs": {
+            "href": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "title": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "strike": {
+          "attrs": {},
+          "content": null
+        },
+        "strong": {
+          "attrs": {},
+          "content": null
+        },
+        "suggest_del": {
+          "attrs": {
+            "by": {
+              "hasDefault": true,
+              "default": null
+            },
+            "chat": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "turn": {
+              "hasDefault": true,
+              "default": null
+            },
+            "work": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "suggest_ins": {
+          "attrs": {
+            "by": {
+              "hasDefault": true,
+              "default": null
+            },
+            "chat": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "turn": {
+              "hasDefault": true,
+              "default": null
+            },
+            "work": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        }
+      }
+    }
   }
 ]

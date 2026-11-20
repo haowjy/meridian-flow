@@ -1,7 +1,7 @@
-import type { Mark, Node } from "prosemirror-model";
+import type { Attrs, Mark, Node } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
 import { RAW_META } from "./rewrite.js";
-import { blockKind, kindOf, type SuggestionAttrs, type View } from "./view.js";
+import { blockKind, kindOf, proposals, type SuggestionAttrs, type View } from "./view.js";
 
 /** The turns with suggestions still in `doc`: where a reject of `{ turn }` would change it. */
 export function pendingTurns(doc: Node): Set<string> {
@@ -9,12 +9,11 @@ export function pendingTurns(doc: Node): Set<string> {
   const note = (attrs: SuggestionAttrs | null) => {
     if (attrs?.turn) turns.add(attrs.turn);
   };
-  doc.forEach((block) => {
-    note(block.attrs.sug);
-    if (block.isTextblock)
-      block.forEach((child) => {
-        for (const mark of child.marks) if (isSuggestion(mark)) note(mark.attrs as SuggestionAttrs);
-      });
+  doc.descendants((node) => {
+    note(node.attrs.sug);
+    for (const proposal of Object.values(proposals(node))) note(proposal);
+    for (const mark of node.marks) if (isSuggestion(mark)) note(mark.attrs as SuggestionAttrs);
+    return true;
   });
   return turns;
 }
@@ -45,15 +44,27 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
   const fateOf = fates(state.doc, filter, action);
   const unmark: Array<[number, number, Mark]> = [];
   const remove: Array<[number, number]> = [];
-  const keepBlock: number[] = [];
-  state.doc.forEach((block, blockPos) => {
+  const set: Array<[number, string, unknown]> = [];
+  state.doc.descendants((block, blockPos, parent) => {
+    if (block.isInline) return false;
     const blockFate = fateOf(block.attrs.sug);
     if (blockFate) {
-      if (blockFate === "accept") keepBlock.push(blockPos);
+      // A block inside it carries the same suggestion, and goes or stays with it.
+      if (blockFate === "accept") set.push([blockPos, "sug", null]);
       else remove.push([blockPos, blockPos + block.nodeSize]);
-      return;
+      return blockFate === "accept";
     }
-    if (!block.isTextblock) return;
+    const pending = Object.entries(proposals(block));
+    const settled = pending.filter(([, proposal]) => fateOf(proposal));
+    if (settled.length > 0) {
+      for (const [, proposal] of settled)
+        if (fateOf(proposal) === "accept")
+          for (const [key, value] of Object.entries(proposal.attrs))
+            set.push([blockPos, key, value]);
+      const left = pending.filter(([, proposal]) => !fateOf(proposal));
+      set.push([blockPos, "sugAttrs", left.length > 0 ? Object.fromEntries(left) : null]);
+    }
+    if (!block.isTextblock) return true;
     // A Live block whose whole text an accepted change deletes goes with it, and with it any
     // other suggestion's insertion inside, as a Live delete of the block would.
     let wholly = block.content.size > 0;
@@ -74,11 +85,12 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
       const otherIns = !kept && child.marks.some((m) => m.type === ins);
       if (kept || (!deleted && !otherIns)) wholly = false;
     });
-    if (wholly && action === "accept" && state.doc.childCount > 1)
+    if (wholly && action === "accept" && parent && parent.childCount > 1)
       remove.push([blockPos, blockPos + block.nodeSize]);
+    return false;
   });
   for (const [from, to, mark] of unmark) tr.removeMark(from, to, mark);
-  for (const pos of keepBlock) tr.setNodeAttribute(pos, "sug", null);
+  for (const [pos, key, value] of set) tr.setNodeAttribute(pos, key, value);
   for (const [from, to] of merge(remove).reverse()) tr.delete(from, to);
   return tr;
 }
@@ -97,6 +109,8 @@ function fates(
   const superseded = new Set<string>();
   if (action === "accept")
     doc.descendants((node) => {
+      for (const proposal of [node.attrs.sug, ...Object.values(proposals(node))])
+        if (matches(proposal, filter)) chosen.add(proposal.id);
       const marks = node.marks.filter(isSuggestion);
       for (const mark of marks)
         if (matches(mark.attrs as SuggestionAttrs, filter)) chosen.add(mark.attrs.id);
@@ -130,45 +144,51 @@ function merge(ranges: Array<[number, number]>): Array<[number, number]> {
   return out;
 }
 
-/** One change as a view shows it: what it adds and removes, where it starts. */
+/**
+ * One change as a view shows it: what it adds and removes, where it starts, and for a pending
+ * change to a block's attributes, the attributes it sets.
+ */
 export type Change = SuggestionAttrs & {
   inserted: string;
   deleted: string;
+  attrs: Attrs | null;
   from: number;
   to: number;
 };
 
 /** The view's own changes, in document order, for review: what `kindOf` shows as its own. */
 export function list(doc: Node, view: View): Change[] {
-  if (view.work === null) return [];
+  const work = view.work;
+  if (work === null || view.hidden.has(work)) return [];
   const byId = new Map<string, Change>();
-  const note = (
-    attrs: SuggestionAttrs,
-    from: number,
-    to: number,
-    text: string,
-    side: "inserted" | "deleted",
-  ) => {
-    const change = byId.get(attrs.id) ?? { ...attrs, inserted: "", deleted: "", from, to };
-    change[side] += text;
+  const note = (attrs: SuggestionAttrs, from: number, to: number, add: Partial<Change>) => {
+    const change = byId.get(attrs.id) ?? {
+      ...attrs,
+      inserted: "",
+      deleted: "",
+      attrs: null,
+      from,
+      to,
+    };
+    change.inserted += add.inserted ?? "";
+    change.deleted += add.deleted ?? "";
+    change.attrs = add.attrs ?? change.attrs;
     change.from = Math.min(change.from, from);
     change.to = Math.max(change.to, to);
     byId.set(attrs.id, change);
   };
-  doc.forEach((block, blockPos) => {
-    const owner = blockKind(block, view);
-    if (owner === "hidden") return;
+  doc.descendants((block, blockPos) => {
+    if (block.isInline) return false;
+    const owner = "sug" in block.attrs ? blockKind(block, view) : "live";
+    if (owner === "hidden") return false;
+    const end = blockPos + block.nodeSize;
     if (owner === "own") {
-      note(
-        block.attrs.sug,
-        blockPos,
-        blockPos + block.nodeSize,
-        `${block.textContent}\n`,
-        "inserted",
-      );
-      return;
+      note(block.attrs.sug, blockPos, end, { inserted: `${block.textContent}\n` });
+      return false;
     }
-    if (!block.isTextblock) return;
+    const proposal = proposals(block)[work];
+    if (proposal) note(proposal, blockPos, end, { attrs: proposal.attrs });
+    if (!block.isTextblock) return true;
     block.forEach((child, offset) => {
       const kind = kindOf(child.marks, block, view);
       if (kind !== "own-ins" && kind !== "own-del") return;
@@ -177,9 +197,12 @@ export function list(doc: Node, view: View): Change[] {
       const side = kind === "own-ins" ? "inserted" : "deleted";
       // Two tabs of one Work can each mark the same text: every one of them is a change to review.
       for (const mark of child.marks)
-        if (mark.type.name === name && mark.attrs.work === view.work)
-          note(mark.attrs as SuggestionAttrs, from, from + child.nodeSize, child.textContent, side);
+        if (mark.type.name === name && mark.attrs.work === work)
+          note(mark.attrs as SuggestionAttrs, from, from + child.nodeSize, {
+            [side]: child.textContent,
+          });
     });
+    return false;
   });
   return [...byId.values()].sort((a, b) => a.from - b.from);
 }

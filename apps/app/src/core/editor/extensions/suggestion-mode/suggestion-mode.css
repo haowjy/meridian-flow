@@ -17,3 +17,33 @@
 .meridian-editor .meridian-comment {
   box-shadow: inset 0 -2px 0 0 color-mix(in oklab, var(--color-warning) 60%, transparent);
 }
+
+/* A pending change to a block's attributes: the element is Live's, so its proposed heading level
+   is drawn here, from `data-view-level` (0 is body text). */
+.meridian-editor .sug-attrs {
+  box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--color-primary) 40%, transparent);
+}
+.meridian-editor [data-view-level] {
+  font-weight: 600;
+}
+.meridian-editor [data-view-level="0"] {
+  font-size: 1em;
+  font-weight: inherit;
+}
+.meridian-editor [data-view-level="1"] {
+  font-size: 1.875em;
+  line-height: 1.25;
+}
+.meridian-editor [data-view-level="2"] {
+  font-size: 1.375em;
+  line-height: 1.3;
+}
+.meridian-editor [data-view-level="3"] {
+  font-size: 1.25em;
+}
+.meridian-editor [data-view-level="4"] {
+  font-size: 1.125em;
+}
+.meridian-editor :is([data-view-level="5"], [data-view-level="6"]) {
+  font-size: 1.0625em;
+}

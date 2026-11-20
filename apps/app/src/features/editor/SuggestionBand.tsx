@@ -114,6 +114,7 @@ export function SuggestionBand({
               data-suggestion-change={change.id}
             >
               <span className="min-w-0 flex-1 truncate">
+                {change.attrs ? <AttrsLabel attrs={change.attrs} /> : null}
                 {change.deleted ? <span className="sug-del">{change.deleted}</span> : null}
                 {change.deleted && change.inserted ? " " : null}
                 {change.inserted ? <span className="sug-ins">{change.inserted}</span> : null}
@@ -139,4 +140,9 @@ export function SuggestionBand({
         : null}
     </div>
   );
+}
+
+function AttrsLabel({ attrs }: { attrs: Record<string, unknown> }) {
+  if (!("level" in attrs)) return <Trans>Block format</Trans>;
+  return attrs.level ? <Trans>Heading {String(attrs.level)}</Trans> : <Trans>Body text</Trans>;
 }

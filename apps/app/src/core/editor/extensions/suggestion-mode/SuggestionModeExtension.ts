@@ -12,6 +12,7 @@ import {
   type Filter,
   kindOf,
   liveView,
+  proposals,
   RAW_META,
   reject,
   rewrite,
@@ -20,7 +21,13 @@ import {
 } from "@meridian/suggestions";
 import { Extension, Mark } from "@tiptap/core";
 import type { MarkSpec, Node as PMNode } from "@tiptap/pm/model";
-import { type EditorState, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import {
+  type EditorState,
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type Transaction,
+} from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import "./suggestion-mode.css";
@@ -101,8 +108,19 @@ declare module "@tiptap/core" {
   }
 }
 
-function suggestionView(state: EditorState): View {
+/** The view the editor shows: what every reader of the editor's blocks reads them through. */
+export function suggestionView(state: EditorState): View {
   return suggestionModeKey.getState(state)?.view ?? liveView;
+}
+
+/**
+ * The view the editor shows after `tr`, read from the state before it: a plugin's state may be
+ * computed before this one's.
+ */
+export function suggestionViewAfter(tr: Transaction, before: EditorState): View | null {
+  const set = tr.getMeta(suggestionModeKey) as { view: View } | undefined;
+  if (set) return set.view;
+  return tr.docChanged ? suggestionView(before) : null;
 }
 
 export const SuggestionModeExtension = Extension.create({
@@ -114,7 +132,13 @@ export const SuggestionModeExtension = Extension.create({
 
   addGlobalAttributes() {
     return [
-      { types: SUGGESTION_BLOCK_TYPES, attributes: { sug: { ...unrendered, keepOnSplit: false } } },
+      {
+        types: SUGGESTION_BLOCK_TYPES,
+        attributes: {
+          sug: { ...unrendered, keepOnSplit: false },
+          sugAttrs: { ...unrendered, keepOnSplit: false },
+        },
+      },
     ];
   },
 
@@ -212,21 +236,30 @@ export const SuggestionModeExtension = Extension.create({
 
 function paint(doc: PMNode, view: View): DecorationSet {
   const decorations: Decoration[] = [];
-  doc.forEach((block, blockPos) => {
-    const owner = blockKind(block, view);
-    if (owner === "hidden") {
+  doc.descendants((block, blockPos) => {
+    if (block.isInline) return false;
+    const end = blockPos + block.nodeSize;
+    const owner = "sug" in block.attrs ? blockKind(block, view) : "live";
+    if (owner !== "live") {
       decorations.push(
-        Decoration.node(blockPos, blockPos + block.nodeSize, { class: "sug-hidden" }),
+        Decoration.node(blockPos, end, {
+          class: owner === "hidden" ? "sug-hidden" : "sug-ins-block",
+        }),
       );
-      return;
+      return false;
     }
-    if (owner === "own") {
+    // A pending change to the block's attributes shows them; the element is still Live's.
+    const proposal = view.work === null ? undefined : proposals(block)[view.work];
+    if (proposal && !view.hidden.has(proposal.work)) {
+      const level = proposal.attrs.level;
       decorations.push(
-        Decoration.node(blockPos, blockPos + block.nodeSize, { class: "sug-ins-block" }),
+        Decoration.node(blockPos, end, {
+          class: "sug-attrs",
+          ...(level !== undefined ? { "data-view-level": String(level ?? 0) } : {}),
+        }),
       );
-      return;
     }
-    if (!block.isTextblock) return;
+    if (!block.isTextblock) return true;
     block.forEach((child, offset) => {
       const kind = kindOf(child.marks, block, view);
       if (kind === "live") return;
@@ -237,17 +270,20 @@ function paint(doc: PMNode, view: View): DecorationSet {
         }),
       );
     });
+    return false;
   });
   return DecorationSet.create(doc, decorations);
 }
 
 function hiddenAt(state: EditorState, pos: number, side: -1 | 1): boolean {
   const $pos = state.doc.resolve(pos);
-  if ($pos.depth >= 1 && blockKind($pos.node(1), suggestionView(state)) === "hidden") return true;
+  const view = suggestionView(state);
+  for (let depth = $pos.depth; depth >= 1; depth--) {
+    const node = $pos.node(depth);
+    if ("sug" in node.attrs && blockKind(node, view) === "hidden") return true;
+  }
   const node = side < 0 ? $pos.nodeBefore : $pos.nodeAfter;
-  return (
-    !!node && node.isInline && kindOf(node.marks, $pos.parent, suggestionView(state)) === "hidden"
-  );
+  return !!node && node.isInline && kindOf(node.marks, $pos.parent, view) === "hidden";
 }
 
 function outOfHidden(state: EditorState, pos: number, direction: -1 | 1): number | null {

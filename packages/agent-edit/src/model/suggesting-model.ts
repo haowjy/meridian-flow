@@ -18,6 +18,7 @@ import {
   rewrite,
   runs,
   type SuggestionAttrs,
+  suggested,
   type View,
   viewBlock,
   visible,
@@ -85,36 +86,15 @@ export function suggestingModel(
     applyOps(doc, block, ops) {
       const view = viewAt(block);
       const before = stored(block);
-      if (
-        view.work !== null &&
-        blockKind(before, view) !== "own" &&
-        ops.some((op) => op.kind !== "text" || op.path.length > 0)
-      )
-        return refused(
-          "a suggestion changes text in a paragraph; this prototype makes no other kind",
-        );
-      if (view.work !== null && ops.some((op) => op.kind === "text" && op.formats.length > 0))
-        return refused("formatting is not suggested in this prototype");
       // Nothing in the block that the view hides or marks: view units are stored units.
       if (view.work === null && viewBlock(before, view) === before) {
         const applied = base.applyOps(doc, block, ops);
         written(unwrapBlock(block));
         return applied;
       }
-      const textOps = ops.filter(
-        (op): op is Extract<EditOp, { kind: "text" }> => op.kind === "text" && op.path.length === 0,
-      );
-      const other = ops.filter((op) => !textOps.includes(op as Extract<EditOp, { kind: "text" }>));
-      if (other.length > 0) {
-        const applied = base.applyOps(doc, block, other);
-        written(unwrapBlock(block));
-        if (!applied.ok || textOps.length === 0) return applied;
-      }
-      if (textOps.length === 0) return { ok: true };
-      const current = stored(block);
-      const out = rewritten(current, textOps, view, author, schema);
-      if (!out) return refused("the write does not fit the block");
-      const applied = applyRawOps(unwrapBlock(block), lowerBlock(current, out.node));
+      const out = rewritten(before, ops, view, author, schema);
+      if (typeof out === "string") return refused(out);
+      const applied = applyRawOps(unwrapBlock(block), lowerBlock(before, out.node));
       written(unwrapBlock(block), out.node);
       if (out.endChange) tails.set(unwrapBlock(block), out.endChange);
       return applied;
@@ -131,9 +111,7 @@ export function suggestingModel(
       if (after) tails.delete(unwrapBlock(after));
       return base.insertBlocks(doc, after, {
         ...parsed,
-        blocks: parsed.blocks.map((node) =>
-          node.type.create({ ...node.attrs, sug }, node.content, node.marks),
-        ),
+        blocks: parsed.blocks.map((node) => suggested(node, sug)),
       });
     },
 
@@ -158,49 +136,113 @@ export function suggestingModel(
 }
 
 /**
- * The text edits of one block, planned in view units, replayed on the stored block and rewritten.
- * `endChange` is the change the text a Work's edit cut from the block's visible end belongs to: a
- * block inserted right after it is the other half of a split.
+ * A block's edits, planned in the view, replayed on the stored block as one ProseMirror
+ * transaction and rewritten, as a keystroke is. Every op addresses the block as it was, so each
+ * position is read there and mapped through the steps before it. `endChange` is the change the
+ * text a Work's edit cut from the block's visible end belongs to: a block inserted right after it
+ * is the other half of a split. A string says why the write cannot be suggested.
  */
 function rewritten(
   node: PMNode,
-  ops: readonly Extract<EditOp, { kind: "text" }>[],
+  ops: readonly EditOp[],
   view: View,
   author: Author | null,
   schema: Schema,
-): { node: PMNode; endChange: SuggestionAttrs | null } | null {
+): { node: PMNode; endChange: SuggestionAttrs | null } | string {
   const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
-  const units = runs(node, view);
-  const end = units.reduce((n, run) => n + (visible(run.kind) ? run.to - run.from : 0), 0);
-  let endStep: number | null = null;
   const tr = state.tr;
-  // Formats are planned on the text before the splices and do not move positions: first.
-  for (const { from, to, mark, attrs } of ops.flatMap((op) => op.formats)) {
-    const a = 1 + rawUnit(units, from, "start");
-    const b = Math.max(a, 1 + rawUnit(units, to, "end"));
-    const type = schema.marks[mark.split("--")[0]];
-    if (attrs) tr.addMark(a, b, type.create(attrs));
-    else
-      tr.doc.nodesBetween(a, b, (child) => {
-        for (const held of child.marks) if (yjsMarkKey(held) === mark) tr.removeMark(a, b, held);
-      });
-  }
-  const splices = ops.flatMap((op) => op.splices).sort((a, b) => b.from - a.from);
-  for (const { from, to, content } of splices) {
-    const a = 1 + rawUnit(units, from, from === to ? "end" : "start");
-    const b = from === to ? a : Math.max(a, 1 + rawUnit(units, to, "end"));
-    const step = tr.steps.length;
-    if (content.size > 0) tr.replaceWith(a, b, content);
-    else if (b > a) tr.delete(a, b);
-    if (from < to && to === end && tr.steps.length > step) endStep = step;
+  const map = (pos: number, assoc = 1) => tr.mapping.map(pos, assoc);
+  const live = view.work !== null && blockKind(node, view) !== "own";
+  let endStep: number | null = null;
+  for (const op of ops) {
+    const target = locate(state.doc, op.path, view);
+    if (!target) return "the write does not fit the block";
+    if (op.kind === "delete") {
+      if (live && !("sug" in target.node.attrs))
+        return "a table's rows and columns are not suggested";
+      tr.delete(map(target.pos, 1), map(target.pos + target.node.nodeSize, -1));
+    } else if (op.kind === "insert") {
+      if (live && op.nodes.some((inserted) => !("sug" in inserted.attrs)))
+        return "a table's rows and columns are not suggested";
+      tr.insert(map(childEnd(target, op.after, view), -1), [...op.nodes]);
+    } else if (op.kind === "attrs") {
+      let at = target.pos;
+      if (op.unit !== undefined) {
+        if (live) return "a picture's attributes are not suggested";
+        at = target.pos + 1 + rawUnit(runs(target.node, view), op.unit, "start");
+      }
+      for (const [key, value] of Object.entries(op.attrs)) tr.setNodeAttribute(map(at), key, value);
+    } else {
+      const units = runs(target.node, view);
+      const start = target.pos + 1;
+      const end = units.reduce((n, run) => n + (visible(run.kind) ? run.to - run.from : 0), 0);
+      // Formats are planned on the text before the splices and do not move positions: first.
+      for (const { from, to, mark, attrs } of op.formats) {
+        const a = map(start + rawUnit(units, from, "start"));
+        const b = Math.max(a, map(start + rawUnit(units, to, "end"), -1));
+        const type = schema.marks[mark.split("--")[0]];
+        if (attrs) tr.addMark(a, b, type.create(attrs));
+        else
+          tr.doc.nodesBetween(a, b, (child) => {
+            for (const held of child.marks)
+              if (yjsMarkKey(held) === mark) tr.removeMark(a, b, held);
+          });
+      }
+      for (const { from, to, content } of [...op.splices].sort((x, y) => y.from - x.from)) {
+        const a = map(start + rawUnit(units, from, from === to ? "end" : "start"));
+        const b = from === to ? a : Math.max(a, map(start + rawUnit(units, to, "end"), -1));
+        const step = tr.steps.length;
+        if (content.size > 0) tr.replaceWith(a, b, content);
+        else if (b > a) tr.delete(a, b);
+        if (op.path.length === 0 && from < to && to === end && tr.steps.length > step)
+          endStep = step;
+      }
+    }
   }
   const out = rewrite(tr, state, view, author);
-  if (out.doc.childCount !== 1) return null;
+  if (out.doc.childCount !== 1) return "the write does not fit the block";
   const changes = (out.getMeta(CHANGE_META) as Array<SuggestionAttrs | null> | undefined) ?? [];
   return {
     node: out.doc.child(0),
     endChange: endStep === null ? null : (changes[endStep] ?? null),
   };
+}
+
+/** The node at `path` (child indexes in the view, which leaves out hidden blocks) in `doc`'s block. */
+function locate(
+  doc: PMNode,
+  path: readonly number[],
+  view: View,
+): { node: PMNode; pos: number } | null {
+  let found: { node: PMNode; pos: number } | null = { node: doc.child(0), pos: 0 };
+  for (const index of path) {
+    const parent: { node: PMNode; pos: number } = found;
+    found = null;
+    let seen = -1;
+    parent.node.forEach((child, offset) => {
+      if (found || !shownChild(child, view)) return;
+      seen += 1;
+      if (seen === index) found = { node: child, pos: parent.pos + 1 + offset };
+    });
+    if (!found) return null;
+  }
+  return found;
+}
+
+/** Where a node goes in `container` after its shown child `after` (-1: first). */
+function childEnd(container: { node: PMNode; pos: number }, after: number, view: View): number {
+  let at = container.pos + 1;
+  let seen = -1;
+  container.node.forEach((child, offset) => {
+    if (seen >= after) return;
+    if (shownChild(child, view)) seen += 1;
+    at = container.pos + 1 + offset + child.nodeSize;
+  });
+  return after < 0 ? container.pos + 1 : at;
+}
+
+function shownChild(child: PMNode, view: View): boolean {
+  return child.isInline || !("sug" in child.attrs) || blockKind(child, view) !== "hidden";
 }
 
 /**

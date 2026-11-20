@@ -1,4 +1,4 @@
-import { Fragment, type Mark, type Node, Slice } from "prosemirror-model";
+import { type Attrs, Fragment, type Mark, type Node, Slice } from "prosemirror-model";
 
 /** Who suggested a stretch: carried by `suggest_ins`, `suggest_del` and a block's `sug`. */
 export type SuggestionAttrs = {
@@ -11,6 +11,21 @@ export type SuggestionAttrs = {
   /** `user:<id>` or `agent`. */
   by: string;
 };
+
+/**
+ * One Work's pending change to a block's attributes (a heading level, a list), kept in the
+ * block's `sugAttrs` by Work. The block and its text stay Live: accept sets `attrs`, reject drops
+ * the entry, and nothing anchored in the block moves.
+ */
+export type AttrProposal = SuggestionAttrs & { attrs: Attrs };
+
+/** A block's pending attribute changes, by Work. */
+export function proposals(node: Node): Record<string, AttrProposal> {
+  return (node.attrs.sugAttrs ?? {}) as Record<string, AttrProposal>;
+}
+
+/** Attributes that say who suggested what: never themselves suggested, accepted or shown. */
+export const SUGGESTION_ATTRS = ["sug", "sugAttrs"];
 
 /**
  * Whose suggestions a view shows: one Work's, or none (`work: null`, the Live view). A Work in
@@ -42,7 +57,11 @@ function mine(attrs: SuggestionAttrs | null, view: View): boolean {
   return present(attrs, view) && attrs.work === view.work;
 }
 
-/** A top-level block: Live, the view's own suggested block, or another Work's (not shown). */
+/**
+ * A block: Live, the view's own suggested block, or another Work's (not shown). Every block
+ * inside a suggested block carries its `sug` too (`suggested`), so a textblock at any depth knows
+ * its owner without its ancestors.
+ */
 export function blockKind(block: Node, view: View): "live" | "own" | "hidden" {
   const sug = (block.attrs.sug ?? null) as SuggestionAttrs | null;
   if (!sug) return "live";
@@ -95,31 +114,47 @@ export function viewBlock(block: Node, view: View): Node | null {
   const content = viewContent(block, view);
   // A block whose whole text the view proposes to remove is removed.
   if (content === null) return null;
-  const attrs = block.attrs.sug ? { ...block.attrs, sug: null } : block.attrs;
-  return block.type.create(attrs, content, block.marks);
+  return block.type.create(viewAttrs(block, view), content, block.marks);
+}
+
+/** A block's attributes in a view: Live's, with the view's own pending change applied. */
+export function viewAttrs(node: Node, view: View): Attrs {
+  if (!("sug" in node.attrs)) return node.attrs;
+  const own = view.work !== null && !view.hidden.has(view.work) ? proposals(node)[view.work] : null;
+  return { ...node.attrs, ...own?.attrs, sug: null, sugAttrs: null };
+}
+
+function carries(node: Node): boolean {
+  return !!node.attrs.sug || !!node.attrs.sugAttrs || node.marks.some(isSuggestionMark);
 }
 
 function carriesSuggestion(block: Node): boolean {
-  if (block.attrs.sug) return true;
+  if (carries(block)) return true;
   let found = false;
   block.descendants((node) => {
-    if (found) return false;
-    if (node.marks.some(isSuggestionMark)) found = true;
+    if (carries(node)) found = true;
     return !found;
   });
   return found;
 }
 
-/** A node's content in a view; null for a textblock whose whole text the view removes. */
+/**
+ * A node's content in a view; null for a textblock whose whole text the view removes. A block
+ * inside another stays, emptied, since its container may need it (a table cell).
+ */
 function viewContent(node: Node, view: View): Fragment | null {
   const children: Node[] = [];
   if (!node.isTextblock) {
     node.forEach((child) => {
-      children.push(
-        child.isLeaf
-          ? child
-          : child.type.create(child.attrs, viewContent(child, view) ?? Fragment.empty, child.marks),
-      );
+      if (child.isLeaf) children.push(child);
+      else if (blockKind(child, view) !== "hidden")
+        children.push(
+          child.type.create(
+            viewAttrs(child, view),
+            viewContent(child, view) ?? Fragment.empty,
+            child.marks,
+          ),
+        );
     });
     return Fragment.from(children);
   }
@@ -140,10 +175,29 @@ export function stripSuggestions(fragment: Fragment): Fragment {
       nodes.push(node.mark(node.marks.filter((mark) => !isSuggestionMark(mark))));
       return;
     }
-    const attrs = node.attrs.sug ? { ...node.attrs, sug: null } : node.attrs;
-    nodes.push(node.type.create(attrs, stripSuggestions(node.content), node.marks));
+    nodes.push(
+      node.type.create(owned(node.attrs, null), stripSuggestions(node.content), node.marks),
+    );
   });
   return Fragment.from(nodes);
+}
+
+/**
+ * `node` as one Work's suggested block (`sug`), or as no one's (null): it and every block in it
+ * carry `sug`, and none carries a pending attribute change, since the Work edits its own block
+ * directly. A node that cannot carry `sug` (a table row) is left as it is.
+ */
+export function suggested(node: Node, sug: SuggestionAttrs | null): Node {
+  if (node.isText) return node;
+  const content: Node[] = [];
+  node.forEach((child) => {
+    content.push(suggested(child, sug));
+  });
+  return node.type.create(owned(node.attrs, sug), Fragment.from(content), node.marks);
+}
+
+function owned(attrs: Attrs, sug: SuggestionAttrs | null): Attrs {
+  return "sug" in attrs ? { ...attrs, sug, sugAttrs: null } : attrs;
 }
 
 /** Content a view shows, out of a slice of a block: what a copy or a moved tail carries. */
@@ -168,13 +222,13 @@ export function stripSlice(slice: Slice): Slice {
 
 /** A copy carries what the view shows, and no suggestion. `parent` holds the slice's open text. */
 export function visibleSlice(slice: Slice, parent: Node, view: View): Slice {
-  const keep = (fragment: Fragment, block: Node): Fragment => {
+  const keep = (fragment: Fragment, parent: Node): Fragment => {
     const nodes: Node[] = [];
     fragment.forEach((node) => {
       if (node.isInline) {
-        if (visible(kindOf(node.marks, block, view))) nodes.push(node);
+        if (visible(kindOf(node.marks, parent, view))) nodes.push(node);
       } else if (blockKind(node, view) !== "hidden") {
-        nodes.push(node.copy(node.isTextblock ? keep(node.content, node) : node.content));
+        nodes.push(node.copy(keep(node.content, node)));
       }
     });
     return Fragment.from(nodes);
