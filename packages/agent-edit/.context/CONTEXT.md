@@ -76,8 +76,8 @@ there; this is a rare case left as it is.
 No Yjs item is followed to undo an edit. Each AI write records its `delta` (the blocks it changed,
 before and after), and Undo, revert and the card's state read that against the text as it is now
 ([content-merge](content-merge.md#reading-an-ai-edit-against-a-text-stands-and-membership)). The receipt's `effect` still names the
-items a write inserted and deleted (`captureEditParts`, in `undo/receipt.ts`), for draft bylines and
-late-typing recovery; `heldDeletes` keeps a delete the room had already made out of it.
+items a write inserted and deleted (`captureEditParts`, in `undo/receipt.ts`), for draft bylines;
+`heldDeletes` keeps a delete the room had already made out of it.
 
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the

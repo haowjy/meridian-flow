@@ -24,8 +24,9 @@ leave them pending. `4205` is terminal `closed`, not rebuild. In-band closes car
 ## Draft rooms
 
 No timeout releases held frames: a server that never sends SyncStep1 leaves them held
-and the room unacknowledged. After handshake-first, `4207` means a server that lost
-committed rows or a peer that skips the handshake, and the next SyncStep2 repairs it.
+and the room unacknowledged. The server no longer sends `4207` (a frame that starts past
+the room's clock closes `1013`, and the next SyncStep2 repairs it); the client keeps treating
+`4207` as an ordinary reconnect until its handling is removed.
 
 ## Access scope and 4409
 

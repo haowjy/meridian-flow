@@ -3,6 +3,8 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - lazy-cut retirement, lock-scoped capture, persistence revalidation, and durable recovery sweeps
+ * - the head row as a Live command's lock: `lockDocumentMutation` takes it before the command
+ *   reads, because a keystroke holds only that row (it allocates journal ids under it)
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -253,6 +255,75 @@ describe("durable document derivations", () => {
       }
     },
   );
+
+  /**
+   * Guards: a keystroke committing between a Live command's read and its rows. Its row id would sit
+   * below the command's, outside the cut the command records, and the model's next concurrent-change
+   * report (which reads only rows after the cut) would never name it. Fails if
+   * `lockDocumentMutation` stops taking the head row: the keystroke then commits at once.
+   */
+  it("a keystroke waits for a command that has read the journal, and commits above its rows", async () => {
+    const room = new Y.Doc({ gc: false });
+    const authority = await readDocumentAuthorityHead(db, documentId);
+    bindDocumentAuthority(room, authority);
+    const transport = createHocuspocusPersistenceService({
+      journal: persistence.journal,
+      hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,
+      metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
+      emitAgentEditInvariantViolation: () => {},
+    });
+    const commandDoc = new Y.Doc({ gc: false });
+    commandDoc.getText("prose").insert(0, "model");
+    const typist = new Y.Doc({ gc: false });
+    typist.getText("prose").insert(0, "typed");
+    let read!: () => void;
+    const hasRead = new Promise<void>((resolve) => {
+      read = resolve;
+    });
+    let finish!: () => void;
+    const mayFinish = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const command = runInDrizzleTransaction(db, async () => {
+      await lockDocumentMutation(currentDrizzleDb(db), documentId);
+      await persistence.journal.read(documentId);
+      read();
+      await mayFinish;
+      return persistence.journal.append(documentId, Y.encodeStateAsUpdate(commandDoc), {
+        origin: "system",
+        seq: 0,
+      });
+    });
+    try {
+      await hasRead;
+      const keystroke = transport.admitLiveWriterUpdate({
+        documentId: documentId as never,
+        document: room,
+        expectedGeneration: authority.generation,
+        update: Y.encodeStateAsUpdate(typist),
+        origin: { type: "user", userId: userId as never },
+      });
+      const deadline = Date.now() + 5000;
+      for (;;) {
+        const [waiting] = await db.execute(sql`select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and wait_event_type = 'Lock'`);
+        if (Number(waiting.n) >= 1) break;
+        if (Date.now() > deadline) throw new Error("The keystroke did not wait on the command");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      finish();
+      const commandSeq = await command;
+      await keystroke;
+      const keystrokeSeq = await persistence.store.latestUpdateSeq(documentId);
+      expect(keystrokeSeq).toBeGreaterThan(commandSeq);
+    } finally {
+      finish();
+      await command.catch(() => {});
+      room.destroy();
+      commandDoc.destroy();
+      typist.destroy();
+    }
+  });
 
   it("capture releases its own mutation lock inside an ambient transaction before replay", async () => {
     const client = new Y.Doc({ gc: false });

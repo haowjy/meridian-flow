@@ -53,5 +53,4 @@ the notes say.
 | [Document session status](../../apps/app/src/core/editor/.context/state-machines.md) | Client | Computed from the same connection states. There is no replay: Yjs sync brings the document up to date |
 | [Tree list connection](../../apps/app/src/core/tree-list/.context/state-machines.md) | Client | The connection only, as for a document; reconnecting levels the copy and the server by Yjs sync, and a copy the server broke the connection for (`copy-broken`) is replaced once, then is its own terminal state |
 | [Tree list room connection](../../apps/server/server/lib/.context/state-machines.md) | Server | The handshake only: a SyncStep1 brings the room to the journal's head, and a read-only connection's updates are dropped |
-| [Draft room handshake](../../apps/server/server/lib/.context/state-machines.md) | Server | The handshake only: no edits are accepted before it |
 | [Server feed](../../apps/app/src/features/debug/.context/state-machines.md) | Client | The connection only: the browser's `EventSource` reconnects, and nothing is replayed |

@@ -1,7 +1,7 @@
 /** Stable draft identity through Discard, process loss and live authority replacement. */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { draftRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import { draftRoomName } from "@meridian/contracts/protocol";
 import { createDrizzleBranchDiscard } from "../../../../apps/server/server/domains/collab/adapters/drizzle-branch-discard.ts";
 import {
   readDocumentAuthorityHead,
@@ -80,7 +80,10 @@ try {
   const u1 = appendToFirstParagraph(offline, "A");
   const u2 = appendToFirstParagraph(offline, "B");
   const missing = await server.send(room, draft.draftId, u2);
-  assert.deepEqual(missing, { ok: false, closes: [WS_CLOSE.DRAFT_PREFIX_MISSING] });
+  assert.deepEqual(missing, {
+    ok: false,
+    closes: [{ code: 1013, reason: "writer-journal-admission-failed" }],
+  });
   observe("prefix missing", missing);
   offline.destroy();
   // Process-local room state is disposable: the next server materializes the same journal.

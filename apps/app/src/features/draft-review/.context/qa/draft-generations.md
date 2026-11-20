@@ -10,8 +10,7 @@ pnpm exec tsx tools/qa/probes/drafts-lock-free/run.mts cold-load-commit read-onl
 The first runner creates and drops its scratch database. It checks that live
 restore changes only live authority, a fresh server reopens the same draft room
 with committed text, and Discard all sends `4205 discarded` only after its root
-transaction commits. The second runner checks missing-prefix `4207` resync and
-load/read-only handshake repair.
+transaction commits. The second runner checks load/read-only handshake repair.
 
 Against a running dev stack, seed an existing-document draft in a scratch Work,
 then run this probe. It discards that Work's entire branch:
@@ -34,7 +33,7 @@ can be removed and correctly closes with `4208 document-deleted`.
    discarded`, leaves the draft, and does not reconnect. The initiating tab
    shows no refusal.
 4. Restart the dev server through `pnpm dev:restart`. The tab reconnects to the
-   same room and retains acknowledged text. For missing-prefix `4207`, the next
+   same room and retains acknowledged text. After a `1013` gap close, the next
    SyncStep2 uploads the withheld prefix instead of treating it as terminal.
 5. Restore a live checkpoint while the draft remains open. Live authority moves;
    the draft id and room do not.
