@@ -5,14 +5,7 @@ import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { type NotUndone, takeBackAll } from "./undo.js";
 import { readStored, writable } from "./validate.js";
-import {
-  LIVE,
-  lastSettlements,
-  listRecords,
-  pendingRecords,
-  replayView,
-  viewRecords,
-} from "./view.js";
+import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
 /** Why a record asked to land did not; it stays pending. */
@@ -494,30 +487,8 @@ function appliedBy(doc: Y.Doc, applied: string) {
 }
 
 /**
- * The nodes of an Apply command that still stand in live: each node whose copy is in force
- * (the projection's `inForce`), and each whose `restore` the Apply made (`restoredByApply`, the ids
- * `undoApply` takes back) is in force too. Empty once Un-Apply, or an Undo of each change, took
- * them all back; the tab reads it to tell whether the Apply's tree half has ended. A pure function
- * of the list, the same in every client.
- */
-export function appliedNodes(
-  doc: Y.Doc,
-  applied: string,
-  restoredByApply: readonly string[],
-): string[] {
-  const standing = replayView(doc, LIVE).inForce;
-  return [
-    ...new Set(
-      madeBy(doc, applied, restoredByApply)
-        .filter((record) => standing.has(record.id))
-        .map((record) => record.node),
-    ),
-  ];
-}
-
-/**
  * The live records an Apply command made: the restores it made first (`restoredByApply`), then
- * its copies. Whether or not they still stand: `appliedNodes` filters, an estimate does not.
+ * its copies, whether or not they still stand.
  */
 export function madeBy(
   doc: Y.Doc,

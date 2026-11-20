@@ -15,6 +15,7 @@ import type {
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
+import type { TreeListRef } from "@meridian/contracts/protocol";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,7 +38,7 @@ import {
   shownSourceOf,
 } from "@/core/project-tree/tree-undo";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
-import type { TreeListHandle } from "@/core/tree-list/tree-list-registry";
+import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import { ApplyEntries, type ApplyPort, type Seat } from "@/features/draft-review/apply-history";
 import { type CommandOutcome, folderKey } from "@/features/draft-review/draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
@@ -50,8 +51,17 @@ import {
 } from "@/features/project/context/account-feature-context";
 
 type Verdict = "apply" | "discard";
-/** `sources`: where the press's nodes showed in the Work's tree as it was sent. */
-type Pressed = { commandId: string; result: PressResult; sources: readonly string[] };
+/**
+ * Each tree list whose rows showed the press's nodes in the Work's tree as it was sent, with the
+ * sources they showed in: the sidebar stacks its Undo step goes on.
+ */
+type Placement = readonly { list: TreeListRef; sources: readonly string[] }[];
+type Pressed = { commandId: string; result: PressResult; placement: Placement };
+/**
+ * `failed`: the press reached the server, which didn't take it. `told`: it was never sent, and
+ * `submitCommand` has told the writer already.
+ */
+type Unpressed = "failed" | "told";
 /** A node the press takes: whole, or only its tree change (a review's tree line). */
 type PressItem = { node: string; half?: "tree" };
 const whole = (nodes: readonly string[]): PressItem[] => nodes.map((node) => ({ node }));
@@ -108,63 +118,83 @@ export function usePressCommands({
     });
 
     /** A press's Undo: the server takes back what that press did, and nothing else. */
-    const unpress = async (commandId: string): Promise<boolean> => {
-      if (!driver) return false;
+    const unpress = async (commandId: string): Promise<"done" | Unpressed> => {
+      if (!driver) return "failed";
       const record = await submitPressUndo(driver, ownerKey, {
         projectId,
         pressCommandId: commandId,
       });
-      const settled = record ? await driver.whenSettled(record.id) : null;
+      if (!record) return "told";
+      const settled = await driver.whenSettled(record.id);
       await refresh();
-      return settled?.state === "done";
+      return settled?.state === "done" ? "done" : "failed";
     };
 
     /**
-     * Where the nodes show in the Work's tree now (`sources`), its view showing both what Live
-     * holds and what the Work made.
+     * Where the nodes show in the Work's tree now, in the project's list and the account's: its
+     * view shows both what Live holds and what the Work made. None found, the project's list
+     * holds the step under every source.
      */
-    const sourcesOf = (nodes: readonly string[]): string[] => {
+    const placementOf = (nodes: readonly string[]): Placement => {
       if (!treeLists) return [];
       const branchId = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.ownerDrafts(projectId, ownerKey),
       )?.branchId;
-      const handle = treeLists.acquire({ kind: "project", projectId });
       const { view, pendingText } = branchId
         ? draftTreeVersion(branchId, rows(), work ? workLifecycleState(work) : "active")
         : { view: LIVE, pendingText: undefined };
-      const shown = handle.session.replay(view, pendingText);
-      handle.release();
-      return [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))];
+      const project: TreeListRef = { kind: "project", projectId };
+      const placement = [project, treeLists.account].flatMap((list) => {
+        const handle = treeLists.acquire(list);
+        const shown = handle.session.replay(view, pendingText);
+        handle.release();
+        const sources = [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))];
+        return sources.length ? [{ list, sources }] : [];
+      });
+      return placement.length ? placement : [{ list: project, sources: [] }];
     };
 
-    /** A press's step on the project list's Undo stack, held there while it is on it. */
-    const seatOf = (step: PressStep): Seat => {
-      let held: TreeListHandle | null = null;
-      return {
+    /**
+     * A press's step on the Undo stack of each list in its placement, one `undo` for all of them.
+     * The stacks belong to the lists' sessions, whoever holds them, as a gesture's steps do.
+     */
+    const seatOf = (nodes: readonly string[], undo: () => Promise<boolean>) => {
+      let placement: Placement = [];
+      let seated: { session: TreeListSession; step: PressStep }[] = [];
+      const seat: Seat = {
         push: () => {
-          if (held || !treeLists) return;
-          held = treeLists.acquire({ kind: "project", projectId });
-          pushUndoStep(held.session, step);
+          if (seated.length || !treeLists) return;
+          seated = placement.map(({ list, sources }) => {
+            const handle = treeLists.acquire(list);
+            const step: PressStep = { kind: "press", sources, nodes, undo };
+            pushUndoStep(handle.session, step);
+            handle.release();
+            return { session: handle.session, step };
+          });
         },
         drop: () => {
-          if (!held) return;
-          dropUndoStep(held.session, step);
-          held.release();
-          held = null;
+          for (const { session, step } of seated) dropUndoStep(session, step);
+          seated = [];
         },
       };
+      /** The press in force landed here: a Redo is a new press, which may have moved. */
+      const place = (where: Placement) => {
+        placement = where;
+      };
+      return { seat, place };
     };
 
     /** A Discard's Undo, once: the notice, every row that offers it and the sidebar send this. */
     const undoOf = (commandId: string, undone: () => void) => {
       let sent: Promise<boolean> | null = null;
       return () => {
-        sent ??= unpress(commandId).then((done) => {
-          if (done) {
+        sent ??= unpress(commandId).then((answer) => {
+          if (answer === "done") {
             undone();
             return true;
           }
-          notifyFailure({ key: `unpress:${commandId}`, title: t`Couldn't undo`, brief: true });
+          if (answer === "failed")
+            notifyFailure({ key: `unpress:${commandId}`, title: t`Couldn't undo`, brief: true });
           sent = null;
           return false;
         });
@@ -181,23 +211,26 @@ export function usePressCommands({
       const taken: PressItem[] = pressed.result.items.map((item) =>
         item.text ? { node: item.node } : { node: item.node, half: "tree" },
       );
+      const { seat, place } = seatOf(
+        taken.map(({ node }) => node),
+        async () => (await entries.undo(null)).kind !== "failed",
+      );
+      place(pressed.placement);
       const port: ApplyPort = {
-        unapply: async (commandId) =>
-          (await unpress(commandId))
-            ? { kind: "answered", unapplyId: commandId, took: true }
-            : { kind: "failed" },
+        unapply: async (commandId) => {
+          const answer = await unpress(commandId);
+          if (answer === "done") return { kind: "answered", unapplyId: commandId, took: true };
+          return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
+        },
         redo: async () => {
           if (!driver) return "failed";
           const again = await press("apply", taken, driver);
-          return again ? { commandId: again.commandId } : "failed";
+          if (again === "told") return null;
+          if (again === "failed") return "failed";
+          place(again.placement);
+          return { commandId: again.commandId };
         },
       };
-      const seat = seatOf({
-        kind: "press",
-        sources: pressed.sources,
-        nodes: taken.map(({ node }) => node),
-        undo: async () => (await entries.undo(null)).kind !== "failed",
-      });
       const entries: ApplyEntries = new ApplyEntries(
         pressed.commandId,
         port,
@@ -227,7 +260,7 @@ export function usePressCommands({
       verdict: Verdict,
       items: readonly PressItem[] | "all",
       live: CommandDriver,
-    ): Promise<Pressed | null> => {
+    ): Promise<Pressed | Unpressed> => {
       const listed = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.ownerDrafts(projectId, ownerKey),
       );
@@ -244,7 +277,10 @@ export function usePressCommands({
             .filter((node) => !rows().some((item) => item.documentId === node))
             .map((node) => folderKey(listed.branchId as string, node))
         : [];
-      const sources = sourcesOf(nodes);
+      // Discard all takes folders with only a tree change too: they have no row.
+      const placement = placementOf(
+        items === "all" ? [...nodes, ...(listed?.folders.map((folder) => folder.id) ?? [])] : nodes,
+      );
       const release = owner.hold([...rowKeys, ...folders], verdict === "apply");
       try {
         const open = nodes.flatMap((documentId) => {
@@ -266,20 +302,14 @@ export function usePressCommands({
           ...(listed?.saw ? { saw: listed.saw } : {}),
           ...(open.length ? { seen: open } : {}),
         });
-        const settled = record ? await live.whenSettled(record.id) : null;
+        if (!record) return "told";
+        const settled = await live.whenSettled(record.id);
         await refresh();
-        if (!record || settled?.state !== "done" || settled.outcome?.status !== "done") {
-          notifyFailure({
-            key: `press:${ownerKey}`,
-            title: verdict === "apply" ? t`Couldn't apply` : t`Couldn't discard`,
-            brief: true,
-          });
-          return null;
-        }
+        if (settled?.state !== "done" || settled.outcome?.status !== "done") return "failed";
         return {
           commandId: record.sendId,
           result: settled.outcome.result as PressResult,
-          sources,
+          placement,
         };
       } finally {
         release();
@@ -287,8 +317,7 @@ export function usePressCommands({
     };
 
     /** What the press says of the nodes it was sent: the ones it changed nothing in are untaken. */
-    const outcomeOf = (pressed: Pressed | null, nodes: readonly string[]): CommandOutcome => {
-      if (!pressed) return { kind: "blocked" };
+    const outcomeOf = (pressed: Pressed, nodes: readonly string[]): CommandOutcome => {
       const { result } = pressed;
       if (result.settled?.length) return { kind: "returned" };
       const took = new Set(result.items.map((item) => item.node));
@@ -308,13 +337,20 @@ export function usePressCommands({
       // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
       const named = (node: string) => names.get(node) ?? "";
-      const outcome = press(verdict, items, driver).then((pressed) => {
+      const outcome = press(verdict, items, driver).then((pressed): CommandOutcome => {
+        if (pressed === "failed")
+          notifyFailure({
+            key: `press:${ownerKey}`,
+            title: verdict === "apply" ? t`Couldn't apply` : t`Couldn't discard`,
+            brief: true,
+          });
+        if (typeof pressed === "string") return { kind: "blocked" };
         const sent =
           items === "all"
-            ? (pressed?.result.items.map((item) => item.node) ?? [])
+            ? pressed.result.items.map((item) => item.node)
             : items.map((item) => item.node);
         const answer = outcomeOf(pressed, sent);
-        if (!pressed || answer.kind !== "done") return answer;
+        if (answer.kind !== "done") return answer;
         const changed = pressed.result.items.map((item) => item.node);
         const where = noticeSurface(input.documentId);
         if (verdict === "apply") {
@@ -331,12 +367,8 @@ export function usePressCommands({
             })),
           });
         } else {
-          const seat = seatOf({
-            kind: "press",
-            sources: pressed.sources,
-            nodes: changed,
-            undo: () => undo(),
-          });
+          const { seat, place } = seatOf(changed, () => undo());
+          place(pressed.placement);
           let shown: number | null = null;
           const undo = undoOf(pressed.commandId, () => {
             seat.drop();

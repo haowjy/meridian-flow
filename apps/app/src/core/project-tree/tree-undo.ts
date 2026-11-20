@@ -93,8 +93,9 @@ export const NOTHING_CLOSED: ClosedOwners = { source: () => null };
  * An Apply or a Discard in a Work's review (its press command), one step whichever view is on
  * screen. Ctrl+Z on it sends the command's own Undo (`undo`: false when the request didn't reach
  * the server, which the writer is told; the step stays). Whoever pushed it takes it off the stack
- * once the command is taken back from anywhere (a notice, an editor's Ctrl+Z, the sidebar), and
- * a Redo that lands puts it back on top.
+ * once the command is taken back in this tab (a notice, an editor's Ctrl+Z, the sidebar), and a
+ * Redo that lands puts it back on top. Taken back in another tab, the step stays: its Ctrl+Z is
+ * answered with nothing taken.
  */
 export type PressStep = {
   kind: "press";

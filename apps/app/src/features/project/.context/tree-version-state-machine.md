@@ -90,8 +90,10 @@ stateDiagram-v2
   notice and an open editor's Ctrl+Z send (an Apply through `ApplyEntries`), and is spent once the
   server answered, so it never falls through to an older step; one that didn't reach the server
   toasts and stays. On the Changes tab a press takes the latest step of any source; in a source's
-  list, a step whose documents showed there in the Work's tree when it was pressed. It leaves the
-  stack once the press is taken back from anywhere, and an editor's Redo of an Apply puts it back.
+  list (the project's or the account's), a step whose documents or folders showed there in the
+  Work's tree when it was pressed. It leaves the stack once the press is taken back in this tab,
+  and an editor's Redo of an Apply puts it back where the new press landed. One taken back in
+  another tab stays, and its Ctrl+Z takes nothing.
 - **A step that waits for a closed owner keeps its place.** A tree step whose every record would
   change such an owner's notes, goes back where it was, and its rows say who it waits for ("The
   move stayed: Notes is archived. Unarchive it to undo this."). A press passes over it while every

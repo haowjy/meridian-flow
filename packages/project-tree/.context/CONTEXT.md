@@ -199,14 +199,9 @@ the replay uses them (package `AGENTS.md`).
   superseded), Undo answers `unknown`. Undo of an Apply and `restoreEntry` use the same match.
   `restores`, `restoredBy`, `appliedBy` and `fromDraft` say who and from where, not which record.
 - **`projection.inForce` is the one reading of which records are in force**, worked out by
-  the replay. `undoChange` answers `already` for a record that is not,
-  and `appliedNodes(doc, command, restoredByApply)` is the one reader of what of an Apply still
-  stands: the nodes whose live copies are in force, and the nodes whose Apply-made `restore` (the
-  ids `undoApply` takes back) is in force. An Apply that only brought a document back from Trash
-  lists it until Un-Apply or a card's Undo takes the restore back. A tab can tell the Apply's tree
-  half has ended (a card's Undo of the drafted change took the copy back). `madeBy` is the one reader
-  of the records themselves, standing or not (restores first, then copies): `appliedNodes` filters it, and
-  the server's Un-Apply estimate reads `Change.sources` of each. `appliedBy` keeps
+  the replay. `undoChange` answers `already` for a record that is not. `madeBy` is the one reader
+  of the records an Apply made, standing or not (restores first, then copies): the server's
+  Un-Apply estimate reads `Change.sources` of each. `appliedBy` keeps
   copies not in force, so `undoApply` reports them `already`. One Undo takes out every copy of a
   record: when a record applied, Un-Applied and applied again has its first copy back in force (an
   Undo of the Un-Apply's Undo), Un-Apply of the second Apply takes out both. After a copy of
