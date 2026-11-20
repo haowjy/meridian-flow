@@ -21,20 +21,15 @@ import {
   viewBlock,
   visible,
 } from "@meridian/suggestions";
+import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import type { BlockRef } from "../handles.js";
 import { unwrapBlock, unwrapDoc } from "../handles.js";
 import type { EditOp, EditOpsResult } from "../ports/model.js";
 import { lowerBlock } from "../resolver/lower-block.js";
-import { getTopLevelXmlBlocks } from "./block-hash.js";
-import { readRepairedRoot } from "./schema-repair.js";
-import {
-  applyOps as applyRawOps,
-  fragmentOf,
-  type YProsemirrorDocumentModel,
-} from "./y-prosemirror.js";
+import { applyOps as applyRawOps, type YProsemirrorDocumentModel } from "./y-prosemirror.js";
 
 /** `viewOf` reads the view from the document itself: which Works' drafts it has discarded. */
 export function suggestingModel(
@@ -117,7 +112,6 @@ export function suggestingModel(
 
     insertBlocks(doc, after, parsed) {
       const view = viewOf(unwrapDoc(doc));
-      forget(unwrapDoc(doc));
       if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
       // A block a write adds after its own edit of the block before is part of that change.
       const id =
@@ -134,14 +128,15 @@ export function suggestingModel(
     deleteBlock(doc, block) {
       const view = viewAt(block);
       const node = stored(block);
-      forget(unwrapDoc(doc));
       if (view.work === null || !author || blockKind(node, view) === "own") {
         base.deleteBlock(doc, block);
         return;
       }
       const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
       const out = rewrite(state.tr.delete(1, 1 + node.content.size), state, view, author);
-      applyRawOps(unwrapBlock(block), lowerBlock(node, out.doc.firstChild as PMNode));
+      const after = out.doc.firstChild as PMNode;
+      applyRawOps(unwrapBlock(block), lowerBlock(node, after));
+      written(unwrapBlock(block), after);
     },
   };
 
@@ -202,40 +197,42 @@ function rawUnit(units: readonly Run[], unit: number, side: "start" | "end"): nu
 }
 
 /**
- * Each document's stored blocks, suggestions and all, projected once per state: the model calls
- * this per block, and a projection reads the whole fragment.
+ * Stored blocks, suggestions and all, projected one block at a time and kept for the document's
+ * current state: the model reads them per block, many times per write.
  */
 const projections = new WeakMap<Y.Doc, Map<Y.XmlElement, PMNode>>();
 
-/**
- * A write inside the model's transaction, which `afterTransaction` has not seen yet: the block's
- * new stored node when the write knows it, else the next read projects the document again.
- */
-function written(element: Y.XmlElement, node?: PMNode): void {
-  const nodes = projections.get(element.doc as Y.Doc);
-  if (node && nodes) nodes.set(element, node);
-  else projections.delete(element.doc as Y.Doc);
-}
-
-/** A write that adds or removes blocks. */
-function forget(doc: Y.Doc): void {
-  projections.delete(doc);
-}
-
-function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
-  const doc = element.doc as Y.Doc;
+function projectionsOf(doc: Y.Doc): Map<Y.XmlElement, PMNode> {
   let nodes = projections.get(doc);
   if (!nodes) {
-    const root = readRepairedRoot("projectBlocks", fragmentOf(doc), schema);
-    const projected = new Map<Y.XmlElement, PMNode>();
-    getTopLevelXmlBlocks(doc).forEach((block, index) => {
-      projected.set(block, root.child(index));
-    });
-    nodes = projected;
+    nodes = new Map();
     projections.set(doc, nodes);
     doc.once("afterTransaction", () => projections.delete(doc));
   }
-  const node = nodes.get(element);
-  if (!node) throw new Error("A block outside its document's projection");
+  return nodes;
+}
+
+/**
+ * A write inside the model's transaction, which `afterTransaction` has not seen yet: the block's
+ * new stored node when the write knows it, else the next read projects that block again.
+ */
+function written(element: Y.XmlElement, node?: PMNode): void {
+  const nodes = projectionsOf(element.doc as Y.Doc);
+  if (node) nodes.set(element, node);
+  else nodes.delete(element);
+}
+
+function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
+  const nodes = projectionsOf(element.doc as Y.Doc);
+  let node = nodes.get(element);
+  if (!node) {
+    // The binding converts a fragment, so the block goes through one of its own.
+    const scratch = new Y.Doc();
+    const fragment = scratch.getXmlFragment("block");
+    fragment.insert(0, [element.clone()]);
+    node = yXmlFragmentToProseMirrorRootNode(fragment, schema).child(0);
+    scratch.destroy();
+    nodes.set(element, node);
+  }
   return node;
 }

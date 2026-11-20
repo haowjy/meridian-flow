@@ -157,11 +157,12 @@ export function list(doc: Node, view: View): Change[] {
       const kind = kindOf(child.marks, block, view);
       if (kind !== "own-ins" && kind !== "own-del") return;
       const name = kind === "own-ins" ? "suggest_ins" : "suggest_del";
-      const mark = child.marks.find((m) => m.type.name === name && m.attrs.work === view.work);
-      if (!mark) return;
       const from = blockPos + 1 + offset;
       const side = kind === "own-ins" ? "inserted" : "deleted";
-      note(mark.attrs as SuggestionAttrs, from, from + child.nodeSize, child.textContent, side);
+      // Two tabs of one Work can each mark the same text: every one of them is a change to review.
+      for (const mark of child.marks)
+        if (mark.type.name === name && mark.attrs.work === view.work)
+          note(mark.attrs as SuggestionAttrs, from, from + child.nodeSize, child.textContent, side);
     });
   });
   return [...byId.values()].sort((a, b) => a.from - b.from);

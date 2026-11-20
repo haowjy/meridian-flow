@@ -81,6 +81,10 @@ type At = (pos: number, assoc?: number) => number;
 
 /** Whether a Live-view step must be rewritten: it removes hidden text or carries a suggestion. */
 function touchesSuggestions(step: Step, doc: Node, view: View): boolean {
+  if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
+    const { from, to } = step as unknown as { from: number; to: number };
+    return pieces(doc, from, to, view).some((piece) => piece.kind === "hidden");
+  }
   if (!(step instanceof ReplaceStep)) return false;
   const { from, to, slice } = step as unknown as { from: number; to: number; slice: Slice };
   let carries = false;
@@ -124,13 +128,16 @@ function rewriteStep(
     const a = at(from, 1);
     const b = at(to, -1);
     const add = step instanceof AddMarkStep;
-    // A comment anchors anywhere; formatting in a Work's view reaches only its own insertions.
-    if (view.work === null || mark.type.name === "comment") {
-      add ? out.addMark(a, b, mark) : out.removeMark(a, b, mark);
-      return null;
-    }
+    // A mark reaches only what the view shows. In a Work's view a comment anchors on any of it,
+    // and formatting only on the Work's own insertions (suggested formatting is not built).
+    const reaches = (kind: RunKind) =>
+      view.work === null
+        ? kind === "live"
+        : mark.type.name === "comment"
+          ? kind !== "hidden"
+          : kind === "own-ins";
     for (const piece of pieces(out.doc, a, b, view))
-      if (piece.kind === "own-ins")
+      if (reaches(piece.kind))
         add ? out.addMark(piece.from, piece.to, mark) : out.removeMark(piece.from, piece.to, mark);
     return null;
   }
@@ -301,16 +308,18 @@ function continuedId(doc: Node, pos: number, author: Omit<SuggestionAttrs, "id">
   return sug && sameAuthor(sug, author) ? sug.id : null;
 }
 
-/** The last change the same author and turn made in `block`: what a block added after it joins. */
+/**
+ * The change a block added after `block` belongs to: the same author's change of the same turn
+ * that runs to `block`'s end, which is what a split leaves. Anything else is a change of its own.
+ */
 export function changeIn(block: Node, author: Omit<SuggestionAttrs, "id">): string | null {
   const sug = block.attrs.sug as SuggestionAttrs | null;
-  let id = sug && sameAuthor(sug, author) ? sug.id : null;
-  block.descendants((node) => {
-    for (const mark of node.marks)
-      if (isSuggestionMark(mark) && sameAuthor(mark.attrs as SuggestionAttrs, author))
-        id = mark.attrs.id as string;
-  });
-  return id;
+  if (sug && sameAuthor(sug, author)) return sug.id;
+  const last = block.lastChild;
+  for (const mark of last?.marks ?? [])
+    if (isSuggestionMark(mark) && sameAuthor(mark.attrs as SuggestionAttrs, author))
+      return mark.attrs.id as string;
+  return null;
 }
 
 /**
