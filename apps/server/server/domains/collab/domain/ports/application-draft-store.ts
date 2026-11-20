@@ -7,7 +7,6 @@ import type { ResolvedDraft } from "../draft-resolver.js";
 import type { DraftSnapshot, DraftStore } from "../draft-store.js";
 
 export type ApplicationDraftStore = DraftStore & {
-  listActiveWorkDraftIds(documentId: DocumentId): Promise<string[]>;
   /** The branch's active draft of the document, or null. */
   findBranchDraft(documentId: DocumentId, branchId: BranchId): Promise<DraftSnapshot | null>;
   /**

@@ -279,7 +279,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const draftPulls = createDraftPullService({
     outsideTransaction: runOutsideWrite,
     draftCoordinator,
-    drafts: draftStore,
+    // The harness opens no rooms: its tests catch drafts up by hand.
+    openDraftRooms: async () => [],
     liveJournal: persistence.journal,
   });
   const draftEffects = createDraftProjection({
@@ -410,12 +411,15 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
           liveRoomOf: async (documentId) =>
             liveRoom(documentId, await readAuthorityGeneration(documentId)),
           afterLiveCommit: (documentId) =>
-            deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
+            deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
         }),
         links,
       ),
       read: modelEditRead,
-      catchUp: (documentId) => draftPulls.flushLivePull(documentId),
+      catchUp: async (documentId, threadId) => {
+        const draft = await draftStore.resolveWorkDraftForThread(documentId, threadId);
+        await draftPulls.catchUpDraft(draft.draftId);
+      },
     },
     modelEvidence,
   );
@@ -430,7 +434,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     resolveDocumentUri,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
-    flushLivePull: draftPulls.flushLivePull,
+    liveCommitted: draftPulls.liveCommitted,
     notices: createReversalNoticePort({
       notices,
       resolveLastDocumentUri,

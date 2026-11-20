@@ -53,7 +53,7 @@ function versionGateServices(
     admitLiveWriterUpdate: vi.fn(async () => ({
       admitted: true as const,
     })),
-    flushDraftLivePull: vi.fn(async () => undefined),
+    catchUpDraft: vi.fn(async () => undefined),
   };
   return {
     liveDocuments: {

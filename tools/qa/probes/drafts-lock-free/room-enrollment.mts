@@ -264,7 +264,7 @@ export const coldLoadCommit: Probe = {
       const loading = gateway.load(draftId);
       await pause.entered.wait;
       appendToFirstParagraph(live, " COMMITTED");
-      await rebaseLive(harness, gateway.coordinator, documentId, live);
+      await rebaseLive(harness, gateway.coordinator, documentId, live, draftId);
       pause.release.open();
       const room = await loading;
       const registered = text(room);
@@ -304,7 +304,7 @@ export const droppedDelivery: Probe = {
       const room = await gateway.load(draftId);
       await gateway.enrolled(draftId);
       appendToFirstParagraph(live, " LIVE");
-      await rebaseLive(harness, gateway.coordinator, documentId, live);
+      await rebaseLive(harness, gateway.coordinator, documentId, live, draftId);
       const behind = text(room);
       const next = await gateway.type(room, draftId, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
@@ -341,7 +341,7 @@ export const readOnlyHandshake: Probe = {
       await gateway.enrolled(draftId);
       Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
       appendToFirstParagraph(live, " LIVE");
-      await rebaseLive(harness, gateway.coordinator, documentId, live);
+      await rebaseLive(harness, gateway.coordinator, documentId, live, draftId);
       const behind = { room: text(room), tab: text(tab) };
       await gateway.joinReadOnly(room, draftId, tab);
       const durable = (await harness.readDraft(draftId)).text;

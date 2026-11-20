@@ -1,11 +1,11 @@
 /**
- * Decision D23 (the Work archive rule): an archived Work's draft keeps rebasing on live, so it
- * applies cleanly after unarchive. A live edit made after Archive reaches the draft through the
- * background pull; unarchive finds nothing to catch up; a writer frame on the archived draft is
- * still refused, since the freeze stops the writer, not the rebase.
+ * Decision D23 (the Work archive rule): an archived Work's draft opened read-only shows current
+ * text, since the freeze stops the writer, not the rebase. A live edit made after Archive reaches
+ * the draft only while a room is open on it: the push skips an unopened draft, and opening it
+ * catches it up. Unarchive finds nothing to catch up; a writer frame on the archived draft is
+ * still refused.
  */
 import assert from "node:assert/strict";
-import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDraftPullService } from "../../../../apps/server/server/domains/collab/domain/draft-pulls.ts";
 import { materializeDraftRead } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import {
@@ -21,7 +21,7 @@ export const d23ArchivedDraftRebases: Probe = {
   name: "d23-archived-draft-rebases",
   decision: "D23",
   expected:
-    "archived: the live edit reaches the draft; unarchived: the text is already there, checkpoint unmoved; a writer frame while archived rejects `DraftStaleUpdateError`",
+    "archived: an unopened draft is left alone, opening it catches it up, a later live edit reaches it while open; unarchived: the text is already there, checkpoint unmoved; a writer frame while archived rejects `DraftStaleUpdateError`",
   async run(harness) {
     const { workId, branchId } = await harness.seedWork("archived-rebase");
     const { documentId, live } = await harness.seedDocument("archived-rebase", "Base");
@@ -31,9 +31,12 @@ export const d23ArchivedDraftRebases: Probe = {
       liveDoc: live,
       liveRoom: null,
     });
+    const openRooms: string[] = [];
     const pulls = createDraftPullService({
       outsideTransaction: independently,
-      drafts: harness.store,
+      openDraftRooms: async () => openRooms,
+      debounceMs: 5,
+      maxDebounceMs: 20,
       liveJournal: harness.persistence.journal,
       draftCoordinator: harness.coordinator,
     });
@@ -41,11 +44,25 @@ export const d23ArchivedDraftRebases: Probe = {
       await harness.works.archive(workId);
       const update = appendToFirstParagraph(live, " AFTER ARCHIVE");
       await harness.persistence.journal.append(documentId, update, { origin: "system", seq: 0 });
-      await pulls.flushLivePull(documentId as DocumentId);
+      pulls.liveCommitted(documentId);
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      const unopened = await harness.readDraft(documentDraft.draftId);
+      observe("unopened", unopened);
+      assert.doesNotMatch(unopened.text, /AFTER ARCHIVE/);
+
+      // Opened read-only: the room's first catch-up reads Live, though the Work is archived.
+      openRooms.push(documentDraft.draftId);
+      await pulls.catchUpDraft(documentDraft.draftId);
+      const opened = await harness.readDraft(documentDraft.draftId);
+      assert.match(opened.text, /Base AFTER ARCHIVE/);
+      const second = appendToFirstParagraph(live, " AGAIN");
+      await harness.persistence.journal.append(documentId, second, { origin: "system", seq: 0 });
+      pulls.liveCommitted(documentId);
+      await new Promise((resolve) => setTimeout(resolve, 60));
       const archived = await harness.readDraft(documentDraft.draftId);
       observe("archived", archived);
       assert.equal(archived.lifecycle, "archived");
-      assert.match(archived.text, /Base AFTER ARCHIVE/);
+      assert.match(archived.text, /Base AFTER ARCHIVE AGAIN/);
 
       const read = await harness.store.readDraftAt(documentDraft.draftId);
       if (!read) throw new Error("Draft is missing");

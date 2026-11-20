@@ -9,7 +9,7 @@ A model's document-changing tool call (`write`: text, `undo`/`revert`, `move`, `
 - `modelEdits().write` is the one operation that reads, plans, lowers and appends under the lock the append takes: live, the seam's Work locks then the document lock; a Work draft, the grants' Works, the removed-document rule (before any branch or draft opens: a removed document returns the edit and makes none), `approveBranchWriteJoin`, the branch, `ensureLiveDocumentDraft` (the live journal read in the transaction, no room mutex), then the draft row `FOR UPDATE`. A writer's keystroke into the document waits for one edit's planning and append.
 - `modelEdits().read` is a read inside a `run` effect (the text a returned edit shows): it joins the command's transaction and pulls nothing, as a write's room read does.
 - A server failure (an apply or commit that failed, an effect that threw) is not the model's to retry: `effectSettler` (`lib/model-tools/document-tools.ts`) runs the effect once more under the same command id, and only a second failure is answered, as an edit that did not land and asks for no retry. What an effect leaves in memory outlives its rollback, so each attempt starts from a checkpoint of the reply's own updates (`ReplyMutations.checkpoint`) and a rolled-back one restores it; captured call inputs (a Copy's source nodes) stay immutable and each attempt derives its own.
-- `modelEdits().catchUp` is the draft's live pull. A pull opens a connection of its own, so the handler runs it before the claim.
+- `modelEdits().catchUp(documentId, threadId)` is the thread's Work draft's catch-up with live (nothing when the thread has no draft of the document). A pull opens a connection of its own, so the handler runs it before the claim.
 
 ## One connection
 

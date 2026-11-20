@@ -687,12 +687,17 @@ export function createDrizzleDraftStore(
 
     findOwnerDraft,
 
-    async listActiveWorkDraftIds(documentId) {
+    async workDraftsOf(documentId, draftIds) {
+      if (!draftIds.length) return [];
       const rows = await currentDrizzleDb(db)
         .select({ id: documentDrafts.id })
         .from(documentDrafts)
         .where(
-          and(eq(documentDrafts.documentId, documentId), eq(documentDrafts.kind, "work_draft")),
+          and(
+            eq(documentDrafts.documentId, documentId),
+            eq(documentDrafts.kind, "work_draft"),
+            inArray(documentDrafts.id, [...draftIds]),
+          ),
         );
       return rows.map((row) => row.id);
     },

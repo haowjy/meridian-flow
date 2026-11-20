@@ -213,7 +213,7 @@ export const twoProcessFold: Probe = {
       appendToFirstParagraph(f.live, " LIVE");
       // B commits after A's off-lock read but before A takes the row. The rebase must
       // use the committed prefix and deliver B's row with its own content update.
-      const pull = rebaseLive(harness, f.a.coordinator, f.documentId, f.live);
+      const pull = rebaseLive(harness, f.a.coordinator, f.documentId, f.live, f.draftId);
       await pause.entered;
       const foreign = await type(f.b, f.draftId, " FOREIGN");
       pause.release();

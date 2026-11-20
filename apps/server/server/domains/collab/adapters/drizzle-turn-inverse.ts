@@ -99,7 +99,7 @@ type Dependencies = {
   /** Where a document in Trash last stood, which names it while a Redo brings it back. */
   resolveLastDocumentUri(documentId: string, branchId?: BranchId): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
-  flushLivePull(documentId: DocumentId): Promise<void>;
+  liveCommitted(documentId: DocumentId): void;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
   /** A revert changes pending membership, so it reconciles the Works' counts through it. */
   workProjection: Pick<WorkProjectionMutation, "mutate" | "ownersOf">;
@@ -1021,7 +1021,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
         } else {
           await input.coordinator.deliver(document.documentId);
           await input.refreshDocument(document.documentId);
-          await input.flushLivePull(document.documentId);
+          input.liveCommitted(document.documentId);
         }
       }
       if (kind !== "revert" && !query.model && query.turnId)

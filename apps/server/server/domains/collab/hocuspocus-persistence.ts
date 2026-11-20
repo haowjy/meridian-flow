@@ -29,7 +29,12 @@ import type {
 } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
-import { closeDraftRooms, closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
+import {
+  closeDraftRooms,
+  closeRoom,
+  openDraftRoomIds,
+  whenRoomRegistered,
+} from "./hocuspocus-rooms.js";
 
 type PendingAppend = {
   documentId: string;
@@ -63,6 +68,8 @@ type HocuspocusPersistenceDeps = {
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
+  /** Brings Live's committed text into a draft whose room just opened. */
+  catchUpDraft?(draftId: string): Promise<void>;
   /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
   onDraftWriterUpdateAdmitted?(draftId: string): void;
 };
@@ -72,6 +79,7 @@ export type HocuspocusPersistenceService = Pick<
   | "resolveDraftHocuspocusRoom"
   | "draftExists"
   | "openDraftIds"
+  | "openDraftRooms"
   | "loadHocuspocusDocument"
   | "loadHocuspocusDraftState"
   | "admitLiveWriterUpdate"
@@ -325,6 +333,11 @@ export function createHocuspocusPersistenceService(
       return requireDraftStore().openDraftIds(userId, draftIds);
     },
 
+    async openDraftRooms(documentId) {
+      const open = openDraftRoomIds(deps.hocuspocus());
+      return open.length ? requireDraftStore().workDraftsOf(documentId, open) : [];
+    },
+
     async loadHocuspocusDocument(documentId, document) {
       unsafeCheckpointDocuments.delete(documentId);
       if (!document) return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
@@ -358,7 +371,13 @@ export function createHocuspocusPersistenceService(
           room: document,
           trigger: "enrollment",
         });
-        if (!base) closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_PURGED);
+        if (!base) {
+          closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_PURGED);
+          return;
+        }
+        // Registered, so a Live commit from here on pushes to this room, and this pull reads
+        // whatever committed before it.
+        await deps.catchUpDraft?.(draftId);
       })().catch((cause: unknown) => {
         if (!deps.eventSink) return;
         emitEvent(deps.eventSink, {

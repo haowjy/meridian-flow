@@ -1,4 +1,7 @@
-/** Live→Work draft pulls (debounced and at tool boundaries). */
+/**
+ * Live→Work draft pulls: a Live commit pushes to the draft rooms open at that moment (debounced);
+ * a reader that shows a draft's text catches that one draft up first.
+ */
 
 import { contentMerge, type RuleCounts } from "@meridian/agent-edit/content-merge";
 import {
@@ -14,17 +17,22 @@ import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosem
 import * as Y from "yjs";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 
-export type WorkDraftLookup = {
-  listActiveWorkDraftIds(documentId: DocumentId): Promise<string[]>;
-};
-
 export type DraftPullService = {
-  scheduleLivePull(documentId: DocumentId): void;
-  /** Drops debounced pulls that haven't started; in-flight pulls finish. */
+  /**
+   * Live committed. After the debounce, catches up each draft of the document that has a room
+   * open then. Never waits: a draft nobody has open catches up when it is next read.
+   */
+  liveCommitted(documentId: DocumentId): void;
+  /**
+   * Brings Live's committed text into the draft's base and prose. A caller joining a running
+   * pull waits for a rerun that reads Live after its call. Never call it inside a command's
+   * transaction: it opens connections of its own.
+   */
+  catchUpDraft(draftId: string): Promise<void>;
+  /** Drops debounced pushes that haven't started; in-flight pulls finish. */
   cancelScheduledPulls(): void;
   /** Stop scheduling and join pulls already in flight before their store is destroyed. */
   shutdown(): Promise<void>;
-  flushLivePull(documentId: DocumentId): Promise<void>;
 };
 
 export type DraftPullDiagnostics = {
@@ -36,7 +44,8 @@ export type DraftPullDiagnostics = {
 export function createDraftPullService(input: {
   outsideTransaction<T>(operation: () => T): T;
   draftCoordinator: DraftCoordinator;
-  drafts: WorkDraftLookup;
+  /** The document's Work drafts with a room open or loading in this process. */
+  openDraftRooms(documentId: DocumentId): Promise<string[]>;
   debounceMs?: number;
   maxDebounceMs?: number;
   liveJournal: Pick<UpdateJournal, "read">;
@@ -45,15 +54,9 @@ export function createDraftPullService(input: {
   let stopped = false;
   const debounceMs = input.debounceMs ?? 2000;
   const maxDebounceMs = input.maxDebounceMs ?? 10000;
-  const timers = new Map<
-    string,
-    {
-      debounce?: NodeJS.Timeout;
-      max?: NodeJS.Timeout;
-      running?: Promise<void>;
-      queued?: Promise<void>;
-    }
-  >();
+  const scheduled = new Map<DocumentId, { debounce?: NodeJS.Timeout; max?: NodeJS.Timeout }>();
+  const pulls = new Map<string, { running?: Promise<void>; queued?: Promise<void> }>();
+  const pushes = new Set<Promise<void>>();
 
   const schema = buildDocumentSchema();
 
@@ -70,68 +73,63 @@ export function createDraftPullService(input: {
     }
   }
 
-  async function pullLive(documentId: DocumentId): Promise<void> {
-    const drafts = await input.drafts.listActiveWorkDraftIds(documentId);
-    if (!drafts.length) return;
+  async function pullDraft(draftId: string): Promise<void> {
+    const base = await input.draftCoordinator.loadBase(draftId);
+    const documentId = base.snapshot.documentId as DocumentId;
     const live = await committedLive(documentId);
     try {
       const blocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-      for (const draftId of drafts) {
-        const base = await input.draftCoordinator.loadBase(draftId);
-        if (
-          blocksEqual(
-            readBlocks(base.replica.doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
-            blocks,
-          )
+      if (
+        blocksEqual(
+          readBlocks(base.replica.doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
+          blocks,
         )
-          continue;
-        const write = input.draftCoordinator.prepareAppend(base, [], {
-          work: "any",
-          async authorServerRows(prefix) {
-            // A committed Apply in this prefix also committed its live row. Read live after
-            // the draft lock, without taking live's lock or importing any of its Yjs identity.
-            const current = await committedLive(documentId);
-            try {
-              const nextBase = readBlocks(
-                current.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-                schema,
-              );
-              const reviewBase = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
-              const oldBase = readBlocks(reviewBase, schema);
-              if (blocksEqual(oldBase, nextBase)) return [];
-              const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-              const merged = contentMerge(schema, oldBase, nextBase, readBlocks(fragment, schema));
-              input.diagnostics?.merged({
-                documentId,
-                rules: merged.rules,
-                overrode: merged.overrode,
-              });
-              return captureMutationUpdates(prefix, () =>
-                prefix.transact(() => {
-                  writeBlocks(fragment, schema, merged.blocks);
-                  writeBlocks(reviewBase, schema, nextBase);
-                }),
-              );
-            } finally {
-              current.destroy();
-            }
-          },
-        });
-        try {
-          await write.persist();
-          await write.transfer();
-        } finally {
-          write.dispose();
-        }
+      )
+        return;
+      const write = input.draftCoordinator.prepareAppend(base, [], {
+        // A server rebase is not an incoming edit: an archived Work's open draft follows Live too.
+        work: "any",
+        async authorServerRows(prefix) {
+          // A committed Apply in this prefix also committed its live row. Read live after
+          // the draft lock, without taking live's lock or importing any of its Yjs identity.
+          const current = await committedLive(documentId);
+          try {
+            const nextBase = readBlocks(current.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+            const reviewBase = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+            const oldBase = readBlocks(reviewBase, schema);
+            if (blocksEqual(oldBase, nextBase)) return [];
+            const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+            const merged = contentMerge(schema, oldBase, nextBase, readBlocks(fragment, schema));
+            input.diagnostics?.merged({
+              documentId,
+              rules: merged.rules,
+              overrode: merged.overrode,
+            });
+            return captureMutationUpdates(prefix, () =>
+              prefix.transact(() => {
+                writeBlocks(fragment, schema, merged.blocks);
+                writeBlocks(reviewBase, schema, nextBase);
+              }),
+            );
+          } finally {
+            current.destroy();
+          }
+        },
+      });
+      try {
+        await write.persist();
+        await write.transfer();
+      } finally {
+        write.dispose();
       }
     } finally {
       live.destroy();
     }
   }
 
-  async function run(documentId: DocumentId): Promise<void> {
-    if (stopped) return;
-    const current = timers.get(documentId);
+  function catchUpDraft(draftId: string): Promise<void> {
+    if (stopped) return Promise.resolve();
+    const current = pulls.get(draftId);
     if (current?.running) {
       // A joiner needs a snapshot captured after its call, not the in-flight
       // snapshot that may predate a writer edit. Coalesce joins into one rerun.
@@ -139,84 +137,70 @@ export function createDraftPullService(input: {
       current.queued ??= input.outsideTransaction(() => {
         const rerun = () => {
           current.queued = undefined;
-          return run(documentId);
+          return catchUpDraft(draftId);
         };
         return running.then(rerun, rerun);
       });
       return current.queued;
     }
     const entry = current ?? {};
-    const running = input.outsideTransaction(() =>
-      pullLive(documentId)
-        .then(() => {
-          // A queued snapshot may include newer edits; its retries still need these timers.
-          if (entry.queued) return;
-          if (entry.debounce) clearTimeout(entry.debounce);
-          if (entry.max) clearTimeout(entry.max);
-          entry.debounce = undefined;
-          entry.max = undefined;
-        })
-        .finally(() =>
-          input.outsideTransaction(() => {
-            entry.running = undefined;
-            if (!entry.queued && !entry.debounce && !entry.max) timers.delete(documentId);
-          }),
-        ),
+    entry.running = input.outsideTransaction(() =>
+      pullDraft(draftId).finally(() =>
+        input.outsideTransaction(() => {
+          entry.running = undefined;
+          if (!entry.queued) pulls.delete(draftId);
+        }),
+      ),
     );
-    entry.running = running;
-    timers.set(documentId, entry);
-    return running;
+    pulls.set(draftId, entry);
+    return entry.running;
   }
 
-  function backgroundPull(documentId: DocumentId): void {
-    void run(documentId).catch((cause: unknown) => {
-      input.diagnostics?.backgroundFailed({ documentId, cause });
-    });
-  }
-
-  function armDebounce(documentId: DocumentId, entry: NonNullable<ReturnType<typeof timers.get>>) {
-    if (entry.debounce) clearTimeout(entry.debounce);
-    entry.debounce = setTimeout(() => {
-      entry.debounce = undefined;
-      backgroundPull(documentId);
-    }, debounceMs);
+  function push(documentId: DocumentId): void {
+    const entry = scheduled.get(documentId);
+    if (entry?.debounce) clearTimeout(entry.debounce);
+    if (entry?.max) clearTimeout(entry.max);
+    scheduled.delete(documentId);
+    const report = (cause: unknown) => input.diagnostics?.backgroundFailed({ documentId, cause });
+    const pushed: Promise<void> = input
+      .outsideTransaction(() => input.openDraftRooms(documentId))
+      .then((draftIds) =>
+        Promise.all(draftIds.map((draftId) => catchUpDraft(draftId).catch(report))),
+      )
+      .then(() => undefined, report)
+      .finally(() => pushes.delete(pushed));
+    pushes.add(pushed);
   }
 
   return {
-    scheduleLivePull(documentId) {
+    liveCommitted(documentId) {
       if (stopped) return;
-      const entry = timers.get(documentId) ?? {};
-      if (entry.running) backgroundPull(documentId);
-      armDebounce(documentId, entry);
-      entry.max ??= setTimeout(() => {
-        entry.max = undefined;
-        backgroundPull(documentId);
-      }, maxDebounceMs);
-      timers.set(documentId, entry);
+      const entry = scheduled.get(documentId) ?? {};
+      if (entry.debounce) clearTimeout(entry.debounce);
+      entry.debounce = setTimeout(() => push(documentId), debounceMs);
+      entry.max ??= setTimeout(() => push(documentId), maxDebounceMs);
+      scheduled.set(documentId, entry);
     },
 
+    catchUpDraft,
+
     cancelScheduledPulls() {
-      for (const [documentId, entry] of timers) {
+      for (const entry of scheduled.values()) {
         if (entry.debounce) clearTimeout(entry.debounce);
         if (entry.max) clearTimeout(entry.max);
-        entry.debounce = undefined;
-        entry.max = undefined;
-        if (!entry.running && !entry.queued) timers.delete(documentId);
       }
+      scheduled.clear();
     },
 
     async shutdown() {
       stopped = true;
       this.cancelScheduledPulls();
       // A queued rerun observes stopped before touching the store. Failures are already
-      // reported by the background caller; teardown must join every other pull as well.
-      await Promise.allSettled(
-        [...timers.values()].flatMap((entry) => [entry.running, entry.queued].filter(Boolean)),
-      );
-    },
-
-    flushLivePull(documentId) {
-      return run(documentId);
+      // reported by the push that ran them; teardown must join every other pull as well.
+      await Promise.allSettled([
+        ...pushes,
+        ...[...pulls.values()].flatMap((entry) => [entry.running, entry.queued].filter(Boolean)),
+      ]);
     },
   };
 }

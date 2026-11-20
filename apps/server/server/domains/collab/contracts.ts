@@ -123,6 +123,11 @@ export type CollabTransport = {
   draftExists(draftId: string): Promise<boolean>;
   /** Which of these drafts are in the user's projects: a draft that is not listed is gone. */
   openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
+  /**
+   * The document's Work drafts with a room open or loading, the one place that knows which
+   * rooms are open: this process's Hocuspocus. A Live commit pushes to exactly these.
+   */
+  openDraftRooms(documentId: DocumentId): Promise<string[]>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
   loadHocuspocusDraftState(draftId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {
@@ -593,7 +598,8 @@ export type DraftPeerShadowAccess = {
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
-  flushDraftLivePull(documentId: DocumentId): Promise<void>;
+  /** Brings Live's committed text into the draft before a reader shows it. */
+  catchUpDraft(draftId: string): Promise<void>;
   /**
    * Stored grep text for those of `documentIds` whose text matches what this reader sees: the
    * derived outputs are current, no active draft stands between a draft reader and the live

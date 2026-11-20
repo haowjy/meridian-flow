@@ -16,6 +16,16 @@ export function closeDraftRooms(hocuspocus: Hocuspocus | null, draftId: string):
   );
 }
 
+/** The drafts with a room open or loading in this process. */
+export function openDraftRoomIds(hocuspocus: Hocuspocus | null): string[] {
+  if (!hocuspocus) return [];
+  const names = new Set([...hocuspocus.documents.keys(), ...hocuspocus.loadingDocuments.keys()]);
+  return [...names].flatMap((name) => {
+    const room = parseYjsRoomName(name);
+    return room?.kind === "draft" ? [room.draftId] : [];
+  });
+}
+
 /** Close a terminal draft room and unload it. Removal uses `4208` instead. */
 export function closeRoom(
   hocuspocus: Hocuspocus,

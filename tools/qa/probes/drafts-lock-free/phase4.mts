@@ -250,6 +250,7 @@ export async function rebaseLive(
   coordinator: ReturnType<typeof createDraftCoordinator>,
   documentId: DocumentId,
   live: Y.Doc,
+  draftId: string,
 ): Promise<void> {
   const committed = await harness.liveDoc(documentId);
   try {
@@ -260,12 +261,12 @@ export async function rebaseLive(
   }
   const pulls = createDraftPullService({
     outsideTransaction: (operation) => operation(),
-    drafts: harness.store,
+    openDraftRooms: async () => [],
     liveJournal: harness.persistence.journal,
     draftCoordinator: coordinator,
   });
   try {
-    await pulls.flushLivePull(documentId);
+    await pulls.catchUpDraft(draftId);
   } finally {
     pulls.cancelScheduledPulls();
   }
@@ -456,7 +457,7 @@ export async function openProjected(
   });
   const pulls = createDraftPullService({
     outsideTransaction: (operation) => operation(),
-    drafts: harness.store,
+    openDraftRooms: async () => [],
     liveJournal: harness.persistence.journal,
     draftCoordinator: coordinator,
   });

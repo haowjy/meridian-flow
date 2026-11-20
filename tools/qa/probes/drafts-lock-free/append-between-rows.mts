@@ -126,7 +126,13 @@ export const appendBetweenRows: Probe = {
           const frame = independently(() => send(f.a, f.draft, key));
           await f.pause.entered;
           appendToFirstParagraph(f.draft.live, " LIVE");
-          await rebaseLive(f.other, f.b.coordinator, f.draft.documentId, f.draft.live);
+          await rebaseLive(
+            f.other,
+            f.b.coordinator,
+            f.draft.documentId,
+            f.draft.live,
+            f.draft.draftId,
+          );
           const movedTo = await harness.readDraft(f.draft.draftId);
           f.pause.release();
           const outcome = await frame;

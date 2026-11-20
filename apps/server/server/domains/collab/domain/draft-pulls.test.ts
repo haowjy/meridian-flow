@@ -1,7 +1,7 @@
 /** Draft pull service conformance for live-to-Work rebase cadence.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Live-to-Work pull debounce and retry
+ * - Live-to-Work push debounce and the joined-pull rerun
  */
 
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -21,13 +21,27 @@ function docWithText(value: string): Y.Doc {
   return doc;
 }
 
+const textOf = (doc: Y.Doc) =>
+  doc
+    .getXmlFragment("prosemirror")
+    .toArray()
+    .map((p) =>
+      (p as Y.XmlElement)
+        .toArray()
+        .map((t) => t.toString())
+        .join(""),
+    )
+    .join("");
+
 describe("DraftPullService", () => {
-  it("keeps the debounce armed after a failed flush and retries the live snapshot", async () => {
+  it("pushes a debounced Live commit to the drafts open then, and a failure waits for the next commit", async () => {
     vi.useFakeTimers();
+    const live = docWithText("pending writer edit");
+    const draft = new Y.Doc({ gc: false });
     try {
-      const live = docWithText("pending writer edit");
-      const draft = new Y.Doc({ gc: false });
       let fail = true;
+      const failed = vi.fn();
+      const opened = vi.fn(async () => ["work"]);
       const service = createDraftPullService({
         outsideTransaction: (operation) => operation(),
         liveJournal: journalFor(live),
@@ -39,36 +53,30 @@ describe("DraftPullService", () => {
           Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
           return "pulled";
         }),
-        drafts: {
-          listActiveWorkDraftIds: async () => ["work"],
-        },
+        openDraftRooms: opened,
+        diagnostics: { backgroundFailed: failed, merged: () => {} },
         debounceMs: 10,
         maxDebounceMs: 50,
       });
-      service.scheduleLivePull(DOCUMENT_ID);
-      await expect(service.flushLivePull(DOCUMENT_ID)).rejects.toThrow("pull failed");
+      service.liveCommitted(DOCUMENT_ID);
+      service.liveCommitted(DOCUMENT_ID);
+      expect(opened).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(10);
-      expect(
-        draft
-          .getXmlFragment("prosemirror")
-          .toArray()
-          .map((p) =>
-            (p as Y.XmlElement)
-              .toArray()
-              .map((t) => t.toString())
-              .join(""),
-          )
-          .join(""),
-      ).toBe("pending writer edit");
+      expect(opened).toHaveBeenCalledTimes(1);
+      expect(failed).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(textOf(draft)).toBe("");
+      service.liveCommitted(DOCUMENT_ID);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(textOf(draft)).toBe("pending writer edit");
+    } finally {
       draft.destroy();
       live.destroy();
-    } finally {
       vi.useRealTimers();
     }
   });
 
-  it("keeps newer-update timers armed when a queued pull fails after an older pull commits", async () => {
-    vi.useFakeTimers();
+  it("a caller joining a running pull waits for a rerun that reads Live after its call", async () => {
     const live = docWithText("old");
     const draft = new Y.Doc({ gc: false });
     try {
@@ -79,7 +87,7 @@ describe("DraftPullService", () => {
         outsideTransaction: (operation) => operation(),
         liveJournal: journalFor(live),
         draftCoordinator: mockCoordinator(async ({ upstream }: { upstream: Y.Doc }) => {
-          if (++pulls === 2) throw new Error("queued pull failed");
+          ++pulls;
           Y.applyUpdate(draft, Y.encodeStateAsUpdate(upstream));
           // The first pull has committed; it returns only once the newer update queued.
           if (pulls === 1) {
@@ -88,85 +96,46 @@ describe("DraftPullService", () => {
           }
           return "pulled";
         }),
-        drafts: {
-          listActiveWorkDraftIds: async () => ["work"],
-        },
-        diagnostics: { backgroundFailed: () => {}, merged: () => {} },
-        debounceMs: 10,
-        maxDebounceMs: 50,
+        openDraftRooms: async () => [],
       });
-      const older = service.flushLivePull(DOCUMENT_ID);
+      const older = service.catchUpDraft("work");
       await captured.promise;
       ((live.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText).insert(
         3,
         " and newer",
       );
-      service.scheduleLivePull(DOCUMENT_ID);
-      const queued = expect(service.flushLivePull(DOCUMENT_ID)).rejects.toThrow(
-        "queued pull failed",
-      );
+      const joined = service.catchUpDraft("work");
+      const again = service.catchUpDraft("work");
       commit.resolve();
       await older;
-      await queued;
-      expect(
-        draft
-          .getXmlFragment("prosemirror")
-          .toArray()
-          .map((p) =>
-            (p as Y.XmlElement)
-              .toArray()
-              .map((t) => t.toString())
-              .join(""),
-          )
-          .join(""),
-      ).toBe("old");
-      expect(vi.getTimerCount()).toBe(2);
-      await vi.advanceTimersByTimeAsync(10);
-      expect(
-        draft
-          .getXmlFragment("prosemirror")
-          .toArray()
-          .map((p) =>
-            (p as Y.XmlElement)
-              .toArray()
-              .map((t) => t.toString())
-              .join(""),
-          )
-          .join(""),
-      ).toBe("old and newer");
-      expect(vi.getTimerCount()).toBe(0);
+      await joined;
+      await again;
+      expect(pulls).toBe(2);
+      expect(textOf(draft)).toBe("old and newer");
     } finally {
       live.destroy();
       draft.destroy();
-      vi.useRealTimers();
     }
   });
 
-  it("reports timer failures and rearms the maximum debounce for later updates", async () => {
+  it("keeps catching up under continuous Live commits: the maximum debounce fires", async () => {
     vi.useFakeTimers();
     try {
-      const failed = vi.fn();
-      let failures = 2;
+      const opened = vi.fn(async () => []);
       const service = createDraftPullService({
         outsideTransaction: (operation) => operation(),
         liveJournal: journalFor(docWithText("writer edit")),
-        draftCoordinator: mockCoordinator(async () => {
-          if (failures-- > 0) throw new Error("timer pull failed");
-          return "pulled";
-        }),
-        drafts: {
-          listActiveWorkDraftIds: async () => ["work"],
-        },
-        diagnostics: { backgroundFailed: failed, merged: () => {} },
+        draftCoordinator: mockCoordinator(async () => "pulled"),
+        openDraftRooms: opened,
         debounceMs: 10,
         maxDebounceMs: 50,
       });
-      service.scheduleLivePull(DOCUMENT_ID);
-      await vi.advanceTimersByTimeAsync(50);
-      expect(failed).toHaveBeenCalledTimes(2);
-      service.scheduleLivePull(DOCUMENT_ID);
-      expect(vi.getTimerCount()).toBe(2);
-      await vi.advanceTimersByTimeAsync(10);
+      for (let at = 0; at < 60; at += 5) {
+        service.liveCommitted(DOCUMENT_ID);
+        await vi.advanceTimersByTimeAsync(5);
+      }
+      expect(opened).toHaveBeenCalledTimes(1);
+      service.cancelScheduledPulls();
       expect(vi.getTimerCount()).toBe(0);
     } finally {
       vi.useRealTimers();
@@ -189,7 +158,7 @@ function mockCoordinator(pull: (input: { upstream: Y.Doc }) => Promise<unknown>)
   let committed = new Y.Doc({ gc: false });
   return {
     loadBase: async () => ({
-      snapshot: { status: "active" },
+      snapshot: { status: "active", documentId: DOCUMENT_ID },
       replica: { doc: new Y.Doc({ gc: false }) },
     }),
     prepareAppend: (

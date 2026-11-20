@@ -5,7 +5,7 @@
  */
 
 import type { ReadCommand, WriteCommand, WriteOutcome } from "@meridian/agent-edit/integration";
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts";
 import type {
   ModelEditKey,
   ModelEditOutcome,
@@ -38,11 +38,11 @@ export type ModelEditWriteContext = RoutedWriteContext & {
 
 export type ModelEdits = {
   /**
-   * Before `run`: brings a document's Work drafts level with live, so the write plans on a draft
-   * that has the writer's latest text. A pull opens a connection of its own, so it cannot run
+   * Before `run`: brings the thread's Work draft of the document level with live, so the write
+   * plans on the writer's latest text. A pull opens a connection of its own, so it cannot run
    * inside the command.
    */
-  catchUp(documentId: DocumentId): Promise<void>;
+  catchUp(documentId: DocumentId, threadId: ThreadId): Promise<void>;
   /**
    * Claims the call's command id, runs `effect` under it and stores what it returns. The effect
    * throws `ModelEditRefusal` to answer without changing anything; any other throw rolls the

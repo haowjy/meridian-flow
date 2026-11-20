@@ -131,6 +131,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
       openDraftIds: hocuspocusPersistence.openDraftIds,
+      openDraftRooms: hocuspocusPersistence.openDraftRooms,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
@@ -257,7 +258,7 @@ function createInMemoryDraftPeerStub(
       const read = await documents.readVersionedMarkdown(input.documentId);
       return read.ok ? read.value.revision : null;
     },
-    async flushDraftLivePull() {},
+    async catchUpDraft() {},
     // Nothing is derived in memory.
     readStoredGrepTexts: async () => new Map(),
     readStoredWordCounts: async () => new Map(),

@@ -90,7 +90,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
     resolveDocumentUri: async () => `scratch://@${work.handle}/probe.md`,
     resolveLastDocumentUri: async () => null,
     refreshDocument: async () => {},
-    flushLivePull: async () => {},
+    liveCommitted: () => {},
     notices: { record: async () => {} },
     workProjection: harness.projection,
     removals: createTestRemovalDeps(harness.db).removals,
