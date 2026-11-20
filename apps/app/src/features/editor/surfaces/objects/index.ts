@@ -53,5 +53,4 @@ export {
   ObjectVerbNotice,
   type RunVerb,
   useVerbFeedback,
-  verbFailureMessage,
 } from "./verb-feedback";

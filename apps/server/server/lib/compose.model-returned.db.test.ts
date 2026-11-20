@@ -1,7 +1,7 @@
 /**
- * The AI's edit that cannot land is answered, not refused: the writer discarded the draft it
- * edited, deleted the document, deleted a paragraph, or the Work is closed. The call is a plain
- * `done` command row that says `returned`, nothing opens, nothing is journalled, and the result
+ * The AI's edit that cannot land is answered, not refused: the writer deleted the document or a
+ * paragraph, or the Work is closed. (An edit the writer's Discard left behind lands in a new draft.)
+ * The call is a plain `done` command row that says `returned`, nothing opens, nothing is journalled, and the result
  * shows the document as it now stands, so the model's next edit lands.
  */
 import { randomUUID } from "node:crypto";
@@ -38,11 +38,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-    const {
-      handleDiscardWorkDraftRequest,
-      handleOwnerDraftListRequest,
-      selectBranchRouteServices,
-    } = await import("./branch-review-route.js");
+    const { handleDiscardBranchRequest, handleOwnerDraftListRequest, selectBranchRouteServices } =
+      await import("./branch-review-route.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -172,7 +169,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.commands.kind, "model_edit"))
         .orderBy(schema.commands.createdAt);
     const draftRows = () => db.select({ id: schema.documentDrafts.id }).from(schema.documentDrafts);
-    const branchRows = () => db.select({ id: schema.branches.id }).from(schema.branches);
+    const _branchRows = () => db.select({ id: schema.branches.id }).from(schema.branches);
     const hashOf = (read: string, word: string) =>
       read
         .split("\n")
@@ -188,21 +185,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       } as never);
       const row = listed.items.find((item) => item.documentId === CH1);
       if (!row) throw new Error("the model's edit made no draft to discard");
-      await handleDiscardWorkDraftRequest(routes, {
+      await handleDiscardBranchRequest(routes, {
         ...scope,
         branchId: row.branchId,
-        documentId: CH1 as never,
-        request: {
-          branchId: row.branchId,
-          itemKey: row.itemKey,
-          commandId: randomUUID(),
-          ends: "item",
-          draftSeenAt: row.updatedAt,
-        },
+        request: { commandId: randomUUID(), items: [{ node: CH1, tree: true, text: "all" }] },
       } as never);
     }
 
-    it("the writer discards the draft mid-round: the next edit is returned and the one after lands", async () => {
+    it("the writer discards the draft mid-round: the next edit lands in the same draft", async () => {
       const { runtime, call } = await reply(DRAFTING);
       const read = await call("read", { path: "ch1" });
       const first = await call("write", {
@@ -213,47 +203,42 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(first.isError, first.text).toBeFalsy();
       await writerDiscards(runtime);
-      const drafts = await draftRows();
-      const branches = await branchRows();
+      const earlier = await draftRows();
 
       const replayId = randomUUID();
-      const returnArgs = {
+      const args = {
         command: "replace",
         path: "ch1",
         find: "Charlie three.",
         content: "Charlie, edited.",
       };
-      const returned = await call("write", returnArgs, replayId);
-      expect(returned.isError).toBeFalsy();
-      expect(returned.text).toContain("status: returned");
-      expect(returned.text).toContain("the writer discarded the draft");
-      expect(returned.text).toContain("Charlie three.");
-      expect(returned.text).not.toMatch(/re-read|retry|read again/i);
-      // Nothing opened: no draft, no branch; and the row is a plain `done`.
-      expect(await draftRows()).toEqual(drafts);
-      expect(await branchRows()).toEqual(branches);
+      const landed = await call("write", args, replayId);
+      expect(landed.isError, landed.text).toBeFalsy();
+      expect(landed.text).toContain("status: success");
+      expect(landed.text).not.toMatch(/re-read|retry|read again/i);
+      // A Discard closes no draft: the write lands in the one the Discard left open.
+      expect(await draftRows()).toHaveLength(earlier.length);
+      const listed = await handleOwnerDraftListRequest(selectBranchRouteServices(runtime.app), {
+        userId: USER_ID,
+        projectId: PROJECT_ID,
+        owner: `work:${WORK_ID}`,
+      } as never);
+      expect(listed.items.find((item) => item.documentId === CH1)?.actorThreads).toEqual([
+        expect.objectContaining({ threadId: DRAFTING.threadId }),
+      ]);
       const rows = await modelEditRows();
       const last = rows.at(-1)?.outcome as never as {
         status: string;
         result: { settled?: unknown };
       };
       expect(last.status).toBe("done");
-      expect(last.result.settled).toEqual([{ rule: "returned", why: "draft_discarded" }]);
+      expect(last.result.settled).toBeUndefined();
 
       // A crash between the row's commit and the answer: the call, sent again under its id,
       // reads the same row and the same text.
-      const replayed = await call("write", returnArgs, replayId);
-      expect(replayed.text).toBe(returned.text);
+      const replayed = await call("write", args, replayId);
+      expect(replayed.text).toBe(landed.text);
       expect((await modelEditRows()).length).toBe(rows.length);
-      // The model's view is now the current text: its next edit lands.
-      const landed = await call("write", {
-        command: "replace",
-        path: "ch1",
-        find: "Charlie three.",
-        content: "Charlie, edited.",
-      });
-      expect(landed.isError, landed.text).toBeFalsy();
-      expect(landed.text).toContain("status: success");
       expect(read.text).toContain("Alpha one.");
     });
 
@@ -449,7 +434,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(now.text).toContain("[Self](renamed)");
     });
 
-    it("undo, redo and revert on a document the writer deleted are returned, naming who", async () => {
+    it("undo and revert on a document the writer deleted are returned, naming who", async () => {
       const { call } = await reply(LIVE_CHAT);
       await call("read", { path: "ch1" });
       const landed = await call("write", {
@@ -465,7 +450,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       for (const args of [
         { command: "undo", path: "ch1" },
-        { command: "redo", path: "ch1" },
         { command: "revert", path: "ch1", edit: "e1" },
       ]) {
         const answer = await call("write", args);
@@ -508,7 +492,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           threadId: LIVE_CHAT.threadId as never,
           turnId: LIVE_CHAT.turnId as never,
           userId: USER_ID as never,
-          direction: "undo",
           commandId: randomUUID() as never,
         },
       );

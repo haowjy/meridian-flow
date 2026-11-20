@@ -22,13 +22,12 @@ export type {
   WriteCommandName,
 } from "./command-schema.js";
 export type {
-  UndoRedoOutcome,
+  UndoOutcome,
   WriteErrorStatus,
   WriteStatus,
   WriteSuccessPhase,
 } from "./model-result.js";
 export type UndoCommand = Extract<WriteCommand, { command: "undo" }>;
-export type RedoCommand = Extract<WriteCommand, { command: "redo" }>;
 /** Structured tool result with the exact LLM-facing text kept separate from host status. */
 export type WriteOutcome = WriteOutcomeBase &
   ({ status: "success"; phase: WriteSuccessPhase } | { status: Exclude<WriteStatus, "success"> });

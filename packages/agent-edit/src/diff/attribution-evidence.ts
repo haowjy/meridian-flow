@@ -13,6 +13,8 @@ export interface AttributionPart {
   toolCallId?: string;
   inserted: readonly ItemRange[];
   deleted: readonly ItemRange[];
+  /** An Undo took the part out: its tombstones are history, no pending change's evidence. */
+  taken?: boolean;
 }
 export interface WriterReceipt {
   userId: string;
@@ -36,13 +38,19 @@ export const USER = -2;
 /** Provenance a restoration chain could not settle. Names no one, and is never the writer's. */
 export const UNKNOWN = -3;
 
-const receipts = new WeakMap<readonly AttributionPart[], { inserted: IdIndex; deleted: IdIndex }>();
+const receipts = new WeakMap<
+  readonly AttributionPart[],
+  { inserted: IdIndex; deleted: IdIndex; taken: IdIndex }
+>();
 function receiptEvidence(parts: readonly AttributionPart[]) {
   let evidence = receipts.get(parts);
   if (!evidence) {
     evidence = {
       inserted: indexRanges(parts.map((part) => part.inserted)),
       deleted: indexRanges(parts.map((part) => part.deleted)),
+      taken: indexRanges([
+        parts.filter((part) => part.taken).flatMap((part) => [...part.inserted, ...part.deleted]),
+      ]),
     };
     receipts.set(parts, evidence);
   }
@@ -143,6 +151,7 @@ export class AttributionEvidence {
   private readonly writeBack: IdIndex;
   private readonly undone: IdIndex;
   private readonly settled: IdIndex;
+  private readonly taken: IdIndex;
   private readonly links: IdIndex;
   private readonly superseded: IdIndex;
   private readonly linkList: readonly RestorationLink[];
@@ -156,6 +165,7 @@ export class AttributionEvidence {
     this.deleted = receipts.deleted;
     this.applied = room.applied;
     this.settled = room.settled;
+    this.taken = receipts.taken;
     this.writeBack = room.writeBack;
     this.undone = room.undone;
     this.linkList = room.linkList;
@@ -244,6 +254,13 @@ export class AttributionEvidence {
     return true;
   }
 
+  /** Whether an Apply took the id into the base or an Undo took its part out: no pending change's evidence. */
+  private settledRun(client: number, clock: number): EvidenceRun {
+    const [settled, settledLength] = this.settled.run(client, clock);
+    const [taken, takenLength] = this.taken.run(client, clock);
+    return [settled >= 0 || taken >= 0 ? 0 : -1, Math.min(settledLength, takenLength)];
+  }
+
   /** Deletion evidence belongs to this item, never to its restored insertion's source. */
   deleter(client: number, clock: number): number {
     return this.deleterRun(client, clock, 1)[0];
@@ -271,7 +288,7 @@ export class AttributionEvidence {
   ) {
     for (let offset = 0; offset < length; ) {
       const at = clock + offset;
-      const [settled, settledLength] = this.settled.run(client, at);
+      const [settled, settledLength] = this.settledRun(client, at);
       const [who, deleterLength] = this.deleterRun(client, at, length - offset);
       const run = Math.min(length - offset, settledLength, deleterLength);
       visit(who, settled >= 0, at, run);
@@ -288,7 +305,7 @@ export class AttributionEvidence {
   ) {
     for (let offset = 0; offset < length; ) {
       const at = clock + offset;
-      const [settled, settledLength] = this.settled.run(client, at);
+      const [settled, settledLength] = this.settledRun(client, at);
       const [undone, undoneLength] = this.undone.run(client, at);
       const [writeBack, writeBackLength] = this.writeBackRun(client, at, length - offset);
       const [origin, originLength] = this.originRun(client, at, length - offset);

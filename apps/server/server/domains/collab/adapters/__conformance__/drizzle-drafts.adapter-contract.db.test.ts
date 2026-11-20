@@ -313,7 +313,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         kind: "work_draft",
         branchId: BRANCH_ID as never,
-        status: "active",
         state: Buffer.from([1, 2]),
         stateVector: Buffer.from([0]),
         schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
@@ -325,33 +324,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow(DraftCorruptError);
     });
 
-    it("never makes a draft in a closed branch: a captured branch's draft stays closed after its close", async () => {
+    it("never makes a draft in a closed branch", async () => {
       const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
       const branchStore = createDrizzleBranchStore(db);
-      // Review captured the Work's active branch and its draft, then a whole close ended it.
-      const captured = await store.ensureDocumentDraft({
-        documentId: DOC_ID as never,
-        branchId: BRANCH_ID as never,
-        liveDoc: docWithText("live"),
-        liveRoom: null,
-      });
+      // Review captured the Work's active branch, then a whole close ended it.
       await runInDrizzleTransaction(db, async () => {
         await branchStore.lockActive(BRANCH_ID as never);
-        // The Discard kernel closes the drafts first; the store closes only the row.
-        await db
-          .update(documentDrafts)
-          .set({ closedCause: "discarded", status: "closed" })
-          .where(eq(documentDrafts.branchId, BRANCH_ID as never));
         await branchStore.close(BRANCH_ID as never, new Date());
       });
       const before = await db
-        .select({ id: documentDrafts.id, status: documentDrafts.status })
+        .select({ id: documentDrafts.id })
         .from(documentDrafts)
         .where(eq(documentDrafts.branchId, BRANCH_ID as never));
 
-      expect
-        .soft((await store.getDraft(captured.draftId))?.status, "the captured draft is closed")
-        .toBe("closed");
       await expect
         .soft(
           store.ensureDocumentDraft({
@@ -366,7 +351,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect
         .soft(
           await db
-            .select({ id: documentDrafts.id, status: documentDrafts.status })
+            .select({ id: documentDrafts.id })
             .from(documentDrafts)
             .where(eq(documentDrafts.branchId, BRANCH_ID as never)),
           "and no draft row is added",
@@ -438,11 +423,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         expect((await store.getDraft(documentDraft.draftId))?.revision).toBe(revision);
       }
-      await db
-        .update(documentDrafts)
-        .set({ status: "closed", closedCause: "discarded" })
-        .where(eq(documentDrafts.id, documentDraft.draftId));
-      await expect(append(null)).resolves.toEqual({ status: "refused" });
       const journalRows = await db
         .select({ id: draftWriteJournal.id })
         .from(draftWriteJournal)

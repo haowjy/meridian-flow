@@ -1,7 +1,8 @@
 // Immutable edit capture shared by writer inverses and the model stack.
+import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
+import { readBlocks } from "@meridian/agent-edit/diff";
 import {
   type CapturedPart,
-  captureEditFrontier,
   captureEditParts,
   type EditTarget,
   heldDeletes,
@@ -9,12 +10,14 @@ import {
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
+  documentDrafts,
   documentEditParts,
   documentEdits,
   documentYjsUpdates,
   draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import {
@@ -36,9 +39,14 @@ export interface ReceiptWrite {
   actorUserId?: UserId | null;
   kind?: typeof documentEdits.$inferInsert.kind;
   actionId?: string;
-  consumes?: string[];
-  receipts: (CapturedPart & { origin: EditOrigin; targets?: EditTarget[] })[];
+  receipts: (CapturedPart & {
+    origin: EditOrigin;
+    targets?: EditTarget[];
+    delta?: StoredDelta | null;
+  })[];
 }
+
+const deltaSchema = buildDocumentSchema();
 
 const modelEditCommand = { name: "model-edit-command" };
 
@@ -75,7 +83,6 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       kind: input.kind ?? "write",
       wId,
       actionId: input.actionId,
-      consumes: input.consumes,
     })
     .returning({ id: documentEdits.id });
   if (!edit) throw new Error("Edit receipt was not inserted");
@@ -86,10 +93,13 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       ordinal,
       update: Buffer.from(p.update),
       effect: p.effect,
-      frontier: p.frontier,
-      aliases: p.aliases,
+      delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,
+      draftBranchId:
+        p.origin.kind === "pending"
+          ? sql`(select ${documentDrafts.branchId} from ${documentDrafts} where ${documentDrafts.id} = ${p.origin.draftId})`
+          : null,
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {
@@ -103,12 +113,9 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
   }
   const live = input.receipts.filter((p) => p.origin.kind === "live");
   for (const seq of new Set(live.map((p) => (p.origin.kind === "live" ? p.origin.seq : 0)))) {
-    const ordinals = input.receipts.flatMap((p, ordinal) =>
-      p.origin.kind === "live" && p.origin.seq === seq ? [ordinal] : [],
-    );
     await db
       .update(documentYjsUpdates)
-      .set({ editId: edit.id, editPartOrdinal: ordinals.length === 1 ? ordinals[0] : null })
+      .set({ editId: edit.id })
       .where(eq(documentYjsUpdates.id, seq));
   }
   return edit.id;
@@ -116,22 +123,27 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
 /**
  * Authoritative pre-write state plus transaction deltas, never a state-vector diff. A delete of
  * an item the room had already deleted when the row applied is not the row's effect, whether the
- * author read a stale view or the writer's delete landed after the call.
+ * author read a stale view or the writer's delete landed after the call. `withDelta` reads each
+ * row's text before and after it, for a receipt of an AI write or an Undo that can be undone.
  */
 export function captureReceiptRows(
   doc: Y.Doc,
   rows: readonly { update: Uint8Array; origin: EditOrigin }[],
+  withDelta: boolean,
 ): (ReceiptWrite["receipts"][number] & { held: ReadonlySet<string> })[] {
+  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
   const receipts = rows.map((row) => {
-    const frontier = captureEditFrontier(doc);
     const held = heldDeletes(doc, row.update, Y.decodeStateVector(Y.encodeStateVector(doc)));
+    const textBefore = withDelta ? readBlocks(fragment, deltaSchema) : null;
     Y.applyUpdate(doc, row.update);
-    return { ...row, frontier, held };
+    const delta = textBefore ? captureDelta(textBefore, readBlocks(fragment, deltaSchema)) : null;
+    return { ...row, held, delta };
   });
   return receipts.map((receipt, i) => ({
     ...captureEditParts(doc, [receipt])[0],
     origin: rows[i].origin,
     held: receipt.held,
+    delta: receipt.delta,
   }));
 }
 

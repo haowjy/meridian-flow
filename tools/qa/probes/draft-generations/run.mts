@@ -71,7 +71,7 @@ try {
   assert(restored.ok);
   assert.equal(restored.generation, head.generation + 1n);
   assert.equal(room.name, roomKey);
-  assert.equal((await h.store.getDraft(draft.draftId))?.status, "active");
+  assert.ok(await h.store.getDraft(draft.draftId));
   observe("live restore", { live: String(restored.generation), room: room.name });
 
   const offline = new Y.Doc({ gc: false });
@@ -112,13 +112,13 @@ try {
     createDraftRetirement({
       closeDraftRoom: (id) => closeDraftRooms(server.hocuspocus, id),
       closeRemovedRooms: async () => {},
-      stillClosedBy: async () => new Set(),
     }),
     (cause) => {
       throw cause;
     },
   );
   const discard = createDrizzleBranchDiscard(h.db, {
+    coordinator: h.coordinator,
     close,
     branches: h.branches,
     workProjection: h.projection,
@@ -126,7 +126,11 @@ try {
   });
   const command = h.discardCommand(work.branchId);
   await discard.discardLocked({
-    kernel: { branchId: work.branchId, selection: { kind: "whole" } },
+    kernel: {
+      branchId: work.branchId,
+      selection: { kind: "whole" },
+      commandId: command.envelope.commandId,
+    },
     command: {
       ...command,
       // Settled inside the Discard's transaction, after the kernel closed the drafts.
@@ -136,11 +140,12 @@ try {
       },
     },
   });
-  assert.deepEqual(closes, [WS_CLOSE.DRAFT_CLOSED]);
-  assert.equal((await h.store.getDraft(draft.draftId))?.closedCause, "discarded");
+  // A Discard appends the base side to the draft: its room stays open and the id is the same.
+  assert.deepEqual(closes, []);
+  assert.ok(await h.store.getDraft(draft.draftId));
   room.removeConnection(connection as never);
   observe("Discard all other tab after commit", closes);
-  console.log("PASS G2 stable draft identity and terminal close");
+  console.log("PASS G2 stable draft identity through Discard");
 } finally {
   await server.close();
   await h.close();

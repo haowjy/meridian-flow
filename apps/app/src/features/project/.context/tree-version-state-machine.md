@@ -23,7 +23,7 @@ Work's draft. "The toggle" below means this state, whichever chip sets it.
 ```mermaid
 stateDiagram-v2
     [*] --> Live
-    Live --> Draft: the Work's draft picked in a chip, Show draft, or one of its drafts opened
+    Live --> Draft: the Work's draft picked in a chip, or one of its drafts opened
     Live --> Draft: Work picked while a page is on its draft
     Draft --> Live: Live picked in a chip
     Draft --> Live: Work picked, no page on its draft
@@ -54,9 +54,9 @@ stateDiagram-v2
   to switch to: the sidebar's while the Work has pending changes (**offered**), the page's while
   the document has a draft of any owner, or its review is open (it carries the review's Close
   review, and on a phone its Apply and Discard).
-- **On Live** each row the Work changes carries a jade dot, and a page the Work drafts says
-  what the draft does to it with Show draft (`LiveDraftNotice`). A page the draft created stays
-  on its draft and says live has no version of it; its chip reads Draft.
+- **On Live** each row the Work changes carries a jade dot, and so does the chip of a page any
+  chat drafts: the chip's menu lists the drafts and what each does to the page. Nothing is said
+  above the page. A page the draft created stays on its draft; its chip reads Draft.
 - **The Work chip** under None names the chat's Work when its drafts drive the toggle, with the
   count Changes shows; the pick itself stays None.
 - **A Work pick** keeps every page that is on one of the picked Work's drafts on it, and then puts
@@ -70,7 +70,7 @@ stateDiagram-v2
   active one does; a create, rename, move or delete there is sent like any other, the server stamps
   it `dropped` ("Work was closed"), every replay leaves it out, and its row says so
   (`core/project-tree/tree-bounces.ts`, `use-tree-notice-words.tsx`: a created row stays struck
-  through with "Copy" or "Not created", another row reads as it stood with "Copy", "Not moved" or
+  through with "Not created", another row reads as it stood with "Copy", "Not moved" or
   "Not deleted"). On a deleted Work's Draft no tree offers a control, New document is not offered
   and the identity bar's placement field doesn't open (`TreeVersion.ended`). Its Scratch on Live reads and
   offers no change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
@@ -86,8 +86,23 @@ stateDiagram-v2
   notice ends at the next gesture or press, or when the writer opens a document from the tree.
   The stack is record ids per list copy, in memory; a reload empties it. A step `undoChange`
   refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. An Apply is one step in
-  either view: the press asks the server's Un-Apply, and a refusal (the tree changed since) is
-  skipped the same way; on the Changes tab a press takes the latest step of any source. The
-  applied rows in Changes carry the same step's Undo (`undoApply`).
+  either view (`ApplyStep`, undone through `ApplyEntries`): the press asks the server's Un-Apply and
+  is spent once the server answered, so it never falls through to an older step; one that didn't
+  reach the server toasts and stays. On the Changes tab a press takes the
+  latest step of any source. The applied rows in Changes carry the same step's Undo. An Apply step
+  has two halves, from its answer: its text ends only by an Un-Apply, and its tree half ends by
+  itself when `appliedNodes` (over the Apply's command and the restores its answer named) reads
+  empty in the list copies (`endWhenTakenBack`). With both ended it ends. It sits on the stack
+  until an Un-Apply took something back or it ended.
+- **A step that waits for a closed owner keeps its place.** A tree step whose every record would
+  change such an owner's notes, goes back where it was, and its rows say who it waits for ("The
+  move stayed: Notes is archived. Unarchive it to undo this."). A press passes over it while every
+  owner it waits for is closed (`waitsForClosed`) and takes the step before it; once one reopens,
+  the next press takes it. Closed is read in the tab at each press (`useClosedOwners`).
+- **A delete that hides nothing rests.** A delete's step whose records are in force but hide
+  nothing now (an Apply brought back what it took, or a create keeps its folder standing) keeps its
+  place too: a press passes over it and its rows offer no Undo (`rests`), until it hides something
+  again. A notice line away from the rows ends as it starts to rest (`rested`). Only a record no
+  longer in force (restored, undone, purged) ends it (`endWhenRestored`).
 
 A wrong edit here shows one tree in the sidebar while actions write into another.

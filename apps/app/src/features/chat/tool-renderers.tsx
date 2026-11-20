@@ -281,9 +281,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
     }
     case "ambiguous_match":
-      return name
-        ? t`The requested passage in ${name} wasn't specific enough.`
-        : t`The requested passage wasn't specific enough.`;
+      return name ? t`Couldn't match a passage in ${name}` : t`Couldn't match a passage`;
   }
   // A read changes nothing, so the change-shaped copy below never fits it.
   if (tool.toolName === "read") {
@@ -293,27 +291,15 @@ export function documentToolFailureCopy(tool: ToolView): string {
   }
   switch (status) {
     case "cant_undo_applied":
-      return t`That change can't be undone here because it was already applied to your manuscript.`;
     case "cant_undo_discarded":
-      return t`That change can't be undone because it was discarded.`;
     case "cant_undo_changed":
-      return t`That change can't be undone because the text changed afterwards.`;
-    case "cant_redo_applied":
-      return t`That change can't be redone here because it was already applied to your manuscript.`;
-    case "cant_redo_discarded":
-      return t`That change can't be redone because it was discarded.`;
-    case "cant_redo_changed":
-      return t`That change can't be redone because the text changed afterwards.`;
-    case "cant_redo_users_undo":
-      return t`That change can't be redone because you undid it.`;
+    case "purged":
     case "insufficient_undo":
-      return t`There isn't enough left to undo.`;
-    case "insufficient_redo":
-      return t`There isn't enough left to redo.`;
+      return t`Couldn't undo`;
     case "nothing_to_revert":
-      return t`That change wasn't reverted because its text changed or is already gone.`;
+      return t`Couldn't revert`;
     case "work_archived":
-      return t`That change can't be made because this Work's drafts are archived.`;
+      return t`Work archived`;
     case "permission_denied":
       return name ? t`${name} can't be changed.` : t`That document can't be changed.`;
     case "partial_failure":
@@ -321,7 +307,7 @@ export function documentToolFailureCopy(tool: ToolView): string {
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
     case "returned":
-      return returnedWriteCopy(documentFailureReturned(tool).why, name, tool);
+      return returnedWriteCopy(documentFailureWhy(tool), name);
     case "invalid_write":
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
     default:
@@ -331,97 +317,27 @@ export function documentToolFailureCopy(tool: ToolView): string {
   }
 }
 
-/** The `returned` block of a returned write's typed result: why, and the removal record if any. */
-function documentFailureReturned(tool: ToolView): {
-  why: string | null;
-  removal: ToolView["result"] | null;
-} {
+/** Why a returned write came back: the `returned` block of its typed result. */
+function documentFailureWhy(tool: ToolView): string | null {
   const result = tool.result;
   const returned =
     result && typeof result === "object" && !Array.isArray(result) ? result.returned : null;
-  if (!returned || typeof returned !== "object" || Array.isArray(returned))
-    return { why: null, removal: null };
-  return { why: asString(returned.why) ?? null, removal: returned.removal ?? null };
-}
-
-/**
- * Who removed a returned write's document and how, when the host sent the record with it. A
- * named person is named; anyone else reads passively.
- */
-function documentFailureRemoval(tool: ToolView): {
-  by: { kind: "person"; name: string } | { kind: "agent"; chat: string | null } | null;
-  reason: "deleted" | "discarded";
-} {
-  const { removal } = documentFailureReturned(tool);
-  if (!removal || typeof removal !== "object" || Array.isArray(removal))
-    return { by: null, reason: "deleted" };
-  const actor = removal.actor;
-  const record = actor && typeof actor === "object" && !Array.isArray(actor) ? actor : null;
-  const name = (value: unknown) => (typeof value === "string" && value ? value : null);
-  const person = record?.kind === "user" ? name(record.displayName) : null;
-  return {
-    by: person
-      ? { kind: "person", name: person }
-      : record?.kind === "agent"
-        ? { kind: "agent", chat: name(record.chatTitle) }
-        : null,
-    reason: removal.reason === "discarded" ? "discarded" : "deleted",
-  };
+  if (!returned || typeof returned !== "object" || Array.isArray(returned)) return null;
+  return asString(returned.why) ?? null;
 }
 
 /** An edit the document's state returned: nothing was kept, and the AI was shown the document as it stands. */
-function returnedWriteCopy(why: string | null, name: string | null, tool: ToolView): string {
+function returnedWriteCopy(why: string | null, name: string | null): string {
   switch (why) {
-    case "draft_discarded":
-      return t`You discarded the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands.`;
-    case "draft_replaced":
-      return t`A restore put an earlier draft back over the draft this change was made on, so it wasn't kept. The AI carries on from the document as it stands.`;
-    case "document_removed":
-      return removedWriteCopy(name, documentFailureRemoval(tool));
     case "work_archived":
-      return t`This Work is archived, so its drafts take no new text and the change wasn't kept.`;
+      return t`Work archived`;
     case "work_deleted":
-      return t`This Work is deleted, so its drafts take no new text and the change wasn't kept.`;
+      return t`Work deleted`;
     case "block_gone":
-      return t`That paragraph was deleted, merged or moved before the change was made, so it wasn't kept. The AI carries on from the document as it stands.`;
+      return t`Paragraph gone`;
     default:
       return name ? t`That change wasn't kept in ${name}.` : t`That change wasn't kept.`;
   }
-}
-
-/** A write refused because its document was removed before the write ran. */
-function removedWriteCopy(
-  name: string | null,
-  removal: ReturnType<typeof documentFailureRemoval>,
-): string {
-  const { by } = removal;
-  if (by?.kind === "person") {
-    const who = by.name;
-    return removal.reason === "discarded"
-      ? name
-        ? t`${who} discarded ${name} from the draft before this change could be made.`
-        : t`${who} discarded this document from the draft before this change could be made.`
-      : name
-        ? t`${who} deleted ${name} before this change could be made.`
-        : t`${who} deleted this document before this change could be made.`;
-  }
-  if (by?.kind === "agent") {
-    const chat = by.chat;
-    return chat
-      ? name
-        ? t`The AI in ${chat} deleted ${name} before this change could be made.`
-        : t`The AI in ${chat} deleted this document before this change could be made.`
-      : name
-        ? t`The AI in a chat deleted ${name} before this change could be made.`
-        : t`The AI in a chat deleted this document before this change could be made.`;
-  }
-  return removal.reason === "discarded"
-    ? name
-      ? t`${name} was discarded from the draft before this change could be made.`
-      : t`This document was discarded from the draft before this change could be made.`
-    : name
-      ? t`${name} was deleted before this change could be made.`
-      : t`This document was deleted before this change could be made.`;
 }
 
 /**

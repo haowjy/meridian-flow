@@ -38,7 +38,6 @@ import {
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { DocumentTrashRestoreProvider } from "./context/DocumentTrashRestoreProvider";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
-import { useRemovedNoticeLifetime } from "./context/RemovedDocumentNotice";
 import { recentAddressFromTab } from "./context/recent-opening";
 import type { AddressedDocument } from "./context/route-document-owner";
 import { DragHint } from "./context/tree-drop/drag-hint";
@@ -124,11 +123,6 @@ export function ProjectView(props: ProjectViewProps) {
   const accountId = useAccountId();
   const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   useProjectWake(props.projectId);
-  // The removed-documents notice sits in main's band; a navigation in main ends it.
-  useRemovedNoticeLifetime(props.projectId, {
-    key: JSON.stringify([props.chatDisplay, props.activeContextScheme, props.activeContextPath]),
-    onScreen: true,
-  });
   const presented = useOptionalPresentedDocuments();
   useEffect(() => {
     const patchRecents = () => {

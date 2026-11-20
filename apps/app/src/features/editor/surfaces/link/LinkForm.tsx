@@ -316,18 +316,9 @@ function LinkFields({
           ) : null}
         </div>
       )}
-      {refused ? (
-        <InlineErrorRow
-          message={t`This link can no longer be edited. Close the form and try again.`}
-          className="p-0"
-        />
-      ) : null}
+      {refused ? <InlineErrorRow message={t`Can't edit link`} className="p-0" /> : null}
       {invalid ? (
-        <InlineErrorRow
-          id={`${fieldId}-error`}
-          message={t`Choose a document or enter a web address or document path.`}
-          className="p-0"
-        />
+        <InlineErrorRow id={`${fieldId}-error`} message={t`Invalid link`} className="p-0" />
       ) : null}
       <div className="flex items-center justify-end gap-1.5">
         {draft.existing ? (

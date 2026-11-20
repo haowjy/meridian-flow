@@ -1,4 +1,4 @@
-/** Authenticated whole-turn card Undo/Redo transport. */
+/** Authenticated whole-turn card Undo transport. */
 
 import { COMMAND_CONFLICT_CODE, CommandIdSchema } from "@meridian/contracts/commands";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
@@ -11,15 +11,16 @@ import {
   setResponseStatus,
 } from "nitro/h3";
 import { z } from "zod";
-import { ReversalOwnersMoved } from "../../../../../domains/collab/index.js";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../../lib/request-id.js";
 import { reverseTurnCard } from "../../../../../lib/work-receipt-reversal.js";
 import { CommandConflictError } from "../../../../../shared/commands/command-record.js";
 import { throwHttpInterrupt } from "../../../../../shared/interrupt-boundary.js";
+import { TreeOwnersMoved } from "../../../../../shared/tree-owners.js";
 
 const reverseBodySchema = z.strictObject({
-  direction: z.enum(["undo", "redo"], { error: "direction must be undo or redo" }),
+  // A tab that predates the removal of Redo still sends a direction.
+  direction: z.enum(["undo", "redo"]).optional(),
   scope: z.literal("turn"),
   commandId: CommandIdSchema,
   target: z.string({ error: "target must be a string" }).min(1),
@@ -35,13 +36,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: parsed.error.issues[0]?.message });
   }
   const body = parsed.data;
+  // Redo is gone: an open tab's Redo finds nothing to reverse, as an Undo of an expired card does.
+  if (body.direction === "redo") return { status: "expired", documents: [] };
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
   const turnId = requireRequestId(body.target, "target") as TurnId;
   try {
     const outcome = await reverseTurnCard(app, {
       threadId,
       userId: user.userId,
-      direction: body.direction,
       turnId,
       commandId: body.commandId,
     });
@@ -49,7 +51,7 @@ export default defineEventHandler(async (event) => {
     return outcome;
   } catch (cause) {
     // The Works kept changing under the click's locks: nothing was stored, the same request may resend.
-    if (cause instanceof ReversalOwnersMoved)
+    if (cause instanceof TreeOwnersMoved)
       throw createError({
         statusCode: 503,
         message: cause.message,

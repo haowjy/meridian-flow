@@ -10,6 +10,7 @@
  */
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import { equalOrderedMatches } from "../ordered-matching.js";
+import { boundedDiff } from "./bounded-diff.js";
 import type { Correspondence } from "./correspond.js";
 import { type Hunk, posMap } from "./hunks.js";
 import {
@@ -85,8 +86,11 @@ export function align(B: Side, S: Side, corr: Correspondence): Alignment {
 
 // 1,000 tokens preserves ordinary split/join units while capping Myers' quadratic search.
 // Disjoint 1,000-word paragraphs measured 18–29 ms; 1,500 reached 128 ms (KF30 probe).
-// Oversized paragraphs stay whole replacements.
+// An oversized unit is diffed by token key alone, exact up to MAX_OVERSIZED_EDITS edit operations
+// (a replaced word is two, so about 500 replaced words) and one replacement past
+// that: the cost follows the edits, not the size or how unlike they are.
 const ANCHOR_GAP_TOKENS = 1000;
+const MAX_OVERSIZED_EDITS = 1000;
 
 type UnitMemo = { next: WeakMap<object, UnitMemo>; hunks?: Hunk[] };
 const units: UnitMemo = { next: new WeakMap() };
@@ -115,13 +119,7 @@ function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: num
     const draft = buildSide(S.blocks.slice(s0, s1));
     const hunks: Hunk[] = [];
     if (base.toks.length > ANCHOR_GAP_TOKENS || draft.toks.length > ANCHOR_GAP_TOKENS)
-      hunks.push({
-        from: 0,
-        to: base.toks.length,
-        sfrom: 0,
-        sto: draft.toks.length,
-        ins: draft.toks,
-      });
+      keyHunks(base, draft, hunks);
     else tokenHunks(base, 0, base.toks.length, draft, 0, draft.toks.length, hunks);
     memo.hunks = separateBlocks(base, draft, refine(base.toks, hunks));
     canonicalize(base.toks, draft.toks, memo.hunks);
@@ -134,6 +132,41 @@ function unitHunks(B: Side, b0: number, b1: number, S: Side, s0: number, s1: num
     sto: h.sto + S.starts[s0],
   });
   for (const h of memo.hunks) out.push(relocate(h));
+}
+
+/**
+ * An oversized unit's hunks: its token keys' diff, each deletion with the insertion beside it one
+ * hunk. False when the diff ran out of its budget and the hunk is one coarse replacement.
+ */
+function keyHunks(B: Side, S: Side, out: Hunk[]): void {
+  let b = 0;
+  let s = 0;
+  let hunk: Hunk | undefined;
+  const { runs } = boundedDiff(
+    B.toks.map((t) => t.key),
+    S.toks.map((t) => t.key),
+    MAX_OVERSIZED_EDITS,
+  );
+  for (const [op, n] of runs) {
+    if (op === DIFF_EQUAL) {
+      hunk = undefined;
+      b += n;
+      s += n;
+      continue;
+    }
+    if (!hunk) {
+      hunk = { from: b, to: b, sfrom: s, sto: s, ins: [] };
+      out.push(hunk);
+    }
+    if (op === DIFF_DELETE) {
+      b += n;
+      hunk.to = b;
+    } else {
+      hunk.ins = hunk.ins.concat(S.toks.slice(s, s + n));
+      s += n;
+      hunk.sto = s;
+    }
+  }
 }
 
 /**
@@ -357,10 +390,21 @@ function blockIdPairs(bt: Tok[], b0: number, b1: number, st: Tok[], s0: number, 
 
 /**
  * A pure insertion or deletion next to equal tokens can sit at several equivalent places. Pick one
- * by rule so both sides' diffs agree: whole blocks at block boundaries when possible, else leftmost.
+ * by rule so both sides' diffs agree: whole blocks at block boundaries when possible, else the
+ * first place that starts a sentence (so a sentence added after a full stop is not ". Text" before
+ * it, and two sentences that end alike do not share their full stop), else leftmost.
  */
 function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
   const boundary = (p: number) => p === bt.length || isBlockTok(bt[p]);
+  const coreAt = (k: number) => {
+    const t = bt[k];
+    return t?.kind === "text" ? t.core : "";
+  };
+  const sentenceStart = (p: number) => {
+    let k = p - 1;
+    while (k >= 0 && /^["'\u201d\u2019)\]]+$/.test(coreAt(k))) k--;
+    return k < 0 || isBlockTok(bt[k]) || /[.!?\u2026]$/.test(coreAt(k));
+  };
   for (let i = 0; i < hunks.length; i++) {
     const h = hunks[i];
     const lo = i > 0 ? hunks[i - 1].to : 0;
@@ -379,7 +423,10 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
         sf++;
         cands.push([p, sf]);
       }
-      const best = cands.find(([q, s]) => boundary(q) && isBlockTok(st[s])) ?? cands[0];
+      const best =
+        cands.find(([q, s]) => boundary(q) && isBlockTok(st[s])) ??
+        cands.find(([q]) => sentenceStart(q)) ??
+        cands[0];
       h.from = h.to = best[0];
       h.sfrom = best[1];
       h.sto = best[1] + n;
@@ -398,7 +445,10 @@ function canonicalize(bt: Tok[], st: Tok[], hunks: Hunk[]) {
         sf++;
         cands.push([p, sf]);
       }
-      const best = cands.find(([q]) => isBlockTok(bt[q]) && boundary(q + n)) ?? cands[0];
+      const best =
+        cands.find(([q]) => isBlockTok(bt[q]) && boundary(q + n)) ??
+        cands.find(([q]) => sentenceStart(q)) ??
+        cands[0];
       h.from = best[0];
       h.to = best[0] + n;
       h.sfrom = h.sto = best[1];

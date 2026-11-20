@@ -130,7 +130,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       headSchemaVersion: async () => null,
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
-      draftStates: hocuspocusPersistence.draftStates,
+      openDraftIds: hocuspocusPersistence.openDraftIds,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
@@ -294,15 +294,41 @@ function createInMemoryDraftPeerStub(
 function createInMemoryBranchStub(): CollabBranches {
   const gone = async (input: { branchId: string }): Promise<CommandOutcome> => ({
     kind: "result",
-    result: { status: "gone", branchId: input.branchId as BranchId },
+    result: {
+      status: "discarded",
+      branchId: input.branchId as BranchId,
+      closed: [],
+      whole: false,
+      settled: [{ rule: "already", state: "discarded" }],
+    },
   });
   return {
     draftReview: {
+      // No branches here: every item's records and drafts are as good as purged.
       async apply({ request }) {
-        return { status: "closed", commandId: request.commandId };
+        const purged = (node: string) => ({
+          landed: false as const,
+          settled: [{ rule: "left_out" as const, items: [node], why: "purged" as const }],
+        });
+        return {
+          status: "applied",
+          commandId: request.commandId,
+          items: request.items.map((item) => ({
+            node: item.node,
+            ...(item.tree ? { tree: purged(item.node) } : {}),
+            ...(item.text ? { text: purged(item.node) } : {}),
+          })),
+          applied: [],
+        };
       },
-      async unapplyClick({ request }) {
-        return { status: "closed", commandId: request.commandId };
+      async unapplyClick({ request, branchId }) {
+        return {
+          status: "unapplied",
+          commandId: request.commandId,
+          branchId: branchId as BranchId,
+          textUndone: [],
+          treeUndone: [],
+        };
       },
       commandDocuments: {
         async ofApply() {
@@ -311,18 +337,34 @@ function createInMemoryBranchStub(): CollabBranches {
         async ofDiscard() {
           return [];
         },
+        async redoItems() {
+          return [];
+        },
       },
       async listDiscards() {
         return [];
       },
-      async undoDiscard({ request }) {
-        return { status: "refused", commandId: request.commandId, reason: "not_found" };
+      async purgeDiscards() {
+        return 0;
+      },
+      async undoDiscard({ branchId, request }) {
+        return {
+          status: "restored",
+          commandId: request.commandId,
+          discardCommandId: request.discardCommandId,
+          branchId,
+          restored: 0,
+          swapped: 0,
+          leftOut: 0,
+          brought: { text: [], tree: [] },
+          settled: [{ rule: "left_out", items: [], why: "purged" }],
+        };
       },
       async list() {
         return [];
       },
       async listItems() {
-        return { branchId: null, items: [], folders: [], threadTitles: new Map() };
+        return { branchId: null, items: [], folders: [], threadTitles: new Map(), saw: {} };
       },
       async pendingDocumentCount() {
         return 0;
@@ -351,7 +393,6 @@ function createInMemoryBranchStub(): CollabBranches {
       async awaitCommand() {
         return { kind: "none" };
       },
-      discardItem: (input) => gone(input.item),
       discardBranch: gone,
     },
   };
@@ -371,6 +412,9 @@ function createInMemoryTurnLiveLineageStore(journal: InMemoryJournal) {
     // The in-memory host has no tree history.
     async listFolderTargetsForTurn() {
       return [];
+    },
+    async placesOf() {
+      return new Map();
     },
     async listTreeEntriesForTurn() {
       return [];

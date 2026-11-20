@@ -19,6 +19,7 @@ import type {
   ContextDocument,
   ContextDocumentStore,
   ContextFolder,
+  ContextSubtree,
 } from "../../ports/context-document-store.js";
 import type { TreeView } from "../../tree/tree-view.js";
 import { DEFAULT_EDITABLE_FILETYPE } from "./bound-writes.js";
@@ -33,67 +34,66 @@ type ContextFsCopyDeps = CopyTreeDeps & {
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {
   const { store, holderUri, folderUri } = deps;
 
-  /** The source subtree at one path: the folder with every descendant, or one file. */
-  async function snapshotSource(
-    path: string,
-    view: TreeView,
-  ): Promise<Result<CopySourceEntry, AdapterFault>> {
-    const clean = path.replace(/\/+$/, "");
+  /**
+   * The source subtree of node `id`, wherever it stands now (live, or in Trash with what its
+   * delete took): the folder with every descendant in its visible order, or the one file. `path`
+   * only spells the root's address; the id decides which node is copied. A draft `view` reads the
+   * Work's tree, where the node must be placed.
+   */
+  async function snapshotSource(source: {
+    id: string;
+    path: string;
+    view: TreeView;
+  }): Promise<Result<CopySourceEntry, AdapterFault>> {
+    const clean = source.path.replace(/\/+$/, "");
     if (!clean) {
       return Err({
         code: "invalid_operation",
         message: "The source root cannot be copied; copy a file or a folder in it.",
       });
     }
-    const folder = await store.resolveFolderAt(view, clean);
-    if (folder.kind === "found" && folder.node) {
-      return Ok(await folderSnapshot(clean, folder.node, view));
-    }
-    const document = await store.resolveDocumentAt(view, clean);
-    if (document.kind === "found") return Ok(fileSnapshot(clean, document.node));
-    return Err({ code: "not_found" });
-  }
-
-  async function folderSnapshot(
-    path: string,
-    folder: ContextFolder,
-    view: TreeView,
-  ): Promise<CopySourceFolder> {
-    const [folders, documents] = await Promise.all([
-      store.listFolders(view, folder.id),
-      store.listDocuments(view, folder.id),
-    ]);
-    const siblings = [
-      ...folders.map((child) => ({
-        order: { kind: "folder" as const, name: child.name, rank: child.rank, entryId: child.id },
-        folder: child,
-      })),
-      ...documents.map((child) => ({
-        order: {
-          kind: "file" as const,
-          name: renderFilename(child.name, child.extension),
-          rank: child.rank,
-          entryId: child.id,
-        },
-        document: child,
-      })),
-    ].sort((left, right) => compareCatalogSiblings(left.order, right.order));
-    const children: CopySourceEntry[] = [];
-    for (const sibling of siblings) {
-      children.push(
-        "folder" in sibling
-          ? await folderSnapshot(joinPath(path, sibling.folder.segment), sibling.folder, view)
-          : fileSnapshot(joinPath(path, sibling.document.segment), sibling.document),
-      );
-    }
-    return {
-      kind: "folder",
-      path,
-      uri: folderUri(path),
-      folderId: folder.id,
-      name: folder.name,
-      children,
+    const subtree =
+      source.view.kind === "live"
+        ? await store.readSubtree(source.id)
+        : await viewSubtree(store, source.view, source.id);
+    if (!subtree) return Err({ code: "not_found" });
+    if (subtree.root.kind === "document") return Ok(fileSnapshot(clean, subtree.root.document));
+    const folders = new Map<string | null, ContextFolder[]>();
+    for (const child of subtree.folders)
+      folders.set(child.parentId, [...(folders.get(child.parentId) ?? []), child]);
+    const documents = new Map<string | null, ContextDocument[]>();
+    for (const child of subtree.documents)
+      documents.set(child.folderId, [...(documents.get(child.folderId) ?? []), child]);
+    const folderSnapshot = (path: string, folder: ContextFolder): CopySourceFolder => {
+      const siblings = [
+        ...(folders.get(folder.id) ?? []).map((child) => ({
+          order: { kind: "folder" as const, name: child.name, rank: child.rank, entryId: child.id },
+          folder: child,
+        })),
+        ...(documents.get(folder.id) ?? []).map((child) => ({
+          order: {
+            kind: "file" as const,
+            name: renderFilename(child.name, child.extension),
+            rank: child.rank,
+            entryId: child.id,
+          },
+          document: child,
+        })),
+      ].sort((left, right) => compareCatalogSiblings(left.order, right.order));
+      return {
+        kind: "folder",
+        path,
+        uri: folderUri(path),
+        folderId: folder.id,
+        name: folder.name,
+        children: siblings.map((sibling) =>
+          "folder" in sibling
+            ? folderSnapshot(joinPath(path, sibling.folder.segment), sibling.folder)
+            : fileSnapshot(joinPath(path, sibling.document.segment), sibling.document),
+        ),
+      };
     };
+    return Ok(folderSnapshot(clean, subtree.root.folder));
   }
 
   function fileSnapshot(path: string, document: ContextDocument): CopySourceFile {
@@ -129,5 +129,32 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
               ? { branchId: input.branchId, documentSync: deps.documentSync }
               : undefined,
           ),
+  };
+}
+
+/** The subtree of node `id` as a Work's draft tree places it, from one read of the view. */
+async function viewSubtree(
+  store: ContextDocumentStore,
+  view: TreeView,
+  id: string,
+): Promise<ContextSubtree | null> {
+  const tree = await store.listTree(view);
+  const document = tree.documents.find((candidate) => candidate.id === id);
+  if (document) return { root: { kind: "document", document }, folders: [], documents: [] };
+  const root = tree.folders.find((candidate) => candidate.id === id);
+  if (!root) return null;
+  const inside = new Set([id]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const folder of tree.folders)
+      if (folder.parentId && inside.has(folder.parentId) && !inside.has(folder.id)) {
+        inside.add(folder.id);
+        grew = true;
+      }
+  }
+  return {
+    root: { kind: "folder", folder: root },
+    folders: tree.folders.filter((folder) => folder.id !== id && inside.has(folder.id)),
+    documents: tree.documents.filter((doc) => doc.folderId && inside.has(doc.folderId)),
   };
 }

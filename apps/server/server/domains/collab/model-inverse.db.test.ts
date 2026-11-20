@@ -5,26 +5,18 @@
  * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/architecture/collaboration/turn-receipts.md#reversal-availability-is-the-servers)
  */
 import { randomUUID } from "node:crypto";
-import {
-  appendApplyRecord,
-  applyRecordOf,
-  REVIEW_BASE_FRAGMENT,
-  readBlocks,
-  writeBlocks,
-} from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { applyTextEdit } from "@meridian/agent-edit/test-support";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { setTestHook } from "../../shared/test-hooks.js";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
-import { createDraftDispositionReader } from "./domain/draft-disposition.js";
 import { createTurnReversalService } from "./domain/turn-reversal-service.js";
 import {
   ALPHA_ID,
@@ -37,6 +29,7 @@ import {
   TURN_ID,
   USER_ID,
 } from "./test-support/collab-postgres-harness.js";
+import { recordApply } from "./test-support/draft-classification.js";
 import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture, readDraftId } from "./test-support/turn-inverse-fixture.js";
 
@@ -45,7 +38,7 @@ const fixture = () => inverseFixture(db);
 beforeEach(() => resetDatabase(db));
 afterAll(() => closeDatabase(db));
 describe("model document stack", () => {
-  it("authorizes live model revert through card Undo and Redo, without treating stack actions as card targets", async () => {
+  it("authorizes live model revert through card Undo, without treating stack actions as card targets", async () => {
     const { harness, view, context } = await fixture();
     try {
       const resolveDocumentUri = async (documentId: string) =>
@@ -81,7 +74,8 @@ describe("model document stack", () => {
         ),
       ).toMatchObject({ status: "success" });
       let position = 2;
-      const command = async (kind: "undo" | "redo" | "revert") => {
+      let editHandle = "e1";
+      const command = async (kind: "undo" | "revert") => {
         const turnId = randomUUID();
         const responseId = randomUUID();
         await db.insert(schema.turns).values({
@@ -106,7 +100,7 @@ describe("model document stack", () => {
         expect(
           await core.write(
             {
-              ...(kind === "revert" ? { command: kind, edit: "e1" } : { command: kind }),
+              ...(kind === "revert" ? { command: kind, edit: editHandle } : { command: kind }),
               documentId: ALPHA_ID,
               file: "alpha.md",
               tool_use_id: `model-${kind}`,
@@ -121,25 +115,36 @@ describe("model document stack", () => {
         return turnId;
       };
       // Stack actions change the original edit's state, but are not new card targets.
-      for (const kind of ["undo", "redo"] as const) {
-        const turnId = await command(kind);
+      {
+        const turnId = await command("undo");
         const text = await harness.liveMarkdown(ALPHA_ID);
-        expect(await view.collab.getTurnReceiptChip(THREAD_ID, turnId)).toBeNull();
-        for (const direction of ["undo", "redo"] as const) {
-          expect(
-            await card.reverseThreadContext({
-              commandId: randomUUID(),
-              threadId: THREAD_ID,
-              turnId,
-              direction,
-              userId: USER_ID,
-            }),
-          ).toMatchObject({ status: direction === "undo" ? "nothing_to_undo" : "nothing_to_redo" });
-        }
+        expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, turnId)).toBeNull();
+        expect(
+          await card.reverseThreadContext({
+            commandId: randomUUID(),
+            threadId: THREAD_ID,
+            turnId,
+            userId: USER_ID,
+          }),
+        ).toMatchObject({ status: "nothing_to_undo" });
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe(text);
       }
+      // The undone edit can't be reverted; the model writes it again, and reverts that.
+      const again = await core.write(
+        {
+          command: "replace",
+          documentId: ALPHA_ID,
+          file: "alpha.md",
+          find: "Beta",
+          content: "Gamma",
+          tool_use_id: "written-again",
+        },
+        liveContext,
+      );
+      expect(again).toMatchObject({ status: "success" });
+      editHandle = (again as { writeId: string }).writeId;
       const turnId = await command("revert");
-      expect(await view.collab.getTurnReceiptChip(THREAD_ID, turnId)).toMatchObject({
+      expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, turnId)).toMatchObject({
         control: "undo",
       });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
@@ -148,27 +153,16 @@ describe("model document stack", () => {
           commandId: randomUUID(),
           threadId: THREAD_ID,
           turnId,
-          direction: "undo",
           userId: USER_ID,
         }),
       ).toMatchObject({ status: "reversed" });
       expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
-      expect(
-        await card.reverseThreadContext({
-          commandId: randomUUID(),
-          threadId: THREAD_ID,
-          turnId,
-          direction: "redo",
-          userId: USER_ID,
-        }),
-      ).toMatchObject({ status: "reversed" });
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
       await harness.dispose();
     }
   });
   it.each(["stepwise", "count"] as const)(
-    "overlapping replacements compose %s undo and redo",
+    "overlapping replacements compose %s undo",
     async (schedule) => {
       const { harness, view, context } = await fixture();
       try {
@@ -192,10 +186,10 @@ describe("model document stack", () => {
           ).toMatchObject({ status: "success", writeId: `e${index + 1}` });
         const draftId = await readDraftId(db, ALPHA_ID);
         let call = 0;
-        const write = async (command: "undo" | "redo", count?: number) =>
+        const write = async (count?: number) =>
           view.collab.agentEdit().write(
             {
-              command,
+              command: "undo",
               documentId: ALPHA_ID,
               file: "alpha.md",
               ...(count ? { count } : {}),
@@ -203,32 +197,24 @@ describe("model document stack", () => {
             },
             context,
           );
-        expect(await write("undo", 4)).toMatchObject({ status: "insufficient_undo" });
+        expect(await write(4)).toMatchObject({ status: "insufficient_undo" });
         expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
         if (schedule === "count") {
-          expect(await write("undo", 3)).toMatchObject({ status: "success" });
+          expect(await write(3)).toMatchObject({ status: "success" });
           expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
-          expect(await write("redo", 3)).toMatchObject({ status: "success" });
         } else {
           for (const text of ["Silver", "Gold", "Beta"]) {
-            expect(await write("undo")).toMatchObject({ status: "success" });
+            expect(await write()).toMatchObject({ status: "success" });
             expect(await view.draftMarkdown(draftId)).toBe(`Alpha ${text}.\n\nBlue.\n`);
           }
-          expect(await write("redo")).toMatchObject({
-            status: "success",
-            result: { message: "redone: e1" },
-          });
-          expect(await view.draftMarkdown(draftId)).toBe("Alpha Gold.\n\nBlue.\n");
-          expect(await write("redo", 2)).toMatchObject({ status: "success" });
         }
-        expect(await view.draftMarkdown(draftId)).toBe("Alpha Azure.\n\nBlue.\n");
         expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
       } finally {
         await harness.dispose();
       }
     },
   );
-  it("reverts applied text in a mixed count and reapplies an applied Undo through Redo", async () => {
+  it("leaves text the writer applied to the manuscript, and says so", async () => {
     const { harness, view, context, responseId } = await fixture();
     try {
       const core = view.collab.agentEdit();
@@ -243,18 +229,10 @@ describe("model document stack", () => {
       const draftId = await readDraftId(db, ALPHA_ID);
       const pm = buildDocumentSchema();
       const applyDraft = async (liveText: string) => {
-        const disposition = await createDraftDispositionReader(
-          createDrizzleDraftDispositionStore(db),
-        )(draftId);
-        if (!disposition) throw new Error("draft disposition missing");
         const { doc, snapshot } = await view.draftCoordinator.copyDraft(draftId);
         try {
           doc.clientID = 1;
           doc.transact(() => {
-            appendApplyRecord(
-              doc,
-              applyRecordOf(disposition.classifications, disposition.classifications.keys()),
-            );
             writeBlocks(
               doc.getXmlFragment(REVIEW_BASE_FRAGMENT),
               pm,
@@ -272,6 +250,13 @@ describe("model document stack", () => {
             })
             .where(eq(schema.documentDrafts.id, draftId));
           await view.draftCoordinator.deliverCommitted(draftId);
+          await recordApply(db, {
+            draftId,
+            documentId: ALPHA_ID,
+            accountId: USER_ID,
+            projectId: PROJECT_ID,
+            store: createDrizzleDraftDispositionStore(db),
+          });
         } finally {
           doc.destroy();
         }
@@ -286,95 +271,27 @@ describe("model document stack", () => {
         });
       };
 
-      // Apply lands after the chip was offered and after the click's first capture. The retry
-      // must reclassify the pending pop as a forward revert instead of refusing the click.
-      expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
-        control: "undo",
-      });
-      let removeApplyHook = () => {};
-      removeApplyHook = setTestHook("inverse.beforeCommitScope", async () => {
-        removeApplyHook();
-        await applyDraft("Alpha Gamma.");
-      });
-      try {
-        expect(
-          await view.collab.reverseTurn({
-            threadId: THREAD_ID,
-            turnId: TURN_ID,
-            direction: "undo",
-            actor: { type: "user", userId: USER_ID },
-          }),
-        ).toMatchObject({ status: "reversed" });
-      } finally {
-        removeApplyHook();
-      }
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
-      expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
-        control: "redo",
-      });
-      expect(
-        await view.collab.reverseTurn({
-          threadId: THREAD_ID,
-          turnId: TURN_ID,
-          direction: "redo",
-          actor: { type: "user", userId: USER_ID },
-        }),
-      ).toMatchObject({ status: "reversed" });
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
-      expect(
-        (
-          await createDraftDispositionReader(createDrizzleDraftDispositionStore(db))(draftId)
-        )?.parts.map((part) => part.disposition),
-      ).toContain("applied");
-      expect(await core.read({ ...address, format: "edits" }, context)).toMatchObject({
-        status: "success",
-        result: { message: expect.stringMatching(/e1.*applied.*revert/) },
-      });
+      // Text the writer applied is in the manuscript: the model's Undo does not take it back.
       const secondContext = {
         ...context,
         responseIdentity: { modelResponseId: responseId },
       };
+      await applyDraft("Alpha Gamma.");
       await core.read(address, secondContext);
-      expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
+      expect(await core.read({ ...address, format: "edits" }, context)).toMatchObject({
         status: "success",
-        result: { message: "reverted: e1" },
+        result: { message: expect.stringMatching(/e1.*applied.*none/) },
       });
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
-      expect(await core.write({ ...address, command: "redo" }, secondContext)).toMatchObject({
-        status: "nothing_to_redo",
-      });
-
       expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
-        status: "success",
-        result: { message: expect.stringContaining("undone: e2") },
+        status: "cant_undo_changed",
       });
       expect(await view.draftMarkdown(draftId)).toBe("Alpha Gamma.\n\nBlue.\n");
-      await applyDraft("Alpha Gamma.");
-      expect(await core.write({ ...address, command: "redo" }, secondContext)).toMatchObject({
-        status: "success",
-        result: { message: expect.stringContaining("redone: e2") },
-      });
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
-      expect(
-        await core.write({ ...address, command: "undo", count: 2 }, secondContext),
-      ).toMatchObject({
-        status: "success",
-        result: { message: expect.stringMatching(/undone: e2\nreverted: e1/) },
-      });
-      expect(await view.draftMarkdown(draftId)).toBe("Alpha Beta.\n\nBlue.\n");
+      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Gamma.\n\nBlue.\n");
     } finally {
       await harness.dispose();
     }
   });
-  it.each([
-    ["live", "count"],
-    ["draft", "count"],
-    ["live", "stepwise"],
-    ["draft", "stepwise"],
-    ["live", "short"],
-    ["draft", "short"],
-  ] as const)("two-edit undo in %s supports %s redo", async (destination, schedule) => {
+  it.each(["live", "draft"] as const)("two-edit undo in %s", async (destination) => {
     const { harness, view, context, responseId } = await fixture();
     try {
       const core = view.collab.agentEdit();
@@ -394,113 +311,62 @@ describe("model document stack", () => {
         destination === "live" ? harness.liveMarkdown(ALPHA_ID) : view.draftMarkdown(draftId);
       const responseIdentity = { modelResponseId: responseId };
       const inverse = { ...initial, responseIdentity };
-      const write = (command: "undo" | "redo", count = 1) =>
-        core.write({ ...address, command, count }, inverse);
-      expect(await write("undo", 2)).toMatchObject({
+      const write = (count: number) => core.write({ ...address, command: "undo", count }, inverse);
+      expect(await write(2)).toMatchObject({
         status: "success",
         result: { message: "undone: e2, e1" },
       });
       expect(await prose()).toBe("Alpha Beta.\n\nBlue.\n");
-      if (schedule === "short") {
-        expect(await write("redo", 3)).toMatchObject({
-          status: "insufficient_redo",
-          result: { message: expect.stringContaining("Only 2 edits to redo") },
-        });
-        expect(await prose()).toBe("Alpha Beta.\n\nBlue.\n");
-        expect(await write("redo", 2)).toMatchObject({ status: "success" });
-      } else if (schedule === "stepwise") {
-        expect(await write("redo")).toMatchObject({
-          status: "success",
-          result: { message: "redone: e1" },
-        });
-        expect(await prose()).toBe("Alpha Gold.\n\nBlue.\n");
-        expect(await write("redo")).toMatchObject({
-          status: "success",
-          result: { message: "redone: e2" },
-        });
-      } else {
-        expect(await write("redo", 2)).toMatchObject({
-          status: "success",
-          result: { message: "redone: e1, e2" },
-        });
-      }
-      expect(await prose()).toBe("Alpha Silver.\n\nBlue.\n");
     } finally {
       await harness.dispose();
     }
   });
 });
 
-it.each(["undo", "redo"] as const)(
-  "model %s follows its edit to the draft, keeps the writer's typing, and refuses only after none remains",
-  async (direction) => {
-    const { harness, view, context } = await fixture();
+it("model undo of an edit the writer typed inside is refused and leaves the draft as it is", async () => {
+  const { harness, view, context } = await fixture();
+  try {
+    const core = view.collab.agentEdit();
+    const command = { documentId: ALPHA_ID, file: "alpha.md" };
+    await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
+    const draftId = await readDraftId(db, ALPHA_ID);
+    const [documentDraft] = await db
+      .select()
+      .from(schema.documentDrafts)
+      .where(eq(schema.documentDrafts.id, draftId));
+    const doc = new Y.Doc({ gc: false });
     try {
-      const core = view.collab.agentEdit();
-      const command = { documentId: ALPHA_ID, file: "alpha.md" };
-      await core.write({ ...command, command: "replace", find: "Beta", content: "Gamma" }, context);
-      const draftId = await readDraftId(db, ALPHA_ID);
-      if (direction === "redo")
-        expect(await core.write({ ...command, command: "undo" }, context)).toMatchObject({
-          status: "success",
-        });
-      const liveContext = {
-        ...context,
-        responseIdentity: undefined,
-        grant: {
-          ...testFileGrant({ kind: "live" }, ALPHA_ID),
-          principal: context.grant.principal,
-        },
-      };
-      await core.read({ ...command, format: "edits" }, liveContext);
-      expect(await core.write({ ...command, command: direction }, liveContext)).toMatchObject({
-        status: "success",
-        result: { destination: "draft", draftWork: "w1" },
+      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
+      doc.clientID = allocateDocumentClient(doc);
+      const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
+      const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
+      await view.draftCoordinator.commitWriterUpdate({
+        draftId: documentDraft.id,
+        updateData: Y.mergeUpdates(updates),
+        actorUserId: USER_ID,
+        roomDocument: doc,
       });
-      expect(await view.draftMarkdown(draftId)).toBe(
-        direction === "undo" ? "Alpha Beta.\n\nBlue.\n" : "Alpha Gamma.\n\nBlue.\n",
-      );
-      expect(
-        await core.write(
-          { ...command, command: direction === "undo" ? "redo" : "undo" },
-          liveContext,
-        ),
-      ).toMatchObject({ status: "success" });
-      await core.read({ ...command, format: "edits" }, context);
-      const [documentDraft] = await db
-        .select()
-        .from(schema.documentDrafts)
-        .where(eq(schema.documentDrafts.id, draftId));
-      const doc = new Y.Doc({ gc: false });
-      try {
-        Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
-        doc.clientID = allocateDocumentClient(doc);
-        const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
-        const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-        await view.draftCoordinator.commitWriterUpdate({
-          draftId: documentDraft.id,
-          updateData: Y.mergeUpdates(updates),
-          actorUserId: USER_ID,
-          roomDocument: doc,
-        });
-      } finally {
-        doc.destroy();
-      }
-      const expected =
-        direction === "undo" ? "Alpha Beta!.\n\nBlue.\n" : "Alpha !Gamma.\n\nBlue.\n";
-      expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
-        status: "success",
-      });
-      expect(await view.draftMarkdown(draftId)).toBe(expected);
-      expect(await core.write({ ...command, command: direction }, context)).toMatchObject({
-        status: `nothing_to_${direction}`,
-      });
-      expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
     } finally {
-      await harness.dispose();
+      doc.destroy();
     }
-  },
-);
+    const liveContext = {
+      ...context,
+      responseIdentity: undefined,
+      grant: {
+        ...testFileGrant({ kind: "live" }, ALPHA_ID),
+        principal: context.grant.principal,
+      },
+    };
+    await core.read({ ...command, format: "edits" }, liveContext);
+    expect(await core.write({ ...command, command: "undo" }, liveContext)).toMatchObject({
+      status: "cant_undo_changed",
+    });
+    expect(await view.draftMarkdown(draftId)).toBe("Alpha Ga!mma.\n\nBlue.\n");
+    expect(await harness.liveMarkdown(ALPHA_ID)).toBe("Alpha Beta.\n\nBlue.\n");
+  } finally {
+    await harness.dispose();
+  }
+});
 
 it("model inverse receipts echo only changed blocks and their immediate context", async () => {
   const { harness, view, context, responseId } = await fixture();
@@ -515,14 +381,10 @@ it("model inverse receipts echo only changed blocks and their immediate context"
     expect(
       await core.write({ ...address, command: "replace", find: "Beta", content: "Gamma" }, context),
     ).toMatchObject({ status: "success" });
-    for (const command of ["undo", "redo"] as const) {
-      const result = await core.write({ ...address, command }, context);
-      expect(result.status).toBe("success");
-      expect(JSON.stringify(result.result)).toContain(
-        command === "undo" ? "Alpha Beta." : "Alpha Gamma.",
-      );
-      expect(JSON.stringify(result.result)).not.toContain("Far 9.");
-    }
+    const result = await core.write({ ...address, command: "undo" }, context);
+    expect(result.status).toBe("success");
+    expect(JSON.stringify(result.result)).toContain("Alpha Beta.");
+    expect(JSON.stringify(result.result)).not.toContain("Far 9.");
   } finally {
     await harness.dispose();
   }

@@ -58,7 +58,6 @@ export function AddConnectionForm({
     name: useId(),
     token: useId(),
     level: useId(),
-    warning: useId(),
   };
   const addressError = error?.on === "address" ? error.message : null;
   const name = addName(values);
@@ -127,15 +126,9 @@ export function AddConnectionForm({
           </Select>
         </Field>
       ) : null}
-      <p id={ids.warning} className="text-xs text-muted-foreground">
-        <Trans>
-          The server sees what the AI sends it and can steer what the AI does. Add only servers you
-          trust.
-        </Trans>
-      </p>
       {error?.on === "form" ? <InlineErrorRow message={error.message} className="px-0" /> : null}
       <div className="flex gap-2">
-        <Button type="submit" size="sm" aria-describedby={ids.warning}>
+        <Button type="submit" size="sm">
           <Trans>Connect</Trans>
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>

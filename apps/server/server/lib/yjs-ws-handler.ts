@@ -3,7 +3,15 @@ import { Hocuspocus, type WebSocketLike } from "@hocuspocus/server";
 import { isSchemaRepairUpdate } from "@meridian/agent-edit";
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import { draftOwnerKey } from "@meridian/contracts/branches";
-import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
+import {
+  accessChangedClose,
+  encodeCaughtUpWsMessage,
+  encodeReadOnlyWsMessage,
+  parseYjsClientStatelessMessage,
+  parseYjsRoomName,
+  WS_CLOSE,
+} from "@meridian/contracts/protocol";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import {
   buildDocumentSchema,
@@ -100,7 +108,9 @@ type YjsAdmissionTarget =
  * What the person may do in the room (file-access §7). An `edit` connection
  * holds its grant for the session and every frame confirms it.
  */
-type YjsRoomAccess = { level: "read" } | { level: "edit"; grant: FileGrant<"edit"> };
+type YjsRoomAccess =
+  | { level: "read"; why?: ClosedOwnerWhy }
+  | { level: "edit"; grant: FileGrant<"edit"> };
 
 type YjsConnectionAdmission =
   | {
@@ -324,7 +334,7 @@ async function findRoomAccess(
   if (!isFileAccessDenied(edit))
     return { access: { level: "edit", grant: edit }, facts: edit.facts };
   if (edit.level !== "read" || !edit.facts) return null;
-  return { access: { level: "read" }, facts: edit.facts };
+  return { access: { level: "read", why: closedOwnerWhy(edit.facts) }, facts: edit.facts };
 }
 
 async function classifyYjsConnectionAdmission(input: {
@@ -361,9 +371,9 @@ async function classifyYjsConnectionAdmission(input: {
     const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
     if (!documentDraft) {
       // A browser connects as soon as it appends a document's `create` in a Work, which names the
-      // draft the server may not have made yet: it retries. A draft that was made and closed is
-      // refused for good.
-      if (await services.documentSync.draftExists(room.draftId)) refuse(WS_CLOSE.DRAFT_CLOSED);
+      // draft the server may not have made yet: it retries. A draft that exists and cannot be
+      // joined is refused for good.
+      if (await services.documentSync.draftExists(room.draftId)) refuse(WS_CLOSE.DRAFT_PURGED);
       refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
     }
     documentId = documentDraft.documentId;
@@ -419,6 +429,17 @@ async function classifyYjsConnectionAdmission(input: {
   };
 }
 
+/** Why the file's owner is closed, if it is: the 4409 reason a writer typing into it is told. */
+function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | undefined {
+  const owner = facts?.branchOwner ?? facts?.ownerWork;
+  if (!owner) return undefined;
+  if ("frozen" in owner && owner.owner.kind === "lineage") {
+    return owner.frozen ? "chat_frozen" : undefined;
+  }
+  if (owner.deleted) return "work_deleted";
+  return owner.archived ? "work_archived" : undefined;
+}
+
 /** Room access follows these owners, each under its `draftOwnerKey`. */
 function accessKeys(facts: FileFacts): string[] {
   const { workIds, lineageRootIds } = grantOwnerLocks(facts);
@@ -447,7 +468,7 @@ async function enforceDraftHandshake(input: {
     }
     if (!active) {
       input.context?.draftSyncState?.set(key, "rejected");
-      refuse(WS_CLOSE.DRAFT_CLOSED);
+      refuse(WS_CLOSE.DRAFT_PURGED);
     }
     input.context?.draftSyncState?.set(key, "passed");
     return;
@@ -523,9 +544,14 @@ async function admitDraftSync(
     // Not a refusal: the client reconnects and its handshake carries the missing prefix.
     if (cause instanceof DraftPrefixMissingError) refuse(WS_CLOSE.DRAFT_PREFIX_MISSING, cause);
     if (cause instanceof DraftStaleUpdateError) {
-      if (!(await input.services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
-        refuse(WS_CLOSE.DRAFT_CLOSED, cause);
-      refuse(WS_CLOSE.ACCESS_CHANGED, cause);
+      const resolved = await input.services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
+      if (!resolved) refuse(WS_CLOSE.DRAFT_PURGED, cause);
+      const current = await findRoomAccess(input.services, input.userId, {
+        kind: "draft",
+        documentId: resolved.documentId,
+        owner: resolved.owner,
+      });
+      refuse(accessChangedClose(closedOwnerWhy(current?.facts)), cause);
     }
     refuse({ code: 1008, reason: "draft-update-admission-failed" }, cause);
   }
@@ -576,6 +602,17 @@ export function createHocuspocus(
   rooms: YjsRoomAccessIndex,
   treeRooms: TreeRooms = createTreeRooms(services),
 ): Hocuspocus<YjsConnectionContext> {
+  /** Brings Live's committed text into the draft's base and prose; a failure is logged, not thrown. */
+  const pullLiveIntoDraft = (target: Extract<YjsAdmissionTarget, { kind: "draft" }>) =>
+    services.documentSync.flushDraftLivePull(target.documentId).catch((cause: unknown) => {
+      emitEvent(services.eventSink, {
+        level: "warn",
+        source: "collab.hocuspocus",
+        name: "draft_review.live_pull_failed",
+        correlation: { documentId: target.documentId, draftId: target.draftId },
+        payload: unknownToEventPayload(cause),
+      });
+    });
   const hocuspocus = new Hocuspocus<YjsConnectionContext>({
     name: "meridian-yjs",
     yDocOptions: { gc: false, gcFilter: () => true },
@@ -621,26 +658,31 @@ export function createHocuspocus(
           // A Work change between admission and registration reached no room.
           // Registered now, the room hears every later change; ask once more.
           const settled = await findRoomAccess(services, userId, admission.fileTarget);
-          if (settled?.access.level !== admission.access.level) refuse(WS_CLOSE.ACCESS_CHANGED);
+          if (settled?.access.level !== admission.access.level)
+            refuse(accessChangedClose(closedOwnerWhy(settled?.facts)));
 
           if (admission.target.kind === "draft") {
             const target = admission.target;
             // Do not delay room admission: a cold room may briefly render its persisted
             // state before this pull arrives. A pull that commits while the room loads is
             // brought in by the room's enrollment once Hocuspocus registers it.
-            void services.documentSync
-              .flushDraftLivePull(target.documentId)
-              .catch((cause: unknown) => {
-                emitEvent(services.eventSink, {
-                  level: "warn",
-                  source: "collab.hocuspocus",
-                  name: "draft_review.live_pull_failed",
-                  correlation: { documentId: target.documentId, draftId: target.draftId },
-                  payload: unknownToEventPayload(cause),
-                });
-              });
+            void pullLiveIntoDraft(target);
           }
         });
+      });
+    },
+    // A draft room's `catch_up`: Live's committed text is pulled into the draft now, rather than
+    // after the pull's debounce, and the answer follows the pull's update on this socket.
+    async onStateless({ document, connection, payload }) {
+      const message = parseYjsClientStatelessMessage(payload);
+      if (!message) return;
+      const { context } = connection;
+      return runWithEventCorrelation({ traceId: context.traceId }, async () => {
+        const target = context.admissionTarget;
+        if (target?.kind === "draft") await pullLiveIntoDraft(target);
+        // Batched room updates go out first, so the answer never overtakes the pull's.
+        document.flush();
+        connection.sendStateless(encodeCaughtUpWsMessage(message.id));
       });
     },
     async beforeHandleMessage({ context }) {
@@ -691,7 +733,10 @@ export function createHocuspocus(
             return;
           }
           const admitted = await runWithEditGrants(services.fileAccess, [access.grant], admit);
-          if (!admitted.ok) refuse(WS_CLOSE.ACCESS_CHANGED);
+          if (!admitted.ok) {
+            const facts = admitted.refusal.refused.find((denial) => denial.facts)?.facts;
+            refuse(accessChangedClose(closedOwnerWhy(facts)));
+          }
         });
       });
     },
@@ -725,7 +770,7 @@ export function createHocuspocus(
               serverSchemaVersion: cause.expectedVersion,
             });
           }
-          if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_CLOSED);
+          if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_PURGED);
           if (state) Y.applyUpdate(document, state);
           if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
         });
@@ -751,6 +796,9 @@ export function createHocuspocus(
         if (context.tree) connection.sendStateless(JSON.stringify({ list: context.tree.listId }));
         return;
       }
+      // The authenticated scope says `readonly`; this says why (for a closed owner), so the client never has to guess.
+      if (context.access?.level === "read")
+        connection.sendStateless(encodeReadOnlyWsMessage(context.access.why));
       // This hook's refusal also closes the connection Hocuspocus has already made.
       const closing = {
         closeTransport(close: RoomClose) {
@@ -763,7 +811,7 @@ export function createHocuspocus(
           // A close can commit between admission and registration; the ended draft
           // must not take a late connection.
           if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
-            refuse(WS_CLOSE.DRAFT_CLOSED);
+            refuse(WS_CLOSE.DRAFT_PURGED);
           return;
         }
         try {
@@ -809,7 +857,7 @@ export function createYjsGateway(services: YjsGatewayServices) {
   const treeRooms = createTreeRooms(services);
   const hocuspocus = createHocuspocus(services, rooms, treeRooms);
   const unsubscribe = services.fileAccessChanges.subscribe((change) =>
-    rooms.revokeOwner(fileAccessChangeKey(change)),
+    rooms.revokeOwner(fileAccessChangeKey(change), "closed" in change ? change.closed : undefined),
   );
 
   function closeConnection(
@@ -847,11 +895,12 @@ export function createYjsGateway(services: YjsGatewayServices) {
             peer.close(code, reason),
         }),
       };
-      registration.revoke = () => {
+      registration.revoke = (why) => {
         // Close the socket first, so Hocuspocus's own protocol CLOSE (which the
         // provider reports as 1000) never reaches the client ahead of 4409.
-        peer.close(WS_CLOSE.ACCESS_CHANGED.code, WS_CLOSE.ACCESS_CHANGED.reason);
-        closeConnection(connection, WS_CLOSE.ACCESS_CHANGED);
+        const close = accessChangedClose(why);
+        peer.close(close.code, close.reason);
+        closeConnection(connection, close);
       };
       return connection;
     },

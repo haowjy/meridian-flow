@@ -23,6 +23,8 @@ export type HeldContextNode =
   | {
       kind: "held";
       address: HeldContextNodeAddress;
+      /** The node is in Trash and `address` is the last one it held; only when asked for. */
+      inTrash?: true;
     }
   /** The project holds a node that no live address can name: in Trash, or inconsistent. */
   | { kind: "unreachable" };
@@ -57,6 +59,8 @@ export interface ProjectContextAvailabilityPort {
     input: {
       projectId: ProjectId;
       node: { kind: "document"; id: DocumentId } | { kind: "folder"; id: string };
+      /** Answer a node in Trash with its last address (`inTrash`) rather than `unreachable`. */
+      inTrash?: boolean;
     },
     actor: { userId: string },
   ): Promise<HeldContextNode | null>;

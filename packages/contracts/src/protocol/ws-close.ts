@@ -1,11 +1,13 @@
 /** Application-defined WebSocket close contracts shared by clients and server transports. */
 
+import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
+
 export const WS_CLOSE = {
   AUTH_FAILED: { code: 4401, reason: "auth_failed" },
   AUTH_ERROR: { code: 1011, reason: "auth_error" },
   PERMISSION_DENIED: { code: 4403, reason: "permission-denied" },
-  /** Terminal: this draft ended. The transport reason names its close cause. */
-  DRAFT_CLOSED: { code: 4205, reason: "discarded" },
+  /** Terminal: the draft's row was purged with its Work, so its room is gone. Never reconnect. */
+  DRAFT_PURGED: { code: 4205, reason: "purged" },
   /**
    * A draft update arrived before the update it depends on reached the draft's journal. Not a
    * refusal: the client reconnects and its next handshake's SyncStep2 carries the missing prefix.
@@ -36,7 +38,8 @@ export const WS_CLOSE = {
   DOCUMENT_SCHEMA_STALE: { code: 4407, reason: "document-schema-stale" },
   /**
    * The room's file access changed (a Work archived, unarchived, deleted or
-   * restored). Not terminal: reconnect and take the new authenticated scope.
+   * restored). Not terminal: reconnect and take the new authenticated scope. A close
+   * because a Work or chat closed names it: `access-changed:<ClosedOwnerWhy>`.
    */
   ACCESS_CHANGED: { code: 4409, reason: "access-changed" },
 } as const;
@@ -53,4 +56,26 @@ export function listChangedId(event: { code: number; reason: string }): string |
   return event.code === code && event.reason.startsWith(`${reason}:`)
     ? event.reason.slice(reason.length + 1)
     : undefined;
+}
+
+/** The 4409 close; `why` names a closed owner, and is left out for any other change of access. */
+export function accessChangedClose(why?: ClosedOwnerWhy) {
+  const { code, reason } = WS_CLOSE.ACCESS_CHANGED;
+  return { code, reason: why ? `${reason}:${why}` : reason };
+}
+
+/** Whether this close is a 4409, with or without a reason. */
+export function isAccessChangedClose(event: { code?: number; reason: string }): boolean {
+  const { code, reason } = WS_CLOSE.ACCESS_CHANGED;
+  return event.code === code || event.reason === reason || event.reason.startsWith(`${reason}:`);
+}
+
+/** The closed owner a 4409 names, if it names one. */
+export function accessChangedWhy(event: {
+  code?: number;
+  reason: string;
+}): ClosedOwnerWhy | undefined {
+  if (!isAccessChangedClose(event)) return undefined;
+  const why = event.reason.slice(WS_CLOSE.ACCESS_CHANGED.reason.length + 1);
+  return CLOSED_OWNER_WHYS.find((known) => known === why);
 }

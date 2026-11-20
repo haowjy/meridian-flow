@@ -70,7 +70,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return db
         .select({
           kind: documentDrafts.kind,
-          status: documentDrafts.status,
           branchId: documentDrafts.branchId,
         })
         .from(documentDrafts)
@@ -163,7 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const branchId = made[0]?.id;
       expect
         .soft(await draftsOf(chapter), "and the branch's draft")
-        .toEqual([{ kind: "work_draft", status: "active", branchId }]);
+        .toEqual([{ kind: "work_draft", branchId }]);
       expect.soft(await savedRows(branchId ?? "", chapter), "in the draft").toHaveLength(1);
     });
   });

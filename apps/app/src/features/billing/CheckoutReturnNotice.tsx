@@ -1,5 +1,5 @@
 import { Trans } from "@lingui/react/macro";
-import { CheckCircle2, CircleAlert, Info, LoaderCircle } from "lucide-react";
+import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 
 import type { CheckoutReturnStatus } from "./checkout";
 
@@ -50,10 +50,7 @@ function NoticeIcon({ status }: { status: CheckoutReturnStatus }) {
   if (status === "confirmed") {
     return <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />;
   }
-  if (status === "timeout" || status === "unverified") {
-    return <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />;
-  }
-  return <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />;
+  return <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />;
 }
 
 function NoticeMessage({ status }: { status: CheckoutReturnStatus }) {
@@ -61,20 +58,7 @@ function NoticeMessage({ status }: { status: CheckoutReturnStatus }) {
     return <Trans>Confirming your purchase…</Trans>;
   }
   if (status === "confirmed") {
-    return <Trans>Purchase confirmed.</Trans>;
+    return <Trans>Purchase confirmed</Trans>;
   }
-  if (status === "timeout") {
-    return (
-      <Trans>We couldn’t confirm this purchase yet. Check your balance before trying again.</Trans>
-    );
-  }
-  if (status === "unverified") {
-    return (
-      <Trans>We couldn’t confirm this purchase. Check your balance before trying again.</Trans>
-    );
-  }
-  if (status === "portal") {
-    return <Trans>Returned from the billing portal.</Trans>;
-  }
-  return <Trans>You left checkout. No purchase was confirmed.</Trans>;
+  return <Trans>Purchase not confirmed</Trans>;
 }

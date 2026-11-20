@@ -33,24 +33,21 @@ export type TurnLiveLineageDocumentItem = {
   | { scope: "draft"; owner: DraftOwnerKey }
 );
 
-export type TurnReceiptState =
-  | "live-active"
-  | "live-reversed"
-  | "work-active"
-  | "work-reversed"
-  | "expired";
+export type TurnReceiptControl = "undo" | "view_change";
 
-export type TurnReceiptControl = "undo" | "redo" | "view_change";
-
-/** What became of a document's draft text from a turn: still waiting, applied, or discarded. */
-export type TurnDraftState = "pending" | "applied" | "discarded";
+/**
+ * What became of a turn's drafted change to one document, text and tree halves folded into the
+ * less settled one: still waiting, applied, taken back by the card's Undo, or discarded.
+ */
+export type TurnDraftState = "pending" | "applied" | "undone" | "discarded";
 
 export interface TurnReceiptChip {
-  /** Each drafted document's current state, by document id; absent for documents the turn wrote live. */
+  /** Each drafted document's change, by document or node id; absent for what the turn wrote live. */
   drafts?: Record<string, TurnDraftState>;
-  skips?: import("./write-reversal.js").TurnInverseSkip[];
-  state: TurnReceiptState;
+  /** `undo`: the card's Undo would take something back. */
   control: TurnReceiptControl;
+  /** The card's Undo ran and nothing is left for it; the card says "Undone". */
+  undone?: true;
 }
 
 export interface ListTurnLiveLineageResponse {

@@ -87,14 +87,14 @@ separate browser check covers rendering and native keyboard history.
 | Action | Required result |
 |---|---|
 | Discard an editor change | Text reverts immediately; one Ctrl+Z restores it with restoration provenance and bylines. |
-| Discard the document draft (band) | All pending changes revert, the draft id stays, the page goes Live, and "Draft of ‹name› discarded." takes the review line above the toolbar. Undo returns the page to the draft with the same marks and bylines. |
+| Discard the document draft (band) | All pending changes revert, the draft id stays, the page goes Live, and "‹name› discarded." takes the review line above the toolbar. Undo returns the page to the draft with the same marks and bylines. |
 | Discard from the dock or the Changes list | The item leaves immediately; the notice takes its row's place (a dock: its footer). Undo restores the same draft and bylines. |
 | Discard, open another document, come back | The Changes or dock notice is still there; Undo restores the draft and main does not move. |
 | Discard, then type elsewhere in that draft | The notice stays; its Undo restores the discarded text and keeps the typing. |
-| Discard, then type over the discarded text or let a reply write the same sentence again | The notice stays; its Undo says "1 change couldn't come back" and writes nothing twice. In the editor that discarded, Ctrl+Z undoes the typing, then drops the Discard, ends the notice, shows the same line on the draft's failure line, and never undoes an earlier step in that press. The same holds after the notice was dismissed, and for a Discard brought back by Ctrl+Shift+Z after its Ctrl+Z. When it was the document's only change, the line takes the band's "No changes left" place (side editor, main, and 390). Typing right after the restored word counts as an edit too. |
+| Discard, then type over the discarded text or let a reply write the same sentence again | The notice stays; its Undo brings back what still stands of the change, keeps the writer's text where they wrote over it, and writes nothing twice. Nothing says what didn't come back. |
 | A second Discard or an Apply by the same Work | It replaces the notice. |
 | Reload | The notice ends; discarded text persists. |
-| Discard all / the dock's Discard with only text drafts | No question; one notice "N drafts discarded."; one Undo restores every room. |
+| Discard all / the dock's Discard with only text drafts | No question; one notice "N discarded."; one Undo restores every room. |
 | Discard a new document, a move or delete | No question; the notice shows, and Undo brings back the document, the move or delete and its text. |
 | Discard a trashed chat's draft | It asks once ("This can't be undone.") in place of its controls, and shows no notice. |
 | Discard all with a move and text, then Undo | Both come back as pending; a document drafted again meanwhile keeps its newer draft, and the notice says how many couldn't come back. |
@@ -129,9 +129,9 @@ server resolves on receipt.
 | Apply, type beside it, then Discard before the answer | Applied words stay in the optimistic base; the new typing reverts. |
 | Apply a deletion before the first answer | The base ends at the applied text; the deletion does not reappear. |
 | Room record before answer, then answer before record | No flicker or duplicate insertion; each head settles once. |
-| Refuse the middle click | Its change returns with an item failure, then the next frozen click sends. |
-| Refuse `{status:"refused",reason:"not_found"}` at desktop, narrow desktop, and coarse-pointer phone | The focused bar, identity row, Changes source status, and dock show the failure exactly once; paragraph and row tops do not move. |
-| Drop the answer | The same body and id retry after 1, 2, and 4 seconds; then the item shows Retry and no successor sends. |
+| Refuse the middle click | Its change returns and the pill shows, then the next frozen click sends. |
+| Refuse `{status:"refused",reason:"not_found"}` at desktop, narrow desktop, and coarse-pointer phone | One "Couldn't apply" pill shows at the top centre and goes by itself; no bar, row or line shows the failure, and paragraph and row tops do not move. |
+| Drop the answer | The same body and id retry after 1, 2, and 4 seconds; then the click settles unsent, the change is pending again, one pill shows, and the next click sends. |
 | Slow ten clicks | Groups leave together; Applying uses reserved space after 500 ms and completion is FIFO. |
 | Navigate to the Changes source during the head | The owner receives the answer and record and settles without a mounted editor. |
 | Hold the final draft update, click Apply, archive the Work in another tab | The click is sent when the room ends; the server's `work_archived` answer reverts it silently, with no Applying/Retry limbo. Unarchive and reopen: a fresh Apply works. |
@@ -224,8 +224,7 @@ Open a draft with two separated changes and a move.
 5. Delay or drop an Apply answer, then press Undo and Redo while typing. Commands
    settle in order, typing remains enabled, and the review does not flash back
    before its authoritative room update.
-6. Refuse Un-Apply. The restored change shows the error and Retry with the same
-   command id, and the next Ctrl+Z tries the Un-Apply again rather than undoing
+6. Refuse Un-Apply. A "Couldn't undo" pill shows, and the next Ctrl+Z tries the Un-Apply again rather than undoing
    the typing under it. Tree-only and delete-short-circuit Apply do not enter
    editor history; a chat or sidebar Apply does (see `draft-review.md`).
 7. Apply a chat's change, block `**/unapply` and press Ctrl+Z: the next Ctrl+Z

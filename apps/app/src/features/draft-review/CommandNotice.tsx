@@ -12,6 +12,7 @@ import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { ActionNotice } from "@/components/app/ActionNotice";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { RowWord } from "@/components/app/RowWord";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
@@ -21,11 +22,8 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { type Removal, removalSentence } from "@/features/project/context/RemovedDocumentNotice";
-import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { type AppliedFact, type DraftNotice, hasLine, type RestoreReturned } from "./draft-notices";
-import { leftOutSentence } from "./ReviewMessageText";
+import type { AppliedFact, DraftNotice } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
@@ -116,9 +114,9 @@ export function CommandNotice({
 }
 
 /**
- * One notice: "Draft of Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss,
+ * One notice: "Chapter 1 discarded." or "Chapter 1 deleted." with Undo and a dismiss,
  * or what an Apply did.
- * An Undo that failed stays, with Retry. When main, the side or the phone's sheet still presents
+ * An Undo that failed shows the pill toast, and the notice keeps its Undo. When main, the side or the phone's sheet still presents
  * the document the Discard left there, an Undo returns that view to the draft; anywhere else
  * nothing moves.
  */
@@ -132,36 +130,18 @@ export function DraftNoticeLine({
   useLingui();
   const undo = useNoticeUndo();
   const openDocument = useOpenProjectDocument(notice.projectId);
-  const whereabouts = useWhereabouts(notice.projectId);
-  if (!hasLine(notice)) return null;
+  const landed = useLandedNow(notice);
   if (notice.kind === "applied") {
-    // A document gone since says so once, in place of what the Apply did to it.
-    const removed = new Map<string, Removal>();
-    const facts = notice.facts.flatMap((fact): AppliedFact[] => {
-      if (fact.kind === "applied") return [];
-      const now = whereabouts(fact.documentId, factName(fact));
-      if (now.kind !== "removed") return [factNow(fact, now)];
-      removed.set(fact.documentId, now.removal);
-      return [];
-    });
-    const landed = facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
-    const restored = facts.flatMap((fact) => (fact.kind === "restored" ? [fact] : []));
-    const also = facts.flatMap((fact) =>
-      fact.kind === "also" ? [`${fact.from} → ${fact.to}`] : [],
-    );
+    if (landed.length === 0) return null;
     const [only] = landed;
     // The bare "Now in X." only when the Apply landed one document: with others it needs its name.
-    const single = only && notice.facts.filter((fact) => fact.kind === "landed").length === 1;
-    const name = only ? documentDisplayName(only.uri) : "";
+    const single = notice.facts.filter((fact) => fact.kind === "landed").length === 1;
+    const name = documentDisplayName(only.uri);
     // One landing names the document on its Open; the line says where it went. Several say it
     // once per place, so the line holds at sidebar width.
-    const sentence = [
-      ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
-      appliedSentence(restored, also),
-      removalSentence([...removed.values()]),
-    ]
-      .filter(Boolean)
-      .join(" ");
+    const sentence = (single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)).join(
+      " ",
+    );
     return (
       <ActionNotice
         data-command-notice="applied"
@@ -181,66 +161,21 @@ export function DraftNoticeLine({
   }
   const { subject } = notice;
   const onUndo = () => undo(notice);
-  const { sentence, failedUndo } =
+  const sentence =
     subject.kind === "drafts"
-      ? {
-          sentence: t`${subject.count} drafts discarded.`,
-          failedUndo: t`Couldn't bring back ${subject.count} drafts.`,
-        }
+      ? t`${subject.count} discarded.`
       : subject.kind === "deletes"
-        ? {
-            sentence: t`${subject.count} items deleted.`,
-            failedUndo: t`Couldn't bring back ${subject.count} items.`,
-          }
+        ? t`${subject.count} items deleted.`
         : subject.kind === "deleted"
-          ? {
-              sentence: (name: string) => t`${name} deleted.`,
-              failedUndo: t`Couldn't bring back ${subject.name}.`,
-            }
-          : subject.kind === "draft"
-            ? {
-                sentence: (name: string) => t`Draft of ${name} discarded.`,
-                failedUndo: t`Couldn't bring back the draft of ${subject.name}.`,
-              }
-            : subject.kind === "folder"
-              ? {
-                  sentence: (name: string) => t`Changes in ${name} discarded.`,
-                  failedUndo: t`Couldn't bring back the changes in ${subject.name}.`,
-                }
-              : {
-                  sentence: (name: string) => t`Change to ${name} discarded.`,
-                  failedUndo: t`Couldn't bring back the change to ${subject.name}.`,
-                };
-  const failed = notice.status === "failed";
-  if (notice.status === "returned") {
-    return (
-      <ActionNotice
-        data-command-notice="undo-returned"
-        sentence={restoreReturnedSentence(notice.returned)}
-        onDismiss={notice.dismiss}
-        className={className}
-      />
-    );
-  }
-  if (notice.status === "partial") {
-    const count = notice.leftOut;
-    return (
-      <ActionNotice
-        data-command-notice="undo-partial"
-        sentence={leftOutSentence(count)}
-        onDismiss={notice.dismiss}
-        className={className}
-      />
-    );
-  }
+          ? (name: string) => t`${name} deleted.`
+          : (name: string) => t`${name} discarded.`;
   return (
     <ActionNotice
-      data-command-notice={failed ? "undo-failed" : "discarded"}
+      data-command-notice="discarded"
       sentence={sentence}
       name={"name" in subject ? subject.name : null}
       action={{ label: <Trans>Undo</Trans>, onClick: onUndo, pending: notice.status === "undoing" }}
       onDismiss={notice.dismiss}
-      failure={failed ? { message: failedUndo, onRetry: onUndo, onDismiss: notice.dismiss } : null}
       className={className}
     />
   );
@@ -262,6 +197,14 @@ function useNoticeUndo() {
     // if main is still there.
     const stays = left ? left.landed : review?.documentId;
     void notice.undo().then((answer) => {
+      if (answer === "failed") {
+        notifyFailure({
+          key: `undo-discard:${notice.id}`,
+          title: t`Couldn't undo`,
+          brief: true,
+        });
+        return;
+      }
       if (answer !== "ok" || !review || stays === undefined || !presented) return;
       if (presented.mainDocumentId(projectId) === stays) openReviewFile(review, ownerKey);
       // Beside main the address is main's: only the document's view changes.
@@ -293,98 +236,43 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
   if (!notice) return { held: () => false, word: () => null };
   if (notice.kind === "applied") {
+    // An Apply's rows offer its Undo while it can be taken back: the notice ends with it.
     const factsOf = (id: string) => notice.facts.filter((fact) => fact.documentId === id);
     return {
       held: (id) => factsOf(id).length > 0,
       word: (id) => {
-        const facts = factsOf(id);
-        const [first] = facts;
-        if (!first) return null;
-        const now = whereabouts(id, factName(first));
-        const name = now.kind === "placed" ? documentDisplayName(now.uri) : factName(first);
-        const said =
-          now.kind === "removed"
-            ? removalSentence([now.removal])
-            : facts.map((fact) => factSentence(factNow(fact, now))).join(" ");
-        const step = facts.find((fact) => fact.step)?.step;
-        if (step) {
-          const count = step.count;
-          return (
-            <RowWord
-              label={t`Undo applying ${name}`}
-              word={<Trans>Undo</Trans>}
-              sentence={`${said} ${
-                count > 1
-                  ? t`Undo takes back the whole Apply, all ${count} changes.`
-                  : t`Undo takes back the Apply.`
-              }`}
-              onAction={step.undo}
-              // The pressed ✓ or Apply all left with its row: the first row the Apply took has
-              // the focus, as a delete's Undo does.
-              focus={{ take: () => takeOnce(notice.id) }}
-            />
-          );
-        }
+        const [first] = factsOf(id);
+        const step = factsOf(id).find((fact) => fact.step)?.step;
+        if (!first || !step) return null;
+        const now = whereabouts(id);
+        const name = now.kind === "placed" ? documentDisplayName(now.uri) : first.name;
         return (
           <RowWord
-            tone="done"
-            label={t`${name}, applied`}
-            word={<Trans>Applied</Trans>}
-            sentence={said}
+            label={t`Undo applying ${name}`}
+            word={<Trans>Undo</Trans>}
+            sentence={t`Applied`}
+            onAction={() => void step.undo(null)}
+            // The pressed ✓ or Apply all left with its row: the first row the Apply took has
+            // the focus, as a delete's Undo does.
+            focus={{ take: () => takeOnce(notice.id) }}
           />
         );
       },
     };
   }
-  const held = (id: string) => notice.documentIds.includes(id);
+  const took = (id: string) => notice.documentIds.includes(id);
   const { subject } = notice;
   const count = "count" in subject ? subject.count : 1;
   const name = "name" in subject ? subject.name : "";
   return {
-    held,
+    held: took,
     word: (id) => {
-      if (!held(id)) return null;
-      if (notice.status === "returned")
-        return (
-          <RowWord
-            tone="warning"
-            word={<Trans>Not restored</Trans>}
-            sentence={restoreReturnedSentence(notice.returned)}
-          />
-        );
-      if (notice.status === "partial") {
-        const left = notice.leftOut;
-        return (
-          <RowWord
-            tone="warning"
-            word={<Trans>Partly restored</Trans>}
-            sentence={leftOutSentence(left)}
-          />
-        );
-      }
-      if (notice.status === "failed")
-        return (
-          <RowWord
-            tone="warning"
-            word={<Trans>Retry</Trans>}
-            label={
-              count > 1 ? t`Retry bringing back ${count} changes` : t`Retry bringing back ${name}`
-            }
-            sentence={t`Couldn't bring it back. Retry tries again.`}
-            onAction={() => undo(notice)}
-          />
-        );
+      if (!took(id)) return null;
       return (
         <RowWord
           word={<Trans>Undo</Trans>}
           label={count > 1 ? t`Undo discard of ${count} changes` : t`Undo discard of ${name}`}
-          sentence={
-            count > 1
-              ? t`Discarded ${count} changes just now. Undo brings them all back.`
-              : subject.kind === "folder"
-                ? t`Discarded the changes in ${name} just now. Undo brings them back.`
-                : t`Discarded just now. Undo brings it back.`
-          }
+          sentence={t`Discarded`}
           pending={notice.status === "undoing"}
           onAction={() => undo(notice)}
         />
@@ -398,69 +286,44 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
  * has it, `removed` once it is in Trash or purged, and `unread` while the list can't say, when the
  * notice says where the Apply left it.
  */
-type Whereabouts =
-  | { kind: "placed"; uri: string }
-  | { kind: "removed"; removal: Removal }
-  | { kind: "unread" };
+type Whereabouts = { kind: "placed"; uri: string } | { kind: "removed" } | { kind: "unread" };
 
-function useWhereabouts(projectId: string): (documentId: string, name: string) => Whereabouts {
+function useWhereabouts(projectId: string): (documentId: string) => Whereabouts {
   const trees = useProjectTrees(projectId);
-  return (documentId, name) => {
+  return (documentId) => {
     const place = trees.find(documentId);
     if (place) return { kind: "placed", uri: place.file.uri };
-    const standing = trees.standing(documentId);
-    if (standing.kind !== "in-trash" && standing.kind !== "purged") return { kind: "unread" };
-    const answer = removalAnswer(standing);
-    const title = standing.kind === "in-trash" ? standing.node.name : name;
-    return {
-      kind: "removed",
-      removal: { title, record: answer?.kind === "removed" ? answer.record : null },
-    };
+    const { kind } = trees.standing(documentId);
+    return kind === "in-trash" || kind === "purged" ? { kind: "removed" } : { kind: "unread" };
   };
 }
 
-const factName = (fact: AppliedFact) => (fact.kind === "also" ? fact.to : fact.name);
+type Landed = Extract<AppliedFact, { kind: "landed" }>;
 
-/** The fact as the document stands now: a landing names where it is, a return its name. */
-function factNow(fact: AppliedFact, now: Whereabouts): AppliedFact {
+/**
+ * What an Apply landed, each fact as its document stands now. A document gone since is left out:
+ * there is nothing to say of where it landed. A notice that is not an Apply has none.
+ */
+function useLandedNow(notice: DraftNotice | null): Landed[] {
+  const whereabouts = useWhereabouts(notice?.projectId ?? "");
+  if (notice?.kind !== "applied") return [];
+  return notice.facts.flatMap((fact) => {
+    if (fact.kind !== "landed") return [];
+    const now = whereabouts(fact.documentId);
+    return now.kind === "removed" ? [] : [factNow(fact, now)];
+  });
+}
+
+/** The notice, if it has a line to say: a plain Apply's is said only on its rows, and a landing in a document since deleted says nothing. */
+export function useNoticeLine(notice: DraftNotice | null): DraftNotice | null {
+  const landed = useLandedNow(notice);
+  return notice && (notice.kind !== "applied" || landed.length > 0) ? notice : null;
+}
+
+/** The fact as the document stands now: a landing names where it is. */
+function factNow(fact: Landed, now: Whereabouts): Landed {
   if (now.kind !== "placed") return fact;
-  if (fact.kind === "landed") return { ...fact, uri: now.uri, name: documentDisplayName(now.uri) };
-  if (fact.kind === "restored") return { ...fact, name: documentDisplayName(now.uri) };
-  return fact;
-}
-
-/** What one fact of an Apply says on its document's row. */
-function factSentence(fact: AppliedFact): string {
-  switch (fact.kind) {
-    case "landed": {
-      const place = placeOf(fact.uri);
-      return t`Applied. Now in ${place}.`;
-    }
-    case "applied": {
-      const area = schemeLabel(fact.scheme);
-      return area ? t`Applied just now: its changes are in ${area}.` : t`Applied just now.`;
-    }
-    case "restored": {
-      const area = schemeLabel(fact.scheme);
-      return area ? t`Applied. It is back in ${area}.` : t`Applied. It is back.`;
-    }
-    case "also": {
-      const { from, to } = fact;
-      return t`Applied with the others: ${from} → ${to}.`;
-    }
-  }
-}
-
-/** What a restore that did nothing says, wherever it was sent from. */
-export function restoreReturnedSentence(why: RestoreReturned | null): string {
-  switch (why) {
-    case "work-closed":
-      return t`Work was closed.`;
-    case "chat-in-trash":
-      return t`Its chat is in Trash.`;
-    default:
-      return t`Gone from Trash.`;
-  }
+  return { ...fact, uri: now.uri, name: documentDisplayName(now.uri) };
 }
 
 /** A notice's action in `container` (Undo, Retry): where the focus goes when the notice took the pressed control's place. */
@@ -472,9 +335,7 @@ export const noticeAction = (container: HTMLElement) =>
 export type InArea = { name: string; scheme: ProjectContextTreeScheme | null | undefined };
 
 /** The names joined per area, in the order each area first appears. */
-function byArea(
-  documents: readonly InArea[],
-): { area: string | null; names: string; count: number }[] {
+function byArea(documents: readonly InArea[]): { area: string | null; names: string }[] {
   const groups = new Map<string | null, string[]>();
   for (const { name, scheme } of documents) {
     const area = schemeLabel(scheme);
@@ -484,7 +345,6 @@ function byArea(
   return [...groups].map(([area, names]) => ({
     area,
     names: list.format(names),
-    count: names.length,
   }));
 }
 
@@ -505,32 +365,13 @@ export function ApplyAllQuestion({
   );
   const sentences = [
     ...(deleting.length > 0 ? [t`Applying deletes ${deletes}.`] : []),
-    ...byArea(restoring).map(({ area, names, count }) =>
+    ...byArea(restoring).map(({ area, names }) =>
       area
-        ? count === 1
-          ? t`Applying brings back ${names}, which was deleted from ${area}.`
-          : t`Applying brings back ${names}, which were deleted from ${area}.`
-        : count === 1
-          ? t`Applying brings back ${names}, which was deleted.`
-          : t`Applying brings back ${names}, which were deleted.`,
+        ? t`Applying brings back ${names}, deleted from ${area}`
+        : t`Applying brings back ${names}`,
     ),
   ];
   return <>{sentences.join(" ")}</>;
-}
-
-/** "‹title› is back in Knowledge.": one sentence per area an Apply brought documents back to. */
-function restoredSentence(restored: readonly InArea[]): string {
-  return byArea(restored)
-    .map(({ area, names, count }) =>
-      area
-        ? count === 1
-          ? t`${names} is back in ${area}.`
-          : t`${names} are back in ${area}.`
-        : count === 1
-          ? t`${names} is back.`
-          : t`${names} are back.`,
-    )
-    .join(" ");
 }
 
 /** "Ch 3 and Outline are now in Manuscript/Arc 3.": one sentence per place, in landing order. */
@@ -552,17 +393,4 @@ function landedSentences(landed: readonly { uri: string }[]): string[] {
 function placeOf(uri: string): string {
   const whole = documentLocationName(uri);
   return whole.slice(0, whole.lastIndexOf("/")) || whole;
-}
-
-export function appliedSentence(
-  restored: readonly InArea[],
-  alsoApplied: readonly string[] = [],
-): string {
-  const others = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
-    alsoApplied,
-  );
-  return [
-    ...(restored.length ? [restoredSentence(restored)] : []),
-    ...(alsoApplied.length ? [t`Also applied ${others}.`] : []),
-  ].join(" ");
 }

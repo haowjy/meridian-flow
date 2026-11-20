@@ -237,10 +237,7 @@ export function createDraftAgentEditJournal(input: {
 export type DraftLookupWithSnapshots = WorkDraftLookup & {
   getDraft(
     draftId: string,
-  ): Promise<Pick<
-    DraftSnapshot,
-    "branchId" | "status" | "closedCause" | "documentId" | "seed"
-  > | null>;
+  ): Promise<Pick<DraftSnapshot, "branchId" | "documentId" | "seed"> | null>;
   /** The thread's primary Work's active draft on the document, as metadata. */
   resolveWorkDraftForThread(documentId: DocumentId, threadId: ThreadId): Promise<ResolvedDraft>;
 };

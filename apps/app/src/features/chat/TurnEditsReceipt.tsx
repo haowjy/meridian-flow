@@ -4,26 +4,21 @@ import { Trans } from "@lingui/react/macro";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type {
-  TreeReversalLanding,
   Turn,
   TurnDraftState,
-  TurnInverseSkip,
   TurnLiveLineageDocumentItem,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isReversibleWorkReceipt } from "@meridian/contracts/works";
 import type { WorkReceipt } from "@meridian/thread-client";
-import { useEffect, useId, useState } from "react";
-import { type ReversalDirection, successfulWorkReversals } from "@/client/api/reverse-api";
+import { useId, useState } from "react";
 import { useReverseTurnMutation } from "@/client/query/useReverseMutation";
-import { applyRecentAvailability } from "@/client/recents";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { Button } from "@/components/ui/button";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import { MIDDLE_BUTTON } from "@/core/editor/links";
 import { AgentFileSave } from "@/features/agents/PackageSave";
 import { packageFolderOf, packageLabel } from "@/features/agents/package-save";
-import { useOptionalAccountId } from "@/features/project/context/account-feature-context";
 import { useReferenceDrag } from "@/features/project/context/entry-drag/reference-source";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import {
@@ -33,22 +28,16 @@ import {
   useChatContextRoutability,
 } from "./ChatContextNavigation";
 import { DocumentName } from "./DocumentName";
-import {
-  describeModelMove,
-  documentDisplayName,
-  documentLocationName,
-  folderDisplayName,
-  type OwnerNames,
-} from "./document-display-name";
+import { describeModelMove, documentDisplayName, folderDisplayName } from "./document-display-name";
 import { useOwnerNames } from "./owner-names";
-import {
-  type ReversalRefusal,
-  refusedReversalStatus,
-  reversalRefusalCopy,
-  skipCauseCopy,
-  treeFaultLocation,
-} from "./turn-receipt-copy";
 import { workReceiptLine } from "./work-receipt-copy";
+
+/** The answers that mean the press failed; every other answer is a press that took what it could. */
+const UNDO_FAILED: ReadonlySet<string> = new Set([
+  "partial_failure",
+  "permission_denied",
+  "internal_error",
+]);
 
 /** One document a turn edited: where the edit landed (a draft names its Work), and what it did to the document's place. */
 export type TurnEditDocument = TurnLiveLineageDocumentItem;
@@ -82,121 +71,29 @@ export function TurnEditsReceipt({
   const canOpenContextUri = useChatContextRoutability();
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState(false);
-  // The parts the writer's last Undo or Redo left, with the command that left them.
-  const [actionSkips, setActionSkips] = useState<{
-    direction: ReversalDirection;
-    skips: TurnInverseSkip[];
-  } | null>(null);
-  const [commandRefusal, setCommandRefusal] = useState<ReversalRefusal | null>(null);
-  const [outcomeNotices, setOutcomeNotices] = useState<string[] | null>(null);
   const turnMutation = useReverseTurnMutation(threadId);
-  const accountId = useOptionalAccountId();
   const projectId = useProjectDocumentNavigationProjectId();
 
   const drafts = receipt?.drafts;
-  const direction: ReversalDirection = receipt?.control === "redo" ? "redo" : "undo";
-  // A part the refusal line already names (a blocked or missing folder, or a document gone
-  // again) isn't listed a second time, nor is a drafted document's apply or discard: its row
-  // says what became of it.
-  const skips = (actionSkips?.skips ?? receipt?.skips ?? []).filter(
-    (skip) =>
-      !(skip.kind === "tree" && commandRefusal?.status === skip.cause) &&
-      !(drafts?.[skip.documentId] && (skip.cause === "applied" || skip.cause === "discarded")),
-  );
-  const names = useOwnerNames();
-  const guardCopy = commandRefusal ? reversalRefusalCopy(commandRefusal, names) : undefined;
   const hasEditedDocuments = documents.length > 0;
+  const names = useOwnerNames();
   // Reversible Work mutation receipts are content in their own right: their
   // lines list as rows, and their presence is what keeps a Work-only turn's
   // Undo on screen.
   const reversibleWorkReceipts = workReceipts.filter(isReversibleWorkReceipt);
-  const reversible = receipt != null && receipt.control !== "view_change";
-
-  useEffect(() => {
-    if (receipt?.control !== "view_change") setCommandRefusal(null);
-  }, [receipt?.control]);
+  const reversible = receipt?.control === "undo";
 
   if (!hasTurnEditsReceiptContent(documents, workReceipts)) return null;
 
+  /** One press, one command: it takes what it can and says nothing. Only a failure shows, as a toast. */
   async function reverseTurn() {
     if (pending || !reversible) return;
     setPending(true);
     try {
-      const outcome = await turnMutation.mutateAsync({ turnId: turn.id, direction });
-      if (accountId && projectId) {
-        const liveCreates = documents.filter(
-          (document) =>
-            document.scope === "live" &&
-            outcome.documents.some(
-              (result) =>
-                result.documentId === document.documentId &&
-                result.created &&
-                result.status === "reversed" &&
-                result.destination?.kind === "live",
-            ),
-        );
-        if (direction === "undo") {
-          applyRecentAvailability(accountId, {
-            removed: liveCreates.map(({ documentId }) => ({ documentId, projectId })),
-            updates: [],
-          });
-        } else {
-          for (const document of liveCreates) {
-            const uri =
-              outcome.landings?.find((landing) => landing.documentId === document.documentId)
-                ?.landedAt ?? document.uri;
-            const parsed = parseContextUri(uri);
-            if (!parsed.ok || !isProjectContextTreeScheme(parsed.value.scheme)) continue;
-            applyRecentAvailability(accountId, {
-              removed: [],
-              updates: [
-                {
-                  documentId: document.documentId,
-                  name: documentDisplayName(uri),
-                  scheme: parsed.value.scheme,
-                  path: `/${parsed.value.path}`,
-                },
-              ],
-            });
-          }
-        }
-      }
-      setActionSkips({ direction, skips: outcome.skips ?? [] });
-      const restored = successfulWorkReversals(outcome);
-      const status =
-        outcome.status === "partial" && outcome.acceptedParts
-          ? null
-          : refusedReversalStatus(outcome.status);
-      // A Work-only turn has no document half, so its "nothing to undo" is a
-      // fact about documents that were never part of the claim. With a Work
-      // restored, repeating it would report a successful restore as refusal.
-      const documentHalfEmpty =
-        !hasEditedDocuments &&
-        restored.length > 0 &&
-        (status === "nothing_to_undo" || status === "nothing_to_redo");
-      const refusal = status && !documentHalfEmpty ? status : null;
-      setCommandRefusal(
-        refusal
-          ? {
-              direction,
-              status: refusal,
-              at: treeFaultLocation(refusal, outcome.skips),
-              denial: outcome.denial,
-            }
-          : null,
-      );
-      const notices = [
-        ...(outcome.landings ?? []).map((landing) => treeLandingLine(landing, names)),
-        ...restored.map((work) => reversedWorkLine(work, names)),
-      ];
-      setOutcomeNotices(notices.length ? [...new Set(notices)] : null);
-      if (refusal || notices.length > 0 || outcome.skips?.length) setExpanded(true);
+      const outcome = await turnMutation.mutateAsync({ turnId: turn.id });
+      if (UNDO_FAILED.has(outcome.status)) throw new Error(outcome.status);
     } catch {
-      // A rejected request is a refusal the writer never asked for: the command
-      // is the only thing that can report it, so it says so here rather than
-      // leaving the click looking like it worked.
-      setCommandRefusal({ direction, status: "request_failed" });
-      setExpanded(true);
+      notifyFailure({ key: `undo:${turn.id}`, title: t`Couldn't undo`, brief: true });
     } finally {
       setPending(false);
     }
@@ -232,82 +129,25 @@ export function TurnEditsReceipt({
               : workCountLabel(reversibleWorkReceipts.length)}
           </span>
         </FoldToggle>
-        {reversible ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="meta"
-            onClick={(event) => {
-              event.stopPropagation();
-              void reverseTurn();
-            }}
-            disabled={pending}
-            className="ml-auto shrink-0 text-jade-text"
-          >
-            {pending
-              ? direction === "redo"
-                ? t`Redoing…`
-                : t`Undoing…`
-              : direction === "redo"
-                ? t`Redo`
-                : t`Undo`}
-          </Button>
-        ) : null}
+        <UndoSlot
+          reversible={reversible}
+          pending={pending}
+          undone={receipt?.undone === true}
+          onUndo={() => void reverseTurn()}
+        />
       </div>
       {projectId ? (
         <AgentPackagesSaveLines projectId={projectId} documents={documents} drafts={drafts} />
       ) : null}
       {expanded ? (
         <div id={panelId} className="border-border-subtle border-t">
-          {skips.length > 0 ? (
-            <div
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] text-muted-foreground"
-              data-turn-skips
-              role="status"
-            >
-              <p>
-                {!reversible && !actionSkips
-                  ? t`What happened to each part`
-                  : skipsHeading(skips.length, actionSkips?.direction ?? null, direction)}
-              </p>
-              <ul>
-                {skips.map((skip, index) => (
-                  <li key={`${skip.documentId}:${index}`}>
-                    <SkipSubject skip={skip} />
-                    <span className="ml-1">{skipCauseCopy(skip.cause)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {outcomeNotices?.map((notice) => (
-            <p
-              key={notice}
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
-              data-reversal-outcome
-              role="status"
-            >
-              {notice}
-            </p>
-          ))}
-          {guardCopy ? (
-            <p
-              className="px-[var(--chat-card-pad-x)] py-[var(--chat-card-pad-y)] pl-[var(--chat-geometry-receipt-indent)] text-muted-foreground"
-              data-reversal-refusal
-              role="status"
-            >
-              {guardCopy}
-            </p>
-          ) : null}
           {documents.length > 0 ? (
             <ul className="flex flex-col">
               {documents.map((doc) => (
                 <li key={doc.uri}>
                   <DocumentRow
                     document={doc}
-                    draft={
-                      doc.scope === "draft" && !doc.folder ? drafts?.[doc.documentId] : undefined
-                    }
+                    state={draftStateOf(doc, drafts)}
                     onOpenContextUri={openContextUri}
                     canOpenContextUri={canOpenContextUri}
                   />
@@ -383,13 +223,13 @@ function AgentPackagesSaveLines({
  */
 function DocumentRow({
   document,
-  draft,
+  state,
   onOpenContextUri,
   canOpenContextUri,
 }: {
   document: TurnEditDocument;
-  /** What became of the document's draft text, when the turn drafted it. */
-  draft: TurnDraftState | undefined;
+  /** What became of the change the turn drafted to this row. */
+  state: TurnDraftState | undefined;
   onOpenContextUri: OpenContextUri | null;
   canOpenContextUri: CanOpenContextUri | null;
 }) {
@@ -410,10 +250,10 @@ function DocumentRow({
     return (
       <span
         {...drag}
-        className="flex min-h-6 items-center truncate px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
+        className="flex min-h-6 min-w-0 flex-wrap items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-foreground"
       >
         <DocumentRowLabel document={document} />
-        <DraftStateWord state={draft} />
+        <DraftStateWord state={state} />
       </span>
     );
   }
@@ -425,10 +265,10 @@ function DocumentRow({
       onAuxClick={(event) => {
         if (event.button === MIDDLE_BUTTON) onOpenContextUri(document.uri);
       }}
-      className="focus-ring flex min-h-6 w-full items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
+      className="focus-ring flex min-h-6 w-full flex-wrap items-center px-[var(--chat-card-pad-x)] pl-[var(--chat-geometry-receipt-indent)] text-left transition-colors hover:bg-ink-fill"
     >
       <DocumentRowLabel document={document} />
-      <DraftStateWord state={draft} />
+      <DraftStateWord state={state} />
     </button>
   );
 }
@@ -453,22 +293,39 @@ function useDocumentRowDrag(document: TurnEditDocument) {
   );
 }
 
-/** What a drafted document's text stands at now; one still waiting needs no word. */
+/** What became of a row's drafted change, when the turn drafted it. */
+function draftStateOf(
+  document: TurnEditDocument,
+  drafts: TurnReceiptChip["drafts"],
+): TurnDraftState | undefined {
+  return document.scope === "draft" ? drafts?.[document.documentId] : undefined;
+}
+
+/** One word for a row's drafted change; one still waiting needs none, the header says Drafted. */
 function DraftStateWord({ state }: { state: TurnDraftState | undefined }) {
-  if (state !== "applied" && state !== "discarded") return null;
+  const word = stateWord(state);
+  if (!word) return null;
   return (
     <span className="ml-auto shrink-0 pl-2 text-muted-foreground" data-draft-state={state}>
-      {state === "applied" ? t`Applied` : t`Discarded`}
+      {word}
     </span>
   );
 }
 
-/** A row's words: the document's name, or what the turn did to where it is. */
+function stateWord(state: TurnDraftState | undefined): string | null {
+  if (state === "applied") return t`Applied`;
+  if (state === "undone") return t`Undone`;
+  if (state === "discarded") return t`Discarded`;
+  return null;
+}
+
+/** A row's words: the node's name (a folder's where the turn left it), or what the turn did to where it is. */
 function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
   const names = useOwnerNames();
   const tree = document.tree;
+  const nameOf = document.folder ? folderDisplayName : documentDisplayName;
   if (tree?.op === "move") {
-    const source = documentDisplayName(tree.from);
+    const source = nameOf(tree.from);
     const { kind, place } = describeModelMove(tree.from, tree.to, names);
     if (kind === "reorder")
       return (
@@ -485,7 +342,7 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
     );
   }
   if (tree?.op === "copy") {
-    const source = documentDisplayName(tree.from);
+    const source = nameOf(tree.from);
     const { place } = describeModelMove(tree.from, tree.to, names);
     return (
       <span className="min-w-0 truncate text-foreground" data-turn-tree-line="copy">
@@ -496,24 +353,26 @@ function DocumentRowLabel({ document }: { document: TurnEditDocument }) {
     );
   }
   if (tree?.op === "delete") {
-    const name = documentDisplayName(tree.from);
+    const name = nameOf(tree.from);
     return (
       <span className="min-w-0 truncate text-foreground" data-turn-tree-line="delete">
         <Trans>Deleted {name}</Trans>
       </span>
     );
   }
+  if (document.folder)
+    return <span className="min-w-0 truncate text-foreground">{nameOf(document.uri)}</span>;
   // The whole row is the door here, so the name inside it stays inert.
   return <DocumentName path={document.uri} insideDoor />;
 }
 
 /**
- * "Drafted" when every change went into a draft and some still wait; "Applied" or "Discarded"
- * once every one of them has had that outcome; the mix said in counts when they differ. Else
- * "Edited" while the turn only changed text, "Changed" once it moved, deleted or made something
- * or wrote both drafts and the manuscript. Documents and folders are counted apart, so a
- * reorganisation says it touched folders too. It counts, never names: a name inside the toggle
- * would compete for the click with the expanded rows, which already open each document.
+ * "Applied", "Undone" or "Discarded" once every drafted change has had that outcome, else
+ * "Drafted" while any waits or they differ (each row says its own). Else "Edited" while the turn
+ * only changed text, "Changed" once it moved, deleted or made something or wrote both drafts and
+ * the manuscript. Documents and folders are counted apart, so a reorganisation says it touched
+ * folders too. It counts, never names: a name inside the toggle would compete for the click with
+ * the expanded rows, which already open each document.
  */
 function documentCountLabel(
   documents: readonly TurnEditDocument[],
@@ -530,24 +389,12 @@ function documentCountLabel(
   const what =
     counted(true) === 0 ? files : counted(false) === 0 ? folders : t`${files} and ${folders}`;
   if (documents.every((document) => document.scope === "draft")) {
-    const states = new Map<string, TurnDraftState | undefined>(
-      documents
-        .filter((document) => !document.folder)
-        .map(({ documentId }) => [documentId, drafts?.[documentId]]),
-    );
-    const count = (state: TurnDraftState) =>
-      [...states.values()].filter((value) => value === state).length;
-    const applied = count("applied");
-    const discarded = count("discarded");
-    const waiting = states.size - applied - discarded;
-    if (applied && !discarded && !waiting && counted(true) === 0) return t`Applied ${what}`;
-    if (discarded && !applied && !waiting && counted(true) === 0) return t`Discarded ${what}`;
-    if (applied && discarded && waiting)
-      return t`Drafted ${what}: ${applied} applied, ${discarded} discarded, ${waiting} still a draft`;
-    if (applied && discarded) return t`Drafted ${what}: ${applied} applied, ${discarded} discarded`;
-    if (applied && waiting) return t`Drafted ${what}: ${applied} applied, ${waiting} still a draft`;
-    if (discarded && waiting)
-      return t`Drafted ${what}: ${discarded} discarded, ${waiting} still a draft`;
+    const states = new Set(documents.map((document) => draftStateOf(document, drafts)));
+    if (states.size === 1) {
+      if (states.has("applied")) return t`Applied ${what}`;
+      if (states.has("undone")) return t`Undone ${what}`;
+      if (states.has("discarded")) return t`Discarded ${what}`;
+    }
     return t`Drafted ${what}`;
   }
   if (documents.some((document) => document.scope === "draft" || document.tree || document.folder))
@@ -556,61 +403,43 @@ function documentCountLabel(
 }
 
 /**
- * What the listed parts are: the ones the last Undo or Redo left as they were, or, before one,
- * the ones it would leave (a stopped turn's rolled-back parts, an applied draft).
+ * The card's one slot: Undo while a press would take something back, "Undoing…" while it runs,
+ * "Undone" once it did, else empty. Its width never changes, so none of these moves what sits
+ * beside it.
  */
-function skipsHeading(
-  count: number,
-  done: ReversalDirection | null,
-  next: ReversalDirection,
-): string {
-  if (done === "redo")
-    return plural(count, {
-      one: "Redo left # part as it was",
-      other: "Redo left # parts as they were",
-    });
-  if (done === "undo")
-    return plural(count, {
-      one: "Undo left # part as it was",
-      other: "Undo left # parts as they were",
-    });
-  return next === "redo"
-    ? plural(count, {
-        one: "Redo leaves # part as it is",
-        other: "Redo leaves # parts as they are",
-      })
-    : plural(count, {
-        one: "Undo leaves # part as it is",
-        other: "Undo leaves # parts as they are",
-      });
-}
-
-/**
- * What a part that stayed was: its text excerpts, or the document a move or delete named. A
- * part stopped by a place (taken, its folder gone, moved again) names the whole place, so the
- * writer can find it.
- */
-function SkipSubject({ skip }: { skip: TurnInverseSkip }) {
-  const names = useOwnerNames();
-  if (skip.kind === "tree") {
-    const at = skip.at ?? skip.uri;
-    return (
-      <>
-        {skip.cause === "ancestor_taken" ||
-        skip.cause === "folder_missing" ||
-        skip.cause === "superseded"
-          ? documentLocationName(at, names)
-          : documentDisplayName(at)}
-      </>
-    );
-  }
-  if (!skip.before && !skip.after) return <>{documentDisplayName(skip.uri)}</>;
+function UndoSlot({
+  reversible,
+  pending,
+  undone,
+  onUndo,
+}: {
+  reversible: boolean;
+  pending: boolean;
+  undone: boolean;
+  onUndo: () => void;
+}) {
   return (
-    <>
-      {skip.before ? `“${skip.before}”` : ""}
-      {skip.before && skip.after ? " → " : ""}
-      {skip.after ? `“${skip.after}”` : ""}
-    </>
+    <span className="ml-auto flex min-w-[5rem] shrink-0 items-center justify-end">
+      {reversible ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="meta"
+          onClick={(event) => {
+            event.stopPropagation();
+            onUndo();
+          }}
+          disabled={pending}
+          className="text-jade-text"
+        >
+          {pending ? t`Undoing…` : t`Undo`}
+        </Button>
+      ) : undone ? (
+        <span className="text-muted-foreground" role="status">
+          <Trans>Undone</Trans>
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -618,23 +447,4 @@ function SkipSubject({ skip }: { skip: TurnInverseSkip }) {
  * writer's own word for the entity the turn changed. */
 function workCountLabel(count: number) {
   return count === 1 ? <Trans>Changed 1 Work</Trans> : <Trans>Changed {count} Work</Trans>;
-}
-
-/** One receipt-style line per restored Work. The server names the Work when it
- * can; without a name the sentence stays factual instead of guessing one. */
-function reversedWorkLine(
-  work: { workId: string; name: string; status: string },
-  names: OwnerNames,
-): string {
-  const name = names({ kind: "work-id", workId: work.workId }) ?? work.name;
-  return work.status === "redone"
-    ? t`Redid change to Work ${name}.`
-    : t`Undid change to Work ${name}.`;
-}
-
-/** Where a tree inverse actually committed when its recorded name was no longer free. */
-function treeLandingLine(landing: TreeReversalLanding, names: OwnerNames): string {
-  return landing.action === "restored"
-    ? t`Restored as ${documentDisplayName(landing.landedAt)}.`
-    : t`Moved to ${documentLocationName(landing.landedAt, names)}.`;
 }

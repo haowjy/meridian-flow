@@ -69,9 +69,7 @@ export function controlWithdrawnCopy(control: ControlBody): string {
 
 /** The card in a queued command's row when its withdraw didn't reach the server (also announced). */
 export function controlWithdrawFailedCopy(control: ControlBody): string {
-  return control.kind === "write_mode"
-    ? t`Couldn't undo the switch.`
-    : t`Couldn't stop the compaction.`;
+  return control.kind === "write_mode" ? t`Couldn't undo` : t`Couldn't stop the compaction`;
 }
 
 /**

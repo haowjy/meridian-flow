@@ -89,18 +89,17 @@ function pathOf(projection: TreeProjection, id: string): string[] {
 }
 
 /**
- * Folders along `dir` from the source's top, each the folder its segment reaches, else made
- * under the segment's name (beside a document of that name, as its twin); each made is pushed
- * to `made`.
+ * Folders along `dir` from `from`, each the folder its segment reaches, else made under the
+ * segment's name (beside a document of that name, as its twin); each made is pushed to `made`.
  */
 function ensureFolders(
   writer: TreeWriter,
   target: TreeWriteTarget,
-  sourceId: string,
   dir: readonly string[],
+  from: string,
   made: MadeFolder[] = [],
 ): string {
-  let parent = sourceRoot(sourceId);
+  let parent = from;
   for (const segment of dir) {
     const existing = childNamed(writer.view(target.view), parent, segment, "folder");
     if (existing) {
@@ -239,7 +238,12 @@ export interface SourceTree {
   insertTree(
     target: TreeWriteTarget,
     input: {
-      trees: readonly { dir: readonly string[]; roots: readonly NewNode[] }[];
+      trees: readonly {
+        dir: readonly string[];
+        /** The folder to start from, by id, instead of walking `dir` by name: a folder in Trash is kept standing by what lands in it. */
+        parent?: { folderId: string; createFolders: readonly string[] };
+        roots: readonly NewNode[];
+      }[];
       position?: ContextSiblingPosition;
     },
   ): Promise<Result<InsertedTrees, AdapterFault>>;
@@ -312,7 +316,7 @@ export function createSourceTree(deps: {
         const folders: MadeFolder[] = [];
         const parent =
           input.into === undefined
-            ? ensureFolders(writer, target, sourceId, input.dir, folders)
+            ? ensureFolders(writer, target, input.dir, sourceRoot(sourceId), folders)
             : input.into;
         const index = indexAt(writer.view(target.view), parent, input.position);
         const created = writer.create(target.view, target.actor, {
@@ -388,7 +392,9 @@ export function createSourceTree(deps: {
         const made: MadeFolder[] = [];
         const groups = input.trees.map((tree) => ({
           roots: tree.roots,
-          parent: ensureFolders(writer, target, sourceId, tree.dir, made),
+          parent: tree.parent
+            ? ensureFolders(writer, target, tree.parent.createFolders, tree.parent.folderId, made)
+            : ensureFolders(writer, target, tree.dir, sourceRoot(sourceId), made),
         }));
         const ids: string[] = [];
         for (const group of groups) {

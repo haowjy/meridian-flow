@@ -23,10 +23,9 @@ partitions the text.
   doesn't borrow Editor command authority.
 - Unknown attribution isn't known-empty membership: show the text without a byline, and
   don't erase the side while it loads.
-- A draft's failure shows once per surface: the focused change's bar while it shows, else
-  the identity row's notices; a file's status line in the Changes source and the side. Fix
-  displacement with one feedback surface outside the manuscript, not per-width fixes
-  ([TODO](.context/TODO.md)).
+- A press that fails (Apply, Undo, Redo, Discard, Restore) is a brief pill (`notifyFailure`),
+  never a line in the row or bar the writer pressed; a click the queue gives up on settles
+  `unsent` and the change is pending again. A file's status line shows progress only.
 
 Read [the runtime reference](.context/draft-review.md) before changing ownership.
 Browser recipes: [draft review QA](.context/qa/draft-review.md).

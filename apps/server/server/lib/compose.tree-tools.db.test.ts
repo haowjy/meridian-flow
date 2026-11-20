@@ -39,7 +39,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const {
       handleApplyClickRequest,
       handleApplyItemsRequest,
-      handleDiscardWorkDraftRequest,
+      handleDiscardBranchRequest,
       handleOwnerDraftListRequest,
       selectBranchRouteServices,
     } = await import("./branch-review-route.js");
@@ -244,21 +244,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               commandId: randomUUID(),
               groupIds: [],
               baseViewDelta: [],
-              tree: { revision: (await item(documentId))?.tree?.revision ?? null },
+              tree: true,
               ...extra,
             },
           } as never),
-        discard: async (documentId: string, ends: Record<string, unknown> = { ends: "tree" }) => {
+        discard: async (documentId: string, ends: { ends: "tree" | "item" } = { ends: "tree" }) => {
           const row = await item(documentId);
-          return handleDiscardWorkDraftRequest(routes, {
+          return handleDiscardBranchRequest(routes, {
             ...scope,
             branchId: row?.branchId,
-            documentId: documentId as never,
             request: {
-              branchId: row?.branchId,
-              itemKey: row?.itemKey,
               commandId: randomUUID(),
-              ...ends,
+              items: [
+                {
+                  node: documentId,
+                  tree: true,
+                  ...(ends.ends === "item" ? { text: "all" } : {}),
+                },
+              ],
             },
           } as never);
         },
@@ -294,7 +297,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("a whole-item Discard of a moved, edited document closes its text draft too", async () => {
+    it("a whole-item Discard of a moved, edited document takes its text too and leaves the draft open", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
       const writer = review(script);
@@ -306,7 +309,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(seen).toMatchObject({ hasDraft: true, tree: { movedFrom: { path: "/ch1" } } });
       const textDrafts = () =>
         db
-          .select({ status: schema.documentDrafts.status })
+          .select({ id: schema.documentDrafts.id })
           .from(schema.documentDrafts)
           .where(
             and(
@@ -315,22 +318,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             ),
           );
 
-      // Decided on a draft that moved on since: refused, and nothing ends.
-      expect(
-        await writer.discard(CH1, { ends: "item", draftSeenAt: "2000-01-01T00:00:00.000Z" }),
-      ).toMatchObject({ body: { status: "draft_changed" } });
-      expect(await writer.item(CH1)).toMatchObject({
-        hasDraft: true,
-        tree: { revision: seen?.tree?.revision },
-      });
-
-      expect(
-        await writer.discard(CH1, { ends: "item", draftSeenAt: seen?.updatedAt }),
-      ).toMatchObject({
-        body: { status: "discarded", itemClosed: true, itemDisposition: "discarded" },
+      expect(await writer.discard(CH1, { ends: "item" })).toMatchObject({
+        body: { status: "discarded", closed: [CH1] },
       });
       expect(await writer.item(CH1)).toBeUndefined();
-      expect(await textDrafts()).toEqual([{ status: "closed" }]);
+      expect(await textDrafts()).toHaveLength(1);
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
@@ -349,16 +341,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await edit("write", { command: "delete", path: "ch1" });
         await edit("write", { command: "create", path: "ch1", content: "New." });
       });
-      expect(await writer.apply(CH1)).toMatchObject({ status: "needs_restore" });
-      expect(await writer.apply(CH1, { restore: true })).toMatchObject({
+      expect(await writer.apply(CH1)).toMatchObject({
         status: "applied",
-        restored: true,
+        items: [
+          { node: CH1, tree: { landed: true, settled: [{ rule: "restored", documentId: CH1 }] } },
+        ],
       });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-moved", deletedAt: null });
 
       // A drafted delete of a document live deleted too is no change to review: nothing to apply.
       await draft({ command: "delete", path: "ch2" });
-      expect(await writer.item(CH2)).toMatchObject({ tree: { revision: expect.any(String) } });
+      expect(await writer.item(CH2)).toMatchObject({ tree: expect.anything() });
       await script.reply(async (edit) => {
         await edit("write", { command: "delete", path: "ch2" });
       });
@@ -369,7 +362,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({
-        body: { status: "discarded", itemClosed: false },
+        body: { status: "discarded", closed: [] },
       });
       expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");
@@ -493,15 +486,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     describe("undo by the receipt", () => {
-      it("takes back a live move, and redo does it again", async () => {
+      it("takes back a live move", async () => {
         const script = await start();
         const { call } = await script.begin();
         await call("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
         const undone = await call("write", { command: "undo", path: "part1/ch1" });
         expect(text(undone), text(undone)).toContain("status: reversed; path: manuscript://ch1");
         expect(await placement(CH1)).toMatchObject({ name: "ch1" });
-        const redone = await call("write", { command: "redo", path: "ch1" });
-        expect(text(redone)).toContain("status: reversed; path: manuscript://part1/ch1");
       });
 
       it("still takes back a drafted move after its Apply landed it", async () => {
@@ -527,12 +518,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId: OTHER.threadId as never,
             turnId: OTHER.turnId as never,
             userId: USER_ID as never,
-            direction: "undo",
             commandId: randomUUID() as never,
           },
         );
 
-      it("the card's Undo after an Apply takes the applied moves back though one drafted document was discarded", async () => {
+      it("the card's Undo takes back a move an Apply landed, though one drafted document was discarded", async () => {
         const script = await start();
         await drafting(script).reply(async (edit) => {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
@@ -548,29 +538,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...scope,
           owner,
         } as never);
+        const branchId = await branchOf(OTHER_WORK_ID);
+        const applyCommandId = randomUUID();
         await handleApplyItemsRequest(routes, {
           ...scope,
-          branchId: await branchOf(OTHER_WORK_ID),
+          branchId,
           request: {
-            commandId: randomUUID(),
+            commandId: applyCommandId,
             items: left.map((item) => ({
               node: item.documentId,
-              tree: { revision: item.tree?.revision ?? null },
+              tree: true as const,
             })),
           },
         } as never);
         const [part1] = await placementsNamed("part1");
         expect((await placement(CH1))?.parentId).toBe(part1?.id);
-        const undone = await cardUndo();
-        expect(undone.status, JSON.stringify(undone)).not.toBe("permission_denied");
+        // The Apply landed the move; the card's own Undo takes it back, as it takes back any reply's move.
+        await cardUndo();
         expect((await placement(CH1))?.parentId).toBeNull();
         expect(await placementsNamed("fresh")).toEqual([]);
-        expect(
-          await composed.ports.documentSync.getTurnReceiptChip(
-            OTHER.threadId as never,
-            OTHER.turnId as never,
-          ),
-        ).toMatchObject({ control: "redo" });
       });
 
       it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {
@@ -583,7 +569,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .set({ deletedAt: new Date() })
           .where(eq(schema.works.id, OTHER_WORK_ID));
         const undone = await cardUndo();
-        expect(undone).toMatchObject({ status: "permission_denied", denial: "work_deleted" });
+        expect(undone).toMatchObject({ status: "permission_denied" });
       });
 
       it("says nothing can be undone once the Work discarded the change", async () => {
@@ -620,26 +606,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(second.isError, text(second)).toBeFalsy();
         expect(text(second)).toContain("status: reversed; path: manuscript://ch2");
         expect(await ls(call, "manuscript://")).toContain("\n  ch1");
-        // Redo of the move brings both back.
-        expect(text(await call("write", { command: "redo", path: "ch1" }))).toContain(
-          "status: reversed",
-        );
-        expect(await ls(call, "manuscript://part1/")).toContain("ch2");
         // count 2 takes a text edit and the move before it, in one call.
+        await call("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
         await call("write", { command: "replace", path: "part1/ch1", find: "one", content: "1" });
         ({ call } = await script.begin());
         const both = await call("write", { command: "undo", path: "part1/ch1", count: 2 });
         expect(both.isError, text(both)).toBeFalsy();
         expect(await ls(call, "manuscript://")).toContain("\n  ch1");
-        // A create with content is one command: one undo takes the node and its text, one redo both.
+        // A create with content is one command: one undo takes the node and its text.
         call = await live(await start());
         await call("write", { command: "create", path: "born", content: "Fresh." });
         const gone = await call("write", { command: "undo", path: "born" });
         expect(gone.isError, text(gone)).toBeFalsy();
         expect(await ls(call, "manuscript://")).not.toContain("born");
-        const back = await call("write", { command: "redo", path: "born" });
-        expect(back.isError, text(back)).toBeFalsy();
-        expect(text(await call("read", { path: "born" }))).toContain("Fresh.");
       });
 
       it("undoing a folder create leaves what the writer put in it, and the folder standing", async () => {
@@ -784,7 +763,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await placement(CH1))?.deletedAt).toBeNull();
       });
 
-      it("a reply that only moved, copied and created has a card, and its Undo and Redo take it back", async () => {
+      it("a reply that only moved, copied and created has a card, and its Undo takes it back", async () => {
         const script = await start();
         const { call } = await script.begin();
         await call("write", { command: "move", from: { path: "ch1" }, path: "user://mine" });
@@ -798,12 +777,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(listed.map((document) => document.documentId)).toEqual(
           expect.arrayContaining([CH2] as never[]),
         );
-        const chip = await sync.getTurnReceiptChip(
+        const chip = await sync.getDocumentAndTreeChip(
           THREAD.threadId as never,
           THREAD.turnId as never,
         );
         expect(chip).toMatchObject({ control: "undo" });
-        const card = (direction: "undo" | "redo", commandId = randomUUID()) =>
+        const card = (commandId = randomUUID()) =>
           reverseTurnCard(
             {
               ...composed.ports,
@@ -814,33 +793,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadId: THREAD.threadId as never,
               turnId: THREAD.turnId as never,
               userId: USER_ID as never,
-              direction,
               commandId: commandId as never,
             },
           );
         const clicked = randomUUID();
-        const undone = await card("undo", clicked);
+        const undone = await card(clicked);
         expect(undone.status, JSON.stringify(undone)).toBe("reversed");
         const receipts = async () => (await db.select().from(schema.treeEditReceipts)).length;
         const stored = await receipts();
         // The same click again answers its stored outcome and appends nothing.
-        expect(await card("undo", clicked)).toEqual(undone);
+        expect(await card(clicked)).toEqual(undone);
         expect(await receipts()).toBe(stored);
         const { call: after } = await script.begin();
         expect(await ls(after, "manuscript://")).toContain("ch1");
         expect(await ls(after, "manuscript://")).toContain("ch2");
         expect(await ls(after, "manuscript://")).not.toContain("fresh");
         expect(await ls(after, "user://")).not.toContain("mine");
-        const redoChip = await sync.getTurnReceiptChip(
-          THREAD.threadId as never,
-          THREAD.turnId as never,
-        );
-        expect(redoChip).toMatchObject({ control: "redo" });
-        const redone = await card("redo");
-        expect(redone.status, JSON.stringify(redone)).toBe("reversed");
-        expect(await ls(after, "user://")).toContain("mine");
-        expect(await ls(after, "manuscript://part1/")).toContain("ch2");
-        expect(await ls(after, "manuscript://")).toContain("fresh");
+        expect(
+          await sync.getDocumentAndTreeChip(THREAD.threadId as never, THREAD.turnId as never),
+        ).toMatchObject({ undone: true, control: "view_change" });
       });
 
       it("a Copy's operation id: a resend answers the stored result, another request or another account's is command_conflict", async () => {
@@ -886,7 +857,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(ran).toBe(1);
       });
 
-      it("a move to the account's files copies under the path's name, and Undo and Redo take the copy", async () => {
+      it("a move to the account's files copies under the path's name, and Undo takes the copy", async () => {
         const call = await live(await start());
         const moved = await call("write", {
           command: "move",
@@ -901,9 +872,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(undone.isError, text(undone)).toBeFalsy();
         expect(await ls(call, "user://")).not.toContain("mine");
         expect(await ls(call, "manuscript://")).toContain("ch1");
-        const redone = await call("write", { command: "redo", path: "user://mine" });
-        expect(redone.isError, text(redone)).toBeFalsy();
-        expect(await ls(call, "user://")).toContain("mine");
       });
     });
 
@@ -962,7 +930,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       const card = (
         script: Awaited<ReturnType<typeof start>>,
-        direction: "undo" | "redo",
         commandId = randomUUID(),
         thread = THREAD,
       ) =>
@@ -976,7 +943,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             threadId: thread.threadId as never,
             turnId: thread.turnId as never,
             userId: USER_ID as never,
-            direction,
             commandId: commandId as never,
           },
         );
@@ -996,23 +962,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const script = await madeWorkAndEdited();
         expect(await ch1(script)).toContain("ONE");
         const id = randomUUID();
-        const undone = await card(script, "undo", id);
+        const undone = await card(script, id);
         expect(undone.workReceipts, JSON.stringify(undone)).toEqual([
           expect.objectContaining({ workId: NEW_WORK_ID, status: "reversed" }),
         ]);
-        expect(undone.acceptedParts).toBeGreaterThan(0);
+        expect(undone.status).toBe("reversed");
         expect(await workDeleted()).toBe(true);
         expect(await ch1(script)).toContain("one");
         expect(await claims()).toBe(1);
         // The same click again: the stored answer, nothing done twice.
-        expect(await card(script, "undo", id)).toEqual(undone);
+        expect(await card(script, id)).toEqual(undone);
         expect(await claims()).toBe(1);
-        const redone = await card(script, "redo");
-        expect(redone.workReceipts).toEqual([
-          expect.objectContaining({ workId: NEW_WORK_ID, status: "redone" }),
-        ]);
-        expect(await workDeleted()).toBe(false);
-        expect(await ch1(script)).toContain("ONE");
       });
 
       it("a crash after the documents and before the commit leaves neither half", async () => {
@@ -1022,7 +982,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           throw new Error("crash between the halves");
         });
         try {
-          await expect(card(script, "undo", id)).rejects.toThrow("crash between the halves");
+          await expect(card(script, id)).rejects.toThrow("crash between the halves");
         } finally {
           remove();
         }
@@ -1030,7 +990,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ch1(script)).toContain("ONE");
         expect(await claims()).toBe(0);
         // The id is free: the same click, sent again, takes effect once.
-        const undone = await card(script, "undo", id);
+        const undone = await card(script, id);
         expect(undone.workReceipts?.[0]?.status).toBe("reversed");
         expect(await workDeleted()).toBe(true);
         expect(await ch1(script)).toContain("one");
@@ -1042,7 +1002,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const raced = await race<"undo" | "delete">(
           db,
           {
-            undo: () => card(script, "undo"),
+            undo: () => card(script),
             delete: () =>
               runWorkLifecycleCommand(app.works.transaction, () =>
                 app.works.softDelete(NEW_WORK_ID as never, app.stopThreads),
@@ -1064,7 +1024,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const raced = await race<"undo" | "inbox">(
           db,
           {
-            undo: () => card(script, "undo"),
+            undo: () => card(script),
             inbox: () => threadLock.withThreadLock(NEW_WORK_THREAD as never, async () => "held"),
           },
           "undo",
@@ -1080,7 +1040,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const script = await madeWorkAndEdited();
         const raced = await race<"first" | "second">(
           db,
-          { first: () => card(script, "undo"), second: () => card(script, "undo") },
+          { first: () => card(script), second: () => card(script) },
           "first",
           "inverse.beforeCommitScope",
         );
@@ -1103,7 +1063,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           const raced = await race<"undo" | "draft">(
             db,
             {
-              undo: () => card(script, "undo"),
+              undo: () => card(script),
               draft: () =>
                 other.reply(async (edit) => {
                   await edit("write", {

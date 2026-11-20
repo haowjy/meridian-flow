@@ -35,8 +35,7 @@ folder path arrives as a directory entry. `dragCancel` does not deliver
 5. Drop the folder with a file: the folder is a failed chip, "folder (Folders
    can't be attached)", and the file attaches. The file input cannot pick a
    folder either.
-6. `agent-browser set offline on`, drop two files: both chips fail with "Couldn't
-   reach the server. Check your connection." (not "Failed to fetch"). Go online
+6. `agent-browser set offline on`, drop two files: both chips fail with "Couldn't reach the server" (not "Failed to fetch"). Go online
    and click one chip: it retries and becomes a document chip; the other stays failed.
 7. Drag a tree row onto the composer text: the caret and **Mention** hint show
    and one mention chip lands. Over the transcript nothing lights and nothing

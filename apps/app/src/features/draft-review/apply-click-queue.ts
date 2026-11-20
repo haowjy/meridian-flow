@@ -4,11 +4,13 @@ import type {
   ApplyClickAnswer,
   ApplyClickObservation,
   ApplyClickResult,
+  RedoClick,
   UnapplyClick,
   UnapplyClickAnswer,
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
 import type { Node as PMNode } from "@tiptap/pm/model";
+import { itemLanded, itemOf, textUndoneOf } from "./draft-notices";
 
 export type FrozenApply = {
   body: ApplyClick;
@@ -23,20 +25,20 @@ export type FrozenApply = {
   madeAfterRoomEnded?: true;
   /**
    * The click again, from the draft as the server holds it when this click is the head: what to
-   * send, null when none of its changes is there, undefined to send it as it is. Rejects when
+   * send, null when none of its changes is there, undefined to send it as it is, "reload" when
+   * this build can't read the draft, so the server can't take the click either. Rejects when
    * `signal` aborts: the read was not answered in time, or the queue closed.
    */
   rebuild?: (
     signal: AbortSignal,
-  ) => Promise<Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | undefined>;
+  ) => Promise<Pick<FrozenApply, "body" | "optimistic" | "patched"> | null | "reload" | undefined>;
   /** A member of a several-item Apply sends through its group (`GroupApply`), not on its own. */
   send?: (body: ApplyClick) => Promise<ApplyClickAnswer>;
 };
 
-function isFinalApplyRefusal(
-  answer: ApplyClickObservation,
-): answer is Exclude<ApplyClickResult, { status: "applied" }> {
-  return ["closed", "refused", "needs_restore", "changed"].includes(answer.status);
+/** Whether `answer` says this item's text cut landed: text that never landed has nothing to fold. */
+function textLanded(answer: ApplyClickResult, node: string): boolean {
+  return itemOf(answer, node)?.text?.landed === true;
 }
 
 /** A click frozen on `draftId`'s room: the room folds it into its base until it records it. */
@@ -45,14 +47,19 @@ export function frozenOn(command: { body: ApplyClick }, draftId: string): boolea
 }
 
 export type ApplyClickLanded = { status: "landed"; commandId: string };
-export type ApplyClickOutcome = ApplyClickResult | ApplyClickLanded | { status: "cancelled" };
-export type UnapplyClickOutcome = UnapplyClickResult | { status: "cancelled" };
+/** The click never reached the server: this build can't read its draft (`rebuild` said "reload"), or its id is another command's. */
+export type ClickUnsent = { status: "unsent"; commandId: string };
+export type ApplyClickOutcome =
+  | ApplyClickResult
+  | ApplyClickLanded
+  | ClickUnsent
+  | { status: "cancelled" };
+export type UnapplyClickOutcome = UnapplyClickResult | ClickUnsent | { status: "cancelled" };
 
 type ApplyCommand = FrozenApply & {
   kind: "apply";
   sent: boolean;
   attempts: number;
-  stalled: boolean;
   closed: boolean;
   /** Its `acknowledged` settled: it may be sent once it is the head. */
   released: boolean;
@@ -73,32 +80,44 @@ export type UnapplyCommand = {
   optimistic: readonly PMNode[];
   patched: readonly PMNode[];
   patchFor(groupIds: readonly string[]): readonly PMNode[];
-  selectionChanged(groupIds: readonly string[]): void;
+  /** What the answer took back. */
+  selectionChanged(groupIds: readonly string[], tree: boolean): void;
   ready: Promise<boolean>;
   groupIds: Set<string>;
   sent: boolean;
   attempts: number;
-  stalled: boolean;
   answer?: UnapplyClickResult;
+  /** The server's answer as it arrives, or how the command ended without one. */
+  heard: Promise<UnapplyClickOutcome>;
+  hear(result: UnapplyClickOutcome): void;
   outcome: Promise<UnapplyClickOutcome>;
   finish(result: UnapplyClickOutcome): void;
 };
 type Command = ApplyCommand | UnapplyCommand;
 
 export type ApplyCommandHandle = {
-  /** Resolves false when the Un-Apply was refused, and the Apply stands. */
-  undo(): Promise<boolean>;
-  redo(): void;
   /**
-   * Once nothing is outstanding: the Apply an Un-Apply takes back, and the click a Redo sends
-   * again (a new command id to fill).
+   * The Un-Apply's answer as soon as the server gives it, while its rows may still be leaving the
+   * room; `unsent` when it was refused and the Apply stands, `cancelled` when the Apply was never
+   * sent.
    */
-  replay(): { applyCommandId: string; again: ApplyClick };
+  undo(): Promise<UnapplyClickOutcome>;
+  /** Queues the Redo at once; resolves with what became of it. */
+  redo(): Promise<ApplyClickOutcome>;
+  /** The Apply in force: its command id, which a Redo replaces only once it lands. */
+  applyInForce(): string;
 };
 type ScheduledApplyHandle = ApplyCommandHandle & {
+  /** The latest Apply queued: the one an Un-Apply names, or cancels before it is sent. */
   current: ApplyCommand;
+  /** The Apply in force: the first, or the latest Redo that landed. */
+  inForce: ApplyCommand;
   reversal: Promise<UnapplyClickOutcome>;
   replaySelection: string[];
+  /** The Un-Apply took this item's tree change back, so the Redo's painting shows it. */
+  replayTree: boolean;
+  /** The Un-Apply sent, which the Redo names; null when it was cancelled before it was sent. */
+  unapplyId: string | null;
   pendingReplay: ApplyCommand | null;
 };
 
@@ -127,9 +146,12 @@ export class ApplyClickQueue {
 
   constructor(
     private readonly port: {
+      /** The item's node: an Apply's answer is read from its entry, whatever its siblings did. */
+      node: string;
       send(body: ApplyClick): Promise<ApplyClickAnswer>;
       lookup(body: ApplyClick): Promise<ApplyClickObservation>;
       unapply?(body: UnapplyClick): Promise<UnapplyClickAnswer>;
+      redo?(body: RedoClick): Promise<ApplyClickAnswer>;
       changed(): void;
     },
   ) {}
@@ -140,10 +162,6 @@ export class ApplyClickQueue {
 
   get unapplies(): UnapplyCommand[] {
     return this.commands.filter((command): command is UnapplyCommand => command.kind === "unapply");
-  }
-
-  get stalled(): boolean {
-    return this.commands[0]?.stalled ?? false;
   }
 
   get pending(): boolean {
@@ -158,36 +176,42 @@ export class ApplyClickQueue {
     return result;
   }
 
-  /** Own one Apply's command identity, reversal result, and text-only replay selection. */
+  /** Own one Apply's command identity, reversal result, and replay selection. */
   enqueueHistory(input: {
     frozen: FrozenApply;
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    intent(): void;
-    applyRefused(answer: ApplyClickOutcome): void;
-    unapplyRefused(answer: UnapplyClickOutcome): void;
   }): { outcome: Promise<ApplyClickOutcome>; handle: ApplyCommandHandle } {
     const initial = this.queueApply(input.frozen);
     this.startFeedback();
     this.port.changed();
-    const landedText = (answer: ApplyClickOutcome) =>
-      answer.status === "landed" || (answer.status === "applied" && answer.textEffect === true);
+    // Either half landing gives the Apply something to take back; a Redo replays text alone.
+    const landed = (answer: ApplyClickOutcome) => {
+      if (answer.status === "landed") return true;
+      return answer.status === "applied" && itemLanded(answer, this.port.node);
+    };
     let handle!: ScheduledApplyHandle;
     handle = {
       current: initial,
+      inForce: initial,
       reversal: Promise.resolve({ status: "cancelled" }),
       replaySelection: [...initial.body.groupIds],
+      replayTree: initial.body.tree === true,
+      unapplyId: null,
       pendingReplay: null,
       undo: () => {
-        input.intent();
         handle.pendingReplay = null;
         if (this.cancel(handle.current.body.commandId)) {
+          handle.unapplyId = null;
           handle.reversal = Promise.resolve({ status: "cancelled" });
-          return Promise.resolve(true);
+          return handle.reversal;
         }
         handle.replaySelection = [...handle.current.body.groupIds];
+        handle.replayTree = handle.current.body.tree === true;
+        const unapplyId = crypto.randomUUID();
+        handle.unapplyId = unapplyId;
         const inverse = this.queueUnapply({
           body: {
-            commandId: crypto.randomUUID(),
+            commandId: unapplyId,
             applyCommandId: handle.current.body.commandId,
           },
           draftId: handle.current.body.draftId ?? "",
@@ -195,32 +219,50 @@ export class ApplyClickQueue {
           patched: handle.current.patched,
           groupIds: handle.current.body.groupIds,
           patchFor: input.patchFor,
-          ready: handle.current.outcome.then(landedText),
-          selectionChanged: (groupIds) => {
-            handle.replaySelection = [...groupIds];
-            const replay = handle.pendingReplay;
-            if (replay && !replay.sent) {
-              replay.body = { ...replay.body, groupIds: [...groupIds] };
-              replay.patched = input.patchFor(groupIds);
+          ready: handle.current.outcome.then((answer) => {
+            // Text that never landed has nothing to fold back while the Un-Apply is out.
+            if (answer.status === "applied" && !textLanded(answer, this.port.node)) {
+              inverse.groupIds.clear();
+              inverse.patched = inverse.optimistic;
             }
+            return landed(answer);
+          }),
+          // A Redo pressed before the answer brings back only what the Un-Apply took back, and
+          // nothing when it took nothing.
+          selectionChanged: (groupIds, tree) => {
+            handle.replaySelection = [...groupIds];
+            handle.replayTree = tree;
+            const replay = handle.pendingReplay;
+            if (!replay || replay.sent) return;
+            if (groupIds.length === 0 && !tree) {
+              handle.pendingReplay = null;
+              this.cancel(replay.body.commandId);
+              return;
+            }
+            replay.body = { ...replay.body, groupIds: [...groupIds], tree: tree || undefined };
+            replay.patched = input.patchFor(groupIds);
           },
         });
         handle.reversal = inverse.outcome;
-        return inverse.outcome.then((answer) => {
-          const happened = answer.status === "unapplied" || answer.status === "cancelled";
-          if (!happened) input.unapplyRefused(answer);
-          return happened;
-        });
+        return inverse.heard;
       },
       redo: () => {
-        input.intent();
-        handle.current = this.queueApply({
+        const before = handle.inForce;
+        const { unapplyId } = handle;
+        const sendRedo = this.port.redo?.bind(this.port);
+        const replay = this.queueApply({
+          // What the review shows at once and records under its id. The Redo sent names only the
+          // Un-Apply: the server works out what it took back. An Apply cancelled before it was
+          // sent has no Un-Apply: the click goes again as it was frozen.
           body: {
             ...handle.current.body,
             commandId: crypto.randomUUID(),
             groupIds: [...handle.replaySelection],
-            tree: undefined,
+            tree: handle.replayTree || undefined,
           },
+          ...(unapplyId && sendRedo
+            ? { send: (body) => sendRedo({ commandId: body.commandId, redoOf: unapplyId }) }
+            : {}),
           optimistic: handle.current.optimistic,
           patched: input.patchFor(handle.replaySelection),
           // Waits for the Un-Apply: one that did not land leaves the Apply standing, so the Redo
@@ -230,18 +272,23 @@ export class ApplyClickQueue {
               this.cancel(replay.body.commandId);
           }),
         });
-        const replay = handle.current;
-        handle.pendingReplay = handle.current;
+        handle.current = replay;
+        handle.pendingReplay = replay;
         this.startFeedback();
         this.port.changed();
-        void handle.current.outcome.then((answer) => {
-          if (!landedText(answer) && answer.status !== "cancelled") input.applyRefused(answer);
+        return replay.outcome.then((answer) => {
+          if (landed(answer)) handle.inForce = replay;
+          // A replay that never reached the server leaves the Apply it would have replaced as the
+          // one in force, the one the next Un-Apply names.
+          else if (
+            (answer.status === "cancelled" || answer.status === "unsent") &&
+            handle.current === replay
+          )
+            handle.current = before;
+          return answer;
         });
       },
-      replay: () => ({
-        applyCommandId: handle.current.body.commandId,
-        again: { ...handle.current.body, groupIds: [...handle.replaySelection], tree: undefined },
-      }),
+      applyInForce: () => handle.inForce.body.commandId,
     };
 
     return {
@@ -284,7 +331,6 @@ export class ApplyClickQueue {
       ...frozen,
       sent: false,
       attempts: 0,
-      stalled: false,
       closed: false,
       released: false,
       roomEnded: frozen.madeAfterRoomEnded === true,
@@ -314,12 +360,16 @@ export class ApplyClickQueue {
     patched: readonly PMNode[];
     groupIds: readonly string[];
     patchFor(groupIds: readonly string[]): readonly PMNode[];
-    selectionChanged(groupIds: readonly string[]): void;
+    selectionChanged(groupIds: readonly string[], tree: boolean): void;
     ready: Promise<boolean>;
   }): UnapplyCommand {
     let finish!: (result: UnapplyClickOutcome) => void;
+    let hear!: (result: UnapplyClickOutcome) => void;
     const outcome = new Promise<UnapplyClickOutcome>((resolve) => {
       finish = resolve;
+    });
+    const heard = new Promise<UnapplyClickOutcome>((resolve) => {
+      hear = resolve;
     });
     const command: UnapplyCommand = {
       kind: "unapply",
@@ -327,9 +377,13 @@ export class ApplyClickQueue {
       groupIds: new Set(input.groupIds),
       sent: false,
       attempts: 0,
-      stalled: false,
+      heard,
+      hear,
       outcome,
-      finish,
+      finish: (result) => {
+        hear(result);
+        finish(result);
+      },
     };
     this.commands.push(command);
     this.port.changed();
@@ -348,15 +402,6 @@ export class ApplyClickQueue {
     } else if (head?.kind === "unapply") {
       this.reconcileUnapply(head, records);
     } else this.port.changed();
-  }
-
-  retry(): void {
-    const head = this.commands[0];
-    if (!head?.stalled) return;
-    head.stalled = false;
-    head.attempts = 0;
-    this.port.changed();
-    void this.dispatch(head);
   }
 
   cancel(commandId: string): boolean {
@@ -449,7 +494,7 @@ export class ApplyClickQueue {
   }
 
   private async dispatch(command: Command): Promise<void> {
-    if (this.request || this.commands[0] !== command || command.stalled) return;
+    if (this.request || this.commands[0] !== command) return;
     if (command.kind === "apply") await this.dispatchApply(command);
     else await this.dispatchUnapply(command);
   }
@@ -477,7 +522,7 @@ export class ApplyClickQueue {
         this.moveOn();
         return;
       }
-      // Unanswered, like a send: tried again, then stalled with Retry.
+      // Unanswered, like a send: tried again, then given up as unsent.
       if (!answered) {
         this.scheduleRetry(command);
         return;
@@ -485,6 +530,10 @@ export class ApplyClickQueue {
       command.rebuilding = false;
       if (rebuilt === null) {
         this.settle(command, { status: "cancelled" });
+        return;
+      }
+      if (rebuilt === "reload") {
+        this.settle(command, { status: "unsent", commandId: command.body.commandId });
         return;
       }
       if (rebuilt) Object.assign(command, rebuilt);
@@ -510,19 +559,24 @@ export class ApplyClickQueue {
       return;
     }
     if (answer?.status === "applied") {
-      // A frozen click settles once its room records it; one cut on receipt has no room to.
-      if (!command.body.snapshot || command.closed || command.roomEnded || this.isRecorded(command))
+      // An Apply record in the room is the proof this item's text cut landed: with none written
+      // (its text came back settled, or there was none) the answer is final, whatever a sibling
+      // in the same command landed. A frozen click settles once its room records it; one cut on
+      // receipt has no room to, nor has one whose room ended.
+      if (
+        !command.body.snapshot ||
+        command.closed ||
+        command.roomEnded ||
+        !textLanded(answer, this.port.node) ||
+        this.isRecorded(command)
+      )
         this.settle(command, answer);
-      return;
-    }
-    if (answer && isFinalApplyRefusal(answer)) {
-      this.settle(command, answer);
       return;
     }
     // The id is the server's for another command: resending it can only answer the same. A
     // closed head reads its durable outcome instead, below.
     if (answer?.status === "conflict" && !command.closed) {
-      this.settle(command, { status: "refused", commandId: answer.commandId, reason: "malformed" });
+      this.settle(command, { status: "unsent", commandId: answer.commandId });
       return;
     }
     if (command.closed && answer?.status === "none") {
@@ -541,7 +595,7 @@ export class ApplyClickQueue {
       if (this.commands[0] === command) this.settle(command, { status: "cancelled" });
       return;
     }
-    if (this.request || this.commands[0] !== command || command.stalled) return;
+    if (this.request || this.commands[0] !== command) return;
     this.request = command;
     command.sent = true;
     let answer: UnapplyClickAnswer | undefined;
@@ -555,19 +609,17 @@ export class ApplyClickQueue {
     if (this.commands[0] !== command) return;
     if (answer?.status === "unapplied") {
       command.answer = answer;
-      command.groupIds = new Set(answer.reversedGroupIds);
-      command.patched = command.patchFor(answer.reversedGroupIds);
-      command.selectionChanged(answer.reversedGroupIds);
-      this.port.changed();
+      const undone = textUndoneOf(answer, this.port.node);
+      command.groupIds = new Set(undone);
+      command.patched = command.patchFor(undone);
+      command.selectionChanged(undone, answer.treeUndone.includes(this.port.node));
+      // The answer is acted on now (notice, history, hand-over); the room only settles it.
+      command.hear(answer);
       this.reconcileUnapply(command);
       return;
     }
-    if (answer?.status === "closed" || answer?.status === "refused") {
-      this.settle(command, answer);
-      return;
-    }
     if (answer?.status === "conflict") {
-      this.settle(command, { status: "refused", commandId: answer.commandId });
+      this.settle(command, { status: "unsent", commandId: answer.commandId });
       return;
     }
     this.scheduleRetry(command);
@@ -598,7 +650,7 @@ export class ApplyClickQueue {
     try {
       const result = await this.port.lookup(command.body);
       if (this.commands[0] !== command || result.commandId !== command.body.commandId) return;
-      if (result.status === "applied" || isFinalApplyRefusal(result)) {
+      if (result.status === "applied") {
         this.settle(command, result);
         return;
       }
@@ -643,8 +695,13 @@ export class ApplyClickQueue {
 
   private scheduleRetry(command: Command): void {
     const delay = RETRY_DELAYS[command.attempts++];
-    if (delay === undefined) command.stalled = true;
-    else this.retryTimer = setTimeout(() => void this.dispatch(command), delay);
+    if (delay === undefined) {
+      // Out of retries: the click is given up as not sent, so the draft shows it still pending and
+      // the commands behind it go.
+      this.settle(command, { status: "unsent", commandId: command.body.commandId });
+      return;
+    }
+    this.retryTimer = setTimeout(() => void this.dispatch(command), delay);
     this.port.changed();
   }
 
@@ -666,12 +723,18 @@ export class ApplyClickQueue {
     return true;
   }
 
+  private settle(command: Command, result: ClickUnsent): void;
   private settle(command: ApplyCommand, result: ApplyClickOutcome): void;
   private settle(command: UnapplyCommand, result: UnapplyClickOutcome): void;
   private settle(command: Command, result: ApplyClickOutcome | UnapplyClickOutcome): void {
     if (this.commands[0] !== command) return;
     // Folded before the release publishes, so the change doesn't flash back.
-    if (command.kind === "apply" && command.roomEnded && result.status === "applied") {
+    if (
+      command.kind === "apply" &&
+      command.roomEnded &&
+      result.status === "applied" &&
+      textLanded(result, this.port.node)
+    ) {
       const draftId = command.body.draftId;
       if (draftId && frozenOn(command, draftId))
         this.landedUnrecorded.set(draftId, [

@@ -9,7 +9,7 @@ mode the writes go straight to live. Either way the writer can undo them.
 
 Does: chooses a Work, the task this session belongs to, from the picker under the project name. "None" is the row for no Work.
 
-Sees: the picker keeps the choice, which decides which chats and drafts the sidebar shows. A new chat's composer has its own Work control; if that Work becomes unavailable the composer says "Your selected Work is unavailable. Choose another Work, or None."
+Sees: the picker keeps the choice, which decides which chats and drafts the sidebar shows. A new chat's composer has its own Work control; if that Work becomes unavailable the composer says "Selected Work unavailable."
 
 - Map: [project](../app.md#project), [projects](../server-workspace.md#projects)
 - Machines: [Work archive and delete](../../../apps/server/server/domains/projects/.context/state-machines.md)
@@ -54,7 +54,7 @@ Sees: the Work's drafted documents with a pending count, and "Apply all" and "Di
 
 Does: picks the Work's draft in the sidebar's version chip beside Changes, which reads "Live" (offered while the Work has pending changes).
 
-Sees: every sidebar source turns to the Work's tree on a grey review ground, at once (the browser replays it from its copy of the list), and the open page switches to its draft if it has one. A click opens a document on its draft; a rename, move or new document goes into the Work's draft. The chip now reads "Draft"; picking Live in it brings back live, and the page with it. On Live, a jade dot marks each row the Work changes, and a page the Work drafts opens live with one sentence saying what the draft does to it and Show draft; its chip is neutral with a jade dot. Picking a version in the chip, or opening a change from Changes, moves the toggle with it. Ctrl+Z in the sidebar takes back the writer's latest tree change in the source on screen, made in the view on screen; a change someone has changed since is skipped with a notice.
+Sees: every sidebar source turns to the Work's tree on a grey review ground, at once (the browser replays it from its copy of the list), and the open page switches to its draft if it has one. A click opens a document on its draft; a rename, move or new document goes into the Work's draft. The chip now reads "Draft"; picking Live in it brings back live, and the page with it. On Live, a jade dot marks each row the Work changes, and a page the Work drafts opens live with its chip neutral and a jade dot; the chip's menu lists the draft. Picking a version in the chip, or opening a change from Changes, moves the toggle with it. Ctrl+Z in the sidebar takes back the writer's latest tree change in the source on screen, made in the view on screen; a change someone has changed since is skipped with a notice.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab)
 - Machines: [Draft and branch](../../../apps/server/server/domains/collab/.context/state-machines.md), [Draft review](../../../apps/app/src/features/draft-review/.context/state-machines.md)
@@ -82,7 +82,7 @@ Sees: after Apply, the live page has the model's text. After Discard, the draft 
 
 ## Undo
 
-Does: presses Undo on the reply's receipt, the card that lists every document the reply wrote. Redo puts it back.
+Does: presses Undo on the reply's receipt, the card that lists every document the reply wrote. There is no Redo: to get it back, ask the model to write it again.
 
 Sees: what the reply wrote is reversed, wherever it now is. The receipt stays.
 

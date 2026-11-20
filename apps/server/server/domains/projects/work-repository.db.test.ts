@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { CommandId } from "@meridian/contracts";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { LIVE } from "@meridian/project-tree";
@@ -115,17 +116,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // Each lifecycle change re-admits open rooms at the new access level.
       const heard: FileAccessChange[] = [];
       const stopHearing = fileAccessChanges.subscribe((change) => heard.push(change));
-      const announced = () => expect(heard.splice(0)).toEqual([{ workId: work.id }]);
+      const announced = (closed?: ClosedOwnerWhy) =>
+        expect(heard.splice(0)).toEqual([{ workId: work.id, closed }]);
       await works.archive(work.id);
-      announced();
+      announced("work_archived");
       await works.softDelete(work.id);
-      announced();
+      announced("work_deleted");
       expect(await works.findById(work.id)).toMatchObject({
         archivedAt: expect.any(String),
         deletedAt: expect.any(String),
       });
       await works.restore(work.id);
-      announced();
+      announced("work_archived");
       expect(await works.findById(work.id)).toMatchObject({
         archivedAt: expect.any(String),
         deletedAt: null,
@@ -813,7 +815,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
         "a cascade deletion leaves its documents' drafts open for the Work's Restore",
-      ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
+      ).resolves.toMatchObject([{ id: "work-delete-draft" }]);
 
       await works.restore(work.id);
       await expect(
@@ -837,7 +839,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.documentDrafts)
           .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ status: "active", closedCause: null }]);
+      ).resolves.toMatchObject([{ id: "work-delete-draft" }]);
       expect(await shown()).toContain(document.id);
       await expect(
         db

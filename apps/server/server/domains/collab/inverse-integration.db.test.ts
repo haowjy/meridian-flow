@@ -82,25 +82,13 @@ describe("inverse integration (postgres)", () => {
     ).toMatchObject({ status: "success" });
     expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
     expect(
-      await fixture.collab
-        .agentEdit()
-        .write({ command: "redo", file: "alpha.md", documentId: ALPHA_ID }, moved),
-    ).toMatchObject({ status: "success" });
-    expect(await fixture.draftMarkdown(draftId)).toBe("gold\n\nblue\n\ngreen\n");
-    expect(
-      await fixture.collab
-        .agentEdit()
-        .write({ command: "revert", edit: "e1", file: "alpha.md", documentId: ALPHA_ID }, moved),
-    ).toMatchObject({ status: "success" });
-    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
-    expect(
       (await db.select().from(schema.branches)).filter(
         (branch) => branch.originWorkId === WORK_B_ID,
       ),
     ).toEqual([]);
   });
 
-  it("6.2: card Undo of a turn whose draft was discarded skips every part by name", async () => {
+  it("6.2: card Undo of a turn whose draft was discarded takes nothing back", async () => {
     const { fixture } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
       ["blue", "azure"],
@@ -111,20 +99,9 @@ describe("inverse integration (postgres)", () => {
     const outcome = await fixture.collab.reverseTurn({
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      direction: "undo",
       actor: { type: "user", userId: USER_ID },
     });
-    expect(outcome).toMatchObject({ status: "expired", acceptedParts: 0 });
-    expect(
-      (outcome.skips ?? [])
-        .map((skip) => (skip.kind === "text" ? [skip.before, skip.after, skip.cause] : []))
-        .sort(),
-    ).toEqual([
-      // Discard released the draft's bytes. Live has unrelated item identities, so
-      // receipts cannot manufacture snippets from it.
-      ["", "", "discarded"],
-      ["", "", "discarded"],
-    ]);
+    expect(outcome).toMatchObject({ status: "expired" });
   });
 
   it("F8: card Undo of a drafted create inverts its text and leaves the item as an empty whole-item change", async () => {
@@ -155,10 +132,9 @@ describe("inverse integration (postgres)", () => {
     const turnUndo = await fixture.collab.reverseTurn({
       threadId: THREAD_ID,
       turnId: TURN_ID,
-      direction: "undo",
       actor: { type: "user", userId: USER_ID },
     });
-    expect(turnUndo).toMatchObject({ status: "reversed", skips: [] });
+    expect(turnUndo).toMatchObject({ status: "reversed" });
     const kept = await item();
     expect(kept).toMatchObject({ listed: true, item: { origin: "created", wholeItem: true } });
     expect((await fixture.draftMarkdown(kept?.draftId as string)).trim()).toBe("");

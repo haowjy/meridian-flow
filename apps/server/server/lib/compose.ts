@@ -379,6 +379,7 @@ export type AppServices = {
     publishReports(): Promise<number>;
     purgeWorks(): Promise<number>;
     purgeDocuments(): Promise<number>;
+    purgeDiscards(): Promise<number>;
     expireAsks(): Promise<number>;
   };
   userTurnAdmission: UserTurnAdmission;
@@ -601,7 +602,17 @@ export async function createProductionAppPorts(input: {
   const mcpConnections = createMcpConnections({
     store: mcpStore,
     client: mcpClient,
-    addressRefusal,
+    addressRefusal: (url) => {
+      const reason = addressRefusal(url);
+      if (reason)
+        emitEvent(eventSink, {
+          level: "warn",
+          source: "mcp.connection-address",
+          name: "McpAddressRefused",
+          payload: { host: url.hostname, reason },
+        });
+      return reason;
+    },
     cipher: createTokenCipher(resolveMcpTokenKey(environment)),
     sessionKey: (row) => sessionKey(row.accountId, row.id, row.settingsVersion),
     // A hint, then the app asks again; one hint per open project of the account.
@@ -668,7 +679,7 @@ export async function createProductionAppPorts(input: {
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
     liveChangedUnder: (branchIds) => workProjectionMutation.liveChangedUnder(branchIds),
   });
-  const draftClose = createDraftClose({ treeLists });
+  const draftClose = createDraftClose();
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
@@ -1148,6 +1159,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     publishReports: () => reportPublisher.sweep(WAKE_SWEEP_LIMIT),
     purgeWorks: () => workPurger.sweep(),
     purgeDocuments: () => ports.documentTrash.purge(),
+    purgeDiscards: () => ports.documentSync.draftReview.purgeDiscards(),
     expireAsks: () => asks.expireDue(),
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
@@ -1539,6 +1551,9 @@ export function createInMemoryAppServices(
       return 0;
     },
     async purgeDocuments() {
+      return 0;
+    },
+    async purgeDiscards() {
       return 0;
     },
     expireAsks: () => asks.expireDue(),

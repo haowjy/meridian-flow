@@ -31,10 +31,8 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
     deleting: readonly DockFile[];
     restoring: readonly DockFile[];
   } | null>(null);
-  const troubledFileCount = dock.files.filter(
-    (file) => file.status === "error" || dock.fileFailures(file).length > 0,
-  ).length;
-  // A refusal or a preview that did not load opens the strip so the writer sees it.
+  const troubledFileCount = dock.files.filter((file) => file.status === "error").length;
+  // A preview that did not load opens the strip so the writer sees it.
   useEffect(() => {
     if (troubledFileCount > 0) setExpanded(true);
   }, [troubledFileCount]);
@@ -47,17 +45,11 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const multi = dock.files.length > 1;
   const only = dock.files[0];
   const askingApply = asking !== null && dock.showCommands;
-  const ids = (files: readonly DockFile[]) => new Set(files.map((file) => file.row.documentId));
-  // A delete the strip hadn't shown yet holds those files back; several ask again by name.
-  const apply = (restore: ReadonlySet<string>) =>
-    void dock.apply(restore).then((held) => {
-      if (held.length > 0 && multi) setAsking({ deleting: [], restoring: held });
-    });
   // One file's row shows its delete, so its Apply already says to delete or bring it back.
   const startApply = () =>
     multi && (dock.deletedToApply.length > 0 || dock.deletingToApply.length > 0)
       ? setAsking({ deleting: dock.deletingToApply, restoring: dock.deletedToApply })
-      : apply(ids(dock.deletedToApply));
+      : dock.apply();
   // One question at a time, in the footer below the files: opening it never moves a row.
   const question: CommandQuestion | null = askingApply
     ? {
@@ -76,7 +68,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
         onKeep: () => setAsking(null),
         onConfirm: () => {
           setAsking(null);
-          apply(ids(asking.restoring));
+          dock.apply();
         },
         disabled: !dock.canCommand,
       }
@@ -118,7 +110,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           setExpanded((value) => !value);
         }}
         inline
-        className="min-w-[12ch] flex-auto coarse:min-h-11"
+        className="coarse:min-h-11 min-w-[12ch] flex-auto"
       >
         <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-jade-text" />
         <span className="min-w-0 truncate text-foreground">
@@ -235,7 +227,7 @@ function DockFileLine({
   const own = new Set(file.changes.map((change) => change.id));
   const items = view.items.filter(({ change }) => own.has(change.id));
   const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
-  // A refused or lost command is the file's status line's (`DraftCommandStatus`), shown once.
+  // A command's progress is the file's status line's (`DraftCommandStatus`), shown once.
   const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
   const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
   if (!summary && !expanded) return null;

@@ -1,4 +1,4 @@
-import { CodecParseError, type ParsedContent, type ParsedContentWithSpans } from "@meridian/markup";
+import { CodecParseError, type ParsedContent } from "@meridian/markup";
 import type { EditResolutionErrorCode, ResolvedEdit } from "../apply/types.js";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
@@ -19,11 +19,11 @@ import {
   type SplicedGroup,
   spliceFindMatches,
   type TextFindMatch,
-  type TextWindow,
 } from "./find.js";
 import { type HashLocateContext, hashLocateContext, locateBlockByHash } from "./hash-locator.js";
 import { landCopies } from "./land-copies.js";
 import { lowerBlock } from "./lower-block.js";
+import type { CutWindows, PlainEdit, PlannedStep } from "./planned-step.js";
 import {
   type BlockScope,
   resolveScope,
@@ -128,18 +128,7 @@ export function planWrite(
   };
   const normalized = normalizeParams(concreteCtx, params);
 
-  let planned: PlannedWrite | ResolveWriteFailure;
-  switch (normalized.command) {
-    case "insert":
-      planned = planInsert(concreteCtx, normalized);
-      break;
-    case "replace":
-      planned = planReplace(concreteCtx, normalized);
-      break;
-    case "remove":
-      planned = planRemove(concreteCtx, normalized);
-      break;
-  }
+  const planned = planCommand(concreteCtx, normalized);
   if (!("steps" in planned)) return planned;
   const steps = planned.steps;
   return {
@@ -163,6 +152,20 @@ export function planWrite(
   };
 }
 
+function planCommand(
+  ctx: ConcreteResolveContext,
+  params: NormalizedParams,
+): PlannedWrite | ResolveWriteFailure {
+  switch (params.command) {
+    case "insert":
+      return planInsert(ctx, params);
+    case "replace":
+      return planReplace(ctx, params);
+    case "remove":
+      return planRemove(ctx, params);
+  }
+}
+
 /** Plan and assign in one go, for callers whose written content is known up front. */
 export function resolveWrite(
   ctx: ResolveWriteContext,
@@ -170,32 +173,6 @@ export function resolveWrite(
 ): ResolveWriteResult {
   const plan = planWrite(ctx, params);
   return plan.ok ? plan.assign(ctx.links) : plan;
-}
-
-/** One planned piece of a write, in edit order. */
-type PlannedStep =
-  /** Edits that need no ref assignment: removes and copies. */
-  | { kind: "edits"; edits: ResolvedEdit[] }
-  | { kind: "insert"; after: BlockRef | undefined; blocks: Block[]; assign: boolean }
-  /** Rewrite `scope` as `blocks`, assigned against the scope's old nodes. */
-  | { kind: "replace"; scope: BlockScope; blocks: Block[] }
-  /** A find's reconstructed group: only the splice's occurrences are assigned. */
-  | {
-      kind: "spliced";
-      scope: BlockScope;
-      oldGroup: Block[];
-      oldText: string;
-      oldSpans: ParsedContentWithSpans["spans"];
-      newText: string;
-      parsed: ParsedContentWithSpans;
-      splice: SplicedGroup["splice"];
-      /** Each block's text windows the find's cuts cover, old and new; null when unmappable. */
-      windows: CutWindows | null;
-    };
-
-interface CutWindows {
-  old: TextWindow[][];
-  new: TextWindow[][];
 }
 
 interface PlannedWrite {
@@ -512,7 +489,7 @@ function lowerInsertPosition(
   return last ? { ok: true, after: last, beside: blocks.length - 1 } : { ok: true, beside: null };
 }
 
-function deleteEdits(params: NormalizedParams, scope: BlockScope): ResolvedEdit[] {
+function deleteEdits(params: NormalizedParams, scope: BlockScope): PlainEdit[] {
   return scope.blocks.map((element) => ({
     documentId: params.documentAddress.documentId,
     file: params.documentAddress.filePath,

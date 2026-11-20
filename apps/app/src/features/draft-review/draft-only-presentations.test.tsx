@@ -30,7 +30,6 @@ let registry: DraftOnlyPresentations;
 let removal: ContextRemovalCoordinator;
 const metadataAnswers: Array<(answer: { status: "gone" | "active" }) => void> = [];
 /** What the removed notice was told the writer lost. */
-let removedNotices: string[] = [];
 const presentedTab: OpenDocument = {
   kind: "tracked",
   documentId,
@@ -48,10 +47,6 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useProjectStandings: () => ({
     watch: () => () => undefined,
     standing: () => ({ kind: "waiting" }),
-  }),
-  useOptionalRemovedNotices: () => ({
-    presentedRemoved: (_project: string, tabs: readonly OpenDocument[]) =>
-      removedNotices.push(...tabs.map((tab) => tab.documentId)),
   }),
 }));
 vi.mock("@/client/query/useProjectTrees", () => ({
@@ -77,7 +72,6 @@ vi.mock("@/features/project/use-work-scope", () => ({
 
 beforeEach(() => {
   registry = new DraftOnlyPresentations();
-  removedNotices = [];
   removal = new ContextRemovalCoordinator({
     presented: {
       documents: () => [presentedTab],
@@ -111,7 +105,6 @@ it("a late gone answer about an old mount leaves a newer mount of the same item 
     await vi.waitFor(() => expect(metadataAnswers).toHaveLength(2));
     await act(async () => metadataAnswers[0]?.({ status: "gone" }));
     expect(registry.state("mount-2")).toBe("draft-only");
-    expect(removedNotices).toEqual([]);
   });
 });
 
@@ -122,18 +115,16 @@ function command(kind: "gone" | "back") {
 it("a live delete's hold ends when live has the document again", async () => {
   removal.applyRemovals([command("gone")]);
   expect(registry.isDraftOnly(projectId, documentId)).toBe(true);
-  expect(removedNotices).toEqual([]);
 
   removal.applyRemovals([command("back")]);
   expect(registry.isDraftOnly(projectId, documentId)).toBe(false);
 });
 
-it("a live delete's hold ends with its draft, and the document is said removed", async () => {
+it("a live delete's hold ends with its draft, ", async () => {
   removal.applyRemovals([command("gone")]);
   await settling(async () => {
     await vi.waitFor(() => expect(metadataAnswers).toHaveLength(1));
     await act(async () => metadataAnswers[0]?.({ status: "gone" }));
-    await vi.waitFor(() => expect(removedNotices).toEqual([documentId]));
-    expect(registry.isDraftOnly(projectId, documentId)).toBe(false);
+    await vi.waitFor(() => expect(registry.isDraftOnly(projectId, documentId)).toBe(false));
   });
 });

@@ -76,15 +76,6 @@ export function addList(ranges: Ranges, list: RangeList): void {
   for (const [client, from, to] of list) addRange(ranges, client, from, to);
 }
 
-/** Every clock of `a` not in `b`. */
-export function subtract(a: Ranges, b: Ranges): Ranges {
-  const left: Ranges = new Map();
-  for (const [client, list] of a)
-    for (const [from, to] of list)
-      for (const [x, y] of without(from, to, b.get(client))) addRange(left, client, x, y);
-  return left;
-}
-
 /** The items `update` inserts, skips and garbage collected structs aside. */
 export function insertedBy(update: Uint8Array): Ranges {
   const ranges: Ranges = new Map();

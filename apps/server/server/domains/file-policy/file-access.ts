@@ -3,7 +3,11 @@
  * is minted. `authorize` is the preflight; `confirmEdit` is the authoritative
  * re-check a write seam runs inside its transaction.
  */
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import { mergeOwnerLocks } from "../../shared/draft-owner.js";
+import { TreeOwnersMoved } from "../../shared/tree-owners.js";
+import type { LockedOwners } from "../../shared/work-lifecycle-lock.js";
 import type { TreeView } from "../context/tree/tree-view.js";
 import { decide, destinationFor, levelAt, personLevel } from "./domain/policy.js";
 import {
@@ -34,7 +38,7 @@ export interface FileAccess {
   destinationAvailability(
     target: FileTarget,
     destination: FileDestination,
-  ): Promise<{ frozen: boolean }>;
+  ): Promise<{ closed: ClosedOwnerWhy | null }>;
   /** Preflight: fast errors and UI state. Advisory for writes. */
   authorize<N extends FileNeed>(
     principal: Principal,
@@ -56,13 +60,16 @@ export interface FileAccess {
   /**
    * Authoritative, inside the ambient transaction (§5, §5.2). The caller has
    * already locked the Works and lineages the grants' facts name (`grantOwnerLocks`), in one
-   * id-ordered select with its own. Re-reads facts and each agent chain, and
+   * id-ordered select with its own (`locked`). Re-reads facts and each agent chain, and
    * re-runs the policy at each grant's destination. A file whose owner or
-   * branch Work moved outside that locked set is refused, since locking it now
-   * would break the id order. Refused grants are returned, not thrown, so the
-   * rest of the reply can commit.
+   * branch Work moved outside `locked` throws `TreeOwnersMoved` naming the new owners: locking
+   * them now would break the id order, so the caller runs again with them in its set. Refused grants are
+   * returned, not thrown, so the rest of the reply can commit.
    */
-  confirmEdit(grants: readonly FileGrant<"edit" | "discard">[]): Promise<FileAccessDenied[]>;
+  confirmEdit(
+    grants: readonly FileGrant<"edit" | "command">[],
+    locked: LockedOwners,
+  ): Promise<FileAccessDenied[]>;
   /**
    * The list path (§6): each listed document's decision from one facts query,
    * with an agent's drafted documents decided in its branch. A document the principal
@@ -99,10 +106,12 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         target,
         ...(destination.kind === "draft" ? { branchOwner: destination.owner } : {}),
       });
-      if (!facts) return { frozen: false };
+      if (!facts) return { closed: null };
       const work = destination.kind === "draft" ? facts.branchOwner : facts.ownerWork;
+      if (work?.deleted) return { closed: "work_deleted" };
+      if (work?.archived) return { closed: "work_archived" };
       const frozenLineage = destination.kind === "draft" && facts.branchOwner?.frozen === true;
-      return { frozen: work?.archived === true || work?.deleted === true || frozenLineage };
+      return { closed: frozenLineage ? "chat_frozen" : null };
     },
     async authorize(principal, target, need) {
       const facts = await loadFor(principal, target);
@@ -125,11 +134,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       return mint(principal, facts, result, asked);
     },
 
-    async confirmEdit(grants) {
-      const lockedWorks = new Set(grants.flatMap((grant) => grantOwnerLocks(grant.facts).workIds));
-      const lockedLineages = new Set(
-        grants.flatMap((grant) => grantOwnerLocks(grant.facts).lineageRootIds),
-      );
+    async confirmEdit(grants, locked) {
       const fresh: (FileFacts | null)[] = [];
       for (const { facts, destination } of grants) {
         fresh.push(
@@ -148,15 +153,19 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         }
         return chain;
       };
+      const needed = mergeOwnerLocks(
+        ...fresh.flatMap((facts) => (facts ? [grantOwnerLocks(facts)] : [])),
+      );
+      const outside = {
+        workIds: needed.workIds.filter((id) => !locked.works.has(id)),
+        lineageRootIds: needed.lineageRootIds.filter((id) => !locked.lineages.has(id)),
+      };
+      if (outside.workIds.length + outside.lineageRootIds.length > 0)
+        throw new TreeOwnersMoved([], outside);
       const refused: FileAccessDenied[] = [];
       for (const [index, grant] of grants.entries()) {
         const facts = fresh[index];
-        const needed = facts ? grantOwnerLocks(facts) : null;
-        if (
-          !facts ||
-          !needed?.workIds.every((id) => lockedWorks.has(id)) ||
-          !needed.lineageRootIds.every((id) => lockedLineages.has(id))
-        ) {
+        if (!facts) {
           refused.push(notFound(grant.principal, grant.facts.target));
           continue;
         }
@@ -261,7 +270,7 @@ async function refreshPrincipal(
 
 /** `confirmEdit` re-checks a grant against the need it was minted for. */
 function allows(result: FileDecision, need: FileNeed): boolean {
-  return need === "discard" ? result.discard : atLeast(result.level, need);
+  return need === "command" ? result.command : atLeast(result.level, need);
 }
 
 function mint<N extends FileNeed>(

@@ -1,9 +1,11 @@
 /**
  * How a tree Move, Copy or delete runs. A Move or delete is appended to the copy of the list and
  * cannot fail; the server's later `dropped` comes back as a settlement and shows on the row it
- * concerns. A Copy is a route, and its failure is a toast with Retry.
+ * concerns. A Copy is a route, and its failure is a toast, with Retry unless sending it again
+ * can't land it.
  */
-import { plural, t } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
+import type { Settlement } from "@meridian/contracts/commands";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -18,7 +20,7 @@ import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
 import { revealPlaced } from "../tree-reveal";
 import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";
-import { copyRows } from "./execute-copy";
+import { copyRows, type StateVectorOf } from "./execute-copy";
 import { moveRows } from "./execute-move";
 import type { ReadyCopy, ReadyMove } from "./move-plan";
 import { type EntrySelection, leaveSelections } from "./selection";
@@ -34,20 +36,16 @@ export type EntryContext = {
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
 };
 
+/** What a Copy needs beyond a Move: the state vector of a document's open session in this tab. */
+export type CopyContext = EntryContext & {
+  stateVectorOf: StateVectorOf;
+};
+
 /** A Copy the route refused: it has its own key, and Retry runs it again unless it is final. */
 type CopyFailure = {
   key: string;
-  sources: readonly string[];
-  destination: string | null;
-  refusal: CopyRefusal;
+  error: unknown;
   copy: ReadyCopy;
-};
-
-type CopyRefusal = {
-  /** The route's answer, in its words, when it gave one. */
-  reason: string | null;
-  /** Sending it again can't land it: the Work is closed, or the writer can't copy there. */
-  final: boolean;
 };
 
 /** The key of a project's failure, under that project's prefix (`entryToast(projectId)`). */
@@ -66,89 +64,72 @@ export function runMove(
   if (moved.length > 0) revealPlaced(move.to.parentId, moved, selection);
 }
 
-/** What the route said was wrong, when it said. */
-function refusalOf(error: unknown): CopyRefusal {
-  const retry = (reason: string | null) => ({ reason, final: false });
-  const final = (reason: string) => ({ reason, final: true });
-  if (!isMeridianApiError(error)) return retry(null);
-  const { details } = error;
-  const reason = details && typeof details === "object" && "reason" in details && details.reason;
-  if (reason === "source_behind") return retry(t`The latest edits hadn't reached the server.`);
-  switch (error.code) {
-    case "not_found":
-    case "stale_source":
-      return retry(t`A source is no longer there.`);
-    case "destination_missing":
-    case "stale_target":
-      return retry(t`The destination is no longer there.`);
-    case "permission_denied":
-      return final(t`You can't copy there.`);
-    case "work_archived":
-    case "work_deleted":
-      return final(t`The Work was closed.`);
-    case "work_missing":
-      return final(t`That Work isn't available.`);
-    default:
-      return retry(null);
-  }
+/** Why the route refused for good, where it did: the Work is closed, or the writer can't copy there. */
+function finalRefusalReason(error: unknown): string | undefined {
+  if (!isMeridianApiError(error)) return undefined;
+  if (error.code === "permission_denied") return t`No access`;
+  if (["work_archived", "work_deleted", "work_missing"].includes(error.code)) return t`Work closed`;
+  return undefined;
 }
 
-function copyFailureTitle(
-  sources: readonly string[],
-  destination: string | null,
-  reason: string | null,
-): string {
-  const [only] = sources;
-  const said =
-    sources.length === 1 && only
-      ? destination
-        ? t`Couldn't copy ${only} to ${destination}.`
-        : t`Couldn't copy ${only}.`
-      : destination
-        ? plural(sources.length, {
-            one: `Couldn't copy # item to ${destination}.`,
-            other: `Couldn't copy # items to ${destination}.`,
-          })
-        : plural(sources.length, {
-            one: "Couldn't copy # item.",
-            other: "Couldn't copy # items.",
-          });
-  return reason ? `${said} ${reason}` : said;
+/** Why the server left a copy out, where sending it again would leave it out the same way. */
+function settledReason(undone: readonly Settlement[]): string | undefined {
+  if (
+    undone.some(
+      (one) => one.rule === "returned" && ["work_archived", "work_deleted"].includes(one.why),
+    )
+  )
+    return t`Work closed`;
+  if (undone.some((one) => one.rule === "left_out" && one.why === "would_loop"))
+    return t`Folder into itself`;
+  return undefined;
 }
 
 /** Toasts a refused Copy; Retry, offered unless the refusal is final, runs it again. */
 function showCopyFailure(
-  context: EntryContext,
+  context: CopyContext,
   failure: CopyFailure,
   selection: EntrySelection | null,
 ): void {
+  const reason = finalRefusalReason(failure.error);
   notifyFailure({
     key: failure.key,
-    title: copyFailureTitle(failure.sources, failure.destination, failure.refusal.reason),
-    onRetry: failure.refusal.final
+    title: t`Couldn't copy`,
+    reason,
+    detail: failure.error,
+    action: reason
       ? undefined
-      : () => void runCopy(context, failure.copy, selection),
+      : { label: t`Retry`, run: () => void runCopy(context, failure.copy, selection) },
   });
 }
 
 export async function runCopy(
-  context: EntryContext,
+  context: CopyContext,
   copy: ReadyCopy,
   selection: EntrySelection | null,
 ): Promise<void> {
-  const { copies, answered } = copyRows(context.projectId, copy);
+  const { copies, answered } = copyRows(context.projectId, copy, context.stateVectorOf);
   revealPlaced(copy.into, copies, selection);
   try {
-    await answered;
+    const settled = await answered;
+    // The Work closed, or a source was gone or would land inside itself: something wasn't copied.
+    const undone = settled.filter((one) => one.rule === "returned" || one.rule === "left_out");
+    if (undone.length > 0) {
+      leaveSelections(copies);
+      notifyFailure({
+        key: entryToast(context.projectId, crypto.randomUUID()),
+        title: t`Couldn't copy`,
+        reason: settledReason(undone),
+        detail: undone,
+      });
+    }
   } catch (error) {
     leaveSelections(copies);
     showCopyFailure(
       context,
       {
         key: entryToast(context.projectId, crypto.randomUUID()),
-        sources: copy.copies.map(({ name }) => name),
-        destination: copy.destinationName,
-        refusal: refusalOf(error),
+        error,
         copy,
       },
       selection,
@@ -217,7 +198,9 @@ export async function runDelete(
 
 /**
  * The delete's notice, with an Undo that takes back the sidebar's own Undo step for it: whichever
- * runs first, the other has nothing left (a press ends the notice).
+ * runs first, the other has nothing left (a press ends the notice). It also ends when its steps
+ * rest (an Apply or a create shows what they took again): it can't hide its Undo for now as the
+ * rows do, and the rows and Ctrl+Z keep it.
  */
 function showDeleteNotice(
   { notices }: NonNullable<EntryContext["notice"]>,
@@ -239,15 +222,17 @@ function showDeleteNotice(
     }),
     end: () => {},
   };
-  // The notice's one Undo covers every list's step: it ends with the last of them.
+  // The notice's one Undo covers every list's step: it ends when the last of them ends or rests.
   const standing = new Set(taken.map(({ step }) => step));
-  for (const { step } of taken)
-    step.ended = () => {
-      standing.delete(step);
-      if (standing.size > 0) return;
+  for (const { step } of taken) {
+    const leave = () => {
+      if (!standing.delete(step) || standing.size > 0) return;
       handle.end();
       notices.partEnded(handle);
     };
+    step.ended = leave;
+    step.rested = leave;
+  }
   const id = notices.showDiscard({
     projectId,
     ownerKey: deleteNoticeKey(projectId),

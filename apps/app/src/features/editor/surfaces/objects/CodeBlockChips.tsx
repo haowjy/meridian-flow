@@ -121,7 +121,7 @@ export function CodeBlockChips({
         size="xs"
         variant="ghost"
         label={t`Copy code`}
-        onClick={() => run(copyText(target.node.textContent), t`Code copied`)}
+        onClick={() => run(copyText(target.node.textContent), "copy")}
       >
         <Copy aria-hidden />
       </IconButton>

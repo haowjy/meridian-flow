@@ -24,7 +24,9 @@ import {
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
+  type ClosedOwners,
   endWhenRestored,
+  NOTHING_CLOSED,
   pushUndoStep,
   shownSourceOf,
   type TreeGesture,
@@ -43,6 +45,8 @@ export class TreeActions {
     private readonly actor: string,
     /** The tree the writer acts on, read at each call: live, or the Work's on Draft. */
     private readonly version: () => TreeVersion = () => LIVE_VERSION,
+    /** Which owners are closed now: a step that waits for them is passed over. */
+    private readonly closed: ClosedOwners = NOTHING_CLOSED,
   ) {}
 
   /** The writer on the copy as it stands. */
@@ -110,7 +114,7 @@ export class TreeActions {
     if (!session) return Promise.resolve(false);
     const { view, pendingText } = this.version();
     const same = step.kind === "tree" && view.draft === step.draft;
-    return undoStep(session, step, this.actor, same ? pendingText : undefined);
+    return undoStep(session, step, this.actor, this.closed, same ? pendingText : undefined);
   }
 
   /** The record parent for a folder's id or a source's id (the top of its tree). */

@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
 import type { DocumentId } from "../runtime/index.js";
 
 export const YJS_WS_PATH_PREFIX = "/ws/yjs";
@@ -85,8 +86,28 @@ export interface ChangeEventWsMessage {
   truncated: boolean;
 }
 
+/**
+ * Sent after a room admits a connection read-only. Hocuspocus's authenticated scope says `readonly` but
+ * not why; `why` names a closed owner, the same reasons a 4409 close names, and is left out otherwise.
+ */
+export interface ReadOnlyWsMessage {
+  type: "read_only";
+  why?: ClosedOwnerWhy;
+}
+
+/**
+ * A draft room's answer to the client's `catch_up` of the same `id`: Live's committed text has been
+ * pulled into the draft, and the pull's update went out on this socket before this message.
+ */
+export interface CaughtUpWsMessage {
+  type: "caught_up";
+  id: number;
+}
+
 type YjsStatelessMessageByType = {
   change_event: ChangeEventWsMessage;
+  read_only: ReadOnlyWsMessage;
+  caught_up: CaughtUpWsMessage;
 };
 
 export type YjsStatelessMessage = YjsStatelessMessageByType[keyof YjsStatelessMessageByType];
@@ -133,16 +154,65 @@ export function encodeChangeEventWsMessage(message: Omit<ChangeEventWsMessage, "
   return JSON.stringify(changeEventWsMessageSchema.parse({ type: "change_event", ...message }));
 }
 
-/** Parses the extensible stateless Yjs channel and rejects malformed payloads. */
-export function parseYjsStatelessMessage(payload: string): YjsStatelessMessage | null {
-  let value: unknown;
+export function encodeReadOnlyWsMessage(why?: ClosedOwnerWhy): string {
+  return JSON.stringify({ type: "read_only", why } satisfies ReadOnlyWsMessage);
+}
+
+const readOnlyWsMessageSchema: z.ZodType<ReadOnlyWsMessage> = z.object({
+  type: z.literal("read_only"),
+  why: z.enum(CLOSED_OWNER_WHYS).optional(),
+});
+
+const caughtUpWsMessageSchema: z.ZodType<CaughtUpWsMessage> = z.object({
+  type: z.literal("caught_up"),
+  id: z.number().int(),
+});
+
+function parseJson(payload: string): unknown {
   try {
-    value = JSON.parse(payload);
+    return JSON.parse(payload);
   } catch {
     return null;
   }
-  const result = changeEventWsMessageSchema.safeParse(value);
-  return result.success ? result.data : null;
+}
+
+/** Parses the extensible stateless Yjs channel and rejects malformed payloads. */
+export function parseYjsStatelessMessage(payload: string): YjsStatelessMessage | null {
+  const value = parseJson(payload);
+  const change = changeEventWsMessageSchema.safeParse(value);
+  if (change.success) return change.data;
+  const readOnly = readOnlyWsMessageSchema.safeParse(value);
+  if (readOnly.success) return readOnly.data;
+  const caughtUp = caughtUpWsMessageSchema.safeParse(value);
+  return caughtUp.success ? caughtUp.data : null;
+}
+
+/**
+ * Sent by a client on a draft room: bring Live's committed text into this draft now, and answer
+ * `caught_up` with the same `id` once the room holds it.
+ */
+export interface CatchUpWsMessage {
+  type: "catch_up";
+  id: number;
+}
+
+const catchUpWsMessageSchema: z.ZodType<CatchUpWsMessage> = z.object({
+  type: z.literal("catch_up"),
+  id: z.number().int(),
+});
+
+export function encodeCatchUpWsMessage(id: number): string {
+  return JSON.stringify({ type: "catch_up", id } satisfies CatchUpWsMessage);
+}
+
+export function encodeCaughtUpWsMessage(id: number): string {
+  return JSON.stringify({ type: "caught_up", id } satisfies CaughtUpWsMessage);
+}
+
+/** The stateless messages a client sends; null for anything else. */
+export function parseYjsClientStatelessMessage(payload: string): CatchUpWsMessage | null {
+  const parsed = catchUpWsMessageSchema.safeParse(parseJson(payload));
+  return parsed.success ? parsed.data : null;
 }
 
 export function yjsWsPath(): string {

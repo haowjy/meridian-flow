@@ -1,7 +1,6 @@
 /** `@meridian/agent-edit/diff`: the pure text model shared by review, Apply and Discard. */
 
 export { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
-export { appliedParts } from "./applied-parts.js";
 export {
   APPLY_RECORD_ROOT,
   type ApplyEntry,
@@ -41,12 +40,10 @@ export {
   retainLateTypingDeletions,
 } from "./late-peer-recovery.js";
 export {
-  appendRestorationLinks,
   RESTORED_ROOT,
   type RestorationLink,
   readRestorations,
   recordRestorations,
-  recordWriteBack,
 } from "./restorations.js";
 export {
   composeGroups,
@@ -59,4 +56,4 @@ export {
 } from "./review.js";
 export { diffKeys, type Tok, wordDiff } from "./tokens.js";
 export { countWords } from "./word-count.js";
-export { type WriteStats, writeBlocks, writeDiscardBlocks } from "./writer.js";
+export { type WriteStats, writeBlocks } from "./writer.js";

@@ -1,4 +1,8 @@
-/** Copy's command record: one `copy` row in `commands`, claimed before its effect. */
+/**
+ * Copy's command record: one `copy` row in `commands`, claimed before its effect. Every answer it
+ * stores is `done`: a copy, or one that made nothing and says why in `settled`. An error stores
+ * nothing.
+ */
 
 import type { ProjectId, UserId } from "@meridian/contracts";
 import type { CopyCommandResult } from "@meridian/contracts/branches";
@@ -10,20 +14,12 @@ import type {
 import type { Database } from "@meridian/database";
 import { CommandExistsError, commandDigest } from "../../../shared/commands/command-record.js";
 import { lookupCommand } from "../../../shared/commands/drizzle-commands.js";
-import { runInDrizzleSavepoint } from "../../../shared/drizzle-transaction.js";
 import { runDocumentCommand } from "../../collab/adapters/drizzle-document-commands.js";
 
-/** The effect answered a refusal: its savepoint rolls back, and the refusal is stored. */
-class RejectedCopy extends Error {
+/** The effect answered an error: nothing is stored, so the same id stays sendable. */
+class FailedCopy extends Error {
   constructor(readonly result: Extract<ContextOperationResult, { ok: false }>) {
-    super("Copy rejected");
-  }
-}
-
-/** A transient failure: nothing is stored, so the same id stays retryable. */
-class RetryableCopy extends Error {
-  constructor(readonly result: Extract<ContextOperationResult, { ok: false }>) {
-    super("Copy failed transiently");
+    super("Copy failed");
   }
 }
 
@@ -86,27 +82,20 @@ export function createCopyCommands(db: Database, owner: { userId: string; projec
             digest: digestOf(command),
           },
           async () => {
-            let result: ContextOperationResult;
-            try {
-              result = await runInDrizzleSavepoint(db, async () => {
-                const done = await operation();
-                // An inner Result-aware owner may have caught its rollback exception.
-                if (!done.ok) throw new RejectedCopy(done);
-                return done;
-              });
-            } catch (cause) {
-              if (!(cause instanceof RejectedCopy)) throw cause;
-              result = cause.result;
-            }
-            if (!result.ok && result.error.code === "io_error") throw new RetryableCopy(result);
+            const result = await operation();
+            if (!result.ok) throw new FailedCopy(result);
             const receipt: ContextOperationReceipt = { operationId, command, result };
-            return { status: result.ok ? "copied" : "refused", receipt };
+            return {
+              status: "copied",
+              receipt,
+              ...(result.value.settled ? { settled: result.value.settled } : {}),
+            };
           },
           () => undefined,
         );
         return settled.receipt.result as ContextOperationResult;
       } catch (cause) {
-        if (cause instanceof RetryableCopy) return cause.result;
+        if (cause instanceof FailedCopy) return cause.result;
         if (cause instanceof CommandExistsError)
           return (await stored(operationId, command, address)) ?? mismatch(address);
         throw cause;

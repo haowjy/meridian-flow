@@ -17,6 +17,7 @@ import {
   readBlocks,
 } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type * as Y from "yjs";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import { DraftMissingError, type DraftStore, type StaleEffectCursor } from "./draft-store.js";
 
@@ -28,6 +29,16 @@ const BACKOFF_MS = 250;
 const MAX_BACKOFF_MS = 30_000;
 const MAX_RUNS = 4;
 const SWEEP_PAGE = 50;
+
+const schema = buildDocumentSchema();
+
+/** The one judgement of `has_effect`: the draft's text differs from its review base. */
+export function draftHoldsText(doc: Y.Doc): boolean {
+  return !blocksEqual(
+    readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
+    readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+  );
+}
 
 export type DraftProjection = {
   /** A committed append made the draft's derived state stale. */
@@ -73,7 +84,6 @@ export function createDraftProjection(input: {
   const maxRuns = input.maxRuns ?? MAX_RUNS;
   const entries = new Map<string, Entry>();
   const queue: string[] = [];
-  const schema = buildDocumentSchema();
   const running = new Set<Promise<void>>();
   let sweep: Promise<number> | null = null;
   let disposed = false;
@@ -184,19 +194,23 @@ export function createDraftProjection(input: {
       | { kind: "judged"; write: Parameters<DraftStore["writeEffect"]>[0] };
     try {
       judged = await input.coordinator.readDraft(draftId, async (doc, snapshot) => {
-        // A thread peer carries no effect; a closed draft is not a review member.
-        if (snapshot.kind !== "work_draft" || snapshot.status !== "active")
-          return { kind: "done" as const };
-        const base = readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
-        const draft = readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-        const hasEffect = !blocksEqual(base, draft);
+        // A thread peer carries no effect.
+        if (snapshot.kind !== "work_draft") return { kind: "done" as const };
+        const hasEffect = draftHoldsText(doc);
         return {
           kind: "judged" as const,
           write: {
             draftId,
             revision: snapshot.revision,
             hasEffect,
-            textChanges: hasEffect ? projectReview(diffBlocks(base, draft)).groups.length : 0,
+            textChanges: hasEffect
+              ? projectReview(
+                  diffBlocks(
+                    readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
+                    readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+                  ),
+                ).groups.length
+              : 0,
             workId: snapshot.workId,
             rootThreadId: snapshot.rootThreadId,
           },

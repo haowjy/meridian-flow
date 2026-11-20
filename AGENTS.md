@@ -1,8 +1,6 @@
 # Meridian Flow — Agent Instructions
 
 This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
-Product decisions are the owner's. Each one, his or recorded anywhere, is the current choice with its reason,
-open to change: when what you find argues against one, tell him and why, and build on it until he changes it.
 
 ## Mission
 
@@ -16,14 +14,14 @@ documents, often at once, and their writes land: no approval gates, refusals or
 take it back. In the app, teach a concept once, then show state, not standing
 explanations. See [trust the LLM][trust-llm] and [trust the user][trust-user].
 
-**Trust every client, like a game client the player owns.** A client acts for its writer, so
-the server neither refuses what a client sends nor re-checks it against attacks. The client
-shows the result at once; the server stores it and settles conflicts by a rule every client
-reaches on its own (two writes to one name keep both, a move of a deleted document restores it,
-typing into a closed draft comes back with Copy). Each AI agent is a client too, one that runs
-on the server: its writes land and settle the same way, and it is never told to re-read and try
-again. Each refusal is a design to replace, and no writer or agent sends anything twice. The
-server still checks who is signed in, and runs everything that costs money.
+**The server never says no.** Anything that edits a project is a client: the writer's browser
+tab, their other device, an AI agent running on the server. A client shows its edit at once and
+sends it, and the server stores it as sent, with no refusal and no check against attacks. When
+two edits clash, a fixed rule settles them, and every client runs the same rule, so every screen
+agrees without asking: two documents given one name both keep it, and moving a deleted document
+brings it back. Nobody resends anything, and an agent is never told to re-read and try again. A
+design that needs a refusal is a design to replace. The server still checks who is signed in,
+and runs everything that costs money.
 
 ## Engineering
 
@@ -97,8 +95,8 @@ session that started it.
 
 **Debug with `./mf`; verify in the browser.** Use `./mf` to reproduce and read
 state; [docs/debugging.md](docs/debugging.md) has the rest. Every change a writer sees or relies on, server-only changes included, gets
-a prober's `agent-browser` run of the final code before it reaches `main`, with
-screenshots in its PR. A feature built as part PRs into a release branch gets that
+a prober's `agent-browser` run of the final code before it reaches `main`, with a
+video of the run and screenshots of its key states in its PR, uploaded with `gh pr edit --attach`, never committed. A feature built as part PRs into a release branch gets that
 run once, on the whole feature after review, not one per part; each part's coder
 checks its own screens in the browser. `./mf` output never stands in for it.
 

@@ -5,6 +5,7 @@
  */
 
 import { Hocuspocus } from "@hocuspocus/server";
+import { APPLY_RECORD_ROOT } from "@meridian/agent-edit/diff";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
@@ -16,7 +17,6 @@ import {
 import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterAppend, LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
-import { PROVENANCE_TARGETS_TYPE } from "./domain/provenance.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { MemoryDraftStore, memoryDraft, testDraftRow } from "./test-support/memory-draft-store.js";
 
@@ -388,10 +388,10 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
     [
       "nested insert",
       (doc: Y.Doc) =>
-        (doc.getMap(PROVENANCE_TARGETS_TYPE).get("nested") as Y.Array<unknown>).push(["hostile"]),
+        (doc.getMap(APPLY_RECORD_ROOT).get("nested") as Y.Array<unknown>).push(["hostile"]),
     ],
-    ["delete-only change", (doc: Y.Doc) => doc.getMap(PROVENANCE_TARGETS_TYPE).delete("nested")],
-    ["top-level collision", (doc: Y.Doc) => doc.getArray(PROVENANCE_TARGETS_TYPE).push([1])],
+    ["delete-only change", (doc: Y.Doc) => doc.getMap(APPLY_RECORD_ROOT).delete("nested")],
+    ["top-level collision", (doc: Y.Doc) => doc.getArray(APPLY_RECORD_ROOT).push([1])],
   ])("rejects hostile reserved namespace %s before journaling", async (_name, mutate) => {
     const liveDocument = documentWithReservedFacts();
     const journal = fakeJournal();
@@ -551,7 +551,7 @@ function writerUpdate(): Uint8Array {
 function documentWithReservedFacts(): Y.Doc {
   const doc = boundDoc({ gc: false });
   const nested = new Y.Array<unknown>();
-  doc.getMap(PROVENANCE_TARGETS_TYPE).set("nested", nested);
+  doc.getMap(APPLY_RECORD_ROOT).set("nested", nested);
   nested.push(["authority fact"]);
   return doc;
 }

@@ -34,7 +34,6 @@ import {
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleAuthorityGenerationReader } from "../adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
-import { draftsStillClosedBy } from "../adapters/drizzle-draft-close.js";
 import { createDrizzleDraftReplayJournalReads } from "../adapters/drizzle-draft-journal-reads.js";
 import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
@@ -86,7 +85,7 @@ const { createDrizzleWorkBranchPendingStore } = await import(
 );
 const { createBranchReviewItems } = await import("../domain/branch-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
-const { branchFolderRevisions, createDrizzleBranchTreeState } = await import(
+const { branchFolderIds, createDrizzleBranchTreeState } = await import(
   "../adapters/drizzle-branch-tree-state.js"
 );
 const { createDrizzleBranchTreeActors } = await import("../adapters/drizzle-branch-tree-actors.js");
@@ -392,8 +391,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     {
       write: scopeModelEditWrite(
         createModelEditWriter({
-          read: modelEditRead,
-          evidence: modelEvidence,
           liveCore: runtime.liveUtilityCore,
           threadCore,
           branches: workBranches,
@@ -410,10 +407,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
               .where(eq(schema.documentDrafts.id, draftId))
               .for("update");
           },
-          roomsOf: async (documentId) => ({
-            liveRoom: liveRoom(documentId, await readAuthorityGeneration(documentId)),
-            drafts: await draftStore.listWorkDraftStates(documentId),
-          }),
+          liveRoomOf: async (documentId) =>
+            liveRoom(documentId, await readAuthorityGeneration(documentId)),
           afterLiveCommit: (documentId) =>
             deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
         }),
@@ -475,7 +470,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       async closeRemovedRooms(_documentIds, draftIds) {
         for (const draftId of draftIds) closeDraftRoom(draftId);
       },
-      stillClosedBy: (drafts) => draftsStillClosedBy(currentDrizzleDb(db), drafts),
     }),
     (error) => {
       throw error;
@@ -493,26 +487,29 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     commandDocuments: {
       ofApply: async () => [],
       ofDiscard: async () => [],
+      redoItems: async () => [],
     },
     listDiscards: async () => [],
+    purgeDiscards: async () => 0,
     undoDiscard: async () => {
       throw new Error("Undo of a Discard is not configured in the collab fixture");
     },
     branches: workBranches,
     reviewItems,
-    folderRevisions: (branchId) => branchFolderRevisions(db, branchId),
+    folderIds: (branchId) => branchFolderIds(db, branchId),
+    // No tree lists in this fixture: a list read without a cut.
+    treeCut: async () => ({}),
     pending: durableWorkBranchPendingStore,
     identity,
     discard: createBranchDiscard({
-      branches: workBranches,
       // No Work projection in this harness: pending counts aren't under test.
       store: createDrizzleBranchDiscard(db, {
+        coordinator: draftCoordinator,
         close: draftClose,
         branches: workBranches,
         workProjection: createTestWorkProjectionMutation(db),
         treeLists,
       }),
-      holdRetirement: draftClose.holdRetirement,
     }),
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,
@@ -543,7 +540,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     agentEdit: () => testAgentEdit,
     reverseTurn: turnReversal.reverseTurn,
     reversalOwners: turnInverse.reversalOwners,
-    getTurnReceiptChip: turnInverse.getTurnReceiptChip,
+    getDocumentAndTreeChip: turnInverse.getDocumentAndTreeChip,
     writeDocument: runtime.markdownDocuments.writeDocument,
     mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
@@ -640,13 +637,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     },
     /** Waits for every draft-effect judgement the test's writes scheduled. */
     settleDraftEffects: () => draftEffects.flush(),
-    reverseTurn: (direction: "undo" | "redo") =>
-      collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction,
-        actor: { type: "user", userId: USER_ID },
-      }),
     liveMarkdown: (documentId: DocumentId) =>
       liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,

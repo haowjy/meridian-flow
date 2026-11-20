@@ -31,7 +31,6 @@ import { uploadBytes } from "../context/uploads/upload-test-support.js";
 import { createNoopEventSink } from "../observability/index.js";
 import { createDrizzleJournal } from "./adapters/drizzle-journal.js";
 import { LinkBindingInsideTransactionError } from "./domain/link-binding.js";
-import { materializeRootLineageForDoc } from "./domain/provenance.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 describe.skipIf(!enabled || !process.env.DATABASE_URL)(
@@ -298,9 +297,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
               // Only the new paragraph and word are the saver's; every paragraph the save kept
               // keeps its items, and so the authorship it had.
               const saved = await journalDoc(id);
-              const freshUnits = materializeRootLineageForDoc(saved)
-                .filter(({ root }) => root.clock >= (baseVector.get(root.clientID) ?? 0))
-                .reduce((sum, { root }) => sum + root.length, 0);
+              const freshUnits = visibleTextUnits(saved).filter(
+                ({ client, clock }) => clock >= (baseVector.get(client) ?? 0),
+              ).length;
               saved.destroy();
               expect(freshUnits).toBe("Inserted.".length + " changed".length);
               return id;
@@ -422,3 +421,21 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     });
   },
 );
+
+/** Each character the document shows, as the Yjs id of its item and its offset. */
+function visibleTextUnits(doc: Y.Doc): { client: number; clock: number }[] {
+  const units: { client: number; clock: number }[] = [];
+  const visit = (node: Y.XmlFragment | Y.XmlElement | Y.XmlText) => {
+    if (node instanceof Y.XmlText) {
+      for (let item = node._start; item; item = item.right)
+        if (!item.deleted && item.content instanceof Y.ContentString)
+          for (let i = 0; i < item.length; i++)
+            units.push({ client: item.id.client, clock: item.id.clock + i });
+      return;
+    }
+    for (const child of node.toArray())
+      if (child instanceof Y.XmlElement || child instanceof Y.XmlText) visit(child);
+  };
+  visit(doc.getXmlFragment("prosemirror"));
+  return units;
+}

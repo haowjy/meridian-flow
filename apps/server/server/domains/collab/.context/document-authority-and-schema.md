@@ -85,7 +85,7 @@ history stay open; only purge deletes it.
 A removal refuses as a `DocumentNotFoundError` carrying the removal record, so
 every not-found mapping, including a model's read, answers a removal as
 `document_not_found` with who removed it (status and words once, agent-edit's
-`removedFile` in `removal-copy.ts`). A model's text edit, undo, redo or revert the
+`removedFile` in `removal-copy.ts`). A model's text edit, undo or revert the
 removal stopped is not refused: it is a `done` row that says `returned` with
 `document_removed` and the record in `returned.removal` (agent-edit's
 `returnedWriteResult`), which the chat's card words. It is answered from an

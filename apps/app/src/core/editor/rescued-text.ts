@@ -68,22 +68,6 @@ export function extractSchemaRepairEvidence(
   return evidence;
 }
 
-/** Every word `document` holds, one line per block; null when it holds none. */
-export function documentText(document: Y.Doc): string | null {
-  const all = new Map(
-    [...Y.decodeStateVector(Y.encodeStateVector(document))].map(([client, clock]) => [
-      client,
-      [{ clock: 0, len: clock }],
-    ]),
-  );
-  const { text } = textInRanges(
-    document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-    { clients: all },
-    { liveOnly: true },
-  );
-  return text || null;
-}
-
 /** The live words of the items in `ranges`; null when they hold none. */
 export function typedText(document: Y.Doc, ranges: Ranges): string | null {
   const clients = new Map(

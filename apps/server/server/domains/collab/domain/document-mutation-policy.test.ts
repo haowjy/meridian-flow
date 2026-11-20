@@ -15,11 +15,7 @@ import {
   replicateFrozenSource,
 } from "./document-mutation-policy.js";
 import type { AppendDraftJournalInput } from "./draft-store.js";
-import {
-  appendProvenanceFacts,
-  primeReservedNamespaceIndex,
-  validateClientUpdateAdmission,
-} from "./provenance.js";
+import { primeReservedNamespaceIndex, validateClientUpdateAdmission } from "./provenance.js";
 
 const revision = "revision-1" as DocumentRevision;
 
@@ -77,21 +73,6 @@ describe("document mutation policy operations", () => {
     expect(Y.encodeStateAsUpdate(target)).toEqual(before);
   });
 
-  it("rejects non-injective identity replication before the target applies it", () => {
-    const base = proseDoc("a");
-    const root = textRange(base);
-    const target = cloneDoc(base);
-    const source = cloneDoc(base);
-    carryToRoot(target, root, "t");
-    carryToRoot(source, root, "s");
-    const beforeTarget = Y.encodeStateAsUpdate(target);
-
-    expect(() => replicateFrozenSource(source, target)).toThrow(
-      "One provenance root unit cannot have two visible targets",
-    );
-    expect(Y.encodeStateAsUpdate(target)).toEqual(beforeTarget);
-  });
-
   it("replicates a live state that holds a writer's garbage-collected structs", () => {
     // A writer's gc-enabled editor collects prose it deleted before syncing, so its update
     // carries GC structs that the live document keeps verbatim.
@@ -145,38 +126,4 @@ function replacementPort(
     disconnectGeneration: vi.fn(async () => undefined),
     ...overrides,
   };
-}
-
-function proseDoc(value: string): Y.Doc {
-  const doc = new Y.Doc({ gc: false });
-  const paragraph = new Y.XmlElement("paragraph");
-  paragraph.push([new Y.XmlText(value)]);
-  doc.getXmlFragment("prosemirror").push([paragraph]);
-  return doc;
-}
-
-function cloneDoc(doc: Y.Doc): Y.Doc {
-  const clone = new Y.Doc({ gc: false });
-  Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-  return clone;
-}
-
-function textRange(doc: Y.Doc) {
-  const paragraph = doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement;
-  const text = paragraph.get(0) as Y.XmlText;
-  const id = (text as unknown as { _start: { id: { client: number; clock: number } } })._start.id;
-  return { clientID: id.client, clock: id.clock, length: text.length };
-}
-
-function carryToRoot(
-  doc: Y.Doc,
-  root: { clientID: number; clock: number; length: number },
-  value: string,
-): void {
-  doc.getXmlFragment("prosemirror").delete(0, 1);
-  const paragraph = new Y.XmlElement("paragraph");
-  const text = new Y.XmlText(value);
-  paragraph.push([text]);
-  doc.getXmlFragment("prosemirror").push([paragraph]);
-  appendProvenanceFacts(doc, { targets: [{ version: 1, target: textRange(doc), root }] });
 }

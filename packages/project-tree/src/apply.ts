@@ -3,7 +3,7 @@ import { assertNewCommand } from "./list-index.js";
 import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
 import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { type NotUndone, prepareUndo } from "./undo.js";
+import { type NotUndone, takeBackAll } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import {
   LIVE,
@@ -40,6 +40,8 @@ export type ApplyResult = {
   superseded: TreeRecord[];
   /** The copies that brought a node back from Trash (rule 9), each with its node. */
   lifted: Array<{ copy: TreeRecord; node: string }>;
+  /** The live restores appended before the copies: Un-Apply takes them back (`restoredByApply`). */
+  restored: TreeRecord[];
 };
 
 function needs(record: TreeRecord): string[] {
@@ -169,22 +171,56 @@ export function dependents(pending: readonly TreeRecord[], only: readonly string
 }
 
 /**
+ * The live restores an Apply of `chosen` writes: one for each node a chosen record acts on that
+ * live has deleted and the Work's view keeps (rule 7), bringing it back with what its delete took.
+ * It carries `fromDraft`, so the replay lifts the delete and leaves the node's arrival alone: the
+ * node keeps the name the Work's view showed it with, as a rule-9 touch would.
+ */
+function keptRestores(
+  live: readonly TreeRecord[],
+  rest: readonly TreeRecord[],
+  chosen: ReadonlySet<string>,
+  draft: string | null,
+  by: { appliedBy: Actor; command: string },
+): TreeRecord[] {
+  const shown = replay([...live, ...rest], { draft });
+  const nodes = new Set(
+    rest.flatMap((record) =>
+      chosen.has(record.id) && shown.nodes.get(record.node)?.keptByPending ? [record.node] : [],
+    ),
+  );
+  return [...nodes].map((node, at) => ({
+    id: `${by.command}-${at}`,
+    node,
+    actor: by.appliedBy,
+    draft: null,
+    type: "restore",
+    appliedBy: by.appliedBy,
+    ...(draft === null ? {} : { fromDraft: draft }),
+  }));
+}
+
+/**
  * Whether applying `chosen` lands what the Work's tree showed: the view of live plus the pending
- * records, against the view after the chosen ones have become live copies. Both are read without
- * the records that cannot land (`without`): one of those may start to take effect once the rest
- * has landed, which is the writer's cue that it can now be applied.
+ * records, against the view after the chosen ones have become live copies, behind the restores the
+ * Apply writes. Both are read with those restores, and without the records that cannot land
+ * (`without`): one of those may start to take effect once the rest has landed, which is the
+ * writer's cue that it can now be applied.
  */
 function keepsView(
   live: readonly TreeRecord[],
   pending: readonly TreeRecord[],
   chosen: ReadonlySet<string>,
   without: ReadonlySet<string>,
+  by: { appliedBy: Actor; command: string },
 ): boolean {
   const draft = pending[0]?.draft ?? null;
   const rest = pending.filter((record) => !without.has(record.id));
-  const before = fingerprint(replay([...live, ...rest], { draft }), false);
+  const restores = keptRestores(live, rest, chosen, draft, by);
+  const before = fingerprint(replay([...live, ...restores, ...rest], { draft }), false);
   const after = [
     ...live,
+    ...restores,
     ...rest
       .filter((record) => chosen.has(record.id))
       .map((record) => ({ ...record, draft: null, fromDraft: draft ?? undefined }) as TreeRecord),
@@ -197,7 +233,7 @@ function keepsView(
  * The ids of the records in the structs of the list a copy at state `saw` lacks: what was
  * admitted after the press. Read from the encoded update without applying it.
  */
-function recordsAdmittedAfter(doc: Y.Doc, saw: Uint8Array): Set<string> {
+export function recordsAdmittedAfter(doc: Y.Doc, saw: Uint8Array): Set<string> {
   const ids = new Set<string>();
   for (const item of Y.decodeUpdate(Y.encodeStateAsUpdate(doc, saw)).structs)
     if (item instanceof Y.Item && item.content instanceof Y.ContentAny)
@@ -244,6 +280,7 @@ export function applyDraft(
   const pending = pendingRecords(doc, draft);
   const pendingIds = new Set(pending.map((record) => record.id));
   const live = viewRecords(doc, LIVE);
+  const by = { appliedBy, command };
   // Records that cannot land by themselves, each with why; what stands on them is `needs`.
   const roots = new Map<string, LeftWhy>();
   for (const skip of view.skipped)
@@ -267,12 +304,12 @@ export function applyDraft(
     // them that does (the empty one always does), so nothing is ever turned away whole.
     const pool = (() => {
       if (candidates.length === 0) return [];
-      if (keepsView(live, pending, chosenOf(candidates), leftIds)) return candidates;
+      if (keepsView(live, pending, chosenOf(candidates), leftIds, by)) return candidates;
       const last = pending.indexOf(candidates[candidates.length - 1] as TreeRecord);
       return pending.slice(0, last + 1).filter((record) => !leftIds.has(record.id));
     })();
     const holds = (count: number) =>
-      keepsView(live, pending, chosenOf(pool.slice(0, count)), leftIds);
+      keepsView(live, pending, chosenOf(pool.slice(0, count)), leftIds, by);
     let count = pool.length;
     if (count > 0 && pool !== candidates && !holds(count)) {
       let good = 0;
@@ -305,6 +342,13 @@ export function applyDraft(
       return facts(record).every((fact) => overriding.has(fact));
     });
     const overridden = new Set([...superseded, ...already].map((record) => record.id));
+    const restored = keptRestores(
+      live,
+      pending.filter((record) => !leftIds.has(record.id)),
+      taken,
+      draft,
+      by,
+    );
 
     // A copy's `from` is what live had just before it, as the copies before it leave live.
     const was = new Map<string, { name: string; parent: string; rank: string }>();
@@ -313,7 +357,7 @@ export function applyDraft(
     // when the next copy of that node needs it, since a copy's `from` is live just before it.
     const stands = (node: string) => {
       if (turned.delete(node)) {
-        const now = replay([...live, ...copies]).nodes.get(node);
+        const now = replay([...live, ...restored, ...copies]).nodes.get(node);
         if (now) was.set(node, now);
       }
       return was.get(node) ?? liveNow.nodes.get(node);
@@ -346,11 +390,11 @@ export function applyDraft(
       copies.push(writable(copy));
       ofCopy.set(copy.id, record.id);
     }
-    return { taken, superseded, already, overridden, copies, ofCopy };
+    return { taken, superseded, already, overridden, copies, ofCopy, restored };
   };
   let landing = plan();
   while (closed) {
-    const projection = replay([...live, ...landing.copies]);
+    const projection = replay([...live, ...landing.restored, ...landing.copies]);
     const offender = landing.copies.find((copy) =>
       projection.changes.get(copy.id)?.sources.some(closed),
     );
@@ -362,7 +406,7 @@ export function applyDraft(
     closedBy.set(original, source);
     landing = plan();
   }
-  const { taken, superseded, already, overridden, copies } = landing;
+  const { taken, superseded, already, overridden, copies, restored } = landing;
   // Rule 9: a landed move or rename of a node live has in Trash brings it back. The copy that
   // did is the first to touch the node: found by reading live before and after the copies.
   const lifted: ApplyResult["lifted"] = [];
@@ -380,7 +424,7 @@ export function applyDraft(
     }
   }
   writer.transact(() => {
-    recordsOf(doc).push(copies);
+    recordsOf(doc).push([...restored.map((record) => writable(record)), ...copies]);
     writer.settle(appliedBy, [...taken], "applied", { command });
     writer.settle(appliedBy, [...overridden], "superseded", { command });
   });
@@ -402,6 +446,7 @@ export function applyDraft(
     ),
     superseded: [...superseded, ...already],
     lifted,
+    restored,
   };
 }
 
@@ -461,12 +506,29 @@ export function appliedNodes(
   restoredByApply: readonly string[],
 ): string[] {
   const standing = replayView(doc, LIVE).inForce;
+  return [
+    ...new Set(
+      madeBy(doc, applied, restoredByApply)
+        .filter((record) => standing.has(record.id))
+        .map((record) => record.node),
+    ),
+  ];
+}
+
+/**
+ * The live records an Apply command made: the restores it made first (`restoredByApply`), then
+ * its copies. Whether or not they still stand: `appliedNodes` filters, an estimate does not.
+ */
+export function madeBy(
+  doc: Y.Doc,
+  applied: string,
+  restoredByApply: readonly string[],
+): TreeRecord[] {
   const restores = new Set(restoredByApply);
-  const copies = appliedBy(doc, applied).copies.filter((copy) => standing.has(copy.id));
-  const restored = listRecords(doc).filter(
-    (record) => restores.has(record.id) && standing.has(record.id),
-  );
-  return [...new Set([...restored, ...copies].map((record) => record.node))];
+  return [
+    ...listRecords(doc).filter((record) => restores.has(record.id)),
+    ...appliedBy(doc, applied).copies,
+  ];
 }
 
 /** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
@@ -480,7 +542,7 @@ export function appliedCreates(writer: TreeWriter, applied: string): string[] {
 export type UndoLeftWhy = NotUndone | "has_text" | "closed";
 
 export type UndoApplyResult = {
-  /** The opposite records made, newest first. */
+  /** The opposite records made: the copies' first, newest first, then the restores'. */
   undone: TreeRecord[];
   /** The live copies not taken back, each with why; `source` is the closed one a `closed` names. */
   left: Array<{ record: TreeRecord; why: UndoLeftWhy; source?: string }>;
@@ -508,34 +570,37 @@ export function undoApply(
   } = {},
 ): UndoApplyResult {
   assertNewCommand(writer.doc, command);
-  const { settled, copies } = appliedBy(writer.doc, applied);
-  const restores = new Set(options.restoredByApply);
-  const made = [...listRecords(writer.doc).filter((record) => restores.has(record.id)), ...copies];
+  const { settled } = appliedBy(writer.doc, applied);
+  const made = madeBy(writer.doc, applied, options.restoredByApply ?? []);
   const undone: TreeRecord[] = [];
   const left: UndoApplyResult["left"] = [];
   // The roots (`carries ?? id`) of the copies taken back, at least in part.
   const reversed = new Set<string>();
   writer.transact(() => {
-    for (const copy of made.reverse()) {
-      if (copy.type === "create" && options.writtenSince?.has(copy.node)) {
+    const copies = made.reverse();
+    const asked = copies.filter(
+      (copy) => !(copy.type === "create" && options.writtenSince?.has(copy.node)),
+    );
+    const answers = takeBackAll(
+      writer,
+      by,
+      asked.map((copy) => ({ id: copy.id, view: LIVE })),
+      options.closed,
+    );
+    for (const copy of copies) {
+      const back = answers.get(copy.id);
+      if (back === undefined) {
         left.push({ record: copy, why: "has_text" });
         continue;
       }
-      const back = prepareUndo(writer, LIVE, by, copy.id);
       if (typeof back === "string") {
         left.push({ record: copy, why: back });
         continue;
       }
-      const source =
-        options.closed &&
-        replay([...viewRecords(writer.doc, LIVE), back])
-          .changes.get(back.id)
-          ?.sources.find(options.closed);
-      if (source) {
-        left.push({ record: copy, why: "closed", source });
+      if ("closed" in back) {
+        left.push({ record: copy, why: "closed", source: back.closed });
         continue;
       }
-      writer.append(back);
       undone.push(back);
       reversed.add(copy.carries ?? copy.id);
     }
@@ -604,7 +669,7 @@ export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
  * restoring that command brings it back as a copy that wins in turn). A copy has a new id and the same node id; `carries` names the original, `restores`
  * the Discard and `restoredBy` who restored it, while `actor` stays who drafted it. A
  * record whose node cannot be acted on once the copies are in (purged, or its create is not in
- * force and no copy brings it back) is left out and returned. Once.
+ * force and no copy brings it back) is left out. Once.
  */
 export function restoreDiscard(
   writer: TreeWriter,
@@ -612,7 +677,7 @@ export function restoreDiscard(
   by: Actor,
   draft: string,
   command: string,
-): { copies: TreeRecord[]; leftOut: Array<{ record: TreeRecord; why: "purged" }> } | "already" {
+): { copies: TreeRecord[] } | "already" {
   const { doc } = writer;
   assertNewCommand(doc, command);
   const { records, restored } = discardedBy(doc, discarded);
@@ -624,11 +689,8 @@ export function restoreDiscard(
     records.flatMap((record) => (record.type === "create" ? [record.node] : [])),
   );
   const copies: TreeRecord[] = [];
-  const leftOut: Array<{ record: TreeRecord; why: "purged" }> = [];
   for (const record of records) {
-    if (!created.has(record.node) && !placeIn(view.nodes, record.node))
-      leftOut.push({ record, why: "purged" });
-    else
+    if (created.has(record.node) || placeIn(view.nodes, record.node))
       copies.push(
         writable({
           ...record,
@@ -655,7 +717,7 @@ export function restoreDiscard(
     writer.settle(by, overridden, "discarded", { command });
     recordsOf(doc).push(copies);
   });
-  return { copies, leftOut };
+  return { copies };
 }
 
 /** The records a command settled with one of these, and nothing since has settled again. */

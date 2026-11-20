@@ -203,9 +203,7 @@ function DiagramFace({
               {sourceOpen ? t`Hide source` : t`Edit source`}
             </EditorMenuItem>
             <EditorMenuSeparator />
-            <EditorMenuItem
-              onSelect={() => run(copyText(source), t`${provider.name} source copied`)}
-            >
+            <EditorMenuItem onSelect={() => run(copyText(source), "copy")}>
               <Copy aria-hidden />
               {t`Copy ${provider.name} source`}
             </EditorMenuItem>
@@ -213,7 +211,7 @@ function DiagramFace({
                 no image to hand over yet, and law 5 prefers the gap. */}
             {svg ? (
               <EditorMenuItem
-                onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), t`Image downloaded`)}
+                onSelect={() => run(downloadPng(svg, DIAGRAM_EXPORT_FILENAME), "download")}
               >
                 <Download aria-hidden />
                 {t`Download image`}
@@ -232,7 +230,6 @@ function DiagramFace({
             // Only report a failure the writer can act on: a message about
             // source they have already changed is noise.
             error={rendered === source ? error : null}
-            hasPreview={svg !== null}
           />
         ) : null}
         <ViewerCanvas contentKey={svg ?? ""}>
@@ -255,15 +252,12 @@ function SourcePane({
   value,
   onChange,
   error,
-  hasPreview,
 }: {
   /** The provider's name, which is what the pane is labelled with. */
   name: string;
   value: string;
   onChange: (next: string) => void;
   error: string | null;
-  /** False when nothing has ever rendered, which changes what the note can promise. */
-  hasPreview: boolean;
 }) {
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -289,9 +283,7 @@ function SourcePane({
       />
       {error ? (
         <p className="meridian-diagram-parse-note meridian-lightbox-parse-note" role="status">
-          {hasPreview
-            ? t`This diagram stopped parsing. The preview is the last version that rendered.`
-            : t`This diagram has a syntax problem, so there is nothing to preview yet.`}
+          {t`Syntax error`}
           <code>{error}</code>
         </p>
       ) : null}

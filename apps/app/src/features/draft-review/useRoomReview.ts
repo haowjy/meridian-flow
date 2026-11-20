@@ -56,11 +56,8 @@ export function useRoomBindings(drafts: readonly DraftRef[]) {
     for (const [index, result] of metadata.entries()) {
       const { data } = result;
       if (data?.status === "gone") void owner.askEnd(drafts[index]);
-      // A restore reopened a draft this tab saw end: its room joins again under the same id.
-      else if (
-        data?.status === "active" &&
-        owner.metadataActive(drafts[index], data.draftId, data.readAt)
-      ) {
+      // A room that failed tries again on each new answer that names its draft open.
+      else if (data?.status === "active") {
         const read = reads.current.get(data.reviewRoomName);
         const kind = read?.state().kind;
         if (

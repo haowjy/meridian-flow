@@ -156,14 +156,7 @@ export type ClientFailureRecord = FailureOccurrence & {
 export type ClientRescueRecord = {
   occurrenceId: string;
   phase: "rescued";
-  rescue:
-    | { kind: "schema-removed-text"; chars: number; passages: number }
-    | {
-        kind: "unsent-typing";
-        cause: "closed" | "removed" | "access-changed" | "owner-closed";
-        chars: number;
-        passages: number;
-      };
+  rescue: { kind: "schema-removed-text"; chars: number; passages: number };
 };
 
 /** What the client diagnostics channel carries: failure transitions and rescues. */

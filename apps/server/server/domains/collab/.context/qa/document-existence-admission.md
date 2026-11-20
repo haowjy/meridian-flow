@@ -2,8 +2,8 @@
 
 Runtime checks for W52's write side: live admission refuses a removed document
 under its mutation lock, only a create or explicit repair makes a Yjs head, and
-Apply brings a deleted document back only when the writer knew it was deleted
-(`restore`). Run on an owned mock stack
+Apply brings a deleted document back only to land what the click carries for it (its
+text, or a move or rename of it), never because a name is free. Run on an owned mock stack
 (`MODEL_PROVIDER=mock pnpm dev`). A tab is `@hocuspocus/provider` over `ws` on
 `/ws/yjs` with the `./mf` dev cookie and the `meridian.collab.<version>`
 subprotocol; durable state is read with `psql` on this checkout's database.
@@ -40,20 +40,16 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
 6. **Apply against a removal.** A draft-mode chat edits document A. Start the
    stack with `HOOK_PAUSE_AT=apply.beforeBoundary`, click Apply on A (its row
    doesn't show a delete yet), `./mf doc rm` A while the click waits, resume.
-   PASS: the answer is `needs_restore`; A's `deleted_at` is unchanged, its
-   draft is still `active`, and it has no AI live row. Apply again from the row,
-   which now says "Deleted from the manuscript": the click carries `restore`,
-   the answer is `applied` with `restored: true`, A is living with the draft's
-   text. The same race runs unattended as rows of
+   PASS: the answer is `applied` and A's entry in `items` has `text: { landed: true,
+   settled: [restored] }`; A is living with the draft's text. The same race runs unattended as rows of
    `pnpm exec tsx tools/qa/probes/atomic-apply/run.mts`.
 7. **A taken path.** Delete A live, then create a document at A's path. PASS:
-   Apply with `restore` is `applied`; A is restored as a twin and
+   Apply is `applied`; A is restored as a twin and
    the result identifies the landed path with its distinct segment.
 8. **The receipt names who removed it.** Start the stack with
    `HOOK_PAUSE_AT=command.beforeClaim` (the edit must not hold the Work lock the
    delete needs). A draft-mode chat replaces a line; pause, `./mf doc rm` the document,
    resume. PASS: the write's result reads "Not in the document: this file was deleted by <name> and is in the trash, so this edit was not kept anywhere." (a name appears only when the user row
    has one: the dev auth bypass user has none, so set `users.name` after the delete and before
-   resuming), and the chat's card reads "<name> deleted <title> before this change could
-   be made." (or "<title> was deleted before this change could be made." without a name; the result is `returned` with `why: document_removed` and the record in `returned.removal`).
+   resuming), and the chat's card reads "<name> deleted <title>" (or "<title> was deleted" without a name; the result is `returned` with `why: document_removed` and the record in `returned.removal`).
    Repeat in a No Work chat.

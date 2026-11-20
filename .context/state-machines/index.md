@@ -68,8 +68,9 @@ have it:
 | Fork and handoff creation | A chat created from another, before the server has it | [features/chat](../../apps/app/src/features/chat/.context/state-machines.md) |
 | Import creation, local upload phase | This tab's part in an import | [features/import](../../apps/app/src/features/import/.context/state-machines.md) |
 | Apply click command | One Apply or Undo click on a draft change | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
+| An Apply's Undo | One Apply: in force, failed, Un-Apply or Redo in flight, taken back, or ended; every surface that undoes it reads it | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
 | Package Save word | What the last Save or Undo of one Agent package says where its state shows | [features/agents](../../apps/app/src/features/agents/.context/state-machines.md) |
-| Draft end and reopen | What closed one draft, which decides whether it stays on screen | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
+| Draft end | Whether one draft is gone (its Work or document purged), which sends the page to Live | [features/draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md) |
 | Held paint | A document still painting a draft that left its list | [features/project](../../apps/app/src/features/project/.context/document-paint-state-machine.md) |
 | Sidebar version | Whether the sidebar and its actions show live or the picked Work's tree, and sidebar Undo | [features/project](../../apps/app/src/features/project/.context/tree-version-state-machine.md) |
 | Panes | What main and the side show, and where an opened item lands | [features/project](../../apps/app/src/features/project/.context/pane-state-machine.md) |
@@ -86,5 +87,6 @@ have it:
 
 Named states that no code steps: they are computed from other state on each read. Examples
 are the handoff brief card and compaction divider (from a turn's status), the import word the
-writer sees, undo part state in agent-edit and the Stop button's status. Two-way toggles and
+writer sees, undo part state in agent-edit, the state of a change of an AI edit in a draft (drawn in
+[collab reversal](../../apps/server/server/domains/collab/.context/reversal.md)) and the Stop button's status. Two-way toggles and
 one-shot results are left out too.

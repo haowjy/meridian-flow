@@ -333,7 +333,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                     projectId={projectId}
                     editorWorkId={props.editorWorkId}
                     onNewDocument={onNewDocument}
-                    holdsRemovedNotice
                   />
                 )}
               </ProjectRouteBoundary>

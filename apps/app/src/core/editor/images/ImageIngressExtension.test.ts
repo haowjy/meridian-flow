@@ -486,9 +486,7 @@ describe("a new picture lands where the writer asked for it", () => {
     expect(held).toEqual([]);
     expect(imageNodes(editor)).toEqual([]);
     expect(pendingImages(editor)).toEqual([]);
-    expect(imageIngressStatus(editor)?.getSnapshot().notice?.message).toBe(
-      "There is nowhere left to put that picture.",
-    );
+    expect(imageIngressStatus(editor)?.getSnapshot().notice?.message).toBe("Can’t drop here");
   });
 });
 

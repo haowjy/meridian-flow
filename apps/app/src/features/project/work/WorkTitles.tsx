@@ -18,8 +18,7 @@ import { TitleEditSlot } from "../shell/TitleEditSlot";
 // rename's message can hang below it. The text inside truncates instead.
 const headingClass = cn("relative flex min-w-0", role.pageHeading);
 
-const renameFailure = (cause: unknown) =>
-  workUpdateFailure(cause, t`Couldn’t rename this Work. Try again.`);
+const renameFailure = (cause: unknown) => workUpdateFailure(cause, t`Couldn’t rename this Work`);
 
 const closedSentence = (cause: unknown) =>
   cause instanceof WorkReturnedError ? workClosedSentence(cause.why) : null;

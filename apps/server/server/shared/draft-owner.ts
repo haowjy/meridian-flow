@@ -11,6 +11,7 @@ import {
   type DraftOwnerKey,
   draftOwnerKey,
 } from "@meridian/contracts";
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import { branches, documentDrafts, threads } from "@meridian/database/schema";
 import { and, eq, inArray, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
@@ -27,6 +28,21 @@ export function mergeOwnerLocks(...sets: readonly OwnerLocks[]): OwnerLocks {
 }
 
 export type BranchOwnerLifecycle = "active" | "archived" | "frozen" | "deleted" | "missing";
+
+/** Why a branch's owner is closed to writes, or null while it is active. */
+export function closedOwnerOf(lifecycle: BranchOwnerLifecycle): ClosedOwnerWhy | null {
+  switch (lifecycle) {
+    case "active":
+      return null;
+    case "archived":
+      return "work_archived";
+    case "frozen":
+      return "chat_frozen";
+    case "deleted":
+    case "missing":
+      return "work_deleted";
+  }
+}
 
 /** Identity is independent of availability: a trashed first chat can have live forks. */
 export function lineageHasLiveMember(rootThreadId: string | SQLWrapper) {
@@ -135,15 +151,24 @@ export async function lockLineageOwners(
   rootThreadIds: readonly string[],
 ): Promise<ReadonlyMap<string, "active" | "frozen">> {
   const roots = [...new Set(rootThreadIds)].sort();
-  const states = new Map<string, "active" | "frozen">();
-  if (roots.length === 0) return states;
   const tx = currentDrizzleDb(db);
   for (const root of roots) {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${lineageLockKey(root)}, 0))`,
     );
   }
-  const live = await tx.execute<{ root: string; live: boolean }>(
+  return readLineageOwners(db, roots);
+}
+
+/** Each lineage's liveness as it stands, with no lock: a lineage with no live member is frozen. */
+export async function readLineageOwners(
+  db: DrizzleDb,
+  rootThreadIds: readonly string[],
+): Promise<ReadonlyMap<string, "active" | "frozen">> {
+  const roots = [...new Set(rootThreadIds)].sort();
+  const states = new Map<string, "active" | "frozen">();
+  if (roots.length === 0) return states;
+  const live = await currentDrizzleDb(db).execute<{ root: string; live: boolean }>(
     sql`SELECT r.id::text AS root, ${lineageHasLiveMember(sql`r.id`)} AS live
         FROM unnest(${sql`ARRAY[${sql.join(
           roots.map((root) => sql`${root}::uuid`),

@@ -8,6 +8,7 @@ import { t } from "@lingui/core/macro";
 import type { DocumentDraftHint, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { describeMove, type ParsedContextLocation } from "@/features/chat/document-display-name";
+import { isDeletedLive } from "./deleted-drafts";
 import type { ReviewChange } from "./review-model";
 
 export type TreeLine =
@@ -34,6 +35,20 @@ export function hasTreeLine(
   item: Pick<ThreadDraftListItem, "tree" | "contextLocation" | "documentName" | "isNew">,
 ): boolean {
   return !item.isNew && treeLineOf(item) !== null;
+}
+
+/**
+ * Whether Apply lands something of the item: its text, its creation, its tree line, or a document
+ * live deleted, which Apply brings back with the Work's change to it (a reorder in place has no
+ * tree line).
+ */
+export function hasApply(
+  item: Pick<
+    ThreadDraftListItem,
+    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft" | "deletedLive"
+  >,
+): boolean {
+  return item.hasDraft || item.isNew || hasTreeLine(item) || isDeletedLive(item);
 }
 
 /**
@@ -126,42 +141,4 @@ export function treeNoticeLabel(
     : kind === "reorder"
       ? t`Pending reorder`
       : t`Pending move`;
-}
-
-/**
- * What the toggle's Work does to a page open on Live: "Split Arc 2 is moving this to Arc 3 and
- * editing it." `line` is its move or delete, `edited` that it holds text changes.
- */
-export function draftNoticeSentence(work: string | null, line: TreeLine | null, edited: boolean) {
-  if (line?.kind === "delete")
-    return work ? t`${work} is deleting this.` : t`A chat is deleting this.`;
-  if (!line) return work ? t`${work} is editing this.` : t`A chat is editing this.`;
-  const { place } = line;
-  if (!edited) {
-    if (line.kind === "reorder")
-      return work ? t`${work} is reordering this.` : t`A chat is reordering this.`;
-    if (line.kind === "rename")
-      return work
-        ? t`${work} is renaming this to ${place}.`
-        : t`A chat is renaming this to ${place}.`;
-    return work ? t`${work} is moving this to ${place}.` : t`A chat is moving this to ${place}.`;
-  }
-  if (line.kind === "reorder")
-    return work
-      ? t`${work} is reordering this and editing it.`
-      : t`A chat is reordering this and editing it.`;
-  if (line.kind === "rename")
-    return work
-      ? t`${work} is renaming this to ${place} and editing it.`
-      : t`A chat is renaming this to ${place} and editing it.`;
-  return work
-    ? t`${work} is moving this to ${place} and editing it.`
-    : t`A chat is moving this to ${place} and editing it.`;
-}
-
-/** A page a draft created, open while the toggle is on Live: it has no live version to show. */
-export function newInDraftSentence(work: string | null): string {
-  return work
-    ? t`Live has no version of this page: it is new in ${work}.`
-    : t`Live has no version of this page: it is new in a chat's draft.`;
 }

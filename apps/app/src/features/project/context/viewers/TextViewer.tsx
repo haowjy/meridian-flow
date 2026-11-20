@@ -10,12 +10,10 @@ export function TextViewer({
   source,
   name,
   markdown,
-  emptyMessage,
 }: {
   source: TextPreviewSource;
   name: string;
   markdown?: boolean;
-  emptyMessage?: React.ReactNode;
 }) {
   const preview = useTextPreview(source);
 
@@ -27,8 +25,6 @@ export function TextViewer({
         <p role="status" className={role.emptyLine}>
           <Trans>Loading preview…</Trans>
         </p>
-      ) : preview.text.length === 0 && emptyMessage ? (
-        <p className="text-sm leading-6 text-muted-foreground">{emptyMessage}</p>
       ) : markdown ? (
         <section aria-label={name}>
           <Markdown>{preview.text}</Markdown>

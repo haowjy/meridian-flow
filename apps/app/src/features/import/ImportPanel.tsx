@@ -122,11 +122,10 @@ function ImportCard({
         <Progress value={progress} label={title} className="mt-2 h-1" />
       )}
       <div className="mt-2 space-y-2 text-xs text-muted-foreground empty:hidden">
-        {presentation.note ? <p>{presentation.note}</p> : null}
         {presentation.fallback ? <p>{presentation.fallback}</p> : null}
         {local.stopLost ? (
           <p>
-            <Trans>It finished before it could stop.</Trans>
+            <Trans>Already finished</Trans>
           </p>
         ) : null}
         {local.error ? (
@@ -247,7 +246,7 @@ export function ImportSheet({
       open={open}
       onOpenChange={onOpenChange}
       title={<Trans>Imports</Trans>}
-      description={<Trans>Your imports in this project, with their controls.</Trans>}
+      description={<Trans>Your imports in this project</Trans>}
       closeLabel={t`Close`}
     >
       <ImportPanelBody items={items} touch onPick={onPick} onClose={() => onOpenChange(false)} />

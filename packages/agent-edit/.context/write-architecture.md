@@ -6,7 +6,7 @@ parses or serializes. Resolver and apply code stay CRDT-neutral through the opaq
 `DocHandle` and `BlockRef`.
 
 The model's view, frontiers and the concurrent-change listing are in [The Model's
-View][view]; undo, redo and revert are in [Agent Editing and Reversal][reversal].
+View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
 
 ## Identity and targeting
 
@@ -119,10 +119,9 @@ before journal submission, synchronization, recovery or failure. A state-vector 
 is not a per-write deletion delta.
 
 Forward-write attribution comes from explicit actor context and immutable receipts,
-never transaction-origin identity. Certified aliases are the only persisted
-restoration correspondence, never text or length guesses.
+never transaction-origin identity.
 
-Forward-inverse receipt capture removes cross-part insert/delete transients as ranges,
+Receipt capture removes cross-part insert/delete transients as ranges,
 then intersects each range with the retained `prosemirror` item structs; other roots
 and GC structs never expand into per-clock identities.
 
@@ -148,12 +147,14 @@ a paragraph alone never joins independent writes. A live write merges one update
   to the host's provenance, never a text diff. Every person prints as `the user`.
 - A result never tells the model to read again or to retry. A write that cannot land because the
   document changed under its view answers `returned` (`returnedWriteResult`): the block it named
-  is gone (`block_gone`, decided by `hasMissingTarget` against the room copy), or the host found
-  its draft closed, its Work closed or its document removed. The result carries the document as
-  it stands, recorded as the model's latest view, so its next write plans on it. A hash or
-  number the view does not hold (`not_found`) carries the current text for the same reason. An
-  insert whose anchor block was deleted is not missing its target: it is new words, applied on
-  the view, and Yjs places it after the anchor's tombstone, where the anchor was. An undo, redo
+  is gone from a draft still open (`block_gone`, decided by `hasMissingTarget` against the room
+  copy), or the host found its Work closed or its document removed. The result carries the
+  document as it stands, recorded as the model's latest view, so its next write plans on it. A
+  hash or number the view does not hold (`not_found`) carries the current text for the same
+  reason. An insert whose anchor block was deleted is not missing its target: it is new words,
+  applied on the view, and Yjs places it after the anchor's tombstone, where the anchor was. A
+  draft the writer discarded is the same open draft, so its words land in it like any other.
+  An undo
   or revert that finds its text applied, discarded or changed since is `done` and says what was
   left (`cant_*`, `insufficient_*`, `nothing_to_revert` are outcomes, not errors).
 - Provider tool IDs are response-local: the host keys a write by response and tool call, so

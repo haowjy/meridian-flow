@@ -5,7 +5,7 @@ import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import { expect, it } from "vitest";
 import {
-  handleDiscardWorkDraftRequest,
+  handleDiscardBranchRequest,
   selectBranchRouteServices,
 } from "../../lib/branch-review-route.js";
 import { throwHttpInterrupt } from "../../shared/interrupt-boundary.js";
@@ -58,13 +58,12 @@ describeBranchTreeDb("review commands (postgres)", (start) => {
     "12b: a twin that lost the race to its own command's effect answers the stored outcome when its grant is refused ($name)",
     async ({ refuse }) => {
       const c = await twoChanges(start);
-      const { itemKey, branchId } = await c.item();
+      const { branchId } = await c.item();
       const request = {
-        branchId,
-        itemKey,
         commandId: randomUUID(),
-      } as Parameters<typeof handleDiscardWorkDraftRequest>[1]["request"];
-      let twin: Awaited<ReturnType<typeof handleDiscardWorkDraftRequest>> | undefined;
+        items: [{ node: c.chapter, tree: true, text: "all" }],
+      } as Parameters<typeof handleDiscardBranchRequest>[1]["request"];
+      let twin: Awaited<ReturnType<typeof handleDiscardBranchRequest>> | undefined;
       const authorize = c.deps.fileAccess.authorize.bind(c.deps.fileAccess);
       let first = true;
       const deps = {
@@ -75,9 +74,9 @@ describeBranchTreeDb("review commands (postgres)", (start) => {
           authorize: async (...args: Parameters<typeof authorize>) => {
             if (first) {
               first = false;
-              twin = await handleDiscardWorkDraftRequest(c.deps, {
+              twin = await handleDiscardBranchRequest(c.deps, {
                 ...c.scope,
-                documentId: c.chapter,
+                branchId,
                 request,
               });
               throw refuse();
@@ -86,9 +85,9 @@ describeBranchTreeDb("review commands (postgres)", (start) => {
           },
         },
       } as typeof c.deps;
-      const answered = await handleDiscardWorkDraftRequest(deps, {
+      const answered = await handleDiscardBranchRequest(deps, {
         ...c.scope,
-        documentId: c.chapter,
+        branchId,
         request,
       });
       expect(twin?.body).toMatchObject({ status: "discarded" });

@@ -113,6 +113,7 @@ export type TextTarget =
 /** Some of a draft's changes, which a Discard writes back in the draft's room. */
 export type GroupsTarget = Extract<TextTarget, { kind: "groups" }>;
 export type ChangeTarget = TextTarget | { kind: "tree" };
+export type ApplyTarget = ChangeTarget;
 export function targetOfChanges(changes: readonly ReviewChange[]): ChangeTarget {
   const text = changes.filter((change) => !change.tree);
   const tree = text.length < changes.length;

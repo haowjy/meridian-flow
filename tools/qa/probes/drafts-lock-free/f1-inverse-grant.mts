@@ -61,7 +61,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
         turnId: work.turnId as never,
         actor: "agent",
         wId,
-        receipts: captureReceiptRows(pre, [{ update, origin: { kind: "live", seq } }]),
+        receipts: captureReceiptRows(pre, [{ update, origin: { kind: "live", seq } }], true),
       });
     } finally {
       pre.destroy();
@@ -86,7 +86,7 @@ export async function seedModelLiveWrite(harness: Harness, label: string) {
       recover: async () => {},
       deliver: async () => {},
     } as never,
-    draftCoordinator: { async deliverCommitted() {} },
+    draftCoordinator: harness.coordinator,
     resolveDocumentUri: async () => `scratch://@${work.handle}/probe.md`,
     resolveLastDocumentUri: async () => null,
     refreshDocument: async () => {},

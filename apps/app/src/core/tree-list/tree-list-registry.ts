@@ -14,10 +14,7 @@ export class TreeListRegistry {
     private readonly accountId: string,
     /** Records a recovered copy could not append again: what a client of this build never writes. */
     private readonly onDropped: (records: readonly TreeRecord[]) => void = () => undefined,
-    private readonly bounceHost: BounceHost = {
-      localText: async () => null,
-      endCreatedDraftRoom: () => undefined,
-    },
+    private readonly bounceHost: BounceHost = { endCreatedDraftRoom: () => undefined },
   ) {}
 
   /** The list's session, opened if no view holds it. Release the handle when the view goes. */
@@ -46,6 +43,11 @@ export class TreeListRegistry {
         }
       },
     };
+  }
+
+  /** The signed-in account's own list. */
+  get account(): TreeListRef {
+    return { kind: "account", userId: this.accountId };
   }
 
   /** The account is signing out or closing: every session ends. */

@@ -1,11 +1,10 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
-import { plural } from "@lingui/core/macro";
+import { t } from "@lingui/core/macro";
 import { createdDraftId } from "@meridian/contracts";
 import { type AccountId, draftRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { getDraftMetadata, listDraftStates } from "@/client/api/branches-api";
-import { getTrashDiscards } from "@/client/api/projects-api";
+import { getDraftMetadata, listOpenDrafts } from "@/client/api/branches-api";
 import { readDocumentView } from "@/client/project-shell/document-views";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
@@ -20,13 +19,11 @@ import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
-import { unsentTypingToasts } from "@/features/editor/RescuedText";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
 import { ProjectStandings } from "./project-standings";
-import { RemovedNoticeStore } from "./removed-notice-store";
 
 /** Why a sign-out stopped: edits the server did not acknowledge, or a copy another tab still held open. */
 export class SignOutIncomplete extends Error {
@@ -62,7 +59,6 @@ export class AccountFeatureLifetime {
   readonly removal;
   /** Where each document stands in its project's list: the one answer to "is it still there". */
   readonly standings;
-  readonly notices;
   /** The project tree's lists this account has open; step 6's tree screens read them. */
   readonly treeLists: TreeListRegistry;
   private readonly stopTreeListDebugHook: () => void;
@@ -87,16 +83,13 @@ export class AccountFeatureLifetime {
       (records) =>
         notifyFailure({
           key: "tree-list-dropped",
-          title: plural(records.length, {
-            one: "# change made on this device couldn't be kept.",
-            other: "# changes made on this device couldn't be kept.",
-          }),
+          title: t`Couldn't save`,
+          detail: records,
         }),
       {
-        localText: (documentId) => this.runtime.registry.localText(documentId as DocumentId),
         endCreatedDraftRoom: (documentId) =>
           void this.runtime.registry
-            .abandonDraftRoom(draftRoomName(createdDraftId(documentId as DocumentId)))
+            .closeDraftRoom(draftRoomName(createdDraftId(documentId as DocumentId)))
             .catch(reportError),
       },
     );
@@ -104,45 +97,21 @@ export class AccountFeatureLifetime {
     this.registry = this.runtime.registry;
     this.standings = new ProjectStandings(this.treeLists, accountId);
     this.draftCommands = new DraftCommandOwner(this.registry, {
-      // The server's state now, whichever arrived first: the close, or a restore after it.
+      // The server's state now: it still holds the draft, or the draft is gone.
       resolveEnd: async (ref, draftId) => {
         const answer = await getDraftMetadata(ref);
         if (answer.status === "active" && answer.draftId === draftId) return "open";
-        const trash = await getTrashDiscards(ref.projectId);
-        if (trash.entries.some(({ drafts }) => drafts.some((draft) => draft.draftId === draftId)))
-          return "in-trash";
-        const standing = this.standings.standing(ref.projectId, ref.documentId);
-        return standing.kind === "waiting"
+        return this.standings.standing(ref.projectId, ref.documentId).kind === "waiting"
           ? null
-          : standing.kind === "in-trash"
-            ? "document"
-            : "other";
+          : "gone";
       },
-      documentBack: (ref) =>
-        new Promise<void>((resolve) => {
-          const back = () => {
-            const kind = this.standings.standing(ref.projectId, ref.documentId).kind;
-            return kind !== "in-trash" && kind !== "waiting";
-          };
-          const stop = this.standings.watch(ref.projectId, () => {
-            if (!back()) return;
-            stop();
-            resolve();
-          });
-          if (back()) {
-            stop();
-            resolve();
-          }
-        }),
       closeCreated: (ref) => {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },
     });
-    this.notices = new RemovedNoticeStore(this.standings);
     this.removal = new ContextRemovalCoordinator({
       presented: this.presented,
       copies: this.registry,
-      notices: this.notices,
       drafts: {
         // A Discarded draft's review can still hold its room, and a view can leave a draft for
         // Live: neither shows the draft, so neither keeps a document live deleted.
@@ -158,11 +127,14 @@ export class AccountFeatureLifetime {
         close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
       },
     });
-    this.registry.observeUnsentTyping(unsentTypingToasts);
+    // Typing with nowhere to go is dropped: one pill says so, with nothing to copy or return.
+    this.registry.observeDroppedTyping(() =>
+      notifyFailure({ key: "unsent-typing", title: t`Couldn't save` }),
+    );
     // Typing a draft never took, left in a copy no draft owner will close or open: found once, after load.
     if (typeof window !== "undefined")
       this.cancelDraftCopySweep = afterFirstPaint(() =>
-        this.registry.sweepDraftCopies(listDraftStates).catch(reportError),
+        this.registry.sweepDraftCopies(listOpenDrafts).catch(reportError),
       );
     dropRetiredTabSession(accountId);
     // The browser last held someone else's documents: nothing of theirs stays for this account.

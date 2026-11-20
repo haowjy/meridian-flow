@@ -7,6 +7,8 @@ import type { Database } from "@meridian/database";
 import type { Connection } from "@meridian/project-tree";
 import { sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { closedWhyOf } from "../../../shared/tree-owners.js";
+import { readOwners } from "../../../shared/work-lifecycle-lock.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { ownerFrom, ownerProjectIdSql } from "../tree/source-owner.js";
 
@@ -91,9 +93,12 @@ export async function readConnection(
     );
     if (!project || project.owner !== accountId) return null;
   }
-  const sources = await tx.execute<{ id: string; closed: boolean }>(sql`
-    SELECT s.id::text AS id,
-      (s.deleted_at IS NOT NULL OR (s.scope = 'work' AND (w.id IS NULL OR w.archived_at IS NOT NULL OR w.deleted_at IS NOT NULL))) AS closed
+  const rows = await tx.execute<{
+    id: string;
+    workId: string | null;
+    rootThreadId: string | null;
+  }>(sql`
+    SELECT s.id::text AS id, s.work_id::text AS "workId", s.root_thread_id::text AS "rootThreadId"
     FROM context_sources s
     LEFT JOIN works w ON w.id = s.work_id
     WHERE ${
@@ -101,11 +106,14 @@ export async function readConnection(
         ? sql`${ownerProjectIdSql("s", "w")} = ${list.projectId}::uuid`
         : sql`s.user_id = ${list.userId}::uuid`
     }`);
-  const openSources = new Set(
-    sources.filter((source) => !source.closed).map((source) => source.id),
+  const owners = await readOwners(
+    db,
+    rows.flatMap((row) => (row.workId ? [row.workId] : [])),
+    rows.flatMap((row) => (!row.workId && row.rootThreadId ? [row.rootThreadId] : [])),
   );
+  const open = new Set(rows.filter((row) => !closedWhyOf(row, owners)).map((row) => row.id));
   return {
     drafts: await openBranches(tx, list),
-    closed: (source) => !openSources.has(source),
+    closed: (source) => !open.has(source),
   };
 }

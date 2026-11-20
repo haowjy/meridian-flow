@@ -18,10 +18,10 @@
  * because a component happened to stay mounted.
  */
 
-/** Long enough to read one sentence while looking back at the manuscript. */
+/** Long enough to read the pill while looking back at the manuscript. */
 const NOTICE_LIFETIME_MS = 6_000;
 
-export type ImageIngressNotice = { message: string; token: number; tone: "done" | "failed" };
+export type ImageIngressNotice = { message: string; token: number };
 
 export type ImageIngressStatus = {
   /** True while a drag carrying files is over the manuscript. */
@@ -33,10 +33,8 @@ export type ImageIngressStore = {
   subscribe: (listener: () => void) => () => void;
   getSnapshot: () => ImageIngressStatus;
   setDropActive: (active: boolean) => void;
-  /** Say what could not be done, in the writer's terms. */
+  /** Say what could not be done: the failure's category, in a few words. */
   refuse: (message: string) => void;
-  /** Say what a drop became, when it is not what the writer would assume. */
-  tell: (message: string) => void;
   dismiss: () => void;
   destroy: () => void;
 };
@@ -60,11 +58,11 @@ export function createImageIngressStore(): ImageIngressStore {
     expiry = null;
   };
 
-  const announce = (message: string, tone: ImageIngressNotice["tone"]) => {
+  const refuse = (message: string) => {
     cancelExpiry();
     issued += 1;
     const token = issued;
-    publish({ ...status, notice: { message, token, tone } });
+    publish({ ...status, notice: { message, token } });
     expiry = setTimeout(() => {
       expiry = null;
       // Only this notice: a later one has replaced it and must not be silenced by an expiry
@@ -83,8 +81,7 @@ export function createImageIngressStore(): ImageIngressStore {
       if (status.dropActive === active) return;
       publish({ ...status, dropActive: active });
     },
-    refuse: (message) => announce(message, "failed"),
-    tell: (message) => announce(message, "done"),
+    refuse,
     dismiss() {
       cancelExpiry();
       if (status.notice) publish({ ...status, notice: null });

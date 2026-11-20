@@ -54,8 +54,9 @@ import {
   createDrizzleWorkBranchDisposal,
 } from "./adapters/drizzle-branch-discard.js";
 import { createDrizzleBranchTreeActors } from "./adapters/drizzle-branch-tree-actors.js";
+import { treeCutOf } from "./adapters/drizzle-branch-tree-lists.js";
 import {
-  branchFolderRevisions,
+  branchFolderIds,
   createDrizzleBranchTreeState,
 } from "./adapters/drizzle-branch-tree-state.js";
 import {
@@ -66,6 +67,7 @@ import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js
 import { createDrizzleCommandDocuments } from "./adapters/drizzle-command-documents.js";
 import { createDrizzleCreatedDrafts } from "./adapters/drizzle-created-drafts.js";
 import { createDrizzleDiscardEntries } from "./adapters/drizzle-discard-entries.js";
+import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
@@ -74,7 +76,7 @@ import {
   createDrizzleDocumentDerivationStore,
 } from "./adapters/drizzle-document-derivations.js";
 import { createDrizzleDocumentPurgeDisposal } from "./adapters/drizzle-document-purge-disposal.js";
-import { type DraftClose, draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
+import type { DraftClose } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleDraftDispositionStore } from "./adapters/drizzle-draft-disposition.js";
 import { createDrizzleDraftReplayJournalReads } from "./adapters/drizzle-draft-journal-reads.js";
 import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
@@ -367,8 +369,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
 
   const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
-    evidence: modelEvidence,
-    read: modelEditRead,
     liveCore: runtime.liveUtilityCore,
     threadCore,
     branches: workBranches,
@@ -386,10 +386,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         .where(eq(documentDrafts.id, draftId))
         .for("update");
     },
-    roomsOf: async (documentId) => ({
-      liveRoom: liveRoom(documentId, await readAuthorityGeneration(documentId)),
-      drafts: await drafts.listWorkDraftStates(documentId),
-    }),
+    liveRoomOf: async (documentId) =>
+      liveRoom(documentId, await readAuthorityGeneration(documentId)),
     afterLiveCommit: (documentId) =>
       deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
   });
@@ -469,7 +467,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     pendingWriters: workBranchPendingStore.pendingWriters,
     treeActors: createDrizzleBranchTreeActors(deps.db, deps.treeLists),
   });
-  // Exactly what each committed transaction ended: its closed drafts' rooms.
+  // Exactly what each committed transaction ended: its deleted drafts' rooms.
   deps.draftClose.bindRetirement(
     createDraftRetirement({
       closeDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
@@ -480,7 +478,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           draftIds,
           removalRecords.lookup,
         ),
-      stillClosedBy: (drafts) => draftsStillClosedBy(currentDrizzleDb(deps.db), drafts),
     }),
     (error) => {
       if (deps.eventSink)
@@ -493,16 +490,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
   );
   const discardStore = createDrizzleBranchDiscard(deps.db, {
+    coordinator: draftCoordinator,
     close: deps.draftClose,
     branches: workBranches,
     workProjection: deps.workProjectionMutation,
     treeLists: deps.treeLists,
   });
-  const discard = createBranchDiscard({
-    branches: workBranches,
-    store: discardStore,
-    holdRetirement: deps.draftClose.holdRetirement,
-  });
+  const discard = createBranchDiscard({ store: discardStore });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
   const applyCommands = createApplyClickService({
@@ -517,8 +511,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       arrivals: deps.arrivals,
       treeLists: deps.treeLists,
       tree: treeReader,
-      branchTree: branchTreeState,
-      close: deps.draftClose,
       onCommitted: async (documentId) => {
         await draftPulls.flushLivePull(documentId);
         await runDocumentWriteHook({ documentId }, "collab.apply");
@@ -530,6 +522,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
             source: "collab.draft_review",
             name: `${kind}.merge.counted`,
             payload: { commandId, rules, overrode },
+          });
+      },
+      answeredWithoutLanding: ({ commandId, settled }) => {
+        if (deps.eventSink)
+          emitEvent(deps.eventSink, {
+            level: "info",
+            source: "collab.draft_review",
+            name: "apply.answered_without_landing",
+            payload: { commandId, settled },
           });
       },
       measured: (measurement) => {
@@ -545,13 +546,17 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     }),
   });
   const discardEntries = createDrizzleDiscardEntries(deps.db);
+  const discardPurge = createDrizzleDiscardPurge(deps.db, {
+    workProjection: deps.workProjectionMutation,
+    ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
+  });
   const undoDiscard = createUndoDiscardService({
     commands,
     store: createDrizzleUndoDiscard(deps.db, {
       workProjection: deps.workProjectionMutation,
       branches: workBranches,
       treeLists: deps.treeLists,
-      close: deps.draftClose,
+      coordinator: draftCoordinator,
     }),
   });
   const branches = createWorkBranchReviewService({
@@ -560,13 +565,15 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     unapplyClick: applyCommands.unapply,
     undoDiscard,
     listDiscards: (projectId) => discardEntries.list(projectId),
+    purgeDiscards: () => discardPurge.purge(),
     branches: workBranches,
     reviewItems,
     identity,
     discard,
     commands,
     resolveThreadTitles: lookups.resolveThreadTitles,
-    folderRevisions: (branchId) => branchFolderRevisions(deps.db, branchId),
+    folderIds: (branchId) => branchFolderIds(deps.db, branchId),
+    treeCut: (branchId) => treeCutOf(deps.db, deps.treeLists, branchId),
     pending: workBranchPendingStore,
   });
   const draftPeers = scopeDraftPeer(
@@ -632,7 +639,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       headSchemaVersion: persistence.journal.headSchemaVersion,
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
-      draftStates: hocuspocusPersistence.draftStates,
+      openDraftIds: hocuspocusPersistence.openDraftIds,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,

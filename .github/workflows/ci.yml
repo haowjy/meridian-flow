@@ -74,6 +74,8 @@ jobs:
           bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       - run: node tools/ci/run-check-group.mjs test --shard=1/2
+        env:
+          TREE_SEEDS: 300
 
   quality-test-2:
     name: quality-test-2
@@ -95,6 +97,8 @@ jobs:
           bun-version-file: .tool-versions
       - run: pnpm install --frozen-lockfile
       - run: node tools/ci/run-check-group.mjs test --shard=2/2
+        env:
+          TREE_SEEDS: 300
 
   quality:
     name: quality

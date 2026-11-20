@@ -14,8 +14,7 @@ recovered prose, one without `removedText`, a second short one, and a
 
 Check at a wide Editor (1280px), the side panel, and a 390px phone width:
 
-- The fence is one error line, "Editing paused. This chapter needs a newer
-  version of Meridian.", with Refresh; the editor is read-only. At phone width
+- The fence is one error line, "Editing paused", with Refresh; the editor is read-only. At phone width
   the sentence may wrap but is never cut off.
 - The repair is one line, "Some text was removed", with Details and no X.
   With both, the two lines stack above the toolbar, aligned with it.

@@ -128,11 +128,7 @@ export function LinkMenu({
         </EditorMenuItem>
       ) : null}
       <EditorMenuItem
-        blockedReason={
-          clipboard === "available"
-            ? null
-            : t`This browser will not let the page write to the clipboard.`
-        }
+        blockedReason={clipboard === "available" ? null : t`Clipboard unavailable`}
         onSelect={(event) => {
           // The menu is the only thing on screen that can carry the answer, so
           // it stays open until the write settles and closes only on a copy

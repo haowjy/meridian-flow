@@ -36,7 +36,7 @@ export function createDrizzleCreatedDrafts(
         and not exists (select 1 from document_yjs_checkpoints c where c.document_id = v.id)
         and not exists (select 1 from document_yjs_updates u where u.document_id = v.id)
         and not exists (select 1 from document_drafts d where d.id = v.draft_id)
-        and not exists (select 1 from document_drafts d where d.document_id = v.id and d.kind = 'work_draft' and d.status = 'active') as fresh
+        and not exists (select 1 from document_drafts d where d.document_id = v.id and d.kind = 'work_draft') as fresh
       from ${records}`);
     const fresh = rows.filter((row) => row.fresh);
     const other = rows.filter((row) => !row.fresh);

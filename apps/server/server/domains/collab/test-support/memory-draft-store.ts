@@ -1,5 +1,4 @@
 /** The checkpoint + tail draft store in memory, for unit tests whose flows write a draft. */
-import type { DraftState } from "@meridian/contracts/branches";
 import type { UserId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
@@ -26,8 +25,6 @@ export function testDraftRow(
     workId: null,
     rootThreadId: null,
     projectId: "project-1" as DraftSnapshot["projectId"],
-    status: "active",
-    closedCause: null,
     revision: 0,
     checkpointRevision: 0,
     checkpointSeq: 0,
@@ -94,17 +91,8 @@ export class MemoryDraftStore implements DraftStore {
     return documentDraft ? rowOf(documentDraft) : null;
   }
 
-  async draftStates(
-    _userId: UserId,
-    draftIds: readonly string[],
-  ): Promise<Record<string, DraftState>> {
-    const states: Record<string, DraftState> = {};
-    for (const id of draftIds) {
-      const draft = this.drafts.get(id);
-      if (draft?.status === "active") states[id] = "open";
-      else if (draft?.closedCause) states[id] = draft.closedCause;
-    }
-    return states;
+  async openDraftIds(_userId: UserId, draftIds: readonly string[]): Promise<string[]> {
+    return draftIds.filter((id) => this.drafts.has(id));
   }
 
   /** One observation: the row, checkpoint and tail are taken together, with no await between. */
@@ -137,10 +125,7 @@ export class MemoryDraftStore implements DraftStore {
 
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {
     const documentDraft = this.drafts.get(input.draftId);
-    if (
-      documentDraft?.status !== "active" ||
-      (input.work !== "any" && documentDraft.lifecycle !== "active")
-    )
+    if (!documentDraft || (input.work !== "any" && documentDraft.lifecycle !== "active"))
       return { status: "refused" };
     const read = this.readNow(input.draftId, input.base);
     if (!read) return { status: "refused" };
@@ -181,7 +166,6 @@ export class MemoryDraftStore implements DraftStore {
       .filter(
         (documentDraft) =>
           documentDraft.kind === "work_draft" &&
-          documentDraft.status === "active" &&
           (documentDraft.hasEffectRevision ?? -1) < documentDraft.revision &&
           (!input.after || documentDraft.draftId < input.after.draftId),
       )
@@ -192,7 +176,7 @@ export class MemoryDraftStore implements DraftStore {
 
   async commitRewrite(input: CommitRewriteInput): Promise<RewriteOutcome> {
     const documentDraft = this.drafts.get(input.draftId);
-    if (documentDraft?.status !== "active") return { status: "closed" };
+    if (!documentDraft) return { status: "gone" };
     if (this.takeCasFailure()) return { status: "moved" };
     if (
       input.policy.kind === "exact"

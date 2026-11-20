@@ -111,6 +111,19 @@ describe("contentMerge", () => {
     expect(result.orderConflict).toBe(false);
   });
 
+  // Live cut " and the moon was bright", the writer undid the cut, and the draft's replacement of
+  // `bright` by `dim` kept its own copy of the cut words: two versions of one text at one point.
+  it("keeps the draft's version of words live restored, without both copies", () => {
+    const [base, live, draft] = [
+      "p#a:The river was cold.",
+      "p#a:The river was cold and the moon was bright.",
+      "p#a:The river was cold and the moon was dim.",
+    ].map((text) => parseDoc(schema, text));
+    expect(render(contentMerge(schema, base, live, draft).blocks)).toBe(
+      "p:The river was cold and the moon was dim.",
+    );
+  });
+
   it.each(CASES.map((c) => [c.name, c] as const))("case table: %s", (_name, c) => {
     const [B, L, D] = tagBySide(
       ...([c.base, c.live, c.draft].map((x) => parseDoc(schema, x)) as [

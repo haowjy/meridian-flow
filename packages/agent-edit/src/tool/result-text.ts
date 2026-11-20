@@ -185,7 +185,7 @@ function notes(result: AgentEditResultV1): string[] {
       `${listed(surviving)} still ${surviving.length === 1 ? "has" : "have"} changes to it; applying them brings it back.`,
     );
   if (result.tree?.deletedInLive)
-    lines.push("deleted in live by the user: this waits until it is restored");
+    lines.push("deleted in live by the user: applying this brings it back");
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.awarenessDegraded) {
     lines.push("the write landed, but concurrent changes could not be reported.");

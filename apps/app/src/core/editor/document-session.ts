@@ -39,6 +39,8 @@
  * after the acknowledgements arrive, so subscribers can show "back online and
  * saved" after an outage.
  */
+
+import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   type ChangeEventWsMessage,
   parseYjsRoomName,
@@ -105,6 +107,10 @@ export type DocumentSessionSnapshot = {
    * (local-first).
    */
   access: DocumentSessionAccess | null;
+  /** Why a read-only room is read-only, when its owner is closed (a Work archived or deleted, a chat in Trash). */
+  closedWhy: ClosedOwnerWhy | null;
+  /** A read admission whose reason has not arrived yet: `closedWhy` may still change. */
+  reasonPending: boolean;
   localPersistenceSynced: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
@@ -121,7 +127,7 @@ export type HandshakeDifference = { lacking: Uint8Array; server: Uint8Array };
 export type DocumentSessionAccess = "edit" | "read";
 
 export type DocumentSessionResetReason =
-  | typeof WS_CLOSE.DRAFT_CLOSED.reason
+  | typeof WS_CLOSE.DRAFT_PURGED.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
   /** The document was deleted or discarded; its rooms never reopen. */
@@ -135,10 +141,7 @@ export type DocumentSessionResetReason =
  */
 export type ResetDisposition = "schema" | "removed" | "closed";
 
-/**
- * The server closed the draft (a Discard, here or anywhere): its room is in Trash. Its owner may
- * keep showing its text read-only until a restore reopens it.
- */
+/** The server purged the draft with its Work (`WS_CLOSE.DRAFT_PURGED`); its owner may keep showing its text read-only. */
 export function draftClosed(state: DocumentSessionConnectionState | null | undefined): boolean {
   return state?.kind === "reset" && state.disposition === "closed";
 }
@@ -217,10 +220,22 @@ export type DocumentSessionTransportProvider = {
   /** On a read-admitted connection, one more handshake; the server's answer is the verdict. */
   requestHandshake?: () => void;
   /**
+   * On a draft room: settles once the server has pulled Live's committed text into the draft and
+   * this document holds the result; at once when the socket is not connected, and on its close or
+   * when no answer comes within a bound.
+   */
+  catchUpWithLive?: () => Promise<void>;
+  /**
    * Every scope the server names for this room, and on subscribe the one it
    * last named. Nothing until it names one: a transport never invents a scope.
    */
-  subscribeAccess?: (listener: (access: DocumentSessionAccess) => void) => () => void;
+  subscribeAccess?: (
+    listener: (
+      access: DocumentSessionAccess,
+      closedWhy: ClosedOwnerWhy | null,
+      reasonPending: boolean,
+    ) => void,
+  ) => () => void;
   subscribeChangeEvents?: (listener: (message: ChangeEventWsMessage) => void) => () => void;
   destroy: () => void | Promise<void>;
 };
@@ -304,6 +319,8 @@ export class DocumentSession {
    */
   private transportState: DocumentSessionConnectionState | null = null;
   private access: DocumentSessionAccess | null = null;
+  private closedWhy: ClosedOwnerWhy | null = null;
+  private reasonPending = false;
   /**
    * Read admission only: whether this connection's last handshake found the writer's edits the
    * server lacks. `differenceAnswered` is false from a connection's start, and from any change
@@ -451,9 +468,16 @@ export class DocumentSession {
         this.recomputeStatus();
       }) ?? null;
     this.unsubscribeTransportAccess =
-      this.transportProvider.subscribeAccess?.((access) => {
-        if (access === this.access) return;
+      this.transportProvider.subscribeAccess?.((access, closedWhy, reasonPending) => {
+        if (
+          access === this.access &&
+          closedWhy === this.closedWhy &&
+          reasonPending === this.reasonPending
+        )
+          return;
         this.access = access;
+        this.closedWhy = closedWhy;
+        this.reasonPending = reasonPending;
         this.forgetDifference();
         this.emit();
       }) ?? null;
@@ -548,7 +572,7 @@ export class DocumentSession {
     if (this.destroyed || this.transportState?.kind === "reset") return;
     this.transportState = {
       kind: "reset",
-      reason: WS_CLOSE.DRAFT_CLOSED.reason,
+      reason: WS_CLOSE.DRAFT_PURGED.reason,
       disposition: "closed",
     };
     this.localPeers?.stop();
@@ -594,6 +618,35 @@ export class DocumentSession {
   }
 
   /**
+   * Settles once the server holds what this room holds now, or at once while the room is not
+   * synced or is read-admitted, and when it stops being synced or becomes read: the server will
+   * never take a read room's typing, and a caller deciding from the server's state never waits on
+   * a reconnect.
+   */
+  whenServerHoldsLocalChanges(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let stop = () => {};
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        stop();
+        resolve();
+      };
+      stop = this.subscribe((snapshot) => {
+        if (snapshot.status !== "synced" || snapshot.access === "read") done();
+      });
+      if (settled) stop();
+      else this.whenCurrentChangesAcknowledged().then(done, done);
+    });
+  }
+
+  /** On a draft room: the server pulls Live's committed text into it now (`catchUpWithLive`). */
+  catchUpWithLive(): Promise<void> {
+    return this.transportProvider?.catchUpWithLive?.() ?? Promise.resolve();
+  }
+
+  /**
    * Reads the local copy (words another tab stored that this tab never received) and takes one
    * more handshake, so the verdict is the whole browser's. Resolves whether the room still holds
    * edits the server will not take; false when the connection ended or turned editable meanwhile.
@@ -617,14 +670,15 @@ export class DocumentSession {
   /**
    * The typing the last read-admitted handshake found the server lacks (`UnsentEdits.undeliverable`),
    * as the items (`lacking`) and the document they live in, encoded so it can be read after the
-   * session is made inert, and whether this session wrote any of it, or a deletion the server
-   * lacks, through an editor or its Undo. Null when the room holds none.
+   * session is made inert. Null when the room holds none.
    */
-  undeliverableEdits(): { copy: Uint8Array; lacking: Ranges; own: boolean } | null {
+  undeliverableEdits(): { copy: Uint8Array; lacking: Ranges } | null {
     const difference = this.lastDifference;
     if (!difference || !this.holdsUndeliverable) return null;
-    const { typing, own } = this.unsent.undeliverable(difference);
-    return { copy: Y.encodeStateAsUpdate(this.document), lacking: typing, own };
+    return {
+      copy: Y.encodeStateAsUpdate(this.document),
+      lacking: this.unsent.undeliverable(difference),
+    };
   }
 
   /**
@@ -723,6 +777,8 @@ export class DocumentSession {
       serverHasLocalChanges: this.serverHasLocalChanges,
       connectionState: this.transportState,
       access: this.access,
+      closedWhy: this.closedWhy,
+      reasonPending: this.reasonPending,
       localPersistenceSynced: this.localPersistenceSynced,
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,

@@ -6,7 +6,7 @@ import { FailureCard } from "@/components/app/FailureCard";
 import { Button } from "@/components/ui/button";
 import { useSettingsNavigation } from "@/features/account/SettingsDialog";
 import { useTryAgain } from "./ConnectionRow";
-import { actionLabel, connectionStanding, standingAction } from "./connection-status";
+import { actionLabel, connectionStanding, problemWord, standingAction } from "./connection-status";
 
 /** The connections a new chat would not get working tools from, each with its fix; null when every one works. */
 export function useNewChatConnectionMarks(projectId: string) {
@@ -47,17 +47,13 @@ function ConnectionMark({
           </Trans>
         ) : standing.kind === "no_tools" ? (
           <Trans>
-            <strong>{name}</strong> has no tools chosen, so this chat won't have it.
+            <strong>{name}</strong> has no tools chosen.
           </Trans>
-        ) : standing.kind === "problem" && standing.status === "needs_sign_in" ? (
+        ) : standing.kind === "problem" ? (
           <Trans>
-            <strong>{name}</strong>: {standing.reason}
+            <strong>{name}</strong>: {problemWord(standing.status)}
           </Trans>
-        ) : (
-          <Trans>
-            <strong>{name}</strong> can't be reached.
-          </Trans>
-        )}
+        ) : null}
       </p>
       {action ? (
         <Button

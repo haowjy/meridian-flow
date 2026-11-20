@@ -39,6 +39,7 @@ stack.
 - [Durable questions](../../apps/server/server/domains/runtime/.context/qa/ask.md): answer, own words, Skip, timeout, restart and crash recovery, claim races, the queue barrier, and fork refusal.
 - [Concurrent typing](../../apps/app/src/core/editor/.context/qa/concurrent-typing.md): two TipTap editors type different words into one paragraph a key at a time with updates arriving late; each word must stay whole and in order. Vitest, no stack; run it by hand when the y-tiptap patch changes.
 - [Fold fuzz](../../apps/app/src/core/editor/.context/qa/fold-fuzz.md): random concurrent typing, deleting, bolding and paragraph inserts in two or three TipTap editors while agent-edit writes the same paragraphs, through a relaying server; counts lost, doubled and re-attributed characters and rebuilt blocks. Vitest, no stack; run it by hand when the y-tiptap patch changes.
+- [Manuscript gate](../../apps/app/src/core/editor/.context/qa/manuscript-gate.md): an AI edit undone by its recorded content, against an oracle: the AI through the model's tools, the writer typing in a TipTap editor, with marks, tables, images and unsent typing; counts matches to an oracle, glued words, lost words and offered Undos. Vitest, no stack; run it by hand when `content-merge` or the editor binding changes.
 - [Unsent edits hold a live session](../../apps/app/src/core/editor/.context/qa/unsent-edits-session-hold.md): offline edit, tab closed, reconnect without reopening, and the removal exit; plus the two-draft Apply and untitled-document probes.
 - [Browser state envelopes](../../apps/app/.context/qa/browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Settled chat Markdown](../../apps/app/src/features/chat/.context/qa/chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
@@ -46,7 +47,7 @@ stack.
 - [Chat submissions](../../apps/app/src/features/chat/.context/qa/chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Folder mentions](../../apps/app/src/features/links/.context/qa/folder-mentions.md): the `@` Mention row, composer and Editor folder chips, the drill-in menu a folder chip opens, and rename or delete then click.
 - [Chat Files menu](../../apps/app/src/features/chat/.context/qa/chat-files.md): shared nested Scratch plus chat uploads; search, rename, move, delete, fork source and phone parity.
-- [Crash and two processes](../../apps/server/server/domains/collab/.context/qa/crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `draft-readback.ts`.
+- [Crash and two processes](../../apps/server/server/domains/collab/.context/qa/crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `draft-readback.mts`.
 - [Stable draft identity and terminal closes](../../apps/app/src/features/draft-review/.context/qa/draft-generations.md): draft rooms through Discard all, a fresh server instance and live restore; `4205`, `4207` and removal `4208`.
 - [Lock-free drafts seam probes](../../apps/server/server/domains/collab/.context/qa/drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, Undo ordering, room delivery, sequenced appends, the effect projection and its sweep, the reconnect order), run with one command against a scratch database.
 - [#871 cells](../../apps/app/src/features/draft-review/.context/qa/871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is lost to ancestor delete, and how the result names the user.
@@ -101,7 +102,7 @@ that has not exited after five minutes (`PROBE_TIMEOUT_MS`) is killed and counte
 - `bash tools/deploy/smoke-check.sh`: [staging health](../../tools/deploy/smoke-check.sh). Requires `STAGING_URL`; without it the script exits successfully without probing.
 - `CHAT_SMOKE_TURNS=200 pnpm exec playwright test --config apps/app/e2e/playwright.chat-smoke.config.ts`: [chat virtualization](../../apps/app/e2e/chat-performance-smoke.pw.ts). Supply the owned app URL and database URL; a missing database skips the scenario. Capture the runner report and trace.
 - `pnpm exec tsx apps/server/scripts/probe-link-resolution.ts`: [import link resolution and frontmatter parse timings](../../apps/server/scripts/probe-link-resolution.ts) at vault scale; pure, no database. These scale checks stay out of the correctness gate.
-- [Project repository smoke](../../tools/dev/smoke-project-domain.ts) is not recommended on a shared database: it deletes a fixed project UUID before seeding. It needs run-scoped fixture ownership before becoming a safe catalog entry.
+- [Project repository smoke](../../tools/dev/smoke-project-domain.mts) is not recommended on a shared database: it deletes a fixed project UUID before seeding. It needs run-scoped fixture ownership before becoming a safe catalog entry.
 
 Large-chapter editing, image-in-table layout and browser first-send/concurrent
 editing recovery still lack dedicated, cataloged script-backed writer checks.
@@ -216,7 +217,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    `binary.md`, `page.html`, a `.txt` of invalid UTF-8 (`\xff\xfe\xfa\xfb…`), a good `.md`,
    a good `.docx` and a Chinese `.txt`. Done says 5 need a look; each of the first five
    opens as a card with Download (never "PK" or tags as text) and its See files line reads
-   "Couldn't turn this into a document. Kept as a file."; the names keep `.md`, `.txt`,
+   "Kept as a file"; the names keep `.md`, `.txt`,
    `.html`. The good `.md`, `.docx` and Chinese `.txt` open as prose.
    Then Rename (a name without a suffix keeps it: `binary.md` → `renamed` is `renamed.md`),
    Move into a folder, Copy, Delete and Restore each kept file at the root and in a folder:
@@ -229,22 +230,21 @@ worktree's API origin and inspect the rendered detail/open-list responses:
    after N requests, then reload. Check each case with the done card's See files list
    and the entry rows (`reason`):
    - Edit a received file and Continue with the same folder. It lists as "Edited after
-     it uploaded. The imported copy is the earlier version." (the entry's
+     upload" (the entry's
      `changed_after_upload` column), and the landed document keeps the old text:
      received bytes are never sent again.
    - Edit an awaiting file and let one Continue send it, then pause again and Continue
-     with the same folder. It still lists "Changed after you picked it."
+     with the same folder. It still lists "Changed"
      (`reason = changed_after_pick`): the second Continue must not clear a mark that was
      true. Keep one other file awaiting (fail its request) so the import stays uploading
      between Continues, then edit the file again and Continue: it lists both sentences
      (`changed_after_pick` and `changed_after_upload`). Revert it to the uploaded bytes and
-     Continue: only "Changed after you picked it." remains, because the file is not the
+     Continue: only "Changed" remains, because the file is not the
      one originally picked (its modified time changed). Check the rows after each step.
    - Pick a copy of the folder with later modified times and some files removed, then
      Pick again with the original after editing two files that landed from the copy. The
-     copy's marks clear; only the edits list, each with the "Edited after it uploaded"
-     sentence (a file that arrived from the copy and was then edited also lists "Changed
-     after you picked it", because the edit destroys the proof that mark was false). Pick
+     copy's marks clear; only the edits list, each with the "Edited after upload"
+     sentence (a file that arrived from the copy and was then edited also lists "Changed", because the edit destroys the proof that mark was false). Pick
      again must send the files the copy lacked.
    - `chmod 000` a received file and touch it, then Continue. Everything else still
      sends; the file keeps its reason and is not listed. Do the same to an awaiting file
@@ -257,7 +257,7 @@ worktree's API origin and inspect the rendered detail/open-list responses:
      sends, the import completes with no marks and Retry is never needed.
    - Click Import without them while the hash pass is still running (slow
      `Blob.prototype.arrayBuffer` for `File`s). The report's `POST …/picked` goes before
-     the skip, and the edited files still list "Edited after it uploaded".
+     the skip, and the edited files still list "Edited after upload".
    - Make a read never settle (`arrayBuffer` returning a pending promise for one edited
      received file, or `slice(0, 1)` for an awaiting one). After 30 seconds the file counts
      as unreadable: the report goes without it, or the send skips it. The import

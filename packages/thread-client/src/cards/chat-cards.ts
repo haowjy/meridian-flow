@@ -176,7 +176,7 @@ export function chatCards(input: ChatCardsInput): ChatCards {
             kind: "refused",
             status: outcome.cause === "another-reply" ? 409 : null,
           }),
-          copy: outcome.cause === "another-reply" ? "retry-refused-another-reply" : "retry-refused",
+          copy: "retry-refused",
           action: null,
           anchor: onTurn(target.id),
           requestId: outcome.requestId,

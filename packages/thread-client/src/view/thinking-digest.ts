@@ -87,8 +87,7 @@ function isEditCommand(command: ToolCommand): boolean {
     command === "move" ||
     command === "delete" ||
     command === "edit" ||
-    command === "undo" ||
-    command === "redo"
+    command === "undo"
   );
 }
 

@@ -12,7 +12,11 @@ export function markStepDone(doc: Y.Doc, stackItem: StackItem): void {
 
 /**
  * Whether an edit since the step was marked done deleted text it inserted, wrote beside text it
- * inserted or deleted, or deleted a block holding either.
+ * inserted or deleted, or deleted a block holding either (a join into the block before, a new
+ * block type). A neighbouring word, its marks and a split of the block do not count. The server's
+ * Restore of a Discard judges Live's edits the same way (`drizzle-reopen-drafts.ts`), by the text
+ * and not its history: it restores when the writer edited the changed word and typed the original
+ * back, which this leaves out, because Yjs's Undo would then double the text ("crumblingold").
  */
 export function touchedSince(doc: Y.Doc, stackItem: StackItem): boolean {
   const after = stackItem.meta.get(AFTER_META) as Map<number, number>;

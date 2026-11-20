@@ -16,7 +16,6 @@ import { useAccountId } from "../context/account-feature-context";
 import { fileKindIcon } from "../context/context-file-icon";
 import { DocumentHost, MainDocumentStatus } from "../context/DocumentHost";
 import { RecentDocumentsLanding } from "../context/RecentDocumentsLanding";
-import { useRemovedDocumentPhoneNotice } from "../context/RemovedDocumentNotice";
 import { TrashedDocument } from "../context/TrashedDocument";
 import { useDocumentStanding } from "../context/use-document-standing";
 import { useNewDocument } from "../context/use-new-document";
@@ -76,7 +75,6 @@ export function MobileProject(props: MobileProjectProps) {
   const crumbs = trashedId
     ? [{ label: trashedName ?? t`Trash` }]
     : contextBreadcrumbSegments(props);
-  const removedNotice = useRemovedDocumentPhoneNotice(props.projectId);
   // The sheet shows the side's item: a document or a chat, with the desktop's picker.
   const side = useSideItem();
   const sheetChat = useHostChatId();
@@ -124,7 +122,6 @@ export function MobileProject(props: MobileProjectProps) {
             <MobileBreadcrumb segments={crumbs} />
           ) : undefined
         }
-        notice={onChat ? undefined : removedNotice}
         chatAction={
           sheetName ? (
             // Names what the sheet will show: the slot of the kind main is not.

@@ -14,7 +14,7 @@ directions are in [ALTERNATIVES.md](ALTERNATIVES.md).
 ## Pinned reconstruction adapter
 
 Several files read Yjs struct internals, among them `frontier.ts`, `model/block-hash.ts`,
-`undo/forward-inverse.ts` and `diff/`, which is why `yjs` is exactly pinned in
+`undo/receipt.ts` and `diff/`, which is why `yjs` is exactly pinned in
 `package.json`; check them all when the pin changes. `src/yjs-mutation.ts` holds the
 mutation mechanics. Keep version-sensitive
 reconstruction here rather than in app or undo copies. Hosts choose operations,
@@ -71,26 +71,17 @@ inside a text run copies the text after it into a new run, so those characters c
 author and a peer's edit aimed at them can be lost. `main` rebuilt the whole paragraph
 there; this is a rare case left as it is.
 
-## Forward-inverse per-peer rule
+## What an Undo reads
 
-An inverse acts per item of the receipt, never on a dependency closure: each inserted item is
-deleted if still visible, each deleted item is restored if its parent is live (or is restored
-with it) and, for a map entry, nothing newer has replaced it. Anything else is skipped as
-already gone, so another peer's typing never refuses it and is never removed. An AI element
-holding a live descendant outside the receipt stays (`delete-filter.ts`) with all its attributes
-(`id` first: an element without one is not a block); only the AI's own text inside it goes. `executeUndo` runs with `ignoreRemoteMapChanges: false` so Yjs itself
-leaves a writer's later attribute value.
+No Yjs item is followed to undo an edit. Each AI write records its `delta` (the blocks it changed,
+before and after), and Undo, revert and the card's state read that against the text as it is now
+([content-merge](content-merge.md#reading-an-ai-edit-against-a-text-stands-and-membership)). The receipt's `effect` still names the
+items a write inserted and deleted (`captureEditParts`, in `undo/receipt.ts`), for draft bylines and
+late-typing recovery; `heldDeletes` keeps a delete the room had already made out of it.
 
-A replacement undoes as plain Yjs does: the deleted run comes back wherever it was, beside whatever
-the writer put there. Over "One big cat." (the AI replaced `small` with `big`), a writer who typed
-"huge" over "big" gets "One smallhuge cat." on Undo, and one who typed before the word gets
-"One smallvery  cat.". Undo never drops an original word to avoid doubling or joining text.
-The result equals a plain `Y.UndoManager`'s replacement restoration, with no stranded rule and no
-word rule, except the descendant protection above: Flow keeps the writer's text inside a block the
-AI created, where plain Yjs deletes it, so no writer text is lost.
 A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
 Any other change, a deletion inside a word or a letter swap, writes the run whole, so a replaced
 word never has letters of two authors. A writer's letter swap or deletion inside the AI's word
-therefore lands as a replacement, and Undo restores the original beside the writer's letters.
+therefore lands as a replacement, and Undo leaves it alone.

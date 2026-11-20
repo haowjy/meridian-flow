@@ -132,8 +132,8 @@ export function CreationComposer({
   const unavailableMessage = !unavailableChoice
     ? null
     : unavailableWork
-      ? t`Your selected Work is unavailable. Choose another Work, or None.`
-      : t`Your selected Agent is unavailable. Choose another Agent.`;
+      ? t`Selected Work unavailable`
+      : t`Selected Agent unavailable`;
   const worksReady = works.status === "ready" || works.status === "empty";
   const agentsReady = agents.status === "ready" || agents.status === "empty";
   const choicesReady = worksReady && agentsReady && !unavailableChoice;

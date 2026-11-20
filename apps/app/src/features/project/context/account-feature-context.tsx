@@ -15,7 +15,6 @@ import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 import type { ProjectStandings } from "./project-standings";
-import type { RemovedNoticeStore } from "./removed-notice-store";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
 const DraftOnlyContext = createContext<AccountFeatureLifetime["draftOnly"] | null>(null);
@@ -28,7 +27,6 @@ const SignOutContext = createContext<(() => Promise<void>) | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectStandingsAccountContext = createContext<ProjectStandings | null>(null);
-const RemovedNoticesAccountContext = createContext<RemovedNoticeStore | null>(null);
 const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime["registry"] | null>(
   null,
 );
@@ -114,19 +112,17 @@ function AccountFeatureProviders({
             <ContextRemovalAccountContext.Provider value={lifetime.removal}>
               <ProjectStandingsAccountContext.Provider value={lifetime.standings}>
                 <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
-                  <RemovedNoticesAccountContext.Provider value={lifetime.notices}>
-                    <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
-                      <LinkSettlementsProvider value={lifetime.linkSettlements}>
-                        <DraftCommandsContext.Provider value={lifetime.draftCommands}>
-                          <DraftOnlyContext.Provider value={lifetime.draftOnly}>
-                            <PresentedContext.Provider value={lifetime.presented}>
-                              {children}
-                            </PresentedContext.Provider>
-                          </DraftOnlyContext.Provider>
-                        </DraftCommandsContext.Provider>
-                      </LinkSettlementsProvider>
-                    </ProjectDocumentLiveOpenerContext.Provider>
-                  </RemovedNoticesAccountContext.Provider>
+                  <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
+                    <LinkSettlementsProvider value={lifetime.linkSettlements}>
+                      <DraftCommandsContext.Provider value={lifetime.draftCommands}>
+                        <DraftOnlyContext.Provider value={lifetime.draftOnly}>
+                          <PresentedContext.Provider value={lifetime.presented}>
+                            {children}
+                          </PresentedContext.Provider>
+                        </DraftOnlyContext.Provider>
+                      </DraftCommandsContext.Provider>
+                    </LinkSettlementsProvider>
+                  </ProjectDocumentLiveOpenerContext.Provider>
                 </LiveDocumentRegistryAccountContext.Provider>
               </ProjectStandingsAccountContext.Provider>
             </ContextRemovalAccountContext.Provider>
@@ -171,6 +167,12 @@ export function useLiveDocumentSessionRegistry(): AccountFeatureLifetime["regist
   return registry;
 }
 
+export function useOptionalLiveDocumentSessionRegistry():
+  | AccountFeatureLifetime["registry"]
+  | null {
+  return useContext(LiveDocumentRegistryAccountContext);
+}
+
 export function useOptionalProjectStandings(): ProjectStandings | null {
   return useContext(ProjectStandingsAccountContext);
 }
@@ -180,11 +182,6 @@ export function useAccountEpochSignal(): AbortSignal {
   const signal = useContext(AccountEpochContext);
   if (!signal) throw new Error("AccountFeatureComposition is required");
   return signal;
-}
-
-/** The removed-documents notice store; null outside the authenticated shell. */
-export function useOptionalRemovedNotices(): RemovedNoticeStore | null {
-  return useContext(RemovedNoticesAccountContext);
 }
 
 export function useAccountId(): string {

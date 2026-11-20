@@ -5,7 +5,7 @@ import { type ReactNode, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useAgentFileDocument } from "./agent-file-document";
 import { FindingsChip } from "./FindingsChip";
-import { type PackageRef, packageLabel } from "./package-save";
+import type { PackageRef } from "./package-save";
 import { SavedDiffDialog } from "./SavedDiffDialog";
 
 /**
@@ -18,19 +18,16 @@ export function PackageChanges({
   pkg,
   status,
   word,
-  undone = false,
 }: {
   projectId: string;
   pkg: PackageRef;
   status: AgentPackageStatus;
   word?: ReactNode;
-  undone?: boolean;
 }) {
   const [opened, setOpened] = useState<AgentFileChange | null>(null);
   const documentOf = useAgentFileDocument(projectId);
   const { changes } = status;
   if (changes.length === 0) return null;
-  const label = packageLabel(pkg);
   const count =
     status.state === "not-saved"
       ? plural(changes.length, {
@@ -55,13 +52,6 @@ export function PackageChanges({
         }
         label={word ? undefined : count}
         heading={count}
-        sub={
-          undone
-            ? t`Undone. Back to the previous saved version, with its text merged into your files. What you changed since is kept.`
-            : status.state === "not-saved"
-              ? t`New chats can't use ${label} until it is saved.`
-              : t`New chats use the saved version until you save.`
-        }
       >
         {(close) => (
           <ul className="flex max-h-80 flex-col overflow-y-auto">

@@ -32,16 +32,18 @@ export type TurnEditedDocumentId =
 export type TurnEditedDocument = TurnEditedDocumentId & {
   uri: string;
   tree?: TurnTreeLine;
+  placement?: TreePlacement;
   /** The current destination is gone; authorize this immutable target where it restores. */
   removed?: true;
 };
 
 /**
- * One of a turn's own moves, deletes or restores of a document, in `seq` order: live, or in the
- * branch of the owner `ownerKey` names (a drafted entry).
+ * One of a turn's own creates, moves, deletes or restores of a node (a document, or a `folder`),
+ * in `seq` order: live, or in the branch of the owner `ownerKey` names (a drafted entry).
  */
 export type TurnTreeEntry = {
   documentId: DocumentId;
+  folder: boolean;
   ownerKey: DraftOwnerKey | null;
   op: "create" | "move" | "delete" | "restore";
   shownAt: string | null;
@@ -52,20 +54,46 @@ export type TurnTreeEntry = {
    * every other entry: a copy moved later in the same turn keeps this on its create.
    */
   copiedFrom: string | null;
+  /**
+   * The model's own undo took this change back: it names an address but is no longer one of the
+   * reply's changes. A card's Undo doesn't count: the card still says what the reply did.
+   */
+  undone: boolean;
 };
 
 export type LiveLineageDocument = TurnEditedDocument & { scope: "live" };
 
 /**
- * A folder a turn changed: it has no document, so its receipt names it by the path the model
- * gave, in the destination (live, or an owner's branch) the change went to.
+ * A folder a turn changed, in the destination (live, or an owner's branch) the change went to:
+ * it has no document, so it is named where the change left it (`at`: a clash's " (2)" included),
+ * with its tree line.
  */
 export type TurnTreeFolder = {
   nodeId: string;
   ownerKey: DraftOwnerKey | null;
-  shownAt: string;
+  at: string;
   tree?: TurnTreeLine;
+  placement?: TreePlacement;
 };
+
+/** A folder the turn changed, by the path the model gave, and the branch it was drafted in. */
+export type TurnFolderTarget = {
+  nodeId: string;
+  ownerKey: DraftOwnerKey | null;
+  branchId: string | null;
+  shownAt: string;
+};
+
+/**
+ * Where a row's node sits in the tree that shows it (live, or a Work's branch): its source, then
+ * the rank and id of each node on its path from the top of the source down. Compared in order
+ * after the source's section, it is the file tree's own order. Absent for a node that view
+ * doesn't place.
+ */
+export type TreePlacement = readonly string[];
+
+/** A node's placement in a view, and a folder's address there. */
+export type TreePlace = { placement: TreePlacement; uri?: string };
 
 /** The file-policy destination a turn's edit is read and reversed at. */
 export function turnEditDestination(target: TurnEditedDocumentId): FileDestination {
@@ -77,7 +105,11 @@ export function turnEditDestination(target: TurnEditedDocumentId): FileDestinati
 export type TurnLiveLineageDocumentStore = {
   listLiveDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<DocumentId[]>;
   listEditedDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocumentId[]>;
-  listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
+  listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnFolderTarget[]>;
+  /** Each node's place in the view `branchId` names (null: live), keyed `node:branch`. */
+  placesOf(
+    nodes: readonly { nodeId: string; branchId: string | null }[],
+  ): Promise<Map<string, TreePlace>>;
   /** The turn's tree entries, live and drafted, ordered by `seq`. */
   listTreeEntriesForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeEntry[]>;
 };
@@ -86,7 +118,7 @@ export type TurnLiveLineageReadModel = {
   listLiveDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<LiveLineageDocument[]>;
   listEditedDocumentsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocument[]>;
   listFoldersForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeFolder[]>;
-  getTurnReceiptChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
+  getDocumentAndTreeChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 };
 
 export function createTurnLiveLineageReadModel(deps: {
@@ -119,9 +151,22 @@ export function createTurnLiveLineageReadModel(deps: {
       ]);
       const lines = treeLines(entries);
       const documents = await resolveDocuments(targets, lines, createAddresses(entries));
+      const branchOf = (document: TurnEditedDocument) =>
+        document.scope === "draft" ? (document.branchIds.at(-1) ?? null) : null;
+      const places = await deps.store.placesOf(
+        documents.map((document) => ({
+          nodeId: document.documentId,
+          branchId: branchOf(document),
+        })),
+      );
       return documents.map((document) => {
         const tree = lines.get(treeLineKey(document));
-        return tree ? { ...document, tree } : document;
+        const placement = places.get(`${document.documentId}:${branchOf(document)}`)?.placement;
+        return {
+          ...document,
+          ...(tree ? { tree } : {}),
+          ...(placement ? { placement } : {}),
+        };
       });
     },
 
@@ -131,16 +176,27 @@ export function createTurnLiveLineageReadModel(deps: {
         deps.store.listTreeEntriesForTurn(threadId, turnId),
       ]);
       const lines = treeLines(entries);
-      return folders.map((folder) => {
-        const tree = lines.get(
-          treeLineKey({ documentId: folder.nodeId as DocumentId, ownerKey: folder.ownerKey }),
-        );
-        return tree ? { ...folder, tree } : folder;
+      const made = createAddresses(entries);
+      const places = await deps.store.placesOf(folders);
+      return folders.map(({ shownAt, branchId, ...folder }) => {
+        const key = treeLineKey({ documentId: folder.nodeId, ownerKey: folder.ownerKey });
+        const tree = lines.get(key);
+        const place = places.get(`${folder.nodeId}:${branchId}`);
+        // Where the folder is now; the turn's own words only for one its view no longer places.
+        const at =
+          place?.uri ??
+          (tree ? (tree.op === "delete" ? tree.from : tree.to) : (made.get(key) ?? shownAt));
+        return {
+          ...folder,
+          at,
+          ...(tree ? { tree } : {}),
+          ...(place ? { placement: place.placement } : {}),
+        };
       });
     },
 
-    async getTurnReceiptChip(threadId, turnId) {
-      return deps.receiptStore?.getTurnReceiptChip(threadId, turnId) ?? null;
+    async getDocumentAndTreeChip(threadId, turnId) {
+      return deps.receiptStore?.getDocumentAndTreeChip(threadId, turnId) ?? null;
     },
   };
 
@@ -186,7 +242,7 @@ function createAddresses(entries: readonly TurnTreeEntry[]): ReadonlyMap<string,
 
 /** A document's tree line is per destination: live, or one owner's branch. */
 function treeLineKey(
-  target: TurnEditedDocumentId | Pick<TurnTreeEntry, "documentId" | "ownerKey">,
+  target: TurnEditedDocumentId | { documentId: string; ownerKey: DraftOwnerKey | null },
 ): string {
   const ownerKey =
     "ownerKey" in target
@@ -209,6 +265,7 @@ function treeLines(entries: readonly TurnTreeEntry[]): Map<string, TurnTreeLine>
     { from: string; at: string; living: boolean; repositioned: boolean; copiedFrom: string | null }
   >();
   for (const entry of entries) {
+    if (entry.undone) continue;
     const key = treeLineKey(entry);
     const state = folded.get(key) ?? {
       from: entry.shownAt ?? "",

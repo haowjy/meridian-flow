@@ -1,13 +1,14 @@
 # Collab state machines
 
 The status columns collab owns. A draft is a pending version of one document, and a branch is
-the set of drafts one owner holds. A branch never reopens; a draft reopens only by a restore. The model they
-belong to is in [draft-model-and-records.md](draft-model-and-records.md).
+the set of drafts one owner holds. A branch never reopens. A draft has no status: it never closes,
+and nothing but a purge ends it. The model they belong to is in
+[draft-model-and-records.md](draft-model-and-records.md).
 
 ## Draft and branch
 
-`document_drafts.status` and `branches.status` (`packages/database/src/schema/yjs.ts`,
-`branches.ts`).
+`branches.status` (`packages/database/src/schema/branches.ts`); a draft is a row of
+`document_drafts` (`yjs.ts`).
 
 ```mermaid
 stateDiagram-v2
@@ -19,29 +20,28 @@ stateDiagram-v2
     state "closed" as b_closed
   }
   state "draft" as D {
-    [*] --> d_active
-    d_active --> d_closed: discard, or the document is removed
-    d_closed --> d_active: restore of the Discard that closed it
-    state "active" as d_active
-    state "closed" as d_closed
+    [*] --> d_open
+    d_open --> [*]: its Work or its document is purged
+    state "open" as d_open
   }
 ```
 
-- **A closed branch never reopens; a closed draft reopens only by a restore.** A Discard
-  stamps each draft it closes with `closed_by`, its command id. Restoring that Discard
-  (`undo_discard`, from the notice or Trash) sets the same row `active` again in the Work's
-  current branch (moving it there when the Discard closed another) and clears `closed_by` and
-  `closed_cause`; a newer draft of the document closes under the restore's own id, so restoring
-  that entry swaps back. A retirement acts on a command-closed draft only while `closed_by`
-  still names its command, so a late one leaves a reopened draft's room alone. Only an `active`
-  draft accepts writes, and a draft room for a closed
-  draft is refused at the [handshake](../../../lib/.context/state-machines.md).
-- **A model's edit planned on a closed draft changes nothing and says so.** The edit is a `done`
-  `model_edit` row with `settled: returned` (`draft_discarded` when a Discard closed the draft,
-  `draft_replaced` when a restore's swap did, `document_removed` when the document's removal, an
-  Apply of its delete or a Work's purge did; `closed_by` names the closing command, and a null one
-  is a purge, whose chats go with the Work). The test runs
-  before any branch or draft opens, nothing is journalled, and the result shows the document as
-  that chat reads it now. A closed draft is never written to.
-- A closed draft keeps `closedCause`, and a closed branch has `closedAt` and a pending document
-  count of zero. Restoring a Work does not erase a draft's own cause.
+- **A Discard leaves the draft open.** It appends the update that makes the draft read as its base
+  for the chosen changes and records a `discard_command_effects` row; Restore appends the inverse
+  for the changes that still stand. Only a Discard of whole drafts is listed in Trash. The
+  day-30 purge (`adapters/drizzle-discard-purge.ts`) deletes the Discard's command row, which
+  cascades its effects; a Restore after that finds nothing. A turn's card reads what became of
+  each part from the draft's own text.
+- **An Apply of a delete leaves the Work's drafts of that document open**, like a delete in Live
+  any other way. Its text half answers `already removed`; the Un-Apply takes the tree half back and
+  has no draft to reopen.
+- **A model's edit lands in the draft it names**, discarded words or not: the draft is the same row
+  after a Discard, and its text no longer holds the discarded words. The edit is returned only
+  when the document is removed (`returned: document_removed`, decided before any branch or draft
+  opens).
+- **A purge ends a draft by deleting its row** in the purging transaction: a Work's purge
+  (`createDrizzleWorkBranchDisposal`) or a document's content purge
+  (`createDrizzleDocumentPurgeDisposal`). `DraftClose.endDrafts` names the rows so their rooms
+  close (`4205`, or `4208` for a removed document) once the transaction commits; it writes
+  nothing, so no closed draft is ever stored.
+- A closed branch has `closedAt` and a pending document count of zero.

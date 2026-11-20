@@ -6,7 +6,6 @@ import { type GoneRow, RowWord } from "@/components/app/RowWord";
 import {
   type Bounce,
   endTreeNotice,
-  type Said,
   subscribeTreeNotices,
   type TreeStep,
   treeBounces,
@@ -173,12 +172,6 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
         />
       ));
     }
-    for (const { notice, list } of shown)
-      if (notice.kind === "said")
-        for (const said of notice.said)
-          put(said.nodes, (node) => (
-            <SaidWord key={node} said={said} onRetry={(step) => void list.undo(step)} />
-          ));
     return {
       end,
       header,
@@ -195,9 +188,8 @@ export function useTreeNoticeWords(projectId: string, place: NoticePlace): TreeN
 
 /**
  * What a bounced change says: what didn't happen ("Not created", "Not renamed", "Not moved", "Not
- * deleted"), why, and the Copy it offers when the writer typed something it can hand back (a
- * created document's text, a rename's name). `work` is the Work that was closed, when the shell
- * knows it. A row's word and a not-created document's tab say it the same.
+ * deleted"), why, and the Copy it offers for a rename's name. `work` is the Work that was closed,
+ * when the shell knows it.
  */
 export function bounceSaying(
   bounce: Bounce,
@@ -210,16 +202,13 @@ export function bounceSaying(
   const closed = work ? t`${work} was closed.` : t`The Work was closed.`;
   const { record, typed } = bounce;
   if (typed) {
-    const created = record.type === "create";
-    const lead = created ? t`Not created:` : t`Not renamed:`;
-    const takes = created ? t`Copy takes what you typed.` : t`Copy takes the name you typed.`;
     const word = <Trans>Copy</Trans>;
     return {
       word,
-      sentence: `${lead} ${closed} ${takes}`,
+      sentence: t`Not renamed: ${closed} Copy takes the name you typed.`,
       copy: {
         word,
-        label: created ? t`Copy what you typed` : t`Copy the name you typed`,
+        label: t`Copy the name you typed`,
         take: () => void navigator.clipboard.writeText(typed),
       },
     };
@@ -272,60 +261,21 @@ function stepSentence(step: TreeStep, node: string): string {
   const was = step.was.get(node);
   switch (step.gesture) {
     case "delete":
-      return count > 1
-        ? t`Deleted ${count} items just now. Undo puts them back.`
-        : t`Deleted just now. Undo puts it back.`;
+      return count > 1 ? t`Deleted ${count} items just now` : t`Deleted just now`;
     case "rename": {
       const name = was?.name ?? "";
-      return t`Renamed from ${name} just now. Undo puts the old name back.`;
+      return t`Renamed from ${name} just now`;
     }
     case "move": {
-      if (count > 1) return t`Moved ${count} items just now. Undo puts them back.`;
+      if (count > 1) return t`Moved ${count} items just now`;
       const folder = was?.folder;
-      return folder
-        ? t`Moved from ${folder} just now. Undo puts it back.`
-        : t`Moved just now. Undo puts it back.`;
+      return folder ? t`Moved from ${folder} just now` : t`Moved just now`;
     }
     case "restore":
       return count > 1
-        ? t`Restored ${count} items from Trash just now. Undo puts them back in Trash.`
-        : t`Restored from Trash just now. Undo puts it back in Trash.`;
+        ? t`Restored ${count} items from Trash just now`
+        : t`Restored from Trash just now`;
     case "create":
       return "";
-  }
-}
-
-/** What a press has to say on a row: a step it skipped, or an Apply it couldn't fully take back. */
-function SaidWord({
-  said,
-  onRetry,
-}: {
-  said: Said;
-  onRetry: (step: Extract<Said, { kind: "failed" }>["step"]) => void;
-}) {
-  const { name } = said;
-  switch (said.kind) {
-    case "skipped":
-      return (
-        <RowWord
-          tone="warning"
-          word={<Trans>Skipped</Trans>}
-          sentence={
-            said.of === "apply"
-              ? t`Undo skipped applying ${name}: the tree changed since.`
-              : t`Undo skipped your change to ${name}: it was changed again since.`
-          }
-        />
-      );
-    case "failed":
-      return (
-        <RowWord
-          tone="warning"
-          word={<Trans>Retry</Trans>}
-          label={t`Retry undoing applying ${name}`}
-          sentence={t`Couldn't undo applying ${name}. Retry tries again.`}
-          onAction={() => onRetry(said.step)}
-        />
-      );
   }
 }

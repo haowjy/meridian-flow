@@ -38,7 +38,7 @@ export function startContextUpload(
 ): Promise<UploadStart> {
   const { file, intakeId } = target;
   if (file.size > MAX_UPLOAD_BYTES)
-    return Promise.reject(new UploadRefusedError(fileTooLargeMessage(file.name)));
+    return Promise.reject(new UploadRefusedError(fileTooLargeMessage()));
   const body: StartUploadInput = {
     intakeId,
     filename: file.name,

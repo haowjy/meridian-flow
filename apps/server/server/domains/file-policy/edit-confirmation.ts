@@ -3,7 +3,9 @@
  * call reaches locks the grants' Works with its own, in id order, and
  * confirms them inside its transaction before any advisory lock.
  */
+import { mergeOwnerLocks } from "../../shared/draft-owner.js";
 import { type EditConfirmation, runWithEditConfirmation } from "../../shared/edit-confirmation.js";
+import { TreeOwnersMoved, untilOwnersHold } from "../../shared/tree-owners.js";
 
 export { markReplyConfirmed } from "../../shared/edit-confirmation.js";
 
@@ -27,34 +29,54 @@ export class FileEditRefusedError extends Error {
 
 /**
  * Runs `operation` with these grants bound. Returns the refusal a seam threw,
- * even when the write path caught the error and turned it into an outcome.
+ * even when the write path caught the error and turned it into an outcome. `alsoLock` names
+ * more owners the seam locks with the grants': those of a source the write changes outside
+ * the grants' targets.
+ *
+ * A document's owner can move between the facts the grants were minted from and the seam's
+ * locks. The seam then throws `TreeOwnersMoved` naming the owners the locks missed, and the
+ * operation runs again from its transaction's start with them locked (`untilOwnersHold`).
  */
-export async function runWithEditGrants<T>(
+export function runWithEditGrants<T>(
   access: Pick<FileAccess, "authorize" | "confirmEdit">,
-  grants: readonly FileGrant<"edit" | "discard">[],
+  grants: readonly FileGrant<"edit" | "command">[],
   operation: () => Promise<T>,
+  alsoLock?: { works: readonly string[]; lineages: readonly string[] },
 ): Promise<{ ok: true; value: T } | { ok: false; refusal: FileEditRefusedError }> {
-  let refusal: FileEditRefusedError | undefined;
-  const confirmation: EditConfirmation = {
-    workIds: [...new Set(grants.flatMap((grant) => grantOwnerLocks(grant.facts).workIds))].sort(),
-    lineageRootIds: [
-      ...new Set(grants.flatMap((grant) => grantOwnerLocks(grant.facts).lineageRootIds)),
-    ].sort(),
-    async confirm() {
-      const refused = await access.confirmEdit(grants);
-      if (refused.length === 0) return;
-      refusal = new FileEditRefusedError(refused);
-      throw refusal;
-    },
-    covers: (documentIds) => grantsCover(access, grants, documentIds),
-  };
-  try {
-    const value = await runWithEditConfirmation(confirmation, operation);
-    return refusal ? { ok: false, refusal } : { ok: true, value };
-  } catch (cause) {
-    if (refusal) return { ok: false, refusal };
-    throw cause;
-  }
+  return untilOwnersHold(async (learned) => {
+    let refusal: FileEditRefusedError | undefined;
+    let moved: TreeOwnersMoved | undefined;
+    const locks = mergeOwnerLocks(
+      ...grants.map((grant) => grantOwnerLocks(grant.facts)),
+      { workIds: [...(alsoLock?.works ?? [])], lineageRootIds: [...(alsoLock?.lineages ?? [])] },
+      learned.owners,
+    );
+    const confirmation: EditConfirmation = {
+      workIds: locks.workIds,
+      lineageRootIds: locks.lineageRootIds,
+      async confirm(locked) {
+        try {
+          const refused = await access.confirmEdit(grants, locked);
+          if (refused.length === 0) return;
+          refusal = new FileEditRefusedError(refused);
+          throw refusal;
+        } catch (cause) {
+          if (cause instanceof TreeOwnersMoved) moved = cause;
+          throw cause;
+        }
+      },
+      covers: (documentIds) => grantsCover(access, grants, documentIds),
+    };
+    try {
+      const value = await runWithEditConfirmation(confirmation, operation);
+      if (moved) throw moved;
+      return refusal ? { ok: false, refusal } : { ok: true, value };
+    } catch (cause) {
+      if (moved) throw moved;
+      if (refusal) return { ok: false, refusal };
+      throw cause;
+    }
+  });
 }
 
 /**
@@ -63,7 +85,7 @@ export async function runWithEditGrants<T>(
  */
 async function grantsCover(
   access: Pick<FileAccess, "authorize">,
-  grants: readonly FileGrant<"edit" | "discard">[],
+  grants: readonly FileGrant<"edit" | "command">[],
   documentIds: readonly string[],
 ): Promise<boolean> {
   const named = new Set<string>();

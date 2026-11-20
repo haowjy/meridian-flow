@@ -2,23 +2,22 @@
  * Apply compilation and command identity. A frozen cut is the writer's click on their room; a
  * whole cut is the server's replica on receipt. No live state or locks enter either.
  */
+import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import {
   type ApplyEntry,
-  applyRecordOf,
   applySpanPatches,
-  classifyChanges,
   composeHunks,
   diffBlocks,
   type Hunk,
   projectReview,
   REVIEW_BASE_FRAGMENT,
+  type ReviewGroup,
   readBlocks,
   type SpanPatch,
   validateSpanPatches,
 } from "@meridian/agent-edit/diff";
 import type {
   ApplyClickAnswer,
-  ApplyClickRefusalReason,
   ApplyClickResult,
   ApplyTextCut,
   UnapplyClickAnswer,
@@ -31,22 +30,33 @@ import { CommandExistsError, replay } from "../../../shared/commands/command-rec
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
 import type { DocumentCommands } from "./document-commands.js";
+import { carriedBy, readChangesAt } from "./draft-changes.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
 export type ApplyCommand = Parameters<CollabBranches["draftReview"]["apply"]>[0];
+/**
+ * A press's cut as the route decoded it: per list, the list's journal id and the state vector
+ * the draft list read. A scope left out is the server's own cut.
+ */
+export type TreeCut = {
+  project?: { list: string; vector: Uint8Array };
+  account?: { list: string; vector: Uint8Array };
+};
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
 /** What an Un-Apply takes back: the Apply's text effects on each document it wrote, and its tree half. */
 export type PreparedUnapply = {
   branchId: import("@meridian/contracts").BranchId;
   /** One per document the Apply wrote text in, by document id; empty for a tree-only Apply. */
   texts: {
-    base: DraftBase;
+    /** The draft the effects were written in; it may be closed, on another branch, or purged. */
+    draftId: string;
     documentId: import("@meridian/contracts").DocumentId;
     effects: {
       ordinal: number;
       groupId: string;
-      liveUpdateSeq: number | null;
+      /** What the group changed in the manuscript; null when it already held the text. */
+      liveDelta: StoredDelta | null;
       baseBefore: unknown[];
       baseAfter: unknown[];
     }[];
@@ -75,13 +85,23 @@ type CompiledApplyGroup = {
   groupId: string;
   before: readonly PMNode[];
   patched: readonly PMNode[];
+  /** The draft's record of the Apply: which command took the group (the browser's queue reads it). */
   record: ApplyEntry;
+  /** The changes of AI edits that sat in this group, as `[partId, index]`, on the draft as the click found it. */
+  carried: [number, number][];
+  /** Where the group sat (`placeOf`). */
+  place: string;
 };
-/** One item of an Apply with its cuts prepared: the text compiled against the draft's replica. */
+/**
+ * One item of an Apply with its cuts prepared: the text compiled against the draft's replica.
+ * `closedDraftId` names a text cut whose draft could not be read (closed, replaced, purged): the
+ * store says what became of it.
+ */
 export type PreparedApplyItem = {
   node: string;
-  tree: TreeCut | null;
+  tree: boolean;
   text: { base: DraftBase; click: CompiledClick } | null;
+  closedDraftId?: string;
 };
 export interface ApplyCommandStore {
   loadBase(input: {
@@ -90,52 +110,77 @@ export interface ApplyCommandStore {
     branchId: import("@meridian/contracts").BranchId;
   }): Promise<DraftBase | null>;
   /**
-   * Applies exactly the command's cuts in one transaction: the tree cuts first (the moves,
-   * deletes and creations their frozen revisions hold), then each item's text cut at the result.
+   * Applies the command's cuts in one transaction: the tree cuts first (the moves, deletes and
+   * creations), then each item's text cut at the result. Every item comes back once, each half
+   * landed or settled on its own evidence.
    */
-  apply(command: ApplyCommand, items: readonly PreparedApplyItem[]): Promise<ApplyClickAnswer>;
+  apply(
+    command: ApplyCommand,
+    items: readonly PreparedApplyItem[],
+    saw: TreeCut | undefined,
+  ): Promise<ApplyClickAnswer>;
+  /** What the Apply left to take back; null when it left nothing (taken back before, or not this account's). */
   loadUnapply(command: UnapplyClickCommand): Promise<PreparedUnapply | null>;
-  unapply(command: UnapplyClickCommand, prepared: PreparedUnapply): Promise<UnapplyClickAnswer>;
+  unapply(
+    command: UnapplyClickCommand,
+    prepared: PreparedUnapply | null,
+  ): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
-/** The branch row revision a click froze. */
-export type TreeCut = { revision: string | null };
 const schema = buildDocumentSchema();
 
+/** Undo of a Discard's `not_found`: B4 settles it, and this goes with it. */
 export class ApplyClickRefused extends Error {
-  constructor(readonly reason: ApplyClickRefusalReason) {
+  constructor(readonly reason: "not_found") {
     super(reason);
   }
 }
 
+/** The click's snapshot, patches or groups are not what a client builds: a 400, nothing stored. */
+export class ApplyClickMalformed extends Error {}
+
+/**
+ * The click's cut is ahead of what the server holds (a room's unacknowledged changes, or tree
+ * records not synced yet): a 503, nothing stored, and the client resends the same command.
+ */
+export class ApplyClickUnsynced extends Error {}
+
 /** Snapshot containment includes tombstones: a delete-only key must have been acknowledged too. */
-function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
+export function containsSnapshot(current: Y.Snapshot, clicked: Y.Snapshot): boolean {
   for (const [client, clock] of clicked.sv) if (clock > (current.sv.get(client) ?? 0)) return false;
   return Y.equalDeleteSets(current.ds, Y.mergeDeleteSets([current.ds, clicked.ds]));
 }
 
-function decodeClickedSnapshot(encoded: string): Y.Snapshot {
+export function decodeClickedSnapshot(encoded: string): Y.Snapshot {
   try {
     const bytes = Buffer.from(encoded, "base64");
     if (bytes.toString("base64") !== encoded) throw new Error("Invalid base64");
     return Y.decodeSnapshotV2(bytes);
   } catch {
-    throw new ApplyClickRefused("malformed");
+    throw new ApplyClickMalformed();
   }
+}
+
+/** A change's hash and the id of the first block it touches: an equal change elsewhere has another. */
+function placeOf(projection: ReturnType<typeof projectReview>, group: ReviewGroup): string {
+  const [span] = group.spans;
+  const { base, draft } = projection.diff;
+  const block = draft.blocks[span.draft.from] ?? base.blocks[span.base.from];
+  return `${group.id.replace(/~\d+$/, "")}@${block?.attrs.id}`;
 }
 
 export function compileClick(
   doc: Y.Doc,
   request: ApplyTextCut & { commandId: string },
-  provenance: {
-    userId: string;
-    parts: import("@meridian/agent-edit/diff").Provenance["parts"];
-  },
+  parts: readonly {
+    id: number;
+    delta: import("@meridian/agent-edit/content-merge").StoredDelta | null;
+  }[],
 ): CompiledClick {
   const current = Y.snapshot(doc);
   // A whole cut is the replica as received: no click froze it, so nothing can be unsynced.
   const snapshot = "whole" in request ? current : decodeClickedSnapshot(request.snapshot);
-  if (!containsSnapshot(current, snapshot)) throw new ApplyClickRefused("unsynced");
+  if (!containsSnapshot(current, snapshot)) throw new ApplyClickUnsynced();
   const cut = Y.equalSnapshots(current, snapshot)
     ? doc
     : Y.createDocFromSnapshot(doc, snapshot, new Y.Doc({ gc: false }));
@@ -149,33 +194,40 @@ export function compileClick(
       }));
       if (validateSpanPatches(schema, base, patches)) throw new Error("Invalid patches");
     } catch {
-      throw new ApplyClickRefused("malformed");
+      throw new ApplyClickMalformed();
     }
     const optimistic = applySpanPatches(base, patches, "base");
-    const projection = projectReview(
-      diffBlocks(optimistic, readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema)),
-    );
-    if ("whole" in request && projection.groups.length === 0) return { schema, groups: [] };
-    const groupIds =
-      "whole" in request ? projection.groups.map((group) => group.id) : request.groupIds;
+    const draftText = readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
+    const projection = projectReview(diffBlocks(optimistic, draftText));
+    const reading = readChangesAt(optimistic, draftText, parts);
+    let groupIds: readonly string[];
+    if ("whole" in request) {
+      const places = request.places && new Set(request.places);
+      const carried = request.carried && new Set(request.carried.map((key) => key.join(":")));
+      const named = places || carried;
+      // A group is re-applied by `carried` only while every AI change in it is one the Un-Apply took:
+      // a neighbour the writer never chose stays in Changes.
+      groupIds = projection.groups.flatMap((group, position) => {
+        const keys = carriedBy(reading, position);
+        if (!named || (!keys.length && places?.has(placeOf(projection, group)))) return [group.id];
+        return carried && keys.length > 0 && keys.every((key) => carried.has(key.join(":")))
+          ? [group.id]
+          : [];
+      });
+      if (groupIds.length === 0) return { schema, groups: [] };
+    } else groupIds = request.groupIds;
     const known = new Set(projection.groups.map((group) => group.id));
     if (
       !groupIds.length ||
       new Set(groupIds).size !== groupIds.length ||
       groupIds.some((id) => !known.has(id))
     )
-      throw new ApplyClickRefused("malformed");
-    const classifications = classifyChanges(
-      cut,
-      projection,
-      { ...provenance, snapshot },
-      { record: true },
-    );
+      throw new ApplyClickMalformed();
     const chosen: Hunk[] = [];
     let before = optimistic;
     const groups = groupIds.map((groupId): CompiledApplyGroup => {
       const group = projection.groups.find((candidate) => candidate.id === groupId);
-      if (!group) throw new ApplyClickRefused("malformed");
+      if (!group) throw new ApplyClickMalformed();
       chosen.push(...group.hunks.map((hunk) => projection.diff.hunks[hunk.index]));
       const patched = applySpanPatches(
         optimistic,
@@ -186,11 +238,12 @@ export function compileClick(
         groupId,
         before,
         patched,
-        record: {
-          ...applyRecordOf(classifications, [groupId]),
-          commandId: request.commandId,
-          groupId,
-        },
+        record: { base: [], settled: [], commandId: request.commandId, groupId },
+        carried: carriedBy(
+          reading,
+          projection.groups.findIndex((candidate) => candidate.id === groupId),
+        ),
+        place: placeOf(projection, group),
       };
       before = patched;
       return step;
@@ -217,52 +270,46 @@ export function createApplyClickService(input: {
       const { items } = command.request;
       const prepared: PreparedApplyItem[] = [];
       for (const item of items) {
-        const tree = item.tree ?? null;
+        const tree = item.tree === true;
         const cut = item.text;
         if (!cut) {
           // A tree cut alone: a move, a delete or a creation with no text room (design-v2 §4).
-          if (!tree) throw new ApplyClickRefused("malformed");
+          if (!tree) throw new ApplyClickMalformed();
           prepared.push({ node: item.node, tree, text: null });
           continue;
         }
-        if (!("whole" in cut) && !cut.groupIds.length) throw new ApplyClickRefused("malformed");
+        if (!("whole" in cut) && !cut.groupIds.length) throw new ApplyClickMalformed();
         const start = performance.now();
         const base = await input.store.loadBase({
           draftId: cut.draftId,
           documentId: item.node,
           branchId: command.branchId,
         });
-        if (!base || base.snapshot.status === "closed")
-          return (await lookup()) ?? { status: "closed", commandId };
         // Receipts are captured after this replica, so they cover every item a contained click can name.
-        const captured = await input.evidence.capture(cut.draftId);
-        if (!captured || captured.draft.documentDraft.status === "closed")
-          return (await lookup()) ?? { status: "closed", commandId };
-        const lifecycle = captured.draft.documentDraft.lifecycle;
-        if (lifecycle !== "active")
-          throw new ApplyClickRefused(
-            lifecycle === "archived"
-              ? "work_archived"
-              : lifecycle === "deleted"
-                ? "work_deleted"
-                : "not_found",
-          );
+        const captured = base ? await input.evidence.capture(cut.draftId) : null;
+        if (!base || !captured) {
+          prepared.push({ node: item.node, tree, text: null, closedDraftId: cut.draftId });
+          continue;
+        }
         let click: CompiledClick;
         try {
-          click = compileClick(base.replica.doc, { ...cut, commandId }, captured);
+          click = compileClick(base.replica.doc, { ...cut, commandId }, captured.parts);
         } finally {
           input.store.measured?.({ commandId, compileClickMs: performance.now() - start });
         }
         prepared.push({ node: item.node, tree, text: { base, click } });
       }
-      return await input.store.apply(command, prepared);
+      return await input.store.apply(command, prepared, command.saw);
     } catch (cause) {
-      if (cause instanceof CommandExistsError) {
+      // A twin that already stored its answer wins over a refusal to start (LA-1).
+      if (
+        cause instanceof CommandExistsError ||
+        cause instanceof ApplyClickMalformed ||
+        cause instanceof ApplyClickUnsynced
+      ) {
         const winner = await lookup();
         if (winner) return winner;
       }
-      if (cause instanceof ApplyClickRefused)
-        return (await lookup()) ?? { status: "refused", commandId, reason: cause.reason };
       throw cause;
     }
   };
@@ -274,15 +321,12 @@ export function createApplyClickService(input: {
     if (first) return first;
     try {
       const prepared = await input.store.loadUnapply(command);
-      if (!prepared) return (await lookup()) ?? { status: "refused", commandId };
       return await input.store.unapply(command, prepared);
     } catch (cause) {
       if (cause instanceof CommandExistsError) {
         const winner = await lookup();
         if (winner) return winner;
       }
-      if (cause instanceof ApplyClickRefused)
-        return (await lookup()) ?? { status: "refused", commandId };
       throw cause;
     }
   };

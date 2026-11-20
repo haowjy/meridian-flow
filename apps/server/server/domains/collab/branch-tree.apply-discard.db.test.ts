@@ -26,11 +26,11 @@ import {
 import { LIVE, lastSettlements, listRecords, type TreeWriter } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import * as Y from "yjs";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import { accountUserSource } from "../../test-support/branch-tree-seeds.js";
 import { createTestRemovalDeps } from "../../test-support/document-removal.js";
+import { createTestDraftCoordinator } from "../../test-support/draft-coordinator.js";
 import { deleteDrizzleRows } from "../../test-support/drizzle-reset.js";
 import { interleave } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
@@ -38,22 +38,17 @@ import { createTreeReader } from "../context/tree/tree-view.js";
 import { createWorkProjectionMutation } from "../projects/adapters/work-projection-mutation.js";
 import { createDrizzleApplyClick } from "./adapters/drizzle-apply-click.js";
 import { createDrizzleBranchDiscard } from "./adapters/drizzle-branch-discard.js";
-import {
-  branchRowRevisions,
-  createDrizzleBranchTreeState,
-} from "./adapters/drizzle-branch-tree-state.js";
+import { createDrizzleBranchTreeState } from "./adapters/drizzle-branch-tree-state.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
-import { draftsStillClosedBy } from "./adapters/drizzle-draft-close.js";
 import { createDrizzleUndoDiscard } from "./adapters/drizzle-undo-discard.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
-import { createApplyClickService } from "./domain/apply-click.js";
+import { createApplyClickService, type TreeCut } from "./domain/apply-click.js";
 import { createBranchDiscard } from "./domain/branch-discard.js";
 import { createBranches } from "./domain/branches.js";
-import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createUndoDiscardService } from "./domain/undo-discard.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -92,38 +87,43 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       },
       pendingCounts: createDrizzleWorkBranchPendingStore(db),
     });
+    const branchStore = createDrizzleBranchStore(db);
     const workBranches = createBranches({
-      store: createDrizzleBranchStore(db),
+      store: branchStore,
       boundary: createDrizzleBranchWriteBoundary(db, workProjection),
+    });
+    const coordinator = createTestDraftCoordinator(db, {
+      close: draftClose,
+      treeLists,
+      workProjection,
+      branches: branchStore,
     });
     const tree = createTreeReader(db);
     const branchTree = createDrizzleBranchTreeState(db, tree);
     const seed = treeSeeder(db);
     const pending = createDrizzleWorkBranchPendingStore(db);
+    // A tree-only click reads no text: no text base is read or replayed.
     const apply = createDrizzleApplyClick(db, {
       workProjection,
       branches: workBranches,
-      // A tree-only click reads no text: nothing below the tree half is reached.
-      coordinator: {} as never,
+      coordinator,
       live: {} as never,
       liveCoordinator: {} as never,
       treeLists,
       tree,
-      branchTree,
-      close: draftClose,
       onCommitted: async () => {},
       merged: () => {},
       measured: () => {},
+      answeredWithoutLanding: () => {},
     });
     const discard = createBranchDiscard({
-      branches: workBranches,
       store: createDrizzleBranchDiscard(db, {
+        coordinator,
         close: draftClose,
         branches: workBranches,
         workProjection,
         treeLists,
       }),
-      holdRetirement: draftClose.holdRetirement,
     });
 
     const commands = createDrizzleDocumentCommands(db);
@@ -138,7 +138,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         workProjection,
         branches: workBranches,
         treeLists,
-        close: draftClose,
+        coordinator,
       }),
     });
 
@@ -201,15 +201,16 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       };
     }
 
-    async function click(documentId: DocumentId, revision: string | null, restore = false) {
-      return applyNodes([[documentId, revision]], randomUUID(), restore);
+    async function click(documentId: DocumentId) {
+      return applyNodes([documentId], randomUUID());
     }
 
-    /** Apply of nodes at the revisions given, as one command; no text cut reaches the text half. */
+    /** Apply of nodes, as one command; no text cut reaches the text half. */
     async function applyNodes(
-      nodes: readonly (readonly [string, string | null | undefined])[],
+      nodes: readonly string[],
       commandId: string,
-      restore = false,
+      saw?: TreeCut,
+      tree = true,
     ) {
       return apply.apply(
         {
@@ -217,21 +218,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           envelope: envelope(commandId),
           request: {
             commandId: commandId as CommandId,
-            items: nodes.map(([node, revision]) => ({ node, tree: { revision } })),
-            ...(restore ? { restore: true as const } : {}),
+            items: nodes.map((node) => ({ node, ...(tree ? { tree: true as const } : {}) })),
           },
         } as never,
-        nodes.map(([node, revision]) => ({
-          node,
-          tree: revision === undefined ? null : { revision },
-          text: null,
-        })),
+        nodes.map((node) => ({ node, tree, text: null })),
+        saw,
       );
-    }
-
-    async function revisionOf(documentId: DocumentId) {
-      const [item] = await branchTree.read(branchId, [], [documentId]);
-      return item?.revision ?? null;
     }
 
     const liveRow = async (id: string) =>
@@ -263,7 +255,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         pending: true,
       });
 
-      const answer = await click(id, item?.revision ?? null);
+      const answer = await click(id);
       expect(answer.status).toBe("applied");
       expect(await liveRow(id)).toMatchObject({ name: "chapter", trashRecord: null });
       expect(await branchRow(id)).toBeUndefined();
@@ -283,38 +275,49 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       expect(await liveRow(a)).toMatchObject({ name: "alpha" });
       expect(await branchRow(c)).toMatchObject({ deleted: true });
 
-      expect((await click(a, await revisionOf(a))).status).toBe("applied");
+      expect((await click(a)).status).toBe("applied");
       expect(await liveRow(a)).toMatchObject({ name: "alpha two" });
 
-      expect((await click(b, await revisionOf(b))).status).toBe("applied");
+      expect((await click(b)).status).toBe("applied");
       expect(await liveRow(b)).toMatchObject({ parentId: folder });
       expect(await liveRow(folder)).toMatchObject({ kind: "folder", name: "Arc" });
 
-      expect((await click(c, await revisionOf(c))).status).toBe("applied");
+      expect((await click(c)).status).toBe("applied");
       expect((await liveRow(c))?.trashRecord).not.toBeNull();
       expect(await branchRow(c)).toBeUndefined();
     });
 
-    it("answers `changed` for a revision the writer did not see, and lands nothing", async () => {
+    it("answers a second press `already`, and lands nothing twice", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "first"));
-      const seen = await revisionOf(a);
-      await submit((writer) => writer.rename(viewOf(), AGENT, a, "second"));
-      expect((await click(a, seen)).status).toBe("changed");
-      expect(await liveRow(a)).toMatchObject({ name: "alpha" });
-      expect(await branchRow(a)).toMatchObject({ name: "second" });
+      expect((await click(a)).status).toBe("applied");
+      const second = await click(a);
+      expect(second).toMatchObject({
+        status: "applied",
+        applied: [],
+        items: [
+          {
+            node: a,
+            tree: { landed: false, settled: [{ rule: "already", state: "applied", item: a }] },
+          },
+        ],
+      });
+      expect(await liveRow(a)).toMatchObject({ name: "first" });
     });
 
-    it("asks before bringing back a document live deleted, and restores it on `restore`", async () => {
+    it("brings back a document live deleted, and says so", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "kept"));
       await submit((writer) => writer.delete(LIVE, "system", a));
-      const revision = await revisionOf(a);
-      expect((await click(a, revision)).status).toBe("needs_restore");
       expect((await liveRow(a))?.trashRecord).not.toBeNull();
 
-      const answer = await click(a, revision, true);
-      expect(answer).toMatchObject({ status: "applied", restored: true });
+      const answer = await click(a);
+      expect(answer).toMatchObject({
+        status: "applied",
+        items: [
+          { node: a, tree: { landed: true, settled: [{ rule: "restored", documentId: a }] } },
+        ],
+      });
       expect(await liveRow(a)).toMatchObject({ name: "kept", trashRecord: null });
     });
 
@@ -332,11 +335,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         userId: USER,
         selection: {
           kind: "items",
-          items: [{ documentId: made, origin: "created", ends: "item" }],
+          items: [{ documentId: made, tree: true, text: "all" }],
         },
         command: asCommand(),
       });
-      expect(result).toMatchObject({ status: "discarded", closed: [made] });
+      expect(result).toMatchObject({ closed: [made], settled: [] });
       // The discarded create is in no view and keeps its document row for retention.
       expect(await liveRow(made)).toBeUndefined();
       expect(await branchRow(made)).toBeUndefined();
@@ -380,8 +383,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         actor: AGENT,
       })) as DocumentId;
       expect(await branchRow(id)).toMatchObject({ existsOnlyInDraft: true });
-      const [item] = await branchTree.read(branchId, [], [id]);
-      expect((await click(id, item?.revision ?? null)).status).toBe("applied");
+      expect((await click(id)).status).toBe("applied");
       const [account] = await db
         .select({ listId: users.treeListId })
         .from(users)
@@ -390,7 +392,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       expect(await branchRow(id)).toBeUndefined();
     });
 
-    it("a whole Discard settles every pending record and closes the branch", async () => {
+    it("a whole Discard settles every pending record and leaves the branch open", async () => {
       const made = (await seed.document(SOURCE, "made.md", {
         view: viewOf(),
         actor: AGENT,
@@ -403,12 +405,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         selection: { kind: "whole" },
         command: asCommand(),
       });
-      expect(result).toMatchObject({ status: "discarded", branchClosed: true });
+      expect(result).toMatchObject({ settled: [] });
       expect(await liveRow(a)).toMatchObject({ trashRecord: null });
       expect(await liveRow(made)).toBeUndefined();
       expect((await db.select().from(documents).where(eq(documents.id, made)))[0]).toBeDefined();
       const [branch] = await db.select().from(branches).where(eq(branches.id, branchId));
-      expect(branch?.status).toBe("closed");
+      expect(branch?.status).toBe("active");
     });
 
     it("Apply of a drafted delete and another Work's whole Discard take the lists in one order", async () => {
@@ -422,7 +424,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         stateVector: Buffer.alloc(0),
       });
       await submit((writer) => writer.delete(viewOf(), AGENT, a));
-      const revision = await revisionOf(a);
       const otherWork = randomUUID();
       await db.insert(works).values({
         id: otherWork,
@@ -445,7 +446,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         bWaited,
       } = await interleave(
         db,
-        () => click(a, revision),
+        () => click(a),
         "treeList.afterRows",
         () =>
           discard.discardItems({
@@ -463,7 +464,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
     it("Apply writes the list's rows only under the document's key, which derivation takes first", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
-      const revision = await revisionOf(a);
       // Derivation's certification (`certifyDocumentDerivation`): the document's key, then the
       // location row of the document.
       const certify = () =>
@@ -480,22 +480,25 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         a: applied,
         b: certified,
         bWaited,
-      } = await interleave(db, () => click(a, revision), "treeList.afterRows", certify);
+      } = await interleave(db, () => click(a), "treeList.afterRows", certify);
       expect(bWaited).toBe(true);
       expect(applied).toMatchObject({ ok: true, value: { status: "applied" } });
       expect(certified).toMatchObject({ ok: true });
     });
 
-    it("refuses a Discard of an item the Work has nothing left on", async () => {
+    it("answers `already` for a Discard of an item the Work has nothing left on", async () => {
       const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
       await expect(
         discard.discardItems({
           branchId,
           userId: USER,
-          selection: { kind: "items", items: [{ documentId: a, origin: "edited", ends: "tree" }] },
+          selection: { kind: "items", items: [{ documentId: a, tree: true, text: null }] },
           command: asCommand(),
         }),
-      ).resolves.toMatchObject({ status: "refused", reason: "stale" });
+      ).resolves.toMatchObject({
+        closed: [a],
+        settled: [{ rule: "already", state: "discarded", item: a }],
+      });
     });
 
     describe("commands over the tree half", () => {
@@ -508,13 +511,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
       });
       /** Apply of several nodes, as the group route sends it, at the revisions now on screen. */
       async function applyGroup(nodes: readonly string[], commandId: string = randomUUID()) {
-        const revisions = await branchRowRevisions(db, branchId, nodes);
         return service.apply({
           branchId,
           envelope: envelopeOf("apply", commandId),
           request: {
             commandId: commandId as CommandId,
-            items: nodes.map((node) => ({ node, tree: { revision: revisions.get(node) ?? null } })),
+            items: nodes.map((node) => ({ node, tree: true as const })),
           },
         });
       }
@@ -528,39 +530,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
             discardCommandId: discardCommandId as CommandId,
           },
         });
-      /** A Work draft of the document holding `text`: what a closed draft keeps after a Discard. */
-      async function draftOf(documentId: DocumentId, text: string) {
-        const doc = new Y.Doc();
-        doc.getText("body").insert(0, text);
-        const id = `draft_${randomUUID()}`;
-        await db.insert(documentDrafts).values({
-          id,
-          documentId,
-          kind: "work_draft",
-          branchId,
-          state: Buffer.from(Y.encodeStateAsUpdate(doc)),
-          stateVector: Buffer.from(Y.encodeStateVector(doc)),
-        });
-        return id;
-      }
-      const workRow = async () => {
-        const [row] = await db.select().from(works).where(eq(works.id, WORK));
-        return {
-          pendingDocumentCount: row?.pendingDocumentCount,
-          entityRevision: Number(row?.entityRevision),
-        };
-      };
-      const draftsOn = (documentId: DocumentId, on: string, status: "active" | "closed") =>
-        db
-          .select()
-          .from(documentDrafts)
-          .where(
-            and(
-              eq(documentDrafts.documentId, documentId),
-              eq(documentDrafts.branchId, on as BranchId),
-              eq(documentDrafts.status, status),
-            ),
-          );
       async function unapply(applyCommandId: string, commandId: string = randomUUID()) {
         return service.unapply({
           branchId,
@@ -593,7 +562,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await branchRow(folder)).toMatchObject({ name: "Arc two" });
         expect(await unapply(commandId, undo)).toMatchObject({ status: "unapplied" });
         // Taken back already: nothing of it is left to take back.
-        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
+        expect(await unapply(commandId)).toEqual({
+          status: "unapplied",
+          commandId: expect.any(String),
+          branchId: expect.any(String),
+          textUndone: [],
+          treeUndone: [],
+        });
       });
 
       it("applies a folder and what is under it as one command, and one Un-Apply takes both", async () => {
@@ -642,7 +617,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
           userId: USER,
           selection: {
             kind: "items",
-            items: [{ documentId: made, origin: "created", ends: "item" }],
+            items: [{ documentId: made, tree: true, text: "all" }],
           },
           command: part,
         });
@@ -656,11 +631,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(await branchRow(made)).toMatchObject({ existsOnlyInDraft: true, deleted: false });
         expect(await branchRow(a)).toMatchObject({ name: "renamed" });
         expect(await undo(part.envelope.commandId)).toMatchObject({
-          status: "refused",
-          reason: "already_restored",
+          status: "restored",
+          restored: 0,
         });
 
-        // A whole Discard closes the branch; its Undo lands on the Work's new one.
+        // A whole Discard leaves the branch open; its Undo lands on it.
         const whole = asCommand();
         await discard.discardItems({
           branchId,
@@ -671,7 +646,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const restored = await undo(whole.envelope.commandId);
         expect(restored).toMatchObject({ status: "restored" });
         if (restored.status !== "restored") return;
-        expect(restored.branchId).not.toBe(branchId);
+        expect(restored.branchId).toBe(branchId);
         const rows = await db
           .select()
           .from(branchTreeNodes)
@@ -679,127 +654,27 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         expect(rows.map((row) => row.id).sort()).toEqual([a, made].sort());
       });
 
-      // Guards: a Discard's Undo that restored the tree records and left the closed drafts'
-      // text behind (a restored chapter applied empty; a text-only Discard answered
-      // `superseded`).
-      it("Restore reopens the closed draft as the same row, swaps a newer one in, and a late retirement leaves it alone", async () => {
+      it("a Restore on an archived Work bounces, and the bounce is replayed once the Work is back", async () => {
         const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
-        const kept = await draftOf(a, "the writer's paragraph");
+        await submit((writer) => writer.rename(viewOf(), AGENT, a, "renamed"));
         const part = asCommand();
         await discard.discardItems({
           branchId,
           userId: USER,
-          selection: { kind: "items", items: [{ documentId: a, origin: "edited", ends: "item" }] },
+          selection: { kind: "items", items: [{ documentId: a, tree: true, text: null }] },
           command: part,
         });
-        expect(await draftsOn(a, branchId, "active")).toHaveLength(0);
-
-        // The Work drafts the document again; the restore closes that draft under itself.
-        const newer = await draftOf(a, "typed after the discard");
-        // It counts as pending, as the effect projection would judge it.
-        await db
-          .update(documentDrafts)
-          .set({ hasEffect: true })
-          .where(eq(documentDrafts.id, newer));
-        await workProjection.mutate({ works: [WORK as never] }, async () => undefined);
-        const beforeSwap = await workRow();
-        woken.length = 0;
-        const first = await undo(part.envelope.commandId);
-        expect(first).toMatchObject({ status: "restored", branchId, restored: 1, swapped: 1 });
-        // One draft closed and one reopened: the count stays, the current draft changed.
-        const afterSwap = await workRow();
-        expect(afterSwap.pendingDocumentCount).toBe(beforeSwap.pendingDocumentCount);
-        expect(afterSwap.entityRevision).toBe(beforeSwap.entityRevision + 1);
-        expect(woken).toContain(`work:${WORK}`);
-        const [reopened] = await draftsOn(a, branchId, "active");
-        expect(reopened).toMatchObject({ id: kept, closedBy: null, closedCause: null });
-        const [swappedOut] = await db
-          .select()
-          .from(documentDrafts)
-          .where(eq(documentDrafts.id, newer));
-        expect(swappedOut).toMatchObject({
-          status: "closed",
-          closedBy: (first as { commandId: string }).commandId,
-        });
-
-        // Nothing is left to take from the entry, and a retirement of the Discard that runs now
-        // finds the draft reopened and closes no room.
-        expect(await undo(part.envelope.commandId)).toMatchObject({
-          status: "refused",
-          reason: "already_restored",
-        });
-        const closedRooms: string[] = [];
-        await createDraftRetirement({
-          closeDraftRoom: (draftId) => closedRooms.push(draftId),
-          closeRemovedRooms: async () => {},
-          stillClosedBy: (drafts) => draftsStillClosedBy(db, drafts),
-        })({
-          closed: [
-            {
-              draftId: kept,
-              documentId: a,
-              cause: "edit_discarded",
-              by: part.envelope.commandId,
-            },
-            {
-              draftId: newer,
-              documentId: a,
-              cause: "edit_discarded",
-              by: (first as { commandId: string }).commandId,
-            },
-          ],
-          removed: new Map(),
-        });
-        expect(closedRooms).toEqual([newer]);
-
-        // Restoring the restore's own entry swaps the text back.
-        const back = await undo((first as { commandId: string }).commandId);
-        expect(back).toMatchObject({ status: "restored", restored: 1, swapped: 1 });
-        expect((await draftsOn(a, branchId, "active")).map((row) => row.id)).toEqual([newer]);
-
-        // A restore turned away by the Work's state is a final answer: stored, and replayed
-        // after the Work is unarchived.
+        // Stored as done with nothing changed, and replayed after the Work is unarchived.
+        const bounced = {
+          status: "restored",
+          restored: 0,
+          settled: [{ rule: "returned", why: "work_archived" }],
+        };
         await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
         const turnedAway = randomUUID();
-        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject({
-          status: "refused",
-          reason: "work_archived",
-        });
+        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject(bounced);
         await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
-        expect(await undo((first as { commandId: string }).commandId, turnedAway)).toMatchObject({
-          status: "refused",
-          reason: "work_archived",
-        });
-
-        // A whole Discard with a tree record and a text draft: both come back on the new branch.
-        const b = (await seed.document(SOURCE, "beta.md")) as DocumentId;
-        await submit((writer) => writer.rename(viewOf(), AGENT, b, "beta two"));
-        const betaDraft = await draftOf(b, "beta text");
-        const whole = asCommand();
-        await discard.discardItems({
-          branchId,
-          userId: USER,
-          selection: { kind: "whole" },
-          command: whole,
-        });
-        const restored = await undo(whole.envelope.commandId);
-        expect(restored).toMatchObject({ status: "restored", restored: 3 });
-        if (restored.status !== "restored") return;
-        expect(restored.branchId).not.toBe(branchId);
-        expect((await draftsOn(a, restored.branchId, "active")).map((row) => row.id)).toEqual([
-          newer,
-        ]);
-        expect((await draftsOn(b, restored.branchId, "active")).map((row) => row.id)).toEqual([
-          betaDraft,
-        ]);
-        expect(
-          (
-            await db
-              .select()
-              .from(branchTreeNodes)
-              .where(eq(branchTreeNodes.branchId, restored.branchId))
-          ).length,
-        ).toBeGreaterThan(0);
+        expect(await undo(part.envelope.commandId, turnedAway)).toMatchObject(bounced);
       });
 
       // Guards: Un-Apply left the restore that "Restore and apply" made in live, because the
@@ -808,11 +683,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
         await submit((writer) => writer.rename(viewOf(), AGENT, a, "kept"));
         await submit((writer) => writer.delete(LIVE, "system", a));
-        const revision = await revisionOf(a);
         const commandId = randomUUID();
-        expect(await applyNodes([[a, revision]], commandId, true)).toMatchObject({
+        expect(await applyNodes([a], commandId)).toMatchObject({
           status: "applied",
-          restored: true,
+          items: [
+            { node: a, tree: { landed: true, settled: [{ rule: "restored", documentId: a }] } },
+          ],
         });
         expect(await liveRow(a)).toMatchObject({ name: "kept", trashRecord: null });
 
@@ -820,20 +696,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         // The restore left with the copies: the document is in Trash again, its rename pending.
         expect((await liveRow(a))?.trashRecord).not.toBeNull();
         expect(await branchRow(a)).toMatchObject({ name: "kept" });
-      });
-
-      it("Un-Apply of a restore with nothing else to apply takes the restore back", async () => {
-        const a = (await seed.document(SOURCE, "alpha.md")) as DocumentId;
-        await draftOf(a, "only text");
-        await submit((writer) => writer.delete(LIVE, "system", a));
-        const commandId = randomUUID();
-        // A click with a text cut only has no tree cut: the restore is all it does in the tree.
-        expect(await applyNodes([[a, undefined]], commandId, true)).toMatchObject({
-          status: "applied",
-        });
-        expect(await liveRow(a)).toMatchObject({ trashRecord: null });
-        expect(await unapply(commandId)).toMatchObject({ status: "unapplied" });
-        expect((await liveRow(a))?.trashRecord).not.toBeNull();
       });
     });
   },

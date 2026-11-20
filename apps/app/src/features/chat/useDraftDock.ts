@@ -4,18 +4,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
-import { useDraftNotice } from "@/features/draft-review/CommandNotice";
+import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
-import { hasLine } from "@/features/draft-review/draft-notices";
-import type { BranchCommandFailure } from "@/features/draft-review/review-command-types";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   listedItemChanges,
   type ReviewChange,
   targetOfChanges,
 } from "@/features/draft-review/review-model";
-import { hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
+import { hasApply, hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
@@ -60,13 +58,9 @@ export function useDraftDock({
   );
   // The owner's notice, if this chat's strip made it.
   const owned = useDraftNotice(controller.ownerKey);
-  const notice =
-    active &&
-    owned?.surface.kind === "strip" &&
-    owned.surface.threadId === threadId &&
-    hasLine(owned)
-      ? owned
-      : null;
+  const here =
+    active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
+  const notice = useNoticeLine(here);
   const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
@@ -151,9 +145,9 @@ export function useDraftDock({
   });
   const files = drafted.filter((file) => {
     const state = controller.owner.state(file.row.draft.itemKey);
-    // A command in flight hides its row, until its delivery needs the writer's Retry.
-    if (state.hidden && !state.stalled) return false;
-    return isOnStrip(file) || state.pending || state.failure;
+    // A command in flight hides its row.
+    if (state.hidden) return false;
+    return isOnStrip(file) || state.pending;
   });
   // What the Changes list holds beyond this chat's: its items (documents and folders), less the
   // documents the strip's Apply would empty. Counted over the listed drafts, not the rows on
@@ -192,9 +186,7 @@ export function useDraftDock({
     [openReviewFile, projectId, ownerKey],
   );
 
-  const applicable = actionableFiles.filter(
-    (file) => file.row.draft.hasDraft || file.row.draft.isNew || hasTreeLine(file.row.draft),
-  );
+  const applicable = actionableFiles.filter((file) => hasApply(file.row.draft));
 
   const discardItems = (files: readonly DockFile[]) => {
     // A frozen owner's draft takes only the whole draft's Discard, which the server ends.
@@ -204,13 +196,9 @@ export function useDraftDock({
       target: whole || file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
     }));
   };
-  /**
-   * Sends the strip's command. An Apply brings back only the deleted documents in `restore`;
-   * it resolves to the files a delete the strip hadn't shown yet held the command back for
-   * (`needs-restore`).
-   */
+  /** Sends the strip's command. */
   const send = useCallback(
-    (mode: "apply" | "discard", restore: ReadonlySet<string> = new Set(), only?: DockFile) => {
+    (mode: "apply" | "discard", only?: DockFile) => {
       const files = only ? [only] : mode === "apply" ? applicable : actionableFiles;
       const items =
         mode === "discard"
@@ -219,25 +207,12 @@ export function useDraftDock({
               draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
               target: file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
             }));
-      if (items.length === 0) return Promise.resolve([]);
+      if (items.length === 0) return;
       // An Apply is one command over every file; a Discard is one notice with one Undo.
-      const sent = mode === "apply" ? runner.applyMany(items, restore) : runner.discardMany(items);
-      return sent.then(
-        (outcomes) =>
-          files.filter((_file, index) => {
-            const outcome = outcomes[index];
-            return outcome?.kind === "needs-restore" && outcome.deleted === true;
-          }),
-        () => [],
-      );
+      void (mode === "apply" ? runner.applyMany(items) : runner.discardMany(items));
     },
     [actionableFiles, applicable, runner, controller.frozen],
   );
-
-  const fileFailures = (file: DockFile): BranchCommandFailure[] => {
-    const failure = controller.owner.state(file.row.draft.itemKey).failure;
-    return failure ? [failure] : [];
-  };
 
   return {
     generating,
@@ -263,6 +238,7 @@ export function useDraftDock({
         (file) =>
           (!file.row.draft.hasDraft && file.row.draft.isNew) ||
           hasTreeLine(file.row.draft) ||
+          isDeletedLive(file.row.draft) ||
           (file.whole
             ? file.row.draft.textChanges > 0
             : (reads[roomIndex(file.row.draft.itemKey)]?.frame?.groups.length ?? 0) > 0),
@@ -270,7 +246,6 @@ export function useDraftDock({
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
     ownerKey,
-    fileFailures,
     review,
     imagePreview,
     closeImagePreview: () => setImagePreview(null),
@@ -278,10 +253,10 @@ export function useDraftDock({
     deletedToApply: applicable.filter((file) => isDeletedLive(file.row.draft)),
     /** The files Apply would delete; more than one file asks first. */
     deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
-    apply: (restore: ReadonlySet<string>) => send("apply", restore),
-    discard: () => void send("discard"),
+    apply: () => send("apply"),
+    discard: () => send("discard"),
     /** A listed (`whole`) row's own commands: its whole draft, as the row has no changes to pick. */
-    applyFile: (file: DockFile) => void send("apply", new Set(), file),
-    discardFile: (file: DockFile) => void send("discard", new Set(), file),
+    applyFile: (file: DockFile) => send("apply", file),
+    discardFile: (file: DockFile) => send("discard", file),
   };
 }

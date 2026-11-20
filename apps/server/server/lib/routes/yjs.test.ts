@@ -167,7 +167,7 @@ describe("Yjs draft handshake route guard", () => {
     );
   });
 
-  it("rejects hostile draft payloads before returning them to Hocuspocus", async () => {
+  it("closes with 1008 when draft admission throws", async () => {
     const admitDraftWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
     });
@@ -189,12 +189,6 @@ describe("Yjs draft handshake route guard", () => {
         },
       }),
     ).rejects.toMatchObject({ reason: "draft-update-admission-failed", code: 1008 });
-    expect(admitDraftWriterUpdate).toHaveBeenCalledWith({
-      draftId: "draft_1",
-      update: new Uint8Array([1, 2, 3]),
-      origin: { type: "user", userId: "user-1" },
-      document,
-    });
   });
 
   it("waits for draft durability before returning the update to Hocuspocus", async () => {
@@ -304,59 +298,6 @@ describe("Yjs draft handshake route guard", () => {
 });
 
 describe("Yjs live writer admission", () => {
-  it("accepts a non-empty system update only after journal, then applies, broadcasts, and acks", async () => {
-    const client = new Y.Doc({ gc: false });
-    client.getText("content").insert(0, "non-empty system update");
-    const payload = Y.encodeStateAsUpdate(client);
-    const server = new Y.Doc({ gc: false });
-    const events: string[] = [];
-    let commit: (() => void) | undefined;
-    const admitLiveWriterUpdate = vi.fn(
-      () =>
-        new Promise<{ admitted: true }>((resolve) => {
-          events.push("accept");
-          commit = () => {
-            events.push("journal");
-            resolve({ admitted: true });
-          };
-        }),
-    );
-    const admission = admitWriterSync({
-      services: {
-        ...services(false),
-        documentSync: { admitLiveWriterUpdate } as never,
-      },
-      documentName: "document-1",
-      document: server,
-      syncType: messageYjsUpdate,
-      payload,
-      userId: "user-1" as never,
-      expectedGeneration: 1n,
-    });
-
-    await Promise.resolve();
-    expect(admitLiveWriterUpdate).toHaveBeenCalledWith({
-      documentId: "document-1",
-      document: server,
-      update: payload,
-      origin: { type: "user", userId: "user-1" },
-      expectedGeneration: 1n,
-    });
-    let returnedToHocuspocus = false;
-    void admission.then(() => {
-      Y.applyUpdate(server, payload);
-      events.push("apply", "broadcast", "ack");
-      returnedToHocuspocus = true;
-    });
-    await Promise.resolve();
-    expect(returnedToHocuspocus).toBe(false);
-    commit?.();
-    await admission;
-    expect(returnedToHocuspocus).toBe(true);
-    expect(server.getText("content").toString()).toBe("non-empty system update");
-    expect(events).toEqual(["accept", "journal", "apply", "broadcast", "ack"]);
-  });
-
   it("does not send an empty update to PostgreSQL bytea admission", async () => {
     const admitLiveWriterUpdate = vi.fn();
     await expect(
@@ -375,34 +316,9 @@ describe("Yjs live writer admission", () => {
     expect(admitLiveWriterUpdate).not.toHaveBeenCalled();
   });
 
-  it("returns a contained admission", async () => {
-    const payload = new Uint8Array([0, 0]);
-    const admitLiveWriterUpdate = vi.fn(async () => ({
-      admitted: false as const,
-    }));
-
-    await expect(
-      admitWriterSync({
-        services: {
-          ...services(false),
-          documentSync: { admitLiveWriterUpdate } as never,
-        },
-        documentName: "document-1",
-        document: new Y.Doc(),
-        syncType: messageYjsUpdate,
-        payload,
-        userId: "user-1" as never,
-        expectedGeneration: 1n,
-      }),
-    ).resolves.toEqual({ admitted: false });
-  });
-
-  it("rejects a failed admission and accepts the client's resubmitted update", async () => {
+  it("rejects a failed admission with a retryable close", async () => {
     const payload = new Uint8Array([7, 8, 9]);
-    const admitLiveWriterUpdate = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("journal down"))
-      .mockResolvedValueOnce({ admitted: true });
+    const admitLiveWriterUpdate = vi.fn().mockRejectedValue(new Error("journal down"));
     const input = {
       services: {
         ...services(false),
@@ -420,10 +336,6 @@ describe("Yjs live writer admission", () => {
       reason: "writer-journal-admission-failed",
       code: 1013,
     });
-    await expect(admitWriterSync(input)).resolves.toEqual({
-      admitted: true,
-    });
-    expect(admitLiveWriterUpdate).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -4,7 +4,9 @@ import type {
   TurnLiveLineageDocumentItem,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import { type QueryClient, useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Editor } from "@tiptap/core";
+import { useEffect } from "react";
 
 import { listTurnLiveLineage } from "@/client/api/live-lineage-api";
 import { useIsThreadPendingCreation } from "@/client/stores";
@@ -17,14 +19,44 @@ import { threadQueryKeys } from "./thread-query-keys";
  * every Apply or Discard (the writer's, a peer's, per change or whole) calls this. A read already
  * in flight is the one the writer waits on, so it is not restarted.
  */
-export function refreshTurnCards(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries(
+export function refreshTurnCards(queryClient: QueryClient, documentId?: string): Promise<void> {
+  return queryClient.invalidateQueries(
     {
-      predicate: ({ queryKey }) =>
-        queryKey[0] === threadQueryKeys.all[0] && queryKey[2] === "live-lineage",
+      predicate: ({ queryKey, state }) =>
+        queryKey[0] === threadQueryKeys.all[0] &&
+        queryKey[2] === "live-lineage" &&
+        (documentId === undefined ||
+          (state.data as ListTurnLiveLineageResponse | undefined)?.documents.some(
+            (item) => item.documentId === documentId,
+          ) === true),
     },
     { cancelRefetch: false },
   );
+}
+
+/**
+ * A card's Undo depends on the text, so an edit to the open document, the writer's own typing
+ * among them, refreshes the cards a moment after it settles. One read per pause in typing, and
+ * only for the on-screen cards whose lineage names the edited document.
+ */
+export function useRefreshTurnCardsOnEdit(editor: Editor | null, documentId: string): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!editor) return;
+    let timer: number | null = null;
+    const onUpdate = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        void refreshTurnCards(queryClient, documentId);
+      }, 300);
+    };
+    editor.on("update", onUpdate);
+    return () => {
+      if (timer != null) window.clearTimeout(timer);
+      editor.off("update", onUpdate);
+    };
+  }, [editor, queryClient, documentId]);
 }
 
 export type TurnLiveLineageStatus = ListQueryStatus<TurnLiveLineageDocumentItem> & {

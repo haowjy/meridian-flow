@@ -7,7 +7,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -20,10 +19,6 @@ import { createScratchDatabase, openHarness } from "../drafts-lock-free/harness.
 export { createScratchDatabase, openHarness };
 
 const CHILD_SOURCE = join(dirname(fileURLToPath(import.meta.url)), "child.mts");
-const INVERSE_WORKER_SOURCE = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../../../apps/server/server/domains/collab/domain/inverse-worker-entry.ts",
-);
 
 let bundled: Promise<string> | undefined;
 
@@ -37,10 +32,7 @@ function childBundle(): Promise<string> {
     const outdir = join(tmpdir(), `model-edit-child-${process.pid}`);
     process.once("exit", () => rmSync(outdir, { recursive: true, force: true }));
     await build({
-      // The inverse worker is a second entry beside the child: the server's pool starts it by a
-      // `new URL("./inverse-worker-entry.ts", import.meta.url)` that the plugin below points at
-      // the bundled `.mjs`, as Nitro's build does.
-      entryPoints: { child: CHILD_SOURCE, "inverse-worker-entry": INVERSE_WORKER_SOURCE },
+      entryPoints: { child: CHILD_SOURCE },
       bundle: true,
       platform: "node",
       format: "esm",
@@ -48,18 +40,6 @@ function childBundle(): Promise<string> {
       outExtension: { ".js": ".mjs" },
       logLevel: "warning",
       plugins: [
-        {
-          name: "inverse-worker-url",
-          setup(b) {
-            b.onLoad({ filter: /collab\/domain\/inverse-worker\.ts$/ }, async (args) => ({
-              contents: (await readFile(args.path, "utf8")).replace(
-                "./inverse-worker-entry.ts",
-                "./inverse-worker-entry.mjs",
-              ),
-              loader: "ts",
-            }));
-          },
-        },
         {
           name: "external-packages",
           setup(b) {
@@ -361,12 +341,11 @@ export async function draftDoc(h: Harness, draftId: string) {
 
 /** The document's Work drafts as stored, oldest first: each one's status and paragraphs. */
 export async function drafts(h: Harness, documentId: string) {
-  const found = await h.raw<{ id: string; status: string }[]>`
-    select id, status from document_drafts
+  const found = await h.raw<{ id: string }[]>`
+    select id from document_drafts
     where document_id=${documentId} and kind='work_draft' order by created_at, id`;
   return Promise.all(
     found.map(async (draft) => ({
-      status: draft.status,
       doc: paragraphs((await h.readDraft(draft.id)).text),
     })),
   );

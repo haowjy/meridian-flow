@@ -153,8 +153,7 @@ export function ExportProjectDialog({
                     {plural(result.outsideLinks.count, {
                       one: `# link points to ${where}, which won't be included.`,
                       other: `# links point to ${where}, which won't be included.`,
-                    })}{" "}
-                    <Trans>They'll stay as Meridian links and won't open outside Meridian.</Trans>
+                    })}
                   </p>
                 ) : null}
                 {result.pendingDrafts > 0 ? (

@@ -82,27 +82,19 @@ leaves the draft active and empty). The scope's draft of the document, if any, t
 over; otherwise the document closes.
 
 Closure belongs to a draft generation, not its item key. The key (branch + document)
-outlives its drafts: a later write to the same document mints a new draft under the same
+outlives its drafts: a later write to the same document after a purge mints a new draft under the same
 key. The command owner keeps each draft's record under its draft id, and an item follows
-its newest known generation, advanced by `bind` and `reconcileClosed`, never by a close.
+its newest known generation, advanced by `bind`, never by an end.
 A close retires the generation it was issued for, so a late answer about the old draft
 can't close a newer one.
 
-While the item's known draft is closed, or this tab's Discard hid it, the review address port
-and the route's address clearing ask the server first (`reconcileClosed`), with a read that goes
-to the server rather than joining the cached query (a restore's invalidation would cancel it).
-`gone` or a failed read refuse admission, because the room owner just ended that review and
-admitting it again would loop; the same draft active again, read after the end, is a restore,
-which reopens it (`metadataActive`) whether or not any surface holds its room; a different
-active draft is the replacement. While a Discard is still in flight the port refuses the item
-outright for the same reason; the end of the hide is a new port, so a refused Discard restores
-the review. `useReviewAdmission` (one per document host) remembers a refusal only for the port
-that gave it, so a replacement that becomes known later is retried once.
+While this tab's Discard hid the item's draft, the review address port refuses the item outright
+(the end of the hide is a new port, so a refused Discard restores the review). A draft the room owner
+ended (its Work or document was purged) is refused admission, because admitting it again would loop.
 
 The server answers `gone` from the Work's ownership and the item key alone, before any
 content grant: the active draft is what grants reading a document deleted live or a
-hidden creation, so after a Discard on another device a content check would answer 404
-forever.
+hidden creation.
 
 ## Account command lifetime
 
@@ -135,11 +127,10 @@ names it in the read; when the bases differ (another tab applied a change, an ea
 part out), a repeated edit stays. Any other chosen change (typing the server never got, an edit changed since
 by another client) stays in the draft, shown as `left_out_not_on_server`: a choice is never widened. Nothing left sends nothing.
 The read is a request like a send: unanswered in 10 seconds, it closes and is tried again, then
-the head stalls with Retry; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
+the click settles `unsent`; closing the queue closes it. An Apply pressed after the room ended takes the same path (`captureEnded`); a room the
 server won't open (closed, access ended) sends the frame's own cut and the server says why. A room
-this build can't open (schema stale or superseded) can't be read either: when the server then
-answers `unsynced`, the item says `needs_reload` with the deploy notice's own words
-(`ReloadWords`), since only a reload lets the click succeed. The ended room stays bound for its
+this build can't open (schema stale or superseded) can't be read either, so the click isn't sent:
+it settles `unsent` in the client, freeing the draft's queue, and the press shows the failure pill. The ended room stays bound for its
 projection only (`Entry.ended`): its rows fold the click while it runs, as any Apply's do, and
 keep folding it once it lands (`landedUnrecorded`), since no record will show, until a room opens
 on the draft again. No lease opens a room for such a click. A click
@@ -177,32 +168,62 @@ every member reached its queue's head, so each text cut lands after that documen
 clicks. A member that ends unsent (closed draft, unread room) is left out; a drop before the
 group is sealed decides nothing. A folder is a member too: a tree cut in its own item's queue
 under `folderKey(branchId, folderId)`, so a folder-only command has the same pending, refused
-and unknown-delivery states, shown on the folder row with Retry, as a document's. Its cut is the
+and unknown-delivery states as a document's; a failure is the pill. Its cut is the
 list response's `folders[].revision`, read once when the command first goes, so a resend
 carries the same body; folders lead the items. Every member's queue settles from the one answer,
 `conflict` included, and the group's answer, which makes the Undo step and the notice, is the
-first a sent member settles on: the post's, a Retry's, or a closed queue's lookup (an unsent
+first a sent member settles on: the post's, a closed queue's lookup (an unsent
 member ends cancelled, and that is not the command's answer); groups are enqueued in item order in one turn, so two groups never wait on
 each other. A sidebar Undo step mints its Un-Apply id once, so a press after a lost answer resends
 the same id.
 
-An editor text Apply gives that editor's history the Undo and Redo callbacks of the
-schedule-owned command handle. The handle owns command identity, reversal outcome and
-replay selection; the mounted history owns only navigation. Undo moves the history cursor
-synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. The
-schedule retries the targeted Apply before the inverse when its delivery is unknown and
-withholds later commands behind any stalled intent. Redo queues a new Apply for only the
-text groups the server actually reversed, never the original tree cut.
+An editor text Apply gives that editor's history one entry (`ApplyEntries`, `apply-history.ts`) whose
+Undo and Redo go through the schedule-owned command handle (`queuePort`). Undo moves the history
+cursor synchronously, cancels an unsent Apply, or queues a projected Un-Apply intent. The schedule
+retries the targeted Apply before the inverse when its delivery is unknown and withholds later
+commands behind any intent. The Un-Apply goes when either half of the Apply landed: a
+landed rename with settled text still has something to take back.
+
+Every Redo is one request that names its Un-Apply: `{ commandId, redoOf }` (`RedoClick`, on the
+Apply route). The server reads what that Un-Apply took from its own records (`redoItems`: the
+effect rows it marked, with their draft, and its `treeUndone`), so a partial Ctrl+Z redoes only
+what it took back, a change another chat proposed since is never applied with it, and one made in
+two documents is applied only where the Un-Apply took it. A group the draft no longer holds, or that a neighbour the
+Un-Apply didn't take has merged into, is passed over, and a Redo that lands nothing ends, applying nothing else. The review's queue paints a
+Redo at once from the selection the Un-Apply took; what it sends is the id. Every port reads the
+same landed rule (`itemLanded`: the item's text or tree landed): an `applied` answer only says the
+command finished.
 
 Existence of a deleted document is its own fact, never read from a name conflict.
-`apply(ref, target, restore)` sends `restore` only when the writer knew: an Apply whose
-row showed the delete, or an Apply all for the documents its confirmation named. Without
-it the server answers `needs_restore`, nothing changes, and the row shows the delete.
-The account owner keeps the answer's `restored` and `renamed` facts, so an editor Apply
-keeps its result after navigation.
+An Apply brings a deleted document back to land what the click carries for it: the click
+carries no `restore`, and the item's answer says `restored`. The question a
+strip or Apply all asks first (it names the deletes and restores) is the writer's
+heads-up, not a precondition. The account owner keeps the answer's `restored`
+fact, so an editor Apply keeps its result after navigation.
 
-`ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then an item
-Retry. A timeout is not one of those failures: the Apply and Un-Apply requests
+An Apply never answers refused. The answer is `applied` with one entry per item in `items`,
+each half `landed` or settled (`itemOf`). `outcomeOf` reads them: an item with a landed half is
+`done` (an Undo step and the applied facts); an item with neither half landed is `settled`. What
+stayed out says nothing, and the item stays in Changes. A click whose room cannot acknowledge it
+settles `unsent` on the client. The press sends `saw`, the cut the cached draft list came
+with, frozen with the click; a 503 (the server lacks something the press saw) is an unknown
+delivery the queue retries with the same id. An Apply goes on the Undo stack only when an
+item landed, and a press of its step that reached the server is spent: `already` or nothing
+taken back never falls through to the next older step.
+
+A Discard never refuses either, and its answer is read per item the same way (`discardAnswer`
+in `draft-command-owner.ts`): an item it took, or one an earlier Discard took (`already`, quiet),
+leaves review, a created document's tab closing either way. The outcome carries what the answer
+says of the items sent (`took`: the ones it didn't take), and the notice lists only what it took
+(`DraftNotices.answered`): its struck rows and its Undo are the answer's, never the press's. An item an
+Apply took first just isn't listed; nothing says so. A move's Discard that also writes its own text is two
+shares of the notice, the room's and the server's, and only the server's answer narrows. The command is `done`,
+with its Undo, when it took any item, and `settled` when it took none. An Apply's Undo step
+holds the nodes its answer says landed, not the ones pressed.
+
+`ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then the click
+settles `unsent` (its optimistic fold ends, so the change is pending again, and the commands behind
+it go), and the press shows one "Couldn't apply" pill per branch. A timeout is not one of those failures: the Apply and Un-Apply requests
 (`postCommand` in `branches-api.ts`) resend under the same id after a timeout and while the
 server answers `running`, so a large Apply stays `Applying` until its answer instead of
 stalling. Changes shows one "Applying" line while rows are hidden by an Apply in flight, and
@@ -210,15 +231,27 @@ hides a folder whose own cut is in flight once nothing under it is listed. Trans
 independent duties:
 
 - *Release* (the head leaves the FIFO and its optimistic contribution ends) happens once:
-  on the room's record or a terminal answer. An applied answer without the record keeps
-  its contribution.
+  on the room's record or a terminal answer. The queue knows its item's node and reads its
+  own entry: an answer whose entry says this item's text landed waits for the record, and one
+  whose text was settled is final, whatever a sibling in the same command landed.
 - *Completion* (the caller's outcome) comes from the full answer, which alone carries
   `restored`. When the answer is missing or lost, the queue reads the stored result back
   under the same command id, never a resend, at 0/1/2/4 seconds. Exhausted reads complete
   as `landed`, with `restored` unknown.
 
-A `work_archived` refusal stores no failure: the Works query refetches and
-`EndedWorkNotice` explains. Other refusals still move prose in two cases, open in
+A closed owner (an archived or deleted Work, or a chat in Trash) locks nothing: Apply and Un-Apply land and
+leave the Work closed. A Discard, Discard all, a folder's ×, a change's Discard and an Undo of a Discard come
+back on their own: the server answers `done` with a settled `returned { why }` (`work_archived`, `work_deleted`,
+`chat_frozen`) and changes nothing. `returnedOf` reads `settled`, never the status, into the `returned` words the
+Undo already uses (`work-closed`, `chat-in-trash`); the owner's outcome is `returned`, and `bounced` in the command
+hook is the one place that makes it a notice (`showBounce`, a `discarded` notice with status `bounced`) and reads the
+Works list again. The notice is a chip ("Work was closed", "Its chat is in Trash") in the trailing slot of the
+control pressed, for 6 s, with the full sentence on hover, focus or long press: a Changes row's notice slot (a
+folder's ×: the folder's row; Discard all: the bar's), the strip's first line, the document band, a change card's own row (one press, one chip, on the card pressed). It adds no line,
+so `hasLine` is false for it. A change's Discard in a closed Work writes in a room the server admits read-only;
+`startDraftDiscardSession` returns `returned` there, with the word for the room's `closedWhy`, instead of a
+`read_only` refusal. The room names `closedWhy` itself: a `read_only` stateless message after every read admission (`why` only for a closed owner), or the 4409 close's reason; the client infers none. A read admission, and any 4409 that names no reason, holds `reasonPending` (so the review is not `ready`, and the controls show their loading state) until its message arrives, and a known reason survives the reconnect meanwhile. A Discard's deferred write answers from the room only once it is settled read-only; while the reason is pending it writes at once, as an offline press does, and the next admission decides. A created document's Discard closes its tab only after `done`, so a returned answer's chip has a band to show on. A returned Undo of a Discard is the same word on its
+notice, Trash's row and the editor's pill. Other refusals still move prose in two cases, open in
 [#992](https://github.com/haowjy/meridian-flow/issues/992). No queue or optimistic base
 persists. The room owner observes only hidden/closed lifecycle transitions. Rendering
 leaves subscribe to command records; command callbacks and the project controller don't.
@@ -233,12 +266,15 @@ occurrence suffix.
 
 ## Discard
 
-`discard(ref, target, history)` composes against the optimistic base and calls
-`writeDiscardBlocks` in one transaction with an origin of its own, so the write is one
-`StackItem`. `history` is the issuing host's own editor (the controller's `reviewEditor`), or
-`notice` for a surface with no editor; the room's runtime may list more than one attached
-editor, so the session never picks one. Either way the session returns one Undo handle, which
-the owner's notice holds. Editor Discard is synchronous.
+Every Discard is one server command under an id the client mints (`DraftCommandOwner.discard`,
+`useWorkBranchCommands.sendDiscard`): one item per document, each naming its `text` (`"all"` or
+the change ids) and `tree`. A single change, a document's draft, a chat strip's or a Work's
+Discard all, a folder group and the review room all send it; nothing writes the room's text.
+The writer sees the result first: the owner marks the targeted changes `discarding`, and the
+editor paints them as the base text they go back to (`setReviewDiscarded`, the inline-review
+plugin's `discarded` class) until the room has the server's write (`releaseWhenRoomHas`, which
+gives up after `ROOM_WRITE_WAIT_MS`). Named changes are read on the server at the room's snapshot, so the owner waits for the room's typing to be acknowledged (`whenCurrentChangesAcknowledged`, as a room Apply does) before it sends; a server still missing the snapshot answers 503 and the Discard does not run. One command is one Ctrl+Z entry in the editor
+(`captureApply`) and one notice with one Undo, which sends the Restore.
 
 ### Notices
 
@@ -249,64 +285,31 @@ main's band or Recently opened (`landing`); the sidebar's rows carry their own (
 tree's interactions page). A page whose document a Discard took away
 (a Work's new document) shows the Discard's notice, Undo included, while it holds the document
 (`discarding`); after that it says the document was discarded from the draft. A newer Apply or
-Discard by the owner replaces it; there is no timer; a reload starts empty. Each notice records
+Discard by the owner replaces it; a reload starts empty. Each notice records
 the surface it was made on (Changes list, a chat's strip, a document's band) and shows only
 there. In the Changes list a notice is said on its rows, never as a line (`useDraftNoticeWords`,
 `RowWord`): every row a Discard took stays struck through with Undo, in the place the list
 showed it when the writer pressed (the list is held at the press, per owner, so a switch of list
 keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedFact.step`): the
-sentence says it was applied, with where it is now (read by id from the tree, the removal sentence once it is in Trash or purged), the name a clash gave it or that it came back
-to the manuscript, and the Undo is the Apply's step on the sidebar's Undo stack, the one Ctrl+Z
-takes (`undoApply`; an Apply all's rows each take back the whole step). Whatever the Un-Apply
-answers ends the applied notice, so its result ("Skipped", "Retry") shows on the
-rows as a press's does. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
+sentence says it was applied, with where it is now when it moved (read by id from the tree; nothing
+said of where it is once it is in Trash or purged), and the Undo is the Apply's step on the sidebar's
+Undo stack, the one Ctrl+Z takes (`ApplyEntries.undo`; an Apply all's rows each take back the
+whole step). An Un-Apply that took something ends the applied notice; one that didn't reach the
+server toasts "Couldn't undo" and leaves it. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
-the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
-removed-documents notice). Only the document's name shortens in a notice; its verb and Undo
+the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot. Only the document's name shortens in a notice; its verb and Undo
 always show. Focus stays on the surface where the writer pressed: each surface (review line,
 phone review header, Changes list, strip) wraps its notice and controls in one
 `useFocusSuccession` container, so a Discard's focus goes to the notice's Undo and an Undo's to
 the controls that come back (the Changes list prefers the restored row). If the writer moved
 before the go-back resolved, the notice ends. Apply
 facts from a band stay out of the store: the identity row shows them from the owner's per-document
-facts (`useManuscriptState`). Discard all is one notice and one server command. A room's Undo is done
-once the prose is back in the room, which sends it whenever it can: the notice ends and the row
-returns at once, offline too. This path does not re-read the owner list, and the view does not
-follow back to the draft, until the server lists the draft again (`relistedOwnerDraft`, polled
-after the acknowledgement): the list omits a draft until the server re-judges its effect, about 250 ms
-after the write, and a read before then drops the row. Following sooner opened a draft-only page
-on a draft the list omitted: `verifyPin` dropped the view's pin and `DraftOnlySettlement` closed
-the page as discarded ("This destination is unavailable"). If the server never lists it within
-the retries, main stays where it is. A room that turned read-only (its Work archived) ends the notice. An Undo
-that throws keeps the notice with Retry, and Retry takes back only the rooms that failed.
-
-A room's share of a notice's Undo holds while what the Discard wrote and deleted is as the Discard
-left it, checked when Undo is pressed (`touchedSince`, against the room's state vector right after
-the Discard): an edit since that deletes text the Discard wrote, writes into or beside text it
-wrote or deleted, or deletes the block holding either means undoing would restore nothing (the
-block is gone) or the same text twice (the model drafted it again), so it doesn't run. A Discard is
-one Yjs step per room, so one such edit to any of a document's discarded changes ends that
-document's whole Undo. Edits elsewhere in the draft leave it standing: Live typing that reaches the
-draft while a Discard all is in flight must not cost a document its Undo. The notice's Undo always
-takes this Discard's own step out of whatever history holds it and undoes it alone through a
-short-lived manager, so it can never pop another step. Ctrl+Z in the reviewing editor applies the
-same check: the step is guarded (`DocumentHistory.guard`, which carries the guard through Redo),
-so when it is next and was touched it is dropped unrun. A dropped step ends its notice share and
-says "N changes couldn't come back" on the draft's failure line (`undo-left-out`), where Ctrl+Z's
-other results show, so the press is never spent silently when the notice is already gone. When the
-document has no change left, no card or strip row is there to carry that line, so the review's
-status line (`ReviewStateInline`) shows the draft's failure in place of "No changes left", and
-`useReviewFailures` leaves it out of the notices under the row so it shows once. Touched means an
-edit since deleted the step's text, wrote beside it, or deleted its block; the writer's own typing
-right after it counts too, though Yjs merges it into the Discard's struct (`touchedSince` checks the
-struct's end, not its start). A share that can't come back (touched, the room closing, resetting or turning read-only
-through `binding.notices`, or a `gone` answer) stays in the notice's sentence, which names the
-whole action the writer took, and the notice says how many of its changes couldn't come back
-(`partEnded(handle, leftOut)`, counted in changes, not documents). A share whose Discard was
-refused or taken back by Ctrl+Z leaves the sentence.
-Both paths record restorations, so marks after an Undo match marks before the Discard. Each Undo
-handle holds a room lease and entry user until it ends, so one notice per owner bounds the rooms
-kept open; `DraftCommandOwner.close()` ends every notice.
+facts (`useManuscriptState`). Discard all is one notice and one server command. An Undo is one Restore command: the notice ends and
+the row returns when the server answers, and one that throws keeps the notice and shows the pill. Ctrl+Z in the
+reviewing editor sends the same Restore (the `captureApply` entry). The server brings back only the
+changes that still stand on the draft, so an edit the writer made over a discarded change leaves that
+change in the base, silently.
+`DraftCommandOwner.close()` ends every notice.
 
 A whole-draft Discard (always a server command) on a draft-only page (live deleted it elsewhere)
 sends main back through `ContextRemovalCoordinator.beginOwnRemoval` once the Discard is written,
@@ -327,40 +330,21 @@ editors never install it. A side or Work notice owns a separate manager and pool
 The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 
-What a closed draft does on screen follows what closed it (`ended`, Draft end and reopen in
-[state-machines.md](state-machines.md)), never which message arrived first. A Discard made
-anywhere but in this tab (`in-trash`), or its document going to Trash (`document`, an Apply of a
-delete included), keeps the draft on screen: the review keeps its room's session read-only, the
-route keeps its address, and the page keeps painting it while the list no longer has it
-(`useDocumentPaint`, until the writer chooses another version). The editor's status pill says
-"This draft is in Trash" with the Discard's Restore, or "This document is in Trash" with the
-document's (`InTrashStatus`). This tab's own Discard (`here`) leaves for Live, where its notice
-has the Undo; any other close (`other`, a purge) leaves too. Restore, the notice's Undo and Trash's
-Restore send the one `restoreDiscard`; every tab learns of it from fresh draft metadata (the
-owner hint re-reads it), and `metadataActive` clears what the tab held as ended and lets the
-room join again under the same id: the session on screen rejoins in place, and every reader whose
-read of the room failed while it was closed asks again, whichever reader brought the answer. While closed, the
-review keeps the room its metadata last named (`useRoomBindings`), and the band and change
-bars offer nothing to act on (`useOpenReviewChanges` reads `gone`).
+A draft ends only when its Work or its document is purged (`ended`, Draft end in
+[state-machines.md](state-machines.md)); a Discard, a restore and an Apply of a delete leave it open.
 
-Every Discard of a whole draft is a server command under an id the client mints, so Trash
-lists it and Restore brings it back: one document's draft as an item Discard
-(`discardOnServer`, everything the branch holds on the document), a move or delete as
-`discardItem`. Only a Discard of some changes in a read frame is a local text Discard, whose
-Undo the room holds. Every Discard shows the owner's notice, and its Undo takes back each share:
-a room's text locally, a server Discard by Undo of a Discard (`restoreDiscard`, both halves onto
-the Work's current branch), the one command Trash's Restore and the editor's Restore send too.
+Trash lists each Discard of whole drafts (`whole`; a Discard of single changes is final but for its Undo) and Restore brings it back (`restoreDiscard`, both halves onto the
+Work's current branch): the notice's Undo, Trash's Restore and a row's Undo send that one command.
 Each Discard's restore has one progress, whatever sent it (`DiscardRestores` on the command
-owner): the notice, Trash's row and the editor's pill all read it, so a restore from Trash ends
-the notice, and a notice's refused Undo clears once a later restore lands. `leftOut` stays on the
-notice as what couldn't come back, and a restore answered with nothing done says why ("Work was
-closed.", "Its chat is in Trash.", "Gone from Trash."). No Discard asks first. A Discard row Trash shows restored has Undo, a new Discard of everything
-the entry took: its drafts' documents and every node its tree half settled (`tree.nodes`), so
-one that only moved, renamed or deleted goes back too. A Discard of a
-selection (a folder group's ×, a folder changed alone) is one server command over exactly those
-documents and folders, both halves, with what stands on them (`discardSelection`,
-`BranchDiscardRequest.items`); only Discard all sends `all`, the one command that closes the
-branch. Neither falls back to the other. A Discard never reports success for a draft it didn't discard. Their optimistic
+owner, keyed by the Discard's command id): the notice and Trash's row read it, so a restore from
+Trash ends the notice, and a notice's refused Undo clears once a later restore lands. A run of
+Discards with nothing between them (no Apply, Un-Apply or Restore) shows as one Trash entry
+(`DiscardEntry.commandIds`), and its Restore sends each command in turn. A change the writer has
+since written over is not brought back, and nothing says so. A restore answered with nothing
+done says why only where the answer is a bounce ("Work was closed.", "Its chat is in Trash.",
+"Gone from Trash."). No Discard asks first. Only Discard all sends `all`. A Discard of a
+selection (a folder group's ×, a folder changed alone) is one command over exactly those
+documents and folders (`discardSelection`, `BranchDiscardRequest.items`). Their optimistic
 visibility is lifecycle state, never text-group hiding. `4205` maps to terminal `closed`,
 including in-band code-1000 delivery, and `4208` to `removed`.
 
@@ -376,19 +360,17 @@ While frozen:
 - the review's editor is read-only under `TrashedChatNotice` (`useDocumentFreeze`, the
   archived Work's path);
 - single changes are locked and Apply is hidden;
-- Discard draft, and the chat strip's Discard, is the server's whole-item Discard
-  (`ends: "item"`), move or delete included. The item stays in review, `discarding`, until the answer, so a refusal shows
-  on it. It carries the row's `updatedAt` as `draftSeenAt`, so a chat restored on another
-  device and written to since refuses `draft_changed` instead of closing text the writer
-  never saw. A created document's Discard in a live chat sends no fence: the writer's own
-  typing would refuse it.
+- Discard draft, and the chat strip's Discard, is the server's one Discard
+  (`text: "all"`, `tree`), move or delete included. The item stays in review, `discarding`, until the
+  answer, so a return shows on it. A chat restored on another device and written to since
+  still discards, and Undo brings the text back.
 
 A local revert checks its room's access when it writes. A room the server already admits
 read-only refuses it (`read_only`) and the list re-reads, so a stale `frozen: false` never
 shows a revert the room drops. The freeze itself closes the socket with `ACCESS_CHANGED`,
 which marks the room read-only at once. An unacknowledged revert is found at the read admission's
 handshake: the room is replaced by one loaded from the server, so the revert's change is back in
-the list, and its typing (not a Discard, which has no words) is handed back. Until the Discard's
+the list, and its typing (not a Discard, which has no words) is dropped with one "Couldn't save". Until the Discard's
 `returned` answer on replacement lands (it needs the closed-Work notices of never-refuse PR B),
 the Discard's local write is simply gone with the old room and shows no chip.
 
@@ -425,38 +407,39 @@ in the release after this one (#1677).
 ## Tree lines
 
 An item with a branch row (a creation, move or delete) applies it with a tree cut: the
-item's Apply carries `tree.revision`, and with no text to send it is the tree cut alone, in
-the same item FIFO. The click body's `tree` is `{ revision }` only, because the server's
-schema is strict.
+item's Apply carries `tree: true`, and with no text to send it is the tree cut alone, in
+the same item FIFO.
 
-`discardItem` is the item's one Discard when it has a tree line: the server's tree-only
-Discard (`ends: "tree"`) beside the local text revert. Its notice's Undo takes back both, so
-the text never comes back without its move or delete.
+An item with a tree line is discarded by the same one command with `tree: true`, so its Undo
+takes back both halves.
 
-An Apply made in the sidebar or a chat's strip goes on the sidebar's Undo stack as one step
-(`rememberApply`, `core/project-tree/tree-undo.ts`): Ctrl+Z there sends Un-Apply by the
-command's id, and a refusal (`gone`, `superseded`: something changed since) is a skipped step
-with its notice. A band's Apply has its editor's Undo instead.
+An Apply is held in the browser as its command id and nothing else (`ApplyEntries`,
+[state-machines.md](state-machines.md)): one entry in each live history of its documents, and a
+step on the sidebar's stack. Every Undo of it is `undo(from)`: the sidebar's Ctrl+Z, an applied
+row's Undo, or Ctrl+Z in an editor showing one of its documents; every Redo is the editor's.
+`ApplyPort` carries the two requests by id: the server's (`serverPort`, the one every surface uses),
+or, for a band's Apply while the review shows the draft's room, its item queue's (`queuePort`), so
+the review shows both at once. When the review lets go of the room (Draft view to Live) the band's
+entry switches to the server's port. `owner.applied` holds every entry, so a session that opens
+after the Apply gets it (`observeHistories`), and ends them with the owner.
 
-Either Apply also enters the Undo history of every live session this tab holds for its
-documents (`registry.liveHistory`: a shown editor or an open tab), so Ctrl+Z there takes the
-Apply back instead of the writer's typing under it. One entry spans those histories
-(`SharedApply`, `apply-history.ts`) for as long as the Apply is in force: Ctrl+Z in any of them
-takes back the whole Apply once, and the others hide it. Whenever it comes back into force (a
-Redo, an Un-Apply that failed or was refused), every history shows it again at its place, under
-what was typed after the Apply and with its Redo kept, and a live history that never had it (a
-session opened since) gets it on top. A sidebar or strip Apply's entry is the
-step's (`AppliedEntry`): its Ctrl+Z is the step's Un-Apply, its Redo sends the same Apply again
-as a new command whose step the entry follows, and an Un-Apply from the sidebar or a notice hides
-it in every history until it answers: `unapplied` or `skipped` ends it, `failed` brings it
-back. A band's entry (`BandApply`) is its item queue's Un-Apply and Redo while the review's room
-shows the draft, so the review shows them at once. The review letting go of the room (Draft view
-to Live) doesn't end it, since the Apply is still in force: the queue settles an Un-Apply only by
-watching that room, so the entry leaves the queue, with the click it froze, and sends its
-Un-Apply and Redo itself, settled by the server's answer alone. Either way an Un-Apply refused,
-or one that reversed nothing, ends it, a lost answer brings it back, and the draft ending
-(`finishClose`) ends it without asking. Otherwise it lasts until sign-out, when the account's
-owner closes.
+**Redo during an Un-Apply** waits for that answer and goes on only when it took something back. A
+Redo that lands makes the new command the one in force and shows the entry again in every live
+history and on the sidebar's stack. Taken back, the entry ends when its editor drops the Redo (new
+typing clears it). Ctrl+Z in one history moves its entry to Redo and hides it in the others; a press
+from elsewhere leaves no Redo and ends every entry; a press that didn't reach the server shows it
+again everywhere and toasts. Nothing is held for a closed owner: an Un-Apply takes what it can,
+and what a closed owner keeps stays applied.
+
+An Apply made in the sidebar, a chat's strip or Changes is also the sidebar's step
+(`rememberApply`, `core/project-tree/tree-undo.ts`): on the stack from when it landed until an
+Un-Apply took something back or it ended, with its watch on its tree half and its notice.
+
+**A chat card's Undo** is the one `reverse_turn` command, and it takes back only its own reply's
+changes, applied ones included: the server reads each applied change from the Apply's `carried` and
+takes it out of the manuscript when it still stands there (`collab/.context/reversal.md`). The card
+holds no Apply entry and sends no Un-Apply; a Changes row's Undo and Ctrl+Z still take back the
+whole Apply.
 
 The move is a row of its own (`tree-line.ts`), listed before the text changes, while a
 delete supersedes the text rows. A selection's target says whether the line is in it, so

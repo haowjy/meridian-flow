@@ -1,20 +1,14 @@
 /**
- * Ending drafts: the one close for every cause, and the retirement it owes once the root
- * transaction commits.
- *
- * Every close joins its root transaction's retirement batch (a transaction participant, so a
- * rolled-back savepoint's closes leave with it); a removal registers its documents and record
- * there whether or not it closes any draft (a delete closes none). The
- * batch retires once, after the root commits: a draft whose document the same transaction
- * removed retires as a removal whatever its own cause, so a Discard that closes a created
- * document's drafts and then tombstones it closes their rooms `4208`.
+ * What a transaction ends for the rooms: the drafts it deletes (a Work's purge, a document's
+ * purge) and the documents it removes. A draft never closes: its row is open until a purge
+ * deletes it, so the only ending is the room's, retired once the root transaction commits. A
+ * draft whose document the same transaction removed retires as a removal.
  */
 
-import { AsyncLocalStorage } from "node:async_hooks";
-import type { BranchId, CommandId, DocumentId } from "@meridian/contracts";
+import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
 import { documentDrafts } from "@meridian/database/schema";
-import { and, asc, eq, inArray, type SQL, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, type SQL } from "drizzle-orm";
 import {
   type DrizzleDb,
   type DrizzleTransactionParticipant,
@@ -22,14 +16,11 @@ import {
   runAfterDrizzleCommit,
 } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
-import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type {
-  ClosedDraft,
-  DraftCloseCause,
   DraftRetirement,
   DraftRetirementBatch,
+  EndedDraft,
 } from "../domain/draft-retirement.js";
-import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
 
 /** Which drafts a close takes: by document (optionally one branch's), branch or id. */
 export type DraftSelection =
@@ -48,16 +39,16 @@ export function draftSelectionPredicate(selection: DraftSelection): SQL | undefi
 }
 
 /** The caller holds its Work/branch and document admission locks. */
-export async function lockActiveDrafts(db: DrizzleDb, selection: DraftSelection) {
+export async function lockDrafts(db: DrizzleDb, selection: DraftSelection) {
   return db
     .select({ id: documentDrafts.id })
     .from(documentDrafts)
-    .where(and(draftSelectionPredicate(selection), eq(documentDrafts.status, "active")))
+    .where(draftSelectionPredicate(selection))
     .orderBy(asc(documentDrafts.id))
     .for("update");
 }
 
-type Batch = { closed: ClosedDraft[]; removed: Map<DocumentId, DocumentRemovalRecord> };
+type Batch = { ended: EndedDraft[]; removed: Map<DocumentId, DocumentRemovalRecord> };
 
 export type DraftClose = {
   /**
@@ -66,49 +57,15 @@ export type DraftClose = {
    */
   registerRemoved(documentIds: readonly DocumentId[], record: DocumentRemovalRecord): void;
   /**
-   * Close exactly the selection's active drafts and retire them after the root transaction
-   * commits. Already-closed rows keep their cause. A removal cause registers its selection's documents too.
-   * `by` is the Discard, restore or Apply command doing the close; each row names it until a restore reopens it. A null `closed_by` is a Work purge's disposal (its chats go with it): a model's edit reads a close with no command as a removed document.
+   * Names the selection's drafts, which the caller deletes in this transaction, so their rooms
+   * retire after it commits. Writes nothing.
    */
-  closeDrafts(
-    db: DrizzleDb,
-    selection: DraftSelection,
-    cause: DraftCloseCause,
-    by?: CommandId,
-  ): Promise<readonly (ClosedDraft & { branchId: string })[]>;
-  /**
-   * Runs `run`, holding back the retirements its commits schedule until it settles. A caller
-   * whose commit happens inside process-level live document scopes uses it: retirement, and a
-   * save racing it, must never wait on scopes the committing caller still holds.
-   */
-  holdRetirement<T>(run: () => Promise<T>): Promise<T>;
+  endDrafts(db: DrizzleDb, selection: DraftSelection): Promise<void>;
   /** The composition's retirement, bound once its rooms and cores exist; unbound retires nothing. */
   bindRetirement(retire: DraftRetirement, onError: (error: unknown) => void): void;
 };
 
-/** Work started inside a hold may commit after it settled; that work retires at once. */
-type Hold = { effects: Array<() => Promise<void>>; open: boolean };
-const retirementHold = new AsyncLocalStorage<Hold>();
-
-/** Which of these drafts still name the command that closed them (a restore clears it). */
-export async function draftsStillClosedBy(
-  db: DrizzleDb,
-  drafts: readonly { draftId: string; by: string }[],
-): Promise<ReadonlySet<string>> {
-  const rows = await db
-    .select({ id: documentDrafts.id, by: documentDrafts.closedBy })
-    .from(documentDrafts)
-    .where(
-      inArray(
-        documentDrafts.id,
-        drafts.map((draft) => draft.draftId),
-      ),
-    );
-  const by = new Map(drafts.map((draft) => [draft.draftId, draft.by]));
-  return new Set(rows.filter((row) => row.by === by.get(row.id)).map((row) => row.id));
-}
-
-export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"> }): DraftClose {
+export function createDraftClose(): DraftClose {
   let sink: { retire: DraftRetirement; onError(error: unknown): void } | null = null;
 
   async function retire(batch: DraftRetirementBatch): Promise<void> {
@@ -122,92 +79,33 @@ export function createDraftClose(deps: { treeLists: Pick<TreeListStore, "resync"
 
   const participant: DrizzleTransactionParticipant<Batch> = {
     key: {},
-    create: () => ({ closed: [], removed: new Map() }),
-    fork: () => ({ closed: [], removed: new Map() }),
+    create: () => ({ ended: [], removed: new Map() }),
+    fork: () => ({ ended: [], removed: new Map() }),
     merge(parent, child) {
-      parent.closed.push(...child.closed);
+      parent.ended.push(...child.ended);
       for (const [id, record] of child.removed) parent.removed.set(id, record);
       return parent;
     },
     async beforeCommit(batch) {
-      if (!batch.closed.length && !batch.removed.size) return;
-      runAfterDrizzleCommit(async () => {
-        const hold = retirementHold.getStore();
-        if (hold?.open) hold.effects.push(() => retire(batch));
-        else await retire(batch);
-      });
+      if (!batch.ended.length && !batch.removed.size) return;
+      runAfterDrizzleCommit(() => retire(batch));
     },
   };
 
-  function registerRemoved(
-    documentIds: readonly DocumentId[],
-    record: DocumentRemovalRecord,
-  ): void {
-    const batch = enlistDrizzleTransactionParticipant(participant);
-    for (const id of documentIds) batch.removed.set(id, record);
-  }
-
   return {
-    registerRemoved,
-    async closeDrafts(db, selection, cause, by) {
+    registerRemoved(documentIds, record) {
       const batch = enlistDrizzleTransactionParticipant(participant);
-      if (typeof cause === "object") {
-        if (!("documentIds" in selection))
-          throw new Error("A removal closes the drafts of the documents it removed");
-        registerRemoved(selection.documentIds, cause.documentRemoved);
-      }
-      const rows = await lockActiveDrafts(db, selection);
-      const closed = rows.length
-        ? await db
-            .update(documentDrafts)
-            .set({
-              status: "closed",
-              closedCause: typeof cause === "object" ? "document_removed" : "discarded",
-              closedBy: by ?? null,
-              updatedAt: new Date(),
-              revision: sql`${documentDrafts.revision} + 1`,
-            })
-            .where(
-              inArray(
-                documentDrafts.id,
-                rows.map((row) => row.id),
-              ),
-            )
-            .returning({
-              draftId: documentDrafts.id,
-              documentId: documentDrafts.documentId,
-              branchId: documentDrafts.branchId,
-              kind: documentDrafts.kind,
-            })
-        : [];
-      // A Work's last text on a document going leaves its view's rows stale: they trail the
-      // replay of the list that holds the document by what the text kept shown (rule 7). Takes
-      // no list key: the caller holds the list of every document it closes drafts of.
-      const lists = new Map<string, TreeList>();
-      for (const row of closed)
-        if (row.kind === "work_draft") {
-          const list = await treeListOfNode(db, row.documentId);
-          if (list) lists.set(JSON.stringify(list), list);
-        }
-      if (lists.size > 0) await deps.treeLists.resync([...lists.values()]);
-      const ended = closed.map((row) => ({
-        draftId: row.draftId,
-        documentId: row.documentId as DocumentId,
-        branchId: row.branchId,
-        cause,
-        by,
-      }));
-      batch.closed.push(...ended);
-      return ended;
+      for (const id of documentIds) batch.removed.set(id, record);
     },
-    async holdRetirement(run) {
-      const hold: Hold = { effects: [], open: true };
-      try {
-        return await retirementHold.run(hold, run);
-      } finally {
-        hold.open = false;
-        for (const effect of hold.effects) await effect();
-      }
+    async endDrafts(db, selection) {
+      const batch = enlistDrizzleTransactionParticipant(participant);
+      const rows = await db
+        .select({ draftId: documentDrafts.id, documentId: documentDrafts.documentId })
+        .from(documentDrafts)
+        .where(draftSelectionPredicate(selection));
+      batch.ended.push(
+        ...rows.map((row) => ({ ...row, documentId: row.documentId as DocumentId })),
+      );
     },
     bindRetirement(retire, onError) {
       sink = { retire, onError };

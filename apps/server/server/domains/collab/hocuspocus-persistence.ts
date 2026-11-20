@@ -71,7 +71,7 @@ export type HocuspocusPersistenceService = Pick<
   CollabTransport,
   | "resolveDraftHocuspocusRoom"
   | "draftExists"
-  | "draftStates"
+  | "openDraftIds"
   | "loadHocuspocusDocument"
   | "loadHocuspocusDraftState"
   | "admitLiveWriterUpdate"
@@ -308,14 +308,12 @@ export function createHocuspocusPersistenceService(
     async resolveDraftHocuspocusRoom(draftId) {
       const documentDraft = await requireDraftStore().getDraft(draftId);
       const owner = documentDraft && ownerOfColumns(documentDraft);
-      if (documentDraft?.status !== "active" || documentDraft.kind !== "work_draft" || !owner)
-        return null;
+      if (documentDraft?.kind !== "work_draft" || !owner) return null;
       return {
         draftId: documentDraft.draftId,
         documentId: documentDraft.documentId,
         owner,
         schemaVersion: documentDraft.schemaVersion,
-        status: documentDraft.status,
       };
     },
 
@@ -323,8 +321,8 @@ export function createHocuspocusPersistenceService(
       return (await requireDraftStore().getDraft(draftId)) !== null;
     },
 
-    async draftStates(userId, draftIds) {
-      return requireDraftStore().draftStates(userId, draftIds);
+    async openDraftIds(userId, draftIds) {
+      return requireDraftStore().openDraftIds(userId, draftIds);
     },
 
     async loadHocuspocusDocument(documentId, document) {
@@ -342,12 +340,10 @@ export function createHocuspocusPersistenceService(
 
     async loadHocuspocusDraftState(draftId) {
       const documentDraft = await requireDraftStore().getDraft(draftId);
-      if (documentDraft?.status !== "active" || documentDraft.kind !== "work_draft")
-        return undefined;
-      // Revalidate close status on the content read, not just the metadata read.
-      return requireDraftCoordinator().readDraft(draftId, async (doc, snapshot) =>
-        snapshot.status === "active" ? { state: Y.encodeStateAsUpdate(doc) } : undefined,
-      );
+      if (documentDraft?.kind !== "work_draft") return undefined;
+      return requireDraftCoordinator().readDraft(draftId, async (doc) => ({
+        state: Y.encodeStateAsUpdate(doc),
+      }));
     },
 
     enrollHocuspocusDraftRoom({ draftId, document }) {
@@ -362,16 +358,7 @@ export function createHocuspocusPersistenceService(
           room: document,
           trigger: "enrollment",
         });
-        if (!base) {
-          const ended = await requireDraftStore().getDraft(draftId);
-          closeRoom(
-            hocuspocus,
-            document,
-            ended?.closedCause === "document_removed"
-              ? WS_CLOSE.DOCUMENT_DELETED
-              : WS_CLOSE.DRAFT_CLOSED,
-          );
-        }
+        if (!base) closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_PURGED);
       })().catch((cause: unknown) => {
         if (!deps.eventSink) return;
         emitEvent(deps.eventSink, {

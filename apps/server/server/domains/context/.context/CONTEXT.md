@@ -218,9 +218,9 @@ document keys; a caller holds no document or namespace key when it submits. `con
   transaction through `inTransaction` / `afterWrite`.
 
 - Copy's `commands` row (`kind: "copy"`, `copy/copy-commands.ts`; its outcome holds the
-  receipt) owns the transaction: the claim is its first write, a refusal after it is stored, a
-  transient `io_error` rolls the claim back so the id stays retryable, and another request under
-  the id answers `command_conflict`. Inside it the command transaction
+  receipt) owns the transaction: the claim is its first write, every answer it stores is `done` (a
+  copy, or no entries with `settled` saying why), an error rolls the claim back so the id stays
+  sendable, and another request under the id answers `command_conflict`. Inside it the command transaction
   (`commandTransaction.run`) takes the destination's Work and, through `treeListStore.submit`,
   its list. The sources are a frozen cut, so their lists are not locked
   and a source deleted mid-copy is a copy of what the writer saw. The command re-resolves an
@@ -236,7 +236,7 @@ addresses to adapters, `copy/copy-command.ts` reads, duplicates and orchestrates
 `adapters/context-fs/copy-adapter.ts` (source read) with `copy-tree.ts` (insertion) is what
 one source's tree contributes.
 
-- Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, in the source view) and each
+- Each source tree is listed once (`ContextCopyAdapter.snapshotSource`, by node id, in the source view) and each
   tracked document's content is read once as a frozen cut (`readEffectiveBlocks`: the live
   document, or the Work's draft where it has one). A Draft view reads live content for
   documents without a Work draft, while spelling links in the Draft tree. The listing is a
@@ -253,13 +253,22 @@ one source's tree contributes.
 - The command transaction (`commandTransaction.run`) takes the destination's Work and, through
   `treeListStore.submit`, its list. The sources are a frozen cut, so their lists are not locked
   and a source deleted mid-copy is a copy of what the writer saw. The command re-resolves an
-  identity destination through the router's one resolver (`destination_missing` when the
-  folder is gone, `permission_denied` when the writer cannot edit it), then the destination
-  adapter inserts the plan (`copyInto`) as one `submit`.
+  identity destination through the router's one resolver (`permission_denied` when the writer
+  cannot command it), then the destination adapter inserts the plan (`copyInto`) as one `submit`.
   Copy and Agent files share `copy/bind-tree.ts` and `adapters/context-fs/copy-tree.ts`:
   Copy binds document blocks; Agent files bind plain code text for the planned address. The
   insertion accepts several destination folders in one submission, installs their initial
   states atomically, and schedules projections after commit. A failed plan creates no folders.
+  The destination folder is followed by id: a folder that moved is the folder where it is now
+  (the plan is made again for its new address), and one in Trash is the parent the roots are
+  created under, so the tree's rule 3 stands it again around them (`insertTree`'s `parent`).
+  A folder moved to another Work or scheme under the lock is a retryable `io_error`: the lock
+  held is the old Work's. A project scheme's destination never locks the port's primary Work
+  (`workScopeId` is null for it): a Copy out of a closed Work into a project scheme lands.
+  When the destination's Work is archived or deleted, the Work lock throws inside
+  `commandTransaction.run`, before anything is written, and `copy()` stores a `done` receipt with
+  no entries and `settled: [{ rule: "returned", why }]`, releasing the duplicated objects since
+  that transaction commits.
 - A copy keeps its source's names ([names
   repeat](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/placement-and-naming.md#names-repeat)):
   beside a node of that name it is a twin. The plan (`planCopy`) reads nothing of the destination;
@@ -282,36 +291,53 @@ one source's tree contributes.
 - A copied folder's children arrive in source order, so its visible order survives. Roots
   arrive at the end of the destination parent. An explicit position places the roots as one
   run: the first there, each next one after the previous.
-- Content is bound for the address each copy will have (`bindCopiedBlocks`) before the lock.
-  The insert submits `create` records once. A live copy encodes each bound document as its
-  first Yjs state, then settles arrivals; projections and link rows derive after commit. A
-  draft copy creates an empty live authority and draft through admission, then appends the bound
-  blocks to that draft through the draft coordinator. It is not a live arrival. Binaries carry
-  the duplicated object in the selected tree view. `metadata.copiedFrom` records the source URI,
-  the version read and that version's revision.
-- Refusals are typed: `not_found` or `stale_source` for a gone or changed source,
-  `destination_missing` for a destination that no longer exists, `stale_target` for one that
-  moved, `permission_denied` for an identity destination the writer cannot edit,
-  `invalid_operation`
-  for a folder into its own subtree ("Can't go inside itself", the drag hint's words), the
-  source root, or a draft placement destination. Uploads as the
-  destination (by path or by folder identity), a malformed path or state vector, and a vector
-  sent for a folder are refused by the route before the domain runs, typed and unrecorded. A
-  draft view names its Work and no chat: the server reads that Work's active branch's draft of
-  each document, and a Work outside the project is refused as `work_missing`. A draft view
-  never refuses for lack of a draft: a document the Work holds no draft of copies its live text
-  (`copiedFrom.version` `live`), so a folder copies each document as the Work shows it. The
-  copy is what the writer saw: Draft view shows a document with no draft as its live text.
+- Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
+  so it lands only in an empty document) and encoded to its first Yjs state
+  (`encodeSeed`) outside the lock. A copy into a Work's draft view creates an empty live
+  authority and draft through admission, then appends the bound blocks to that draft through
+  the draft coordinator (`writeCreatedDraftContent`); it is not a live arrival. The live insert is one `submit` of `create` records
+  (`SourceTree.insertTree`, ranks from `generateNKeysBetween`); the creation aggregate
+  (`createDocumentsAtomically`) persists the identities, `InitialDocumentSeeds` writes the heads and
+  seed checkpoints, and every arrival settles once, so ahead refs pointing at a copy's new address
+  settle. Projections and link rows are derived after the transaction commits, four documents at a
+  time (`refreshDocumentProjection`), and the answer does not wait for them: a successful answer
+  means the rows are committed, not derived. A derivation that fails is logged and the stale sweep
+  recovers it. `metadata.copiedFrom` records the source URI, the version read and that version's
+  revision.
+- A Copy follows ids, never the path the writer saw. The route finds each source by node id
+  (`availability.held`, `inTrash: true`: where it stands now, or the last address it held in Trash,
+  in a closed Work too) and passes that address; the adapter reads the subtree by id
+  (`ContextDocumentStore.readSubtree`: the node and what its own delete took, or what is live
+  under it). A node in Trash is read on a `command` grant, since a deleted file's `read` is
+  none. A source the project no longer holds (purged, or in another project), a document whose
+  bytes were released, and a root that would land inside itself are left out: the Copy lands
+  the rest and `settled` carries `left_out` with `purged` or `would_loop` and the roots' addresses.
+  A destination folder the project no longer holds copies nothing (`left_out`, every source).
+  Nothing is `stale_source`, `stale_target` or `destination_missing` now.
+  What is still an error and stores nothing: `invalid_operation` for the source root or a
+  placement destination that cannot take a copy; `permission_denied` for a destination the
+  writer cannot command; uploads as the destination (by path or by folder identity), a malformed
+  path or state vector, and a vector sent for a folder, which the route refuses before the domain
+  runs. A draft view names its Work and no chat: the server reads that Work's active draft of
+  the document, else the latest one a Discard or a delete closed (its bytes are retained), else
+  the live document (the Work never drafted it, so the draft view showed live); a Work outside
+  the project is refused as `work_missing`. A draft source reads the Work's tree by id, so a
+  folder copies with the documents the Work places in it, and a node the Work does not place
+  is left out as purged. The one name outcome left to the address-model
+  research is `conflict` (a copy id another row holds).
 - A client-held source sends its Yjs state vector with a document source (a folder source
   with a vector is a 400). The vector is compared with the room of the view being read, live
   or draft. When the cut lacks updates it names, the read waits up to 2 s for the room to
-  catch up, then answers `io_error` with `reason: "source_behind"` ("The source has edits the
-  server has not received yet"): retryable and never recorded, so the replica's replay
-  reads the room again, and distinct from a transport failure so the
-  replica can stop after a bounded wait. A live document's vector from a real tab has been checked; no draft
-  tab has sent one yet, so confirm the draft room's vector against one first.
+  catch up, then answers a 503 `io_error` with `reason: "source_behind"` ("The source has edits the
+  server has not received yet"): retryable and never recorded, so the same id may be sent
+  again, and distinct from a transport failure. The browser sends the vector of every open document (`openStateVector` on the session
+  registry: the live room, or for a draft view the one open draft room of the document) and sends
+  the same Copy again, backing off from 0.5 s to 5 s, for as long as the answer is
+  `source_behind` (`execute-copy.ts`): typing a tab holds always reaches the server
+  (`findings/unsynced-probe.md`), so the wait ends. A draft view's vector has not been run against a
+  live draft tab yet: confirm it there first.
 - A document that exists only in a Work's draft is not in the live tree, so it cannot be a
-  source yet (`not_found`).
+  source yet (left out as purged).
 - There is no Undo command: Copy's Undo is ordinary deletion of the identities it created.
 
 ## Catalog and publication

@@ -147,13 +147,6 @@ export function TroubleChip({
           touch={touch}
           word={t`Unavailable`}
           heading={t`${name} is unavailable`}
-          sub={
-            trouble.runtime
-              ? t`New chats can't start it until these are fixed.`
-              : file.saved
-                ? t`The last Save left it out. Fix these and save again.`
-                : t`Save leaves it out until these are fixed.`
-          }
         >
           {() => <SentenceList items={trouble.problems} />}
         </FindingsChip>
@@ -165,7 +158,6 @@ export function TroubleChip({
           touch={touch}
           word={t`Not in use`}
           heading={t`Your latest edit isn't in use`}
-          sub={t`New chats use the last good save of ${name} until these are fixed and it is saved again.`}
         >
           {() => <SentenceList items={trouble.problems} />}
         </FindingsChip>
@@ -188,7 +180,6 @@ export function TroubleChip({
           touch={touch}
           word={plural(trouble.notes.length, { one: "# note", other: "# notes" })}
           heading={plural(trouble.notes.length, { one: "# note", other: "# notes" })}
-          sub={t`${name} works and saves.`}
         >
           {() => <SentenceList items={trouble.notes} />}
         </FindingsChip>

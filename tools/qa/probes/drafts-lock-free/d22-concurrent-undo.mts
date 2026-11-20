@@ -1,9 +1,10 @@
 /**
  * Decision D22 item 5: two Undos of the same model write, started together on independent
- * connections, land once. The inverse orders them by what it captured (the draft's revision under
- * its exact checkpoint rewrite, the live head under the document's mutation lock), not by a
- * `document-inverse` advisory lock: the second misses, recaptures, sees the write already undone,
- * and records nothing. Both destinations: a live document and a Work draft.
+ * connections, land once. The inverse plans inside its commit (the draft's revision under its exact
+ * checkpoint rewrite, the live head under the document's mutation lock), not by a
+ * `document-inverse` advisory lock: the second sees the write already undone and records nothing,
+ * and answers `success` like any Undo that has nothing left to take. Both destinations: a live
+ * document and a Work draft.
  */
 import assert from "node:assert/strict";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
@@ -48,12 +49,16 @@ async function seedModelDraftWrite(harness: Harness, label: string) {
   Y.applyUpdate(pre, before);
   let parts: ReturnType<typeof captureReceiptRows>;
   try {
-    parts = captureReceiptRows(pre, [
-      {
-        update,
-        origin: { kind: "pending", draftId: documentDraft.draftId, rowId: 0 },
-      },
-    ]);
+    parts = captureReceiptRows(
+      pre,
+      [
+        {
+          update,
+          origin: { kind: "pending", draftId: documentDraft.draftId, rowId: 0 },
+        },
+      ],
+      true,
+    );
   } finally {
     pre.destroy();
   }
@@ -98,7 +103,7 @@ function inverseService(harness: Harness, handle: string) {
       recover: async () => {},
       deliver: async () => {},
     } as never,
-    draftCoordinator: { async deliverCommitted() {} },
+    draftCoordinator: harness.coordinator,
     resolveDocumentUri: async () => `scratch://@${handle}/probe.md`,
     resolveLastDocumentUri: async () => null,
     refreshDocument: async () => {},
@@ -151,7 +156,7 @@ export const d22ConcurrentUndo: Probe = {
   name: "d22-concurrent-undo",
   decision: "D22",
   expected:
-    "live and draft: one `success`, one refusal; kinds `write, undo`; the text reverted once; no `40P01`",
+    "live and draft: one answers `success`, the other `cant_undo_changed` (the commit took nothing); kinds `write, undo`; the text reverted once; no `40P01`",
   async run(harness) {
     {
       const seeded = await seedModelLiveWrite(harness, "two-undo-live");
@@ -159,7 +164,7 @@ export const d22ConcurrentUndo: Probe = {
       const kinds = await editKinds(harness, seeded.documentId);
       const text = await harness.liveText(seeded.documentId);
       observe("live", { statuses, kinds, text });
-      assert.equal(statuses.filter((status) => status === "success").length, 1);
+      assert.deepEqual(statuses, ["cant_undo_changed", "success"]);
       assert.ok(
         statuses.every((status) => !/Error/.test(status)),
         statuses.join(", "),
@@ -185,7 +190,7 @@ export const d22ConcurrentUndo: Probe = {
       const kinds = await editKinds(harness, seeded.documentId);
       const draft = await harness.readDraft(seeded.draftId);
       observe("draft", { statuses, kinds, text: draft.text, revision: draft.revision });
-      assert.equal(statuses.filter((status) => status === "success").length, 1);
+      assert.deepEqual(statuses, ["cant_undo_changed", "success"]);
       assert.ok(
         statuses.every((status) => !/Error/.test(status)),
         statuses.join(", "),

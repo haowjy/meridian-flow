@@ -7,7 +7,7 @@ import { Trans } from "@lingui/react/macro";
 import { type AgentFinding, type SaveOutcome, shownFindings } from "@meridian/contracts/agents";
 import { useProjectDocumentNavigationProjectId } from "@/features/project/context/open-project-document";
 import { useOpenAgentFile } from "./agent-file-document";
-import { changeLine, FindingList, heldBack, heldSummary } from "./PackageSave";
+import { changeLine, FindingList, heldBack, heldHeading } from "./PackageSave";
 import { packageLabel } from "./package-save";
 import { UndoSave } from "./UndoSave";
 
@@ -50,7 +50,7 @@ function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: 
           {outcome.outcome === "failed" ? (
             <Trans>Not saved: {label}</Trans>
           ) : held.length > 0 ? (
-            heldSummary(outcome).heading
+            heldHeading(outcome)
           ) : outcome.outcome === "saved" ? (
             <Trans>Saved {label}</Trans>
           ) : (
@@ -64,28 +64,14 @@ function OutcomePart({ outcome, projectId }: { outcome: SaveOutcome; projectId: 
       {outcome.outcome === "failed" ? (
         <>
           <p className="px-[var(--chat-card-pad-x)] text-muted-foreground">
-            {outcome.savedBefore ? (
-              <Trans>
-                Nothing in it could be read. New chats keep the version saved before until this is
-                fixed.
-              </Trans>
-            ) : (
-              <Trans>
-                Nothing in it could be read. New chats can't use it until this is fixed.
-              </Trans>
-            )}
+            <Trans>Couldn't read it</Trans>
           </p>
           <Findings projectId={projectId} outcome={outcome} findings={outcome.findings} />
         </>
       ) : (
         <>
           {held.length > 0 ? (
-            <>
-              <p className="px-[var(--chat-card-pad-x)] text-foreground">
-                {heldSummary(outcome).sub}
-              </p>
-              <Findings projectId={projectId} outcome={outcome} findings={held} />
-            </>
+            <Findings projectId={projectId} outcome={outcome} findings={held} />
           ) : null}
           {saved.length > 0 ? (
             <ul className="px-[var(--chat-card-pad-x)]">

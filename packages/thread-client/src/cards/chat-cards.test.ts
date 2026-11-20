@@ -96,7 +96,7 @@ it("anchors a refused Retry on its reply for the view even when the reply was fo
     }),
   );
   expect(refused.cards).toMatchObject([
-    { key: "req:1", copy: "retry-refused-another-reply", anchor: { turn: "f" }, action: null },
+    { key: "req:1", copy: "retry-refused", anchor: { turn: "f" }, action: null },
   ]);
   expect([...refused.anchoredTurnIds]).toEqual(["f"]);
 

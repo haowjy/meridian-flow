@@ -9,10 +9,7 @@ import type { OpenDocument } from "@/client/stores";
 import { DraftNoticeLine } from "@/features/draft-review/CommandNotice";
 import { changeListLabel } from "@/features/draft-review/DocumentChanges";
 import type { DraftNotice } from "@/features/draft-review/draft-notices";
-import {
-  ReviewFailureNotices,
-  ReviewStateInline,
-} from "@/features/draft-review/ReviewHeaderNotices";
+import { ReviewStateInline } from "@/features/draft-review/ReviewHeaderNotices";
 import { ReviewStepper } from "@/features/draft-review/ReviewStepper";
 import type { ReviewHeaderModel } from "@/features/draft-review/useReviewHeader";
 import { DocumentVersionMenu } from "@/features/editor/DocumentVersionMenu";
@@ -75,7 +72,6 @@ export function MobileReviewHeader({
         <ManuscriptStateSlot state={manuscriptState} touch />
         <ReviewStateInline
           touch
-          itemKey={view.itemKey ?? ""}
           finished={finished}
           completing={header.completing}
           next={header.next}
@@ -106,12 +102,6 @@ export function MobileReviewHeader({
       {notice ? (
         <DraftNoticeLine notice={notice} className="border-t border-border-subtle" />
       ) : null}
-      <ReviewFailureNotices
-        itemKey={view.itemKey ?? ""}
-        commandError={header.commandError}
-        failedElsewhere={header.failedElsewhere}
-        onOpenNext={header.openDraft}
-      />
     </section>
   );
 }

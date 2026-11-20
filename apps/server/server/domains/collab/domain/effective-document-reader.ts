@@ -99,8 +99,8 @@ export function createEffectiveDocumentReader(input: {
 
   /**
    * A Work's draft room as the Work holds it: found by the Work and the document alone, with
-   * no reading chat and no reply's staged writes. A Work without a draft of the document is
-   * `draft_not_found`; callers decide whether to fall back to live.
+   * no reading chat and no reply's staged writes. A Work that never drafted the document is `draft_not_found`; callers decide
+   * whether to fall back to live.
    */
   async function readWorkDraft<T>(
     command: { documentId: DocumentId; owner: DraftOwner },

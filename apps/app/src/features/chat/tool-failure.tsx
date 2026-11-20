@@ -18,7 +18,7 @@ export function errorMessageExpand(tool: ToolView): ToolExpand | null {
 }
 
 /** A schema failure, or arguments that weren't JSON: either way the model's mistake. */
-const INVALID_ARGUMENTS = () => t`The assistant called this tool with arguments it couldn't use.`;
+const INVALID_ARGUMENTS = () => t`Invalid arguments`;
 
 /**
  * A refusal's own message, localized where the app knows the code. A caught exception
@@ -28,7 +28,7 @@ export function failureText(result: NonNullable<ToolView["result"]>): string {
   const record =
     typeof result === "object" && !Array.isArray(result) ? (result as { error?: unknown }) : null;
   if (record?.error === "invalid_arguments") return INVALID_ARGUMENTS();
-  if (record?.error === "permission_denied") return t`The assistant can't use this tool here.`;
+  if (record?.error === "permission_denied") return t`Not allowed`;
   // Spawn and thread_message refusals nest their error under `error`.
   const nested = record?.error && typeof record.error === "object" ? record.error : null;
   const error = meridianErrorFromStructuredToolOutput((nested ?? result) as typeof result);
@@ -38,19 +38,17 @@ export function failureText(result: NonNullable<ToolView["result"]>): string {
     case "tool_arguments_parse":
       return INVALID_ARGUMENTS();
     case TOOL_EXCEPTION_CODE:
-      return t`Something went wrong while running this.`;
+      return t`Tool error`;
     case "tool_timeout":
-      return t`This took too long, so it was stopped.`;
+      return t`Timed out`;
     case "thread_stopped":
-      return t`A chat was stopped, so this wasn't sent.`;
+      return t`Chat stopped`;
     case "one_request_at_a_time":
-      return t`Only one question or request can wait for an answer at a time, so this one wasn't asked.`;
+      return t`A question is already waiting`;
     case "permission_denied":
       // The action policy's refusals (a read-only agent, a subagent that can't ask) are
       // worded for the model; file-policy refusals keep their own message.
-      return isActionDenied(error.details)
-        ? t`This assistant isn't allowed to make this change, so it wasn't done.`
-        : error.message;
+      return isActionDenied(error.details) ? t`Not allowed` : error.message;
     default:
       return error.message;
   }
@@ -62,21 +60,21 @@ function mcpFailureText(code: string, record: object | null): string | null {
   const name = typeof connection === "string" ? connection : null;
   switch (code as McpFailureCode) {
     case "mcp_tool_error":
-      return t`The tool ran and reported a problem.`;
+      return t`Tool error`;
     case "mcp_rejected":
-      return name ? t`${name} refused the request.` : t`The server refused the request.`;
+      return name ? t`${name} refused it` : t`Refused`;
     case "mcp_too_large":
-      return t`The reply was too large to keep.`;
+      return t`Reply too large`;
     case "mcp_unreachable":
-      return name ? t`${name} couldn't be reached.` : t`The server couldn't be reached.`;
+      return name ? t`${name} unreachable` : t`Unreachable`;
     case "mcp_unauthorized":
-      return name ? t`${name} needs a valid token.` : t`The server needs a valid token.`;
+      return name ? t`${name} needs sign-in` : t`Needs sign-in`;
     case "mcp_aborted":
-      return t`This was stopped before it finished.`;
+      return t`Stopped`;
     case "mcp_unknown_tool":
-      return t`This chat has no connection tool by that name.`;
+      return t`Unknown tool`;
     case "mcp_connection_removed":
-      return name ? t`${name} was removed from your connections.` : t`This connection was removed.`;
+      return name ? t`${name} removed` : t`Connection removed`;
     default:
       return null;
   }

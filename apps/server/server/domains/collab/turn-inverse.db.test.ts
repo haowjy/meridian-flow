@@ -1,13 +1,7 @@
-/** Card partial inverses and writer text preservation. */
-import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { LIVE } from "@meridian/project-tree";
-import { allocateDocumentClient } from "@meridian/prosemirror-schema";
-import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, expect, it } from "vitest";
-import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
-import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import {
   ALPHA_ID,
   BETA_ID,
@@ -15,13 +9,10 @@ import {
   createTestDatabase,
   resetDatabase,
   SOURCE_ID,
-  schema,
   THREAD_ID,
   TURN_ID,
-  USER_ID,
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
-import { draftContent } from "./test-support/draft-store-seam.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
 
 const db = createTestDatabase();
@@ -64,90 +55,9 @@ it("a document in no view (deleted after its edit) does not stop another documen
       lists: [await treeListOfSource(db, SOURCE_ID)],
       make: ([{ writer }]) => writer.delete(LIVE, "system", BETA_ID),
     });
-    expect(await view.collab.getTurnReceiptChip(THREAD_ID, TURN_ID)).toMatchObject({
+    expect(await view.collab.getDocumentAndTreeChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",
     });
-  } finally {
-    await harness.dispose();
-  }
-});
-
-it("Redo after the writer typed inside restored text deletes only the model's letters", async () => {
-  const { harness, view, context } = await fixture();
-  try {
-    expect(
-      await view.collab.agentEdit().write(
-        {
-          command: "replace",
-          documentId: ALPHA_ID,
-          file: "alpha.md",
-          find: "Beta",
-          content: "",
-          tool_use_id: "delete",
-        },
-        context,
-      ),
-    ).toMatchObject({ status: "success" });
-    expect(
-      await view.collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      }),
-    ).toMatchObject({ status: "reversed" });
-    const [documentDraft] = await db
-      .select()
-      .from(schema.documentDrafts)
-      .where(
-        and(
-          eq(schema.documentDrafts.documentId, ALPHA_ID),
-          eq(schema.documentDrafts.kind, "work_draft"),
-        ),
-      );
-    const pending = createDrizzleWorkBranchPendingStore(db);
-    expect((await pending.pendingWriters(documentDraft.id)).threadIds).toEqual([]);
-    expect(
-      await view.collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction: "redo",
-        actor: { type: "user", userId: USER_ID },
-      }),
-    ).toMatchObject({ status: "reversed" });
-    expect((await pending.pendingWriters(documentDraft.id)).threadIds).toEqual([THREAD_ID]);
-    expect(
-      await view.collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction: "undo",
-        actor: { type: "user", userId: USER_ID },
-      }),
-    ).toMatchObject({ status: "reversed" });
-    const doc = new Y.Doc({ gc: false });
-    try {
-      Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
-      doc.clientID = allocateDocumentClient(doc);
-      const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
-      const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.draftCoordinator.commitWriterUpdate({
-        draftId: documentDraft.id,
-        updateData: Y.mergeUpdates(updates),
-        actorUserId: USER_ID,
-        roomDocument: doc,
-      });
-    } finally {
-      doc.destroy();
-    }
-    expect(
-      await view.collab.reverseTurn({
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        direction: "redo",
-        actor: { type: "user", userId: USER_ID },
-      }),
-    ).toMatchObject({ status: "reversed", acceptedParts: 1 });
-    expect(await view.draftMarkdown(documentDraft.id)).toBe("Alpha !.\n\nBlue.\n");
   } finally {
     await harness.dispose();
   }

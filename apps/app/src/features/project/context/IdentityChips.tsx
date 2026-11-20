@@ -33,9 +33,7 @@ export function ChooseHomeChip({ onClick }: { onClick: () => void }) {
         </Chip>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-60">
-        <Trans>
-          Not filed yet, so it sits in Unfiled. Click to give it a name and a place in your project.
-        </Trans>
+        <Trans>Unfiled</Trans>
       </TooltipContent>
     </Tooltip>
   );

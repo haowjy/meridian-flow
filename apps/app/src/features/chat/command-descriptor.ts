@@ -28,7 +28,6 @@ import {
   type LucideIcon,
   PenLine,
   Plug,
-  Redo2,
   Save,
   Search,
   Sparkles,
@@ -171,13 +170,6 @@ const COMMAND_DESCRIPTORS: Record<ToolCommand, CommandDescriptor> = {
     Icon: Undo2,
     phrases: () => tenses(t`Undoing…`, t`Undid`),
     failureVerb: () => t`Couldn't undo`,
-    pathlessTitle: null,
-    expand: "none",
-  },
-  redo: {
-    Icon: Redo2,
-    phrases: () => tenses(t`Redoing…`, t`Redid`),
-    failureVerb: () => t`Couldn't redo`,
     pathlessTitle: null,
     expand: "none",
   },
@@ -390,16 +382,12 @@ function copyTenses(tool: ToolView): ToolActivityVocabulary {
 }
 
 /**
- * Where a settled undo, redo or move put its document, when that is not the path the model asked
+ * Where a settled undo or move put its document, when that is not the path the model asked
  * for: it landed beside a namesake, so its path carries a `~` suffix. The row names and opens this.
  */
 export function settledDocumentPath(tool: ToolView): string | undefined {
   const command = toolCommand(tool);
-  if (
-    tool.status !== "complete" ||
-    (command !== "undo" && command !== "redo" && command !== "move")
-  )
-    return undefined;
+  if (tool.status !== "complete" || (command !== "undo" && command !== "move")) return undefined;
   const result = tool.result;
   if (result === null || typeof result !== "object" || Array.isArray(result)) return undefined;
   return typeof result.path === "string" && result.path.length > 0 ? result.path : undefined;

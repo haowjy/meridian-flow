@@ -29,7 +29,7 @@ with no row and on a row with no break.
 |---|---|---|---|
 | `collab` | `context` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-apply-tree.ts` |
 | `collab` | `file-policy` | domains are acyclic | `apps/server/server/domains/collab/adapters/drizzle-drafts.ts` |
-| `collab` | `projects` | domains are acyclic | `apps/server/server/domains/collab/adapters/lifecycle-refusal.ts` |
+| `collab` | `projects` | domains are acyclic | `apps/server/server/domains/collab/adapters/closed-owner-bounce.ts` |
 | `context` | `collab` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/bound-writes.ts` |
 | `context` | `file-policy` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |
 | `context` | `projects` | domains are acyclic | `apps/server/server/domains/context/adapters/context-fs/context-fs.ts` |

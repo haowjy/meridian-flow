@@ -27,10 +27,8 @@ regenerate the three migration artifacts; never merge their SQL by hand.
 A document tombstone has a non-null deletion reason exactly when it has
 `deleted_at`. User, Work and system-cause fields identify its actor; legacy
 actors may be unknown. Only a Work cascade sets `deleted_by_work_id`, which
-remains its restore marker. Restore clears all removal fields. A closed draft
-has its own `closed_cause`, independent of the document's current removal
-(`discarded` or `document_removed`), so Work restore does not erase why a
-draft closed. `content_purged_at` marks a tombstone whose document bytes and content history have
+remains its restore marker. Restore clears all removal fields. A draft has no status: it is
+deleted with its Work or its document's content, never closed. `content_purged_at` marks a tombstone whose document bytes and content history have
 been released after the retention window; placement and the removal record remain.
 
 A `branches` row is one owner's pending file tree. Its active owner is either
@@ -70,7 +68,8 @@ JSON-looking scalar strings into other values.
 
 Undo records an inverse as a new edit rather than rewriting history. Immutable
 `document_edits` and `document_edit_parts` retain the original edit, its author
-and the inverse needed to take it back.
+and the inverse needed to take it back. A drafted part keeps the branch its draft was in
+(`draft_branch_id`, no foreign key), so its turn's card still finds its owner after the draft row is gone.
 
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on

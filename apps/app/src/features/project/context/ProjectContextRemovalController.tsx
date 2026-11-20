@@ -7,6 +7,7 @@ import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextSourceFacts } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
+import { logInAgain } from "@/components/app/AppStatus";
 import { notifyFailure } from "@/components/app/failure-toast";
 import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import {
@@ -88,8 +89,8 @@ export function ProjectContextRemovalController({
       signInRequired: () =>
         notifyFailure({
           key: "sign-in-expired",
-          title: t`Your sign-in has expired. Sign in again to keep your changes syncing; nothing you typed is lost.`,
-          onRetry: () => window.location.reload(),
+          title: t`Sign-in expired`,
+          action: { label: t`Log in`, run: logInAgain },
         }),
     });
     setObserver(created);

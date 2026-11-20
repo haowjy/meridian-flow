@@ -1,6 +1,7 @@
 /** Translation from scheme-adapter results into canonical ContextPort results. */
 import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { TreeOwnersMoved } from "../../../shared/tree-owners.js";
 import { NodeIdRefusedError } from "../adapters/tree-list-rows.js";
 import type {
   AdapterFault,
@@ -72,6 +73,8 @@ export async function callAdapter<T>(
   try {
     result = await op();
   } catch (error) {
+    // Not a fault: the command's caller runs it again with more owners locked.
+    if (error instanceof TreeOwnersMoved) throw error;
     // A node id the caller reserved (an upload's) is already in use.
     if (error instanceof NodeIdRefusedError) return Err({ code: "conflict", uri });
     return Err({

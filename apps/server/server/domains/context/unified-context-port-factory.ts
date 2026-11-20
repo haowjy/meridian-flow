@@ -26,7 +26,7 @@ import { lockContextNamespaces } from "./adapters/context-fs/document-locations.
 import type { ContextPlacement } from "./adapters/context-fs/placement.js";
 import { createSourceTree } from "./adapters/context-fs/tree-writes.js";
 import { createDrizzleOwnerLookup } from "./adapters/owner-lookup.js";
-import { resolveActiveFolderUri } from "./adapters/project-context-availability.js";
+import { resolveHeldFolderUri } from "./adapters/project-context-availability.js";
 import { createDrizzleScratchLineages } from "./adapters/scratch-lineages.js";
 import type { ChatUploadsOwners } from "./chat-uploads-owners.js";
 import { type ContextSourceBinding, createContextPortRouter } from "./context/router.js";
@@ -482,7 +482,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         links: options.links,
         documentCreation: options.documentSync,
         resolveDestinationFolder: async (id, view) =>
-          resolveActiveFolderUri(
+          resolveHeldFolderUri(
             options.db,
             projectId,
             userId,
@@ -506,7 +506,7 @@ export function createProductionUnifiedContextPortFactory(options: {
         links: options.links,
         documentCreation: options.documentSync,
         resolveDestinationFolder: async (id, view) =>
-          resolveActiveFolderUri(
+          resolveHeldFolderUri(
             options.db,
             projectId,
             userId,

@@ -1,106 +1,57 @@
-/** One text-derived review and disposition view for every receipt at a captured draft revision. */
-import {
-  type ApplyEntry,
-  appliedParts,
-  type ChangeClassification,
-  classifyChanges,
-  diffBlocks,
-  projectReview,
-  REVIEW_BASE_FRAGMENT,
-  type ReviewProjection,
-  readApplyRecord,
-  readBlocks,
-} from "@meridian/agent-edit/diff";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
-import { assertReadableDraft, type DraftSnapshot, materializeDraftRead } from "./draft-store.js";
-import type {
-  DraftDispositionStore,
-  DraftProvenance,
-  DraftReceiptPart,
-} from "./ports/draft-disposition-store.js";
+/**
+ * Whether a draft's parts were applied, and by which Apply, at a captured draft revision. An Apply
+ * in force names the changes it took (`carried`, written with its effect), so this reads no Yjs
+ * item id. Whether a change of a part still waits is `draft-changes.ts`'s read of its text.
+ */
+import { assertReadableDraft } from "./draft-store.js";
+import type { DraftDispositionStore, DraftReceiptPart } from "./ports/draft-disposition-store.js";
 
 export type PartDisposition = "applied" | "pending" | "discarded";
 /**
- * The writer's apply or discard of a part, if they made one. It outranks whatever the kernel
- * says about the part's text (a sibling change applied, or the writer typed over it).
+ * The writer's apply or discard of a part, if they made one. It outranks whatever the text says
+ * about the part (a sibling change applied, or the writer typed over it).
  */
 export const settledCause = (disposition: PartDisposition) =>
   disposition === "applied" || disposition === "discarded" ? disposition : null;
 export interface DraftDispositionView {
-  draft: DraftSnapshot;
-  /** Released creation bytes have no snapshot, Apply record or projection. */
-  provenance: DraftProvenance | null;
-  projection: ReviewProjection | null;
-  classifications: ReadonlyMap<string, ChangeClassification>;
-  applyRecord: readonly ApplyEntry[];
-  /** `waiting`: the part is a member of a change that waits in an open draft. */
-  parts: readonly (DraftReceiptPart & { disposition: PartDisposition; waiting: boolean })[];
+  draft: import("./draft-store.js").DraftSnapshot;
+  /**
+   * `applied`: an Apply in force took a change of the part. `appliedChanges` names, by index in
+   * the part's delta, the Apply command that took each; the latest when two did. Else `pending`
+   * while the draft is open, and `discarded` once it is closed.
+   */
+  parts: readonly (DraftReceiptPart & {
+    disposition: PartDisposition;
+    appliedChanges: ReadonlyMap<number, string>;
+  })[];
 }
-
-const schema = buildDocumentSchema();
 
 export function createDraftDispositionReader(store: DraftDispositionStore) {
   return async (draftId: string): Promise<DraftDispositionView | null> => {
     const cut = await store.capture(draftId);
     if (!cut) return null;
     const draft = cut.draft.documentDraft;
-    if (!cut.draft.checkpoint) {
-      // Only a terminal released creation may have no bytes; never manufacture an empty draft.
-      if (draft.status !== "closed" || !cut.contentReleased || cut.draft.tail.length)
-        throw new Error(`Missing draft checkpoint: ${draftId}`);
-      return {
-        draft,
-        provenance: null,
-        projection: null,
-        classifications: new Map(),
-        applyRecord: [],
-        parts: cut.parts.map((part) => ({ ...part, disposition: "discarded", waiting: false })),
-      };
-    }
+    // Never manufacture an empty draft.
+    if (!cut.draft.checkpoint) throw new Error(`Missing draft checkpoint: ${draftId}`);
     assertReadableDraft(draft);
-    const doc = materializeDraftRead(cut.draft);
-    try {
-      const applyRecord = readApplyRecord(doc);
-      const applied = appliedParts(doc, cut.parts, applyRecord);
-      const parts = cut.parts.map((part, index) => ({
-        ...part,
-        status: applied[index] ? ("applied" as const) : ("pending" as const),
-      }));
-      const provenance: DraftProvenance = {
-        snapshot: Y.snapshot(doc),
-        userId: cut.userId,
-        parts,
-      };
-      const projection = projectReview(
-        diffBlocks(
-          readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), schema),
-          readBlocks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
-        ),
-      );
-      const classifications = classifyChanges(doc, projection, provenance, { record: true });
-      const pending = new Set<number>();
-      for (const change of classifications.values())
-        for (const member of change.members) pending.add(member);
-      return {
-        draft,
-        provenance,
-        projection,
-        classifications,
-        applyRecord,
-        parts: parts.map((part, index) => ({
+    // Effects arrive oldest first, so the later Apply wins a change two took.
+    const takenBy = new Map<number, Map<number, string>>();
+    for (const effect of cut.applied)
+      for (const [part, index] of effect.carried) {
+        const changes = takenBy.get(part) ?? new Map<number, string>();
+        changes.set(index, effect.commandId);
+        takenBy.set(part, changes);
+      }
+    return {
+      draft,
+      parts: cut.parts.map((part) => {
+        const appliedChanges = takenBy.get(part.id) ?? new Map<number, string>();
+        return {
           ...part,
-          waiting: part.status !== "applied" && draft.status === "active" && pending.has(index),
-          disposition:
-            part.status === "applied"
-              ? "applied"
-              : draft.status === "active" && pending.has(index)
-                ? "pending"
-                : "discarded",
-        })),
-      };
-    } finally {
-      doc.destroy();
-    }
+          appliedChanges,
+          disposition: appliedChanges.size ? "applied" : "pending",
+        };
+      }),
+    };
   };
 }

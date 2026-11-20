@@ -1,25 +1,21 @@
 /**
  * ManuscriptStateNotice — what live did to the document this draft holds: deleted from its
- * area (Apply brings it back). Once an Apply brings it back the same place says so, until the writer dismisses it or opens another
- * document; a host swap on promotion (the phone's) remounts it and must not end it. With none
- * of those, it says what a Work's pending move or delete will do to the document, which
- * live doesn't show until Apply: "Ascension is renaming this to ch12-old."
+ * area (Apply brings it back). With none of that, it says what a Work's pending move or delete
+ * will do to the document, which live doesn't show until Apply: "Ascension is renaming this to
+ * ch12-old."
  *
  * It lives in the free end of a header row the document already has (the identity row, the
  * phone's review row), never in a strip of its own: a delete lands while the writer reads, and
  * a line pushed in above the toolbar would move the page under them. The slot takes only what
  * the row leaves and adds nothing to the row's size, so its arrival never wraps or grows the
- * row. A narrow slot shows the short label; the button opens the full sentence.
+ * row. A narrow slot shows the short label; a state with a longer sentence opens it from a button.
  */
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
-import { Info, X } from "lucide-react";
-import { useEffect, useSyncExternalStore } from "react";
+import { Info } from "lucide-react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { OpenDocument } from "@/client/stores";
-import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { appliedSentence } from "@/features/draft-review/CommandNotice";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import {
@@ -27,20 +23,16 @@ import {
   treeNoticeLabel,
   treeNoticeSentence,
 } from "@/features/draft-review/tree-line";
-import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { tabLocation } from "@/features/project/context/identity-location";
-import { useLiveDraftCue } from "@/features/project/context/LiveDraftNotice";
-import { deletedLiveSentence } from "@/features/project/context/RemovedDocumentNotice";
-import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 import { cn } from "@/lib/utils";
 
 export type ManuscriptState = {
-  kind: "deleted" | "applied" | "pending-tree";
-  sentence: string;
+  kind: "deleted" | "pending-tree";
   label: string;
-  dismiss?: () => void;
+  /** What the chip's button opens when the label doesn't say it all. */
+  sentence?: string;
 };
 
 /** The document's manuscript state, or null when live did nothing to it. */
@@ -48,41 +40,17 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   useLingui();
   const { documentId } = tab;
   const { files } = useDraftReview();
-  const owner = useDraftCommandOwner();
-  const restored = useSyncExternalStore(
-    owner.subscribe,
-    () => owner.wasRestored(projectId, documentId),
-    () => false,
-  );
-  useEffect(() => owner.keepApplyFactsOnly(projectId, documentId), [owner, projectId, documentId]);
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedLive(item);
-  const removal = useRemovalRecord(projectId, deleted ? documentId : null);
-  const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
-  // The page's notice says what the toggle's Work does to it on Live, and on Draft the page is that
-  // Work's draft: this says what other Works do.
-  const cue = useLiveDraftCue(projectId, tab);
+  // On Draft the page is the toggle's Work's draft: this says what other Works do.
   const shell = useShellTreeVersion();
-  const shown = shell?.showing === "draft" ? shell.ownerKey : cue?.ownerKey;
+  const shown = shell?.showing === "draft" ? shell.ownerKey : null;
   if (deleted) {
     const from = schemeLabel(item?.deletedFrom?.scheme);
-    const sentence = deletedLiveSentence(
-      title,
-      from,
-      removal?.kind === "removed" ? removal.record : null,
-    );
-    return { kind: "deleted", sentence, label: from ? t`Deleted from ${from}` : t`Deleted` };
+    const label = from ? t`Deleted from ${from}` : t`Deleted`;
+    return { kind: "deleted", label };
   }
-  const { scheme } = tabLocation(tab);
-  const area = schemeLabel(scheme);
-  if (restored)
-    return {
-      kind: "applied",
-      sentence: appliedSentence([{ name: title, scheme }]),
-      label: t`Back in ${area}`,
-      dismiss: () => owner.forgetApplyFacts(projectId, documentId),
-    };
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
     hint.tree && hint.owner !== shown ? [{ work: hint.label, line: hint.tree }] : [],
   );
@@ -123,38 +91,45 @@ export function ManuscriptStateSlot({
 }
 
 function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: boolean }) {
+  // The popover button carries the name; a chip with none is read as it is drawn.
+  const hidden = state.sentence ? true : undefined;
+  const content = (
+    <>
+      <Info aria-hidden className="size-3.5 shrink-0" />
+      <span aria-hidden={hidden} className="min-w-0 truncate @max-[28rem]:hidden">
+        {state.sentence ?? state.label}
+      </span>
+      <span aria-hidden={hidden} className="hidden min-w-0 truncate @max-[28rem]:inline">
+        {state.label}
+      </span>
+    </>
+  );
+  const height = touch ? "h-11" : "h-6 coarse:h-11";
   return (
     <div
       role="status"
       data-manuscript-state-notice={state.kind}
       className="flex min-w-0 max-w-full items-center font-sans text-muted-foreground text-xs"
     >
-      <Popover>
-        <PopoverTrigger
-          aria-label={state.sentence}
-          title={state.sentence}
-          className={cn(
-            "focus-ring flex min-w-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-ink-fill hover:text-foreground",
-            touch ? "h-11" : "h-6 coarse:h-11",
-          )}
-        >
-          <Info aria-hidden className="size-3.5 shrink-0" />
-          <span aria-hidden className="min-w-0 truncate @max-[28rem]:hidden">
+      {state.sentence ? (
+        <Popover>
+          <PopoverTrigger
+            aria-label={state.sentence}
+            title={state.sentence}
+            className={cn(
+              "focus-ring flex min-w-0 items-center gap-1.5 rounded-md px-1.5 hover:bg-ink-fill hover:text-foreground",
+              height,
+            )}
+          >
+            {content}
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-80 max-w-[calc(100vw-1rem)] p-3 text-sm">
             {state.sentence}
-          </span>
-          <span aria-hidden className="hidden min-w-0 truncate @max-[28rem]:inline">
-            {state.label}
-          </span>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-80 max-w-[calc(100vw-1rem)] p-3 text-sm">
-          {state.sentence}
-        </PopoverContent>
-      </Popover>
-      {state.dismiss ? (
-        <IconButton label={t`Dismiss`} className="shrink-0" onClick={state.dismiss}>
-          <X aria-hidden />
-        </IconButton>
-      ) : null}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        <span className={cn("flex min-w-0 items-center gap-1.5 px-1.5", height)}>{content}</span>
+      )}
     </div>
   );
 }

@@ -115,7 +115,14 @@ export function createDrizzleLineageScratchLifecycle(
             and(eq(contextSources.scope, "lineage"), eq(contextSources.rootThreadId, rootThreadId)),
             lineageHasLiveMember(rootThreadId),
           );
-          await liveness?.fileAccessChanges.publish({ rootThreadId });
+          const [root] = await currentDrizzleDb(db)
+            .select({ live: lineageHasLiveMember(rootThreadId) })
+            .from(threads)
+            .where(eq(threads.id, rootThreadId));
+          await liveness?.fileAccessChanges.publish({
+            rootThreadId,
+            closed: root?.live ? undefined : "chat_frozen",
+          });
         }
         liveness?.hints.publishDraftOwnerHints(
           [...new Map(roots.map((root) => [root.id, root.projectId]))].map(

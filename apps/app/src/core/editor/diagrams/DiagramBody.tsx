@@ -80,7 +80,7 @@ export function DiagramBody({
           the writer cannot see is one they cannot fix (law 5). */}
       {face === "stale" && describesSource ? (
         <p className="meridian-diagram-parse-note mb-2" role="status">
-          {t`This diagram stopped parsing. Showing the last version that rendered.`}
+          {t`Syntax error`}
           <code>{render.error}</code>
         </p>
       ) : null}

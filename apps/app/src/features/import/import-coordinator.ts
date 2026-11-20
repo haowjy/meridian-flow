@@ -77,8 +77,8 @@ export class ImportCoordinator {
   }
   constructor(
     private readonly api: ImportApi,
-    /** An import that never started: it is gone, and this sentence says why. */
-    private readonly onRefused: (sentence: string) => void,
+    /** An import that never started: it is gone. `detail` is why, for the log. */
+    private readonly onRefused: (detail: unknown) => void,
   ) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -352,17 +352,16 @@ export class ImportCoordinator {
       if (!this.live(record, attempt)) return;
       await this.create(record, attempt);
     } catch (error) {
-      if (this.live(record, attempt))
-        this.refuse(record, error instanceof Error ? error.message : refusalSentence(null));
+      if (this.live(record, attempt)) this.refuse(record, error);
     }
   }
   /** Nothing of this import reached the server, so nothing is left to come back to. */
-  private refuse(record: RecordState, sentence: string) {
+  private refuse(record: RecordState, detail: unknown) {
     this.retire(record);
     this.records.delete(record.view.importId);
     this.publish();
     this.nudge();
-    this.onRefused(sentence);
+    this.onRefused(detail);
   }
   private async create(record: RecordState, attempt: UploadAttempt) {
     const command = record.command;
@@ -387,9 +386,12 @@ export class ImportCoordinator {
           error.status < 500
         )
           record.creation = "local";
-        const sentence = refusalSentence(error instanceof ImportRequestError ? error.code : null);
-        if (record.creation === "local") this.refuse(record, sentence);
-        else this.local(record, { phase: "stalled", error: sentence });
+        if (record.creation === "local") this.refuse(record, error);
+        else
+          this.local(record, {
+            phase: "stalled",
+            error: refusalSentence(error),
+          });
       }
       return;
     }
@@ -399,7 +401,7 @@ export class ImportCoordinator {
       if (this.live(record, attempt))
         this.local(record, {
           phase: "stalled",
-          error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+          error: refusalSentence(error),
         });
     }
   }
@@ -436,7 +438,7 @@ export class ImportCoordinator {
     } catch (error) {
       if (this.current(record))
         this.local(record, {
-          error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+          error: refusalSentence(error),
           ...(record.view.summary.state === "uploading" && record.held.size
             ? { phase: "stalled" as const }
             : {}),
@@ -473,7 +475,7 @@ export class ImportCoordinator {
       if (!this.live(record, attempt)) return false;
       if (!(error instanceof ImportRequestError && error.status >= 400 && error.status < 500)) {
         this.local(record, {
-          error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+          error: refusalSentence(error),
         });
         return false;
       }

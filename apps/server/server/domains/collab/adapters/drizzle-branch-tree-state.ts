@@ -24,43 +24,13 @@ type Row = {
   live: boolean;
   live_trashed: boolean;
   binary: boolean;
-  revision: string | null;
 };
 
-/** One digest of the change a Work's row says, so a click that froze it sees any later change. */
-const REVISION = sql`md5(concat_ws('|', b.context_source_id::text, coalesce(b.parent_id::text, ''),
-  b.name, b.rank, b.deleted::text, b.exists_only_in_draft::text))`;
-
-/**
- * The revision of the Work's row on each of these nodes, documents or folders (null: the Work
- * has no row on it): what a click that froze the row compares against.
- */
-export async function branchRowRevisions(
-  db: Database,
-  branchId: BranchId,
-  nodeIds: readonly string[],
-): Promise<Map<string, string>> {
-  const ids = nodeIds.filter(isUuid);
-  if (!isUuid(branchId) || ids.length === 0) return new Map();
-  const rows = await currentDrizzleDb(db).execute<{ id: string; revision: string }>(sql`
-    SELECT b.id::text AS id, ${REVISION} AS revision
-    FROM branch_tree_nodes b
-    WHERE b.branch_id = ${branchId}::uuid AND b.changed
-      AND b.id IN (${sql.join(
-        ids.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      )})`);
-  return new Map(rows.map((row) => [row.id, row.revision]));
-}
-
-/** The folders the Work has a row on, each with its revision: what an Apply of a folder freezes. */
-export async function branchFolderRevisions(
-  db: Database,
-  branchId: BranchId,
-): Promise<{ id: string; revision: string }[]> {
+/** The folders the Work has a row on: what an Apply of a folder lands. */
+export async function branchFolderIds(db: Database, branchId: BranchId): Promise<{ id: string }[]> {
   if (!isUuid(branchId)) return [];
-  const rows = await currentDrizzleDb(db).execute<{ id: string; revision: string }>(sql`
-    SELECT b.id::text AS id, ${REVISION} AS revision
+  const rows = await currentDrizzleDb(db).execute<{ id: string }>(sql`
+    SELECT b.id::text AS id
     FROM branch_tree_nodes b
     WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder' AND b.changed`);
   return [...rows];
@@ -99,8 +69,7 @@ export function createDrizzleBranchTreeState(
       const rows = await tx.execute<Row>(sql`
         SELECT d.id::text AS id, b.exists_only_in_draft, b.deleted,
           t.id IS NOT NULL AS live, coalesce(t.trash_record IS NOT NULL, false) AS live_trashed,
-          d.storage_url IS NOT NULL AS binary,
-          CASE WHEN b.id IS NULL THEN NULL ELSE ${REVISION} END AS revision
+          d.storage_url IS NOT NULL AS binary
         FROM documents d
           LEFT JOIN branch_tree_nodes b
             ON b.id = d.id AND b.branch_id = ${branchId}::uuid AND b.changed
@@ -147,7 +116,6 @@ export function createDrizzleBranchTreeState(
           deletedLive: change === "moving" && row.live_trashed,
           deletedFromUri: there?.kind === "deleted" ? (there.lastAddress?.uri ?? null) : null,
           change,
-          revision: row.revision,
           pending: pending.has(id),
           uri,
           movedFromUri: change === "moving" ? movedFrom(there, uri) : null,

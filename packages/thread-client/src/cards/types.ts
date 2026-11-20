@@ -7,21 +7,19 @@
 import type { Failure } from "@meridian/contracts/failures";
 import type { Occurrence } from "../commands";
 
-/** The closed set of cards. The app owns the words; a reply's own words ride in `text`. */
+/** The closed set of cards. The app owns the words; a card's `text` is diagnostics only. */
 export type ChatCardCopy =
   | "updates-disconnected"
-  /** "This response failed." */
+  /** "Reply failed." */
   | "reply-failed"
-  /** "The AI provider turned this request down." */
+  /** "Reply declined." */
   | "reply-declined"
-  /** The server's `turn.error` for a manual compaction (`text`); the app words a missing one. */
+  /** A manual compaction's failure. */
   | "compaction-failed"
-  /** The server's `turn.error` for the handoff brief (`text`). */
+  /** The handoff brief's failure. */
   | "brief-failed"
-  /** "Couldn't retry." */
+  /** "Couldn't retry" */
   | "retry-refused"
-  /** "Couldn't retry. Another reply started first." */
-  | "retry-refused-another-reply"
   /** "Couldn't start the retry." */
   | "retry-lost"
   /** "Couldn't start a new brief." */
@@ -30,13 +28,11 @@ export type ChatCardCopy =
   | "brief-stop-failed"
   /** "Couldn't stop the reply." */
   | "stop-failed"
-  /** "Couldn't move your queued message to the message box." (plural with `count`) */
-  | "hand-back-failed"
   /** "Couldn't move your queued message." (plural with `count`) */
-  | "hand-back-refused"
+  | "hand-back-failed"
   /** "Couldn't send now." */
   | "send-now-failed"
-  /** "You're out of usage. Your messages will send when you add more." */
+  /** "Out of usage." */
   | "usage-blocked"
   /** "Couldn't send." on a writer message */
   | "send-failed"
@@ -77,7 +73,7 @@ export type ChatCard = {
   anchor: ChatCardAnchor;
   /** How many messages a hand-back card covers (plural copy); 1 elsewhere. */
   count: number;
-  /** The server's words for a reply card that shows them; null otherwise. */
+  /** The server's words for a failed compaction or brief: for diagnostics (`./mf`), not shown in the app. */
   text: string | null;
   /** The command a hand-back card replays or dismisses; null for every other card. */
   requestId: string | null;

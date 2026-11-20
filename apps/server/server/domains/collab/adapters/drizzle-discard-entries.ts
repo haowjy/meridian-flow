@@ -1,26 +1,26 @@
 /**
- * The document half of Trash's Discard entries (design section 7): every Discard, and every
- * restore that swapped a newer draft out, that ran in the project within the retention, with the
- * text drafts it closed that are still closed. A restore reopens a draft by clearing `closed_by`,
- * so a taken member leaves the entry by itself. A deleted Work's entries are hidden until it is
- * restored, and a purged Work's branches (and so its entries) are gone.
+ * The document half of Trash's Discard entries (design section 5): every Discard of whole drafts
+ * the day-30 purge hasn't removed, with the drafts it took text from that no Restore has ended. A
+ * Discard of single changes has no entry: its Undo is the notice's or Ctrl+Z, and it is final
+ * otherwise. A Restore ends an
+ * entry by setting `ended_by` on the command's effects. A Work in Trash keeps its entries, as an
+ * archived Work does (a Restore answers `returned` until the Work is restored); a purged Work's
+ * branches (and so its entries) are gone.
  */
 import type { BranchId, CommandId, ProjectId } from "@meridian/contracts";
 import type { DiscardEntry } from "@meridian/contracts/branches";
-import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
-import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { branches, commands, discardCommandEffects } from "@meridian/database/schema";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 
 export function createDrizzleDiscardEntries(db: Database) {
   return {
-    async list(projectId: ProjectId, now: Date = new Date()): Promise<DiscardEntry[]> {
+    async list(projectId: ProjectId): Promise<DiscardEntry[]> {
       const tx = currentDrizzleDb(db);
       const rows = await tx
         .select({
           id: commands.id,
-          kind: commands.kind,
           at: commands.createdAt,
           outcome: commands.outcome,
         })
@@ -28,9 +28,9 @@ export function createDrizzleDiscardEntries(db: Database) {
         .where(
           and(
             eq(commands.projectId, projectId),
-            inArray(commands.kind, ["discard", "undo_discard"]),
-            gt(commands.createdAt, deletionPurgeCutoff(now)),
+            eq(commands.kind, "discard"),
             sql`${commands.outcome}->>'status' = 'done'`,
+            sql`${commands.outcome} #>> '{result,whole}' = 'true'`,
           ),
         )
         .orderBy(desc(commands.createdAt));
@@ -46,29 +46,23 @@ export function createDrizzleDiscardEntries(db: Database) {
           await tx
             .select({ id: branches.id, workId: branches.originWorkId })
             .from(branches)
-            .leftJoin(works, eq(works.id, branches.originWorkId))
-            .where(
-              and(
-                inArray(branches.id, [...new Set(ran.map((command) => command.branchId))]),
-                isNull(works.deletedAt),
-              ),
-            )
+            .where(inArray(branches.id, [...new Set(ran.map((command) => command.branchId))]))
         ).map((row) => [row.id, row.workId]),
       );
       const drafts = await tx
         .select({
-          draftId: documentDrafts.id,
-          documentId: documentDrafts.documentId,
-          by: documentDrafts.closedBy,
+          commandId: discardCommandEffects.commandId,
+          draftId: discardCommandEffects.draftId,
+          documentId: discardCommandEffects.documentId,
         })
-        .from(documentDrafts)
+        .from(discardCommandEffects)
         .where(
           and(
             inArray(
-              documentDrafts.closedBy,
+              discardCommandEffects.commandId,
               ran.map((command) => command.id),
             ),
-            eq(documentDrafts.status, "closed"),
+            isNull(discardCommandEffects.endedBy),
           ),
         );
       return ran.flatMap((command): DiscardEntry[] =>
@@ -76,12 +70,11 @@ export function createDrizzleDiscardEntries(db: Database) {
           ? [
               {
                 commandId: command.id as CommandId,
-                kind: command.kind as DiscardEntry["kind"],
                 at: command.at.toISOString(),
                 branchId: command.branchId,
                 workId: owners.get(command.branchId) ?? null,
                 drafts: drafts
-                  .filter((draft) => draft.by === command.id)
+                  .filter((draft) => draft.commandId === command.id)
                   .map(({ draftId, documentId }) => ({ draftId, documentId })),
               },
             ]

@@ -2,12 +2,11 @@
 
 import type { DocumentEditResult } from "@meridian/agent-edit/integration";
 
-type Direction = "undo" | "redo" | "revert";
+type Direction = "undo" | "revert";
 
 export function textPlanRefusal(
   uri: string,
   handle: string,
-  direction: Direction,
   failure:
     | "draft_archived"
     | "document_deleted"
@@ -26,25 +25,24 @@ export function textPlanRefusal(
       status: "document_not_found",
       message: "File not found. Read the project to find the right path.",
     };
-  const verb = direction === "revert" ? "undo" : direction;
   if (failure === "applied")
     return {
-      status: `cant_${verb}_applied`,
+      status: `cant_undo_applied`,
       message: `The user applied ${handle} to the manuscript, and its draft is closed. Nothing was changed in ${uri}.`,
     };
   if (failure === "partly_applied")
     return {
-      status: `cant_${verb}_applied`,
+      status: `cant_undo_applied`,
       message: `The user applied part of ${handle} to the manuscript and discarded the rest, and its draft is closed. Nothing was changed in ${uri}.`,
     };
   return failure === "discarded"
     ? {
-        status: `cant_${verb}_discarded`,
+        status: `cant_undo_discarded`,
         message: `The user discarded ${handle}; it is already gone. Nothing was changed in ${uri}.`,
       }
     : {
-        status: `cant_${verb}_changed`,
-        message: `Can't ${verb} ${handle}: none of that edit remains unchanged. Nothing was changed in ${uri}.`,
+        status: `cant_undo_changed`,
+        message: `Can't undo ${handle}: none of that edit remains unchanged. Nothing was changed in ${uri}.`,
       };
 }
 
@@ -53,16 +51,10 @@ export function textOmission(
   direction: Direction,
   omission: {
     ordinal: number;
-    cause:
-      | "paragraph_removed"
-      | "already_removed"
-      | "edited_since"
-      | "draft_archived"
-      | "discarded";
+    cause: "already_removed" | "edited_since" | "draft_archived" | "discarded";
   },
 ) {
   const words = {
-    paragraph_removed: "paragraph replaced or removed",
     already_removed: "already removed",
     edited_since: "edited since",
     draft_archived: "draft archived",

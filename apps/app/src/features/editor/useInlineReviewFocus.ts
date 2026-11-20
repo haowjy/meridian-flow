@@ -3,7 +3,8 @@
  * directions:
  *
  *   controller to editor   Show changes on/off, the focused change's emphasis, the pulse on changes that
- *                          just arrived
+ *                          just arrived, the changes the writer discarded before the server's write
+ *                          reaches the room
  *   editor to controller   a click on a mark (or a struck removal) focuses that change everywhere: the
  *                          list, the stepper, the bar
  *
@@ -11,13 +12,14 @@
  * it; the plugin state is the guard.
  */
 import type { Editor } from "@tiptap/core";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
 import { inlineReviewFocusIntent } from "@/core/editor/extensions/inline-review/DraftInlineReviewExtension";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { resolveFocusedChange } from "@/features/draft-review/review-model";
 import { useArrivedChanges } from "@/features/draft-review/useArrivedChanges";
 import { useReviewState } from "@/features/draft-review/useReviewRuntime";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 
 export function useInlineReviewFocus({
   editor,
@@ -29,6 +31,12 @@ export function useInlineReviewFocus({
   itemKey: string;
 }): void {
   const { controller, roomOwner } = useDraftReview();
+  const owner = useDraftCommandOwner();
+  const discarding = useSyncExternalStore(
+    owner.subscribe,
+    () => owner.state(itemKey).discarding,
+    () => null,
+  );
   const { changes, ready } = useReviewState(roomOwner.runtime);
   const focused = resolveFocusedChange(changes, controller.focus) ?? changes[0] ?? null;
   const {
@@ -87,6 +95,18 @@ export function useInlineReviewFocus({
       live.off("transaction", onTransaction);
     };
   }, [live, reviewing, documentId, itemKey, reportFocusedChange]);
+
+  // A change the writer discarded shows as its base side at once; the server's write replaces it.
+  const discarded = useMemo(
+    () => (discarding ? changes.filter(discarding).map((change) => change.id) : []),
+    [changes, discarding],
+  );
+  useEffect(() => {
+    if (!live || !reviewing) return;
+    const painted = getInlineReviewPluginState(live.state)?.discardedChangeIds;
+    if (painted?.size === discarded.length && discarded.every((id) => painted.has(id))) return;
+    live.commands.setReviewDiscarded(discarded);
+  }, [live, reviewing, discarded]);
 
   // Changes that arrive while the writer reviews pulse once.
   const arrived = useArrivedChanges(

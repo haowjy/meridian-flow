@@ -2,12 +2,10 @@
 
 import { useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
-import type { BranchCommandFailure } from "./review-command-types";
 import type { ReviewChange } from "./review-model";
 
 export type ReviewChangeItem = {
   change: ReviewChange;
-  draftFailure?: BranchCommandFailure | null;
 };
 
 /** Presentation data can be shared without focus or command authority. */
@@ -36,20 +34,9 @@ export function isWholeDocumentChange(view: Pick<DraftChangesData, "status" | "i
   return view.status === "ready" && view.items.length === 1 && view.items[0]?.change.frame === null;
 }
 
-type DraftRef = { projectId: string; ownerKey: string; documentId: string; itemKey: string };
-
 /** Subscribe to this item's record, not another draft's command activity. */
 export function useDraftCommandState(itemKey: string) {
   const owner = useDraftCommandOwner();
   const snapshot = () => owner.state(itemKey);
   return useSyncExternalStore(owner.subscribe, snapshot, snapshot);
-}
-
-/** Join item failures here; text and group identity remain the runtime's. */
-export function useChangeItems(
-  draft: DraftRef | null,
-  changes: readonly ReviewChange[],
-): { items: readonly ReviewChangeItem[] } {
-  const failure = useDraftCommandState(draft?.itemKey ?? "").failure;
-  return { items: changes.map((change) => ({ change, draftFailure: failure })) };
 }

@@ -14,6 +14,7 @@ import type {
   WorkId,
 } from "@meridian/contracts";
 import type { TreeView } from "../../context/tree/tree-view.js";
+import type { WorkWriteOptions } from "../../projects/index.js";
 import type {
   Branch,
   BranchOwnerView,
@@ -26,19 +27,23 @@ export interface Branches {
   viewForOwner(owner: DraftOwner | null): Promise<TreeView>;
   /**
    * The write boundary only, and the only path that makes a branch: locks the owner (the Work
-   * row, or the lineage lock; refusing an archived, deleted or frozen one), then the owner's
+   * row, or the lineage lock) under the caller's `WorkWriteOptions`, by default refusing an
+   * archived, deleted or frozen one (`requireActive: false` makes a branch on a closed Work), then the owner's
    * active branch, made if absent, row-locked. With no ambient transaction it runs in its own.
    * Inside one it joins only a transaction the ContextFS command boundary approved
    * (`approveBranchWriteJoin`: it has locked nothing but owners); any other ambient caller gets
    * `BranchWriteJoinRefusedError`, so it never takes the owner lock after namespace or document
    * locks.
    */
-  ensureActiveForWrite(input: {
-    owner: DraftOwner;
-    projectId: ProjectId;
-    threadId: ThreadId | null;
-    userId: UserId;
-  }): Promise<Branch>;
+  ensureActiveForWrite(
+    input: {
+      owner: DraftOwner;
+      projectId: ProjectId;
+      threadId: ThreadId | null;
+      userId: UserId;
+    },
+    options?: WorkWriteOptions,
+  ): Promise<Branch>;
   /** No lock. The branch and its owner's lifecycle as it reads now; any status. */
   ownerOf(branchId: BranchId): Promise<BranchOwnerView | null>;
   /** No lock. The oldest active branch this owner has, else null. */
@@ -85,19 +90,23 @@ export function createBranches(deps: {
       const branch = await store.activeForOwner(owner);
       return branch ? { kind: "branch", branchId: branch.id } : { kind: "live" };
     },
-    ensureActiveForWrite(input) {
-      return deps.boundary.withActiveOwnerLocked(input.owner, async () => {
-        const ensured = await store.ensureActiveLocked({
-          owner: input.owner,
-          projectId: input.projectId,
-          originThreadId: input.threadId,
-          createdBy: input.userId,
-        });
-        // Every close locks the owner first, so the branch can't close between these.
-        const locked = await store.lockActive(ensured.id);
-        if (!locked) throw new BranchClosedUnderOwnerLockError(ensured.id);
-        return locked;
-      });
+    ensureActiveForWrite(input, options) {
+      return deps.boundary.withActiveOwnerLocked(
+        input.owner,
+        async () => {
+          const ensured = await store.ensureActiveLocked({
+            owner: input.owner,
+            projectId: input.projectId,
+            originThreadId: input.threadId,
+            createdBy: input.userId,
+          });
+          // Every close locks the owner first, so the branch can't close between these.
+          const locked = await store.lockActive(ensured.id);
+          if (!locked) throw new BranchClosedUnderOwnerLockError(ensured.id);
+          return locked;
+        },
+        options,
+      );
     },
     ownerOf: (branchId) => store.ownerOf(branchId),
     activeForOwner: (owner) => store.activeForOwner(owner),

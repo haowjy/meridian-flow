@@ -1,10 +1,12 @@
 /**
- * Restore of a Discard from Trash or from the draft it closed. Its progress is the account's one
+ * Restore of a Discard from Trash. Its progress is the account's one
  * per Discard (`DiscardRestores`), which the Discard's notice reads too, so Trash's row, an editor
  * showing the draft and the notice say the same thing.
  */
+import { t } from "@lingui/core/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { notifyFailure } from "@/components/app/failure-toast";
 import type { DiscardRestoreState } from "@/features/draft-review/discard-restores";
 import { restoreDiscard } from "@/features/draft-review/useWorkBranchCommands";
 import { useDraftCommandOwner } from "./account-feature-context";
@@ -27,8 +29,8 @@ export function useRestoreDiscard(projectId: string) {
     [restores, revision],
   );
   const restore = useCallback(
-    (entry: RestorableDiscard) => {
-      void restores.restore(entry.commandId, () =>
+    async (entry: RestorableDiscard) => {
+      const { answer } = await restores.restore(entry.commandId, () =>
         restoreDiscard(queryClient, {
           projectId,
           branchId: entry.branchId,
@@ -36,6 +38,12 @@ export function useRestoreDiscard(projectId: string) {
           documentIds: entry.documentIds,
         }),
       );
+      if (answer === "failed")
+        notifyFailure({
+          key: `restore:${entry.commandId}`,
+          title: t`Couldn't restore`,
+          brief: true,
+        });
     },
     [restores, queryClient, projectId],
   );

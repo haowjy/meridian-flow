@@ -59,9 +59,8 @@ export function useCheckoutReturn(options: UseCheckoutReturnOptions = {}): Check
 
     const storage = checkoutStorage();
     if (parsed === "cancelled") {
-      const baseline = readCheckoutBaseline(storage);
       clearCheckoutBaseline(storage);
-      setStatus(baseline?.handoffKind === "portal" ? "portal" : "cancelled");
+      setStatus("idle");
       clearRef.current();
       return;
     }

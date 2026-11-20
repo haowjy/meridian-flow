@@ -46,6 +46,11 @@ export interface InlineReviewPluginState {
   activeChangeId: string | null;
   /** Changes that just arrived; their marks pulse once. */
   pulsedChangeIds: ReadonlySet<string>;
+  /**
+   * Changes the writer discarded whose write has not reached this room yet: drawn as their base
+   * side (inserted words hidden, removed words plain) by the paint view, not by the document.
+   */
+  discardedChangeIds: ReadonlySet<string>;
   /** False hides every mark and removal; the review and selection are kept. */
   marksVisible: boolean;
   /** Identities of long removals the writer has unfolded. */
@@ -62,6 +67,7 @@ type PluginMeta =
   | { kind: "focus-click"; changeId: string }
   | { kind: "set-marks-visible"; visible: boolean }
   | { kind: "set-pulse"; changeIds: readonly string[] }
+  | { kind: "set-discarded"; changeIds: readonly string[] }
   | { kind: "set-bar-slot"; open: boolean }
   | { kind: "relocalize" }
   | { kind: "composition"; active: boolean }
@@ -100,6 +106,8 @@ declare module "@tiptap/core" {
       setReviewMarksVisible: (visible: boolean) => ReturnType;
       /** Mark these changes as just arrived; pass [] to end the pulse. */
       setReviewPulse: (changeIds: readonly string[]) => ReturnType;
+      /** Draw these changes as discarded until the server's write arrives. */
+      setReviewDiscarded: (changeIds: readonly string[]) => ReturnType;
       /** Open a block after the focused change for its bar, when the margin has no room. */
       setReviewBarSlot: (open: boolean) => ReturnType;
       /** `instant` jumps: for a scroll the editor is about to be replaced under, which must not stop half way. */
@@ -130,6 +138,7 @@ export const DraftInlineReviewExtension = Extension.create({
       setReviewActiveChange: (changeId) => command({ kind: "set-active-change", changeId }),
       setReviewMarksVisible: (visible) => command({ kind: "set-marks-visible", visible }),
       setReviewPulse: (changeIds) => command({ kind: "set-pulse", changeIds }),
+      setReviewDiscarded: (changeIds) => command({ kind: "set-discarded", changeIds }),
       setReviewBarSlot: (open) => command({ kind: "set-bar-slot", open }),
       scrollReviewChangeIntoView:
         (changeId, options) =>
@@ -224,6 +233,7 @@ export function buildInlineReviewPlugin() {
         arrivals: new Set(),
         activeChangeId: null,
         pulsedChangeIds: new Set(),
+        discardedChangeIds: new Set(),
         marksVisible: true,
         expandedRemovals: new Set(),
         barSlot: false,
@@ -293,6 +303,9 @@ export function buildInlineReviewPlugin() {
                 next.pulseRevision++;
               }
             }
+            break;
+          case "set-discarded":
+            next.discardedChangeIds = new Set(meta.changeIds);
             break;
           case "set-bar-slot":
             if (meta.open === previous.barSlot) return previous;

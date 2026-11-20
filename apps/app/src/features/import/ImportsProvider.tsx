@@ -13,15 +13,18 @@ import { importApi } from "./import-api-port";
 import { ImportCoordinator, type ImportsSnapshot, type TrackedImport } from "./import-coordinator";
 import { importPresentation } from "./import-presentation";
 import { useImportMilestone } from "./milestones";
+import { refusalReason } from "./reason-copy";
 
 const Context = createContext<ImportCoordinator | null>(null);
 export function ImportsProvider({ children }: { children: ReactNode }) {
   const [coordinator] = useState(
     () =>
-      new ImportCoordinator(importApi, (sentence) =>
+      new ImportCoordinator(importApi, (detail) =>
         notifyFailure({
           key: `import-refused:${crypto.randomUUID()}`,
-          title: t`Import didn't start. ${sentence}`,
+          title: t`Couldn't import`,
+          reason: refusalReason(detail),
+          detail,
         }),
       ),
   );

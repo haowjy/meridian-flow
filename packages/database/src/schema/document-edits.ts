@@ -28,11 +28,7 @@ import { documents } from "./content";
 import { users } from "./users";
 
 type Range = { client: number; clock: number; len: number };
-type Alias = {
-  source: { client: number; clock: number };
-  target: { client: number; clock: number };
-  len: number;
-};
+type Effect = { inserted: Range[]; deleted: Range[] };
 
 export type { EditOrigin } from "@meridian/contracts";
 export const documentEdits = pgTable(
@@ -59,9 +55,8 @@ export const documentEdits = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     wId: integer("w_id"),
-    kind: text("kind").$type<"write" | "undo" | "redo" | "revert">().notNull(),
+    kind: text("kind").$type<"write" | "undo" | "revert">().notNull(),
     actionId: uuid("action_id"),
-    consumes: jsonb("consumes").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     createdAt: createdAt(),
   },
   (t) => [
@@ -70,9 +65,11 @@ export const documentEdits = pgTable(
     index("document_edits_action_idx").on(t.actionId),
     index("document_edits_command_idx").on(t.commandId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
-    check("document_edits_kind_valid", sql`${t.kind} IN ('write','undo','redo','revert')`),
+    check("document_edits_kind_valid", sql`${t.kind} IN ('write','undo','revert')`),
   ],
 );
+export type EditDeltaJson = { before: Record<string, unknown>[]; after: Record<string, unknown>[] };
+
 export const documentEditParts = pgTable(
   "document_edit_parts",
   {
@@ -82,25 +79,35 @@ export const documentEditParts = pgTable(
       .references(() => documentEdits.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
     update: byteaColumn("update").notNull(),
-    effect: jsonb("effect").$type<{ inserted: Range[]; deleted: Range[] }>().notNull(),
+    effect: jsonb("effect").$type<Effect>().notNull(),
     targets: jsonb("targets")
-      .$type<{ editId: string; ordinal: number; direction: "invert" | "reapply" }[]>()
+      .$type<{ editId: string; ordinal: number }[]>()
       .notNull()
       .default(sql`'[]'::jsonb`),
-    frontier: jsonb("frontier").$type<Record<string, number>>().notNull(),
-    aliases: jsonb("aliases").$type<Alias[]>().notNull().default(sql`'[]'::jsonb`),
+    /**
+     * The blocks the part changed, before and after the write merged in, as ProseMirror JSON with
+     * one unchanged block either side. What the card and the model's Undo read the edit from, in a
+     * draft and in the manuscript; null for a part written before the column or one that no AI wrote.
+     */
+    delta: jsonb("delta").$type<EditDeltaJson | null>(),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
+    /**
+     * A drafted part's branch, as its draft row named it when the part was written; null for a
+     * live part. No foreign key: the turn's card finds its owner here after the draft is purged.
+     */
+    draftBranchId: uuid("draft_branch_id").$type<BranchId>(),
   },
   (t) => [
     uniqueIndex("document_edit_parts_edit_ordinal").on(t.editId, t.ordinal),
     index("document_edit_parts_pending_origin_idx")
       .on(sql`(${t.origin}->>'draftId')`)
       .where(sql`${t.origin}->>'kind' = 'pending'`),
-    index("document_edit_parts_live_origin_seq")
-      .on(sql`((${t.origin}->>'seq')::bigint)`)
-      .where(sql`${t.origin}->>'kind' = 'live'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
     check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),
+    check(
+      "document_edit_parts_draft_branch_valid",
+      sql`(${t.origin}->>'kind' = 'pending') = (${t.draftBranchId} IS NOT NULL)`,
+    ),
   ],
 );
 

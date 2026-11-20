@@ -75,10 +75,6 @@ function ViewerContent({
   // Editor host. Collaborative editing remains in the tracked editor
   // mount and does not render through this component.
   const kind = previewKind(document, read.data);
-  const emptyMessage =
-    document.scheme === "scratch" ? (
-      <Trans>This note is empty. Open it in the Editor to write.</Trans>
-    ) : undefined;
   const binary = read.data.kind === "binary" ? read.data : null;
 
   switch (kind) {
@@ -92,7 +88,6 @@ function ViewerContent({
             }
             name={document.name}
             markdown={kind === "markdown"}
-            emptyMessage={emptyMessage}
           />
         </ReadOnlyViewerFrame>
       );

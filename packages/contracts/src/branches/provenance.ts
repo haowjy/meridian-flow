@@ -6,6 +6,8 @@ export type DraftProvenancePart = {
   toolCallId?: string;
   inserted: readonly DraftItemRange[];
   deleted: readonly DraftItemRange[];
+  /** An Undo took the part out of the text: its tombstones are no pending change's evidence. */
+  taken?: true;
   owner: {
     threadId: string;
     title: string;
@@ -16,6 +18,11 @@ export type DraftProvenanceResponse = {
   userId: string;
   snapshot: number[];
   parts: readonly DraftProvenancePart[];
+  /**
+   * The chats with a change of an AI edit in each pending change, by the id Changes gives it
+   * (read from the draft's text, so it names whoever's change the writer altered too).
+   */
+  members: Readonly<Record<string, readonly string[]>>;
   writers?: readonly {
     userId: string;
     inserted: readonly DraftItemRange[];
@@ -37,9 +44,5 @@ export type DraftsProvenanceResponse = { drafts: Record<string, DraftProvenanceR
 export const DRAFT_STATES_MAX = 200;
 /** The drafts a browser holds copies of. */
 export type DraftStatesRequest = { draftIds: readonly string[] };
-/** Why a draft closed: a Discard (a restore from Trash reopens it), or its document went (a restore may not). */
-export type ClosedDraftCause = "discarded" | "document_removed";
-/** Whether a draft is still open, or why it closed. */
-export type DraftState = "open" | ClosedDraftCause;
-/** The state of each named draft the account has; one it doesn't have is absent. */
-export type DraftStatesResponse = { states: Record<string, DraftState> };
+/** The named drafts the account has: one it doesn't have is gone (a purge deleted it). */
+export type DraftStatesResponse = { open: string[] };

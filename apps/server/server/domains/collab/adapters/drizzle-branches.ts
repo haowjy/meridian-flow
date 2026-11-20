@@ -127,12 +127,12 @@ export function createDrizzleBranchWriteBoundary(
   works: Pick<WorkProjectionMutation, "lockWorks">,
 ): BranchWriteBoundary {
   return {
-    withActiveOwnerLocked: (owner, operation) => {
+    withActiveOwnerLocked: (owner, operation, options = { requireActive: true }) => {
       assertBranchWriteJoinAllowed();
       return runInDrizzleTransaction(db, async () => {
         await works.lockWorks(
           owner.kind === "work" ? { works: [owner.workId] } : { lineages: [owner.rootThreadId] },
-          { requireActive: true },
+          options,
         );
         return operation();
       });
