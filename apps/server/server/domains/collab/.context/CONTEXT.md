@@ -75,7 +75,10 @@ selection still discard. Whether a draft holds text is decided under its row loc
 itself (`draftHoldsText`): `has_effect` stands in only when its watermark is the draft's revision, so
 a projection lagging an Apply never makes a Discard take text that is live. Change ids name
 changes at the state the writer read them: an item with ids also sends that draft's Yjs
-`snapshot`, and `discardChanges` resolves the ids in the draft at it, then merges what setting
+`snapshot` and the tab's `baseViewDelta` then, the same pair an Apply sends, and both read it with
+`readSeen` (`domain/apply-click.ts`), so an id means one change to both. Without the delta, an
+Apply still in flight leaves the server a different base, and an edit made twice (`X`, `X~1`) is
+numbered differently there. `discardChanges` resolves the ids in that review, then merges what setting
 them back did there into the draft as it is now (`contentMerge`); a change the writer has
 written over since stays, and the item is answered `already` like any item that took nothing. A
 snapshot the server doesn't hold yet (`ApplyClickUnsynced`) is a 503 that stores nothing, as for a room Apply; the client waits for its typing to be acknowledged before it sends. The Work's records

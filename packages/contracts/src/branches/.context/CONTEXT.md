@@ -45,4 +45,6 @@ The authenticated scope and whole body are part of the request digest. Server it
 `{ branchId, itemKey, commandId }` only to end a still-hidden creation's use. The branch's Discard
 (`BranchDiscardRequest`) takes `{ commandId, all: true }` for Discard all, which closes the
 branch, or `{ commandId, items }` for a selection of documents and folders; a selection never
-widens to the branch.
+widens to the branch. An item that names change ids sends the review they were read in, as a
+text Apply does: the room's `snapshot` and `baseViewDelta` (`BaseViewDeltaSchema`, shared with
+the Apply routes). The app builds the pair in one place, `frameCut` in `review-frame.ts`.
