@@ -48,7 +48,7 @@ import { threadSchema } from "@meridian/contracts/threads";
 import type { CreateWorkRequest, UpdateWorkRequest, WorkAnswer } from "@meridian/contracts/works";
 import { workAnswerSchema, workSchema, worksSnapshotSchema } from "@meridian/contracts/works";
 
-import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
+import { deleteRequest, getJson, patchJson, postJson } from "./http-client";
 
 type RequestInitOptions = {
   origin?: string;

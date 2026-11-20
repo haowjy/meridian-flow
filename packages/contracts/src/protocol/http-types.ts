@@ -8,15 +8,9 @@ import { z } from "zod";
 import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import type { DraftOwnerKey } from "../branches/owner.js";
 import type { StoredResult } from "../commands/index.js";
-import {
-  CONTEXT_URI_SCHEMES,
-  type ContextUriScheme,
-  isWorkScopedScheme,
-  type OwnedContextUriScheme,
-} from "../context-uri.js";
-import type { DocumentId, UserId, WorkId } from "../ids.js";
+import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "../context-uri.js";
+import type { UserId, WorkId } from "../ids.js";
 import type { ProjectDto } from "../projects/index.js";
-import { parseRequestId } from "../request-id.js";
 import type {
   Block,
   BlockType,

@@ -6,11 +6,7 @@
  */
 
 import type { ContextSchemeCapabilities } from "@meridian/contracts/context-uri";
-import type {
-  ContextEntryRef,
-  InvalidOperationReason,
-  ParsedDocumentFilename,
-} from "@meridian/contracts/protocol";
+import type { InvalidOperationReason, ParsedDocumentFilename } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
 import type { TreeJudge, TreeOwners } from "../../../shared/tree-owners.js";
 import type { BoundWrite } from "../../collab/index.js";

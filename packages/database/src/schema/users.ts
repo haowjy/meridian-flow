@@ -6,7 +6,7 @@
  */
 import type { DocumentId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
-import { boolean, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable(
   "users",

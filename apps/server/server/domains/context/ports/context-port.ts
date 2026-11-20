@@ -12,7 +12,6 @@ import type {
 } from "@meridian/contracts/context-uri";
 import type {
   ContextDestinationParent,
-  ContextEntryRef,
   ContextError,
   ContextSiblingPosition,
   CopyContextEntriesResult,

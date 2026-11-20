@@ -89,7 +89,7 @@ export function DocumentHost(props: DocumentHostProps) {
     <PanePlaceContext.Provider value={place === "side" ? "side" : "main"}>
       <DocumentReviewProvider projectId={projectId} document={tab} showing={onScreen}>
         {place === "main" && props.main ? (
-          <MainDocumentBinding projectId={projectId} document={tab} main={props.main} />
+          <MainDocumentBinding projectId={projectId} document={tab} />
         ) : null}
         {props.presentation === "phone" ? (
           place === "main" ? (
@@ -138,16 +138,14 @@ function useMountDocument(projectId: string, tab: OpenDocument, place: DocumentP
 }
 
 /**
- * Records main's route once live has its document, and the opening in Recent. Renders nothing.
+ * Records the opening in Recent once main shows the document live. Renders nothing.
  */
 function MainDocumentBinding({
   projectId,
   document,
-  main,
 }: {
   projectId: string;
   document: OpenDocument;
-  main: MainDocument;
 }) {
   const liveness = useDocumentLiveness(projectId, document);
 
