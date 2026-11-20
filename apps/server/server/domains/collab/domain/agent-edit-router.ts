@@ -6,7 +6,7 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import { draftOwnerKey, type LinkView } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { FileDestination } from "../../file-policy/index.js";
@@ -34,6 +34,8 @@ export function createAgentEditRouter(input: {
   drafts: Pick<ApplicationDraftStore, "resolveWorkDraftForThread">;
   liveUtilityCore: LiveAgentEditCore;
   threadCore(threadId: ThreadId): AgentEditCore;
+  /** Suggestion mode: a Work's core, which reads Live with the Work's suggestions applied. */
+  suggestionCore: ((work: string) => AgentEditCore) | null;
 }): AgentEditRouter {
   /** The thread's Work draft of the document a draft read can show, if it has one. */
   async function workDraftFor(documentId: DocumentId, threadId: string): Promise<string | null> {
@@ -77,11 +79,17 @@ export function createAgentEditRouter(input: {
     async read(command, routed) {
       const { grant, liveVersion, ...context } = routed;
       const version = liveVersion ? "live" : grant.destination.kind;
-      const { core, workDraftId } = await routeRead({
-        documentId: documentIdFromCommand(command),
-        threadId: context.threadId,
-        version,
-      });
+      const suggesting =
+        input.suggestionCore && version === "draft" && grant.destination.kind === "draft"
+          ? input.suggestionCore(draftOwnerKey(grant.destination.owner))
+          : null;
+      const { core, workDraftId } = suggesting
+        ? { core: suggesting, workDraftId: null }
+        : await routeRead({
+            documentId: documentIdFromCommand(command),
+            threadId: context.threadId,
+            version,
+          });
       const destination = version === "live" ? ({ kind: "live" } as const) : grant.destination;
       // A move out of a never-drafted source (Scratch) shows live text at a path only the Work's
       // draft has; the grant's facts say so, so the label needs no lookup.
@@ -98,11 +106,13 @@ export function createAgentEditRouter(input: {
           : draftedPath
             ? { version: "draft" as const, draftWork: grant.facts.ownerWork?.handle ?? "/" }
             : { version: "live" as const };
-      const routedContext = {
-        ...(await routedTo(context, destination)),
-        documentVersion: version,
-        ...(workDraftId ? { workDraftId } : {}),
-      };
+      const routedContext = suggesting
+        ? { ...context, linkView: { kind: "live" } as const, documentVersion: "live" as const }
+        : {
+            ...(await routedTo(context, destination)),
+            documentVersion: version,
+            ...(workDraftId ? { workDraftId } : {}),
+          };
       // An edits read shows history, not the document: it records no frontier.
       const readCore = () =>
         core.read(

@@ -1,6 +1,7 @@
 /** Shared agent-edit and markdown runtime construction for collab compositions. */
 import {
   type AgentEditCodecFactory,
+  type AgentEditCore,
   createAgentEditCodecFactory,
   createAgentEditCore,
   type DocumentCoordinator,
@@ -26,6 +27,7 @@ import {
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 import type { InitialDocumentSeeds } from "./ports/initial-document-seeds.js";
 import type { LiveDocumentCoordinator } from "./ports/live-document-coordinator.js";
+import { createSuggestionCoordinator } from "./suggestion-coordinator.js";
 
 type AgentEditObservability = Pick<
   Parameters<typeof createAgentEditCore>[0],
@@ -52,6 +54,8 @@ export function createAgentEditRuntime(input: {
   observeSerializationAnomaly?: MarkdownSerializationAnomalyObserver;
   /** Whether a database transaction is open here; whole-document binding refuses to run in one. */
   inTransaction(): boolean;
+  /** Suggestion mode (`FLOW_SUGGESTIONS=1`): a Work's draft is its suggestions inside Live. */
+  suggestions?: boolean;
 }) {
   const schema = buildDocumentSchema();
   const markupCodec = mdxCodec({ schema });
@@ -64,7 +68,7 @@ export function createAgentEditRuntime(input: {
       ? codec
       : createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, filetype));
   };
-  const liveUtilityCore = asLiveAgentEditCore(
+  const liveCoreOver = (coordinator: DocumentCoordinator) =>
     createAgentEditCore({
       links: createScopedDocumentLinks({
         scopes: input.links,
@@ -73,13 +77,29 @@ export function createAgentEditRuntime(input: {
       }),
       journal: input.journal,
       documentEdits: input.documentEdits,
-      coordinator: input.agentCoordinator,
+      coordinator,
       codec,
       codecFor,
       model,
       ...input.observability,
-    }),
+    });
+  const liveUtilityCore = asLiveAgentEditCore(
+    liveCoreOver(
+      input.suggestions
+        ? createSuggestionCoordinator(input.agentCoordinator, null)
+        : input.agentCoordinator,
+    ),
   );
+  const workCores = new Map<string, AgentEditCore>();
+  /** A Work's core in suggestion mode: it reads Live with the Work's suggestions applied and writes suggestions. */
+  const suggestionCore = (work: string): AgentEditCore => {
+    let core = workCores.get(work);
+    if (!core) {
+      core = liveCoreOver(createSuggestionCoordinator(input.agentCoordinator, work));
+      workCores.set(work, core);
+    }
+    return core;
+  };
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
       codec: markupCodec,
@@ -146,6 +166,7 @@ export function createAgentEditRuntime(input: {
     linkBinder,
     importBinder,
     liveUtilityCore,
+    suggestionCore: input.suggestions ? suggestionCore : null,
     markdownDocuments,
     markupCodec,
     model,

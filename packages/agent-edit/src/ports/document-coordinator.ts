@@ -14,6 +14,11 @@ export interface RoomRead {
   room: string | null;
   /** Journal high-water mark for `doc`, in the room's host-owned sequence. */
   position?: number;
+  /**
+   * The host's own record of what `doc` was read from, handed back with every save made on it.
+   * A host whose copy is not the room itself (a view) needs it to translate the save.
+   */
+  base?: unknown;
 }
 
 /** A document's state before a save's kept rows, and with them. */
@@ -120,6 +125,8 @@ export interface DocumentCoordinator {
     entries: readonly JournalBatchAppendEntry[];
     access?: DocumentAccess;
     precondition?: SavePrecondition;
+    /** The `base` of the read the entries were made on. */
+    base?: unknown;
   }): Promise<PreparedSave>;
 
   /** One bounded, origin-aware lookup for the model-facing concurrent-change account. */

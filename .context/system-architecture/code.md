@@ -19,6 +19,7 @@ flowchart TB
   tree-list-sync["tree-list-sync<br/><small>how a client keeps its copy of the list</small>"]:::package
   markup["markup<br/><small>text to document and back</small>"]:::package
   prosemirror-schema["prosemirror-schema<br/><small>the editor's node and mark schema</small>"]:::package
+  suggestions["suggestions<br/><small>a Work's suggestions inside Live (prototype)</small>"]:::package
   database["database<br/><small>Postgres schema and migrations</small>"]:::package
   contracts["contracts<br/><small>the shapes that cross the wire</small>"]:::package
   design-tokens["design-tokens<br/><small>the one place for colours</small>"]:::package
@@ -29,6 +30,9 @@ flowchart TB
   server -->|"saves everything with"| database
   agent-edit -->|"reads and writes text with"| markup
   markup -->|"builds documents from"| prosemirror-schema
+  app -->|"shows and settles suggestions with"| suggestions
+  server -->|"writes the model's edits as suggestions with"| suggestions
+  suggestions -->|"marks documents of"| prosemirror-schema
   database -->|"types its columns with"| contracts
   contracts -->|"takes usage and mock-script shapes from"| gateway
   server -->|"calls the models through"| gateway
@@ -134,6 +138,13 @@ A change to a node, mark or attribute updates `meridian-extensions.ts` in the ap
 - Kind: package
 - Paths: `packages/prosemirror-schema/src`
 - Docs: [CONTEXT](../../packages/prosemirror-schema/.context/CONTEXT.md), [AGENTS](../../packages/prosemirror-schema/AGENTS.md)
+
+## suggestions
+
+A Work's suggestions inside the live document, for the direction-2 prototype behind `FLOW_SUGGESTIONS`: what each view contains, how an edit to a view becomes suggestions, and accepting or rejecting them. It vendors `prosemirror-suggest-changes` unmodified under `src/vendor`.
+
+- Kind: package
+- Paths: `packages/suggestions/src`
 
 ## agent-edit
 

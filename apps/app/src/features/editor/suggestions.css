@@ -1,0 +1,61 @@
+/* Suggestions inside Live. Live hides what a Work proposes to add and reads what it proposes to
+   remove as plain text; a Work's view paints both with the review's green and struck red. */
+.meridian-editor .ProseMirror[data-suggestion-view="live"] ins[data-suggestion] {
+  display: none;
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="live"] del[data-suggestion] {
+  text-decoration: none;
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="work"] ins[data-suggestion] {
+  text-decoration: none;
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  box-shadow: inset 0 -1px 0 0 color-mix(in oklab, var(--color-primary) 40%, transparent);
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="work"] del[data-suggestion] {
+  color: var(--color-destructive);
+  background: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+/* A block's own suggestion: a new, deleted, split, joined or retyped block. Live hides a new
+   block; a split, a join and a retype show as the Work made them (CSS can't undo them). */
+.meridian-editor .ProseMirror[data-suggestion-view="live"] [data-block-suggestion~="insertion"] {
+  display: none;
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="work"] [data-block-suggestion~="insertion"] {
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--color-primary);
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="work"] [data-block-suggestion~="deletion"] {
+  color: var(--color-destructive);
+  text-decoration: line-through;
+  box-shadow: inset 2px 0 0 0 var(--color-destructive);
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="work"] [data-block-suggestion~="modification"] {
+  box-shadow: inset 2px 0 0 0 var(--color-primary);
+}
+
+.meridian-editor
+  .ProseMirror[data-suggestion-view="work"]
+  [data-block-suggestion~="boundary-insertion"]::after,
+.meridian-editor
+  .ProseMirror[data-suggestion-view="work"]
+  [data-block-suggestion~="boundary-deletion"]::after {
+  content: "¶";
+  margin-left: 0.15em;
+  color: var(--color-primary);
+}
+
+.meridian-editor
+  .ProseMirror[data-suggestion-view="work"]
+  [data-block-suggestion~="boundary-deletion"]::after {
+  color: var(--color-destructive);
+  text-decoration: line-through;
+}

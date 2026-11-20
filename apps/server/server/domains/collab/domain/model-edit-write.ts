@@ -13,7 +13,7 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DraftOwner, LinkView, ThreadId } from "@meridian/contracts";
+import { type DraftOwner, draftOwnerKey, type LinkView, type ThreadId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -55,6 +55,8 @@ export type ModelEditWriteDeps = {
   liveRoomOf(documentId: DocumentId): Promise<string | null>;
   /** A draft seeded from an older cut is behind Live: runs once the command's transaction commits. */
   draftBehindLive(documentId: DocumentId): void;
+  /** Suggestion mode: a Work's core, which writes the Work's suggestions into Live. */
+  suggestionCore: ((work: string) => AgentEditCore) | null;
 };
 
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
@@ -87,6 +89,14 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     grant: FileGrant<"edit">,
     owner: DraftOwner,
   ): Promise<WriteOutcome> {
+    if (deps.suggestionCore) {
+      if (documentId) await deps.enterLiveSeam(documentId);
+      return deps.suggestionCore(draftOwnerKey(owner)).write(command, {
+        ...given,
+        linkView: { kind: "live" },
+        documentVersion: "live",
+      });
+    }
     await deps.enterDraftSeam();
     approveBranchWriteJoin();
     const branch = await deps.branches.ensureActiveForWrite({

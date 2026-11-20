@@ -128,12 +128,14 @@ import { createDraftPullService } from "./domain/draft-pulls.js";
 import { DraftNotFoundError } from "./domain/draft-resolver.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
+import { runInLockedWrite } from "./domain/locked-write.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
 import { createModelEditRead, createModelEditWriter } from "./domain/model-edit-write.js";
 import { liveRoom } from "./domain/observation-rooms.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import { createReversalNoticePort } from "./domain/reversal-notices.js";
+import { holdsTurnSuggestions, settleInLive } from "./domain/suggestion-coordinator.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
   createTurnReversalService,
@@ -320,20 +322,21 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     service: () => turnInverse,
     drafts,
   });
+  const agentCoordinator = createDeferredLiveProjectionCoordinator({
+    hocuspocus: hocuspocusBinding.require,
+    journal: persistence.journal,
+    live: liveCoordinator,
+    transactions: {
+      inTransaction: isInDrizzleTransaction,
+      outsideTransaction: runOutsideDrizzleTransaction,
+      afterCommit: deferUntilDrizzleCommit,
+    },
+  });
   const runtime = createAgentEditRuntime({
     documentEdits: modelDocumentEdits,
     journal: persistence.journal,
     coordinator: liveCoordinator,
-    agentCoordinator: createDeferredLiveProjectionCoordinator({
-      hocuspocus: hocuspocusBinding.require,
-      journal: persistence.journal,
-      live: liveCoordinator,
-      transactions: {
-        inTransaction: isInDrizzleTransaction,
-        outsideTransaction: runOutsideDrizzleTransaction,
-        afterCommit: deferUntilDrizzleCommit,
-      },
-    }),
+    agentCoordinator: agentCoordinator,
     initialDocumentSeeds: persistence.seeds,
     deferUntilCommit: deferUntilDrizzleCommit,
     lockDocument: (documentId) => lockDocumentMutation(currentDrizzleDb(deps.db), documentId),
@@ -344,6 +347,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     aheadRefs: deps.aheadRefs,
     inTransaction: isInDrizzleTransaction,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
+    suggestions: process.env.FLOW_SUGGESTIONS === "1",
   });
   const projectionRefresher = { refresh: runDocumentWriteHook };
 
@@ -368,6 +372,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts,
     liveUtilityCore: runtime.liveUtilityCore,
     threadCore,
+    suggestionCore: runtime.suggestionCore,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -395,6 +400,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       liveRoom(documentId, await readAuthorityGeneration(documentId)),
     draftBehindLive: (documentId) =>
       deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
+    suggestionCore: runtime.suggestionCore,
   });
   const modelEdits = createDrizzleModelEdits(
     deps.db,
@@ -616,14 +622,55 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     replaceAuthorityGeneration,
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
+  // Suggestion mode: a turn's card offers Undo while the turn has suggestions pending, and Undo
+  // rejects them in Live.
+  const reverseInverse: typeof turnInverse = runtime.suggestionCore
+    ? {
+        ...turnInverse,
+        async getDocumentAndTreeChip(threadId, turnId) {
+          const chip = await turnInverse.getDocumentAndTreeChip(threadId, turnId);
+          const targets = await lineageStore.listEditedDocumentIdsForTurn(threadId, turnId);
+          for (const { documentId } of targets)
+            if (await holdsTurnSuggestions(agentCoordinator, documentId, turnId))
+              return { ...chip, control: "undo" as const };
+          return chip;
+        },
+        async reverseTurn(query) {
+          const { threadId, turnId, actor } = query;
+          // A tool call's own undo (no turn) keeps today's path.
+          if (!turnId || query.toolCallId) return turnInverse.reverseTurn(query);
+          const meta = {
+            origin: actor.type === "user" ? `human:${actor.userId}` : "system",
+            seq: 0,
+          };
+          const targets = await lineageStore.listEditedDocumentIdsForTurn(threadId, turnId);
+          const documents = [];
+          for (const { documentId } of targets) {
+            // Read and append in the reversal's command transaction. The append takes the
+            // document's lock; text typed since the read merges as Yjs.
+            const rejected = await runInLockedWrite(() =>
+              settleInLive(agentCoordinator, documentId, { turn: turnId }, "reject", meta),
+            );
+            documents.push({
+              documentId,
+              uri: (await documentUriResolver(documentId)) ?? documentId,
+              destination: { kind: "live" as const },
+              status: rejected ? ("reversed" as const) : ("nothing_to_undo" as const),
+            });
+          }
+          const reversed = documents.some((document) => document.status === "reversed");
+          return { status: reversed ? "reversed" : "nothing_to_undo", documents };
+        },
+      }
+    : turnInverse;
   const lineage = createTurnLiveLineageReadModel({
     store: lineageStore,
-    receiptStore: turnInverse,
+    receiptStore: reverseInverse,
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
   });
   const turnReversal = createTurnReversalService({
-    turnInverse,
+    turnInverse: reverseInverse,
     lockOwners: createDrizzleReversalLocks(deps.db),
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,
@@ -631,6 +678,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     threadContext:
       deps.threadContext ?? UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS.threadContext,
   });
+
   return createCollabFacade({
     importBinder: runtime.importBinder,
     lifecycle: {

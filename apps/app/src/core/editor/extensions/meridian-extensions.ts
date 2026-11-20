@@ -6,7 +6,12 @@
  * Meridian ProseMirror schema and Warm Organic rendering. Owns the editor schema
  * surface; consumed by the editor `config`.
  */
-import { HEADING_LEVELS, type HeadingLevel, isNested } from "@meridian/prosemirror-schema";
+import {
+  documentNodes,
+  HEADING_LEVELS,
+  type HeadingLevel,
+  isNested,
+} from "@meridian/prosemirror-schema";
 import { isiOS, isMacOS, type KeyboardShortcutCommand, mergeAttributes, Node } from "@tiptap/core";
 import Bold from "@tiptap/extension-bold";
 import Code from "@tiptap/extension-code";
@@ -476,6 +481,7 @@ export const MeridianTableRow = TableRow.extend({
 export const MeridianTableHeader = TableHeader.extend({
   name: "table_header",
   content: "block+",
+  marks: documentNodes.table_header.marks,
 
   addAttributes() {
     return tableCellAttributes(this.parent);
@@ -485,6 +491,7 @@ export const MeridianTableHeader = TableHeader.extend({
 export const MeridianTableCell = TableCell.extend({
   name: "table_cell",
   content: "block+",
+  marks: documentNodes.table_cell.marks,
 
   addAttributes() {
     return tableCellAttributes(this.parent);
@@ -780,6 +787,7 @@ export const MeridianJsxContainer = Node.create({
   name: "jsx_container",
   group: "block",
   content: "block+",
+  marks: documentNodes.jsx_container.marks,
 
   addAttributes() {
     return {

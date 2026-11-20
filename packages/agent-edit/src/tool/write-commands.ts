@@ -549,6 +549,7 @@ export function createWriteCommands(deps: {
       },
       ifOccupied: edit.ifOccupied,
       ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
+      ...(room.base === undefined ? {} : { base: room.base }),
     });
     if (isInternalWriteResult(saved)) return saved;
     // The echo and frontier show the room as the save left it.

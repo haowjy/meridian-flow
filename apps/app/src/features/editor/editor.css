@@ -1,4 +1,5 @@
 @import "./inline-review.css";
+@import "./suggestions.css";
 
 /**
  * Editor-only ProseMirror chrome and decorations for collaborative documents.

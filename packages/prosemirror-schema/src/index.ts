@@ -70,12 +70,21 @@ export const NESTING_ATTRS = Object.keys(nestingAttrs);
  */
 const idAttr = { default: null };
 
-/** The attributes of a node that is a block: its identity and its nesting. */
-const blockAttrs = { id: idAttr, ...nestingAttrs };
+/**
+ * A Work's suggestions on the block itself (a new, deleted, split or retyped block), as the JSON
+ * of `@meridian/suggestions`'s marks: the Yjs binding keeps a block's attributes, not its marks.
+ */
+const suggestionAttr = { default: null };
+
+/** The attributes of a node that is a block: its identity, its nesting and its suggestions. */
+const blockAttrs = { id: idAttr, ...nestingAttrs, suggestion: suggestionAttr };
+
+/** What lets a block hold suggestion marks while `@meridian/suggestions` works on it. */
+const SUGGESTION_MARK_NAMES = "insertion deletion modification blockBoundarySuggestion";
 
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
-  doc: specOnly(basicNodes.doc),
+  doc: { ...specOnly(basicNodes.doc), marks: SUGGESTION_MARK_NAMES },
   text: specOnly(basicNodes.text),
   hard_break: specOnly(basicNodes.hard_break),
 } satisfies Record<string, NodeSpec>;
@@ -154,6 +163,7 @@ const customNodes = {
 
   table_header: {
     content: "block+",
+    marks: SUGGESTION_MARK_NAMES,
     tableRole: "header_cell",
     isolating: true,
     attrs: {
@@ -167,6 +177,7 @@ const customNodes = {
 
   table_cell: {
     content: "block+",
+    marks: SUGGESTION_MARK_NAMES,
     tableRole: "cell",
     isolating: true,
     attrs: {
@@ -188,6 +199,7 @@ const customNodes = {
   jsx_container: {
     attrs: { name: {}, props: { default: {} }, ...blockAttrs },
     content: "block+",
+    marks: SUGGESTION_MARK_NAMES,
     group: "block",
   },
 
@@ -242,6 +254,44 @@ const customMarks = {
   strike: {},
 } satisfies Record<string, MarkSpec>;
 
+// A Work's suggestion inside the live document. Names and the `id`, `type`, `attrName`,
+// `previousValue` and `newValue` attributes are `prosemirror-suggest-changes`'s, which finds
+// the marks by name; `work`, `chat`, `turn` and `by` say whose suggestion it is.
+const suggester = {
+  work: { default: null },
+  chat: { default: null },
+  turn: { default: null },
+  by: { default: null },
+};
+const suggestionMarks = {
+  insertion: {
+    attrs: { id: {}, ...suggester },
+    inclusive: false,
+    excludes: "deletion modification insertion",
+  },
+  deletion: {
+    attrs: { id: {}, ...suggester },
+    inclusive: false,
+    excludes: "insertion modification deletion",
+  },
+  modification: {
+    attrs: {
+      id: {},
+      type: {},
+      attrName: { default: null },
+      previousValue: { default: null },
+      newValue: { default: null },
+      ...suggester,
+    },
+    inclusive: false,
+    excludes: "deletion insertion",
+  },
+  blockBoundarySuggestion: {
+    attrs: { id: { default: null }, type: { default: null }, ...suggester },
+    inclusive: false,
+  },
+} satisfies Record<string, MarkSpec>;
+
 // ─── Exports ────────────────────────────────────────────────────────
 
 export * from "./block-id.js";
@@ -278,6 +328,7 @@ export const documentNodes = {
 export const documentMarks = {
   ...basicMarkDefaults,
   ...customMarks,
+  ...suggestionMarks,
 } satisfies Record<string, MarkSpec>;
 
 export function buildDocumentSchema(): Schema {

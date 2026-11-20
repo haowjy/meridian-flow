@@ -21,6 +21,7 @@ import {
   linkMarkCodec,
   strikeMarkCodec,
   strongMarkCodec,
+  suggestionMarkCodecs,
 } from "./marks/index.js";
 
 export const markdownBlockCodecs: readonly BlockCodec[] = [
@@ -38,6 +39,7 @@ export const markdownMarkCodecs: readonly MarkCodec[] = [
   codeMarkCodec,
   linkMarkCodec,
   strikeMarkCodec,
+  ...suggestionMarkCodecs,
 ];
 
 export const markdownRequiredBlockNames: readonly string[] = Object.freeze(
