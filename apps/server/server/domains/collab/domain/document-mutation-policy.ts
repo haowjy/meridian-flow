@@ -62,8 +62,8 @@ export type AuthorityGenerationReplacement = (
 ) => Promise<{ generation: bigint }>;
 
 export class WriterFrameGapError extends Error {
-  constructor() {
-    super("writer-frame-gap");
+  constructor(client: number, from: number, held: number) {
+    super(`writer-frame-gap: client ${client} starts at clock ${from}, the room holds ${held}`);
     this.name = "WriterFrameGapError";
   }
 }
@@ -84,7 +84,7 @@ export function novelToRoom(room: Y.Doc, update: Uint8Array): Uint8Array | null 
   let overlaps = false;
   for (const [client, from] of Y.parseUpdateMeta(update).from) {
     const held = clocks.get(client) ?? 0;
-    if (from > held) throw new WriterFrameGapError();
+    if (from > held) throw new WriterFrameGapError(client, from, held);
     if (from < held) overlaps = true;
   }
   return overlaps ? Y.diffUpdate(update, stateVector) : update;

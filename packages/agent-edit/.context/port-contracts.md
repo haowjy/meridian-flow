@@ -8,8 +8,7 @@ must do that the types can't say.
 `read` returns a checkpoint and the retained updates in order; `since` does not
 hide retained rows behind a newer checkpoint, and a persistence watermark includes
 the checkpoint cut even when no rows remain above it. The host, not this package,
-mints captured checkpoint cuts. Compaction never expires immutable receipts or
-lineage.
+mints captured checkpoint cuts.
 
 ## `DocumentCoordinator`
 
