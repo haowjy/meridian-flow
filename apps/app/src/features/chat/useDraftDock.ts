@@ -118,8 +118,12 @@ export function useDraftDock({
 
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
-      // A draft-only picture has no review room: it opens as a preview.
-      if (!file.row.draft.hasDraft && !reviewHasNoRoom(file.row.draft)) {
+      // A draft-only picture opens as a preview; a created document opens like any other.
+      if (
+        !file.row.draft.hasDraft &&
+        !(file.row.draft.isNew && !file.row.draft.binary) &&
+        !reviewHasNoRoom(file.row.draft)
+      ) {
         if (file.row.draft.binary)
           setImagePreview({
             projectId,

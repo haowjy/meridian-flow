@@ -604,11 +604,13 @@ function ChangeRow({
   const drag = useReferenceDrag(
     copyView ? { ref: { kind: "file", id: file.documentId }, name, view: copyView } : null,
   );
-  const treeOnly = reviewHasNoRoom(file.draft);
+  // A document the Work created holds plain Live text, not suggestions: it opens like any other.
+  const reviewable =
+    file.draft.hasDraft || (file.draft.isNew && !file.draft.binary) || reviewHasNoRoom(file.draft);
   const imageOpenable = file.draft.binary;
-  const opens = Boolean(file.contextLocation) && (file.draft.hasDraft || treeOnly || imageOpenable);
+  const opens = Boolean(file.contextLocation) && (reviewable || imageOpenable);
   const review = () => {
-    if (file.draft.hasDraft || treeOnly) {
+    if (reviewable) {
       openReviewFile(file, ownerKey);
       onPicked?.();
     } else if (imageOpenable) setPreviewing(true);
