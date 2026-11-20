@@ -9,9 +9,11 @@ keeps resending it under the same id until the server answers. How the press fit
 ## An Apply's Undo
 
 The browser keeps no state machine for an Apply. `ApplyEntries` (`apply-history.ts`) holds the
-press's command id and puts one entry in the history of each live session of its documents. Every
-Undo of it is `undo(from)`: an applied row's Undo, or Ctrl+Z in an editor (`from`). A press while
-one is out hears the same answer. A chat card's Undo is not one of them: it is the server's
+press's command id and puts one entry in the history of each live session of its documents, and
+one step on the sidebar's Undo stack while it is in force (`PressStep`, `core/project-tree/tree-undo.ts`).
+Every Undo of it is `undo(from)`: an applied row's Undo, the sidebar's Ctrl+Z, or Ctrl+Z in an
+editor (`from`). A press while one is out hears the same answer. A Discard has no entries: its
+notice's Undo and its sidebar step send one shared Undo, once. A chat card's Undo is not one of them: it is the server's
 `reverse_turn`.
 
 ```mermaid

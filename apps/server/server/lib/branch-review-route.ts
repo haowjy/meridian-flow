@@ -15,7 +15,7 @@ import type {
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
-import { CommandIdSchema, type CommandRunning } from "@meridian/contracts/commands";
+import { CommandIdSchema } from "@meridian/contracts/commands";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import * as Y from "yjs";
@@ -25,9 +25,15 @@ import type { DocumentBranchOrigin } from "../domains/collab/domain/ports/work-b
 import { PressUnsynced } from "../domains/collab/domain/press.js";
 import { reviewContextLocation } from "../domains/collab/domain/work-branch-review-service.js";
 import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
-import { type CommandEnvelope, commandDigest, replay } from "../shared/commands/command-record.js";
+import {
+  type CommandEnvelope,
+  type CommandLookup,
+  commandDigest,
+  replay,
+} from "../shared/commands/command-record.js";
 import { ownerKeyOfColumns } from "../shared/draft-owner.js";
 import type { AppServices } from "./app.js";
+import { throwCommandConflict } from "./command-route.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
 
 type BranchRouteServices = {
@@ -282,14 +288,13 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
 export async function handlePressRequest(
   deps: BranchRouteServices,
   input: { projectId: ProjectId; userId: UserId; request: unknown },
-): Promise<PressResult | CommandRunning | CommandConflict> {
+): Promise<PressResult> {
   const { presses } = deps.documentSync;
   const request = parseBody(PressBody, input.request, "press");
   const owner = await requireListedOwner(deps, { ...input, owner: request.owner });
   const envelope = pressEnvelope(input, "press", request.commandId, input.request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
-  if (first.kind === "running") return { status: "running", commandId: request.commandId };
-  const recorded = replay<PressResult>(first, request.commandId as CommandId);
+  const recorded = storedAnswer<PressResult>(first, request.commandId);
   if (recorded) return recorded;
   return callDraftReview(presses.press({ envelope, owner, request }));
 }
@@ -298,14 +303,13 @@ export async function handlePressRequest(
 export async function handlePressUndoRequest(
   deps: BranchRouteServices,
   input: { projectId: ProjectId; userId: UserId; request: unknown },
-): Promise<PressUndoResult | CommandRunning | CommandConflict> {
+): Promise<PressUndoResult> {
   const { presses } = deps.documentSync;
   await requireProjectOwned(deps, input);
   const request = parseBody(PressUndoBody, input.request, "Undo");
   const envelope = pressEnvelope(input, "unpress", request.commandId, request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
-  if (first.kind === "running") return { status: "running", commandId: request.commandId };
-  const recorded = replay<PressUndoResult>(first, request.commandId as CommandId);
+  const recorded = storedAnswer<PressUndoResult>(first, request.commandId);
   if (recorded) return recorded;
   return callDraftReview(presses.undo({ envelope, pressCommandId: request.pressCommandId }));
 }
@@ -331,4 +335,22 @@ function pressEnvelope(
   };
 }
 
-type CommandConflict = { status: "conflict"; commandId: CommandId };
+/**
+ * A resend's answer from what the first request left: its stored result, or null to run it.
+ * The command driver reads any 2xx as the command's result, so a first request still running is
+ * a 503 it sends again after, and an id stored for something else is the routes' 409.
+ */
+function storedAnswer<R extends { status: string }>(
+  first: CommandLookup | { kind: "running" },
+  commandId: string,
+): R | null {
+  if (first.kind === "running")
+    throw createError({
+      statusCode: 503,
+      message: "The press is still running",
+      data: { retryable: true },
+    });
+  const recorded = replay<R>(first, commandId as CommandId);
+  if (recorded?.status === "conflict") return throwCommandConflict();
+  return recorded as R | null;
+}

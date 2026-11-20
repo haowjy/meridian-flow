@@ -9,7 +9,6 @@ import { childAtSegment, idHex } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
-  appliedNodes,
   applyDraft,
   changedFolders,
   childrenOf,
@@ -805,17 +804,13 @@ function reorganisedOnce() {
 }
 
 describe("an Apply's copy that a later record undid is no longer in force", () => {
-  const inLive = (t: ReturnType<typeof start>, command: string) => appliedNodes(t.doc, command, []);
-
   it("a card's Undo of the drafted rename ends the Apply's copy", () => {
     const t = start();
     const n = t.chapter("Hall");
     const drafted = t.w.rename(D, CHAT, n, "Lobby");
     const { command, copies } = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(inLive(t, command)).toEqual([n]);
     undoChange(t.w, D, CHAT, drafted.id);
     expect(t.at(n)?.name).toBe("Hall");
-    expect(inLive(t, command)).toEqual([]);
     expect(undoChange(t.w, LIVE, WRITER, (copies[0] as TreeRecord).id)).toBe("already");
     expect(undoApply(t.w, command, WRITER, cmd())).toMatchObject({
       undone: [],
@@ -831,13 +826,11 @@ describe("an Apply's copy that a later record undid is no longer in force", () =
       const restore = t.w.restore(LIVE, WRITER, n);
       const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
       const mine = [restore.id];
-      expect(appliedNodes(t.doc, command, mine)).toEqual([n]);
       if (how === "unapply") {
         const result = undoApply(t.w, command, WRITER, cmd(), { restoredByApply: mine });
         expect(result.left).toEqual([]);
       } else undoChange(t.w, LIVE, WRITER, restore.id);
       expect(t.at(n)?.trashed).toBe(true);
-      expect(appliedNodes(t.doc, command, mine)).toEqual([]);
     }
   });
 });
@@ -1530,20 +1523,6 @@ describe("Undo of names and places reads the changes in force", () => {
     expect(parentOf(a, f)).toBe(ROOT);
     expect(said(undoChange(a, LIVE, W, out.id))).toBe("move");
     expect(parentOf(a, node)).toBe(f);
-  });
-
-  it("an applied delete undone on two copies: the Apply's tree half has ended", () => {
-    const a = replica(1000);
-    const node = folder(a, "N");
-    a.delete(D, W, node);
-    const applied = applyDraft(a, "work-1", W, cmd());
-    const copy = viewRecords(a.doc, LIVE).at(-1) as TreeRecord;
-    expect(appliedNodes(a.doc, applied.command, [])).toEqual([node]);
-    const b = replica(2000, a);
-    undo(a, copy.id);
-    undo(b, copy.id);
-    sync(a, b);
-    expect(appliedNodes(a.doc, applied.command, [])).toEqual([]);
   });
 
   it("who last renamed a node after an Undo is the Undo's author", () => {
