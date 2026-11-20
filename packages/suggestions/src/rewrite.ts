@@ -441,20 +441,27 @@ function replaceInWork(
       newChangeId(),
   };
   // Text cut from a block the Work added stays that block's insertion, whoever cuts it.
-  const change =
-    blockKind(startBlock.node, view) === "own"
-      ? (startBlock.node.attrs.sug as SuggestionAttrs)
-      : attrs;
+  const startOwn = blockKind(startBlock.node, view) === "own";
+  const change = startOwn ? (startBlock.node.attrs.sug as SuggestionAttrs) : attrs;
   changed(change);
   const schema = out.doc.type.schema;
   const joining = startBlock.pos !== endBlock.pos;
-  // What follows the cut in the last block moves to where the cut closes: kept as a copy, since
-  // Live text never moves in a Work's view.
-  const tail = joining
-    ? visibleContent(endBlock.node, to - endBlock.pos - 1, endBlock.node.content.size, view)
-    : Fragment.empty;
   const endOwn = blockKind(endBlock.node, view) === "own";
-  suggestRemoval(out, from, joining ? endBlock.pos + endBlock.node.nodeSize - 1 : to, view, attrs);
+  // What follows the cut in the last block moves to where the cut closes: kept as a copy, since
+  // Live text never moves in a Work's view. Into a block the Work added it does not move at all:
+  // the copy would become that block's insertion, gone with it. The Live block stays after it.
+  const keepEnd = joining && startOwn && !endOwn;
+  const tail =
+    joining && !keepEnd
+      ? visibleContent(endBlock.node, to - endBlock.pos - 1, endBlock.node.content.size, view)
+      : Fragment.empty;
+  suggestRemoval(
+    out,
+    from,
+    joining && !keepEnd ? endBlock.pos + endBlock.node.nodeSize - 1 : to,
+    view,
+    attrs,
+  );
   if (joining && endOwn) {
     // An own block goes whole; its text is already copied as the tail.
     const a = out.mapping.map(endBlock.pos, 1);
@@ -492,15 +499,19 @@ function replaceInWork(
   else suggestRemoval(out, insertAt, targetEnd, view, attrs);
   const after = out.mapping.map(targetNow.pos + targetNow.node.nodeSize, 1);
   const template = parts.last ?? targetNow.node;
+  const lastContent = (parts.last?.content ?? Fragment.empty).append(rest);
   const blocks = [
     ...parts.middle.map((block) =>
       block.type.create({ ...block.attrs, id: null, sug: change }, block.content, block.marks),
     ),
-    template.type.create(
-      { ...template.attrs, id: null, sug: change },
-      (parts.last?.content ?? Fragment.empty).append(rest),
-    ),
+    template.type.create({ ...template.attrs, id: null, sug: change }, lastContent),
   ];
+  // The Live block kept after the cut is the split's second half.
+  if (keepEnd && lastContent.size === 0) {
+    blocks.pop();
+    out.insert(after, blocks);
+    return out.mapping.map(to, 1);
+  }
   out.insert(after, blocks);
   const lastStart =
     after + blocks.slice(0, -1).reduce((size, block) => size + block.nodeSize, 0) + 1;
