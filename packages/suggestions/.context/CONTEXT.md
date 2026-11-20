@@ -87,7 +87,7 @@ layered on it. `list` gives the view's changes for review; `pending` the turns a
   paired through the transaction's mapping, not diffed. Every Yjs item the verdict keeps stays,
   so text typed inside a resolved word, a comment's anchor and a cursor keep their place. The
   tab's Apply and Reject (`acceptSuggestions`, `rejectSuggestions`) run it on the editor's
-  Y.Doc as one writer edit (origin `ySyncPluginKey`, `addToHistory`), so Ctrl+Z takes back
+  Y.Doc as one writer edit (origin `DIRECT_WRITE_ORIGIN`, which the Undo history tracks), so Ctrl+Z takes back
   only it; the binding then redraws the editor. Card Undo runs it with `{ turn }`.
 - Press: Apply or Discard on documents, folders or a Work is a server command
   (`domains/collab/adapters/drizzle-press.ts`). `pressStored` runs `resolveStored` as one Yjs
