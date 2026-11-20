@@ -95,13 +95,6 @@ export class MemoryDraftStore implements DraftStore {
     return draftIds.filter((id) => this.drafts.has(id));
   }
 
-  async workDraftsOf(documentId: string, draftIds: readonly string[]): Promise<string[]> {
-    return draftIds.filter((id) => {
-      const documentDraft = this.drafts.get(id);
-      return documentDraft && rowOf(documentDraft).documentId === documentId;
-    });
-  }
-
   /** One observation: the row, checkpoint and tail are taken together, with no await between. */
   async readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null> {
     return this.readNow(draftId, since);

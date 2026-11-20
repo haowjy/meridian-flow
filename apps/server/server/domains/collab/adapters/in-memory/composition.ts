@@ -147,6 +147,8 @@ export function createInMemoryCollabDomain(): CollabDomain {
       closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
       reconcileHocuspocusDraftRoom: hocuspocusPersistence.reconcileHocuspocusDraftRoom,
       enrollHocuspocusDraftRoom: hocuspocusPersistence.enrollHocuspocusDraftRoom,
+      connectedHocuspocusDraftRoom: hocuspocusPersistence.connectedHocuspocusDraftRoom,
+      unloadedHocuspocusDraftRoom: hocuspocusPersistence.unloadedHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     agentEdit: {

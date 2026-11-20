@@ -211,8 +211,6 @@ export type DraftStore = {
   getDraft(draftId: string): Promise<DraftSnapshot | null>;
   /** Which of these drafts are in the user's projects: a draft that is not listed is gone. */
   openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
-  /** Which of these drafts are Work drafts of the document. */
-  workDraftsOf(documentId: string, draftIds: readonly string[]): Promise<string[]>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
   /**
    * Which of these text ids a writer's journal row or a late-typing recovery row inserted

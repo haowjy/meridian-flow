@@ -29,6 +29,12 @@ export type DraftPullService = {
    * transaction: it opens connections of its own.
    */
   catchUpDraft(draftId: string): Promise<void>;
+  /**
+   * Catches a draft up as its room opens or takes a connection: a failure is reported through
+   * the diagnostics and never rejects, and shutdown joins it. A failed push is not retried, so
+   * this is what heals it.
+   */
+  catchUpOpenedDraft(draftId: string): Promise<void>;
   /** Drops debounced pushes that haven't started; in-flight pulls finish. */
   cancelScheduledPulls(): void;
   /** Stop scheduling and join pulls already in flight before their store is destroyed. */
@@ -36,7 +42,7 @@ export type DraftPullService = {
 };
 
 export type DraftPullDiagnostics = {
-  backgroundFailed(input: { documentId: DocumentId; cause: unknown }): void;
+  backgroundFailed(input: { documentId?: DocumentId; draftId?: string; cause: unknown }): void;
   /** What a pull's content merge did: how often each rule fired, and the live words the draft overrode. */
   merged(input: { documentId: DocumentId; rules: RuleCounts; overrode: number }): void;
 };
@@ -73,10 +79,11 @@ export function createDraftPullService(input: {
     }
   }
 
-  async function pullDraft(draftId: string): Promise<void> {
+  /** `pushed` is Live as the push read it, shared by the drafts it catches up. */
+  async function pullDraft(draftId: string, pushed?: Y.Doc): Promise<void> {
     const base = await input.draftCoordinator.loadBase(draftId);
     const documentId = base.snapshot.documentId as DocumentId;
-    const live = await committedLive(documentId);
+    const live = pushed ?? (await committedLive(documentId));
     try {
       const blocks = readBlocks(live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
       if (
@@ -123,11 +130,11 @@ export function createDraftPullService(input: {
         write.dispose();
       }
     } finally {
-      live.destroy();
+      if (!pushed) live.destroy();
     }
   }
 
-  function catchUpDraft(draftId: string): Promise<void> {
+  function catchUp(draftId: string, pushed?: Y.Doc): Promise<void> {
     if (stopped) return Promise.resolve();
     const current = pulls.get(draftId);
     if (current?.running) {
@@ -137,7 +144,7 @@ export function createDraftPullService(input: {
       current.queued ??= input.outsideTransaction(() => {
         const rerun = () => {
           current.queued = undefined;
-          return catchUpDraft(draftId);
+          return catchUp(draftId);
         };
         return running.then(rerun, rerun);
       });
@@ -145,7 +152,7 @@ export function createDraftPullService(input: {
     }
     const entry = current ?? {};
     entry.running = input.outsideTransaction(() =>
-      pullDraft(draftId).finally(() =>
+      pullDraft(draftId, pushed).finally(() =>
         input.outsideTransaction(() => {
           entry.running = undefined;
           if (!entry.queued) pulls.delete(draftId);
@@ -162,14 +169,24 @@ export function createDraftPullService(input: {
     if (entry?.max) clearTimeout(entry.max);
     scheduled.delete(documentId);
     const report = (cause: unknown) => input.diagnostics?.backgroundFailed({ documentId, cause });
-    const pushed: Promise<void> = input
-      .outsideTransaction(() => input.openDraftRooms(documentId))
-      .then((draftIds) =>
-        Promise.all(draftIds.map((draftId) => catchUpDraft(draftId).catch(report))),
-      )
-      .then(() => undefined, report)
-      .finally(() => pushes.delete(pushed));
-    pushes.add(pushed);
+    track(
+      (async () => {
+        const draftIds = await input.outsideTransaction(() => input.openDraftRooms(documentId));
+        if (!draftIds.length) return;
+        const live = await input.outsideTransaction(() => committedLive(documentId));
+        try {
+          await Promise.all(draftIds.map((draftId) => catchUp(draftId, live).catch(report)));
+        } finally {
+          live.destroy();
+        }
+      })().catch(report),
+    );
+  }
+
+  function track(work: Promise<void>): Promise<void> {
+    const tracked: Promise<void> = work.finally(() => pushes.delete(tracked));
+    pushes.add(tracked);
+    return tracked;
   }
 
   return {
@@ -182,7 +199,12 @@ export function createDraftPullService(input: {
       scheduled.set(documentId, entry);
     },
 
-    catchUpDraft,
+    catchUpDraft: (draftId) => catchUp(draftId),
+
+    catchUpOpenedDraft: (draftId) =>
+      track(
+        catchUp(draftId).catch((cause) => input.diagnostics?.backgroundFailed({ draftId, cause })),
+      ),
 
     cancelScheduledPulls() {
       for (const entry of scheduled.values()) {

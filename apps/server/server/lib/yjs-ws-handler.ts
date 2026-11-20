@@ -804,6 +804,7 @@ export function createHocuspocus(
           // must not take a late connection.
           if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
             refuse(WS_CLOSE.DRAFT_PURGED);
+          services.documentSync.connectedHocuspocusDraftRoom(room.draftId);
           return;
         }
         try {
@@ -820,6 +821,8 @@ export function createHocuspocus(
     },
     async afterUnloadDocument({ documentName }) {
       treeRooms.unloaded(documentName);
+      const room = parseYjsRoomName(documentName);
+      if (room?.kind === "draft") services.documentSync.unloadedHocuspocusDraftRoom(room.draftId);
     },
     async onStoreDocument({ documentName, document }) {
       const room = parseAnyRoomOrDeny(documentName);

@@ -29,12 +29,7 @@ import type {
 } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
-import {
-  closeDraftRooms,
-  closeRoom,
-  openDraftRoomIds,
-  whenRoomRegistered,
-} from "./hocuspocus-rooms.js";
+import { closeDraftRooms, closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
 
 type PendingAppend = {
   documentId: string;
@@ -68,8 +63,8 @@ type HocuspocusPersistenceDeps = {
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
-  /** Brings Live's committed text into a draft whose room just opened. */
-  catchUpDraft?(draftId: string): Promise<void>;
+  /** Brings Live's committed text into a draft whose room just opened or took a connection. */
+  catchUpOpenedDraft?(draftId: string): Promise<void>;
   /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
   onDraftWriterUpdateAdmitted?(draftId: string): void;
 };
@@ -93,6 +88,8 @@ export type HocuspocusPersistenceService = Pick<
   | "closeHocuspocusDraftRoom"
   | "reconcileHocuspocusDraftRoom"
   | "enrollHocuspocusDraftRoom"
+  | "connectedHocuspocusDraftRoom"
+  | "unloadedHocuspocusDraftRoom"
   | "getPersistenceQueueMetrics"
 > & {
   disconnectLiveGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
@@ -101,6 +98,17 @@ export type HocuspocusPersistenceService = Pick<
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
 ): HocuspocusPersistenceService {
+  // The draft rooms open in this process, by document: what a Live commit pushes to.
+  const draftRoomsOf = new Map<DocumentId, Set<string>>();
+  const documentOfDraftRoom = new Map<string, DocumentId>();
+  function unloadedDraftRoom(draftId: string): void {
+    const documentId = documentOfDraftRoom.get(draftId);
+    if (!documentId) return;
+    documentOfDraftRoom.delete(draftId);
+    const rooms = draftRoomsOf.get(documentId);
+    rooms?.delete(draftId);
+    if (!rooms?.size) draftRoomsOf.delete(documentId);
+  }
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
@@ -334,8 +342,7 @@ export function createHocuspocusPersistenceService(
     },
 
     async openDraftRooms(documentId) {
-      const open = openDraftRoomIds(deps.hocuspocus());
-      return open.length ? requireDraftStore().workDraftsOf(documentId, open) : [];
+      return [...(draftRoomsOf.get(documentId) ?? [])];
     },
 
     async loadHocuspocusDocument(documentId, document) {
@@ -375,9 +382,17 @@ export function createHocuspocusPersistenceService(
           closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_PURGED);
           return;
         }
-        // Registered, so a Live commit from here on pushes to this room, and this pull reads
+        const documentId = base.snapshot.documentId as DocumentId;
+        draftRoomsOf.set(documentId, (draftRoomsOf.get(documentId) ?? new Set()).add(draftId));
+        documentOfDraftRoom.set(draftId, documentId);
+        // The room may have unloaded while it enrolled, after its unload hook ran.
+        if (hocuspocus.documents.get(document.name) !== document) {
+          unloadedDraftRoom(draftId);
+          return;
+        }
+        // Listed, so a Live commit from here on pushes to this room, and this pull reads
         // whatever committed before it.
-        await deps.catchUpDraft?.(draftId);
+        await deps.catchUpOpenedDraft?.(draftId);
       })().catch((cause: unknown) => {
         if (!deps.eventSink) return;
         emitEvent(deps.eventSink, {
@@ -391,6 +406,12 @@ export function createHocuspocusPersistenceService(
       // A store of this room, and a drain of this draft, wait the enrollment out.
       trackAppend(draftRoomName(draftId), enrollment);
     },
+
+    connectedHocuspocusDraftRoom(draftId) {
+      void deps.catchUpOpenedDraft?.(draftId);
+    },
+
+    unloadedHocuspocusDraftRoom: unloadedDraftRoom,
 
     async admitLiveWriterUpdate(input) {
       const authority = documentAuthority(input.document);

@@ -124,8 +124,8 @@ export type CollabTransport = {
   /** Which of these drafts are in the user's projects: a draft that is not listed is gone. */
   openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   /**
-   * The document's Work drafts with a room open or loading, the one place that knows which
-   * rooms are open: this process's Hocuspocus. A Live commit pushes to exactly these.
+   * The document's Work drafts with a room open in this process, kept at enrollment and unload.
+   * A Live commit pushes to exactly these.
    */
   openDraftRooms(documentId: DocumentId): Promise<string[]>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
@@ -169,6 +169,10 @@ export type CollabTransport = {
    * what committed while it loaded, or closes it when the draft ended.
    */
   enrollHocuspocusDraftRoom(input: { draftId: string; document: HocuspocusDocument }): void;
+  /** A client connected to a draft room: catches the draft up, healing a failed push. */
+  connectedHocuspocusDraftRoom(draftId: string): void;
+  /** A draft room unloaded: it is no longer pushed to. */
+  unloadedHocuspocusDraftRoom(draftId: string): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 

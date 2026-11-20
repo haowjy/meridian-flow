@@ -8,6 +8,7 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import type { BranchId } from "@meridian/contracts";
+import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -50,6 +51,7 @@ import { createBranchDiscard } from "../domain/branch-discard.js";
 import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
 import { createBranches } from "../domain/branches.js";
 import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
+import { DraftNotFoundError } from "../domain/draft-resolver.js";
 import { createDraftRetirement } from "../domain/draft-retirement.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import { createModelEditRead, createModelEditWriter } from "../domain/model-edit-write.js";
@@ -249,7 +251,9 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     owner: { kind: "work", workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID },
     ownerHandle: "atomicity-work",
   } as const;
-  const persistence = createDrizzleCollabPersistence(db);
+  const persistence = createDrizzleCollabPersistence(db, (documentId) =>
+    draftPulls.liveCommitted(documentId),
+  );
   const _testJournal = grantedJournal(persistence.journal);
   const hocuspocus = fakeHocuspocus();
   const liveCoordinator = createHocuspocusCoordinator({
@@ -279,8 +283,19 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const draftPulls = createDraftPullService({
     outsideTransaction: runOutsideWrite,
     draftCoordinator,
-    // The harness opens no rooms: its tests catch drafts up by hand.
-    openDraftRooms: async () => [],
+    // The draft rooms a test opened on the fake Hocuspocus.
+    openDraftRooms: async (documentId) => {
+      const open = [...hocuspocus.documents.keys()].flatMap((name) => {
+        const room = parseYjsRoomName(name);
+        return room?.kind === "draft" ? [room.draftId] : [];
+      });
+      const own = await Promise.all(
+        open.map(async (id) =>
+          (await draftStore.getDraft(id))?.documentId === documentId ? id : null,
+        ),
+      );
+      return own.filter((id): id is string => id !== null);
+    },
     liveJournal: persistence.journal,
   });
   const draftEffects = createDraftProjection({
@@ -410,15 +425,19 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
           },
           liveRoomOf: async (documentId) =>
             liveRoom(documentId, await readAuthorityGeneration(documentId)),
-          afterLiveCommit: (documentId) =>
+          draftBehindLive: (documentId) =>
             deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
         }),
         links,
       ),
       read: modelEditRead,
       catchUp: async (documentId, threadId) => {
-        const draft = await draftStore.resolveWorkDraftForThread(documentId, threadId);
-        await draftPulls.catchUpDraft(draft.draftId);
+        try {
+          const draft = await draftStore.resolveWorkDraftForThread(documentId, threadId);
+          await draftPulls.catchUpDraft(draft.draftId);
+        } catch (cause) {
+          if (!(cause instanceof DraftNotFoundError)) throw cause;
+        }
       },
     },
     modelEvidence,
@@ -434,7 +453,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     resolveDocumentUri,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projections.refresh({ documentId }),
-    liveCommitted: draftPulls.liveCommitted,
     notices: createReversalNoticePort({
       notices,
       resolveLastDocumentUri,

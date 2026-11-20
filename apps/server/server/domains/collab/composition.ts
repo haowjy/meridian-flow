@@ -186,7 +186,9 @@ type CollabDomainDeps = {
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
-  const persistence = createDrizzleCollabPersistence(deps.db);
+  const persistence = createDrizzleCollabPersistence(deps.db, (documentId) =>
+    draftPulls.liveCommitted(documentId),
+  );
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     onArrivals: (ids) => deps.arrivals?.settle(ids) ?? Promise.resolve(0),
@@ -389,7 +391,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     liveRoomOf: async (documentId) =>
       liveRoom(documentId, await readAuthorityGeneration(documentId)),
-    afterLiveCommit: (documentId) =>
+    draftBehindLive: (documentId) =>
       deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
   });
   const modelEdits = createDrizzleModelEdits(
@@ -432,11 +434,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     readAuthorityHeadGeneration: readAuthorityGeneration,
     emitAgentEditInvariantViolation: createAgentEditInvariantDiagnostic(deps.eventSink),
     onLiveUpdatePersisted: (documentId) => {
-      draftPulls.liveCommitted(documentId);
       derivations.schedule(documentId);
       deps.liveTextHints?.hint(documentId);
     },
-    catchUpDraft: draftPulls.catchUpDraft,
+    catchUpOpenedDraft: draftPulls.catchUpOpenedDraft,
     onDraftWriterUpdateAdmitted: (draftId) => draftAheads.schedule(draftId),
   });
 
@@ -455,7 +456,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
-    liveCommitted: draftPulls.liveCommitted,
     notices: deps.notices
       ? createReversalNoticePort({
           notices: deps.notices,
@@ -522,7 +522,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       treeLists: deps.treeLists,
       tree: treeReader,
       onCommitted: async (documentId) => {
-        draftPulls.liveCommitted(documentId);
         await runDocumentWriteHook({ documentId }, "collab.apply");
       },
       merged: ({ commandId, kind, rules, overrode }) => {
@@ -676,6 +675,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
       reconcileHocuspocusDraftRoom: hocuspocusPersistence.reconcileHocuspocusDraftRoom,
       enrollHocuspocusDraftRoom: hocuspocusPersistence.enrollHocuspocusDraftRoom,
+      connectedHocuspocusDraftRoom: hocuspocusPersistence.connectedHocuspocusDraftRoom,
+      unloadedHocuspocusDraftRoom: hocuspocusPersistence.unloadedHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     agentEdit: {

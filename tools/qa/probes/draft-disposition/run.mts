@@ -51,7 +51,6 @@ try {
     resolveDocumentUri: async () => "project://probe.md",
     resolveLastDocumentUri: async () => null,
     async refreshDocument() {},
-    liveCommitted() {},
     notices: { async record() {} },
     workProjection: h.projection,
     removals: createTestRemovalDeps(h.db).removals,

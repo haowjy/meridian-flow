@@ -505,7 +505,6 @@ try {
       resolveDocumentUri: async () => "probe.md",
       resolveLastDocumentUri: async () => null,
       refreshDocument: async () => {},
-      liveCommitted: (id) => pulls.liveCommitted(id),
       notices: { record: async () => {} },
       workProjection: h.projection,
       removals: createTestRemovalDeps(h.db).removals,

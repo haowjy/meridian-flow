@@ -53,8 +53,8 @@ export type ModelEditWriteDeps = {
   lockDraft(draftId: string): Promise<void>;
   /** The live room's current name for the document, or null when it has no addressable authority. */
   liveRoomOf(documentId: DocumentId): Promise<string | null>;
-  /** Runs once the command's transaction commits. */
-  afterLiveCommit(documentId: DocumentId): void;
+  /** A draft seeded from an older cut is behind Live: runs once the command's transaction commits. */
+  draftBehindLive(documentId: DocumentId): void;
 };
 
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
@@ -77,7 +77,6 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       linkView: { kind: "live" },
       documentVersion: "live",
     });
-    if (!outcome.isError && documentId) deps.afterLiveCommit(documentId);
     return outcome;
   }
 
@@ -116,7 +115,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       ]),
     });
     // A draft seeded from an older cut is behind live: the pull brings the writer's typing in.
-    if (seen && !workDraft.hasEffect) deps.afterLiveCommit(documentId);
+    if (seen && !workDraft.hasEffect) deps.draftBehindLive(documentId);
     return outcome;
   }
 

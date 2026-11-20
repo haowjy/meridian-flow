@@ -469,19 +469,25 @@ same edit: the second finds the edit already out and takes nothing (probe `d22-c
 in [the lock-free probe index](qa/drafts-lock-free-probes.md)).
 
 Live merges only into drafts someone has open (`domain/draft-pulls.ts`). Two entry points:
-`liveCommitted(documentId)`, a plain notice that carries nothing from the calling process and which every Live writer calls (live sync, a model's live commit,
-Apply, Un-Apply, a live Undo step, an authority replace or restore); and `catchUpDraft(draftId)`,
-which every reader that shows a draft's text calls before it takes any lock. `liveCommitted`
-debounces per document (2 s, 10 s maximum); when it fires it lists the document's draft rooms open
-or loading at that moment (the `openDraftRooms(documentId)` port: its one adapter,
-`hocuspocus-persistence.ts`, reads this process's Hocuspocus `documents` and `loadingDocuments`,
-and nothing else reads them for this) and catches each up. It never waits, and a draft with no
-room is not touched, so background merge work grows with the drafts open on a screen, not with
-the drafts that exist. A draft catches up when it is read or opened: a room's first catch-up
-runs in `enrollHocuspocusDraftRoom` once Hocuspocus has registered the room (any Live commit
-before it falls inside that read, any after finds the room), and the room's `catch_up` message,
-model tools (`modelEdits().catchUp`, `readRoom`) and effective reads (Copy, export, search
-fallback) call it. A caller joining a running catch-up of the same draft waits for a rerun that
+`liveCommitted(documentId)`, a plain notice that carries nothing from the calling process; and
+`catchUpDraft(draftId)`, which every reader that shows a draft's text calls before it takes any
+lock. Every Live write sends the notice from one place: the live journal's `append`,
+`appendWriterUpdate` (when it stores a row) and `appendBatch` fire it after the writing
+transaction commits (`createDrizzleJournal`'s `appended` hook). Live sync, a model's live
+commit, `writeDocument`, a code merge, Apply, Un-Apply and a live Undo step all pass it. An
+authority replace or restore changes Live without an append, so it sends the notice itself. The
+notice debounces per document (2 s, 10 s maximum); when it fires it reads Live once and catches up
+each draft room open then. It never waits, and a draft with no room is not touched, so
+background merge work grows with the drafts open on a screen, not with the drafts that exist.
+`openDraftRooms(documentId)` is an in-memory index in `hocuspocus-persistence.ts` (document →
+open draft rooms), added when a room enrolls and dropped at `afterUnloadDocument`; it makes no
+database call. A draft catches up when it is read or opened: a room's first catch-up runs in
+`enrollHocuspocusDraftRoom` once Hocuspocus has registered the room (any Live commit before it
+falls inside that read, any after finds the room), each later client connection to an open room
+catches it up again (so a failed push heals on the next connect), and the room's `catch_up`
+message, model tools (`modelEdits().catchUp`, `readRoom`) and effective reads (Copy, export,
+search fallback) call it. A failure of an opened-room catch-up is reported as the pull service's
+`background.failed`. A caller joining a running catch-up of the same draft waits for a rerun that
 reads Live after its call. Readers that merge (Apply, Discard, Un-Apply, card Undo and revert)
 never catch up: they merge against the base they find, and a catch-up inside their lock would
 open a second connection (`assertOutsideCommandTransaction`).
@@ -493,7 +499,7 @@ process's: one server process runs today (KB `architecture/hosting.md`, #588). A
 re-reads committed Live and the draft under the draft row hold, so a duplicate or late notice
 is harmless and nothing depends on the notice and the pull sharing a process. Several processes
 need one of two changes, neither built: route each document's draft rooms to one process, or
-replace the `openDraftRooms` adapter with shared presence and fan `liveCommitted` out to every
+replace the `openDraftRooms` index with shared presence and fan `liveCommitted` out to every
 process (for instance Postgres LISTEN/NOTIFY); otherwise a draft open on another process
 misses Live edits until its next read.
 
@@ -614,7 +620,7 @@ transaction. A card Undo's Work receipts run in the same command as its document
 its first document key, and reruns when its commit finds a Work it did not declare.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,
 inverse or compaction takes one. A failed push is reported and not retried: the next Live
-commit, or the next read or open of the draft, catches it up.
+commit, the next connection to the room, or the next read or open of the draft, catches it up.
 
 ## Authority, checkpoints, and derivation
 
