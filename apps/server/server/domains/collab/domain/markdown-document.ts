@@ -25,6 +25,7 @@ import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
 import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { liveBlocks } from "@meridian/suggestions";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -275,7 +276,9 @@ export function createMarkdownDocumentEngine(
     clone.on("update", observeRepair);
 
     try {
-      return read(deps.model.projectBlocks(toDocHandle(clone)).map((block) => block.node));
+      return read(
+        liveBlocks(deps.model.projectBlocks(toDocHandle(clone)).map((block) => block.node)),
+      );
     } finally {
       clone.off("update", observeRepair);
       const anomaly = serializationAnomaly(repairUpdates, nodeSpans);

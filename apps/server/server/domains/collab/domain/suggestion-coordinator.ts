@@ -6,6 +6,7 @@
  */
 
 import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
+import type { UpdateMeta } from "@meridian/agent-edit/integration";
 import {
   bindBlockOrigins,
   blockItemIdKey,
@@ -21,7 +22,13 @@ import {
   PROSEMIRROR_FRAGMENT_NAME,
   RESERVED_CLIENT_ID_MAX,
 } from "@meridian/prosemirror-schema";
-import { hasSuggestions, viewOf, writeThroughView } from "@meridian/suggestions";
+import {
+  hasSuggestions,
+  type SuggestionFilter,
+  settleInDoc,
+  viewOf,
+  writeThroughView,
+} from "@meridian/suggestions";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
 
@@ -117,6 +124,33 @@ export function createSuggestionCoordinator(
       };
     },
   };
+}
+
+/**
+ * Accepts or rejects suggestions in a live document as a client would: one update, saved on the
+ * write path. Run under the document's lock, inside the caller's transaction. False when the
+ * filter names none.
+ */
+export async function settleInLive(
+  live: DocumentCoordinator,
+  docId: string,
+  filter: SuggestionFilter,
+  how: "accept" | "reject",
+  meta: UpdateMeta,
+): Promise<boolean> {
+  const read = await live.readRoom(docId);
+  try {
+    const settled = settleInDoc(rootOf(read.doc), filter, how);
+    const update = settled ? writeInto(read.doc, settled) : null;
+    if (!update) return false;
+    const saved = await live.prepareSave({ docId, entries: [{ docId, update, meta }] });
+    if (saved.write.kind === "no-effect") return false;
+    await saved.write.persist();
+    saved.write.transfer();
+    return true;
+  } finally {
+    read.doc.destroy();
+  }
 }
 
 /** What readers (search, counts, links) read: the document without its suggestions. */

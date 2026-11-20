@@ -48,6 +48,7 @@ import { claimEditorFocus, joinMain } from "./focus-on-open";
 import { InTrashStatus } from "./InTrashStatus";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
+import { SUGGESTIONS_ENABLED, SuggestionBar } from "./SuggestionBar";
 import { SyncStatus } from "./SyncStatus";
 import { FileDropRuntime } from "./surfaces/files";
 import { ImageIngressRuntime } from "./surfaces/images";
@@ -432,11 +433,16 @@ function ActiveSessionEditorView({
           editor={editor}
           active={active}
           notices={
-            <SchemaNotices
-              fence={snapshot.schemaFence}
-              repairs={snapshot.schemaRepairs}
-              editor={editor}
-            />
+            <>
+              <SchemaNotices
+                fence={snapshot.schemaFence}
+                repairs={snapshot.schemaRepairs}
+                editor={editor}
+              />
+              {SUGGESTIONS_ENABLED && editor && identity.viewingOwner?.startsWith("work:") ? (
+                <SuggestionBar editor={editor} work={identity.viewingOwner} accountId={accountId} />
+              ) : null}
+            </>
           }
           toolbar={
             showToolbar ? (

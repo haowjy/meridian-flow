@@ -21,8 +21,8 @@ import {
 /** Who suggests: the Work whose draft it is, the chat and turn that wrote it, and `agent` or `user:<id>`. */
 export type Suggester = { work: string; chat: string | null; turn: string | null; by: string };
 
-/** Which suggestions to accept or reject: a Work's, one turn of it, or one change. */
-export type SuggestionFilter = { work: string; turn?: string; id?: string };
+/** Which suggestions to accept or reject: a Work's, a turn's, or one change. */
+export type SuggestionFilter = { work?: string; turn?: string; id?: string };
 
 const SUGGESTION_MARKS = ["insertion", "deletion", "modification", "blockBoundarySuggestion"];
 
@@ -57,6 +57,19 @@ export function viewOf(doc: PMNode, work: string | null): { doc: PMNode; mapping
     if (type) tr.removeMark(0, tr.doc.content.size, type);
   }
   return { doc: tr.doc, mapping: tr.mapping };
+}
+
+/** Blocks as Live shows them, for readers that hold blocks rather than a document. */
+export function liveBlocks(blocks: readonly PMNode[]): PMNode[] {
+  const first = blocks[0];
+  if (!first) return [];
+  const doc = first.type.schema.topNodeType.create(null, blocks);
+  if (!hasSuggestions(doc)) return [...blocks];
+  const out: PMNode[] = [];
+  viewOf(doc, null).doc.forEach((block) => {
+    out.push(block);
+  });
+  return out;
 }
 
 /** Whether the document holds any suggestion: a document with none is its own Live view. */
@@ -135,14 +148,28 @@ export function rewrite(
   if (suggester) return suggest(tr, state, suggester);
   const marks = SUGGESTION_MARKS.map((name) => state.schema.marks[name]).filter(Boolean);
   const inserted: [number, number][] = [];
+  // Live shows no insertion, so a deletion inside a paragraph that swept one up only meant the
+  // text around it.
+  const hidden: { at: number; node: PMNode }[] = [];
   tr.mapping.maps.forEach((map, index) => {
     const later = tr.mapping.slice(index + 1);
-    map.forEach((_oldStart, _oldEnd, start, end) => {
+    const before = tr.docs[index];
+    map.forEach((oldStart, oldEnd, start, end) => {
       if (end > start) inserted.push([later.map(start, 1), later.map(end, -1)]);
+      // A deletion across blocks takes their suggestions with them.
+      if (!before || before.resolve(oldStart).parent !== before.resolve(oldEnd).parent) return;
+      before.nodesBetween(oldStart, oldEnd, (node, pos) => {
+        if (!node.isInline || !suggestionMark(node.marks, "insertion")) return true;
+        const from = Math.max(pos, oldStart) - pos;
+        const to = Math.min(pos + node.nodeSize, oldEnd) - pos;
+        hidden.push({ at: later.map(map.map(oldStart, -1), -1), node: node.cut(from, to) });
+        return false;
+      });
     });
   });
   for (const [from, to] of inserted)
     if (to > from) for (const type of marks) tr.removeMark(from, to, type);
+  for (const { at, node } of hidden.reverse()) tr.insert(at, node);
   return tr;
 }
 
@@ -304,14 +331,14 @@ export type SuggestionChange = {
   to: number;
 };
 
-/** A Work's suggestions in document order, one per id. */
-export function listSuggestions(doc: PMNode, work: string): SuggestionChange[] {
+/** The suggestions in document order, one per id: a Work's, or every Work's when `work` is omitted. */
+export function listSuggestions(doc: PMNode, work?: string): SuggestionChange[] {
   const byId = new Map<string, SuggestionChange>();
   doc.descendants((node, pos) => {
     // A whole block the library marks on the block node; text inside it carries no mark.
     for (const name of ["insertion", "deletion"] as const) {
       const mark = suggestionMark(node.marks, name);
-      if (!mark || mark.attrs.work !== work) continue;
+      if (!mark || (work !== undefined && mark.attrs.work !== work)) continue;
       const id = String(mark.attrs.id);
       const change = byId.get(id) ?? {
         id,
@@ -358,4 +385,13 @@ export function settleSuggestions(
     });
   }
   return tr;
+}
+
+/** `settleSuggestions` for a caller that holds a document rather than an editor. */
+export function settleInDoc(
+  doc: PMNode,
+  filter: SuggestionFilter,
+  how: "accept" | "reject",
+): PMNode | null {
+  return settleSuggestions(EditorState.create({ doc }), filter, how)?.doc ?? null;
 }
