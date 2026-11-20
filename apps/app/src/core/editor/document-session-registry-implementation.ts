@@ -17,7 +17,7 @@ import type {
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import { type DraftCloseCause, DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
+import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
 import type { DocumentHistory } from "./editor-history";
 import type { Ranges } from "./item-ranges";
 import {
@@ -67,8 +67,11 @@ export class DocumentSessionRegistry {
       // stays: Undo Discard reopens the draft and replays it. A draft the server closed counts
       // whatever ended the session's socket first. A removed document's copy is dropped by
       // `clearLocalCopy` alone, when the list purges it, so each copy is told once.
-      if (this.draftRooms.closedCause(session.roomKey) || session.resetDisposition === "closed")
-        void this.dropUnsent(session).catch(reportError);
+      if (this.draftRooms.isClosed(session.roomKey) || session.resetDisposition === "closed") {
+        // Read from the copy, which has every write of the session's by now.
+        const copy = this.copyOfSession(session);
+        void this.dropCopy(incarnationName(copy.key, copy.incarnation)).catch(reportError);
+      }
     },
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
@@ -90,8 +93,6 @@ export class DocumentSessionRegistry {
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
   private readonly droppedTypingObservers = new Set<() => void>();
-  /** Each retiring session's drop of its copy's unsent typing, once: a removal waits for it before the copy goes. */
-  private readonly dropping = new WeakMap<DocumentSession, Promise<void>>();
   /** Each session's copy: the room's key and the incarnation it opened. */
   private readonly copyOf = new WeakMap<DocumentSession, { key: string; incarnation: number }>();
   private readonly replacing = new WeakSet<DocumentSession>();
@@ -296,16 +297,16 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * The server closed the draft, as `closed` (its Work went) or `removed` (its document went). A
-   * session the pool holds retires with that cause, which drops its unsent typing at the right
-   * time: when nothing shows its text any more. With no session (the room ended earlier, by a
+   * The server closed the draft (its Work or document went), or it was never made. A session the
+   * pool holds retires as a closed draft's, which drops its unsent typing at the right time: when
+   * nothing shows its text any more. With no session (the room ended earlier, by a
    * schema reset or a terminal close, or never opened here) the copy's is dropped now. The copy
    * stays either way.
    */
-  async closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void> {
+  async closeDraftRoom(roomKey: string): Promise<void> {
     const documentId = this.draftRooms.documentOf(roomKey);
     const held = this.draftRooms.peek(roomKey);
-    await this.draftRooms.close(roomKey, cause);
+    await this.draftRooms.close(roomKey);
     if (documentId && !held) {
       const key = draftRoomPersistenceKey(this.accountId, documentId as DocumentId, roomKey);
       await this.dropCopy(incarnationName(key, this.copies.current(key)));
@@ -387,12 +388,6 @@ export class DocumentSessionRegistry {
       }
     }
     for (const name of names) this.copies.markSwept(name);
-  }
-
-  abandonDraftRoom(roomKey: string): Promise<void> {
-    const session = this.draftRooms.peek(roomKey);
-    if (session) this.dropping.set(session, Promise.resolve());
-    return this.draftRooms.close(roomKey);
   }
 
   getDraftRoom(roomKey: string): DocumentSession {
@@ -676,16 +671,6 @@ export class DocumentSessionRegistry {
     const copy = this.copyOf.get(session);
     if (!copy) throw new Error(`Session has no local copy: ${session.roomKey}`);
     return copy;
-  }
-
-  /** What a retiring session's copy holds beyond its mark, read from the copy, which has every write of the session's by now. */
-  private dropUnsent(session: DocumentSession): Promise<void> {
-    const started = this.dropping.get(session);
-    if (started) return started;
-    const copy = this.copyOfSession(session);
-    const dropping = this.dropCopy(incarnationName(copy.key, copy.incarnation));
-    this.dropping.set(session, dropping);
-    return dropping;
   }
 
   private async dropCopy(name: string): Promise<void> {

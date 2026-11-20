@@ -2,7 +2,7 @@
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
-import type { DraftCloseCause, DraftRoomRef } from "./draft-room-pool";
+import type { DraftRoomRef } from "./draft-room-pool";
 import type { DocumentHistory } from "./editor-history";
 
 export type RetainedLiveDocumentReference = Readonly<{
@@ -71,14 +71,10 @@ export interface LiveDocumentSessionRegistry {
    * to go and is not kept.
    */
   observeDroppedTyping(observer: () => void): () => void;
-  closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void>;
+  /** The room ends for good (its draft is gone, or was never made): its unsent typing is dropped with one pill. */
+  closeDraftRoom(roomKey: string): Promise<void>;
   /** Settles the draft copies no room here owns, once each, by the drafts `openOf` says the server still has; see the implementation. */
   sweepDraftCopies(openOf: (draftIds: string[]) => Promise<ReadonlySet<string>>): Promise<void>;
-  /**
-   * The room ends for good and its typing is not handed back: its document was never made, and
-   * the tab and the tree row offer those words from the local copy, which stays.
-   */
-  abandonDraftRoom(roomKey: string): Promise<void>;
   getDraftRoom(roomKey: string): DocumentSession;
   /**
    * Calls `observer` with the session that replaces a room's (a live document's by its id, or a

@@ -180,11 +180,10 @@ and remain quarantined until their retryable destroy ledger succeeds.
   retains keeps its session, read-only, and its transport ends as the socket's close would end it
   (`endClosed`), so a draft that ended on screen stays readable and sends nothing more. Only an
   unretained closed room retires.
-  `abandonDraftRoom` ends the room of a document's create the server dropped (its draft was
-  never made, so the room would only retry `DOCUMENT_UNKNOWN`): the tree list's dropped stamp
-  calls it (`watchBounces`). Its session is marked dropped already, so its retire says nothing:
-  the tree list's own "Couldn't save" pill is the one telling. Such a draft never answers
-  active, so it never reopens.
+  The tree list's dropped stamp ends the room of a document's create the server dropped (its
+  draft was never made, so the room would only retry `DOCUMENT_UNKNOWN`) through
+  `closeDraftRoom` (`watchBounces`): its typing is dropped with the pill like any closed draft's.
+  Such a draft never answers active, so it never reopens.
 - Typing a closed draft's room never sent is dropped with one "Couldn't save" pill (see "Unsent
   typing dropped").
 
@@ -710,11 +709,11 @@ from the wire alone, with nothing stored between handshakes.
   stays, and a retained session stays readable until its owner releases it or a restore
   restarts it. Once its last owner releases it, it retires on the next task, not after the
   grace. A closed draft's retirement drops typing that just left the screen; a removed
-  document's typing is dropped once, by `clearLocalCopy` at its purge. Dropping a closed draft's typing never
+  document's typing is dropped once, by `clearLocalCopy` at its purge (live copies only: a draft copy was told when its draft closed). Dropping a closed draft's typing never
   deletes the copy: Undo Discard reopens the same draft row, and the restarted session replays the
   copy into it, so the writer may see the pill and also get the words back. The copy goes with the
   document's purge. `closeDraftRoom` lets the session the pool
-  holds retire with the close's cause (`closed` or `removed`) (the pool's `closed` set overrides whatever ended its socket)
+  holds retire as a closed draft's (the pool's `closed` set overrides whatever ended its socket)
   and, with no session, drops the copy's typing itself. A draft copy no page opened is
   found at start: once at idle after the account lifetime opens (cancelled if the lifetime
   closes), `sweepDraftCopies` lists the draft copies not yet swept and asks `POST /api/drafts/states`

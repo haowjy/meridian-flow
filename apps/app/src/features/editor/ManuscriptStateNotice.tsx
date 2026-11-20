@@ -91,13 +91,15 @@ export function ManuscriptStateSlot({
 }
 
 function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: boolean }) {
+  // The popover button carries the name; a chip with none is read as it is drawn.
+  const hidden = state.sentence ? true : undefined;
   const content = (
     <>
       <Info aria-hidden className="size-3.5 shrink-0" />
-      <span aria-hidden className="min-w-0 truncate @max-[28rem]:hidden">
+      <span aria-hidden={hidden} className="min-w-0 truncate @max-[28rem]:hidden">
         {state.sentence ?? state.label}
       </span>
-      <span aria-hidden className="hidden min-w-0 truncate @max-[28rem]:inline">
+      <span aria-hidden={hidden} className="hidden min-w-0 truncate @max-[28rem]:inline">
         {state.label}
       </span>
     </>
@@ -106,7 +108,6 @@ function ManuscriptStateChip({ state, touch }: { state: ManuscriptState; touch: 
   return (
     <div
       role="status"
-      aria-label={state.sentence ? undefined : state.label}
       data-manuscript-state-notice={state.kind}
       className="flex min-w-0 max-w-full items-center font-sans text-muted-foreground text-xs"
     >

@@ -89,7 +89,7 @@ export class AccountFeatureLifetime {
       {
         endCreatedDraftRoom: (documentId) =>
           void this.runtime.registry
-            .abandonDraftRoom(draftRoomName(createdDraftId(documentId as DocumentId)))
+            .closeDraftRoom(draftRoomName(createdDraftId(documentId as DocumentId)))
             .catch(reportError),
       },
     );

@@ -7,8 +7,7 @@
  * A copy is deleted only on a fact that is final (`list-removal-observer`: the node's purge, its
  * Work or chat purged, the account removed from the project) or when the account signs out here.
  * A session closing, a draft's Discard or an access the account lost for now never deletes one: a
- * closed draft's copy is handed back as a notice (`DocumentSessionRegistry.sweepDraftCopies`)
- * and kept, because Undo Discard reopens the same draft and replays the copy into it; an open
+ * closed draft's copy is dropped with one pill when its draft closes and kept, because Undo Discard reopens the same draft and replays the copy into it; an open
  * draft's copy is delivered to the draft by opening its room. A copy with no mark is not swept,
  * since it proves nothing undelivered.
  *
@@ -361,7 +360,8 @@ export class LocalDocumentCopies {
       await Promise.all(
         names.map(async (name) => {
           const beyond = this.idb && markedBeyond(await load(this.idb, name));
-          if (beyond) await drop(beyond);
+          // A draft copy was told when its draft closed.
+          if (beyond && !name.startsWith(DRAFT_PREFIX)) await drop(beyond);
         }),
       );
       await this.deleteCopies(documentId, names);
