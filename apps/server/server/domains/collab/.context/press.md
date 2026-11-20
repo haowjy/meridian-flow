@@ -78,3 +78,6 @@ a Discard closes the room and its Undo opens it again.
 - A press Apply leaves `apply_command_trees.created_heads` as the tree Apply's placeholders:
   the press never calls `recordCreatedHeads`, since its Undo keeps every created document in
   Live. Anything that comes to read those heads for a press must record them first.
+- Trash's Restore of a Discard and the Discard notice's Undo are two client paths over one
+  server `unpress`, which runs once: whichever runs second finds nothing. A `rediscard` (the
+  client's Undo of a Restore) of a node whose Discard took only text presses the whole node.
