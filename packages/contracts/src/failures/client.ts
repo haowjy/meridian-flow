@@ -49,14 +49,6 @@ const rescue = z
     phase: z.literal("rescued"),
     rescue: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("schema-removed-text"), chars: count, passages: count }).strict(),
-      z
-        .object({
-          kind: z.literal("unsent-typing"),
-          cause: z.enum(["closed", "removed", "access-changed", "owner-closed"]),
-          chars: count,
-          passages: count,
-        })
-        .strict(),
     ]),
   })
   .strict();
@@ -85,7 +77,6 @@ export function clientFailureEvent(record: ClientDiagnosticRecord): EventRecord 
       payload: {
         occurrenceId: record.occurrenceId,
         rescue: record.rescue.kind,
-        ...(record.rescue.kind === "unsent-typing" ? { endedBy: record.rescue.cause } : {}),
         chars: record.rescue.chars,
         passages: record.rescue.passages,
       },

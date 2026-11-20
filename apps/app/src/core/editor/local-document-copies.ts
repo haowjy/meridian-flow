@@ -24,10 +24,8 @@
  * deleted on a final fact; an incarnation that is no longer current is deleted when no tab holds
  * it (`openOlder`).
  *
- * A copy is working storage only: what a notice offered from it and whether the writer acted on
- * it are in the account's notice store (`hand-back-notices.ts`). What the server is known to have
- * is in the copy, its mark (`server-mark.ts`): a copy is deleted only once what it holds beyond its
- * mark is claimed (`clear`), and kept when the claim can't be stored.
+ * A copy is working storage only. What the server is known to have is in the copy, its mark
+ * (`server-mark.ts`): what it holds beyond its mark is what a room that ends for good drops.
  */
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -37,7 +35,6 @@ import * as Y from "yjs";
 import { browserStorage, type RecordStorage } from "@/client/storage/browser-record";
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
-import { HAND_BACK_NOTICES_PREFIX, handBackNoticesName } from "./hand-back-notices";
 import type { Ranges } from "./item-ranges";
 import { documentText, readCopy } from "./rescued-text";
 import { beyondMark, SERVER_MARK_KEY } from "./server-mark";
@@ -139,8 +136,8 @@ export type UnheldCopy = {
   name: string;
   /** Everything the copy holds. */
   update: Uint8Array;
-  /** Releases the copy, deleting it unless `keep`. */
-  finish(keep: boolean): Promise<void>;
+  /** Releases the copy, deleting it. */
+  finish(): Promise<void>;
 };
 
 /**
@@ -231,7 +228,7 @@ export class LocalDocumentCopies {
     const { locks, idb } = this;
     if (!locks || !idb) return null;
     const ready = deferred<UnheldCopy | null>();
-    const finished = deferred<boolean>();
+    const finished = deferred<void>();
     void locks
       .request(this.lockName(name), { mode: "exclusive", ifAvailable: true }, async (lock) => {
         if (!lock) return ready.resolve(null);
@@ -240,9 +237,10 @@ export class LocalDocumentCopies {
         ready.resolve({
           name,
           update: loaded.update,
-          finish: async (keep) => finished.resolve(keep),
+          finish: async () => finished.resolve(),
         });
-        if (!(await finished.promise)) await this.deleteDatabase(name);
+        await finished.promise;
+        await this.deleteDatabase(name);
       })
       .catch(ready.reject);
     return ready.promise;
@@ -379,28 +377,23 @@ export class LocalDocumentCopies {
   }
 
   /**
-   * Deletes every copy of the document, which can never come back, once `claim` has stored what
-   * each holds beyond its mark; a copy whose claim fails stays, and the next start claims it again.
-   * False when another tab holds one open: that tab's own
+   * Deletes every copy of the document, which can never come back, once `drop` has seen what each
+   * holds beyond its mark. False when another tab holds one open: that tab's own
    * reading of the list clears it, and a copy left behind is found at the next start.
    */
   async clear(
     documentId: DocumentId,
-    claim: (name: string, beyond: BeyondMark) => Promise<boolean>,
+    drop: (beyond: BeyondMark) => Promise<void>,
   ): Promise<boolean> {
     const names = await this.namesOf(documentId);
     const run = async () => {
-      const claimed = await Promise.all(
+      await Promise.all(
         names.map(async (name) => {
           const beyond = this.idb && markedBeyond(await load(this.idb, name));
-          return !beyond || (await claim(name, beyond));
+          if (beyond) await drop(beyond);
         }),
       );
-      await this.deleteCopies(
-        documentId,
-        names.filter((_, index) => claimed[index]),
-        claimed.every(Boolean),
-      );
+      await this.deleteCopies(documentId, names);
       return true;
     };
     if (!this.locks) return run();
@@ -408,9 +401,8 @@ export class LocalDocumentCopies {
   }
 
   /**
-   * Deletes every copy of the account, waiting for the tabs that hold one, then its notices; false
-   * when a copy was still held after the wait. The notices stay with a copy left behind: they say
-   * which of its words the writer already acted on.
+   * Deletes every copy of the account, waiting for the tabs that hold one; false when a copy was
+   * still held after the wait.
    */
   async clearAll(): Promise<boolean> {
     const documents = new Set(
@@ -447,7 +439,6 @@ export class LocalDocumentCopies {
         .map((name) => this.deleteDatabase(name)),
     );
     const cleared = results.every(Boolean);
-    if (cleared) await this.deleteDatabase(handBackNoticesName(this.accountId));
     return cleared;
   }
 
@@ -455,11 +446,10 @@ export class LocalDocumentCopies {
     return (await this.names()).filter((name) => documentOf(name, this.accountId) === documentId);
   }
 
-  /** `all`: no copy of the document is left, so its pointers and its place in `known` go too. */
-  private async deleteCopies(documentId: DocumentId, names: readonly string[], all = true) {
+  /** No copy of the document is left, so its pointers and its place in `known` go too. */
+  private async deleteCopies(documentId: DocumentId, names: readonly string[]) {
     await Promise.all(names.map((name) => this.deleteDatabase(name)));
     for (const name of names) this.pointers.removeItem(`${SWEPT_PREFIX}${name}`);
-    if (!all) return;
     for (const { key } of names.map(parseName)) this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
     if (this.known?.delete(documentId)) this.publish();
   }
@@ -480,14 +470,12 @@ export class LocalDocumentCopies {
   }
 }
 
-/** The accounts that have a copy or a notice in this browser. */
+/** The accounts that have a copy in this browser. */
 async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
   const names = (await idb.databases?.()) ?? [];
   const accounts = new Set<AccountId>();
   for (const { name } of names) {
-    const prefix = [LIVE_PREFIX, DRAFT_PREFIX, HAND_BACK_NOTICES_PREFIX].find((each) =>
-      name?.startsWith(each),
-    );
+    const prefix = [LIVE_PREFIX, DRAFT_PREFIX].find((each) => name?.startsWith(each));
     if (!name || !prefix) continue;
     const account = name.slice(prefix.length).split("/")[0];
     if (account) accounts.add(decodeURIComponent(account) as AccountId);

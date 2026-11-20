@@ -1,11 +1,6 @@
 /** Curated renderers for chat tool activity rows. */
 import { t } from "@lingui/core/macro";
-import { asUserId } from "@meridian/contracts";
-import {
-  type DocumentRemovalRecord,
-  isToolNotRunResult,
-  type JsonValue,
-} from "@meridian/contracts/protocol";
+import { isToolNotRunResult, type JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "@meridian/thread-client";
 import {
   documentToolFailed,
@@ -19,14 +14,8 @@ import {
 } from "@meridian/thread-client";
 import { FileText, Folder } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import { Chip } from "@/components/ui/chip";
 import { FoldToggle } from "@/components/ui/fold-toggle";
-import {
-  type ChatTitles,
-  removalVoice,
-  removedBeforeChangeSentence,
-} from "@/features/project/context/RemovedDocumentNotice";
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
@@ -274,7 +263,7 @@ export function toolRowFailed(tool: ToolView): boolean {
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
-export function documentToolFailureCopy(tool: ToolView, chats: ChatTitles): string {
+export function documentToolFailureCopy(tool: ToolView): string {
   const name = documentFailureDocumentName(tool);
   const status = documentFailureStatus(tool);
   switch (status) {
@@ -318,7 +307,7 @@ export function documentToolFailureCopy(tool: ToolView, chats: ChatTitles): stri
         ? t`Some changes to ${name} couldn't be completed.`
         : t`Some changes couldn't be completed.`;
     case "returned":
-      return returnedWriteCopy(documentFailureReturned(tool).why, name, tool, chats);
+      return returnedWriteCopy(documentFailureWhy(tool), name);
     case "invalid_write":
       return name ? t`That change couldn't be made in ${name}.` : t`That change couldn't be made.`;
     default:
@@ -328,54 +317,18 @@ export function documentToolFailureCopy(tool: ToolView, chats: ChatTitles): stri
   }
 }
 
-/** The `returned` block of a returned write's typed result: why, and the removal record if any. */
-function documentFailureReturned(tool: ToolView): {
-  why: string | null;
-  removal: ToolView["result"] | null;
-} {
+/** Why a returned write came back: the `returned` block of its typed result. */
+function documentFailureWhy(tool: ToolView): string | null {
   const result = tool.result;
   const returned =
     result && typeof result === "object" && !Array.isArray(result) ? result.returned : null;
-  if (!returned || typeof returned !== "object" || Array.isArray(returned))
-    return { why: null, removal: null };
-  return { why: asString(returned.why) ?? null, removal: returned.removal ?? null };
-}
-
-/**
- * The removal record a returned write carried, read from the stored tool result (an older build's
- * may lack fields); null when it has none.
- */
-function documentFailureRemoval(tool: ToolView): DocumentRemovalRecord | null {
-  const { removal } = documentFailureReturned(tool);
-  if (!removal || typeof removal !== "object" || Array.isArray(removal)) return null;
-  const actor = removal.actor;
-  const record = actor && typeof actor === "object" && !Array.isArray(actor) ? actor : null;
-  const text = (value: JsonValue | undefined) =>
-    typeof value === "string" && value ? value : null;
-  const chatId = text(record?.chatId);
-  const userId = text(record?.userId);
-  return {
-    reason: removal.reason === "discarded" ? "discarded" : "deleted",
-    actor:
-      record?.kind === "user" && userId
-        ? { kind: "user", userId: asUserId(userId), displayName: text(record.displayName) }
-        : record?.kind === "agent"
-          ? { kind: "agent", chatTitle: text(record.chatTitle), ...(chatId ? { chatId } : {}) }
-          : null,
-    time: "",
-  };
+  if (!returned || typeof returned !== "object" || Array.isArray(returned)) return null;
+  return asString(returned.why) ?? null;
 }
 
 /** An edit the document's state returned: nothing was kept, and the AI was shown the document as it stands. */
-function returnedWriteCopy(
-  why: string | null,
-  name: string | null,
-  tool: ToolView,
-  chats: ChatTitles,
-): string {
+function returnedWriteCopy(why: string | null, name: string | null): string {
   switch (why) {
-    case "document_removed":
-      return removedBeforeChangeSentence(name, removalVoice(documentFailureRemoval(tool), chats));
     case "work_archived":
       return t`Work archived`;
     case "work_deleted":
@@ -479,7 +432,6 @@ function fileGivenLine(file: ReadFile): string {
 }
 
 function DocumentFailureText({ tool }: { tool: ToolView }) {
-  const chats = useCachedChatTitles();
   return (
     <div
       className={
@@ -488,7 +440,7 @@ function DocumentFailureText({ tool }: { tool: ToolView }) {
           : "text-compact text-destructive"
       }
     >
-      {documentToolFailureCopy(tool, chats)}
+      {documentToolFailureCopy(tool)}
     </div>
   );
 }

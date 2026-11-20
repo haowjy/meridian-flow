@@ -1,7 +1,7 @@
 # Presented documents and Editor lifecycle
 
-Reference detail for how the Editor presents documents in this browser tab: hosts, removal
-notices and draft-only presentation. Read
+Reference detail for how the Editor presents documents in this browser tab: hosts, removals
+and draft-only presentation. Read
 [CONTEXT.md](CONTEXT.md) for the feature-level contracts first.
 
 ## Tree projection
@@ -14,10 +14,10 @@ every view at once, and an offline one stays in the copy until the connection re
 Whether a document is still there is the project's list's answer, not a lookup: `ProjectStandings`
 reads the list's replay for a document and says it is in the tree, in Trash, purged, not in the
 list, or waiting for the list (an absence is not an answer until the list has been read). The
-removal observer (`list-removal-observer.ts`), the removed notice and the editor's own banner all
+removal observer (`list-removal-observer.ts`), the editor and the route all
 read it, so nothing is polled and nothing is stamped with a generation. A document that leaves the
 live tree closes its views and leaves the recent routes; one that comes back is let back. The
-removal's effect on views, notices and recent routes is applied by
+removal's effect on views and recent routes is applied by
 `ContextRemovalCoordinator.applyRemovals`; the route follows the replay itself.
 
 `useFileSuggestions` projects directly from the normalized scope views. It
@@ -34,7 +34,7 @@ scheme-scoped environment. Mobile renders one level at a time via route params.
 ## Presented documents
 
 The writer-facing destination is **Editor**. `ContextRemovalCoordinator` owns
-the effect of a removal on presented documents, notices and recent routes from what the list says;
+the effect of a removal on presented documents and recent routes from what the list says;
 route continuity is the route's (the history entry's remembered id, `ReadableProjectRoute`). The account's document sessions (`core/editor/local-document-copies.ts`) independently
 own content durability. Neither owns the other's state.
 
@@ -116,16 +116,18 @@ unrelated renders. The Editor sidebar derives its schemes from the project and a
 suggestions derive six, including the current Work/no-Work scope. Collapsed sidebar sections stay
 mounted.
 
-### Removed-document notices
+### Removed documents
 
-A presented document that something else deleted or discarded closes as
-before and says so. Three owners, one concept each:
+A presented document that something else deleted or discarded closes, and nothing is said: no
+sentence, chip or toast names who removed it. Who deleted a document is a fact only where the
+writer opened a list of them (the Trash row, `TrashedDocument.tsx`, with `removal-voice.ts`).
+Two owners:
 
 - **The list's standing.** `ProjectStandings.standing(projectId, documentId)` reads the replay of
-  the project's list (and the account's, for `user://`): `in-tree`, `in-trash` (with who deleted
-  it, from the delete record's actor), `purged`, `not-in-list`, or `waiting` until the list has
-  been read. Nothing is polled and nothing is stamped. `useRemovalRecord` is the React reader: the
-  notice, `SyncStatus`, the review room owner and the reopened review address.
+  the project's list (and the account's, for `user://`): `in-tree`, `in-trash`, `purged`,
+  `not-in-list`, or `waiting` until the list has been read. Nothing is polled and nothing is
+  stamped. `useRemovalRecord` is the React reader: `SessionEditor`, the review room owner and the
+  reopened review address.
 - **The observer.** `observeListRemovals` (`list-removal-observer.ts`, mounted per project by
   `ProjectContextRemovalController`) watches the documents the app holds (views, recent routes,
   retained sessions) and applies what the list says as one batch through
@@ -134,30 +136,10 @@ before and says so. Three owners, one concept each:
   to Trash main opens its Trash view (who deleted it, Restore). A purged document's local copy is
   deleted, and so is the copy of a document whose source ended (Work or chat deleted; an archived
   Work's source stays) or whose project the account lost (`denied`).
-- **The notice store.** `RemovedNoticeStore` holds one notice per project. The observer's closes
-  push the documents that vanished; an entry shows once the list says it was removed.
-- **The sentence.** `removalSentence` in `RemovedDocumentNotice.tsx` owns
-  every copy rule as plain strings, so tooltips reuse them. A removal names
-  its actor from the record, the same for every account, and never says "you":
-  "Ana Ruiz deleted <title>.", "<title> was deleted with the Work <name>."; a
-  system rollback reads "removed when the reply that created it didn't
-  finish"; a user with no display name or a purged actor, "<title> was
-  deleted."
 
-Placement follows "feedback never displaces content": a chip in main's header
-(`RemovedDocumentChip` in a `RemovedNoticeSlot`), the landing's top margin when main shows no
-document, and the phone top bar's notice row. The slot keeps room for the chip's short sentence
-("1 document deleted").
-
-`useRemovedNoticeLifetime` (`ProjectView`, both shells) starts a notice's lifetime when it is on
-screen, anchored where it first shows (a removal leaves the address on the removed document, so
-that address); the next navigation in main clears the notice, documents still waiting for an
-answer included. A removal joining the notice re-anchors it.
-
-The writer's own removal says nothing: the tree delete and a Discard of a
+The writer's own removal sends main back: the tree delete and a Discard of a
 created (draft-only) document begin through the removal coordinator
-(`beginOwnRemoval`), which takes a mark in the store (`markOwnRemoval`)
-before the request; the caller settles it in `finally`. If main shows one of
+(`beginOwnRemoval`) before the request. If main shows one of
 the removed documents, `beginOwnRemoval` also sends main back at once, before
 the removal lands: to the document main showed before it, read from Recently
 opened (this browser's record, merged with other devices' opens from the
@@ -168,25 +150,18 @@ the history entry, so Back skips the removed document. A removal by someone
 else, from another device, or a remote Discard keeps the address on the
 removed document. A tree delete's notice has an Undo (`entry-failure.ts`); a created
 document's Discard has none; a restore from Trash never moves main. A Discard of an existing
-document's edits removes nothing, so it marks nothing. Only documents a host
-presents are marked. While the
-mark lives every sighting is silent; "kept" releases it, and a settled
-removal lasts until each host that presented the document saw it vanish or its removal
-landed (`ownRemovalEnded`). A delete the server refuses after the list took it never
-lands: the row comes back with its failure mark, and the marks of the refused entry's documents
-end with it (the observer that did this is gone; step 6b reads it from the replay). Discard is a server command, not a record the browser writes.
+document's edits removes nothing. Discard is a server command, not a record the browser writes.
 
 A document in Trash still takes text: the live room admits it until its node is purged and
 closes (`4208`) at the purge. Typing into a document someone else deleted is saved into it, and a
-restore brings it back. A host still open on a purged room says the record sentence, or "Access
-lost (not saving to the server)" when the list does not say why (`SyncStatus`). Draft rooms carry
+restore brings it back. A host still open on a purged room says nothing (`SyncStatus`). Draft rooms carry
 no document identity in the registry, so their review owner closes and rebuilds them itself.
 
-Reopening a review address whose document was removed says the sentence in
-place of "This destination is unavailable" (item key parsed by
-`@meridian/contracts`' `parseDraftItemKey`). A plain path address keeps "This
-destination is unavailable": once nothing lives at the path it names no
-document, and finding the newest tombstone at a path belongs to a later track.
+Reopening a review address whose document was removed shows what the removal left: a Discard's
+notice with its Undo, or an uncreated document's words (item key parsed by
+`@meridian/contracts`' `parseDraftItemKey`); otherwise "This destination is unavailable", as a plain
+path address does: once nothing lives at the path it names no document, and finding the newest
+tombstone at a path belongs to a later track.
 
 Unsent text is kept: a delete closes the view, but the session and its local copy stay until the
 unsent edits are acknowledged; only a purge, an ended source, a lost project or sign-out deletes the

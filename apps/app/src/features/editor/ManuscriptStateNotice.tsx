@@ -13,7 +13,6 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Info } from "lucide-react";
-import { useCachedChatTitles } from "@/client/query/project-thread-cache";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { OpenDocument } from "@/client/stores";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,8 +25,6 @@ import {
 } from "@/features/draft-review/tree-line";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { tabLocation } from "@/features/project/context/identity-location";
-import { deletedLiveSentence } from "@/features/project/context/RemovedDocumentNotice";
-import { useRemovalRecord } from "@/features/project/context/use-removal-record";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 import { cn } from "@/lib/utils";
 
@@ -44,22 +41,14 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const { files } = useDraftReview();
   const item = files.find((file) => file.documentId === documentId)?.draft;
   const deleted = isDeletedLive(item);
-  const removal = useRemovalRecord(projectId, deleted ? documentId : null);
-  const chats = useCachedChatTitles();
-  const title = tab.name;
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
   // On Draft the page is the toggle's Work's draft: this says what other Works do.
   const shell = useShellTreeVersion();
   const shown = shell?.showing === "draft" ? shell.ownerKey : null;
   if (deleted) {
     const from = schemeLabel(item?.deletedFrom?.scheme);
-    const sentence = deletedLiveSentence(
-      title,
-      from,
-      removal?.kind === "removed" ? removal.record : null,
-      chats,
-    );
-    return { kind: "deleted", sentence, label: from ? t`Deleted from ${from}` : t`Deleted` };
+    const label = from ? t`Deleted from ${from}` : t`Deleted`;
+    return { kind: "deleted", sentence: label, label };
   }
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
     hint.tree && hint.owner !== shown ? [{ work: hint.label, line: hint.tree }] : [],

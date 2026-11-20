@@ -9,9 +9,7 @@
  * after the hamburger and takes the remaining row width. Screens without one
  * (Work) get a centered title: the
  * leading side reserves as many 44px slots as the trailing side, so the title
- * stays truly centered even with the chat door beside the actions. A rejected
- * command on the screen's subject (a Work's Archive) takes a full-width
- * `notice` line under the bar, so the title keeps its width. The bar is the
+ * stays truly centered even with the chat door beside the actions. The bar is the
  * positioned ancestor for a refused title rename, which floats under it.
  * Desktop pane headers stay separate.
  */
@@ -33,8 +31,6 @@ export type MobileTopBarProps = {
   actions?: ReactNode;
   /** Opens the chat sheet over a document. */
   chatAction?: ReactNode;
-  /** A failed command's row, under the bar. */
-  notice?: ReactNode;
 };
 
 export function MobileTopBar({
@@ -44,7 +40,6 @@ export function MobileTopBar({
   breadcrumb,
   actions,
   chatAction,
-  notice,
 }: MobileTopBarProps) {
   // Two trailing controls need a matching 44px reserve on the leading side.
   const balance = !breadcrumb && Boolean(chatAction) && Boolean(actions);
@@ -87,17 +82,6 @@ export function MobileTopBar({
           {actions}
         </div>
       </div>
-      {notice ? (
-        <div
-          className="border-t border-border-subtle"
-          style={{
-            paddingLeft: "calc(0.5rem + env(safe-area-inset-left))",
-            paddingRight: "calc(0.5rem + env(safe-area-inset-right))",
-          }}
-        >
-          {notice}
-        </div>
-      ) : null}
     </header>
   );
 }

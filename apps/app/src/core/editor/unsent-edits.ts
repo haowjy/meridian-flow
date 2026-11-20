@@ -42,7 +42,6 @@ const RECORD_PREFIX = `meridian:display-writes:${collabSchemaKeyTag()}:`;
 export class UnsentEdits {
   /** What this session wrote through an editor or the document's Undo and Redo, by client id. */
   private readonly ledgerInserted: Ranges = new Map();
-  private readonly ledgerDeleted: Ranges = new Map();
   /** Every client id this document has had: Yjs can reassign it. */
   private readonly ownClients = new Set<number>();
   /** Display writes made here, relayed by a peer tab or read from the copy. */
@@ -81,13 +80,12 @@ export class UnsentEdits {
     const writer = !display && transaction.local && transaction.origin !== null;
     if (!display && !writer) return;
     const inserted = display ? this.displayInserted : this.ledgerInserted;
-    const deleted = display ? this.displayDeleted : this.ledgerDeleted;
     const from = transaction.beforeState.get(client) ?? 0;
     const to = transaction.afterState.get(client) ?? 0;
     const deletions = listOf(rangesOf(transaction.deleteSet));
     if (to <= from && deletions.length === 0) return;
     addRange(inserted, client, from, to);
-    addList(deleted, deletions);
+    if (display) addList(this.displayDeleted, deletions);
     if (display && transaction.origin !== this.relayedOrigin) this.saveDisplayRecord();
   };
 
@@ -170,15 +168,13 @@ export class UnsentEdits {
 
   /**
    * The typing in an undeliverable difference, as the items the server lacks that the writer
-   * typed, and whether that or a deletion the server lacks is this session's own. An item of this
-   * session's own client ids is typing only inside the ledger; an item of any other client id
-   * counts whole, because something the server lacks was written in this browser by another tab,
-   * or by a session before a reload, and the copy does not say how.
+   * typed. An item of this session's own client ids is typing only inside the ledger; an item of
+   * any other client id counts whole, because something the server lacks was written in this
+   * browser by another tab, or by a session before a reload, and the copy does not say how.
    */
-  undeliverable({ lacking, server }: HandshakeDifference): { typing: Ranges; own: boolean } {
-    const update = Y.decodeUpdate(lacking);
+  undeliverable({ lacking }: HandshakeDifference): Ranges {
     const typing: Ranges = new Map();
-    for (const struct of update.structs) {
+    for (const struct of Y.decodeUpdate(lacking).structs) {
       if (!(struct instanceof Y.Item)) continue;
       const { client, clock } = struct.id;
       const kept = this.ownClients.has(client)
@@ -188,12 +184,6 @@ export class UnsentEdits {
         for (const [a, b] of without(from, to, this.displayInserted.get(client)))
           addRange(typing, client, a, b);
     }
-    const lackingDeleted = this.deletionsLacking(update.ds, rangesOf(Y.decodeSnapshot(server).ds));
-    const own =
-      [...typing.keys()].some((client) => this.ownClients.has(client)) ||
-      [...lackingDeleted].some(([client, list]) =>
-        list.some(([from, to]) => within(this.ledgerDeleted, client, from, to).length > 0),
-      );
-    return { typing, own };
+    return typing;
   }
 }

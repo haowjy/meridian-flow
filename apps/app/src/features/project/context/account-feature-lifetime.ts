@@ -19,13 +19,11 @@ import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
 import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
-import { unsentTypingToasts } from "@/features/editor/RescuedText";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { PresentedDocuments } from "./presented-documents";
 import { ProjectStandings } from "./project-standings";
-import { RemovedNoticeStore } from "./removed-notice-store";
 
 /** Why a sign-out stopped: edits the server did not acknowledge, or a copy another tab still held open. */
 export class SignOutIncomplete extends Error {
@@ -61,7 +59,6 @@ export class AccountFeatureLifetime {
   readonly removal;
   /** Where each document stands in its project's list: the one answer to "is it still there". */
   readonly standings;
-  readonly notices;
   /** The project tree's lists this account has open; step 6's tree screens read them. */
   readonly treeLists: TreeListRegistry;
   private readonly stopTreeListDebugHook: () => void;
@@ -113,11 +110,9 @@ export class AccountFeatureLifetime {
         this.removal.discardDraft(ref.projectId, ref.documentId);
       },
     });
-    this.notices = new RemovedNoticeStore(this.standings);
     this.removal = new ContextRemovalCoordinator({
       presented: this.presented,
       copies: this.registry,
-      notices: this.notices,
       drafts: {
         // A Discarded draft's review can still hold its room, and a view can leave a draft for
         // Live: neither shows the draft, so neither keeps a document live deleted.
@@ -133,7 +128,10 @@ export class AccountFeatureLifetime {
         close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
       },
     });
-    this.registry.observeUnsentTyping(unsentTypingToasts);
+    // Typing with nowhere to go is dropped: one pill says so, with nothing to copy or return.
+    this.registry.observeDroppedTyping(() =>
+      notifyFailure({ key: "unsent-typing", title: t`Couldn't save` }),
+    );
     // Typing a draft never took, left in a copy no draft owner will close or open: found once, after load.
     if (typeof window !== "undefined")
       this.cancelDraftCopySweep = afterFirstPaint(() =>

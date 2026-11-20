@@ -21,7 +21,6 @@ import type {
 } from "../routing/project-navigation";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { PresentedDocuments } from "./presented-documents";
-import type { RemovedNoticeStore } from "./removed-notice-store";
 
 type ContextRemovalWorkingSetPort = {
   readRecentRoutes(projectId: string): WorkingSetRoute[];
@@ -91,12 +90,6 @@ export type BoundDraftsPort = {
   ): readonly { ownerKey: string; itemKey: string }[];
 };
 
-/** Where views report documents they presented that vanished (`RemovedNoticeStore`). */
-export type RemovedPresentationPort = Pick<
-  RemovedNoticeStore,
-  "presentedRemoved" | "markOwnRemoval"
->;
-
 /**
  * What the list says changed for a document in a project: it left the live tree (deleted, purged
  * or never there), or it is in the tree again (a restore).
@@ -106,11 +99,6 @@ export type RemovalCommand = Readonly<{
   projectId: string;
   documentId: string;
 }>;
-
-/** The views a removal took from main or the side. */
-export type ContextRemovalOutcome =
-  | { kind: "noop" }
-  | { kind: "removal"; removed: readonly OpenDocument[] };
 
 export type ContextRemovalLifetimeLease = {
   suspend(): void;
@@ -135,7 +123,6 @@ export class ContextRemovalCoordinator {
   private readonly presented: PresentedPort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly copies: Pick<LiveDocumentSessionRegistry, "clearLocalCopy"> | null;
-  private readonly notices: RemovedPresentationPort | null;
   private readonly drafts: BoundDraftsPort | null;
   private readonly draftOnly: DraftOnlyPort | null;
   private readonly tabs: ClosedTabsPort | null;
@@ -152,7 +139,6 @@ export class ContextRemovalCoordinator {
       presented?: PresentedPort;
       workingSet?: ContextRemovalWorkingSetPort;
       copies?: Pick<LiveDocumentSessionRegistry, "clearLocalCopy">;
-      notices?: RemovedPresentationPort;
       drafts?: BoundDraftsPort;
       draftOnly?: DraftOnlyPort;
       tabs?: ClosedTabsPort;
@@ -161,7 +147,6 @@ export class ContextRemovalCoordinator {
     this.presented = dependencies.presented ?? new PresentedDocuments();
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.copies = dependencies.copies ?? null;
-    this.notices = dependencies.notices ?? null;
     this.drafts = dependencies.drafts ?? null;
     this.draftOnly = dependencies.draftOnly ?? null;
     this.tabs = dependencies.tabs ?? null;
@@ -322,14 +307,9 @@ export class ContextRemovalCoordinator {
   private applyGone(projectId: string, documentIds: readonly string[]): void {
     for (const documentId of documentIds) this.gone.add(`${projectId}/${documentId}`);
     const held = this.heldByDrafts(projectId, documentIds);
-    const presented = this.presented.documents(projectId);
     this.dropRecentRoutes(projectId, documentIds);
     const leaving = documentIds.filter((id) => !held.has(id));
     this.forget(projectId, leaving);
-    this.notices?.presentedRemoved(
-      projectId,
-      presented.filter((tab) => tab.kind !== "new" && leaving.includes(tab.documentId)),
-    );
   }
 
   private dropRecentRoutes(projectId: string, documentIds: readonly string[]): void {
@@ -387,7 +367,7 @@ export class ContextRemovalCoordinator {
   }
 
   /**
-   * The writer is deleting or Discarding these documents: their removal says nothing, and main,
+   * The writer is deleting or Discarding these documents: main,
    * if it shows one of them, goes at once to the document it showed before, else to Recently
    * opened. Call before the removal. `landed`
    * hears where main went, or null when it did not move; nothing when main did not show them.
@@ -398,7 +378,6 @@ export class ContextRemovalCoordinator {
     documentIds: readonly string[],
     landed?: (landing: MainLanding | null) => void,
   ): string | null {
-    this.notices?.markOwnRemoval(projectId, documentIds);
     const shown = this.presented.mainDocumentId(projectId);
     const route = this.routePorts.get(projectId)?.port;
     if (this.unavailable() || !route || !shown || !documentIds.includes(shown)) return null;
@@ -425,16 +404,14 @@ export class ContextRemovalCoordinator {
    * to remove. A refused Discard does not come back here: the error lives on the draft. A
    * document the writer's own removal is still sending main back from is left to that go-back.
    */
-  discardDraft(projectId: string, documentId: string): ContextRemovalOutcome {
-    if (this.unavailable() || this.goingBack.has(`${projectId}/${documentId}`))
-      return { kind: "noop" };
+  discardDraft(projectId: string, documentId: string): void {
+    if (this.unavailable() || this.goingBack.has(`${projectId}/${documentId}`)) return;
     this.forget(projectId, [documentId]);
     const tab = this.presented
       .documents(projectId)
       .find((candidate) => candidate.documentId === documentId);
-    if (tab === undefined || tab.kind !== "tracked") return { kind: "noop" };
+    if (tab === undefined || tab.kind !== "tracked") return;
     this.dropRecentRoutes(projectId, [documentId]);
-    return { kind: "removal", removed: [tab] };
   }
 
   dispose(): void {

@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import type { Bounce } from "@/core/project-tree/tree-undo";
 import { DraftNoticeLine, useDiscardingNotice } from "@/features/draft-review/CommandNotice";
 import { MainSurface } from "@/features/editor/MainSurface";
-import { type Removal, RemovedDocumentSentence } from "../context/RemovedDocumentNotice";
 import { bounceSaying } from "../context/use-tree-notice-words";
 import { useShellTreeVersion } from "../tree-version";
 
@@ -32,11 +31,12 @@ export type ProjectRouteMask = {
   /** Offered with a failed destination: the address stays, only its reads run again. */
   onRetry?: () => void;
   /**
-   * An unavailable destination whose document was removed says who removed it, or shows the
-   * Discard's notice, with its Undo, while one can bring it back. One the server never created
-   * (`bounce`: its Work was closed) says so, with what the writer typed and the row's Copy.
+   * An unavailable destination whose document was removed shows the Discard's notice, with its
+   * Undo, while one can bring it back. One the server never created (`bounce`: its Work was
+   * closed) says so, with what the writer typed and the row's Copy. A deleted one says nothing
+   * of its own.
    */
-  removed?: Removal & { documentId: string; bounce?: Bounce };
+  removed?: { documentId: string; bounce?: Bounce };
 };
 
 export function ProjectRouteBoundary({
@@ -92,19 +92,13 @@ export function ProjectRouteBoundary({
   );
 }
 
-function RemovedDestination({
-  removed,
-}: {
-  removed: Removal & { documentId: string; bounce?: Bounce };
-}) {
+function RemovedDestination({ removed }: { removed: { documentId: string; bounce?: Bounce } }) {
   const discarded = useDiscardingNotice(removed.documentId);
   if (removed.bounce) return <NotCreatedDestination bounce={removed.bounce} />;
   return discarded ? (
     <DraftNoticeLine notice={discarded} className="max-w-md" />
   ) : (
-    <p className="max-w-md break-words">
-      <RemovedDocumentSentence documents={[removed]} />
-    </p>
+    <Trans>This destination is unavailable.</Trans>
   );
 }
 

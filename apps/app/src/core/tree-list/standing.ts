@@ -6,8 +6,6 @@
 import {
   deleteCovering,
   isSourceRoot,
-  lastSettlements,
-  listRecords,
   type TreeNode,
   type TreeProjection,
 } from "@meridian/project-tree";
@@ -18,26 +16,13 @@ export type DocumentStanding =
   | { kind: "waiting" }
   | { kind: "in-tree"; node: TreeNode }
   /**
-   * Deleted: `deletedBy` is the delete record's actor (`user:<id>`, `agent:<chat>/<turn>`),
-   * `folders` the names of the folders above it, and `entry` the node its Trash entry names (it,
-   * or the deleted folder that took it).
+   * Deleted: `folders` the names of the folders above it, and `entry` the node its Trash entry
+   * names (it, or the deleted folder that took it).
    */
-  | {
-      kind: "in-trash";
-      node: TreeNode;
-      deletedBy: string | null;
-      folders: readonly string[];
-      entry: string;
-    }
+  | { kind: "in-trash"; node: TreeNode; folders: readonly string[]; entry: string }
   /** Its content is gone. */
-  | ({ kind: "purged" } & Discarded)
-  | ({ kind: "not-in-list" } & Discarded);
-
-/**
- * `discardedBy`: it was a Work's new document and a Discard took it away, so it never was live
- * (the Discard's actor, null when unknown).
- */
-type Discarded = { discardedBy?: string | null };
+  | { kind: "purged" }
+  | { kind: "not-in-list" };
 
 const ANSWERS: ReadonlySet<TreeListSnapshot["status"]> = new Set([
   "synced",
@@ -56,20 +41,15 @@ export function standingIn(
 ): DocumentStanding {
   const node = projection.nodes.get(documentId);
   if (!node) {
-    const discarded = discardedCreate(snapshot, documentId);
-    if (projection.gone.has(documentId)) return { kind: "purged", ...discarded };
-    return listIsReadable(snapshot.status)
-      ? { kind: "not-in-list", ...discarded }
-      : { kind: "waiting" };
+    if (projection.gone.has(documentId)) return { kind: "purged" };
+    return listIsReadable(snapshot.status) ? { kind: "not-in-list" } : { kind: "waiting" };
   }
   if (node.purged) return { kind: "purged" };
   if (!node.trashed) return { kind: "in-tree", node };
   const entry = deleteCovering(projection, documentId);
-  const deleted = entry && listRecords(snapshot.doc).find((record) => record.id === entry.id);
   return {
     kind: "in-trash",
     node,
-    deletedBy: deleted?.actor ?? null,
     folders: foldersAbove(projection, node),
     entry: entry?.node ?? documentId,
   };
@@ -102,13 +82,4 @@ function foldersAbove(projection: TreeProjection, node: TreeNode): string[] {
   )
     names.unshift(at.name);
   return names;
-}
-
-/** The Discard that took away the node's latest create, when that is what happened to it. */
-function discardedCreate(snapshot: TreeListSnapshot, documentId: string): Discarded {
-  const create = listRecords(snapshot.doc)
-    .filter((record) => record.type === "create" && record.node === documentId)
-    .pop();
-  const settle = create && lastSettlements(snapshot.doc).get(create.id);
-  return settle?.to === "discarded" ? { discardedBy: settle.actor } : {};
 }

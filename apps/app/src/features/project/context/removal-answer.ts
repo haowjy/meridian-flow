@@ -1,69 +1,24 @@
-/** What the list says about one document's removal, in the shape the notices and banners read. */
-import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
+/** What the list says about one document's removal, in the shape the editor and route read. */
 import type { DocumentStanding } from "@/core/tree-list/standing";
 
-/**
- * `removed`: in Trash (`inTrash`), purged or not in the list. `record` names who deleted it, when
- * the list says.
- */
-export type RemovalAnswer =
-  | { kind: "removed"; record: DocumentRemovalRecord | null; inTrash: boolean }
-  | { kind: "available" };
-
-/**
- * The removing record's actor (`user:<id>`, `agent:<chat>/<turn>`) as the editor's notice reads
- * it: the replay names no account or chat title, so a chat's AI keeps its chat's id and the
- * sentence names the chat from the chat list (`removalSentence`). A Discard is said as one even
- * when the list doesn't name who made it.
- */
-export function removalRecordOf(
-  actor: string | null,
-  reason: DocumentRemovalRecord["reason"] = "deleted",
-): DocumentRemovalRecord | null {
-  if (actor?.startsWith("agent:")) {
-    const chatId = actor.slice("agent:".length).split("/")[0];
-    return {
-      reason,
-      actor: { kind: "agent", chatTitle: null, ...(chatId ? { chatId } : {}) },
-      time: "",
-    };
-  }
-  return actor || reason === "discarded" ? { reason, actor: null, time: "" } : null;
-}
+/** `removed`: in Trash (`inTrash`), purged or not in the list. */
+export type RemovalAnswer = { kind: "removed"; inTrash: boolean } | { kind: "available" };
 
 const AVAILABLE: RemovalAnswer = { kind: "available" };
-const known = new WeakMap<DocumentStanding, RemovalAnswer>();
+const IN_TRASH: RemovalAnswer = { kind: "removed", inTrash: true };
+const GONE: RemovalAnswer = { kind: "removed", inTrash: false };
 
-/**
- * Undefined while the list has not been read: nothing is known, so nothing is shown. The same
- * standing gives the same answer object, so a React snapshot is stable while nothing changed.
- */
+/** Undefined while the list has not been read: nothing is known, so nothing is shown. */
 export function removalAnswer(standing: DocumentStanding): RemovalAnswer | undefined {
-  if (standing.kind === "waiting") return undefined;
-  let answer = known.get(standing);
-  if (!answer) {
-    answer = answerOf(standing);
-    known.set(standing, answer);
-  }
-  return answer;
-}
-
-function answerOf(standing: DocumentStanding): RemovalAnswer {
   switch (standing.kind) {
     case "waiting":
-      throw new Error("A list not yet read has no answer");
+      return undefined;
     case "in-tree":
       return AVAILABLE;
     case "in-trash":
-      return { kind: "removed", record: removalRecordOf(standing.deletedBy), inTrash: true };
+      return IN_TRASH;
     case "purged":
     case "not-in-list":
-      if (standing.discardedBy !== undefined)
-        return {
-          kind: "removed",
-          record: removalRecordOf(standing.discardedBy, "discarded"),
-          inTrash: false,
-        };
-      return { kind: "removed", record: null, inTrash: false };
+      return GONE;
   }
 }

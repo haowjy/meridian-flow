@@ -670,14 +670,15 @@ export class DocumentSession {
   /**
    * The typing the last read-admitted handshake found the server lacks (`UnsentEdits.undeliverable`),
    * as the items (`lacking`) and the document they live in, encoded so it can be read after the
-   * session is made inert, and whether this session wrote any of it, or a deletion the server
-   * lacks, through an editor or its Undo. Null when the room holds none.
+   * session is made inert. Null when the room holds none.
    */
-  undeliverableEdits(): { copy: Uint8Array; lacking: Ranges; own: boolean } | null {
+  undeliverableEdits(): { copy: Uint8Array; lacking: Ranges } | null {
     const difference = this.lastDifference;
     if (!difference || !this.holdsUndeliverable) return null;
-    const { typing, own } = this.unsent.undeliverable(difference);
-    return { copy: Y.encodeStateAsUpdate(this.document), lacking: typing, own };
+    return {
+      copy: Y.encodeStateAsUpdate(this.document),
+      lacking: this.unsent.undeliverable(difference),
+    };
   }
 
   /**

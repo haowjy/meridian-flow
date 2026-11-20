@@ -11,23 +11,14 @@ import {
   DocumentSession,
   type DocumentSessionAccess,
   type DocumentSessionSnapshot,
-  type ResetDisposition,
 } from "./document-session";
 import type {
   LiveDocumentSessionLease,
   RetainedLiveDocumentReference,
-  UnsentTyping,
-  UnsentTypingCause,
-  UnsentTypingObserver,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
 import { type DraftCloseCause, DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
 import type { DocumentHistory } from "./editor-history";
-import {
-  createHandBackNotices,
-  type HandBackNotice,
-  type HandBackNotices,
-} from "./hand-back-notices";
 import type { Ranges } from "./item-ranges";
 import {
   type CopyHold,
@@ -46,22 +37,6 @@ const SWEEP_LOADS = 4;
 /** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
 const KEPT_FOR_UNDO_CAP = 8;
 const SWEEP_DELIVERY_MS = 30_000;
-
-/**
- * The resets that end a room for good: its unsent typing is handed back when the session retires,
- * not at the reset. A session kept on screen still shows that text, and a restore that restarts it
- * delivers it, so handing it back earlier would offer text the document then gets too. Handing
- * back never deletes the copy: Undo Discard reopens a closed draft and replays the copy into it, so
- * the writer may see the notice and also get the words back; losing them is the failure.
- */
-const UNSENT_CAUSE_OF_RESET: Readonly<
-  Record<ResetDisposition | "none", UnsentTypingCause | undefined>
-> = {
-  closed: "closed",
-  removed: "removed",
-  schema: undefined,
-  none: undefined,
-};
 
 type LiveRoomState = {
   session: DocumentSession | null;
@@ -87,11 +62,18 @@ export class DocumentSessionRegistry {
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
     (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
     (session) => {
-      // A draft the server closed hands back with that close's cause whatever ended the session's socket first.
-      const cause =
-        this.draftRooms.closedCause(session.roomKey) ??
-        UNSENT_CAUSE_OF_RESET[session.resetDisposition ?? "none"];
-      if (cause) void this.handBackUnsent(session, cause).catch(reportError);
+      // A room that ended for good (its draft closed or its document was removed) drops its unsent
+      // typing when the session retires, not at the reset: a session kept on screen still shows
+      // that text, and a restore that restarts it delivers it. The copy stays: Undo Discard
+      // reopens a closed draft and replays it. A draft the server closed counts whatever ended
+      // the session's socket first.
+      const { resetDisposition } = session;
+      if (
+        this.draftRooms.closedCause(session.roomKey) ||
+        resetDisposition === "closed" ||
+        resetDisposition === "removed"
+      )
+        void this.dropUnsent(session).catch(reportError);
     },
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
@@ -112,19 +94,9 @@ export class DocumentSessionRegistry {
     string,
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
-  private readonly unsentTypingObservers = new Set<UnsentTypingObserver>();
-  /** Each retiring session's hand-back of its copy, once: a removal waits for it before the copy goes. */
-  private readonly handingBack = new WeakMap<DocumentSession, Promise<void>>();
-  /** Stops following the notice store; set when the first observer starts it. */
-  private stopNotices: (() => void) | null = null;
-  /**
-   * The stored notices shown in this tab, each once for the life of the page: a closed pill stays
-   * closed until a reload, and Copy removes it before its `act` commits, while a read in between
-   * still finds it unacted.
-   */
-  private readonly shownNotices = new Set<string>();
-  /** Shown here and not acted on here: a tab that acts elsewhere takes these off this screen. */
-  private readonly showingNotices = new Set<string>();
+  private readonly droppedTypingObservers = new Set<() => void>();
+  /** Each retiring session's drop of its copy's unsent typing, once: a removal waits for it before the copy goes. */
+  private readonly dropping = new WeakMap<DocumentSession, Promise<void>>();
   /** Each session's copy: the room's key and the incarnation it opened. */
   private readonly copyOf = new WeakMap<DocumentSession, { key: string; incarnation: number }>();
   private readonly replacing = new WeakSet<DocumentSession>();
@@ -142,7 +114,6 @@ export class DocumentSessionRegistry {
     }) => createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
     private readonly teardownGraceMs = SESSION_TEARDOWN_GRACE_MS,
     copies: LocalDocumentCopies = new LocalDocumentCopies(accountId),
-    private readonly notices: HandBackNotices = createHandBackNotices(accountId),
   ) {
     this.copies = copies;
     this.draftRooms = new DraftRoomPool({
@@ -182,12 +153,12 @@ export class DocumentSessionRegistry {
     this.liveRooms.delete(documentId);
     if (state?.session) {
       await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, state.session);
-      await this.handingBack.get(state.session);
+      await this.dropping.get(state.session);
     }
     await this.teardownOwner.drainRoom({ kind: "live", roomKey: documentId });
     (await state?.hold)?.release();
-    await this.copies.clear(documentId, (name, { update, lacking }) =>
-      readCopy(update, (document) => this.handBack("removed", name, document, lacking)),
+    await this.copies.clear(documentId, ({ update, lacking }) =>
+      readCopy(update, (document) => this.dropWords(document, lacking)),
     );
   }
 
@@ -340,10 +311,10 @@ export class DocumentSessionRegistry {
 
   /**
    * The server closed the draft, as `closed` (its Work went) or `removed` (its document went). A
-   * session the pool holds retires with that cause, which hands its copy back at the right time:
-   * when nothing shows its text any more. With no session
-   * (the room ended earlier, by a schema reset or a terminal close, or never opened here) the copy
-   * is handed back now. The copy stays either way.
+   * session the pool holds retires with that cause, which drops its unsent typing at the right
+   * time: when nothing shows its text any more. With no session (the room ended earlier, by a
+   * schema reset or a terminal close, or never opened here) the copy's is dropped now. The copy
+   * stays either way.
    */
   async closeDraftRoom(roomKey: string, cause: DraftCloseCause): Promise<void> {
     const documentId = this.draftRooms.documentOf(roomKey);
@@ -351,7 +322,7 @@ export class DocumentSessionRegistry {
     await this.draftRooms.close(roomKey, cause);
     if (documentId && !held) {
       const key = draftRoomPersistenceKey(this.accountId, documentId as DocumentId, roomKey);
-      await this.handBackCopy(incarnationName(key, this.copies.current(key)), cause);
+      await this.dropCopy(incarnationName(key, this.copies.current(key)));
     }
   }
 
@@ -404,8 +375,7 @@ export class DocumentSessionRegistry {
    * mark, and releases it once acknowledged. The session delivers like any other (the older
    * incarnations are read against its first handshake); a page that opens the room meanwhile
    * shares this session, so nothing is sent twice, and the copy is left unswept. A copy version
-   * older than the current one is read, not delivered: its words come back as an `owner-closed`
-   * notice, and a notice that can't be stored is retried at the next open. Not acknowledged within
+   * older than the current one is read, not delivered: its words are dropped. Not acknowledged within
    * `SWEEP_DELIVERY_MS` (offline), the room is released anyway: the pool keeps draining it, and the
    * copy is swept again at the next start.
    */
@@ -435,7 +405,7 @@ export class DocumentSessionRegistry {
 
   abandonDraftRoom(roomKey: string): Promise<void> {
     const session = this.draftRooms.peek(roomKey);
-    if (session) this.handingBack.set(session, Promise.resolve());
+    if (session) this.dropping.set(session, Promise.resolve());
     return this.draftRooms.close(roomKey);
   }
 
@@ -453,8 +423,6 @@ export class DocumentSessionRegistry {
     if (this.accountCloseAttempt) return this.accountCloseAttempt;
     const attempt = this.invalidateAll().then(() => {
       this.accountRuntimeState = "closed";
-      this.stopNotices?.();
-      this.notices.close();
     });
     this.accountCloseAttempt = attempt;
     void attempt
@@ -535,7 +503,7 @@ export class DocumentSessionRegistry {
 
   /**
    * A session on the room's current incarnation, and the hold on it. The words an older incarnation
-   * held that the server lacks and no session handed back yet are handed back once the session has
+   * held that the server lacks are dropped once the session has
    * synced, and it goes. A copy is never deleted on one session's say-so: a session that `replaced`
    * another retires it by the same path, once its editors have gone and its hold is released, so
    * words another tab wrote into the same copy meanwhile come back too.
@@ -564,15 +532,15 @@ export class DocumentSessionRegistry {
         .retireReplaced(replaced.session.room.kind === "live" ? "live" : "draft", replaced.session)
         .catch((error: unknown) => reportError(error))
         .then(async () => (await replaced.hold)?.release())
-        .then(() => this.handBackOlder(session, copyKey, incarnation))
+        .then(() => this.dropOlder(session, copyKey, incarnation))
         .catch(reportError);
     } else if (incarnation > 0) {
-      void this.handBackOlder(session, copyKey, incarnation).catch(reportError);
+      void this.dropOlder(session, copyKey, incarnation).catch(reportError);
     }
     return { session, hold };
   }
 
-  private async handBackOlder(
+  private async dropOlder(
     session: DocumentSession,
     copyKey: string,
     incarnation: number,
@@ -584,17 +552,14 @@ export class DocumentSessionRegistry {
     const settled = session.getSnapshot().status !== "destroyed";
     const server = Y.encodeStateVector(session.document);
     await Promise.all(
-      older.map(async ({ name, update, finish }) => {
-        let claimed = false;
+      older.map(async ({ update, finish }) => {
         try {
-          claimed =
-            settled &&
-            (await readBeyond(update, server, (document, lacking) =>
-              this.handBack("owner-closed", name, document, lacking),
-            ));
+          if (settled)
+            await readBeyond(update, server, (document, lacking) =>
+              this.dropWords(document, lacking),
+            );
         } finally {
-          // A copy whose words the notice store could not take is read again at the next open.
-          await finish(!claimed);
+          await finish();
         }
       }),
     );
@@ -650,7 +615,7 @@ export class DocumentSessionRegistry {
 
   /**
    * A room the server admitted read-only holds none of the writer's edits the server lacks
-   * (`.context/CONTEXT.md`, "Undeliverable edits"). A room found holding some hands back the
+   * (`.context/CONTEXT.md`, "Undeliverable edits"). A room found holding some drops the
    * typing and is replaced by a session on the next incarnation of its copy, which loads from the
    * server; the old one is inert until its editors have gone. Nothing is emptied and nothing is
    * said to other tabs: each tab replaces its own session at its own read admission.
@@ -664,14 +629,10 @@ export class DocumentSessionRegistry {
       return;
     }
     const copy = this.copyOfSession(old);
-    const name = incarnationName(copy.key, copy.incarnation);
     const edits = old.undeliverableEdits();
     void old.makeInert().catch(reportError);
     // Typing into the old editor after this read goes to its copy, and the older-copy read's.
-    if (edits)
-      await readCopy(edits.copy, (document) =>
-        this.handBack("owner-closed", name, document, edits.lacking, edits.own),
-      );
+    if (edits) await readCopy(edits.copy, (document) => this.dropWords(document, edits.lacking));
     await this.copies.advance(copy.key, copy.incarnation);
     if (!this.isRoomSession(old)) return;
     if (old.room.kind === "live") {
@@ -717,16 +678,11 @@ export class DocumentSessionRegistry {
     session.attachTransport(this.transportFactory);
   }
 
-  observeUnsentTyping(observer: UnsentTypingObserver): () => void {
-    this.unsentTypingObservers.add(observer);
-    // The account's start: what any tab stored and no tab acted on, wherever its document is.
-    if (!this.stopNotices) {
-      const report = (error: unknown) => reportError(error);
-      this.stopNotices = this.notices.subscribe(() => void this.showUnacted().catch(report));
-      void this.showUnacted().catch(report);
-    }
+  /** Calls `observer` each time unsent typing with words in it is dropped: its room can't take it. */
+  observeDroppedTyping(observer: () => void): () => void {
+    this.droppedTypingObservers.add(observer);
     return () => {
-      this.unsentTypingObservers.delete(observer);
+      this.droppedTypingObservers.delete(observer);
     };
   }
 
@@ -736,98 +692,26 @@ export class DocumentSessionRegistry {
     return copy;
   }
 
-  /**
-   * What a retiring session's copy holds beyond its mark, handed back like every notice. Read
-   * from the copy, which has every write of the session's by now: a claim the store can't take is
-   * claimed again from it, by the removal that deletes it or by a later start.
-   */
-  private handBackUnsent(session: DocumentSession, cause: UnsentTypingCause): Promise<void> {
-    const started = this.handingBack.get(session);
+  /** What a retiring session's copy holds beyond its mark, read from the copy, which has every write of the session's by now. */
+  private dropUnsent(session: DocumentSession): Promise<void> {
+    const started = this.dropping.get(session);
     if (started) return started;
     const copy = this.copyOfSession(session);
-    const handing = this.handBackCopy(incarnationName(copy.key, copy.incarnation), cause);
-    this.handingBack.set(session, handing);
-    return handing;
+    const dropping = this.dropCopy(incarnationName(copy.key, copy.incarnation));
+    this.dropping.set(session, dropping);
+    return dropping;
   }
 
-  private async handBackCopy(
-    name: string,
-    cause: UnsentTypingCause,
-    requireMark = false,
-  ): Promise<void> {
-    const beyond = await this.copies.beyondMark(name, requireMark);
+  private async dropCopy(name: string): Promise<void> {
+    const beyond = await this.copies.beyondMark(name);
     if (beyond)
-      await readCopy(beyond.update, (document) =>
-        this.handBack(cause, name, document, beyond.lacking),
-      );
+      await readCopy(beyond.update, (document) => this.dropWords(document, beyond.lacking));
   }
 
-  /**
-   * Hands back the words of `lacking` in `document`, from the copy `name`: the notice store takes
-   * what no notice from that copy holds yet, and this tab shows it (another tab that holds the
-   * same words shows the same notice). Never rejects. False when the store could not take them:
-   * the words are shown all the same, unstored, and the caller keeps the copy if it can. `own`: a
-   * change of this session's with no words (a deletion, a format change) is told too, unstored.
-   */
-  private async handBack(
-    cause: UnsentTypingCause,
-    name: string,
-    document: Y.Doc,
-    lacking: Ranges,
-    own = false,
-  ): Promise<boolean> {
-    const text = typedText(document, lacking);
-    if (text === null) {
-      if (own)
-        this.emit({ id: crypto.randomUUID(), cause, text: null, done: () => Promise.resolve() });
-      return true;
-    }
-    try {
-      const notice = await this.notices.claim(name, cause, lacking, (ranges) =>
-        typedText(document, ranges),
-      );
-      if (notice) this.showStored(notice);
-      return true;
-    } catch (error) {
-      reportError(error);
-      this.emit({ id: crypto.randomUUID(), cause, text, done: () => Promise.resolve() });
-      return false;
-    }
-  }
-
-  /** Shows what the store holds unacted that this tab has not shown, and withdraws what another tab acted on. */
-  private async showUnacted(): Promise<void> {
-    const showing = new Set(this.showingNotices);
-    const unacted = await this.notices.unacted();
-    const left = new Set(unacted.map(({ id }) => id));
-    for (const id of showing)
-      if (!left.has(id) && this.showingNotices.delete(id))
-        for (const observer of this.unsentTypingObservers) observer.withdraw(id);
-    for (const notice of unacted) this.showStored(notice);
-  }
-
-  private showStored({ id, cause, text }: HandBackNotice): void {
-    if (this.shownNotices.has(id)) return;
-    this.shownNotices.add(id);
-    this.showingNotices.add(id);
-    let acting: Promise<void> | null = null;
-    const done = () => {
-      acting ??= this.notices.act(id).then(
-        () => void this.showingNotices.delete(id),
-        (error: unknown) => {
-          acting = null;
-          reportError(error);
-          throw error;
-        },
-      );
-      return acting;
-    };
-    this.emit({ id, cause, text, done });
-  }
-
-  private emit(typing: UnsentTyping): void {
-    const frozen = Object.freeze(typing);
-    for (const observer of this.unsentTypingObservers) observer.show(frozen);
+  /** Words in `lacking` are lost: tell the observers, who show one "Couldn't save". A change with no words (a deletion, a format change) is lost silently. */
+  private dropWords(document: Y.Doc, lacking: Ranges): void {
+    if (typedText(document, lacking) === null) return;
+    for (const observer of this.droppedTypingObservers) observer();
   }
 
   private retainedSnapshot(): readonly RetainedLiveDocumentReference[] {

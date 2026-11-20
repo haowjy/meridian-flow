@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { parseDraftOwnerKey } from "@meridian/contracts/branches";
-import { parseYjsRoomName, WS_CLOSE } from "@meridian/contracts/protocol";
+import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -16,7 +16,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useRefreshTurnCardsOnEdit } from "@/client/query/useTurnLiveLineage";
@@ -34,7 +33,6 @@ import { useLinkableDocuments } from "@/features/links";
 import {
   useAccountEpochSignal,
   useAccountId,
-  useOptionalDraftCommandOwner,
 } from "@/features/project/context/account-feature-context";
 import { referenceDropOptions } from "@/features/project/context/entry-drag/reference-drop-options";
 import { useRemovalRecord } from "@/features/project/context/use-removal-record";
@@ -91,8 +89,6 @@ function workOfOwner(ownerKey: string): string | null {
   const owner = parseDraftOwnerKey(ownerKey);
   return owner?.kind === "work" ? owner.id : null;
 }
-
-const subscribeNothing = () => () => {};
 
 export function SessionEditor(props: SessionEditorProps) {
   const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
@@ -431,7 +427,7 @@ function ActiveSessionEditorView({
           {projectId && documentInTrash ? (
             <InTrashStatus documentId={documentId} />
           ) : (
-            <SyncStatus session={session} onReopen={onReopen} removal={removal} />
+            <SyncStatus session={session} onReopen={onReopen} />
           )}
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>

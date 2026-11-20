@@ -37,7 +37,7 @@ import { useAccountId } from "./account-feature-context";
 import { schemeLocation } from "./context-schemes";
 import { useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { useOpenProjectDocument } from "./open-project-document";
-import { type ChatTitles, type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
+import { type ChatTitles, type RemovalVoice, removalVoice } from "./removal-voice";
 import { useDocumentStanding } from "./use-document-standing";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
@@ -226,7 +226,7 @@ function trashSentence(
 
 /**
  * Names who deleted it only when that says something: you, another writer, a chat's AI or a Work,
- * in `RemovedDocumentNotice`'s words. The date is left out until the server has said it.
+ * as the Trash row says it. The date is left out until the server has said it.
  */
 function deletedSentence(
   actor: DocumentRemovalRecord["actor"],
