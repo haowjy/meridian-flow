@@ -67,6 +67,8 @@ const providerData = z.strictObject({
   /** Environment variable that must contain a real key for this provider to enable. */
   apiKeyEnv: z.string(),
   baseUrl: z.string().url().optional(),
+  /** A provider kept for `LIVE_TEST_MODEL` runs. Its models are hidden from the writer-facing model list. */
+  testOnly: z.literal(true).optional(),
   /** The provider's key in models.dev's api.json, where it differs from Flow's provider id. */
   modelsDev: z.string().optional(),
   models: z.record(z.string(), modelFacts),

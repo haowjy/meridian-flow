@@ -273,6 +273,31 @@
         }
       }
     },
+    "deepinfra": {
+      "deepseek-ai/DeepSeek-V4.1-Flash-1017": {
+        "name": "DeepSeek V4.1 Flash 1017",
+        "release_date": "2026-10-17",
+        "tool_call": true,
+        "limit": {
+          "context": 1048576,
+          "output": 384000
+        },
+        "modalities": {
+          "input": ["text", "image"]
+        },
+        "reasoning_options": [
+          {
+            "type": "effort",
+            "values": ["none", "low", "high", "max"]
+          }
+        ],
+        "cost": {
+          "input": 0.2,
+          "output": 0.6,
+          "cache_read": 0.006
+        }
+      }
+    },
     "gemini": {
       "gemini-4-argon": {
         "name": "Gemini 4 Argon",

@@ -115,6 +115,56 @@
         }
       }
     },
+    "deepinfra": {
+      "adapter": "anthropic",
+      "apiKeyEnv": "FLOW_DEEPINFRA_API_KEY",
+      "testOnly": true,
+      "baseUrl": "https://api.deepinfra.com/anthropic",
+      "models": {
+        "*": {
+          "maker": {
+            "value": "deepseek",
+            "source": "https://deepinfra.com/deepseek-ai/DeepSeek-V4.1-Flash-1017",
+            "checked": "2026-11-20",
+            "note": "DeepInfra serves the model; DeepSeek made it."
+          },
+          "tokenizer": {
+            "value": "deepseek",
+            "source": "https://api-docs.deepseek.com/quick_start/token_usage",
+            "checked": "2026-11-16",
+            "note": "The model's tokenizer is the same when DeepInfra serves it."
+          },
+          "thinksByDefault": {
+            "value": true,
+            "source": "https://api-docs.deepseek.com/guides/thinking_mode",
+            "checked": "2026-11-16",
+            "note": "DeepSeek documents thinking on by default; DeepInfra serves the same model."
+          },
+          "promptCache": {
+            "value": {
+              "kind": "automatic",
+              "shortTtlSeconds": 3600,
+              "longTtlSeconds": 3600
+            },
+            "source": "https://api-docs.deepseek.com/guides/kv_cache",
+            "checked": "2026-11-05",
+            "note": "Carried over from the DeepSeek provider for the same model. Flow sends no cache_control on this adapter; the lifetime is used for prediction only."
+          }
+        },
+        "deepseek-ai/DeepSeek-V4.1-Flash-1017": {
+          "price": {
+            "value": {
+              "input": 0.3,
+              "output": 1.2,
+              "cache_read": 0.006
+            },
+            "source": "https://api-docs.deepseek.com/quick_start/pricing",
+            "checked": "2026-11-05",
+            "note": "Kept at the billed DeepSeek rate while testing DeepInfra, whose discount is promotional and temporary. This is not DeepInfra's list price."
+          }
+        }
+      }
+    },
     "gemini": {
       "adapter": "gemini",
       "apiKeyEnv": "FLOW_GEMINI_API_KEY",

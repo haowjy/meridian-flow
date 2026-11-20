@@ -110,7 +110,7 @@ Two adapters, `local` (disk) and `s3`, chosen by `resolveBackends` in `lib/backe
 
 ## models
 
-The model providers: Anthropic, OpenAI, DeepSeek and Gemini.
+The model providers: Anthropic, OpenAI, DeepSeek and Gemini, plus DeepInfra for dev and staging tests only.
 
 Called through one gateway, with no fallback between providers. With no provider key, or `MODEL_PROVIDER=mock`, a mock provider runs in process.
 

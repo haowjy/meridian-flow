@@ -19,9 +19,10 @@ when the registry is built, not in the deployment that holds that provider's key
 - `families.ts`: which models Flow offers, per provider, as `[models.<family>]`-style `match` and `exclude` globs (as in
   meridian-base's `mars.toml`) and nothing else. A family id is its alias in `mars.toml` (`opus`, `sonnet`, `fable`,
   `sol`, `terra`, `luna`, `deepseek`, `argon`, `hydrogen`), kept equal by hand: nothing in CI reads `mars.toml`. Flow has no family
-  Mars lacks, and Mars has aliases Flow does not offer (haiku, astra, glm, kimi, grok and others). A new version in a
-  listed family appears at the next refresh; an `exclude` entry is a dated, deprecated or older-generation id Flow does
-  not offer. `newestInFamily` applies Mars's alias rule (`resolveAlias` from `@meridian-flow/mars-schema`) to a family.
+  Mars lacks, and Mars has aliases Flow does not offer (haiku, astra, glm, kimi, grok and others). Outside
+  `testOnly` providers, Flow has no family Mars lacks: DeepInfra's family `deepseek-test` is a local name, and the
+  models route hides its models from writers. A new version in a listed family appears at the next refresh; an
+  `exclude` entry is a dated, deprecated or older-generation id Flow does not offer. `newestInFamily` applies Mars's alias rule (`resolveAlias` from `@meridian-flow/mars-schema`) to a family.
   The allowlist moves to a mars-schema release later; the facts below do not.
 - `model-data.json`, read through the zod schema in `model-data.ts` when the registry loads: everything else Flow holds
   about a model. The default model and the compaction summarizer's default (`defaultModel`,
@@ -124,6 +125,7 @@ lifetime shorter than the short one; two lifetimes with `cacheWriteUsdPerMillion
 | Anthropic (Claude) | explicit | 5m | 1h |
 | OpenAI (GPT-5.6+) | automatic | 30m | 12h (the shortest option of at least 1 hour, sent as `prompt_cache_options.ttl`; the 30m default is never sent) |
 | DeepSeek | automatic | 1h | 1h (lower bound of its documented "a few hours to a few days"; an estimate) |
+| DeepInfra (test only) | automatic | 1h | 1h (copied from DeepSeek for the same model) |
 | Gemini | automatic | null | null |
 
 Flow sets `promptCacheRetention` by thread kind so the cached prefix never varies mid-thread: `long` for primary
