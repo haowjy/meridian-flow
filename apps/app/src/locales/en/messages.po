@@ -397,6 +397,7 @@ msgid "{count, plural, one {# tool} other {# tools}}"
 msgstr "{count, plural, one {# tool} other {# tools}}"
 
 #: src/features/draft-review/ReviewStepper.tsx
+#: src/features/editor/SuggestionBar.tsx
 msgid "{count} changes"
 msgstr "{count} changes"
 
@@ -907,6 +908,14 @@ msgstr "A Work groups the chats and drafts for one piece of writing."
 #: src/features/export/ExportProjectDialog.tsx
 msgid "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge and Unfiled."
 msgstr "A ZIP of Markdown files and folders. Includes Manuscript, Knowledge and Unfiled."
+
+#: src/features/editor/SuggestionBar.tsx
+msgid "Accept"
+msgstr "Accept"
+
+#: src/features/editor/SuggestionBar.tsx
+msgid "Accept all"
+msgstr "Accept all"
 
 #: src/features/editor/SyncStatus.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -3578,6 +3587,7 @@ msgid "litrpg"
 msgstr "litrpg"
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/SuggestionBar.tsx
 msgid "Live"
 msgstr "Live"
 
@@ -4901,6 +4911,14 @@ msgstr "Refresh"
 msgid "Refused"
 msgstr "Refused"
 
+#: src/features/editor/SuggestionBar.tsx
+msgid "Reject"
+msgstr "Reject"
+
+#: src/features/editor/SuggestionBar.tsx
+msgid "Reject all"
+msgstr "Reject all"
+
 #: src/features/chat/ChatCards.tsx
 msgid "Reload"
 msgstr "Reload"
@@ -5761,6 +5779,10 @@ msgstr "Subscribe"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "subsection"
 msgstr "subsection"
+
+#: src/features/editor/SuggestionBar.tsx
+msgid "Suggesting"
+msgstr "Suggesting"
 
 #: src/features/chat/ChatView.tsx
 msgid "Summarize earlier messages"
