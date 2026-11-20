@@ -627,18 +627,26 @@ function replaceInWork(
     if (joining) return insertAt;
     return forward ? map(to, 1) : map(from, -1);
   }
-  // A split: the target keeps its text up to the cut; the rest is suggested as new blocks.
-  if (parts.head.size > 0) {
+  // A split: the target keeps its text up to the cut; the rest is suggested as new blocks. When
+  // the view shows nothing of a Live block before the cut, the block is the split's second half.
+  const headless =
+    !joining &&
+    !startOwn &&
+    visibleContent(startBlock.node, 0, from - startBlock.pos - 1, view).size === 0;
+  if (parts.head.size > 0 && !headless) {
     out.insert(insertAt, inline(parts.head));
     insertAt += parts.head.size;
   }
   const targetNow = textblockAtOrThrow(out.doc, insertAt);
-  if (keepEnd) {
-    // The Live block kept after the cut is the split's second half: the paste's whole blocks go
+  if (keepEnd || headless) {
+    // The Live block kept after the cut is the split's second half: the edit's whole blocks go
     // right before it and its last line opens it, all the edit's change.
     const endAt = map(endBlock.pos, 1);
     const opensAt = pastOwnDeletion(out.doc, map(to, 1), view);
-    const blocks = pasted(parts.middle, attrs);
+    const blocks = pasted(
+      headless && parts.first ? [parts.first, ...parts.middle] : parts.middle,
+      attrs,
+    );
     const opening = parts.last?.content ?? Fragment.empty;
     if (opening.size > 0) out.insert(opensAt, marked(schema, opening, attrs));
     if (blocks.length > 0) out.insert(endAt, blocks);
@@ -728,23 +736,24 @@ function pasted(blocks: readonly Node[], attrs: SuggestionAttrs): Node[] {
   );
 }
 
-/** A slice as inline content for the cut's block, whole blocks after it, and the block it ends in. */
+/** A slice as the block it starts in (`head`, its inline content), whole blocks after it, and the block it ends in. */
 function sliceParts(slice: Slice): {
   head: Fragment;
+  first: Node | null;
   middle: Node[];
   last: Node | null;
   split: boolean;
 } {
   const content = stripSuggestions(slice.content);
   if (content.childCount === 0 || content.child(0).isInline)
-    return { head: content, middle: [], last: null, split: false };
+    return { head: content, first: null, middle: [], last: null, split: false };
   const children: Node[] = [];
   content.forEach((child) => {
     children.push(child);
   });
   if (children.length === 1 && slice.openStart > 0 && slice.openEnd > 0)
-    return { head: children[0].content, middle: [], last: null, split: false };
-  const head = slice.openStart > 0 ? (children.shift()?.content ?? Fragment.empty) : Fragment.empty;
+    return { head: children[0].content, first: null, middle: [], last: null, split: false };
+  const first = slice.openStart > 0 ? (children.shift() ?? null) : null;
   const last = slice.openEnd > 0 ? (children.pop() ?? null) : null;
-  return { head, middle: children, last, split: true };
+  return { head: first?.content ?? Fragment.empty, first, middle: children, last, split: true };
 }
