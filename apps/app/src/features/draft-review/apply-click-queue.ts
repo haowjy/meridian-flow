@@ -590,15 +590,12 @@ export class ApplyClickQueue {
    */
   private async giveUp(command: Command): Promise<void> {
     if (command.kind === "apply" && command.sent) {
-      try {
-        const stored = await this.port.lookup(command.body);
-        if (this.commands[0] !== command) return;
-        if (stored.status === "applied" && stored.commandId === command.body.commandId) {
-          this.settle(command, stored);
-          return;
-        }
-      } catch {
-        // The server can't say: the click is given up below.
+      // slop-lint: allow swallowed-error a lookup that fails leaves delivery unknown; the click is given up below
+      const stored = await this.port.lookup(command.body).catch(() => null);
+      if (this.commands[0] !== command) return;
+      if (stored?.status === "applied" && stored.commandId === command.body.commandId) {
+        this.settle(command, stored);
+        return;
       }
     }
     if (this.commands[0] === command)
