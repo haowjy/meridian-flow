@@ -315,7 +315,7 @@
     "packages/agent-edit/src/content-merge/discard.test.ts": 2,
     "packages/agent-edit/src/content-merge/merge.test.ts": 116,
     "packages/agent-edit/src/diff/attribution.test.ts": 38,
-    "packages/agent-edit/src/diff/diff.test.ts": 8,
+    "packages/agent-edit/src/diff/diff.test.ts": 9,
     "packages/agent-edit/src/diff/review.test.ts": 12,
     "packages/agent-edit/src/diff/writer.test.ts": 3,
     "packages/agent-edit/src/links/assign-refs.test.ts": 3,

@@ -761,8 +761,16 @@ export class DraftCommandOwner {
     const scheduled = histories
       ? entry.item.queue.enqueueHistory({
           frozen,
-          patchFor: (groupIds) =>
-            applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
+          // The ids come from the server's answer, read on its cut: after a rebuild or a whole
+          // cut, one this frame has no name for only goes unpreviewed, and the room settles it.
+          patchFor: (groupIds) => {
+            const known = groupIds.filter((id) => frame.groups.some((group) => group.id === id));
+            return applySpanPatches(
+              optimistic,
+              composeGroups(schema, frame, known, "apply"),
+              "base",
+            );
+          },
         })
       : { outcome: entry.item.queue.enqueue(frozen), handle: null };
     let band: ApplyEntries | undefined;

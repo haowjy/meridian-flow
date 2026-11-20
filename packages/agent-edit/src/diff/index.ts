@@ -45,6 +45,7 @@ export {
   type ReviewHunk,
   type ReviewProjection,
   type ReviewSpan,
+  UnknownChangeError,
 } from "./review.js";
 export { diffKeys, type Tok, wordDiff } from "./tokens.js";
 export { countWords } from "./word-count.js";

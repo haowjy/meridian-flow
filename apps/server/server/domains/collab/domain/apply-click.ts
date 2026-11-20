@@ -14,6 +14,7 @@ import {
   type ReviewGroup,
   readBlocks,
   type SpanPatch,
+  UnknownChangeError,
   validateSpanPatches,
 } from "@meridian/agent-edit/diff";
 import type {
@@ -216,18 +217,13 @@ export function compileClick(
       });
       if (groupIds.length === 0) return { schema, groups: [] };
     } else groupIds = request.groupIds;
-    const known = new Set(projection.groups.map((group) => group.id));
-    if (
-      !groupIds.length ||
-      new Set(groupIds).size !== groupIds.length ||
-      groupIds.some((id) => !known.has(id))
-    )
+    if (!groupIds.length || new Set(groupIds).size !== groupIds.length)
       throw new ApplyClickMalformed();
     const chosen: Hunk[] = [];
     let before = optimistic;
     const groups = groupIds.map((groupId): CompiledApplyGroup => {
       const group = projection.groups.find((candidate) => candidate.id === groupId);
-      if (!group) throw new ApplyClickMalformed();
+      if (!group) throw new UnknownChangeError(`Unknown change ${groupId}`);
       chosen.push(...group.hunks.map((hunk) => projection.diff.hunks[hunk.index]));
       const patched = applySpanPatches(
         optimistic,
@@ -305,6 +301,7 @@ export function createApplyClickService(input: {
       if (
         cause instanceof CommandExistsError ||
         cause instanceof ApplyClickMalformed ||
+        cause instanceof UnknownChangeError ||
         cause instanceof ApplyClickUnsynced
       ) {
         const winner = await lookup();

@@ -45,7 +45,7 @@ View][view]; undo and revert are in [Agent Editing and Reversal][reversal].
   addressed by its unit; and for a container whose children differ (a table that gains a row),
   `insert` and `delete` of nodes, the children paired by `correspond`. A unit is one UTF-16 code unit of text, or one inline atom. The
   model's changes come from the word diff, over a find's windows or the whole block (`wordDiff`, the Yjs writer's own: it splits words with
-  `Intl.Segmenter`, so an unspaced Chinese clause is several words, and the word the model
+  the review tokenizer (`segmentText`), so each character of a script written without spaces (Chinese, Japanese, Thai) is a word, and the word the model
   changes is the unit that lands; an atom is one token, compared by type, and a changed attribute is an attribute set;
   formatting is not part of a token). A changed run that only gained characters (the old run is a subsequence of the new)
   writes just the insertions (`retainShared`), so the old characters keep their items and author; any other change writes the run whole. Every operation is made and Yjs merges it,

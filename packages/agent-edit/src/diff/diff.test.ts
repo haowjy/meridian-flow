@@ -4,6 +4,7 @@ The diff core's named risks: word salad in review and partial
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Word-level review hunk cleanup and edit categorization
+ * - Where the tokenizer splits words (`segmentText`)
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Mark, Node as PMNode } from "prosemirror-model";
@@ -12,7 +13,7 @@ import { applySpanPatches, composeHunks, type SpanPatch } from "./compose.js";
 import { blocksEqual } from "./equal.js";
 import { diffBlocks, type Hunk, hunkKind } from "./hunks.js";
 import { projectReview } from "./review.js";
-import type { Tok } from "./tokens.js";
+import { segmentText, type Tok } from "./tokens.js";
 
 const schema = buildDocumentSchema();
 const strong = schema.marks.strong.create();
@@ -45,6 +46,61 @@ const tokText = (toks: readonly Tok[]) =>
 const removed = (d: ReturnType<typeof diffBlocks>, h: Hunk) =>
   tokText(d.base.toks.slice(h.from, h.to));
 const inserted = (h: Hunk) => tokText(h.ins);
+
+// The browser and the server hash these segments into change ids: an engine-dependent split
+// (ICU's `Intl.Segmenter`) made Apply name changes the server could not find.
+it("splits words the same on every engine", () => {
+  const show = (text: string) =>
+    segmentText(text).map(({ segment, space, word }) =>
+      space ? "_" : word ? segment : `·${segment}`,
+    );
+  expect(show("aph.TabOne e.g. file.txt don't 3.14")).toEqual([
+    "aph",
+    "·.",
+    "TabOne",
+    "_",
+    "e",
+    "·.",
+    "g",
+    "·.",
+    "_",
+    "file",
+    "·.",
+    "txt",
+    "_",
+    "don't",
+    "_",
+    "3",
+    "·.",
+    "14",
+  ]);
+  expect(show("我们去了。カーです สวัสดี")).toEqual([
+    "我",
+    "们",
+    "去",
+    "了",
+    "·。",
+    "カ",
+    "ー",
+    "で",
+    "す",
+    "_",
+    "ส",
+    "วั",
+    "ส",
+    "ดี",
+  ]);
+  expect(show("hi 👨‍👩‍👧 👍🏽 🇯🇵!")).toEqual([
+    "hi",
+    "_",
+    "·👨‍👩‍👧",
+    "_",
+    "·👍🏽",
+    "_",
+    "·🇯🇵",
+    "·!",
+  ]);
+});
 
 describe("review hunks read as edits, not word salad", () => {
   const rows: Array<{

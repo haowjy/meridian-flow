@@ -152,7 +152,11 @@ allocates no clocks.
 
 A group's id is a hash of its tokens' keys, and the browser (the editor's schema) and the server
 (`buildDocumentSchema`) both compute it, so a key must not depend on the order a schema lists a node's
-attrs (`stableJson` in `tokens.ts`). When they differed the server refused the click as `malformed`.
+attrs (`stableJson` in `tokens.ts`), and words are split by a regex of our own (`segmentText`), never
+`Intl.Segmenter`, whose word breaks follow the engine's ICU: Node keeps `a.b` one word and Chrome splits it,
+which once gave a change two ids. What remains engine-dependent is the Unicode version behind `\p{…}`: a
+character newer than an engine's tables (a script added in Unicode 16, say) splits differently there. `composeGroups` throws `UnknownChangeError` on an id the projection has no
+group for, so a mismatch is a 400 on Apply and on Discard, never a silent no-op.
 
 A frozen Apply click holds O (the optimistic base seen) and P (O with its selected groups
 applied). `applyBase(schema, committed, O, P)` (`@meridian/agent-edit/content-merge`) returns P when O

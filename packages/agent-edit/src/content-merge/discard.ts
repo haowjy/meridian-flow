@@ -21,8 +21,8 @@ import {
 
 /**
  * `text` with the changes of Changes named by `ids` (all of them for "all") set back to `base`,
- * and the delta of what that took out. An id that names no pending change is ignored; null when
- * nothing was taken. With `seen` (the base and text the ids were read from) the ids name the
+ * and the delta of what that took out; null when nothing was taken. An id that names no change
+ * there throws `UnknownChangeError`. With `seen` (the base and text the ids were read from) the ids name the
  * changes there, and what setting them back did to that text is merged into `text`: a change the
  * writer has written over since stays, the rest goes.
  */
