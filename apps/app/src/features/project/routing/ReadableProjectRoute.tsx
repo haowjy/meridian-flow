@@ -27,7 +27,6 @@ import { originalBrowserSearch } from "@/router-search";
 import {
   useContextRemovalCoordinator,
   useDraftCommandOwner,
-  useOptionalDraftOnlyPresentations,
   useOptionalPresentedDocuments,
 } from "../context/account-feature-context";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
@@ -111,7 +110,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const editorScope = useWorkScopeState(projectId);
   const workId = editorScope.workId;
   const presented = useOptionalPresentedDocuments();
-  const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   useBlocker({
     shouldBlockFn: async () => (navigation ? !(await navigation.allowDeparture()) : false),
     enableBeforeUnload: () => navigation?.hasUnsavedChanges() ?? false,
@@ -374,31 +372,22 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const openContext = useMemo(
     () =>
       createEditorDocumentCommand({
-        projectId,
-        accountId: user.userId,
         read: () => ({ ...latest.current, addressDocumentId: addressDocumentIdRef.current }),
         presented: () => presented?.documents(projectId) ?? [],
-        isDraftOnly: (documentId) =>
-          draftOnlyDocuments?.isDraftOnly(projectId, documentId) ?? false,
       }),
-    [draftOnlyDocuments, presented, projectId, user.userId],
+    [presented, projectId],
   );
   // The route is bound to a document this source's tree lacks, and one decision says what to
   // show: where the document is now (followed), or its standing once found nowhere (the Trash
   // view for a deleted or purged one); a stale memory is dropped above (`abandoned`).
-  // A retained draft keeps painting what it paints, and so does the writer's own removal
-  // while main goes back; both end, so a hold always has an exit.
+  // The writer's own removal keeps painting while main goes back; it ends, so a hold always has
+  // an exit.
   const coordinator = useContextRemovalCoordinator();
   const holding = replayAddress?.kind === "held" ? boundDocumentId : null;
-  const draftRetains = useSyncExternalStore(
-    draftOnlyDocuments?.subscribe ?? noSubscription,
-    () => !!holding && (draftOnlyDocuments?.isDraftOnly(projectId, holding) ?? false),
-  );
-  const goingBack = useSyncExternalStore(
+  const retained = useSyncExternalStore(
     coordinator.subscribe,
     () => !!holding && coordinator.isGoingBack(projectId, holding),
   );
-  const retained = draftRetains || goingBack;
   const heldOutcome: "follow" | "trash" | "wait" | null = !holding
     ? null
     : movedTo
@@ -696,8 +685,4 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       </ChatNavigationProvider>
     </ProjectNavigationProvider>
   );
-}
-
-function noSubscription(): () => void {
-  return () => undefined;
 }

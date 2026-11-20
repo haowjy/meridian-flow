@@ -1,25 +1,13 @@
 import { t } from "@lingui/core/macro";
-import type {
-  ApplyClickAnswer,
-  ApplyClickResult,
-  RedoClick,
-  UnapplyClick,
-  UnapplyClickAnswer,
-} from "@meridian/contracts/branches";
 import { notifyFailure } from "@/components/app/failure-toast";
 import type { DocumentApplyEntry, DocumentHistory } from "@/core/editor/editor-history";
-import type { ApplyClickOutcome, ApplyCommandHandle } from "./apply-click-queue";
-import { itemLanded } from "./draft-notices";
 
-/**
- * The histories this tab holds for the Apply's documents, read now: each one's live session, and
- * the draft rooms it applied from.
- */
+/** The histories this tab holds for the Apply's documents, read now: each one's live session. */
 export type Histories = () => readonly (DocumentHistory | null)[];
 
 /**
- * What a press of Undo came to: `failed`, it never reached the server; else the Un-Apply the
- * server answered (`unapplyId`) and whether it took anything back.
+ * What a press of Undo came to: `failed`, it never reached the server; else the Undo the server
+ * answered (`unapplyId`) and whether it took anything back.
  */
 export type Undone = { kind: "failed" } | { kind: "answered"; unapplyId: string; took: boolean };
 
@@ -27,9 +15,8 @@ export type Undone = { kind: "failed" } | { kind: "answered"; unapplyId: string;
 export type Redone = { commandId: string };
 
 /**
- * The two requests every Undo and Redo of an Apply makes, by command id: Un-Apply the Apply in
- * force, and apply again what an Un-Apply took back. The server decides what that is
- * (`RedoClick`); the browser names only the Un-Apply.
+ * The two requests every Undo and Redo of an Apply makes, by command id: take back the Apply in
+ * force, and apply again what that took back.
  */
 export type ApplyPort = {
   unapply(applyId: string): Promise<Undone>;
@@ -39,12 +26,6 @@ export type ApplyPort = {
 
 /** Where an Apply's step is on the sidebar's Undo stack while it can be taken back. */
 export type Seat = { push(): void; drop(): void };
-
-/** A press took something back: its answer has a text group or a tree fact in it. */
-export const tookSomething = (answer: {
-  textUndone: readonly unknown[];
-  treeUndone: readonly unknown[];
-}): boolean => answer.textUndone.length > 0 || answer.treeUndone.length > 0;
 
 /**
  * One Apply in the history of every live session of its documents, and on the sidebar's stack. It
@@ -77,11 +58,6 @@ export class ApplyEntries {
 
   get id(): string {
     return this.commandId;
-  }
-
-  /** A band's review let go of its room: the server's port from now on. */
-  switchPort(port: ApplyPort): void {
-    this.port = port;
   }
 
   /** Shows it in each live history of its documents, hidden ones included. */
@@ -187,69 +163,4 @@ export class ApplyEntries {
     this.seat?.drop();
     this.over();
   }
-}
-
-/**
- * A band's Apply through its item queue while the review shows the draft's room, so the review
- * shows its Un-Apply and Redo at once. An Un-Apply the queue never sent (`unsent`: its id is
- * another command's) took nothing, as the server's `conflict` does: the press failed and the
- * Apply stands. One the queue cancelled because it never sent the Apply took it all.
- */
-export function queuePort(handle: ApplyCommandHandle, node: string): ApplyPort {
-  const landed = (outcome: ApplyClickOutcome) =>
-    outcome.status === "landed" || (outcome.status === "applied" && itemLanded(outcome, node));
-  return {
-    unapply: async () => {
-      const outcome = await handle.undo();
-      if (outcome.status === "unsent") return { kind: "failed" };
-      return {
-        kind: "answered",
-        unapplyId: outcome.status === "unapplied" ? outcome.commandId : "",
-        took: outcome.status === "cancelled" || tookSomething(outcome),
-      };
-    },
-    redo: async () => {
-      const outcome = await handle.redo();
-      if (outcome.status === "unsent") return "failed";
-      return landed(outcome) ? { commandId: handle.applyInForce() } : null;
-    },
-  };
-}
-
-/** An Apply taken back and applied again by the server's answers alone, from any surface. */
-export function serverPort(input: {
-  unapply(body: UnapplyClick): Promise<UnapplyClickAnswer>;
-  redo(body: RedoClick): Promise<ApplyClickAnswer>;
-  /** What an Un-Apply's answer changes besides the Apply, read before the press settles. */
-  unapplied?(answer: Extract<UnapplyClickAnswer, { status: "unapplied" }>): Promise<void>;
-  /** What a Redo's answer changes besides the Apply, and the nodes it landed. */
-  redone?(answer: ApplyClickResult): Promise<void>;
-}): ApplyPort {
-  return {
-    unapply: async (applyCommandId) => {
-      let answer: UnapplyClickAnswer;
-      const commandId = crypto.randomUUID();
-      try {
-        answer = await input.unapply({ commandId, applyCommandId });
-      } catch {
-        return { kind: "failed" };
-      }
-      if (answer.status !== "unapplied") return { kind: "failed" };
-      await input.unapplied?.(answer);
-      return { kind: "answered", unapplyId: answer.commandId, took: tookSomething(answer) };
-    },
-    redo: async (redoOf) => {
-      const commandId = crypto.randomUUID();
-      let answer: ApplyClickAnswer;
-      try {
-        answer = await input.redo({ commandId, redoOf });
-      } catch {
-        return "failed";
-      }
-      if (answer.status !== "applied") return "failed";
-      if (!answer.items.some((item) => item.text?.landed || item.tree?.landed)) return null;
-      await input.redone?.(answer);
-      return { commandId };
-    },
-  };
 }

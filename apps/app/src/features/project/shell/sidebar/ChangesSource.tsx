@@ -45,7 +45,7 @@ import {
   landingFaultSentence,
 } from "@/features/draft-review/tree-groups";
 import { hasApply, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
-import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
+import type { WorkBranchCommands } from "@/features/suggestion-review/usePressCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { useFocusSuccession } from "@/lib/focus-follow";

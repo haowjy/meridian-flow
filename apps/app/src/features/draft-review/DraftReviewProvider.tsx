@@ -11,10 +11,12 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { DocumentSession } from "@/core/editor/document-session";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
   type DraftReviewController,
@@ -22,15 +24,12 @@ import {
   useDraftReviewStateOwner,
 } from "./useDraftReviewController";
 import { useReviewRefresh } from "./useReviewRefresh";
-import { type ReviewRoomOwner, useReviewRoomOwner } from "./useReviewRoomOwner";
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
-  roomOwner: ReviewRoomOwner;
   files: ReviewFileTarget[];
   drafts: OwnerDraftListStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
-  reviewRoomNameForDraft: (documentId: string, itemKey: string) => string | null;
   activeEditorDocumentId: string | null;
   /** Returns the host's document to Live: its view, not the review, decides what paints. */
   showLive: () => void;
@@ -91,12 +90,18 @@ export function useDraftReviewScopeValue({
     stateOwner: scopeChanged ? { ...reviewState, state: EMPTY_DRAFT_REVIEW_STATE } : reviewState,
     marks,
   });
-  const roomOwner = useReviewRoomOwner({
-    projectId: effectiveProjectId,
-    ownerKey,
-    review: controller.inlineReview,
-    dispatch: reviewState.dispatch,
-  });
+  // A hidden draft (a Discard in flight) or a gone one leaves the review.
+  const commands = useDraftCommandOwner();
+  const reviewItemKey = controller.inlineReview?.itemKey ?? "";
+  const leaves = () => {
+    const command = commands.state(reviewItemKey);
+    return command.hidden || command.ended;
+  };
+  const leaving = useSyncExternalStore(commands.subscribe, leaves, leaves);
+  const { dispatch } = reviewState;
+  useLayoutEffect(() => {
+    if (reviewItemKey && leaving) dispatch({ type: "exitInline" });
+  }, [leaving, reviewItemKey, dispatch]);
 
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
@@ -138,21 +143,10 @@ export function useDraftReviewScopeValue({
 
   const fileForDocument = drafts.fileForDocument;
 
-  const reviewRoomNameForDraft = useCallback(
-    (documentId: string, itemKey: string) =>
-      controller.inlineReview?.documentId === documentId &&
-      controller.inlineReview.itemKey === itemKey
-        ? roomOwner.roomName
-        : null,
-    [controller.inlineReview, roomOwner.roomName],
-  );
-
   useReviewRefresh({
     projectId,
     ownerKey: ownerKey || null,
     review: controller.inlineReview,
-    runtime: roomOwner.runtime,
-    session: roomOwner.session,
     liveSession:
       !activeEditorProjection?.inReview &&
       activeEditorProjection?.documentId === controller.inlineReview?.documentId
@@ -163,11 +157,9 @@ export function useDraftReviewScopeValue({
   const value = useMemo<DraftReviewContextValue>(
     () => ({
       controller,
-      roomOwner,
       files,
       drafts,
       fileForDocument,
-      reviewRoomNameForDraft,
       activeEditorDocumentId,
       showLive,
       setActiveEditorDocumentId,
@@ -175,11 +167,9 @@ export function useDraftReviewScopeValue({
     [
       showLive,
       controller,
-      roomOwner,
       files,
       drafts,
       fileForDocument,
-      reviewRoomNameForDraft,
       activeEditorDocumentId,
     ],
   );

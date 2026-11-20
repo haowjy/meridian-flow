@@ -17,7 +17,6 @@ import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener
 import type { ProjectStandings } from "./project-standings";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
-const DraftOnlyContext = createContext<AccountFeatureLifetime["draftOnly"] | null>(null);
 const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
 
 const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
@@ -115,11 +114,9 @@ function AccountFeatureProviders({
                   <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
                     <LinkSettlementsProvider value={lifetime.linkSettlements}>
                       <DraftCommandsContext.Provider value={lifetime.draftCommands}>
-                        <DraftOnlyContext.Provider value={lifetime.draftOnly}>
-                          <PresentedContext.Provider value={lifetime.presented}>
-                            {children}
-                          </PresentedContext.Provider>
-                        </DraftOnlyContext.Provider>
+                        <PresentedContext.Provider value={lifetime.presented}>
+                          {children}
+                        </PresentedContext.Provider>
                       </DraftCommandsContext.Provider>
                     </LinkSettlementsProvider>
                   </ProjectDocumentLiveOpenerContext.Provider>
@@ -211,11 +208,6 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
 /** The draft command owner; null outside the authenticated shell. */
 export function useOptionalDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] | null {
   return useContext(DraftCommandsContext);
-}
-
-/** The draft-only documents mounted hosts present; null outside the authenticated shell. */
-export function useOptionalDraftOnlyPresentations(): AccountFeatureLifetime["draftOnly"] | null {
-  return useContext(DraftOnlyContext);
 }
 
 /** The documents this browser tab's hosts mount and present; null outside the authenticated shell. */

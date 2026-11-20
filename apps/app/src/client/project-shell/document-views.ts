@@ -144,8 +144,8 @@ export function setDocumentView(
 }
 
 /**
- * A Work pick: a view on one of the picked Work's drafts (`ownerKey`) stays on it, and so does a
- * document with no Live version (`keepsDraft`); every other view showing a draft returns to Live.
+ * A Work pick: a view on one of the picked Work's drafts (`ownerKey`) stays on it; every other
+ * view showing a draft returns to Live.
  * Returns whether a page live also has stayed on the Work's draft: the toggle then lands on Draft,
  * because the scope's drafts of such pages show only on Draft (`shownDraft`).
  */
@@ -153,7 +153,6 @@ export function pickWorkViews(
   accountId: string,
   projectId: string,
   ownerKey: string | null,
-  keepsDraft: (documentId: string) => boolean,
 ): boolean {
   const views = read(accountId, projectId);
   let changed = false;
@@ -161,9 +160,8 @@ export function pickWorkViews(
   const next: Record<string, DocumentView> = {};
   for (const [documentId, view] of Object.entries(views)) {
     const onWork = ownerKey !== null && view.pin?.ownerKey === ownerKey;
-    const draftOnly = keepsDraft(documentId);
-    onWorkDraft ||= onWork && !draftOnly;
-    if (view.version === "draft" && !onWork && !draftOnly) {
+    onWorkDraft ||= onWork;
+    if (view.version === "draft" && !onWork) {
       changed = true;
       if (!view.showChanges) next[documentId] = { version: "live", showChanges: false };
     } else next[documentId] = view;
@@ -181,7 +179,6 @@ export function endPin(
   accountId: string,
   projectId: string,
   pin: DraftPin,
-  successor: (documentId: string) => DraftPin | null = () => null,
 ): void {
   const views = read(accountId, projectId);
   const next: Record<string, DocumentView> = {};
@@ -189,10 +186,7 @@ export function endPin(
   for (const [documentId, view] of Object.entries(views)) {
     if (view.pin?.ownerKey === pin.ownerKey && view.pin.itemKey === pin.itemKey) {
       changed = true;
-      const moved = successor(documentId);
-      next[documentId] = moved
-        ? { version: "draft", pin: moved, showChanges: view.showChanges }
-        : { version: view.version, showChanges: view.showChanges };
+      next[documentId] = { version: view.version, showChanges: view.showChanges };
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
@@ -207,8 +201,7 @@ const verifyKey = (projectId: string, ownerKey: string, itemKey: string) =>
  * moment ago), so the pin goes only once a fresh read of the owner's list also lacks it: the
  * draft has ended (Applied, Discarded, or gone in another tab). A failed read clears nothing, and
  * neither does a read that lacks a draft this browser's create makes (`created`): the server may
- * not have heard of the create. Concurrent calls for one item share one read; the first one's
- * `successor` decides.
+ * not have heard of the create. Concurrent calls for one item share one read.
  */
 export function verifyPin(
   queryClient: QueryClient,
@@ -216,7 +209,6 @@ export function verifyPin(
   projectId: string,
   pin: DraftPin,
   created: (itemKey: string) => boolean,
-  successor?: (documentId: string) => DraftPin | null,
 ): void {
   const key = verifyKey(projectId, pin.ownerKey, pin.itemKey);
   if (verifying.has(key)) return;
@@ -231,7 +223,7 @@ export function verifyPin(
       )
     )
       return;
-    endPin(accountId, projectId, pin, successor);
+    endPin(accountId, projectId, pin);
   });
   verifying.set(key, check);
   void check.finally(() => verifying.delete(key));

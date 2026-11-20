@@ -43,9 +43,6 @@ import { DIRECT_WRITE_ORIGIN, endUndoStep } from "../../editor-history";
 import { createBarSlotElement } from "../inline-review/removal-widget";
 import "./suggestion-mode.css";
 
-/** The marks always exist (the schema is shared); only the behaviour is behind the flag. */
-export const suggestionModeEnabled = import.meta.env.VITE_FLOW_SUGGESTIONS === "1";
-
 /**
  * What the editor shows: a view, who writes this tab's suggestions in it, and its review's paint:
  * the change in focus, and whether changes are marked at all (off: the view reads as if applied).
@@ -285,7 +282,7 @@ export const SuggestionModeExtension = Extension.create({
 
   addKeyboardShortcuts() {
     return {
-      "Mod-Alt-m": () => suggestionModeEnabled && this.editor.commands.addComment(),
+      "Mod-Alt-m": () => this.editor.commands.addComment(),
     };
   },
 
@@ -305,7 +302,6 @@ export const SuggestionModeExtension = Extension.create({
   },
 
   addProseMirrorPlugins() {
-    if (!suggestionModeEnabled) return [];
     return [
       new Plugin<ModeState>({
         key: suggestionModeKey,

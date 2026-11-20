@@ -1,12 +1,11 @@
 /**
- * Open review rows are the room runtime's group projection, without command or focus ownership,
- * after the item's pending move (its tree line) when it has one. A delete replaces the text rows:
+ * Open review rows are the Work's suggestions in the host's editor, without command or focus
+ * ownership, after the item's pending move (its tree line) when it has one. A delete replaces the text rows:
  * its banner and single document row are the review. Focus and stepping walk the visible text
  * changes (`changes`) alone; a tree line has no place in the text.
  */
 import { useContext, useSyncExternalStore } from "react";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { type HostEditor, HostEditorContext } from "@/features/suggestion-review/host-editor";
 import { useSuggestionChanges } from "@/features/suggestion-review/useSuggestionChanges";
 import type { DraftChangesData } from "./draft-changes";
@@ -15,17 +14,14 @@ import type { DraftRef } from "./review-command-types";
 import { itemChange, type ReviewChange } from "./review-model";
 import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
-import { useRoomReview } from "./useRoomReview";
 
 type ReviewRead = {
-  status: "idle" | "loading" | "error" | "ready" | "gone";
+  status: "idle" | "loading" | "ready";
   changes: readonly ReviewChange[];
-  retry?: () => void;
 };
 
 /**
- * In suggestion mode the open review's changes are the Work's suggestions in the host's editor.
- * `host` serves the one caller above the host's boundary (its address admission).
+ * The open review's changes are the Work's suggestions in the host's editor. `host` serves the one caller above the host's boundary (its address admission).
  */
 function useSuggestionRead(draft: DraftRef | null, host: HostEditor | null): ReviewRead {
   const fromBoundary = useContext(HostEditorContext);
@@ -45,8 +41,6 @@ function useSuggestionRead(draft: DraftRef | null, host: HostEditor | null): Rev
 const noSubscription = () => () => undefined;
 const noEditor = () => null;
 
-const useReviewRead: (draft: DraftRef | null, host: HostEditor | null) => ReviewRead =
-  suggestionModeEnabled ? useSuggestionRead : useRoomReview;
 export function useOpenReviewChanges(
   controller: Pick<DraftReviewController, "projectId" | "ownerKey" | "inlineReview">,
   options?: { enabled?: boolean; host?: HostEditor | null },
@@ -64,7 +58,7 @@ export function useOpenReviewChanges(
   const listed = useOwnerDraftList(controller.projectId, controller.ownerKey, Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
   const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
-  const read = useReviewRead(draft, options?.host ?? null);
+  const read = useSuggestionRead(draft, options?.host ?? null);
   const line = item && !item.isNew ? treeLineOf(item) : null;
   const changes = line?.kind === "delete" ? [] : read.changes;
   const items = (item && line ? [treeChange(item, line), ...changes] : changes).map((change) => ({
@@ -75,7 +69,6 @@ export function useOpenReviewChanges(
     documentId: inline?.documentId ?? null,
     itemKey: inline?.itemKey ?? null,
     changes,
-    retry: read.retry,
     items,
     // A draft gone while on screen has nothing to act on.
     status: command.ended

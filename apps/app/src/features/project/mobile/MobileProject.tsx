@@ -9,7 +9,7 @@ import { useDismissalFocus } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
-import { WorkBranchCommandsBoundary } from "@/features/draft-review/useWorkBranchCommands";
+import { WorkBranchCommandsBoundary } from "@/features/suggestion-review/usePressCommands";
 import { ChatSurface } from "../chat/ChatSurface";
 import { RecentChatsLanding } from "../chat/RecentChatsLanding";
 import { useAccountId } from "../context/account-feature-context";

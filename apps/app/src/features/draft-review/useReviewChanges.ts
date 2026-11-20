@@ -11,7 +11,6 @@
  * only the open review's focus, stepping and command behavior.
  */
 import { useCallback, useMemo } from "react";
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useHostEditor } from "@/features/suggestion-review/host-editor";
 
 import type { DraftChangesView } from "./draft-changes";
@@ -89,7 +88,7 @@ export function useReviewChanges(
       if (!review) return;
       settleFocus(change, instant);
       // A suggestion is resolved in the tab, as one edit of the writer's: Ctrl+Z takes it back.
-      if (suggestionModeEnabled && !change.tree && !change.whole) {
+      if (!change.tree && !change.whole) {
         if (mode === "apply") editor?.commands.acceptSuggestions({ id: change.id });
         else editor?.commands.rejectSuggestions({ id: change.id });
         return;

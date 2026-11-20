@@ -1,9 +1,7 @@
 /**
- * Suggestion mode's commands for a Work's review surfaces (the Changes list, a chat's strip, a
- * document's band): every Apply and Discard of a document, a folder, a selection or the whole
- * Work is one press (`press-commands.ts`), run by the server over both halves, with one Undo.
- * It answers in the shape the draft commands do (`WorkBranchCommands`), so those surfaces don't
- * know which one runs.
+ * The commands of a Work's review surfaces (the Changes list, a chat's strip, a document's
+ * band): every Apply and Discard of a document, a folder, a selection or the whole Work is one
+ * press (`press-commands.ts`), run by the server over both halves, with one Undo.
  *
  * The rows a press takes leave the list as it is sent; a press that fails puts them back with a
  * pill. Its notice is the draft notice: a Discard's rows struck with Undo, an Apply's rows with
@@ -17,7 +15,7 @@ import type {
   ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
 import { submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -33,12 +31,8 @@ import { ApplyEntries, type ApplyPort } from "@/features/draft-review/apply-hist
 import { type CommandOutcome, folderKey } from "@/features/draft-review/draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
 import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
+import type { Work } from "@meridian/contracts/works";
 import type { ChangeTarget } from "@/features/draft-review/review-model";
-import type {
-  CommandStart,
-  WorkBranchCommands,
-  WorkBranchCommandsInput,
-} from "@/features/draft-review/useWorkBranchCommands";
 import {
   useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
@@ -50,13 +44,24 @@ type Pressed = { commandId: string; result: PressResult };
 type PressItem = { node: string; half?: "tree" };
 const whole = (nodes: readonly string[]): PressItem[] => nodes.map((node) => ({ node }));
 
+export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
+export type WorkBranchCommands = ReturnType<typeof usePressCommands>;
+
 export function usePressCommands({
   projectId,
   work,
   ownerKey,
   threadId = null,
   surface,
-}: WorkBranchCommandsInput): WorkBranchCommands {
+}: {
+  projectId: string;
+  work: Work | null;
+  /** Whose drafts the commands act on (`work:<id>` or `lineage:<root>`); "" acts on none. */
+  ownerKey: string;
+  threadId?: string | null;
+  /** Where this surface's notices show: the Changes list, a chat's strip, or a document's band. */
+  surface: NoticeSurface["kind"];
+}) {
   const owner = useDraftCommandOwner();
   const driver = useCommandDriver();
   const registry = useLiveDocumentSessionRegistry();
@@ -366,4 +371,13 @@ export function usePressCommands({
     threadId,
     surface,
   ]);
+}
+
+const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);
+/** One surface's commands for the surfaces under it (`useBoundWorkBranchCommands`). */
+export const WorkBranchCommandsBoundary = WorkBranchCommandsContext.Provider;
+export function useBoundWorkBranchCommands(): WorkBranchCommands {
+  const commands = useContext(WorkBranchCommandsContext);
+  if (!commands) throw new Error("Work commands require a WorkBranchCommandsBoundary");
+  return commands;
 }

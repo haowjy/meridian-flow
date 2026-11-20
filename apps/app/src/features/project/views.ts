@@ -50,7 +50,6 @@ import type { OpenDocument } from "@/client/stores";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { openDocumentFromFile } from "./context/open-document-from-file";
 import { type AddressedDocument, resolveRouteDocumentOwner } from "./context/route-document-owner";
-import { useIsDraftOnly } from "./context/use-is-draft-only";
 import type { ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalChatOnScreen } from "./side/SideView";
@@ -111,11 +110,10 @@ export function shownDraft(input: {
   /** The scope's draft of the document, from its list. */
   scopeItemKey: string | undefined;
   choice: TreeVersionChoice;
-  draftOnly: boolean;
 }): DraftPin | undefined {
   const { pin, scopeOwnerKey, scopeItemKey } = input;
   if (pin && pin.ownerKey !== scopeOwnerKey) return pin;
-  if (!scopeOwnerKey || (input.choice !== "draft" && !input.draftOnly)) return undefined;
+  if (!scopeOwnerKey || input.choice !== "draft") return undefined;
   if (!scopeItemKey) return pin;
   return {
     ownerKey: scopeOwnerKey,
@@ -136,7 +134,6 @@ export function useShownDraft(
   const scopeOwnerKey = useScopeDraftOwner(projectId, chatThreadId).ownerKey || null;
   const scopeRows = useOwnerDraftRows(projectId, scopeOwnerKey).rows;
   const choice = useTreeVersionChoice(accountId, projectId);
-  const isDraftOnly = useIsDraftOnly(projectId);
   return useCallback(
     (documentId) =>
       shownDraft({
@@ -144,9 +141,8 @@ export function useShownDraft(
         scopeOwnerKey,
         scopeItemKey: scopeRows.find((row) => row.documentId === documentId)?.itemKey,
         choice,
-        draftOnly: isDraftOnly(documentId),
       }),
-    [accountId, projectId, scopeOwnerKey, scopeRows, choice, isDraftOnly],
+    [accountId, projectId, scopeOwnerKey, scopeRows, choice],
   );
 }
 
@@ -157,8 +153,6 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const scopeOwnerKey = useScopeDraftOwner(projectId, useOptionalChatOnScreen()).ownerKey || null;
   const scopeRows = useOwnerDraftRows(projectId, scopeOwnerKey);
   const choice = useTreeVersionChoice(accountId, projectId);
-  const isDraftOnly = useIsDraftOnly(projectId);
-  const draftOnly = documentId ? isDraftOnly(documentId) : false;
   const scopeRow = documentId
     ? scopeRows.rows.find((row) => row.documentId === documentId)
     : undefined;
@@ -167,7 +161,6 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     scopeOwnerKey,
     scopeItemKey: scopeRow?.itemKey,
     choice,
-    draftOnly,
   });
   // The draft this page painted, and what the writer had chosen then: a Discard made anywhere
   // else leaves its list without the draft, and the page stays on it, in Trash, until the
@@ -181,74 +174,40 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const choseKey = JSON.stringify([stored.pin?.ownerKey, stored.pin?.itemKey, choice]);
   const heldItem =
     painted?.documentId === documentId && painted.chose === choseKey ? painted.draft : null;
-  // What became of it here: `ended` once it is gone or hidden, `asking` while the server is asked.
-  const fateOf = () => {
-    if (!heldItem) return "ended";
-    const command = commands.state(heldItem.itemKey);
-    if (command.hidden || command.ended) return "ended";
-    return command.checkingClose ? "asking" : "open";
-  };
+  // What became of it here: `ended` once it is gone or a press holds it.
+  const fateOf = () =>
+    !heldItem || commands.state(heldItem.itemKey).hidden ? "ended" : "open";
   const fate = useSyncExternalStore(commands.subscribe, fateOf, fateOf);
-  // The server's answer for a painted draft that left its list: still open (an Apply took its
-  // changes, so the page goes on), or gone.
-  const [answered, setAnswered] = useState<string | null>(null);
   const held = heldItem && fate !== "ended" ? heldItem : null;
   const pin = chosen ?? held ?? undefined;
   const foreign = pin !== undefined && pin.ownerKey !== scopeOwnerKey;
   // A page the scope's version doesn't govern shows Live, and holds no ended review open.
   const view = useMemo<DocumentView>(
-    () => (foreign || choice === "draft" || draftOnly ? stored : { ...stored, version: "live" }),
-    [stored, foreign, choice, draftOnly],
+    () => (foreign || choice === "draft" ? stored : { ...stored, version: "live" }),
+    [stored, foreign, choice],
   );
   const pinRows = useOwnerDraftRows(projectId, foreign ? pin.ownerKey : null);
   const pinList = foreign ? pinRows : scopeRows;
   const pinListed = pin ? pinList.rows.some((row) => row.itemKey === pin.itemKey) : false;
-  // The painted draft left its list: while its end is read it stays painted; any other end (an
-  // Apply took its changes) lets the page go on.
+  // The painted draft left its list (an Apply or a Discard took it): the page goes on.
   const unlisted =
     held !== null && pin?.itemKey === held.itemKey && pinList.status === "ready" && !pinListed
-      ? answered === held.itemKey
-        ? ("gone" as const)
-        : ("asking" as const)
+      ? ("gone" as const)
       : null;
-  const queryClient = useQueryClient();
-  const askKey = unlisted === "asking" && held && documentId ? held.itemKey : null;
-  useEffect(() => {
-    if (!askKey || !held || !documentId || fate !== "open") return;
-    const ref = { projectId, ownerKey: held.ownerKey, documentId, itemKey: held.itemKey };
-    let current = true;
-    void commands.askEnd(ref).then(() => {
-      if (current && !commands.state(ref.itemKey).ended) setAnswered(ref.itemKey);
-    });
-    return () => {
-      current = false;
-    };
-  }, [askKey, fate]);
   const pinMissing =
     pin !== undefined && pinList.status === "ready" && !pinListed && unlisted === null;
 
   const createsDraft = useCreatesDraft(projectId);
   const missingKey = pinMissing ? JSON.stringify([pin.ownerKey, pin.itemKey]) : null;
-  // A document live lacks shows "removed" only when the scope has no draft of it either: its view
-  // moves to the scope's draft when the pinned one ends.
-  const successor =
-    documentId && scopeOwnerKey && scopeRow && draftOnly
-      ? { documentId, pin: { ownerKey: scopeOwnerKey, itemKey: scopeRow.itemKey } }
-      : null;
-  const latestSuccessor = useRef(successor);
-  latestSuccessor.current = successor;
   useEffect(() => {
     if (!pin || !missingKey) return;
-    verifyPin(queryClient, accountId, projectId, pin, createsDraft, (id) => {
-      const next = latestSuccessor.current;
-      return next?.documentId === id && next.pin.itemKey !== pin.itemKey ? next.pin : null;
-    });
+    verifyPin(queryClient, accountId, projectId, pin, createsDraft);
   }, [missingKey, queryClient, accountId, projectId, createsDraft]);
 
   const pinOwner = pin?.ownerKey;
   const pinItem = pin?.itemKey;
   const pinChange = pin?.changeId;
-  const paints = pinListed || unlisted === "asking";
+  const paints = pinListed;
   useEffect(() => {
     if (documentId && pinOwner && pinItem && paints)
       setPainted((prior) =>
@@ -270,7 +229,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
       scopeOwnerKey && scopeRow ? { ownerKey: scopeOwnerKey, itemKey: scopeRow.itemKey } : null;
     const base = { scopeOwnerKey, scopeDraft, view };
     if (pinOwner && pinItem && unlisted !== "gone") {
-      if (pinListed || unlisted === "asking")
+      if (pinListed)
         return {
           ...base,
           showing: "draft",

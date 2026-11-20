@@ -14,12 +14,12 @@ import {
   inlineReviewFromState,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-model";
+import type { CommandOutcome } from "./draft-command-owner";
 import {
-  type BranchCommandOutcome,
   type CommandStart,
-  useWorkBranchCommands,
+  usePressCommands,
   type WorkBranchCommands,
-} from "./useWorkBranchCommands";
+} from "@/features/suggestion-review/usePressCommands";
 
 export type { DraftReviewSelection, InlineDraftReview };
 
@@ -100,8 +100,8 @@ export type DraftReviewController = {
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
   startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => CommandStart;
-  apply: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
-  discard: (documentId: string, itemKey: string) => Promise<BranchCommandOutcome>;
+  apply: (documentId: string, itemKey: string) => Promise<CommandOutcome>;
+  discard: (documentId: string, itemKey: string) => Promise<CommandOutcome>;
 };
 
 export function useDraftReviewController({
@@ -126,18 +126,12 @@ export function useDraftReviewController({
   const { state, dispatch } = stateOwner;
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
-  const commands = useWorkBranchCommands({
+  const commands = usePressCommands({
     projectId,
     work,
     ownerKey,
     threadId,
     surface: "band",
-    reviewEditor: (draft) => {
-      const runtime = inlineRuntimeRef.current;
-      return runtime?.documentId === draft.documentId && runtime.itemKey === draft.itemKey
-        ? runtime.editor
-        : null;
-    },
   });
   stateRef.current = state;
 

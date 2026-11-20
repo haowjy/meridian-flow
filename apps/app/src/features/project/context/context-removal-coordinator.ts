@@ -48,34 +48,6 @@ export type ClosedTabsPort = {
   close(projectId: string, documentIds: readonly string[]): void;
 };
 
-/** The draft-only documents hosts present (`DraftOnlyPresentations`). */
-export type DraftOnlyPort = {
-  isDraftOnly(projectId: string, documentId: string): boolean;
-  holdRemovedLive(
-    projectId: string,
-    documentId: string,
-    drafts: readonly {
-      projectId: string;
-      documentId: string;
-      ownerKey: string;
-      itemKey: string;
-      contextLocation: { scheme: ProjectContextTreeScheme; path: string };
-    }[],
-  ): void;
-  promote(projectId: string, documentId: string): void;
-};
-
-/**
- * The drafts of a document some surface holds open and its view shows: only those keep it when
- * live deletes it. A draft held open but not shown paints nothing.
- */
-export type BoundDraftsPort = {
-  boundDrafts(
-    projectId: string,
-    documentId: string,
-  ): readonly { ownerKey: string; itemKey: string }[];
-};
-
 /**
  * What the list says changed for a document in a project: it left the live tree (deleted, purged
  * or never there), or it is in the tree again (a restore).
@@ -96,8 +68,6 @@ export class ContextRemovalCoordinator {
   private readonly routePorts = new Map<string, { token: symbol; port: ContextRemovalRoutePort }>();
   private readonly presented: PresentedPort;
   private readonly copies: Pick<LiveDocumentSessionRegistry, "clearLocalCopy"> | null;
-  private readonly drafts: BoundDraftsPort | null;
-  private readonly draftOnly: DraftOnlyPort | null;
   private readonly tabs: ClosedTabsPort | null;
   /** The documents the list has taken out of the live tree and has not given back, by `projectId/documentId`. */
   private readonly gone = new Set<string>();
@@ -111,15 +81,11 @@ export class ContextRemovalCoordinator {
     dependencies: {
       presented?: PresentedPort;
       copies?: Pick<LiveDocumentSessionRegistry, "clearLocalCopy">;
-      drafts?: BoundDraftsPort;
-      draftOnly?: DraftOnlyPort;
       tabs?: ClosedTabsPort;
     } = {},
   ) {
     this.presented = dependencies.presented ?? new PresentedDocuments();
     this.copies = dependencies.copies ?? null;
-    this.drafts = dependencies.drafts ?? null;
-    this.draftOnly = dependencies.draftOnly ?? null;
     this.tabs = dependencies.tabs ?? null;
   }
 
@@ -127,38 +93,6 @@ export class ContextRemovalCoordinator {
   private forget(projectId: string, documentIds: readonly string[]): void {
     this.presented.forget(projectId, documentIds);
     this.tabs?.close(projectId, documentIds);
-  }
-
-  /**
-   * The documents among `documentIds` a view keeps when live loses them: a host presents the
-   * document draft-only, or a draft held open still has it: a live delete must not strand the
-   * draft. The draft paints there; a held live document stays draft-only while a held draft has
-   * it, until it ends or live has the document again. The hold's location is the view's.
-   */
-  private heldByDrafts(projectId: string, documentIds: readonly string[]): Set<string> {
-    const held = new Set<string>();
-    for (const documentId of documentIds) {
-      if (this.draftOnly?.isDraftOnly(projectId, documentId)) {
-        held.add(documentId);
-        continue;
-      }
-      const drafts = this.drafts?.boundDrafts(projectId, documentId) ?? [];
-      if (!drafts.length) continue;
-      held.add(documentId);
-      const tab = this.presented
-        .documents(projectId)
-        .find((candidate) => candidate.documentId === documentId);
-      const contextLocation =
-        tab?.kind === "tracked" ? { scheme: tab.scheme, path: tab.path } : null;
-      this.draftOnly?.holdRemovedLive(
-        projectId,
-        documentId,
-        contextLocation
-          ? drafts.map((draft) => ({ ...draft, projectId, documentId, contextLocation }))
-          : [],
-      );
-    }
-    return held;
   }
 
   /** A reversible provider lifetime: cleanup revokes now; replay may reacquire before disposal. */
@@ -232,16 +166,13 @@ export class ContextRemovalCoordinator {
       const removed = mine.filter(
         (command) => command.kind === "gone" && !this.gone.has(key(command)),
       );
-      const restored = mine.filter(
-        (command) => command.kind === "back" && this.gone.delete(key(command)),
-      );
+      for (const command of mine)
+        if (command.kind === "back") this.gone.delete(key(command));
       if (removed.length > 0)
         this.applyGone(
           projectId,
           removed.map((command) => command.documentId),
         );
-      // The documents are in the tree again: their holds end.
-      for (const command of restored) this.draftOnly?.promote(projectId, command.documentId);
     }
   }
 
@@ -256,9 +187,7 @@ export class ContextRemovalCoordinator {
 
   private applyGone(projectId: string, documentIds: readonly string[]): void {
     for (const documentId of documentIds) this.gone.add(`${projectId}/${documentId}`);
-    const held = this.heldByDrafts(projectId, documentIds);
-    const leaving = documentIds.filter((id) => !held.has(id));
-    this.forget(projectId, leaving);
+    this.forget(projectId, documentIds);
   }
 
   /**
@@ -335,17 +264,6 @@ export class ContextRemovalCoordinator {
       })
       .then((landing) => landed?.(landing));
     return shown;
-  }
-
-  /**
-   * A draft-created document a view presents lost its draft (a Discard). Runs when Discard starts
-   * (optimistic) and again on server confirmation or a remote discard, where it finds nothing left
-   * to remove. A refused Discard does not come back here: the error lives on the draft. A
-   * document the writer's own removal is still sending main back from is left to that go-back.
-   */
-  discardDraft(projectId: string, documentId: string): void {
-    if (this.unavailable() || this.goingBack.has(`${projectId}/${documentId}`)) return;
-    this.forget(projectId, [documentId]);
   }
 
   dispose(): void {

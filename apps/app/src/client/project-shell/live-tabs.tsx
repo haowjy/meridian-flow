@@ -3,7 +3,6 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo } from 
 import { ownerOfSource, type ProjectTrees, useProjectTrees } from "@/client/query/useProjectTrees";
 import { useAccountId } from "@/features/project/context/account-feature-context";
 import { serverDocumentFromFile } from "@/features/project/context/open-document-from-file";
-import { useIsDraftOnly } from "@/features/project/context/use-is-draft-only";
 import type { OpenDocument } from "../stores";
 import { type Lane, type MainTabs, mainTabKey, useMainTabs } from "./main-tabs";
 
@@ -57,11 +56,9 @@ function useProjectLiveTabs(projectId: string): LiveTabs {
   const lanes = useMainTabs(useAccountId(), projectId);
   const recorded = lanes.document.tabs;
   const trees = useProjectTrees(projectId);
-  const isDraftOnly = useIsDraftOnly(projectId);
   const project = useCallback(
-    (document: OpenDocument) =>
-      (isDraftOnly(document.documentId) ? null : currentTab(trees, document)) ?? document,
-    [trees, isDraftOnly],
+    (document: OpenDocument) => currentTab(trees, document) ?? document,
+    [trees],
   );
   const tabs = useMemo(
     () =>
@@ -71,8 +68,7 @@ function useProjectLiveTabs(projectId: string): LiveTabs {
         // draft settlement owns it.
         if (
           document.kind === "new" ||
-          !PROJECT_SCOPED_SCHEMES.has(document.scheme) ||
-          isDraftOnly(document.documentId)
+          !PROJECT_SCOPED_SCHEMES.has(document.scheme)
         )
           return [tab];
         const current = currentTab(trees, document);
@@ -80,7 +76,7 @@ function useProjectLiveTabs(projectId: string): LiveTabs {
         // Not in the list: gone once the list has synced, not before.
         return trees.isComplete ? [] : [tab];
       }),
-    [recorded, trees, isDraftOnly],
+    [recorded, trees],
   );
   const selected = lanes.document.selected;
   const live = useMemo<Lane<"document">>(

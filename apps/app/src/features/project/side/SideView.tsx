@@ -37,7 +37,6 @@ import { useAccountId, useShownDocuments } from "../context/account-feature-cont
 import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
 import { useDescribeProjectDocument } from "../context/open-project-document";
 import { recentOpening } from "../context/recent-opening";
-import { useIsDraftOnly } from "../context/use-is-draft-only";
 import { useRecordOpenedDocument } from "../context/use-record-opened-document";
 import { type PanePlace, useOptionalPanePlace } from "../pane-place";
 import { useChatNavigation } from "../routing/chat-navigation";
@@ -127,7 +126,6 @@ function useDescriptions(projectId: string): Descriptions {
   // is restored opens again.
   const projectList = useTreeList({ kind: "project", projectId });
   const accountList = useTreeList({ kind: "account", userId: accountId });
-  const isDraftOnly = useIsDraftOnly(projectId);
   const stateOf = (documentId: string): NodeState => {
     for (const list of [projectList, accountList]) {
       const node = list.session?.replay().nodes.get(documentId);
@@ -205,7 +203,7 @@ function useDescriptions(projectId: string): Descriptions {
         // A document deleted or removed while it sits here no longer opens: the side is empty.
         const opens = (tab: OpenDocument | null): Described => {
           if (!tab) return { status: "ready", document: null };
-          const gone = stateOf(tab.documentId) === "gone" && !isDraftOnly(tab.documentId);
+          const gone = stateOf(tab.documentId) === "gone";
           return { status: "ready", document: gone ? null : tab };
         };
         if (mounted) return opens(mounted);
@@ -231,7 +229,6 @@ function useDescriptions(projectId: string): Descriptions {
       store,
       projectList.snapshot?.version,
       accountList.snapshot?.version,
-      isDraftOnly,
     ],
   );
 }
@@ -355,7 +352,7 @@ function useRecordBesideDocument(projectId: string, beside: OpenDocument | null)
       return;
     }
     if (recorded.current === beside.documentId) return;
-    const opening = recentOpening(projectId, beside, new Date().toISOString(), false);
+    const opening = recentOpening(projectId, beside, new Date().toISOString());
     if (!opening) return;
     recorded.current = beside.documentId;
     record(opening);

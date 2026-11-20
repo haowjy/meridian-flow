@@ -7,7 +7,7 @@ import type { DraftRef } from "./review-command-types";
 import { listedItemChanges, targetOfChanges } from "./review-model";
 import { hasTreeLine, treeChange, treeLineOf } from "./tree-line";
 import { useRoomReview } from "./useRoomReview";
-import type { WorkBranchCommands } from "./useWorkBranchCommands";
+import type { WorkBranchCommands } from "@/features/suggestion-review/usePressCommands";
 export function useDraftView(
   draft: DraftRef,
   {

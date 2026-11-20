@@ -1,11 +1,7 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 
 import { t } from "@lingui/core/macro";
-import { createdDraftId } from "@meridian/contracts";
-import { type AccountId, draftRoomName } from "@meridian/contracts/protocol";
-import type { DocumentId } from "@meridian/contracts/runtime";
-import { getDraftMetadata, listOpenDrafts } from "@/client/api/branches-api";
-import { readDocumentView } from "@/client/project-shell/document-views";
+import type { AccountId } from "@meridian/contracts/protocol";
 import { dropMainTabDocuments } from "@/client/project-shell/main-tabs";
 import { browserRecord } from "@/client/storage/browser-record";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -18,7 +14,6 @@ import type { ConnectivityHintsPort } from "@/core/transport/connectivity-hints"
 import { installTreeListDebugHook } from "@/core/tree-list/debug-hook";
 import { TreeListRegistry } from "@/core/tree-list/tree-list-registry";
 import { DraftCommandOwner } from "@/features/draft-review/draft-command-owner";
-import { DraftOnlyPresentations } from "@/features/draft-review/draft-only-presentations";
 import { createLinkSettlements } from "@/features/links/link-settlements";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
@@ -32,16 +27,6 @@ export class SignOutIncomplete extends Error {
   }
 }
 
-/** Runs `run` once the page is idle; the returned function cancels it. */
-function afterFirstPaint(run: () => void): () => void {
-  if ("requestIdleCallback" in window) {
-    const handle = window.requestIdleCallback(run);
-    return () => window.cancelIdleCallback(handle);
-  }
-  const handle = setTimeout(run, 2_000);
-  return () => clearTimeout(handle);
-}
-
 const UNSENT_EDITS_WAIT_MS = 8_000;
 /** One account's tabs hear that another is signing out. */
 const SIGN_OUT_CHANNEL = "meridian:sign-out:v1";
@@ -50,8 +35,6 @@ export class AccountFeatureLifetime {
   readonly runtime;
   readonly registry;
   readonly draftCommands;
-  /** The draft-only documents mounted hosts present; settled by `DraftOnlySettlement`. */
-  readonly draftOnly = new DraftOnlyPresentations();
   /** What this browser tab's hosts mount: main's document and the side's (presented), the kept one. */
   readonly presented = new PresentedDocuments((projectId, tab) =>
     this.removal.reconcileInstalledTab(projectId, tab),
@@ -67,7 +50,6 @@ export class AccountFeatureLifetime {
   readonly linkSettlements = createLinkSettlements();
   private readonly featureLease;
   private readonly signOutChannel: BroadcastChannel | null;
-  private cancelDraftCopySweep: () => void = () => {};
   private closeAttempt: Promise<void> | null = null;
   private featureOwnersSettled = false;
   state: "open" | "closing" | "closed" = "open";
@@ -86,43 +68,14 @@ export class AccountFeatureLifetime {
           title: t`Couldn't save`,
           detail: records,
         }),
-      {
-        endCreatedDraftRoom: (documentId) =>
-          void this.runtime.registry
-            .closeDraftRoom(draftRoomName(createdDraftId(documentId as DocumentId)))
-            .catch(reportError),
-      },
     );
     this.stopTreeListDebugHook = installTreeListDebugHook(accountId, this.treeLists);
     this.registry = this.runtime.registry;
     this.standings = new ProjectStandings(this.treeLists, accountId);
-    this.draftCommands = new DraftCommandOwner(this.registry, {
-      // The server's state now: it still holds the draft, or the draft is gone.
-      resolveEnd: async (ref, draftId) => {
-        const answer = await getDraftMetadata(ref);
-        if (answer.status === "active" && answer.draftId === draftId) return "open";
-        return this.standings.standing(ref.projectId, ref.documentId).kind === "waiting"
-          ? null
-          : "gone";
-      },
-      closeCreated: (ref) => {
-        this.removal.discardDraft(ref.projectId, ref.documentId);
-      },
-    });
+    this.draftCommands = new DraftCommandOwner(this.registry);
     this.removal = new ContextRemovalCoordinator({
       presented: this.presented,
       copies: this.registry,
-      drafts: {
-        // A Discarded draft's review can still hold its room, and a view can leave a draft for
-        // Live: neither shows the draft, so neither keeps a document live deleted.
-        boundDrafts: (projectId, documentId) => {
-          const pin = readDocumentView(accountId, projectId, documentId).pin;
-          return this.draftCommands
-            .boundDrafts(projectId, documentId)
-            .filter((draft) => draft.ownerKey === pin?.ownerKey && draft.itemKey === pin.itemKey);
-        },
-      },
-      draftOnly: this.draftOnly,
       tabs: {
         close: (projectId, documentIds) => dropMainTabDocuments(accountId, projectId, documentIds),
       },
@@ -131,11 +84,6 @@ export class AccountFeatureLifetime {
     this.registry.observeDroppedTyping(() =>
       notifyFailure({ key: "unsent-typing", title: t`Couldn't save` }),
     );
-    // Typing a draft never took, left in a copy no draft owner will close or open: found once, after load.
-    if (typeof window !== "undefined")
-      this.cancelDraftCopySweep = afterFirstPaint(() =>
-        this.registry.sweepDraftCopies(listOpenDrafts).catch(reportError),
-      );
     dropRetiredTabSession(accountId);
     // The browser last held someone else's documents: nothing of theirs stays for this account.
     if (typeof window !== "undefined")
@@ -175,7 +123,6 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
-    this.cancelDraftCopySweep();
     this.stopTreeListDebugHook();
     this.treeLists.close();
     this.draftCommands.close();

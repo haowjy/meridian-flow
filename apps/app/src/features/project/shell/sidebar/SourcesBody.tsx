@@ -33,9 +33,9 @@ import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
 import {
-  useWorkBranchCommands,
+  usePressCommands,
   type WorkBranchCommands,
-} from "@/features/draft-review/useWorkBranchCommands";
+} from "@/features/suggestion-review/usePressCommands";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
@@ -371,7 +371,7 @@ export function SourcesBody({
   const source =
     tabs.includes(picked) || (foot as readonly SourceKey[]).includes(picked) ? picked : fallback;
   if (source !== picked) setPicked(source);
-  const changesCommands = useWorkBranchCommands({
+  const changesCommands = usePressCommands({
     projectId,
     work: changes.work,
     ownerKey: changes.ownerKey,

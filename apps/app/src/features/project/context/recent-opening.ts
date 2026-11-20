@@ -10,11 +10,9 @@ export function recentOpening(
   projectId: string,
   tab: OpenDocument,
   openedAt: string,
-  /** Live lacks the document (`useDocumentLiveness`): a draft-only review is never a live recent. */
-  draftOnly: boolean,
 ): RecentOpening | null {
   if (tab.kind === "new") return null;
-  if (draftOnly || !EDITOR_SCHEMES.has(tab.scheme)) return null;
+  if (!EDITOR_SCHEMES.has(tab.scheme)) return null;
   const path = readableRecentPath(tab.path);
   if (!path) return null;
   const address: RecentAddress = {
@@ -25,6 +23,6 @@ export function recentOpening(
   return { documentId: tab.documentId, projectId, name: tab.name, openedAt, address };
 }
 
-export function recentAddressFromTab(tab: OpenDocument, draftOnly: boolean): RecentAddress | null {
-  return recentOpening("", tab, "", draftOnly)?.address ?? null;
+export function recentAddressFromTab(tab: OpenDocument): RecentAddress | null {
+  return recentOpening("", tab, "")?.address ?? null;
 }

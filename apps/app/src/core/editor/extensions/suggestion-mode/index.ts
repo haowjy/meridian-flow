@@ -4,6 +4,5 @@ export {
   SuggestionModeExtension,
   shownText,
   suggestionFocus,
-  suggestionModeEnabled,
   suggestionView,
 } from "./SuggestionModeExtension";

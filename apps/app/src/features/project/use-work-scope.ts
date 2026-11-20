@@ -12,7 +12,7 @@ import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { useIsThreadPendingCreation } from "@/client/stores";
 import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
-import { useAccountId, useOptionalDraftOnlyPresentations } from "./context/account-feature-context";
+import { useAccountId } from "./context/account-feature-context";
 
 /** The Work scope as the shell can use it: ready with a Work row id (No Work's included), or not yet. */
 export type WorkScope =
@@ -60,7 +60,6 @@ export function useWorkScope(projectId: string): {
   const works = useWorks(projectId);
   const noWorkId = works.noWork?.id ?? null;
   const { workId } = useWorkScopeState(projectId);
-  const draftOnly = useOptionalDraftOnlyPresentations();
   const setWorkId = useCallback(
     (id: string) => {
       if (id === workId) return;
@@ -68,12 +67,11 @@ export function useWorkScope(projectId: string): {
         accountId,
         projectId,
         id === noWorkId ? null : workOwnerKey({ id }),
-        (documentId) => draftOnly?.isDraftOnly(projectId, documentId) ?? false,
       );
       writeTreeVersionChoice(accountId, projectId, onWorkDraft ? "draft" : "live");
       writeProjectScope(accountId, projectId, id === noWorkId ? NO_SCOPE : id);
     },
-    [accountId, projectId, noWorkId, workId, draftOnly],
+    [accountId, projectId, noWorkId, workId],
   );
   return useMemo(() => ({ workId, setWorkId }), [workId, setWorkId]);
 }
