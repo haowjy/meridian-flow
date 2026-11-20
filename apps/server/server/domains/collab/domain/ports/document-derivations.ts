@@ -1,10 +1,11 @@
 /** Durable cuts and atomic certification for live-document derived outputs. */
 import type { DocumentId } from "@meridian/contracts/runtime";
+import type { WorkPending } from "@meridian/suggestions";
 
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
 // Changing the extractor must bump this version to invalidate older output.
-export const DOCUMENT_EXTRACTOR_VERSION = 6;
+export const DOCUMENT_EXTRACTOR_VERSION = 7;
 export type DerivationWatermark = {
   generation: bigint;
   admissionSequence: bigint;
@@ -30,8 +31,8 @@ export type DocumentDerivationOutputs = {
   /** In document order. */
   blocks: DerivedBlock[];
   wordCount: number;
-  /** The Works (`draftOwnerKey`) whose suggestions the cut holds: `blocks` is not their view. */
-  pendingWorks: string[];
+  /** By Work (`draftOwnerKey`), what its suggestions in the cut are: `blocks` is not its view. */
+  pendingChanges: Record<string, WorkPending>;
   /** Sum of the blocks' text bytes. */
   documentBytes: number;
   /** Ordered block content hashes plus the link facts: the edit signal behind `updated_at`. */

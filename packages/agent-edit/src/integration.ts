@@ -55,8 +55,8 @@ export {
   type PressRecord,
   pressStored,
   resolveStored,
+  storedPendingChanges,
   storedPendingTurns,
-  storedPendingWorks,
   suggestingModel,
   undoPressStored,
 } from "./model/suggesting-model.js";

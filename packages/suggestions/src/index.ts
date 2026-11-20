@@ -3,9 +3,10 @@ export {
   type Change,
   type Filter,
   list,
+  pendingChanges,
   pendingTurns,
-  pendingWorks,
   reject,
+  type WorkPending,
 } from "./resolve.js";
 export {
   type Author,

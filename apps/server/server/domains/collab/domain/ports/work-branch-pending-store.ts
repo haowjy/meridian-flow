@@ -13,8 +13,13 @@ export type DocumentBranchOrigin = {
   originLabel: string | null;
 };
 
+/**
+ * A document the branch has text changes in: an active `work_draft` draft, or (suggestion mode)
+ * the branch owner's suggestions in the Live document, which have no draft (`draftId` null) and
+ * whose writers the document's derivation already counted (`writers`).
+ */
 export type WorkBranchDraftMetadata = {
-  draftId: string;
+  draftId: string | null;
   documentId: DocumentId;
   branchId: BranchId;
   updatedAt: Date;
@@ -22,12 +27,15 @@ export type WorkBranchDraftMetadata = {
   hasEffect: boolean;
   /** How many review groups that difference makes, judged with `hasEffect`. */
   textChanges: number;
+  /** Who wrote the pending changes, when known without reading a draft. */
+  writers?: { threadIds: string[]; unattributed: boolean };
 };
 
 export type WorkBranchPendingStore = {
   /**
-   * Every active `work_draft` draft of the branch (only these documents' when given), each
-   * with metadata only: no materialization or receipt classification.
+   * Every document the branch has text changes in (only these documents' when given): its active
+   * `work_draft` drafts and the documents holding its owner's suggestions, each with metadata
+   * only: no materialization or receipt classification.
    */
   listBranchDraftMetadata(
     branchId: BranchId,

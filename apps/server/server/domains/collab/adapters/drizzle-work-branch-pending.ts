@@ -5,7 +5,11 @@ import { branches, documentDrafts, threads, works } from "@meridian/database/sch
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { pendingDocuments, pendingFolders } from "../../context/tree/pending-documents.js";
+import {
+  ownerKeyOfBranch,
+  pendingDocuments,
+  pendingFolders,
+} from "../../context/tree/pending-documents.js";
 import { isPending, readDraftChanges } from "../domain/draft-changes.js";
 import { materializeDraftRead } from "../domain/draft-store.js";
 import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
@@ -108,7 +112,28 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       }));
     },
     async listBranchDraftMetadata(branchId, documentIds) {
-      const rows = await currentDrizzleDb(db)
+      const tx = currentDrizzleDb(db);
+      const owner = ownerKeyOfBranch(sql`b`);
+      const only = documentIds?.length
+        ? sql`AND r.document_id IN (${sql.join(
+            documentIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})`
+        : documentIds
+          ? sql`AND false`
+          : sql``;
+      const suggested = await tx.execute<{
+        document_id: string;
+        updated_at: Date | string;
+        pending: { changes: number; chats: string[]; writer: boolean };
+      }>(sql`
+        SELECT r.document_id::text AS document_id, d.updated_at, r.pending_changes -> ${owner} AS pending
+        FROM branches b
+        JOIN document_block_rooms r ON r.pending_changes ? ${owner}
+        JOIN documents d ON d.id = r.document_id
+        WHERE b.id = ${branchId}::uuid ${only}
+        ORDER BY r.document_id`);
+      const rows = await tx
         .select({
           draftId: documentDrafts.id,
           documentId: documentDrafts.documentId,
@@ -126,7 +151,18 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         )
         .orderBy(asc(documentDrafts.id));
 
-      return rows.map((row) => ({ ...row, branchId }));
+      return [
+        ...rows.map((row) => ({ ...row, branchId })),
+        ...suggested.map((row) => ({
+          draftId: null,
+          documentId: row.document_id as DocumentId,
+          branchId,
+          updatedAt: new Date(row.updated_at),
+          hasEffect: row.pending.changes > 0,
+          textChanges: row.pending.changes,
+          writers: { threadIds: row.pending.chats, unattributed: row.pending.writer },
+        })),
+      ];
     },
     /** The chats with a change in a pending change of the draft, and whether some pending change is no chat's. */
     async pendingWriters(draftId) {

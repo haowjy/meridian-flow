@@ -19,9 +19,26 @@ export function pendingTurns(doc: Node): Set<string> {
   return pendingBy(doc, (attrs) => attrs.turn);
 }
 
-/** The Works with suggestions still in `doc`: the views that read it differently from Live. */
-export function pendingWorks(doc: Node): Set<string> {
-  return pendingBy(doc, (attrs) => attrs.work);
+/** What one Work has pending in a document: its changes, the chats that wrote them, and whether
+ * a change is no chat's (the writer's own typing). */
+export type WorkPending = { changes: number; chats: string[]; writer: boolean };
+
+/**
+ * The Works with suggestions still in `doc`, each with what it has pending: the views that read it
+ * differently from Live, counted as their review lists them (`list`).
+ */
+export function pendingChanges(doc: Node): Record<string, WorkPending> {
+  const out: Record<string, WorkPending> = {};
+  for (const work of [...pendingBy(doc, (attrs) => attrs.work)].sort()) {
+    const changes = list(doc, { work });
+    const chats = new Set(changes.flatMap((change) => (change.chat ? [change.chat] : [])));
+    out[work] = {
+      changes: changes.length,
+      chats: [...chats].sort(),
+      writer: changes.some((change) => !change.chat),
+    };
+  }
+  return out;
 }
 
 function pendingBy(doc: Node, key: (attrs: SuggestionAttrs) => string | null): Set<string> {

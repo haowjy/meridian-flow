@@ -279,6 +279,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
         }
       : undefined,
+    deps.workProjectionMutation,
   );
   const derivations = createDocumentDerivationService({
     store: derivationStore,

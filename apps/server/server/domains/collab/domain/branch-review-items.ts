@@ -20,9 +20,12 @@ export type DraftReviewItem = {
   branchId: BranchId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
-  /** The branch's draft on the document; null for an image or a create with no text yet. */
+  /**
+   * The branch's draft on the document; null for an image, a create with no text yet, or text
+   * that is the owner's suggestions in the Live document.
+   */
   draftId: string | null;
-  /** Whether this item has a text draft. */
+  /** Whether this item has text changes: a text draft, or suggestions in the Live document. */
   hasDraft: boolean;
   /** The text draft's review groups, as the projection job last counted them; 0 without one. */
   textChanges: number;
@@ -90,7 +93,7 @@ export function createBranchReviewItems(deps: {
   async function items(
     branchId: BranchId,
     documentIds?: readonly DocumentId[],
-  ): Promise<ResolvedDraftItem[]> {
+  ): Promise<(ResolvedDraftItem & { writers?: WorkBranchDraftMetadata["writers"] })[]> {
     const drafts = await deps.drafts(branchId, documentIds);
     const draftOf = new Map(drafts.map((evidence) => [evidence.documentId, evidence]));
     const nodes = await deps.tree.read(
@@ -102,19 +105,23 @@ export function createBranchReviewItems(deps: {
     const resolved = nodes.map((node) => {
       const evidence = draftOf.get(node.documentId);
       const item = toItem(branchId, node, evidence, treeActors.get(node.documentId) ?? []);
-      return { item, listed: node.pending };
+      return { item, listed: node.pending, writers: evidence?.writers };
     });
     return resolved.sort((a, b) => (a.item.path ?? "").localeCompare(b.item.path ?? ""));
   }
 
   return {
     async list(branchId) {
-      const listed = (await items(branchId)).flatMap(({ item, listed }) => (listed ? [item] : []));
+      const resolved = await items(branchId);
       return Promise.all(
-        listed.map(async (item) => {
-          const writers = item.draftId
-            ? await deps.pendingWriters(item.draftId)
-            : { threadIds: [], unattributed: false };
+        resolved
+          .filter(({ listed }) => listed)
+          .map(async ({ item, writers: known }) => {
+          const writers =
+            known ??
+            (item.draftId
+              ? await deps.pendingWriters(item.draftId)
+              : { threadIds: [], unattributed: false });
           return {
             ...item,
             actorThreadIds: [...new Set([...writers.threadIds, ...item.actorThreadIds])],
@@ -125,7 +132,8 @@ export function createBranchReviewItems(deps: {
     },
     async resolve(branchId, documentId) {
       const resolved = await items(branchId, [documentId]);
-      return resolved.find(({ item }) => item.documentId === documentId) ?? null;
+      const found = resolved.find(({ item }) => item.documentId === documentId);
+      return found ? { item: found.item, listed: found.listed } : null;
     },
   };
 }

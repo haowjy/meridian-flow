@@ -18,8 +18,8 @@ import {
   DROPPED_META,
   type Filter,
   newChangeId,
+  pendingChanges,
   pendingTurns,
-  pendingWorks,
   type Run,
   reject,
   rewrite,
@@ -28,6 +28,7 @@ import {
   suggested,
   type View,
   viewBlock,
+  type WorkPending,
   visible,
 } from "@meridian/suggestions";
 import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
@@ -446,9 +447,12 @@ function deleteSetOf(ranges: IdRanges): DeleteSet {
   return set;
 }
 
-/** The Works whose suggestions a stored document holds: the views that read it otherwise than Live. */
-export function storedPendingWorks(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
-  return pendingWorks(storedRoot(doc, schema));
+/**
+ * The Works whose suggestions a stored document holds, each with what it has pending: the views
+ * that read it otherwise than Live.
+ */
+export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string, WorkPending> {
+  return pendingChanges(storedRoot(doc, schema));
 }
 
 function storedRoot(doc: Y.Doc, schema: Schema): PMNode {

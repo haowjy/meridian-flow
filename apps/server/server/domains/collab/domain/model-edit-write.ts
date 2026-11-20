@@ -127,14 +127,26 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     return outcome;
   }
 
-  /** A drafted write in suggestion mode: Live's door, as that Work's suggestions. */
+  /**
+   * A drafted write in suggestion mode: Live's door, as that Work's suggestions. The Work's branch
+   * is opened first, as for a draft: its review list, counts and press are the branch's.
+   */
   async function suggest(
     command: WriteCommand,
     given: GivenContext,
     documentId: DocumentId | null,
+    grant: FileGrant<"edit">,
     owner: DraftOwner,
     workView: WorkViews,
   ): Promise<WriteOutcome> {
+    await deps.enterDraftSeam();
+    approveBranchWriteJoin();
+    await deps.branches.ensureActiveForWrite({
+      owner,
+      projectId: agentProject(grant),
+      threadId: (given.threadId as ThreadId | undefined) ?? null,
+      userId: grant.principal.accountId,
+    });
     if (documentId) {
       await deps.enterLiveSeam(documentId);
       await testHook("command.afterLock");
@@ -157,7 +169,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       const owner = grant.destination.owner;
       return runInLockedWrite(async () => {
         const confirmed = await runWithEditGrants(deps.fileAccess, [grant], () =>
-          suggest(command, given, documentId, owner, workView),
+          suggest(command, given, documentId, grant, owner, workView),
         );
         if (!confirmed.ok) throw confirmed.refusal;
         return confirmed.value;
