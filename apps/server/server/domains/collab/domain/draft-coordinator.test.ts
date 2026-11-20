@@ -157,7 +157,7 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
   const coordinator = createDraftCoordinator({
     onAppendCommitted: () => {},
     store,
-    onDraftUpdate: () => broadcasts++,
+    deliver: async () => void broadcasts++,
   });
   await expect(
     commitDraftRows(coordinator, {

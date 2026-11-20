@@ -34,20 +34,6 @@ export function closeRoom(
 }
 
 /**
- * Resolves once Hocuspocus has registered `document` as its room: true, or false when its load
- * failed or another document holds the name. Called from a load hook, while the room is only
- * in `loadingDocuments`: Hocuspocus 4.3's `createDocument` attached the continuation that
- * registers it (`documents.set`) to the load promise before any hook ran, so this one, attached
- * later, runs after it.
- */
-export function whenRoomRegistered(hocuspocus: Hocuspocus, document: Document): Promise<boolean> {
-  const registered = () => hocuspocus.documents.get(document.name) === document;
-  const loading = hocuspocus.loadingDocuments.get(document.name);
-  if (!loading) return Promise.resolve(registered());
-  return loading.then(registered, () => false);
-}
-
-/**
  * After commit only: retire the whole removal batch, including rooms still loading. Draft rooms
  * close by exact draft id (a closed draft stays closed). A live room closes only if `stillRemoved`,
  * read once after every matching load settled, still holds its document's record: a Work Restore

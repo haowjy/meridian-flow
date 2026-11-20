@@ -1,21 +1,7 @@
-/** Mutable Hocuspocus instance binding and draft-room delivery and repair. */
-import type { Hocuspocus, TransactionOrigin } from "@hocuspocus/server";
-import { draftRoomName } from "@meridian/contracts/protocol";
-import * as Y from "yjs";
-import type { EventSink } from "../../observability/index.js";
-import { emitEvent, unknownToEventPayload } from "../../observability/index.js";
+/** The mutable Hocuspocus instance the collab domain binds once the gateway creates it. */
+import type { Hocuspocus } from "@hocuspocus/server";
 
-const DRAFT_AGENT_BROADCAST_ORIGIN = {
-  source: "local",
-  context: { origin: { type: "system", reason: "draft-agent-append" } },
-} satisfies TransactionOrigin;
-
-/** Content a draft room did not author: Hocuspocus broadcasts it to the room's tabs. */
-function applyToRoom(room: Y.Doc, update: Uint8Array): void {
-  Y.applyUpdate(room, update, DRAFT_AGENT_BROADCAST_ORIGIN);
-}
-
-export function createHocuspocusBinding(eventSink?: EventSink) {
+export function createHocuspocusBinding() {
   let instance: Hocuspocus | null = null;
   return {
     bind(hocuspocus: Hocuspocus): void {
@@ -27,21 +13,6 @@ export function createHocuspocusBinding(eventSink?: EventSink) {
     require(): Hocuspocus {
       if (!instance) throw new Error("Hocuspocus is not bound to the collab domain");
       return instance;
-    },
-    applyToRoom,
-    deliverDraftUpdate({ draftId, update }: { draftId: string; update: Uint8Array }): void {
-      try {
-        const room = instance?.documents.get(draftRoomName(draftId));
-        if (room) applyToRoom(room, update);
-      } catch (cause) {
-        if (!eventSink) return;
-        emitEvent(eventSink, {
-          level: "warn",
-          source: "collab.draft_review",
-          name: "draft_update_broadcast.failed",
-          payload: { draftId, ...unknownToEventPayload(cause) },
-        });
-      }
     },
   };
 }

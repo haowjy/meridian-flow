@@ -7,7 +7,10 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { novelToRoom } from "../../../../apps/server/server/domains/collab/domain/document-mutation-policy.ts";
-import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
+import {
+  createDraftCoordinator,
+  type DraftCoordinator,
+} from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import {
   createDraftProjection,
   type DraftProjectionDiagnostics,
@@ -34,13 +37,26 @@ export type EffectWrite = Awaited<ReturnType<DraftStore["writeEffect"]>>;
 
 const noop = () => {};
 
+/**
+ * What production's draft-room `catchUp` does to a Hocuspocus room: applies the committed
+ * draft's content that the plain-document `room` lacks.
+ */
+export async function catchUpRoom(
+  coordinator: DraftCoordinator,
+  draftId: string,
+  room: Y.Doc,
+): Promise<void> {
+  const { replica } = await coordinator.loadBase(draftId);
+  Y.applyUpdate(room, Y.encodeStateAsUpdate(replica.doc, Y.encodeStateVector(room)), "deliver");
+}
+
 /** A coordinator over `store` with the required `onAppendCommitted` (§3.1). */
 export function phase4Coordinator(
   harness: Harness,
   input: {
     store?: DraftStore;
     onAppendCommitted?: (draftId: string) => void;
-    onDraftUpdate?: (input: { draftId: string; update: Uint8Array }) => void;
+    deliver?: (draftId: string) => Promise<void>;
     diagnostics?: Partial<DraftDiagnostics>;
   } = {},
 ) {
@@ -48,10 +64,9 @@ export function phase4Coordinator(
     store: input.store ?? harness.store,
     attemptScope: harness.attemptScope,
     onAppendCommitted: input.onAppendCommitted ?? noop,
-    ...(input.onDraftUpdate ? { onDraftUpdate: input.onDraftUpdate } : {}),
+    ...(input.deliver ? { deliver: input.deliver } : {}),
     diagnostics: {
       compactionFailed: noop,
-      roomReconciled: noop,
       appendPrefixMissing: noop,
       ...input.diagnostics,
     },
@@ -354,10 +369,10 @@ export async function openProcess(
 ) {
   const room = await durableDoc(harness, draft.draftId);
   const dirty: string[] = [];
-  const coordinator = phase4Coordinator(harness, {
+  const coordinator: DraftCoordinator = phase4Coordinator(harness, {
     store,
     onAppendCommitted: (draftId) => dirty.push(draftId),
-    onDraftUpdate: ({ update }) => Y.applyUpdate(room, update, "deliver"),
+    deliver: (draftId) => catchUpRoom(coordinator, draftId, room),
   });
   await coordinator.readDraft(draft.draftId, async () => {});
   return { room, coordinator, dirty };

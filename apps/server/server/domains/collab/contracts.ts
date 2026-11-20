@@ -124,7 +124,7 @@ export type CollabTransport = {
   /** Which of these drafts are in the user's projects: a draft that is not listed is gone. */
   openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   /**
-   * The document's Work drafts with a room open in this process, kept at enrollment and unload.
+   * The document's Work drafts with a connected room in this process, kept from a connection to the room's unload.
    * A Live commit pushes to exactly these.
    */
   openDraftRooms(documentId: DocumentId): Promise<string[]>;
@@ -160,17 +160,14 @@ export type CollabTransport = {
   /** Nonterminal disconnect affordance for the durable shadow-probe T6. */
   closeHocuspocusDraftRoom(draftId: string): void;
   /**
-   * A tab's SyncStep1 on a draft room: reconciles `room` against the committed draft, then
-   * true while the draft is active.
+   * A client connected to a draft room: lists the room for Live pushes, catches it up to the
+   * committed draft (it loaded before it registered) and catches the draft up to Live.
    */
-  reconcileHocuspocusDraftRoom(input: { draftId: string; room: Y.Doc }): Promise<boolean>;
-  /**
-   * Called from a draft room's load hook: once Hocuspocus registers the room, brings it up to
-   * what committed while it loaded, or closes it when the draft ended.
-   */
-  enrollHocuspocusDraftRoom(input: { draftId: string; document: HocuspocusDocument }): void;
-  /** A client connected to a draft room: catches the draft up, healing a failed push. */
-  connectedHocuspocusDraftRoom(draftId: string): void;
+  connectedHocuspocusDraftRoom(input: {
+    draftId: string;
+    documentId: DocumentId;
+    document: HocuspocusDocument;
+  }): void;
   /** A draft room unloaded: it is no longer pushed to. */
   unloadedHocuspocusDraftRoom(draftId: string): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;

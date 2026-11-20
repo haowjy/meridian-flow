@@ -6,7 +6,7 @@
  */
 import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
-import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
+import { messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import {
   createAllowAllFileAccess,
@@ -22,7 +22,7 @@ const documentName = "draft:draft_1";
 
 const payload = new Uint8Array([1, 2, 3]);
 
-function services(stale: boolean) {
+function services() {
   return {
     fileAccess: {} as never,
     fileAccessChanges: createLocalFileAccessChanges(),
@@ -34,7 +34,6 @@ function services(stale: boolean) {
     documentSync: {
       roomRemoval: vi.fn(async () => null),
       ensureDocumentAuthority: vi.fn(async () => {}),
-      reconcileHocuspocusDraftRoom: vi.fn(async () => !stale),
       admitDraftWriterUpdate: vi.fn(async () => undefined),
     } as never,
   };
@@ -70,7 +69,7 @@ describe("Yjs draft handshake route guard", () => {
     await expect(
       admitWriterSync({
         services: {
-          ...services(false),
+          ...services(),
           documentSync: { admitDraftWriterUpdate, roomRemoval: async () => null } as never,
         },
         documentName,
@@ -92,7 +91,7 @@ describe("Yjs draft handshake route guard", () => {
     );
     const admission = admitWriterSync({
       services: {
-        ...services(false),
+        ...services(),
         documentSync: { admitDraftWriterUpdate, roomRemoval: async () => null } as never,
       },
       documentName,
@@ -113,19 +112,6 @@ describe("Yjs draft handshake route guard", () => {
     commit?.();
     await expect(admission).resolves.toBeUndefined();
     expect(returned).toBe(true);
-  });
-
-  it("closes a handshake on a draft that is no longer active", async () => {
-    await expect(
-      admitWriterSync({
-        services: services(true),
-        documentName,
-        document: new Y.Doc(),
-        syncType: messageYjsSyncStep1,
-        payload,
-        userId: "user-1" as never,
-      }),
-    ).rejects.toMatchObject({ code: 4205, reason: "purged" });
   });
 
   it("stops connection admission synchronously when drain starts", async () => {
@@ -177,7 +163,7 @@ describe("Yjs live writer admission", () => {
     await expect(
       admitWriterSync({
         services: {
-          ...services(false),
+          ...services(),
           documentSync: { admitLiveWriterUpdate } as never,
         },
         documentName: "document-1",
@@ -195,7 +181,7 @@ describe("Yjs live writer admission", () => {
     const admitLiveWriterUpdate = vi.fn().mockRejectedValue(new Error("journal down"));
     const input = {
       services: {
-        ...services(false),
+        ...services(),
         documentSync: { admitLiveWriterUpdate } as never,
       },
       documentName: "document-1",

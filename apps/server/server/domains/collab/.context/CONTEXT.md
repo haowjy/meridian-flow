@@ -376,40 +376,26 @@ failure closes `1013`, and the reconnect's handshake resends what the journal la
 paragraph that a model edit, a pull or a Discard deleted before the typing reached the server
 follows plain Yjs and disappears, as in a Live room.
 
-Room delivery has one owner: `install` in
-`domain/draft-runtime.ts`, the only place a replica becomes the draft's
-committed replica. It runs when the store's transaction commits (a savepoint's
-callbacks move to its parent on release and are dropped on its rollback, so a
-rolled-back child installs nothing), installs only past the replica installed
-by then, and sends this process's rooms what separates the two: the rows the new
-replica was built from when they cover everything past the installed one (built
-on it or on an older replica of the same checkpoint: a
-reply's rows, a read's tail catch-up),
-otherwise the document difference (a compaction that folded rows under the draft
-lock, or a checkpoint another process wrote), or nothing when the content is unchanged. A transition at or below
-the committed revision installs and sends nothing, so a read racing a local
-commit delivers once. `install` reaches only rooms Hocuspocus has registered,
-and Hocuspocus 4.3 registers a room only after its load hooks return, so a room
-enrolls itself: its `afterLoadDocument` hook chains after
-Hocuspocus's own registration, and the coordinator's `reconcileRegisteredRoom`
-reads the draft and reconciles the room to it, or closes the room when the
-draft closed while it loaded. From registration on, every
-transition reaches it; enrollment covers what committed between its load read
-and registration. The load and draft `connected` hook re-check active status. Rooms are Yjs replicas kept current by anti-entropy ([eventual
-consistency][eventual]):
-push delivery is the fast path, and the room is reconciled against the
-committed replica (structs past its state vector plus the delete set) at every
-exchange that reads the draft: its enrollment, every tab's SyncStep1 handshake
-(the same `reconcileRegisteredRoom`, before Hocuspocus answers the tab, whether
-the tab may write or only read). A room
-that missed a delivery, or another server process's commit, therefore heals on
-the next exchange and is never refused for it; the tab's own Yjs handshake then
-brings the tab current. Another process's
-commits also reach this process's rooms when its runtime reads the draft for a
-turn inverse's `deliverCommitted`. There is no periodic reconciliation: an idle
-room with no exchange catches up at the next rejoin or handshake.
+A draft room catches up by reading. `catchUp` in `draft-room.ts` reads the draft through
+`loadBase` (the committed replica, brought current by an incremental tail read) and applies
+what the room lacks: the replica's structs past the room's state vector plus its delete set.
+Nothing is pushed to a room. It runs after a command commits (`install` in
+`domain/draft-runtime.ts`, the only place a replica becomes the draft's committed replica,
+asks for it once the store's transaction commits, whether or not that replica won the
+install), and in each client connection's `connected` hook, which also covers what committed
+between the room's load read and its registration. A room that missed a run, or another
+process's commit, heals at the next one and is never refused for it; the tab's Yjs handshake
+or the room's broadcast then brings the tab current. The runs are not coalesced: each is one
+small read and a state-vector diff, and Yjs ignores a repeat. A failure is reported as
+`collab.draft_review` `draft_room_catch_up.failed`. There is no periodic run: an idle room with
+no connection catches up at its next one. Each room kind's code is one module, `live-room.ts` and
+`draft-room.ts` (`admit`, `catchUp`, `load`, the store port), composed with the shared
+writer queue (`writer-queue.ts`) by `hocuspocus-persistence.ts`.
 Every committed append (writer, agent or server) schedules a background tail fold at
-512 rows or 2 MiB (a writer's frame counts rows only; `compact`: no content, effect or `updatedAt` change).
+512 rows or 2 MiB (`compact`: no content, effect or `updatedAt` change). A writer's frame counts
+rows only, from the revision, so a fold needs no tail read per keystroke; the tail's bytes are
+counted when a command's read next loads those rows, so a run of huge pastes with no command in
+between folds at 512 rows.
 `domain/draft-runtime.ts` owns committed replicas, prefix materialization, prepared
 append/rewrite ownership, monotonic installation/delivery and maintenance. Its
 `compacting` set keeps one fold per draft in this process. A rewrite that wins
@@ -491,12 +477,12 @@ is still stale and skips it when not. The pull debounces per document (2 s, 10 s
 it fires it reads Live once for the
 up-to-date check all the open drafts share and catches up each draft room open then. It never waits, and a draft with no room is not touched, so
 background merge work grows with the drafts open on a screen, not with the drafts that exist.
-`openDraftRooms(documentId)` is an in-memory index in `hocuspocus-persistence.ts` (document →
-open draft rooms), added when a room enrolls and dropped at `afterUnloadDocument`; it makes no
-database call. A draft catches up when it is read or opened: a room's first catch-up runs in
-`enrollHocuspocusDraftRoom` once Hocuspocus has registered the room (any Live commit before it
-falls inside that read, any after finds the room), each later client connection to an open room
-catches it up again (so a failed push heals on the next connect), and the room's `catch_up`
+`openDraftRooms(documentId)` is an in-memory index in `draft-room.ts` (document →
+draft rooms with a connection), added at a client's `connected` hook and dropped at
+`afterUnloadDocument`; it makes no database call. A draft catches up when it is read or opened:
+each client connection to a room lists it, catches the room up and then catches the draft up to
+Live (any Live commit before the listing falls inside that read, any after finds the room), so
+a failed push heals on the next connect; the room's `catch_up`
 message, model tools (`modelEdits().catchUp`, `readRoom`) and effective reads (Copy, export,
 search fallback) call it. A failure of an opened-room catch-up is reported as the pull service's
 `background.failed`. A caller joining a running catch-up of the same draft waits for a rerun that

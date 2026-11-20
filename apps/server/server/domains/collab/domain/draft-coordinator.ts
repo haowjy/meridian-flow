@@ -13,12 +13,10 @@ import {
   type DraftRuntime,
   type DraftRuntimeInput,
   type PreparedDraftAppend,
-  type RoomReconcileTrigger,
 } from "./draft-runtime.js";
 import {
   type AppendDraftJournalInput,
   blockOriginsFromDraftSeed,
-  DraftMissingError,
   type DraftSnapshot,
   DraftStaleUpdateError,
 } from "./draft-store.js";
@@ -49,37 +47,13 @@ export type DraftCoordinator = Pick<
     commit: boolean,
     precondition?: SavePrecondition,
   ): Promise<{ result: T; write: PreparedDraftAppend | null }>;
-  /** Brings this process's rooms up to what is committed now: a read, installed as any other. */
+  /** Brings this process's room for the draft up to what is committed now. */
   deliverCommitted(draftId: string): Promise<void>;
-  /**
-   * Brings a registered room up to what is committed on its stable identity:
-   * at its enrollment, from which on every installed transition reaches it, and at each tab's
-   * handshake, so a room that missed a delivery heals on the next exchange whether or not the
-   * tab may write. Returns the base it reconciled against, or null when the draft closed or
-   * was removed.
-   */
-  reconcileRegisteredRoom(input: {
-    draftId: string;
-    room: Y.Doc;
-    trigger: RoomReconcileTrigger;
-  }): Promise<DraftBase | null>;
 };
 
 export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinator {
   const runtime = createDraftRuntime(input);
-  const { loadBase, cloneReplica, prepareAppend, reconcileRoom } = runtime;
-
-  async function reconcileRegisteredRoom(
-    room: Parameters<DraftCoordinator["reconcileRegisteredRoom"]>[0],
-  ): Promise<DraftBase | null> {
-    const base = await loadBase(room.draftId).catch((cause: unknown) => {
-      if (cause instanceof DraftMissingError) return null;
-      throw cause;
-    });
-    if (!base) return null;
-    reconcileRoom({ ...room, replica: base.replica });
-    return base;
-  }
+  const { loadBase, cloneReplica, prepareAppend } = runtime;
 
   /** `fn` over the committed replica, which it must only read. */
   async function readCommitted<T>(
@@ -158,10 +132,6 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     readDraft: readCommitted,
     copyDraft,
     prepareStagedRows,
-    async deliverCommitted(draftId) {
-      await loadBase(draftId);
-    },
-
-    reconcileRegisteredRoom,
+    deliverCommitted: async (draftId) => input.deliver?.(draftId),
   };
 }

@@ -10,7 +10,10 @@
  */
 
 import assert from "node:assert/strict";
-import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
+import {
+  createDraftCoordinator,
+  type DraftCoordinator,
+} from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import type { DraftStore } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
 import {
   appendToFirstParagraph,
@@ -22,7 +25,7 @@ import {
   settled,
   Y,
 } from "./harness.mts";
-import { commitWriterUpdate, pausedAppend, rebaseLive, roomHolds } from "./phase4.mts";
+import { catchUpRoom, commitWriterUpdate, pausedAppend, rebaseLive, roomHolds } from "./phase4.mts";
 
 const KEYS = 20;
 
@@ -31,13 +34,19 @@ type Process = ReturnType<typeof openProcess>;
 /** One server process: its coordinator over its own store, and one Hocuspocus room. */
 function openProcess(harness: Harness, label: string, store: DraftStore = harness.store) {
   const room = new Y.Doc({ gc: false });
-  const coordinator = createDraftCoordinator({
+  const coordinator: DraftCoordinator = createDraftCoordinator({
     onAppendCommitted: () => {},
     store,
     attemptScope: harness.attemptScope,
-    onDraftUpdate: ({ update }) => Y.applyUpdate(room, update, "deliver"),
+    deliver: (draftId) => catchUpRoom(coordinator, draftId, room),
   });
-  return { label, room, coordinator };
+  return {
+    label,
+    room,
+    coordinator,
+    /** A tab's connection: the room reads the journal. */
+    catchUp: (draftId: string) => catchUpRoom(coordinator, draftId, room),
+  };
 }
 
 /**
@@ -147,7 +156,7 @@ export const twoProcessFrames: Probe = {
     const tokens = (text: string) => (text.match(/ [AB]\d+/g) ?? []).length;
     const rooms: Record<string, number> = {};
     for (const process of [a, b]) {
-      await process.coordinator.readDraft(draftId, async () => {});
+      await process.catchUp(draftId);
       rooms[process.label] = tokens(roomText(process));
     }
     await other.close();
@@ -293,12 +302,12 @@ export const twoProcessCompaction: Probe = {
 
 /**
  * B's fold wins the row, so A's is dropped as designed and room A gets nothing pushed:
- * another process's commit reaches an open room at its next handshake, not at a frame.
+ * another process's commit reaches an open room at its next catch-up, not at a frame.
  */
 export const twoProcessCompactionMoved: Probe = {
   name: "two-process-compaction-moved",
   decision: "D25",
-  expected: `room A lacks FOREIGN after its dropped compaction; next: {"ok":true,"value":{"admitted":true}}, room A still lacks FOREIGN, and holds it after the tab's handshake`,
+  expected: `room A lacks FOREIGN after its dropped compaction; next: {"ok":true,"value":{"admitted":true}}, room A still lacks FOREIGN, and holds it after the tab's connection catches the room up`,
   async run(harness) {
     const pause = pausedCompaction(harness.store);
     const bFolded = gate();
@@ -326,22 +335,18 @@ export const twoProcessCompactionMoved: Probe = {
       const before = roomText(f.a);
       const next = await type(f.a, f.draftId, " NEXT");
       const afterFrame = roomText(f.a);
-      await f.a.coordinator.reconcileRegisteredRoom({
-        draftId: f.draftId,
-        room: f.a.room,
-        trigger: "handshake",
-      });
-      const afterHandshake = roomText(f.a);
+      await f.a.catchUp(f.draftId);
+      const afterCatchUp = roomText(f.a);
       observe("moved", {
         roomHadForeign: before.includes("FOREIGN"),
         afterFrame: afterFrame.includes("FOREIGN"),
-        afterHandshake: afterHandshake.includes("FOREIGN"),
+        afterCatchUp: afterCatchUp.includes("FOREIGN"),
       });
       observe("next", next);
       assert.ok(!before.includes("FOREIGN"));
       assert.deepEqual(next, { ok: true, value: { admitted: true } });
       assert.doesNotMatch(afterFrame, /FOREIGN/);
-      assert.match(afterHandshake, /FOREIGN/);
+      assert.match(afterCatchUp, /FOREIGN/);
     } finally {
       await f.other.close();
     }
