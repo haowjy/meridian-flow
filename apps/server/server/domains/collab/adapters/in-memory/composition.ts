@@ -145,6 +145,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
       drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
       closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
+      catchUpDraftRoom: hocuspocusPersistence.catchUpDraftRoom,
       connectedHocuspocusDraftRoom: hocuspocusPersistence.connectedHocuspocusDraftRoom,
       unloadedHocuspocusDraftRoom: hocuspocusPersistence.unloadedHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,

@@ -56,9 +56,9 @@ These run in CI on two cores, so a probe never reads once after a fixed sleep. A
 delivery that a post-commit step, a timer or another process makes (a compaction's
 update to the other process's room, the projection's badge) is waited for: on the
 room's own update event where there is one (`roomHolds`), else by polling to a
-deadline that fails naming what it waited for (`within`, `deadline`). A foreground
-`await` of a commit is enough, because after-commit hooks run before it returns
-(`two-process-fold`). Wall-clock numbers are reported, not asserted, unless they
+deadline that fails naming what it waited for (`within`, `deadline`). A room's catch-up
+after a commit runs after the commit's `await` returns (`two-process-fold` waits on the room).
+Wall-clock numbers are reported, not asserted, unless they
 are the requirement itself (the projection's 1 s max wait, a lock timeout); those
 bounds keep slack for a loaded runner.
 

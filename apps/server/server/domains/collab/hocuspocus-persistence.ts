@@ -50,12 +50,12 @@ export type HocuspocusPersistenceService = Pick<
   | "drainHocuspocusPersistence"
   | "drainHocuspocusDraftPersistence"
   | "closeHocuspocusDraftRoom"
+  | "catchUpDraftRoom"
   | "connectedHocuspocusDraftRoom"
   | "unloadedHocuspocusDraftRoom"
   | "getPersistenceQueueMetrics"
 > &
-  Pick<LiveRoom, "disconnectLiveGeneration"> &
-  Pick<DraftRoom, "catchUp">;
+  Pick<LiveRoom, "disconnectLiveGeneration">;
 
 /** A dependency this adapter was composed without: it throws when first used. */
 function absent<T extends object>(what: string): T {
@@ -85,6 +85,7 @@ export function createHocuspocusPersistenceService(
   return {
     ...live,
     ...draft,
+    catchUpDraftRoom: draft.catchUp,
     async drainHocuspocusPersistence() {
       await queue.drain();
       await live.drainCheckpoints();

@@ -574,17 +574,6 @@ function cloneDoc(doc: Y.Doc, generation = 1n): Y.Doc {
   return clone;
 }
 
-function _draftSnapshot(doc: Y.Doc): { documentDraft: DraftSnapshot; state: Uint8Array } {
-  return {
-    documentDraft: testDraftRow({
-      draftId: DRAFT_ID,
-      documentId: DOCUMENT_ID,
-      workId: "work-1" as never,
-    }),
-    state: Y.encodeStateAsUpdate(doc),
-  };
-}
-
 function fakeJournal(): CheckpointJournal & LiveWriterJournal {
   return {
     appendWriterUpdate: vi.fn(async () => ({ seq: 1 })),

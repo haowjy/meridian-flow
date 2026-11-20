@@ -59,10 +59,12 @@ export function createDraftRoom(deps: DraftRoomDeps): DraftRoom {
   const documentOf = new Map<string, DocumentId>();
 
   async function catchUp(draftId: string): Promise<void> {
-    const room = deps.hocuspocus()?.documents.get(draftRoomName(draftId));
-    if (!room) return;
+    if (!deps.hocuspocus()?.documents.has(draftRoomName(draftId))) return;
     try {
       const { replica } = await coordinator.loadBase(draftId);
+      // Looked up after the read: the room may have unloaded meanwhile.
+      const room = deps.hocuspocus()?.documents.get(draftRoomName(draftId));
+      if (!room) return;
       Y.applyUpdate(
         room,
         Y.encodeStateAsUpdate(replica.doc, Y.encodeStateVector(room)),

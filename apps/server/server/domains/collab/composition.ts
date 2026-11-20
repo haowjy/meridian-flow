@@ -238,7 +238,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftCoordinator = createDraftCoordinator({
     store: drafts,
     attemptScope,
-    deliver: (draftId) => hocuspocusPersistence.catchUp(draftId),
+    deliver: (draftId) => hocuspocusPersistence.catchUpDraftRoom(draftId),
     diagnostics: draftDiagnostics,
     // The projection is composed below, over the coordinator; a mark only fires after a commit.
     onAppendCommitted: (draftId) => draftEffects.markDirty(draftId),
@@ -668,6 +668,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
       drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
       closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
+      catchUpDraftRoom: hocuspocusPersistence.catchUpDraftRoom,
       connectedHocuspocusDraftRoom: hocuspocusPersistence.connectedHocuspocusDraftRoom,
       unloadedHocuspocusDraftRoom: hocuspocusPersistence.unloadedHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,

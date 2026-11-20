@@ -215,6 +215,7 @@ export const twoProcessFold: Probe = {
       const foreign = await type(f.b, f.draftId, " FOREIGN");
       pause.release();
       await pull;
+      await roomHolds(f.a.room, "FOREIGN", 5000, "room A after the pull");
       const durable = (await harness.readDraft(f.draftId)).text;
       const room = roomText(f.a);
       const next = await type(f.a, f.draftId, " NEXT");

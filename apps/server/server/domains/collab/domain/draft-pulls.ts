@@ -51,7 +51,7 @@ export type DraftPullDiagnostics = {
 export function createDraftPullService(input: {
   outsideTransaction<T>(operation: () => T): T;
   draftCoordinator: DraftCoordinator;
-  /** The document's Work drafts with a room open or loading in this process. */
+  /** The document's Work drafts with a connected room in this process. */
   openDraftRooms(documentId: DocumentId): Promise<string[]>;
   debounceMs?: number;
   maxDebounceMs?: number;

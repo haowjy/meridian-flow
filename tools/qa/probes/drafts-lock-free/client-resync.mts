@@ -257,7 +257,7 @@ class PipeSocket {
 function openServer(harness: Harness, workId: string) {
   const binding = createHocuspocusBinding();
   const coordinator = phase4Coordinator(harness, {
-    deliver: (draftId) => persistence.catchUp(draftId),
+    deliver: (draftId) => persistence.catchUpDraftRoom(draftId),
   });
   const persistence = createHocuspocusPersistenceService({
     draftStore: harness.store,

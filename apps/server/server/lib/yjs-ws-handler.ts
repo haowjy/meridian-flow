@@ -614,7 +614,11 @@ export function createHocuspocus(
       const { context } = connection;
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {
         const target = context.admissionTarget;
-        if (target?.kind === "draft") await pullLiveIntoDraft(target);
+        if (target?.kind === "draft") {
+          await pullLiveIntoDraft(target);
+          // The pull's own catch-up is detached; the answer waits for the room to hold it.
+          await services.documentSync.catchUpDraftRoom(target.draftId);
+        }
         // Batched room updates go out first, so the answer never overtakes the pull's.
         document.flush();
         connection.sendStateless(encodeCaughtUpWsMessage(message.id));

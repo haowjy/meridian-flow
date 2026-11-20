@@ -168,6 +168,8 @@ export type CollabTransport = {
     documentId: DocumentId;
     document: HocuspocusDocument;
   }): void;
+  /** Brings the draft's open room, if this process has one, up to the committed draft. */
+  catchUpDraftRoom(draftId: string): Promise<void>;
   /** A draft room unloaded: it is no longer pushed to. */
   unloadedHocuspocusDraftRoom(draftId: string): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;

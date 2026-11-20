@@ -397,7 +397,7 @@ rows only, from the revision, so a fold needs no tail read per keystroke; the ta
 counted when a command's read next loads those rows, so a run of huge pastes with no command in
 between folds at 512 rows.
 `domain/draft-runtime.ts` owns committed replicas, prefix materialization, prepared
-append/rewrite ownership, monotonic installation/delivery and maintenance. Its
+append/rewrite ownership, installation and maintenance. Its
 `compacting` set keeps one fold per draft in this process. A rewrite that wins
 first makes the fold miss; the next append past the bound tries again. Failure
 is logged as `collab.draft` `compaction.failed`. Neither maintenance nor dirty

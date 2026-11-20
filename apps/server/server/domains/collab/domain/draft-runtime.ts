@@ -190,9 +190,8 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
 
   /**
    * The draft as committed now, from the committed replica when its revision still holds,
-   * caught up from the tail when only appends landed since, otherwise materialized. What the
-   * catch-up adds reaches this process's rooms too: another process's commits arrive nowhere
-   * else, and a room missing them would fence every frame typed into it.
+   * caught up from the tail when only appends landed since, otherwise materialized. It
+   * delivers nothing: a room reads the draft in its own `catchUp`.
    */
   async function loadBase(draftId: string): Promise<DraftBase> {
     const current = committed.get(draftId);

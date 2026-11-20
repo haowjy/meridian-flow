@@ -87,7 +87,7 @@ export function openGateway(
         drop = false;
         return;
       }
-      await persistence.catchUp(draftId);
+      await persistence.catchUpDraftRoom(draftId);
     },
     diagnostics: { compactionFailed() {}, appendPrefixMissing() {} },
   });
