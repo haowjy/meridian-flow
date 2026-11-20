@@ -221,7 +221,7 @@ export class DraftCommandOwner {
   readonly notices = new DraftNotices(this.restores);
   constructor(
     private readonly registry: DraftRoomRegistry & {
-      closeDraftRoom(roomKey: string, cause: "closed" | "removed"): Promise<void>;
+      closeDraftRoom(roomKey: string): Promise<void>;
       observeHistories(observer: () => void): () => void;
     },
     private readonly lifecycle: {
@@ -539,8 +539,7 @@ export class DraftCommandOwner {
     for (const [band, held] of this.bandApplies) if (held.draftId === id) band.end();
     // Only this draft's clicks: the item's tree clicks and a newer draft's go on.
     this.items.get(ref.itemKey)?.queue.close(id);
-    if (id !== ref.itemKey)
-      void this.registry.closeDraftRoom(draftRoomName(id), "closed").catch(reportError);
+    if (id !== ref.itemKey) void this.registry.closeDraftRoom(draftRoomName(id)).catch(reportError);
   }
 
   private releaseIdle(entry: Entry) {

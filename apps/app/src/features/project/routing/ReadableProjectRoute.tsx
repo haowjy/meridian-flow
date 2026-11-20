@@ -4,7 +4,6 @@ import { draftOwnerKey, parseDraftItemKey } from "@meridian/contracts";
 import type { DraftOwnerKey } from "@meridian/contracts/branches";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import {
   useCallback,
@@ -17,7 +16,7 @@ import {
 } from "react";
 import { type DraftPin, endPin } from "@/client/project-shell/document-views";
 import type { ContextOwner } from "@/client/query/context-request-options";
-import { fetchCurrentDraftMetadata, useDraftMetadata } from "@/client/query/useDraftMetadata";
+import { useDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
@@ -34,8 +33,7 @@ import {
 } from "../context/account-feature-context";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { useDocumentStanding } from "../context/use-document-standing";
-import { useDroppedCreate } from "../context/use-dropped-create";
-import { useRemovalRecord } from "../context/use-removal-record";
+import { useRemovalAnswer } from "../context/use-removal-answer";
 import { ProjectView } from "../ProjectView";
 import { useDraftTreeVersion } from "../tree-version";
 import { useWorkScopeState } from "../use-work-scope";
@@ -295,7 +293,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       boundDocumentId,
     ],
   );
-  const queryClient = useQueryClient();
   const listedDrafts = useOwnerDrafts(
     projectId,
     documentDestination
@@ -494,16 +491,15 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
           : "unavailable"
         : undefined;
   // A review address names its document: when it is unavailable because the
-  // document was removed, it says so instead. A plain path names no document
-  // once nothing lives there, so it stays "unavailable".
+  // document was removed, the destination shows what its removal left (a Discard's Undo). A plain path names no document once nothing lives there, so
+  // it stays "unavailable".
   const removedDocumentId =
     documentIssue === "unavailable" && address.itemKey ? (closingDocumentId ?? null) : null;
-  const removedDestination = useRemovalRecord(projectId, removedDocumentId);
-  const notCreated = useDroppedCreate(projectId, removedDocumentId);
+  const removalNow = useRemovalAnswer(projectId, removedDocumentId);
   const reviewGone =
     !!address.itemKey &&
     (closingDocumentId == null ||
-      (reviewed?.status === "gone" && removedDestination?.kind === "available"));
+      (reviewed?.status === "gone" && removalNow?.kind === "available"));
   useLayoutEffect(() => {
     if (!reviewGone || !navigation) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
@@ -511,7 +507,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
     if (ticket)
       void navigation.replaceIfCurrent(ticket, withoutReview(address), { reviewEnded: true });
   }, [reviewGone, navigation, location, address]);
-  const removedTitle = documentDestination?.path.split("/").filter(Boolean).at(-1) ?? null;
   const mainIssue = parsed.kind === "invalid" ? "unavailable" : undefined;
   // The failed reads are what the address waits on; retrying them is the destination's recovery.
   const retryEditorAddress = useCallback(() => {
@@ -664,19 +659,12 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
             routeIssues={{
               main: mainIssue,
               // Loading until the removal lookup answers, so the destination
-              // never says "unavailable", then who removed it.
+              // never says "unavailable" first.
               editor:
-                removedDocumentId !== null && removedDestination === undefined
-                  ? "loading"
-                  : editorIssue,
+                removedDocumentId !== null && removalNow === undefined ? "loading" : editorIssue,
               removed:
-                removedDestination?.kind === "removed" && removedDocumentId
-                  ? {
-                      documentId: removedDocumentId,
-                      title: removedTitle,
-                      record: removedDestination.record,
-                      ...(notCreated ? { bounce: notCreated } : {}),
-                    }
+                removalNow?.kind === "removed" && removedDocumentId
+                  ? { documentId: removedDocumentId }
                   : undefined,
             }}
             onRetryEditorRoute={retryEditorAddress}

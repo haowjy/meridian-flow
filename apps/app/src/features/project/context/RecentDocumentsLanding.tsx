@@ -44,14 +44,11 @@ import { type DragEntry, LIVE_VIEW } from "./entry-drag/entry";
 import { EntrySelectionProvider, useEntrySelection } from "./entry-drag/selection";
 import { useEntryRow } from "./entry-drag/use-entry-row";
 import { useOpenProjectDocument } from "./open-project-document";
-import { RemovedDocumentLandingNotice } from "./RemovedDocumentNotice";
 import { useDeleteContextEntries } from "./use-delete-context-entries";
 
 type RecentDocumentsLandingProps = {
   projectId: string;
   editorWorkId?: string | null;
-  /** No tab is left to hold the removed-documents notice in the strip. */
-  holdsRemovedNotice?: boolean;
   /** Starts a local document in the current project (Unfiled). */
   onNewDocument?: () => void;
 };
@@ -64,7 +61,6 @@ export function RecentDocumentsLanding({
   projectId,
   editorWorkId = null,
   onNewDocument,
-  holdsRemovedNotice = false,
 }: RecentDocumentsLandingProps) {
   const recent = useRecentDocuments(projectId);
   const project = useProject(projectId);
@@ -89,12 +85,7 @@ export function RecentDocumentsLanding({
         joined
         className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center"
       >
-        <div className="absolute inset-x-6 top-4 flex flex-col items-center">
-          {discardNotice}
-          {holdsRemovedNotice ? (
-            <RemovedDocumentLandingNotice projectId={projectId} className="justify-center" />
-          ) : null}
-        </div>
+        <div className="absolute inset-x-6 top-4 flex flex-col items-center">{discardNotice}</div>
         <LandingEmpty onNewDocument={onNewDocument} />
       </MainSurface>
     );
@@ -103,12 +94,7 @@ export function RecentDocumentsLanding({
   return (
     <MainSurface joined={!loading} className="min-h-0 flex-1 overflow-y-auto">
       <div className={cn(editorColumnChrome, "pb-24")}>
-        <div className="flex h-16 flex-col justify-center">
-          {discardNotice}
-          {holdsRemovedNotice ? (
-            <RemovedDocumentLandingNotice projectId={projectId} className="min-w-0" />
-          ) : null}
-        </div>
+        <div className="flex h-16 flex-col justify-center">{discardNotice}</div>
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <h2 className={role.sectionHeading}>
             <Trans>Recently opened</Trans>

@@ -22,9 +22,7 @@ import { addBounces, type Bounce, type Was } from "./tree-undo";
 
 /** What a bounce reads from, and tells, the document sessions of this browser. */
 export type BounceHost = {
-  /** The text this browser holds of a document, read from its local copy; null with none. */
-  localText(documentId: string): Promise<string | null>;
-  /** A dropped create's draft will never exist: its room ends for good, the typed words kept for Copy. */
+  /** A dropped create's draft will never exist: its room ends for good, its typed words dropped. */
   endCreatedDraftRoom(documentId: string): void;
 };
 
@@ -62,7 +60,7 @@ export function watchBounces(
     }
     const arrived = own.filter(({ record }) => !seen.has(record.id));
     for (const { record } of arrived) seen.add(record.id);
-    if (arrived.length > 0) void say(session, arrived, host.localText);
+    if (arrived.length > 0) say(session, arrived);
   };
   const stop = session.subscribe(check);
   void session.loaded.then(() => {
@@ -72,24 +70,16 @@ export function watchBounces(
   return stop;
 }
 
-async function say(
-  session: TreeListSession,
-  arrived: readonly DroppedRecord[],
-  localText: BounceHost["localText"],
-): Promise<void> {
-  const said = await Promise.all(
-    arrived.map(async ({ record }): Promise<Bounce> => {
+function say(session: TreeListSession, arrived: readonly DroppedRecord[]): void {
+  addBounces(
+    session,
+    arrived.map(({ record }): Bounce => {
       if (record.type === "rename") return { record, typed: record.name };
       if (record.type !== "create") return { record, typed: null };
       const view = record.draft === null ? LIVE : { draft: record.draft };
-      return {
-        record,
-        typed: record.kind === "document" ? await localText(record.node) : null,
-        made: madeAt(session.replay(view), record),
-      };
+      return { record, typed: null, made: madeAt(session.replay(view), record) };
     }),
   );
-  addBounces(session, said);
 }
 
 /** Where a create's row stood: its name, and the siblings its rank puts before it, nearest first. */

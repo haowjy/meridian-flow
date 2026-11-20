@@ -15,7 +15,6 @@ import {
   useAccountId,
   useOptionalContextRemovalCoordinator,
   useOptionalDraftOnlyPresentations,
-  useOptionalRemovedNotices,
   useProjectStandings,
 } from "@/features/project/context/account-feature-context";
 import { useOptionalChatOnScreen } from "@/features/project/side/SideView";
@@ -91,7 +90,6 @@ function OwnerSettlement({
   const accountId = useAccountId();
   const standings = useProjectStandings();
   const removal = useOptionalContextRemovalCoordinator();
-  const notices = useOptionalRemovedNotices();
   const drafts = useOwnerDrafts(projectId, ownerKey);
   const views = useDocumentViews(accountId, projectId);
   const trees = useProjectTrees(projectId);
@@ -137,10 +135,7 @@ function OwnerSettlement({
       const successor = await successorDraft(queryClient, draft, pinned, scopeOwnerKey);
       if (attempt.signal.aborted) return;
       if (successor) setDocumentView(accountId, projectId, draft.documentId, { pin: successor });
-      else {
-        const closed = removal.discardDraft(projectId, draft.documentId);
-        if (closed.kind !== "noop") notices?.presentedRemoved(projectId, closed.removed);
-      }
+      else removal.discardDraft(projectId, draft.documentId);
       // Last: withdrawing changes the membership, which aborts this attempt.
       if (registry.isHold(draft.token)) registry.withdraw(draft.token);
     };

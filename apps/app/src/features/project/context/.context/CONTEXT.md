@@ -71,7 +71,7 @@ path, the same on desktop and phone. Main's tabs (`client/project-shell/main-tab
 address, never lead it: arriving at a document opens or selects its tab. Hosts mount their
 documents in `PresentedDocuments` (`presented-documents.ts`: places main, side and kept). Its
 `documents` are main's and the side's only (main first): the removal coordinator
-and removed notices read them to know what is on screen. Its `shown` list, every mounted document
+reads them to know what is on screen. Its `shown` list, every mounted document
 newest on screen first, is where the desktop picks the kept host (an open tab only); the coordinator's close, Discard and removal paths `forget` a document there, which also
 closes its tab, so its host unmounts. One document has at most one host, keyed `document:<id>` (`DocumentHost.tsx`), so a move
 between main and the side doesn't remount it.
@@ -142,7 +142,7 @@ editor address and are not recorded.
 ## Reference pages
 
 - [Presented documents and Editor lifecycle](presented-documents-and-editor-lifecycle.md) —
-  hosts, removal notices, draft-only presentation and recovery.
+  hosts, removals, draft-only presentation and recovery.
 - [Document identity bar](document-identity-bar.md) — identity chrome and the
   placement, rename, and repair contract.
 - [Tree interactions](tree-interactions.md) — inline forms, entry actions,

@@ -291,14 +291,13 @@ there. In the Changes list a notice is said on its rows, never as a line (`useDr
 `RowWord`): every row a Discard took stays struck through with Undo, in the place the list
 showed it when the writer pressed (the list is held at the press, per owner, so a switch of list
 keeps it), and every document an Apply took keeps its row with "Undo" (`AppliedFact.step`): the
-sentence says it was applied, with where it is now when it moved (read by id from the tree, the
-removal sentence once it is in Trash or purged), and the Undo is the Apply's step on the sidebar's
+sentence says it was applied, with where it is now when it moved (read by id from the tree; nothing
+said of where it is once it is in Trash or purged), and the Undo is the Apply's step on the sidebar's
 Undo stack, the one Ctrl+Z takes (`ApplyEntries.undo`; an Apply all's rows each take back the
 whole step). An Un-Apply that took something ends the applied notice; one that didn't reach the
 server toasts "Couldn't undo" and leaves it. The first row an Apply took gets the focus its ✓ or Apply all had. A band notice shows on that document's review line (above the toolbar, in place of the
 review controls a whole-draft Discard removed; the phone's review header gives it a row), or on
-the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot (above a
-removed-documents notice). Only the document's name shortens in a notice; its verb and Undo
+the review line of the document main went back to, or, when main went to Recently opened, in that landing's top slot. Only the document's name shortens in a notice; its verb and Undo
 always show. Focus stays on the surface where the writer pressed: each surface (review line,
 phone review header, Changes list, strip) wraps its notice and controls in one
 `useFocusSuccession` container, so a Discard's focus goes to the notice's Undo and an Undo's to
@@ -371,7 +370,7 @@ read-only refuses it (`read_only`) and the list re-reads, so a stale `frozen: fa
 shows a revert the room drops. The freeze itself closes the socket with `ACCESS_CHANGED`,
 which marks the room read-only at once. An unacknowledged revert is found at the read admission's
 handshake: the room is replaced by one loaded from the server, so the revert's change is back in
-the list, and its typing (not a Discard, which has no words) is handed back. Until the Discard's
+the list, and its typing (not a Discard, which has no words) is dropped with one "Couldn't save". Until the Discard's
 `returned` answer on replacement lands (it needs the closed-Work notices of never-refuse PR B),
 the Discard's local write is simply gone with the old room and shows no chip.
 

@@ -120,7 +120,7 @@ with two folders and a note. Open a chat bound to that Work (for example Beats).
 4. Seed a `zz-probe` folder with nested documents. Keep descendants open in
    main, the side and kept (open one, then another, with a chat in between). Delete the folder
    from its list: the folder's row is struck through with "Undo" at once, its rows go, and the
-   open documents close with the removed notice.
+   open documents close with nothing said.
    Repeat offline, reload, then reconnect: the delete lands once and the tree agrees in a second tab.
 5. Delete a Scratch note independently, then trash and restore its No Work chat
    and its Work. The independently deleted note never returns.

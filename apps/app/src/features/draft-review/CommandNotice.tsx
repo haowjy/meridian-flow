@@ -22,10 +22,8 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { type Removal, useRemovalSentence } from "@/features/project/context/RemovedDocumentNotice";
-import { removalAnswer } from "@/features/project/context/removal-answer";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
-import { type AppliedFact, type DraftNotice, hasLine } from "./draft-notices";
+import type { AppliedFact, DraftNotice } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
 export type CommandQuestion = {
@@ -130,34 +128,20 @@ export function DraftNoticeLine({
   className?: string;
 }) {
   useLingui();
-  const sayRemoval = useRemovalSentence();
   const undo = useNoticeUndo();
   const openDocument = useOpenProjectDocument(notice.projectId);
-  const whereabouts = useWhereabouts(notice.projectId);
-  if (!hasLine(notice)) return null;
+  const landed = useLandedNow(notice);
   if (notice.kind === "applied") {
-    // A document gone since says so once, in place of what the Apply did to it.
-    const removed = new Map<string, Removal>();
-    const facts = notice.facts.flatMap((fact): AppliedFact[] => {
-      if (fact.kind === "applied") return [];
-      const now = whereabouts(fact.documentId, fact.name);
-      if (now.kind !== "removed") return [factNow(fact, now)];
-      removed.set(fact.documentId, now.removal);
-      return [];
-    });
-    const landed = facts.flatMap((fact) => (fact.kind === "landed" ? [fact] : []));
+    if (landed.length === 0) return null;
     const [only] = landed;
     // The bare "Now in X." only when the Apply landed one document: with others it needs its name.
-    const single = only && notice.facts.filter((fact) => fact.kind === "landed").length === 1;
-    const name = only ? documentDisplayName(only.uri) : "";
+    const single = notice.facts.filter((fact) => fact.kind === "landed").length === 1;
+    const name = documentDisplayName(only.uri);
     // One landing names the document on its Open; the line says where it went. Several say it
     // once per place, so the line holds at sidebar width.
-    const sentence = [
-      ...(single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)),
-      sayRemoval([...removed.values()]),
-    ]
-      .filter(Boolean)
-      .join(" ");
+    const sentence = (single ? [t`Now in ${placeOf(only.uri)}.`] : landedSentences(landed)).join(
+      " ",
+    );
     return (
       <ActionNotice
         data-command-notice="applied"
@@ -248,7 +232,6 @@ const takeOnce = (id: number) => !focused.has(id) && Boolean(focused.add(id));
 
 export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWords {
   useLingui();
-  const sayRemoval = useRemovalSentence();
   const undo = useNoticeUndo();
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
   if (!notice) return { held: () => false, word: () => null };
@@ -261,13 +244,13 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
         const [first] = factsOf(id);
         const step = factsOf(id).find((fact) => fact.step)?.step;
         if (!first || !step) return null;
-        const now = whereabouts(id, first.name);
+        const now = whereabouts(id);
         const name = now.kind === "placed" ? documentDisplayName(now.uri) : first.name;
         return (
           <RowWord
             label={t`Undo applying ${name}`}
             word={<Trans>Undo</Trans>}
-            sentence={now.kind === "removed" ? sayRemoval([now.removal]) : t`Applied`}
+            sentence={t`Applied`}
             onAction={() => void step.undo(null)}
             // The pressed ✓ or Apply all left with its row: the first row the Apply took has
             // the focus, as a delete's Undo does.
@@ -303,30 +286,43 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
  * has it, `removed` once it is in Trash or purged, and `unread` while the list can't say, when the
  * notice says where the Apply left it.
  */
-type Whereabouts =
-  | { kind: "placed"; uri: string }
-  | { kind: "removed"; removal: Removal }
-  | { kind: "unread" };
+type Whereabouts = { kind: "placed"; uri: string } | { kind: "removed" } | { kind: "unread" };
 
-function useWhereabouts(projectId: string): (documentId: string, name: string) => Whereabouts {
+function useWhereabouts(projectId: string): (documentId: string) => Whereabouts {
   const trees = useProjectTrees(projectId);
-  return (documentId, name) => {
+  return (documentId) => {
     const place = trees.find(documentId);
     if (place) return { kind: "placed", uri: place.file.uri };
-    const standing = trees.standing(documentId);
-    if (standing.kind !== "in-trash" && standing.kind !== "purged") return { kind: "unread" };
-    const answer = removalAnswer(standing);
-    const title = standing.kind === "in-trash" ? standing.node.name : name;
-    return {
-      kind: "removed",
-      removal: { title, record: answer?.kind === "removed" ? answer.record : null },
-    };
+    const { kind } = trees.standing(documentId);
+    return kind === "in-trash" || kind === "purged" ? { kind: "removed" } : { kind: "unread" };
   };
 }
 
+type Landed = Extract<AppliedFact, { kind: "landed" }>;
+
+/**
+ * What an Apply landed, each fact as its document stands now. A document gone since is left out:
+ * there is nothing to say of where it landed. A notice that is not an Apply has none.
+ */
+function useLandedNow(notice: DraftNotice | null): Landed[] {
+  const whereabouts = useWhereabouts(notice?.projectId ?? "");
+  if (notice?.kind !== "applied") return [];
+  return notice.facts.flatMap((fact) => {
+    if (fact.kind !== "landed") return [];
+    const now = whereabouts(fact.documentId);
+    return now.kind === "removed" ? [] : [factNow(fact, now)];
+  });
+}
+
+/** The notice, if it has a line to say: a plain Apply's is said only on its rows, and a landing in a document since deleted says nothing. */
+export function useNoticeLine(notice: DraftNotice | null): DraftNotice | null {
+  const landed = useLandedNow(notice);
+  return notice && (notice.kind !== "applied" || landed.length > 0) ? notice : null;
+}
+
 /** The fact as the document stands now: a landing names where it is. */
-function factNow(fact: AppliedFact, now: Whereabouts): AppliedFact {
-  if (now.kind !== "placed" || fact.kind !== "landed") return fact;
+function factNow(fact: Landed, now: Whereabouts): Landed {
+  if (now.kind !== "placed") return fact;
   return { ...fact, uri: now.uri, name: documentDisplayName(now.uri) };
 }
 

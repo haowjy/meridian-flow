@@ -8,9 +8,7 @@
  * pill says nothing in healthy use:
  *   - `destroyed`   → "Closed" (session torn down); always wins
  *   - `access-lost` → "Access lost (not saving to the server)" (terminal denial); always wins,
- *     except for a removed document (4208): nothing while availability is
- *     asked, the removal's sentence once it proves one, and "Access lost"
- *     for any other answer
+ *     except for a removed document (4208), which says nothing: the tab closes on its own
  *   - an outage → "Saved locally (offline)" (edits buffered in the browser).
  *     It begins when the status is `offline`, and ends at once
  *     when the session says its unsent edits can't be delivered
@@ -39,8 +37,6 @@ import {
   type DocumentSessionSnapshot,
   updatesRefused,
 } from "@/core/editor/document-session";
-import { RemovedDocumentSentence } from "@/features/project/context/RemovedDocumentNotice";
-import type { RemovalAnswer } from "@/features/project/context/removal-answer";
 
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
 
@@ -87,15 +83,9 @@ export type SyncStatusProps = {
   session: DocumentSession;
   /** Reopens a room whose updates were refused; only a draft review offers it. */
   onReopen?: () => void;
-  /**
-   * A removed room's (4208) availability answer while its tab is still open;
-   * undefined while asked. Once the tab closes, the notice beside the strip
-   * says it instead.
-   */
-  removal?: RemovalAnswer;
 };
 
-export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
+export function SyncStatus({ session, onReopen }: SyncStatusProps) {
   const [stored, setStored] = useState<Tracked>(() => trackSession(session));
 
   // A new session starts from its own snapshot with no outage history. Reset
@@ -154,19 +144,11 @@ export function SyncStatus({ session, onReopen, removal }: SyncStatusProps) {
 
   // Autosync is assumed, so the healthy and transient states say nothing:
   // "no news is good news." Terminal states win over any outage phase. Rendered
-  // inside the editor's status pill (SessionEditor). A removed room says nothing while
-  // availability is asked or has said it is still there (a restart follows);
-  // a tab that stays open says why in place.
+  // inside the editor's status pill (SessionEditor). A removed room says nothing.
   const removed =
     snapshot.connectionState?.kind === "reset" &&
     snapshot.connectionState.disposition === "removed";
-  const label = removed ? (
-    removal === undefined || removal.kind === "available" ? null : removal.kind === "removed" ? (
-      <RemovedDocumentSentence documents={[{ title: null, record: removal.record }]} />
-    ) : (
-      <Trans>Access lost (not saving to the server)</Trans>
-    )
-  ) : snapshot.status === "destroyed" ? (
+  const label = removed ? null : snapshot.status === "destroyed" ? (
     <Trans>Closed</Trans>
   ) : snapshot.status === "access-lost" ? (
     <Trans>Access lost (not saving to the server)</Trans>

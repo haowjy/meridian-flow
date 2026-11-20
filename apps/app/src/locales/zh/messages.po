@@ -345,16 +345,16 @@ msgid "{count, plural, one {# change} other {# changes}}"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count, plural, one {# document deleted} other {# documents deleted}}"
-msgstr ""
+#~ msgid "{count, plural, one {# document deleted} other {# documents deleted}}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count, plural, one {# document discarded} other {# documents discarded}}"
-msgstr ""
+#~ msgid "{count, plural, one {# document discarded} other {# documents discarded}}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count, plural, one {# document removed} other {# documents removed}}"
-msgstr ""
+#~ msgid "{count, plural, one {# document removed} other {# documents removed}}"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "{count, plural, one {# document to review} other {# documents to review}}"
@@ -401,16 +401,16 @@ msgid "{count} changes"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were deleted ({names})."
-msgstr ""
+#~ msgid "{count} documents were deleted ({names})."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were discarded from the draft ({names})."
-msgstr ""
+#~ msgid "{count} documents were discarded from the draft ({names})."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{count} documents were removed ({names})."
-msgstr ""
+#~ msgid "{count} documents were removed ({names})."
+#~ msgstr ""
 
 #: src/features/import/import-presentation.ts
 msgid "{count} uploaded. Pick {name} again to continue."
@@ -574,40 +574,40 @@ msgid "{name} connected"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted {count} documents ({names})."
-msgstr "{name} 删除了 {count} 份文档（{names}）。"
+#~ msgid "{name} deleted {count} documents ({names})."
+#~ msgstr "{name} 删除了 {count} 份文档（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted {title}"
-msgstr ""
+#~ msgid "{name} deleted {title}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted {title} from {area}"
-msgstr ""
+#~ msgid "{name} deleted {title} from {area}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted {title}."
-msgstr "{name} 删除了{title}。"
+#~ msgid "{name} deleted {title}."
+#~ msgstr "{name} 删除了{title}。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} deleted this document."
-msgstr "{name} 删除了这份文档。"
+#~ msgid "{name} deleted this document."
+#~ msgstr "{name} 删除了这份文档。"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{name} deleted."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} discarded {count} documents from the draft ({names})."
-msgstr "{name} 从草稿中放弃了 {count} 份文档（{names}）。"
+#~ msgid "{name} discarded {count} documents from the draft ({names})."
+#~ msgstr "{name} 从草稿中放弃了 {count} 份文档（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} discarded {title} from the draft."
-msgstr "{name} 从草稿中放弃了{title}。"
+#~ msgid "{name} discarded {title} from the draft."
+#~ msgstr "{name} 从草稿中放弃了{title}。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} discarded this document from the draft."
-msgstr "{name} 从草稿中放弃了这份文档。"
+#~ msgid "{name} discarded this document from the draft."
+#~ msgstr "{name} 从草稿中放弃了这份文档。"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "{name} discarded."
@@ -646,12 +646,12 @@ msgid "{name} unreachable"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} was deleted"
-msgstr ""
+#~ msgid "{name} was deleted"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{name} was discarded from the draft"
-msgstr ""
+#~ msgid "{name} was discarded from the draft"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/AgentsSource.tsx
 msgid "{name} was removed."
@@ -754,20 +754,20 @@ msgid "{title} restored"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted"
-msgstr ""
+#~ msgid "{title} was deleted"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted from {area}"
-msgstr ""
+#~ msgid "{title} was deleted from {area}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was deleted."
-msgstr ""
+#~ msgid "{title} was deleted."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{title} was discarded from the draft."
-msgstr ""
+#~ msgid "{title} was discarded from the draft."
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 msgid "{toReview} to review"
@@ -782,20 +782,20 @@ msgid "{unavailable, plural, one {# unavailable} other {# unavailable}}"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{who} deleted {name}"
-msgstr ""
+#~ msgid "{who} deleted {name}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{who} deleted this document"
-msgstr ""
+#~ msgid "{who} deleted this document"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{who} discarded {name} from the draft"
-msgstr ""
+#~ msgid "{who} discarded {name} from the draft"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "{who} discarded this document from the draft"
-msgstr ""
+#~ msgid "{who} discarded this document from the draft"
+#~ msgstr ""
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
 msgid "{words, plural, one {# word removed} other {# words removed}}"
@@ -1954,12 +1954,12 @@ msgid "Copy reference"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Copy takes the name you typed."
-msgstr ""
+#~ msgid "Copy takes the name you typed."
+#~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Copy takes what you typed."
-msgstr ""
+#~ msgid "Copy takes what you typed."
+#~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Copy the name you typed"
@@ -1974,8 +1974,8 @@ msgid "Copy to…"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Copy what you typed"
-msgstr ""
+#~ msgid "Copy what you typed"
+#~ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Copying"
@@ -2032,7 +2032,6 @@ msgid "Couldn’t confirm this preference saved."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
-#: src/features/editor/RescuedText.tsx
 #: src/features/editor/surfaces/objects/verb-feedback.tsx
 #: src/features/project/context/entry-drag/entry-failure.ts
 msgid "Couldn't copy"
@@ -2332,7 +2331,6 @@ msgstr ""
 
 #: src/client/commands/submit.ts
 #: src/features/agents/PackageSave.tsx
-#: src/features/editor/RescuedText.tsx
 #: src/features/project/context/account-feature-lifetime.ts
 #: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Couldn't save"
@@ -2779,7 +2777,6 @@ msgstr ""
 #: src/components/app/FailureCard.tsx
 #: src/components/app/InlineErrorRow.tsx
 #: src/features/editor/RescuedText.tsx
-#: src/features/project/context/RemovedDocumentNotice.tsx
 #: src/features/project/work/GoneWord.tsx
 msgid "Dismiss"
 msgstr ""
@@ -4282,8 +4279,8 @@ msgid "Not created"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Not created:"
-msgstr ""
+#~ msgid "Not created:"
+#~ msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
 msgid "Not deleted"
@@ -4325,7 +4322,11 @@ msgid "Not renamed"
 msgstr ""
 
 #: src/features/project/context/use-tree-notice-words.tsx
-msgid "Not renamed:"
+#~ msgid "Not renamed:"
+#~ msgstr ""
+
+#: src/features/project/context/use-tree-notice-words.tsx
+msgid "Not renamed: {closed} Copy takes the name you typed."
 msgstr ""
 
 #: src/features/chat/AssistantTurnActions.tsx
@@ -5936,60 +5937,60 @@ msgid "The AI can't view this file."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted {count} documents ({names})."
-msgstr "{chat} 中的 AI 删除了 {count} 份文档（{names}）。"
+#~ msgid "The AI in {chat} deleted {count} documents ({names})."
+#~ msgstr "{chat} 中的 AI 删除了 {count} 份文档（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted {name}"
-msgstr ""
+#~ msgid "The AI in {chat} deleted {name}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted {title}"
-msgstr ""
+#~ msgid "The AI in {chat} deleted {title}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted {title} from {area}"
-msgstr ""
+#~ msgid "The AI in {chat} deleted {title} from {area}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted {title}."
-msgstr "{chat} 中的 AI 删除了{title}。"
+#~ msgid "The AI in {chat} deleted {title}."
+#~ msgstr "{chat} 中的 AI 删除了{title}。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted this document"
-msgstr ""
+#~ msgid "The AI in {chat} deleted this document"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in {chat} deleted this document."
-msgstr "{chat} 中的 AI 删除了这份文档。"
+#~ msgid "The AI in {chat} deleted this document."
+#~ msgstr "{chat} 中的 AI 删除了这份文档。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted {count} documents ({names})."
-msgstr "某个对话中的 AI 删除了 {count} 份文档（{names}）。"
+#~ msgid "The AI in a chat deleted {count} documents ({names})."
+#~ msgstr "某个对话中的 AI 删除了 {count} 份文档（{names}）。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted {name}"
-msgstr ""
+#~ msgid "The AI in a chat deleted {name}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted {title}"
-msgstr ""
+#~ msgid "The AI in a chat deleted {title}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted {title} from {area}"
-msgstr ""
+#~ msgid "The AI in a chat deleted {title} from {area}"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted {title}."
-msgstr "某个对话中的 AI 删除了{title}。"
+#~ msgid "The AI in a chat deleted {title}."
+#~ msgstr "某个对话中的 AI 删除了{title}。"
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted this document"
-msgstr ""
+#~ msgid "The AI in a chat deleted this document"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "The AI in a chat deleted this document."
-msgstr "某个对话中的 AI 删除了这份文档。"
+#~ msgid "The AI in a chat deleted this document."
+#~ msgstr "某个对话中的 AI 删除了这份文档。"
 
 #: src/features/chat/tool-renderers.tsx
 msgid "The AI read the text extracted from this file."
@@ -6171,20 +6172,20 @@ msgid "This document is still opening."
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was deleted"
-msgstr ""
+#~ msgid "This document was deleted"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was deleted."
-msgstr ""
+#~ msgid "This document was deleted."
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was discarded from the draft"
-msgstr ""
+#~ msgid "This document was discarded from the draft"
+#~ msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "This document was discarded from the draft."
-msgstr ""
+#~ msgid "This document was discarded from the draft."
+#~ msgstr ""
 
 #: src/core/editor/asset-image-render-state.ts
 msgid "This figure needs a project to render"
@@ -6576,8 +6577,8 @@ msgid "Unsaved"
 msgstr ""
 
 #: src/features/project/context/RemovedDocumentNotice.tsx
-msgid "Untitled"
-msgstr ""
+#~ msgid "Untitled"
+#~ msgstr ""
 
 #: src/features/chat/derivation/SourceChatLink.tsx
 #: src/lib/thread-title.ts

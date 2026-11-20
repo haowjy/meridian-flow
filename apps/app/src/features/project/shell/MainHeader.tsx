@@ -11,7 +11,6 @@ import { AppStatus } from "@/components/app/AppStatus";
 import { role } from "@/components/ui/roles";
 import { holdFocus } from "@/lib/focus-follow";
 import { cn } from "@/lib/utils";
-import { RemovedDocumentChip, RemovedNoticeSlot } from "../context/RemovedDocumentNotice";
 import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { BandIconButton } from "./BandIconButton";
 import { MainTabMenu, MainTabStrip } from "./MainTabStrip";
@@ -72,9 +71,6 @@ export function MainHeader({
             current={current}
             onNew={onNew}
           />
-          <RemovedNoticeSlot>
-            <RemovedDocumentChip projectId={projectId} />
-          </RemovedNoticeSlot>
           <MainTabMenu
             projectId={projectId}
             kind={kind}

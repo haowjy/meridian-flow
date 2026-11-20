@@ -37,7 +37,6 @@ import { useAccountId } from "./account-feature-context";
 import { schemeLocation } from "./context-schemes";
 import { useDocumentTrashRestore } from "./DocumentTrashRestoreProvider";
 import { useOpenProjectDocument } from "./open-project-document";
-import { type ChatTitles, type RemovalVoice, removalVoice } from "./RemovedDocumentNotice";
 import { useDocumentStanding } from "./use-document-standing";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { ReadOnlyViewerFrame } from "./viewers/ReadOnlyViewerFrame";
@@ -210,7 +209,7 @@ function trashSentence(
   details: TrashedDetails,
   locale: string,
   accountId: string,
-  chats: ChatTitles,
+  chats: (chatId: string) => string | null,
 ): string {
   const place = schemeLocation(details.scheme, details.folders);
   if (!details.kept) return deletedSentence(details.actor, place, null, accountId, chats);
@@ -226,40 +225,37 @@ function trashSentence(
 
 /**
  * Names who deleted it only when that says something: you, another writer, a chat's AI or a Work,
- * in `RemovedDocumentNotice`'s words. The date is left out until the server has said it.
+ * as the Trash row says it. The date is left out until the server has said it.
  */
 function deletedSentence(
   actor: DocumentRemovalRecord["actor"],
   place: string,
   deleted: string | null,
   accountId: string,
-  chats: ChatTitles,
+  chats: (chatId: string) => string | null,
 ): string {
   if (actor?.kind === "user" && actor.userId === accountId)
     return deleted
       ? t`Deleted from ${place} by you on ${deleted}.`
       : t`Deleted from ${place} by you.`;
-  const voice: RemovalVoice = removalVoice({ reason: "deleted", actor, time: "" }, chats);
-  switch (voice.kind) {
-    case "person": {
-      const { name } = voice;
-      return deleted
-        ? t`Deleted from ${place} by ${name} on ${deleted}.`
-        : t`Deleted from ${place} by ${name}.`;
-    }
-    case "agent": {
-      const { chat } = voice;
-      if (chat)
-        return deleted
-          ? t`Deleted from ${place} by the AI in ${chat} on ${deleted}.`
-          : t`Deleted from ${place} by the AI in ${chat}.`;
-      return deleted
-        ? t`Deleted from ${place} by the AI in a chat on ${deleted}.`
-        : t`Deleted from ${place} by the AI in a chat.`;
-    }
-    case "anonymous":
-      return deleted ? t`Deleted from ${place} on ${deleted}.` : t`Deleted from ${place}.`;
+  if (actor?.kind === "user" && actor.displayName) {
+    const name = actor.displayName;
+    return deleted
+      ? t`Deleted from ${place} by ${name} on ${deleted}.`
+      : t`Deleted from ${place} by ${name}.`;
   }
+  if (actor?.kind === "agent") {
+    // A chat's AI is named by its chat: the record's title, else the chat list's.
+    const chat = actor.chatTitle ?? (actor.chatId ? chats(actor.chatId) : null);
+    if (chat)
+      return deleted
+        ? t`Deleted from ${place} by the AI in ${chat} on ${deleted}.`
+        : t`Deleted from ${place} by the AI in ${chat}.`;
+    return deleted
+      ? t`Deleted from ${place} by the AI in a chat on ${deleted}.`
+      : t`Deleted from ${place} by the AI in a chat.`;
+  }
+  return deleted ? t`Deleted from ${place} on ${deleted}.` : t`Deleted from ${place}.`;
 }
 
 function retentionSentence(retention: TrashRetention, locale: string): string {

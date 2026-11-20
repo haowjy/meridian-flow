@@ -259,19 +259,16 @@ A rescue gives typed text back to its author after something else took it away. 
 - **The schema witness's removed text**, in the browser: when the binding's repair removes text, the
   witness (`schema-repair-witness.ts`) reports the removed prose, and the "Some text was removed"
   bar's Details show it.
-- **Unsent typing**, in the browser: before a room's local copy goes with typing the server lacks
-  (a draft closed or removed, a document removed, the writer's access changed), the session
-  registry reads the words the copy holds beyond its mark of what the server is known to have, and
-  a toast hands them back
-  (`observeUnsentTyping`; the editor's [CONTEXT](../../../apps/app/src/core/editor/.context/CONTEXT.md),
-  "Unsent typing handed back"). It hands back only those words, not the whole document.
 
-The two browser rescues show their words in one body, `RescuedText`
+The schema repair's removed text shows in one body, `RescuedText`
 (`apps/app/src/features/editor/RescuedText.tsx`): each passage with Copy, then Dismiss, so the
-writer cannot clear words they have not seen. Each counts once through the client diagnostics
+writer cannot clear words they have not seen. It counts once through the client diagnostics
 channel (`/api/diagnostics/failures`), logged as `rescue.handed_back` with `rescue`
-(`schema-removed-text` or `unsent-typing`), `endedBy` for unsent typing, and `chars` and
-`passages`; never the words.
+(`schema-removed-text`), `chars` and `passages`; never the words.
+
+Not a rescue: typing a room never delivered (a draft closed or removed, a document removed, the
+room admitted read-only) is dropped with one "Couldn't save" pill and nothing stored (the editor's
+[CONTEXT](../../../apps/app/src/core/editor/.context/CONTEXT.md), "Unsent typing dropped").
 
 Not a rescue, because the text never leaves: a draft room whose updates the server refused three
 times in a row stays on screen read-only with the words, under "Couldn't save your latest changes"
@@ -308,9 +305,8 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
 - Late typing recovery (Work drafts), what stays lost or doubled:
   - Typing sent after the typist's own client already held the deletion: the client collected the
     text (a browser doc collects deleted content), so the update carries no characters, except what
-    its undo history retains. The browser's handback is the only rescue for the rest; for a room
-    admitted read-only it reads the difference from the handshake, so no typing is lost to the
-    outbox's blind spots (a reload, another tab). What the undo
+    its undo history retains. The rest is lost; a room admitted read-only reads the difference from the handshake, so the
+    pill still tells the writer what the outbox's blind spots (a reload, another tab) held. What the undo
     history retains is recovered, and a word deleted and restored offline may then show twice.
   - A typist's backspace of text that arrived hidden, in a frame after the one that recovered it, is not
     applied, and neither is a peer's deletion of the typist's original that it saw before the

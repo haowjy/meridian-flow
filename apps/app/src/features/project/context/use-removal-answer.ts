@@ -9,7 +9,7 @@ const unwatched = () => undefined;
  * Whether and how a document was removed: undefined until the list is read, or when no document
  * is asked about.
  */
-export function useRemovalRecord(
+export function useRemovalAnswer(
   projectId: string,
   documentId: string | null,
 ): RemovalAnswer | undefined {

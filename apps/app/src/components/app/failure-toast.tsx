@@ -6,7 +6,7 @@
  * floating pill, drawn as the app's menus are: the failure's category ("Couldn't apply", "Sign-in
  * expired"), a short `reason` only where running it again would fail the same way, at most one
  * action, and a close. Cause and consequence go to the console (`detail`), never into the pill.
- * Closing only hides it: what it hands back stays until the writer acts on it.
+ * Closing only hides it.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
@@ -28,7 +28,6 @@ export function notifyFailure({
   action,
   brief,
   detail,
-  body,
 }: {
   /** This failure's own: a second toast under one key replaces the first. */
   key: string;
@@ -42,8 +41,6 @@ export function notifyFailure({
   brief?: true;
   /** What went wrong, for whoever debugs it: logged, never shown. */
   detail?: unknown;
-  /** Something the writer needs to reach under the title, such as words to select. */
-  body?: ReactNode;
 }) {
   if (detail !== undefined) console.warn(`[failure] ${key}`, detail);
   dismissFailure(key);
@@ -57,8 +54,6 @@ export function notifyFailure({
   );
   const id = toast.error(label, {
     duration: brief ? BRIEF_MS : Number.POSITIVE_INFINITY,
-    description: body,
-    className: body ? "items-start! py-1.5!" : undefined,
     onDismiss: () => {
       if (owns()) shown.delete(key);
     },

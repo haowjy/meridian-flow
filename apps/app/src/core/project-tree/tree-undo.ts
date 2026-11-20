@@ -119,7 +119,7 @@ export type TreeNotice = { kind: "step"; step: TreeStep };
  */
 export type Bounce = {
   record: DroppedRecord["record"];
-  /** What Copy takes: a created document's typed text, or a rename's name; null when there is none. */
+  /** What Copy takes: a rename's name; null for any other change. */
   typed: string | null;
   /** A create's row as the writer made it, which stays struck through where it was. */
   made?: Was;
