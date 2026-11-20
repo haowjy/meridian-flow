@@ -35,6 +35,7 @@ import {
   applyCommandTrees,
   commands,
   documentBlockRooms,
+  documents,
   pressTextEffects,
 } from "@meridian/database/schema";
 import {
@@ -48,7 +49,7 @@ import {
   undoApply,
 } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
@@ -119,36 +120,48 @@ export function createDrizzlePress(
     { kind: "account", userId: envelope.accountId },
   ];
 
-  /** The documents whose derived cut holds this Work's suggestions: the pending index. */
-  async function indexed(work: string): Promise<Set<string>> {
+  /**
+   * The documents of the Work's lists whose derived cut holds its suggestions: the pending index.
+   * It lags the document's derivation, so it only stands for documents nobody named.
+   */
+  async function indexed(envelope: CommandEnvelope, work: string): Promise<string[]> {
     const rows = await currentDrizzleDb(db)
       .select({ id: documentBlockRooms.documentId })
       .from(documentBlockRooms)
+      .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
       .where(
         and(
-          sql`${documentBlockRooms.pendingChanges} <> '{}'::jsonb`,
+          or(
+            envelope.projectId
+              ? eq(documents.projectId, envelope.projectId as ProjectId)
+              : undefined,
+            eq(documents.userId, envelope.accountId as UserId),
+          ),
           sql`${documentBlockRooms.pendingChanges} ? ${work}`,
         ),
       );
-    return new Set(rows.map((row) => row.id as string));
+    return rows.map((row) => row.id as string);
   }
 
   /**
    * What a press takes, read under the lists' keys: the nodes whose tree records it settles, and
-   * the documents whose text it resolves. A folder takes every node under it in the Work's view.
+   * the documents whose text it resolves. A folder takes every node under it in the Work's view,
+   * and every document there has its text pressed: resolving a document with no suggestion
+   * changes nothing. "all" takes the indexed documents and the ones the tab has open.
    */
   async function selection(
+    envelope: CommandEnvelope,
     lists: TreeList[],
     branchId: BranchId | null,
-    items: PressCommand["request"]["items"],
+    request: PressCommand["request"],
     work: string,
   ): Promise<{ tree: Set<string>; text: Set<string> }> {
-    const text = await indexed(work);
+    const { items } = request;
     const picked = await deps.treeLists.read({
       lists,
       view: (ends) => {
         const tree = new Set<string>();
-        const under = new Set<string>();
+        const text = new Set<string>();
         for (const { writer } of ends) {
           if (items === "all") {
             if (branchId)
@@ -157,18 +170,26 @@ export function createDrizzlePress(
           }
           const view = writer.view(branchId ? { draft: branchId } : LIVE);
           for (const { node } of items) {
-            under.add(node);
-            if (view.nodes.get(node)?.kind === "folder")
-              for (const id of descendantsOf(view, node)) under.add(id);
+            const under = [
+              node,
+              ...(view.nodes.get(node)?.kind === "folder" ? descendantsOf(view, node) : []),
+            ];
+            for (const id of under) {
+              tree.add(id);
+              if (view.nodes.get(id)?.kind === "document") text.add(id);
+            }
           }
         }
-        return { tree: items === "all" ? tree : under, under };
+        return { tree, text };
       },
     });
-    return {
-      tree: branchId ? picked.tree : new Set(),
-      text: items === "all" ? text : new Set([...picked.under].filter((id) => text.has(id))),
-    };
+    if (items === "all")
+      for (const id of [
+        ...(await indexed(envelope, work)),
+        ...(request.seen ?? []).map((one) => one.documentId),
+      ])
+        picked.text.add(id);
+    return { tree: branchId ? picked.tree : new Set(), text: picked.text };
   }
 
   /** Each document's place in Live after the tree half: whether its text may be written. */
@@ -251,7 +272,6 @@ export function createDrizzlePress(
     const { envelope, owner, request } = command;
     const work = draftOwnerKey(owner);
     const lists = listsOf(envelope);
-    const branch = await deps.branches.activeForOwner(owner);
     const seen = new Map((request.seen ?? []).map((one) => [one.documentId, one.vector]));
     const answer = (items: PressResult["items"], settled?: PressResult["settled"]) => ({
       status: "pressed" as const,
@@ -269,7 +289,6 @@ export function createDrizzlePress(
         () =>
           deps.workProjection.mutate(
             {
-              branches: branch ? [branch.id] : [],
               works: [...(owner.kind === "work" ? [owner.workId] : []), ...owners.works],
               lineages: [
                 ...(owner.kind === "lineage" ? [owner.rootThreadId] : []),
@@ -277,11 +296,13 @@ export function createDrizzlePress(
               ],
             },
             async (locked): Promise<PressResult> => {
+              // Read under the owner's lock: a branch is made or closed only under it.
+              const branch = await deps.branches.activeForOwner(owner);
               const active = branch ? await deps.branches.lockActive(branch.id) : null;
               const branchId = active?.id ?? null;
               const judge = await owners.judge(locked);
               await deps.treeLists.lock(lists);
-              const picked = await selection(lists, branchId, request.items, work);
+              const picked = await selection(envelope, lists, branchId, request, work);
               const nodes = [...new Set([...picked.tree, ...picked.text])];
               const tree = new Set<string>();
               const text = new Set<string>();
@@ -346,11 +367,14 @@ export function createDrizzlePress(
         },
       );
 
-    if (request.verdict === "discard" || !branch) return run(NO_OWNERS);
+    if (request.verdict === "discard") return run(NO_OWNERS);
     // The sources the Work's pending records change, and where Live has the nodes they name:
-    // their owners are locked with the Work's and judged under the locks. A miss restarts.
-    const sources = () =>
-      deps.treeLists.read({
+    // their owners are locked with the Work's and judged under the locks. A guess read before
+    // the locks, so it can miss; a miss restarts.
+    const sources = async () => {
+      const branch = await deps.branches.activeForOwner(owner);
+      if (!branch) return new Set<string>();
+      return deps.treeLists.read({
         lists,
         view: (ends) => {
           const out = new Set<string>();
@@ -366,6 +390,7 @@ export function createDrizzlePress(
           return out;
         },
       });
+    };
     return withTreeOwners(db, sources, run);
   }
 
@@ -380,6 +405,7 @@ export function createDrizzlePress(
         and(
           eq(commands.id, pressId),
           eq(commands.accountId, envelope.accountId),
+          eq(commands.projectId, envelope.projectId as ProjectId),
           eq(commands.kind, "press"),
         ),
       );
@@ -487,9 +513,10 @@ export function createDrizzlePress(
             judge.assertLocked();
             const text: string[] = [];
             for (const effect of effects.sort((a, b) => a.documentId.localeCompare(b.documentId))) {
-              // A closed owner's notes take no change; the text stays as the press left it.
-              if (standing.get(effect.documentId)?.textClosed) continue;
-              if (await undoText(effect)) text.push(effect.documentId);
+              // A closed owner's notes take no change: the text stays as the press left it, and
+              // the effect is taken back all the same, so a later Undo can't reach it.
+              if (!standing.get(effect.documentId)?.textClosed && (await undoText(effect)))
+                text.push(effect.documentId);
               await tx()
                 .update(pressTextEffects)
                 .set({ undoneBy: envelope.commandId })

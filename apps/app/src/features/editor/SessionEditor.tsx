@@ -435,6 +435,7 @@ function ActiveSessionEditorView({
         </div>
         {suggestionModeEnabled && suggestionOwner && editor && projectId ? (
           <SuggestionBand
+            key={`${suggestionOwner}:${documentId}`}
             editor={editor}
             ownerKey={suggestionOwner}
             accountId={accountId}

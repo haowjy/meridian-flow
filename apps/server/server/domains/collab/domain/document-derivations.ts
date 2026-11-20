@@ -136,7 +136,6 @@ export async function deriveDocumentOutputs(
   derivePending?: DerivePending,
 ): Promise<DocumentDerivationOutputs> {
   const blocks = await deriveBlocks(cut.documentId, doc);
-  // After the blocks: the model's read of them is what this counts from.
   const pendingChanges = derivePending?.(doc) ?? {};
   const links = !cut.holderUri
     ? []

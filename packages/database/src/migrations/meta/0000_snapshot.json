@@ -9382,22 +9382,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "document_block_rooms_pending": {
-          "name": "document_block_rooms_pending",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"document_block_rooms\".\"pending_changes\" <> '{}'::jsonb",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {

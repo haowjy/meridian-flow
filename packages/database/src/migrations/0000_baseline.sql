@@ -1304,7 +1304,6 @@ CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USI
 CREATE INDEX "commands_thread" ON "commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE INDEX "commands_discard_project" ON "commands" USING btree ("project_id","created_at") WHERE "commands"."kind" IN ('discard', 'undo_discard', 'unapply');--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
-CREATE INDEX "document_block_rooms_pending" ON "document_block_rooms" USING btree ("document_id") WHERE "document_block_rooms"."pending_changes" <> '{}'::jsonb;--> statement-breakpoint
 CREATE UNIQUE INDEX "document_drafts_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft';--> statement-breakpoint
 CREATE INDEX "document_drafts_work_draft_by_branch" ON "document_drafts" USING btree ("branch_id","id") WHERE "document_drafts"."kind" = 'work_draft';--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint

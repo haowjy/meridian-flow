@@ -300,19 +300,15 @@ export const documentBlockRooms = pgTable(
     extractorVersion: integer("extractor_version").notNull(),
     /**
      * Suggestion mode: per Work (its draft owner key), the number of its pending changes in the
-     * cut. A cache of the document's suggestion marks; a press on a whole Work visits these.
+     * cut. A cache of the document's suggestion marks, behind them by the derivation's debounce: a
+     * press on a whole Work visits these, with the documents the pressing tab has open.
      */
     pendingChanges: jsonb("pending_changes")
       .$type<Record<string, number>>()
       .notNull()
       .default(sql`'{}'::jsonb`),
   },
-  (table) => [
-    uniqueIndex("document_block_rooms_document").on(table.documentId),
-    index("document_block_rooms_pending")
-      .on(table.documentId)
-      .where(sql`${table.pendingChanges} <> '{}'::jsonb`),
-  ],
+  (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
 );
 
 /** One row per top-level block of a room, keyed by its Yjs item id. */

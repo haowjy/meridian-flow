@@ -12,9 +12,12 @@ documents, folders or the whole Work is one command, `press`, over both halves
 has no branch row.
 
 - **Selection.** `items` expands folders to what is under them in the Work's view. The tree half
-  takes the Work's pending records on those nodes; the text half takes those nodes that the
-  pending index lists for the Work. `"all"` takes every pending record and every indexed
-  document.
+  takes the Work's pending records on those nodes; the text half takes every document among
+  them, since resolving a document with no suggestion changes nothing. `"all"` takes every
+  pending record, and for text the documents the pending index lists for the Work plus the ones
+  in `seen`.
+- **The branch is read under the owner's lock**, where it is made and closed: a branch read
+  before it could miss the first tree records an AI turn admitted in between.
 - **Tree half.** Apply is the tree Apply (`createApplyTreeOperations`, the same judge, locks and
   `apply_command_trees` rows as an Apply click). Discard is `discardTreeRecords`.
 - **Text half.** For each selected document that stands in Live after the tree half,
@@ -29,19 +32,24 @@ has no branch row.
 
 ## Undo and Redo
 
-`unpress` takes a press back once. The tree half is `undoApply` (Apply) or `restoreDiscard`
-(Discard). The text half is a `Y.UndoManager` undo built from the stored ranges: it restores what
-the press removed and removes what it made Live, and leaves anything typed since in place. An
-effect whose document's authority generation changed (a version restore) is skipped. A
-document the press created stays in Live on Undo of Apply. There is no Redo command: pressing
-again is the Redo. Press and unpress rows are purged with discards after 30 days.
+`unpress` takes a press back once, in the press's own project. The tree half is `undoApply`
+(Apply) or `restoreDiscard` (Discard). The text half is a `Y.UndoManager` undo built from the
+stored ranges: it restores what the press removed and removes what it made Live, and keeps
+anything typed since. Text typed inside words the press resolved ends up after them: `accept`
+and `reject` rewrite the touched text rather than only removing marks. An effect whose
+document's authority generation changed (a version restore), or whose notes are closed, is
+marked taken back without changing its text. A document the press created stays in Live on
+Undo of Apply. There is no Redo command: pressing again is the Redo. Press and unpress rows are
+purged with discards after 30 days.
 
 ## The pending index
 
 `document_block_rooms.pending_changes` is `{ owner: count }` per document, written by the
-document derivation from `pending(doc)`. It lags the derivation's debounce (2–10 s for room
-typing), so a whole-Work press can miss a document typed into seconds before. A per-item press
-does not depend on the lag for an open document: its `seen` vector makes the server wait.
+document derivation from `pending(doc)` and read only by a whole-Work press, scoped to the
+Work's project and account documents. It lags the derivation's debounce (2–10 s for room
+typing), so it never decides what a named press touches. A whole-Work press can miss a
+document typed into in another tab seconds before; the pressing tab's open documents come in
+through `seen`.
 
 ## Work-only documents
 
