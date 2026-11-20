@@ -77,7 +77,7 @@ export function SuggestionBand({
           variant={showDraft ? "secondary" : "ghost"}
           onClick={() => setShowDraft(true)}
         >
-          <Trans>Draft · {changes.length}</Trans>
+          <Trans>Draft ({changes.length})</Trans>
         </Button>
         <span className="flex-1" />
         {discarded ? (
