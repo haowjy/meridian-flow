@@ -9,6 +9,7 @@
  * `relative` parent.
  */
 
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { Trans } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -218,7 +219,8 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      liveRoom={liveness === "live"}
+      // Suggestion mode: a document only a Work has is plain text in its Live room.
+      liveRoom={liveness === "live" || suggestionModeEnabled}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}

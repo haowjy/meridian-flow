@@ -5,6 +5,7 @@ import { parseContextUri } from "@meridian/contracts";
 import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { Editor, EditorOptions } from "@tiptap/core";
+import type { View } from "@meridian/suggestions";
 import { EditorContent } from "@tiptap/react";
 import {
   type ReactNode,
@@ -23,7 +24,6 @@ import { useWorks } from "@/client/query/useWorks";
 import { useAfterPaintRelease, usePaintPending } from "@/components/app/PaintHold";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import { editorReferenceNode } from "@/core/editor/extensions/at-reference";
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { isLinkDocumentScheme, linkAheadAddress } from "@/core/editor/links";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
@@ -49,7 +49,6 @@ import { claimEditorFocus, joinMain } from "./focus-on-open";
 import { InTrashStatus } from "./InTrashStatus";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
-import { SuggestionBand } from "./SuggestionBand";
 import { SyncStatus } from "./SyncStatus";
 import { FileDropRuntime } from "./surfaces/files";
 import { ImageIngressRuntime } from "./surfaces/images";
@@ -82,8 +81,8 @@ type SessionEditorProps = {
   focusKey?: string;
   /** Main's document: the caret main gives (`joinMain`) goes here, never to a side or a sheet. */
   inMain?: boolean;
-  /** Suggestion mode: the Work whose draft this Live editor can show. */
-  suggestionOwner?: string | null;
+  /** Suggestion mode: the view this Live editor shows, and whether its changes are marked. */
+  suggestion?: { view: View; marks: boolean };
 };
 
 /** The Work an owner key names; a lineage names none. */
@@ -152,7 +151,7 @@ function ActiveSessionEditorView({
   holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
-  suggestionOwner,
+  suggestion,
 }: ActiveSessionEditorViewProps) {
   const {
     editable = true,
@@ -390,6 +389,20 @@ function ActiveSessionEditorView({
     });
   }, [active, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
 
+  // The view's author is this tab's writer: what they type in a Work's view is their suggestion.
+  const suggestionView = suggestion?.view ?? null;
+  const suggestionMarks = suggestion?.marks ?? true;
+  useEffect(() => {
+    if (!editor || !suggestionView) return;
+    editor.commands.setSuggestionView(
+      suggestionView,
+      suggestionView.work ? { chat: null, turn: null, by: `user:${accountId}` } : null,
+    );
+  }, [editor, suggestionView, accountId]);
+  useEffect(() => {
+    if (editor && suggestionView) editor.commands.setSuggestionReview({ marks: suggestionMarks });
+  }, [editor, suggestionView, suggestionMarks]);
+
   const constructionCallback = useRef(onConstructed);
   constructionCallback.current = onConstructed;
   useEffect(() => {
@@ -433,17 +446,6 @@ function ActiveSessionEditorView({
           )}
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>
-        {suggestionModeEnabled && suggestionOwner && editor && projectId ? (
-          <SuggestionBand
-            key={`${suggestionOwner}:${documentId}`}
-            editor={editor}
-            ownerKey={suggestionOwner}
-            accountId={accountId}
-            projectId={projectId}
-            documentId={documentId}
-            document={session.document}
-          />
-        ) : null}
         <EditorCanvas
           editor={editor}
           active={active}

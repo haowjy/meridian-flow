@@ -24,6 +24,7 @@ import {
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename, type ReviewFileTarget } from "@/client/query/work-branch-files";
 import { editorHistory } from "@/core/editor/editor-history";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import {
   type ApplyStep,
   dropUndoStep,
@@ -40,6 +41,7 @@ import {
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { useClosedOwners } from "@/features/project/context/closed-owners";
+import { usePressCommands } from "@/features/suggestion-review/usePressCommands";
 import { ApplyEntries, type Seat, serverPort } from "./apply-history";
 import type { RestoreAnswer } from "./discard-restores";
 import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
@@ -67,9 +69,14 @@ type StepData = {
 /** What an Apply's sidebar step holds besides its Undo. */
 type StepInit = Omit<ApplyStep, "kind" | "undo">;
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
-export type WorkBranchCommands = ReturnType<typeof useWorkBranchCommands>;
+export type WorkBranchCommands = ReturnType<typeof useDraftWorkBranchCommands>;
+export type WorkBranchCommandsInput = Parameters<typeof useDraftWorkBranchCommands>[0];
 
-export function useWorkBranchCommands({
+/** A Work's commands: draft commands, or in suggestion mode the press (`usePressCommands`). */
+export const useWorkBranchCommands: (input: WorkBranchCommandsInput) => WorkBranchCommands =
+  suggestionModeEnabled ? usePressCommands : useDraftWorkBranchCommands;
+
+function useDraftWorkBranchCommands({
   projectId,
   work,
   ownerKey,
