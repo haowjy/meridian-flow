@@ -1,23 +1,54 @@
 /**
  * Suggestion mode's review (`VITE_FLOW_SUGGESTIONS=1`): one Live document, viewed as Live or as
- * the Work's draft (Live plus the Work's suggestions). Accept and reject are local edits, so
- * Ctrl+Z takes them back. Discard rejects every one of the Work's suggestions in this document.
+ * the Work's draft (Live plus the Work's suggestions). Apply and Reject on one change are local
+ * edits, so Ctrl+Z takes them back. Apply all and Discard press the document: one server command
+ * over its text and its tree change, taken back by Undo.
  */
 import { Trans } from "@lingui/react/macro";
 import { type Change, list, type View } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo, useState } from "react";
+import * as Y from "yjs";
+import { useCommandDriver } from "@/client/commands/driver-context";
+import { submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { Button } from "@/components/ui/button";
 
 export function SuggestionBand({
   editor,
   ownerKey,
   accountId,
+  projectId,
+  documentId,
+  document,
 }: {
   editor: Editor;
   ownerKey: string;
   accountId: string;
+  projectId: string;
+  documentId: string;
+  /** The open document: a press waits until the server holds what this tab has typed. */
+  document: Y.Doc;
 }) {
+  const driver = useCommandDriver();
+  /** The last press from this band, by the id the server knows it by. */
+  const [pressed, setPressed] = useState<string | null>(null);
+  const press = async (verdict: "apply" | "discard") => {
+    if (!driver) return;
+    const vector = btoa(String.fromCharCode(...Y.encodeStateVector(document)));
+    const record = await submitPress(driver, {
+      projectId,
+      owner: ownerKey,
+      verdict,
+      items: [{ node: documentId }],
+      seen: [{ documentId, vector }],
+    });
+    if (record) setPressed(record.sendId);
+  };
+  const undo = async () => {
+    if (!driver || !pressed) return;
+    setPressed(null);
+    await submitPressUndo(driver, ownerKey, { projectId, pressCommandId: pressed });
+  };
   const [showDraft, setShowDraft] = useState(false);
   const view = useMemo<View>(() => ({ work: showDraft ? ownerKey : null }), [showDraft, ownerKey]);
   useEffect(() => {
@@ -61,22 +92,17 @@ export function SuggestionBand({
           <Trans>Draft ({changes.length})</Trans>
         </Button>
         <span className="flex-1" />
+        {pressed ? (
+          <Button type="button" size="xs" variant="ghost" onClick={() => void undo()}>
+            <Trans>Undo</Trans>
+          </Button>
+        ) : null}
         {changes.length > 0 ? (
           <>
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost"
-              onClick={() => editor.commands.acceptSuggestions({ work: ownerKey })}
-            >
+            <Button type="button" size="xs" variant="ghost" onClick={() => void press("apply")}>
               <Trans>Apply all</Trans>
             </Button>
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost"
-              onClick={() => editor.commands.rejectSuggestions({ work: ownerKey })}
-            >
+            <Button type="button" size="xs" variant="ghost" onClick={() => void press("discard")}>
               <Trans>Discard</Trans>
             </Button>
           </>
