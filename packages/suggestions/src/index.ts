@@ -213,6 +213,12 @@ export function writeThroughView(
     ids.set(group, id);
     return id;
   };
+  // A move inserts in one change and deletes in another: the deleted copy gives up the id.
+  const kept = new Set(
+    changes.flatMap((change) =>
+      change.kind === "blocks" ? change.blocks.map((block) => block.attrs.id).filter(Boolean) : [],
+    ),
+  );
   let state = EditorState.create({ doc: marked(doc) });
   for (const change of changes.reverse()) {
     const from = back.map(change.from, 1);
@@ -224,6 +230,7 @@ export function writeThroughView(
         from,
         to,
         change.blocks,
+        kept,
         work,
         suggester && { ...suggester, id: idOf(change.group) },
       );
@@ -241,7 +248,7 @@ export function writeThroughView(
 /**
  * Whole blocks replaced, written by the package rather than the library: the blocks the view
  * shows in `from`..`to` are marked deleted, and `blocks` go in after them marked inserted, so
- * both versions stay with their own text and marks. A block that keeps its id in `blocks` (a
+ * both versions stay with their own text and marks. A block whose id is `kept` by an inserted one (a
  * retype, a move) hands the id to the new version and the old one takes a fresh id.
  */
 function replaceBlocks(
@@ -249,6 +256,7 @@ function replaceBlocks(
   from: number,
   to: number,
   blocks: readonly PMNode[],
+  kept: ReadonlySet<unknown>,
   work: string | null,
   suggestion: (Suggester & { id: string }) | null,
 ): void {
@@ -263,15 +271,19 @@ function replaceBlocks(
     if (pos >= from && pos + node.nodeSize <= to && !hidden) shown.push({ pos, node });
     return false;
   });
-  const kept = new Set(blocks.map((block) => block.attrs.id).filter(Boolean));
   tr.insert(
     to,
     suggestion
       ? blocks.map((block) => block.mark(insertion.create(suggestion).addToSet(block.marks)))
       : blocks,
   );
+  // The new text is marked too, as the library marks it, so its rules see a proposal there.
+  const size = blocks.reduce((sum, block) => sum + block.nodeSize, 0);
+  if (suggestion) tr.addMark(to, to + size, insertion.create(suggestion));
   for (const { pos, node } of shown.reverse()) {
-    if (!suggestion) {
+    // The Work's own new block was never in Live: deleting it takes the proposal back.
+    const own = node.marks.some((mark) => mark.type === insertion && mark.attrs.work === work);
+    if (!suggestion || own) {
       tr.delete(pos, pos + node.nodeSize);
       continue;
     }
@@ -292,8 +304,11 @@ function suggest(
     state,
     id ? () => id : newSuggestionId,
     () => ({ ...suggester }),
-    // A turn's suggestions keep their own id, so Undo of a turn takes back only that turn.
-    (existing, next) => existing.turn !== next.turn || existing.work !== next.work,
+    // A turn's suggestions keep their own id, so Undo of a turn takes back only that turn. Ids
+    // given by the caller are the change's group, so they never merge with a neighbour's.
+    id
+      ? () => true
+      : (existing, next) => existing.turn !== next.turn || existing.work !== next.work,
   );
 }
 
