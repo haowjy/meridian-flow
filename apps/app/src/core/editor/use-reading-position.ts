@@ -15,7 +15,7 @@ import {
   mayRestoreReadingPosition,
   reportReviewEditorMounted,
 } from "./reading-position-navigation";
-import { type ReadingPosition, ReadingPositionStore } from "./reading-position-store";
+import { ReadingPositionStore } from "./reading-position-store";
 
 export function useReadingPosition({
   editor,
