@@ -4,8 +4,8 @@ import {
   IMPORT_REASON_NEEDS_LOOK,
   type ImportEntryReason,
   type ImportEntryStatus,
-  type ImportRefusalCode,
 } from "@meridian/contracts";
+import { ImportRequestError } from "@/client/api/imports-api";
 
 function failureSentence(reason: ImportEntryReason | null | undefined): string {
   switch (reason) {
@@ -43,8 +43,10 @@ export function problemSentences(
   if (entry.changedAfterUpload) sentences.push(t`Edited after upload`);
   return sentences;
 }
-export function refusalSentence(code: ImportRefusalCode | null): string {
-  switch (code) {
+/** Why the server refused an import, where it said: the same import would be refused again. */
+export function refusalReason(error: unknown): string | undefined {
+  if (!(error instanceof ImportRequestError)) return undefined;
+  switch (error.code) {
     case "too_many_files":
     case "too_many_nodes":
       return t`Too many files`;
@@ -57,8 +59,6 @@ export function refusalSentence(code: ImportRefusalCode | null): string {
     case "path_too_long":
     case "path_too_deep":
       return t`Path too long`;
-    case "selection_mismatch":
-      return t`Selection changed`;
     case "destination_not_found":
     case "destination_invalid":
       return t`Folder not found`;
@@ -66,6 +66,10 @@ export function refusalSentence(code: ImportRefusalCode | null): string {
     case "export_marker_root":
       return t`Can't read export`;
     default:
-      return t`Couldn't import`;
+      return undefined;
   }
+}
+
+export function refusalSentence(error: unknown): string {
+  return refusalReason(error) ?? t`Couldn't import`;
 }

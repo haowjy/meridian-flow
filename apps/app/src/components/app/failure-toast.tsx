@@ -3,14 +3,18 @@
  * failure that has no place of its own on a document or in the import popup; a success never
  * toasts. A failure stays until dismissed, except a `brief` one, a slip from the writer's own
  * action, which goes by itself. `visibleToasts` caps how many show at once. Every toast is one
- * floating pill: the failure's category ("Couldn't apply", "Sign-in expired"), at most one action,
- * and a close. Cause and consequence go to the console (`detail`), never into the pill. Closing
- * only hides it: what it hands back stays until the writer acts on it.
+ * floating pill, drawn as the app's menus are: the failure's category ("Couldn't apply", "Sign-in
+ * expired"), a short `reason` only where running it again would fail the same way, at most one
+ * action, and a close. Cause and consequence go to the console (`detail`), never into the pill.
+ * Closing only hides it: what it hands back stays until the writer acts on it.
  */
 import { t } from "@lingui/core/macro";
 import { CircleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { Toaster, toast } from "sonner";
+import { buttonVariants } from "@/components/ui/button";
+import { dropdownPanelClass } from "@/components/ui/dropdown-presentation";
+import { role } from "@/components/ui/roles";
 
 const BRIEF_MS = 5000;
 
@@ -20,6 +24,7 @@ const shown = new Map<string, string | number>();
 export function notifyFailure({
   key,
   title,
+  reason,
   action,
   brief,
   detail,
@@ -29,6 +34,8 @@ export function notifyFailure({
   key: string;
   /** The failure's category: "Couldn't copy". A longer title is cut to one line. */
   title: ReactNode;
+  /** Why it failed, in two to four words, only where Retry would fail the same way: "Too many imports". */
+  reason?: string;
   /** The one way on: Retry where running it again can help, or what fixes it ("Log in"). */
   action?: { label: string; run: () => void | Promise<void> };
   /** A one-line error that follows from the writer's action and loses nothing: it goes away soon. */
@@ -41,10 +48,17 @@ export function notifyFailure({
   if (detail !== undefined) console.warn(`[failure] ${key}`, detail);
   dismissFailure(key);
   const owns = () => shown.get(key) === id;
-  const id = toast.error(title, {
+  const label = reason ? (
+    <>
+      {title} <span className={role.secondary}>{reason}</span>
+    </>
+  ) : (
+    title
+  );
+  const id = toast.error(label, {
     duration: brief ? BRIEF_MS : Number.POSITIVE_INFINITY,
     description: body,
-    className: body ? "rounded-xl! items-start! py-1.5!" : undefined,
+    className: body ? "items-start! py-1.5!" : undefined,
     onDismiss: () => {
       if (owns()) shown.delete(key);
     },
@@ -97,20 +111,18 @@ export function FailureToaster() {
       gap={6}
       className="max-[600px]:w-auto!"
       containerAriaLabel={t`Failures`}
-      icons={{ error: <CircleAlert aria-hidden className="size-3.5 text-destructive" /> }}
+      icons={{ error: <CircleAlert aria-hidden className="size-4 text-destructive" /> }}
       toastOptions={{
         unstyled: true,
         closeButtonAriaLabel: t`Dismiss`,
         classNames: {
-          toast:
-            "pointer-events-auto inset-x-0 mx-auto flex w-fit! max-w-[min(24rem,100%)] items-center gap-2 rounded-full border border-border bg-card py-px pr-1 pl-3 text-compact text-foreground shadow-float",
+          toast: `pointer-events-auto inset-x-0 mx-auto flex w-fit! max-w-[min(24rem,100%)] items-center gap-2 py-1 pr-1 pl-3 ${dropdownPanelClass} ${role.row}`,
           icon: "flex shrink-0",
           content: "min-w-0 flex-1",
           title: "truncate",
           description: "mt-1.5 mb-0.5 w-full select-text",
-          actionButton: "text-button shrink-0 text-compact coarse:min-h-11",
-          closeButton:
-            "focus-ring order-last flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground coarse:size-11 [&_svg]:size-3",
+          actionButton: "text-button shrink-0 coarse:min-h-11 coarse:min-w-11",
+          closeButton: `order-last ${buttonVariants({ variant: "quiet", size: "icon-xs" })}`,
         },
       }}
     />

@@ -30,6 +30,10 @@ export async function submitCommand(
     notifyFailure({
       key: "command-journal",
       title: t`Couldn't save`,
+      reason:
+        cause.cause instanceof DOMException && cause.cause.name === "QuotaExceededError"
+          ? t`Storage full`
+          : undefined,
       detail: cause,
     });
     return null;

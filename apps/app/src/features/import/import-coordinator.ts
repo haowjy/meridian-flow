@@ -390,7 +390,7 @@ export class ImportCoordinator {
         else
           this.local(record, {
             phase: "stalled",
-            error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+            error: refusalSentence(error),
           });
       }
       return;
@@ -401,7 +401,7 @@ export class ImportCoordinator {
       if (this.live(record, attempt))
         this.local(record, {
           phase: "stalled",
-          error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+          error: refusalSentence(error),
         });
     }
   }
@@ -438,7 +438,7 @@ export class ImportCoordinator {
     } catch (error) {
       if (this.current(record))
         this.local(record, {
-          error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+          error: refusalSentence(error),
           ...(record.view.summary.state === "uploading" && record.held.size
             ? { phase: "stalled" as const }
             : {}),
@@ -475,7 +475,7 @@ export class ImportCoordinator {
       if (!this.live(record, attempt)) return false;
       if (!(error instanceof ImportRequestError && error.status >= 400 && error.status < 500)) {
         this.local(record, {
-          error: refusalSentence(error instanceof ImportRequestError ? error.code : null),
+          error: refusalSentence(error),
         });
         return false;
       }
