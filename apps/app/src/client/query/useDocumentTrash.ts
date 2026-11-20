@@ -124,8 +124,8 @@ export function useTrashedDocument(projectId: string, documentId: string | null)
 }
 
 /**
- * Trash's Discard entries: each Discard (or restore that swapped a newer draft out) with the
- * drafts it closed and what it settled in the tree. Read again after a Discard or a restore here,
+ * Trash's Discard entries: each whole Discard no Restore has run for, with the drafts it closed
+ * and what it settled in the tree. Read again after a Discard or a restore here,
  * and when a Work's drafts change elsewhere (the Works notice).
  */
 export function useTrashDiscards(projectId: string) {

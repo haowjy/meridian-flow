@@ -20,9 +20,8 @@ export type DiscardedTree = {
 
 /**
  * The tree half of Discard Trash entries (design section 5): what each command settled, read
- * once from the list, in the order asked. It
- * answers for a restore of a Discard too (the records the restore overrode and settled under
- * itself), and answers empty, not an error, for a command that discarded no tree records.
+ * once from the list, in the order asked. It answers empty, not an error, for a command that
+ * discarded no tree records.
  */
 export async function discardedTree(
   store: Pick<TreeListStore, "read">,

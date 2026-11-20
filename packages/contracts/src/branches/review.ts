@@ -229,7 +229,7 @@ export type DiscardEntry = {
 /** `GET /api/projects/:projectId/context/trash/discards`: entries with a member in either half. */
 export type ListDiscardEntriesResponse = {
   entries: (DiscardEntry & {
-    /** What the command settled in the tree and no restore has taken. */
+    /** What the Discard settled in the tree. */
     tree: {
       records: number;
       /** Every node those records are on: with the drafts' documents, what an Undo of a restore discards again. */

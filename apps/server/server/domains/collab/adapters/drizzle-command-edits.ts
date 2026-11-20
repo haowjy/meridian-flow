@@ -60,7 +60,6 @@ const partColumns = {
  */
 const commandKinds = inArray(documentEdits.kind, ["apply", "discard", "undo"]);
 
-/** The parts the command's edits wrote, newest first. */
 /** The parts the commands' own edits wrote, newest first. */
 export async function partsOf(
   tx: Tx,
