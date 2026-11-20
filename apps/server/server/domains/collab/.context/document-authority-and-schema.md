@@ -73,7 +73,7 @@ is not a document that may change. Head reads say which they mean:
 read a retained head for history; with `{ living: true }`, read under the
 mutation lock, they gate every other door that mutates retained history:
 version replacement and an explicit checkpoint refuse with the record; a
-background checkpoint store and compaction do nothing. `advanceHead`, which
+background checkpoint store does nothing. `advanceHead`, which
 every checkpoint insert passes, is the backstop. A press reads committed
 live through the mutation-locked journal read; no live fingerprint or review revision token
 fences it. Journal-row edit links (`document_yjs_updates.edit_id`) are written
@@ -147,7 +147,7 @@ needs no checkpoint step. Projections (`document-derivations.ts`) derive AI
 writes and seeds at once and writer typing 2 s after typing stops, at most every
 10 s; no reader needs them fresh, because readers read live Yjs.
 
-Seed and compaction snapshots use the same mutation lock. A first seed is
+Seed snapshots use the same mutation lock. A first seed is
 initialize-only, becomes the generation's base checkpoint, and reconciles an
 already open room before success. Writer admission rejects reserved client IDs
 and reserved provenance namespace mutations before append or Yjs apply.

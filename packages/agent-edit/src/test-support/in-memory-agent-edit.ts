@@ -1,26 +1,13 @@
 // Canonical in-memory agent-edit journal for tests.
 import * as Y from "yjs";
 import { type SavePrecondition, SavePreconditionRefused } from "../ports/document-coordinator.js";
-import type {
-  CompactionResult,
-  JournalSnapshot,
-  PersistedUpdate,
-  UpdateMeta,
-} from "../ports/types.js";
+import type { JournalSnapshot, PersistedUpdate, UpdateMeta } from "../ports/types.js";
 import type {
   JournalBatchAppendEntry,
   JournalBatchAppendResult,
   JournalReadOptions,
   UpdateJournal,
 } from "../ports/update-journal.js";
-
-export interface InMemoryAgentEditJournalOptions {
-  now?: () => Date;
-}
-
-export interface StoredUpdate extends PersistedUpdate {
-  storedAt: Date;
-}
 
 export interface StoredCheckpoint {
   state: Uint8Array;
@@ -32,7 +19,7 @@ export interface JournalEntry {
   checkpoints: StoredCheckpoint[];
   nextSeq: number;
   nextWIdByThread: Map<string, number>;
-  updates: StoredUpdate[];
+  updates: PersistedUpdate[];
   turnsByThread: Map<string, Set<string>>;
 }
 
@@ -40,19 +27,13 @@ export interface JournalEntry {
  * Drizzle-compatible in-memory implementation of UpdateJournal.
  *
  * This is deliberately shared by package tests and the server in-memory
- * adapter so write-ordinal allocation and compaction semantics do not
- * drift away from the production adapter.
+ * adapter so write-ordinal allocation does not drift away from the
+ * production adapter.
  */
 export class InMemoryAgentEditJournal implements UpdateJournal {
   private readonly data = new Map<string, JournalEntry>();
-  private readonly now: () => Date;
-
-  constructor(options: InMemoryAgentEditJournalOptions = {}) {
-    this.now = options.now ?? (() => new Date());
-  }
-
   async append(docId: string, update: Uint8Array, meta: UpdateMeta): Promise<number> {
-    return this.appendSync(docId, update, meta, this.now());
+    return this.appendSync(docId, update, meta);
   }
 
   async appendBatch(
@@ -61,7 +42,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
   ): Promise<JournalBatchAppendResult[]> {
     if (entries.length === 0) return [];
 
-    const storedAt = this.now();
     const nextSeqByDoc = new Map<string, number>();
     for (const batchEntry of entries) {
       const nextSeq = nextSeqByDoc.get(batchEntry.docId) ?? this.entry(batchEntry.docId).nextSeq;
@@ -82,7 +62,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       if (precondition && !precondition(beforeState)) throw new SavePreconditionRefused(docId);
 
     return entries.map((batchEntry) => {
-      const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta, storedAt);
+      const seq = this.appendSync(batchEntry.docId, batchEntry.update, batchEntry.meta);
       const beforeState = beforeStates.get(batchEntry.docId) as Uint8Array;
       if (!batchEntry.mutation) return { seq, beforeState };
       const wId =
@@ -117,40 +97,10 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
     this.setCheckpoint(docId, state, upToSeq);
   }
 
-  async compact(docId: string, before: Date): Promise<CompactionResult> {
-    const entry = this.entry(docId);
-    const checkpointSeq = entry.checkpoint?.upToSeq ?? 0;
-    // Compaction folds a contiguous seq prefix, so every retained update sits strictly
-    // above the latest compacted checkpoint; reconstruction can safely start from the
-    // newest checkpoint below the earliest retained update.
-    const candidateRows = entry.updates
-      .filter((update) => update.seq > checkpointSeq)
-      .sort((left, right) => left.seq - right.seq);
-    const firstRetainedIndex = candidateRows.findIndex((update) => update.storedAt >= before);
-    const foldRows =
-      firstRetainedIndex === -1 ? candidateRows : candidateRows.slice(0, firstRetainedIndex);
-
-    let compactedThroughSeq = checkpointSeq;
-    if (foldRows.length > 0) {
-      const doc = new Y.Doc({ gc: false });
-      if (entry.checkpoint) Y.applyUpdate(doc, entry.checkpoint.state);
-      for (const row of foldRows) Y.applyUpdate(doc, row.update);
-      compactedThroughSeq = foldRows.at(-1)?.seq ?? checkpointSeq;
-      this.setCheckpoint(docId, Y.encodeStateAsUpdate(doc), compactedThroughSeq);
-    }
-
-    if (compactedThroughSeq > 0) {
-      entry.updates = entry.updates.filter((update) => update.seq > compactedThroughSeq);
-    }
-
-    return { updatesFolded: foldRows.length };
-  }
-
   appendSync(
     docId: string,
     update: Uint8Array,
     meta: Omit<UpdateMeta, "seq"> & { seq?: number },
-    storedAt: Date = this.now(),
   ): number {
     const entry = this.entry(docId);
     const seq = entry.nextSeq;
@@ -161,7 +111,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
       seq,
       update: copyBytes(update),
       meta: { ...meta, seq },
-      storedAt: copyDate(storedAt),
     };
     entry.updates.push(stored);
     return seq;
@@ -207,7 +156,7 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
   }
 
   clone(): InMemoryAgentEditJournal {
-    return this.cloneInto(new InMemoryAgentEditJournal({ now: this.now }));
+    return this.cloneInto(new InMemoryAgentEditJournal());
   }
 
   protected cloneInto<T extends InMemoryAgentEditJournal>(target: T): T {
@@ -227,7 +176,6 @@ export class InMemoryAgentEditJournal implements UpdateJournal {
           seq: update.seq,
           update: copyBytes(update.update),
           meta: { ...update.meta },
-          storedAt: copyDate(update.storedAt),
         })),
         turnsByThread: new Map(
           [...entry.turnsByThread].map(([threadId, turns]) => [threadId, new Set(turns)]),
@@ -294,8 +242,4 @@ function copyPersistedUpdate(update: PersistedUpdate): PersistedUpdate {
 
 function copyBytes(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);
-}
-
-function copyDate(date: Date): Date {
-  return new Date(date.getTime());
 }
