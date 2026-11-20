@@ -1060,6 +1060,9 @@ importers:
         specifier: ^1.12.5
         version: 1.12.5
     devDependencies:
+      '@meridian/prosemirror-schema':
+        specifier: workspace:*
+        version: link:../prosemirror-schema
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
