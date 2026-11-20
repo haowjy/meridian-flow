@@ -23,6 +23,7 @@ export {
   restore,
   runs,
   type SuggestionAttrs,
+  sameValue,
   suggested,
   type View,
   viewAttrs,

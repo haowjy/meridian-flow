@@ -21,6 +21,7 @@ import {
   type RunKind,
   SUGGESTION_ATTRS,
   type SuggestionAttrs,
+  sameValue,
   stripSlice,
   stripSuggestions,
   suggested,
@@ -84,7 +85,8 @@ export function rewrite(
     tr.steps.map((step, index) => (changesContent(step) ? tr.mapping.maps[index] : StepMap.empty)),
     null,
   ).changes;
-  for (const range of [...replaced].reverse()) {
+  const work = view.work === null || !author ? null : { ...author, work: view.work };
+  for (const range of [...(work ? wholeBlockRanges(replaced, state.doc) : replaced)].reverse()) {
     const slice = stripSlice(tr.doc.slice(range.fromB, range.toB));
     const a = shownEdge(out.doc, range.fromA, view, -1);
     const b = Math.max(a, shownEdge(out.doc, range.toA, view, 1));
@@ -93,11 +95,17 @@ export function rewrite(
     const changed = (c: SuggestionAttrs) => {
       change = c;
     };
-    const work = view.work === null || !author ? null : { ...author, work: view.work };
+    // What follows the edit in its block, as the transaction leaves it: a join or a split
+    // carries it on, formatted as the transaction made it.
+    const end = range.toB + (b - range.toA);
+    const final = textblockAt(tr.doc, end);
+    const rest = final
+      ? visibleContent(final.node, end - final.pos - 1, final.node.content.size, view)
+      : Fragment.empty;
     const at = !work
       ? replaceLive(out, a, b, slice, view, forward)
       : textblockAt(out.doc, a) && textblockAt(out.doc, b)
-        ? replaceInWork(out, a, b, slice, view, work, forward, changed)
+        ? replaceInWork(out, a, b, slice, rest, view, work, forward, changed)
         : replaceBlocks(out, a, b, slice, view, work, changed);
     changes.push({ from: range.fromA, to: range.toA, change });
     if (at !== null && head >= range.fromB && head <= range.toB)
@@ -141,6 +149,39 @@ const wholeText: TokenEncoder<unknown> = {
   encodeNodeEnd: (node) => (node.isInline ? {} : `/${node.type.name}`),
   compareTokens: (a, b) => a === b,
 };
+
+type Range = { fromA: number; toA: number; fromB: number; toB: number };
+
+/**
+ * Ranges for a Work's view: one that ends between blocks covers the whole blocks it reaches
+ * under the node holding both its ends, so a block comes or goes whole. Overlaps join.
+ */
+function wholeBlockRanges(ranges: readonly Range[], doc: Node): Range[] {
+  const out: Range[] = [];
+  for (const range of ranges) {
+    let { fromA, toA, fromB, toB } = range;
+    if (!textblockAt(doc, fromA) || !textblockAt(doc, toA)) {
+      const $from = doc.resolve(fromA);
+      const $to = doc.resolve(toA);
+      const depth = $from.sharedDepth(toA);
+      const start = $from.depth > depth ? $from.before(depth + 1) : fromA;
+      const stop = $to.depth > depth ? $to.after(depth + 1) : toA;
+      fromB -= fromA - start;
+      toB += stop - toA;
+      fromA = start;
+      toA = stop;
+    }
+    let last = out.at(-1);
+    while (last && fromA <= last.toA) {
+      out.pop();
+      if (last.fromA < fromA) [fromA, fromB] = [last.fromA, last.fromB];
+      if (last.toA > toA) [toA, toB] = [last.toA, last.toB];
+      last = out.at(-1);
+    }
+    out.push({ fromA, toA, fromB, toB });
+  }
+  return out;
+}
 
 /** A mark step cut around the ranges a transaction replaced; any other step as it is. */
 function leftInPlace(step: Step, replaced: readonly { fromA: number; toA: number }[]): Step[] {
@@ -239,6 +280,7 @@ function rewriteFormat(
           piece.from,
           piece.to,
           new Slice(Fragment.from(formatted), 0, 0),
+          Fragment.empty,
           view,
           { ...author, work: view.work },
           false,
@@ -275,13 +317,14 @@ function rewriteFormat(
       if (owner !== "own") out.setMeta(DROPPED_META, true);
       continue;
     }
-    proposeAttrs(out, pos, node.attrs, attrs, { ...author, work: view.work });
+    proposeAttrs(out, pos, node.attrs, attrs, { ...author, work: view.work }, null);
   }
 }
 
 /**
  * The Work's pending change to the Live block at `pos`, from attributes `shown` (as the Work sees
- * them) to `attrs`. Who suggests and a block's identity are never themselves proposed.
+ * them) to `attrs`, as change `id`, or (null) as the block's attribute change so far. Who suggests
+ * and a block's identity are never themselves proposed.
  */
 function proposeAttrs(
   out: Transaction,
@@ -289,16 +332,17 @@ function proposeAttrs(
   shown: Attrs,
   attrs: Attrs,
   author: Omit<SuggestionAttrs, "id">,
+  id: string | null,
 ): void {
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(attrs))
-    if (!SUGGESTION_ATTRS.includes(key) && key !== "id" && !same(attrs[key], shown[key]))
+    if (!SUGGESTION_ATTRS.includes(key) && key !== "id" && !sameValue(attrs[key], shown[key]))
       set[key] = attrs[key];
   if (Object.keys(set).length === 0) return;
   const stored = out.doc.nodeAt(pos) as Node;
   const layers = proposals(stored)[author.work] ?? [];
-  const id = layers[0]?.id ?? newChangeId();
-  setLayers(out, pos, author.work, addLayer(stored, layers, { ...author, id, attrs: set }));
+  const change = id ?? layers.find((layer) => !layer.remove)?.id ?? newChangeId();
+  setLayers(out, pos, author.work, addLayer(stored, layers, { ...author, id: change, attrs: set }));
 }
 
 /** Store a Work's layers on the block at `pos`; none drops its entry. */
@@ -343,12 +387,8 @@ function addLayer(
   const attrs = layered(next);
   const changes =
     next.some((each) => each.remove) ||
-    Object.keys(attrs).some((key) => !same(attrs[key], node.attrs[key]));
+    Object.keys(attrs).some((key) => !sameValue(attrs[key], node.attrs[key]));
   return changes || next.length > 1 ? next : [];
-}
-
-function same(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
 /** The nodes in `[from, to)` whose attributes alone differ in `after`; null when more differs. */
@@ -366,7 +406,7 @@ function attrChanges(
     const now = after.nodeAt(pos);
     if (!now || now.type !== node.type || now.nodeSize !== node.nodeSize) more = true;
     else if (now.isTextblock && !now.content.eq(node.content)) more = true;
-    else if (!same(now.attrs, node.attrs)) changes.push({ pos, node, attrs: now.attrs });
+    else if (!sameValue(now.attrs, node.attrs)) changes.push({ pos, node, attrs: now.attrs });
     return !more && !node.isTextblock;
   });
   return more ? null : changes;
@@ -628,6 +668,7 @@ function replaceInWork(
   from: number,
   to: number,
   slice: Slice,
+  rest: Fragment,
   view: View,
   author: Omit<SuggestionAttrs, "id">,
   forward: boolean,
@@ -659,10 +700,7 @@ function replaceInWork(
     (joining
       ? startOwn
       : visibleContent(startBlock.node, 0, from - startBlock.pos - 1, view).size === 0);
-  const tail =
-    joining && !keepEnd
-      ? visibleContent(endBlock.node, to - endBlock.pos - 1, endBlock.node.content.size, view)
-      : Fragment.empty;
+  const tail = joining && !keepEnd ? rest : Fragment.empty;
   const map = since(out);
   // A joined end block goes whole, its shown text carried on as the tail.
   suggestRemoval(
@@ -707,17 +745,11 @@ function replaceInWork(
     if (opening.size > 0) out.insert(opensAt, marked(schema, opening, attrs));
     // The block takes the attributes the edit leaves it with, as the Work's pending change.
     if (parts.last)
-      proposeAttrs(out, endAt, viewAttrs(endBlock.node, view), parts.last.attrs, author);
+      proposeAttrs(out, endAt, viewAttrs(endBlock.node, view), parts.last.attrs, author, attrs.id);
     if (blocks.length > 0) out.insert(endAt, blocks);
     return opensAt + blocks.reduce((size, block) => size + block.nodeSize, 0) + opening.size;
   }
   const targetEnd = targetNow.pos + targetNow.node.nodeSize - 1;
-  const rest = visibleContent(
-    targetNow.node,
-    insertAt - targetNow.pos - 1,
-    targetNow.node.content.size,
-    view,
-  ).append(tail);
   const cut = since(out);
   if (ownTarget) out.delete(insertAt, targetEnd);
   else suggestRemoval(out, insertAt, targetEnd, view, attrs);

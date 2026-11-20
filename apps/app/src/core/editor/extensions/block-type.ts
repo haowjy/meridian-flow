@@ -1,3 +1,4 @@
+import { sameValue } from "@meridian/suggestions";
 import { InputRule } from "@tiptap/core";
 import type { Attrs, NodeType, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
@@ -41,8 +42,7 @@ export function setBlockType(
     if (!node.isTextblock) return true;
     const next = retypedAttrs(tr, node, type, attrs);
     if (node.type !== type) retyped.push(pos);
-    else if (JSON.stringify(next) !== JSON.stringify(shownAttrs(tr, node)))
-      tr.setNodeMarkup(pos, type, next);
+    else if (!sameValue(next, shownAttrs(tr, node))) tr.setNodeMarkup(pos, type, next);
     return false;
   });
   for (const pos of retyped) {

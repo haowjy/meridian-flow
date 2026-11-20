@@ -9,6 +9,7 @@ import {
   layered,
   proposals,
   type SuggestionAttrs,
+  sameValue,
   type View,
 } from "./view.js";
 
@@ -194,11 +195,14 @@ export function list(doc: Node, view: View): Change[] {
       return false;
     }
     const layers = proposals(block)[work] ?? [];
-    const attrs = shownChange(block, layers);
-    if (attrs) note(layers[0], blockPos, end, { attrs });
-    // A removed block: its text, if any, is listed struck below; the break is what it removes.
-    const removal = layers.find((layer) => layer.remove);
-    if (removal) note(removal, blockPos, end, { deleted: "\n" });
+    for (const id of new Set(layers.map((layer) => layer.id))) {
+      const ofChange = layers.filter((layer) => layer.id === id);
+      const attrs = shownChange(block, ofChange);
+      if (attrs) note(ofChange[0], blockPos, end, { attrs });
+      // A removed block: its text, if any, is listed struck below; the break is what it removes.
+      const removal = ofChange.find((layer) => layer.remove);
+      if (removal) note(removal, blockPos, end, { deleted: "\n" });
+    }
     if (!block.isTextblock) return true;
     block.forEach((child, offset) => {
       const kind = kindOf(child.marks, block, view);
@@ -222,7 +226,6 @@ export function list(doc: Node, view: View): Change[] {
 function shownChange(block: Node, layers: readonly AttrProposal[]): Attrs | null {
   const attrs: Record<string, unknown> = { ...layered(layers) };
   for (const key of Object.keys(attrs))
-    if (JSON.stringify(attrs[key] ?? null) === JSON.stringify(block.attrs[key] ?? null))
-      delete attrs[key];
+    if (sameValue(attrs[key], block.attrs[key])) delete attrs[key];
   return Object.keys(attrs).length > 0 ? attrs : null;
 }

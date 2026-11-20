@@ -37,6 +37,11 @@ export function layered(layers: readonly AttrProposal[]): Attrs {
   return Object.assign({}, ...layers.map((layer) => layer.attrs));
 }
 
+/** Attribute values compared by content: what a block's attribute holds is plain data. */
+export function sameValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+}
+
 /** Attributes that say who suggested what: never themselves suggested, accepted or shown. */
 export const SUGGESTION_ATTRS = ["sug", "sugAttrs"];
 

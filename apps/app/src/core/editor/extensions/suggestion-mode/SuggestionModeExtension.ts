@@ -9,6 +9,7 @@ import {
   type Author,
   accept,
   blockKind,
+  DROPPED_META,
   type Filter,
   kindOf,
   liveView,
@@ -16,6 +17,7 @@ import {
   reject,
   removedIn,
   rewrite,
+  sameValue,
   type View,
   viewAttrs,
   visibleSlice,
@@ -201,7 +203,9 @@ export const SuggestionModeExtension = Extension.create({
     const mode = suggestionModeKey.getState(state);
     // A peer's change, Undo and Redo come through the binding already in stored form.
     if (!mode || transaction.getMeta(ySyncPluginKey)?.isChangeOrigin) return next(transaction);
-    next(rewrite(transaction, state, mode.view, mode.author));
+    const out = rewrite(transaction, state, mode.view, mode.author);
+    // An edit the view cannot suggest in full does not happen at all, as for the model.
+    if (!out.getMeta(DROPPED_META)) next(out);
   },
 
   addProseMirrorPlugins() {
@@ -272,7 +276,7 @@ function paint(doc: PMNode, view: View): DecorationSet {
       decorations.push(Decoration.node(blockPos, end, { class: "sug-del-block" }));
     // A pending change to the block's attributes shows them; the element is still Live's.
     const shown = viewAttrs(block, view);
-    if (block.attrs.sugAttrs && !sameAttrs(shown, { ...block.attrs, sug: null, sugAttrs: null }))
+    if (block.attrs.sugAttrs && !sameValue(shown, { ...block.attrs, sug: null, sugAttrs: null }))
       decorations.push(
         Decoration.node(blockPos, end, {
           class: "sug-attrs",
@@ -317,8 +321,4 @@ function outOfHidden(state: EditorState, pos: number, direction: -1 | 1): number
     while (at > 0 && at < size && inside(at)) at -= direction;
   }
   return TextSelection.near(state.doc.resolve(at), direction).head;
-}
-
-function sameAttrs(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
 }
