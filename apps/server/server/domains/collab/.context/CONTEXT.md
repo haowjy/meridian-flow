@@ -727,6 +727,7 @@ addressed draft and leaves the Work's other documents alone.
 - [Document authority, schema, and connection admission](document-authority-and-schema.md)
 - [Reversal](reversal.md)
 - [Model edits as commands](model-edits.md)
+- [The press: suggestion mode's Apply and Discard](press.md)
 - [WebSocket concurrency boundary](websocket-concurrency.md)
 - [Deferred work](FUTURE.md) and [TODO](TODO.md)
 

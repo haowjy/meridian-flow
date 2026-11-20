@@ -55,8 +55,8 @@ Each is one local transaction (`RAW_META`), filtered by `{ id }`, `{ turn }` or 
 Accept makes insertions Live, deletes deleted text, applies attribute layers. Reject is the
 reverse. Accepting a deletion rejects every other Work's change deleting the same text: the
 first applied wins. A block the Work added that stays (accepted) still holds what later turns
-layered on it. `list` gives the view's changes for review; `pendingTurns` the turns that still
-have something to reject.
+layered on it. `list` gives the view's changes for review; `pending` the turns and the Works
+(with their change ids) that still have something to resolve.
 
 ## Who calls it
 
@@ -67,6 +67,12 @@ have something to reject.
 - Server: the runtime's `workView(work, author)` is the one way to read or write a Work's view
   (a model and an agent-edit core over Live). `model` is Live's view for every Live reader.
   Card Undo calls `resolveStored(doc, schema, "reject", { turn })`.
+- Press: Apply or Discard on documents, folders or a Work is a server command
+  (`domains/collab/adapters/drizzle-press.ts`). agent-edit's `pressStored` runs `accept` or
+  `reject({ work })` as one Yjs transaction and returns its inserted and deleted id ranges;
+  `undoPressStored` takes those ranges back as a Yjs undo. The derivation writes each
+  document's per-Work count from `pending` (`document_block_rooms.pending_changes`), which is
+  how a whole-Work press finds its documents.
 
 ## Known limits
 

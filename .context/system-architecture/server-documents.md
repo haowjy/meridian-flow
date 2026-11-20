@@ -31,7 +31,7 @@ flowchart LR
 
 ## collab
 
-Live documents: Yjs rooms, the write journal, drafts, branches and Apply.
+Live documents: Yjs rooms, the write journal, drafts, branches and Apply, and in suggestion mode the press (Apply or Discard over a Work's text and tree, and its Undo).
 
 Runs the Hocuspocus rooms for live documents and drafts, and keeps the write journal, the inverses Undo applies, receipts and checkpoints. A write is journaled before the room accepts it.
 
