@@ -19,7 +19,6 @@ import { createUiThemeBootScript } from "./ui-theme";
 const settings = {
   ...DEFAULT_ACCOUNT_APPEARANCE,
   theme: "dark" as const,
-  workingSetSyncEnabled: true,
 };
 afterEach(() => {
   localStorage.clear();

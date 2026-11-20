@@ -140,7 +140,7 @@ owner on a scheme that has none is a 400 (`parseWorkId`, `destinationRootUri`), 
 that reaches the domain or the database fails as an untyped 500.
 
 Domain failures go through `contextErrorToHttp`, which types every code;
-`stale_source`, `stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
+`stale_target` and `io_error` are the retryable ones. The boundary stays per route rather
 than in the global error handler: typing every error there would make a 401
 final, and app code on other routes branches on the untyped `HttpResponseError`. A move or delete is requested by entry id; a conflict goes straight through
 `contextErrorToHttp`. An upload is deleted through the tree like a document. If immutable destination

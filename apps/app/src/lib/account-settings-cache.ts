@@ -26,8 +26,7 @@ export function parseSettingsCachePayload(
     languages.includes(s.language) &&
     typeof s.theme === "string" &&
     themes.includes(s.theme) &&
-    typeof s.statsForNerds === "boolean" &&
-    typeof s.workingSetSyncEnabled === "boolean"
+    typeof s.statsForNerds === "boolean"
     ? { settings: settings as AccountSettings, writeId: payload.writeId }
     : undefined;
 }

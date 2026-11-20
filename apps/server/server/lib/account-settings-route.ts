@@ -12,7 +12,6 @@ export function parseAccountSettingsPatch(raw: unknown): Partial<AccountSettings
     language: (v) => ACCOUNT_LANGUAGES.some((x) => x === v),
     theme: (v) => ACCOUNT_THEMES.some((x) => x === v),
     statsForNerds: (v) => typeof v === "boolean",
-    workingSetSyncEnabled: (v) => typeof v === "boolean",
   };
   if (
     !Object.keys(body).length ||

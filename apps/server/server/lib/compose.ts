@@ -281,11 +281,6 @@ import {
   type ThreadRuntimeService,
 } from "../domains/threads/runtime-service.js";
 import { createThreadEventHub, type ThreadEventHub } from "../domains/threads/thread-event-hub.js";
-import {
-  createDrizzleWorkingSetRepository,
-  createInMemoryWorkingSetRepository,
-  type WorkingSetRepository,
-} from "../domains/working-set/index.js";
 import { type CommandStore, createCommandStore } from "../shared/commands/drizzle-commands.js";
 import {
   createDetachedWorkTracker,
@@ -361,7 +356,6 @@ export type AppServices = {
   mcpConnections: McpConnections;
   /** The connections as the runtime reads them: the prompt's catalogue and the three tools. */
   connections: ConnectionsPort;
-  workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
@@ -469,7 +463,6 @@ export type ProductionAppPorts = {
   mcpClient: McpClient;
   /** The one script runner behind `mcp_run`, closed with the app. */
   scriptRunner: ScriptRunner;
-  workingSet: WorkingSetRepository;
   recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
   mockModelScript: MockScriptQueue | null;
@@ -639,7 +632,6 @@ export async function createProductionAppPorts(input: {
     repos: threadRepos,
     eventSink,
   });
-  const workingSet = createDrizzleWorkingSetRepository({ db });
   const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const agentRevisions = createDrizzleAgentRevisionStore(db);
   const chainDeps = {
@@ -876,7 +868,6 @@ export async function createProductionAppPorts(input: {
     connections,
     mcpClient,
     scriptRunner,
-    workingSet,
     recentDocuments,
     modelRequestDebug: createModelRequestDebugStore({ enabled: debugPaths, eventSink }),
     mockModelScript: debugPaths ? (mockScript ?? null) : null,
@@ -1405,7 +1396,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     accountSettings: ports.accountSettings,
     mcpConnections: ports.mcpConnections,
     connections: ports.connections,
-    workingSet: ports.workingSet,
     recentDocuments: ports.recentDocuments,
     orchestrator,
     runner,
@@ -1471,7 +1461,6 @@ export function createInMemoryAppServices(
       Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
   });
   const accountSettings = createInMemoryAccountSettingsRepository();
-  const workingSet = createInMemoryWorkingSetRepository();
   const recentDocuments = createInMemoryRecentDocumentsRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
   const notices = createInMemoryNoticePort();
@@ -2003,7 +1992,6 @@ export function createInMemoryAppServices(
         throw new Error("MCP connections require Postgres");
       },
     }),
-    workingSet,
     recentDocuments,
     orchestrator: {
       async prepare() {

@@ -211,9 +211,7 @@ document keys; a caller holds no document or namespace key when it submits. `con
   bytes. A move stays in one list: a project's files are one, the account's `user://` another.
   Between the two the action is Copy (`port.copy`, `copy/copy-command.ts`), which leaves the
   original where it is; the model's `move` across the two runs it (`lib/model-tools/tree-copy-across.ts`).
-- **Delete.** `port.delete` is the live one-record delete the upload remove uses (`SourceTree.delete`): the node and its subtree go to Trash together; the result
-  lists every document and file the cascade took. `onlyAt` acts only while the node still stands at
-  that path, otherwise `stale_target`. The AI's deletes, drafted or live, are tree commands.
+- **Delete.** Every delete, the writer's, the upload remove and the AI's, drafted or live, is a tree command.
 - **Edit history.** The model's tree entry (`recordAgentTreeChange`) is written in the same
   transaction through `inTransaction` / `afterWrite`.
 
@@ -313,7 +311,7 @@ one source's tree contributes.
   bytes were released, and a root that would land inside itself are left out: the Copy lands
   the rest and `settled` carries `left_out` with `purged` or `would_loop` and the roots' addresses.
   A destination folder the project no longer holds copies nothing (`left_out`, every source).
-  Nothing is `stale_source`, `stale_target` or `destination_missing` now.
+  Nothing is `stale_target` or `destination_missing` now.
   What is still an error and stores nothing: `invalid_operation` for the source root or a
   placement destination that cannot take a copy; `permission_denied` for a destination the
   writer cannot command; uploads as the destination (by path or by folder identity), a malformed
@@ -362,9 +360,9 @@ a Work's, a lineage's or a chat's Scratch or uploads, and whose it is.
 
 A delete is addressed by entry id: the router takes the node
 (`{kind, nodeId}`) and an area; the area only decides which adapter to ask. The adapter finds the
-node in the list's replay inside `make` (`SourceTree.delete`), so a rename or
+node in the list's replay inside `make`, so a rename or
 move by another writer in the gap is neither undone nor refused; the only facts it checks are about
-the target (the occupant, `onlyAt`, the source the caller found the node in). A node that left the
+the target (the occupant, the source the caller found the node in). A node that left the
 source answers `stale_target`. A move keeps the node's name; into a folder that shows it, the node
 is a twin.
 

@@ -2,12 +2,7 @@
 import type { ContextEntryRef, ContextSiblingPosition } from "@meridian/contracts/protocol";
 import { storedFilename } from "@meridian/contracts/protocol";
 import { childrenOf, descendantsOf } from "@meridian/project-tree";
-import {
-  type ContextDeleteOptions,
-  type ContextPort,
-  contextAreaOf,
-  type WriteProvenance,
-} from "../domains/context/index.js";
+import { type ContextPort, contextAreaOf, type WriteProvenance } from "../domains/context/index.js";
 import type { TreeScope } from "../domains/context/ports/context-adapter.js";
 
 export async function entryAt(
@@ -110,11 +105,17 @@ export function moveTo(
   });
 }
 
+/** A live delete of the entry `expected` names, as the record a tree command makes. */
 export function deleteAt(
-  port: Pick<ContextPort, "delete">,
+  port: Pick<ContextPort, "treeCommand">,
   uri: string,
-  options: ContextDeleteOptions & { expected: ContextEntryRef },
+  options: { expected: ContextEntryRef; origin?: WriteProvenance },
 ) {
-  const { expected, ...rest } = options;
-  return port.delete(expected, contextAreaOf(uri), rest);
+  return port.treeCommand(contextAreaOf(uri), {
+    ...(options.origin ? { origin: options.origin } : {}),
+    make: (scope) => {
+      scope.writer.delete(scope.view, scope.actor, options.expected.nodeId);
+      return { result: undefined };
+    },
+  });
 }

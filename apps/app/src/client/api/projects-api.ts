@@ -27,7 +27,6 @@ import {
   apiProjectDocumentReadPath,
   apiProjectPath,
   apiProjectThreadsPath,
-  apiProjectWorkingSetPath,
   apiProjectWorksPath,
   type ContextReadResponse,
   type CopyContextEntriesRequest,
@@ -41,11 +40,9 @@ import {
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
-  type ProjectWorkingSet,
   type ThreadListItem,
   type UpdateProjectRequest,
   type Work,
-  type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 import { threadSchema } from "@meridian/contracts/threads";
 import type { CreateWorkRequest, UpdateWorkRequest, WorkAnswer } from "@meridian/contracts/works";
@@ -181,30 +178,6 @@ export function restoreWork(workId: string, init?: RequestInitOptions): Promise<
 /** Reading an owned project also completes idempotent default-package seeding. */
 export async function getProject(projectId: string, init?: RequestInitOptions): Promise<Project> {
   return getJson(urlFor(apiProjectPath(projectId), init), { headers: init?.headers });
-}
-
-export async function getProjectWorkingSet(
-  projectId: string,
-  init?: RequestInitOptions,
-): Promise<ProjectWorkingSet | null> {
-  return getJson<ProjectWorkingSet | null>(urlFor(apiProjectWorkingSetPath(projectId), init), {
-    headers: init?.headers,
-  });
-}
-
-export async function updateProjectWorkingSet(
-  projectId: string,
-  snapshot: { recentRoutes: WorkingSetRoute[] },
-  init?: RequestInitOptions,
-): Promise<{ revision: number }> {
-  return putJson<{ revision: number }>(
-    urlFor(apiProjectWorkingSetPath(projectId), init),
-    snapshot,
-    {
-      headers: init?.headers,
-      keepalive: init?.keepalive,
-    },
-  );
 }
 
 export async function getProjectContextSources(

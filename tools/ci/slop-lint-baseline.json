@@ -33,11 +33,6 @@
         "count": 1
       },
       {
-        "path": "apps/app/src/client/working-set/store.ts",
-        "line": "} catch {",
-        "count": 3
-      },
-      {
         "path": "apps/app/src/components/app/composer/Composer.tsx",
         "line": "const recorded = await Promise.resolve(onSubmit(envelope)).catch(() => false);",
         "count": 1

@@ -6,7 +6,7 @@ export function createInMemoryAccountSettingsRepository(): AccountSettingsReposi
   const rows = new Map<string, AccountSettings>();
   return {
     async read(id) {
-      return { ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: true, ...rows.get(id) };
+      return { ...DEFAULT_ACCOUNT_APPEARANCE, ...rows.get(id) };
     },
     async update(id, patch) {
       const value = { ...(await this.read(id)), ...patch };

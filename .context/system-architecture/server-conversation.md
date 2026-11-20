@@ -116,7 +116,7 @@ The group of `collab`, `context` and `file-policy`.
 
 Projects and Works.
 
-The group of `projects`, `working-set` and `recent-documents`.
+The group of `projects` and `recent-documents`.
 
 - Kind: context
 - See: [workspace](server.md#workspace)

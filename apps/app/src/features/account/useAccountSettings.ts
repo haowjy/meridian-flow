@@ -40,7 +40,7 @@ type Write = {
   epoch: AbortSignal;
 };
 type Intent = { value: AccountSettings[SettingKey]; pending: boolean; error: SettingError | null };
-const DEFAULTS: AccountSettings = { ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: false };
+const DEFAULTS: AccountSettings = { ...DEFAULT_ACCOUNT_APPEARANCE };
 const KEYS = Object.keys(DEFAULTS) as SettingKey[];
 
 export function useAccountSettings(

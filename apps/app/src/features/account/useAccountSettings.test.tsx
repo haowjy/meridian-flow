@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Contract tests for the cross-device working-set preference command (P1).
+ * Contract tests for the account preference command (P1).
  *
  * Authority is the server account-settings row (absolute-set PATCH); the route
  * loader remains the read owner. These tests hold, fail, and reorder the write
@@ -20,7 +20,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { type AccountPreference, useAccountSettings } from "./useAccountSettings";
 
-type WorkingSetSyncPreference = AccountPreference<"workingSetSyncEnabled">;
+type StatsForNerdsPreference = AccountPreference<"statsForNerds">;
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -81,7 +81,7 @@ async function waitFor(assertion: () => void) {
 }
 
 type Harness = {
-  read: () => WorkingSetSyncPreference;
+  read: () => StatsForNerdsPreference;
   readAll: () => ReturnType<typeof useAccountSettings>;
   rerender: () => Promise<void>;
   renders: AccountSettings[];
@@ -102,9 +102,7 @@ async function mount(
     force = () => setTick((n) => n + 1);
     const seed = useMemo(
       () =>
-        serverValue === null
-          ? null
-          : { ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: serverValue },
+        serverValue === null ? null : { ...DEFAULT_ACCOUNT_APPEARANCE, statsForNerds: serverValue },
       [serverValue],
     );
     latest = useAccountSettings(seed, serverGeneration);
@@ -125,7 +123,7 @@ async function mount(
   try {
     await run({
       renders,
-      read: () => latest.preference("workingSetSyncEnabled"),
+      read: () => latest.preference("statsForNerds"),
       readAll: () => latest,
       rerender: async () => {
         await act(async () => {
@@ -156,7 +154,7 @@ afterEach(() => {
   mocks.account.controller = new AbortController();
 });
 
-describe("useWorkingSetSyncPreference", () => {
+describe("useStatsForNerdsPreference", () => {
   it("keeps the latest optimistic intent when an overlapping write is rejected", async () => {
     const first = deferred<AccountSettings>();
     const second = deferred<AccountSettings>();
@@ -167,9 +165,7 @@ describe("useWorkingSetSyncPreference", () => {
       await act(async () => read().change(true));
       await act(async () => read().change(false));
 
-      await act(async () =>
-        first.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: true }),
-      );
+      await act(async () => first.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, statsForNerds: true }));
       await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
 
       await act(async () => second.reject(new HttpResponseError("bad", 400, {})));
@@ -185,7 +181,7 @@ describe("useWorkingSetSyncPreference", () => {
     mocks.updateAccountSettings.mockRejectedValueOnce(new HttpResponseError("bad", 400, {}));
     mocks.updateAccountSettings.mockResolvedValueOnce({
       ...DEFAULT_ACCOUNT_APPEARANCE,
-      workingSetSyncEnabled: true,
+      statsForNerds: true,
     });
     await mount(false, async ({ read }) => {
       await act(async () => read().change(true));
@@ -195,7 +191,7 @@ describe("useWorkingSetSyncPreference", () => {
       await waitFor(() => expect(read().pending).toBe(false));
 
       expect(mocks.updateAccountSettings).toHaveBeenLastCalledWith(
-        { workingSetSyncEnabled: true },
+        { statsForNerds: true },
         expect.objectContaining({ signal: expect.anything() }),
       );
       expect(read().error).toBeNull();
@@ -223,9 +219,7 @@ describe("useWorkingSetSyncPreference", () => {
       await rerender();
 
       // The first write settles only now; its captured epoch is closed and stale.
-      await act(async () =>
-        write.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: false }),
-      );
+      await act(async () => write.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, statsForNerds: false }));
       await flush();
 
       expect(read().value).toBe(true);
@@ -252,7 +246,6 @@ it("changes every account setting immediately and keeps failures on their own co
       theme: "dark",
       language: "zh",
       statsForNerds: true,
-      workingSetSyncEnabled: true,
     });
     await act(async () => writes[0].reject(new HttpResponseError("bad", 400, {})));
     await waitFor(() => expect(readAll().preference("theme").error?.kind).toBe("rejected"));
@@ -262,7 +255,6 @@ it("changes every account setting immediately and keeps failures on their own co
       writes[1].resolve({
         ...DEFAULT_ACCOUNT_APPEARANCE,
         language: "zh",
-        workingSetSyncEnabled: true,
       }),
     );
     await act(async () =>
@@ -270,7 +262,6 @@ it("changes every account setting immediately and keeps failures on their own co
         ...DEFAULT_ACCOUNT_APPEARANCE,
         language: "zh",
         statsForNerds: true,
-        workingSetSyncEnabled: true,
       }),
     );
     await waitFor(() => expect(readAll().preference("statsForNerds").pending).toBe(false));
@@ -285,13 +276,13 @@ it("follows account cache storage events without sending duplicate patches", asy
   mocks.getAccountSettings.mockResolvedValue({
     ...DEFAULT_ACCOUNT_APPEARANCE,
     theme: "dark",
-    workingSetSyncEnabled: false,
+    statsForNerds: false,
   });
   await mount(true, async ({ readAll }) => {
     writeAccountSettingsCache("account-a", {
       ...DEFAULT_ACCOUNT_APPEARANCE,
       theme: "dark",
-      workingSetSyncEnabled: false,
+      statsForNerds: false,
     });
     await act(async () =>
       window.dispatchEvent(
@@ -299,9 +290,7 @@ it("follows account cache storage events without sending duplicate patches", asy
       ),
     );
     expect(readAll().value.theme).toBe("dark");
-    await waitFor(() =>
-      expect(readAll().preference("workingSetSyncEnabled").confirmed).toBe(false),
-    );
+    await waitFor(() => expect(readAll().preference("statsForNerds").confirmed).toBe(false));
     expect(mocks.updateAccountSettings).not.toHaveBeenCalled();
   });
 });
@@ -310,7 +299,7 @@ it("keeps an ambiguous intent visible unless a server read confirms it", async (
   mocks.updateAccountSettings.mockRejectedValue(new Error("response lost"));
   mocks.getAccountSettings.mockResolvedValue({
     ...DEFAULT_ACCOUNT_APPEARANCE,
-    workingSetSyncEnabled: false,
+    statsForNerds: false,
   });
   await mount(false, async ({ read }) => {
     await act(async () => read().change(true));
@@ -325,7 +314,7 @@ it("adopts a server witness when an ambiguous save actually committed", async ()
   mocks.updateAccountSettings.mockRejectedValue(new Error("response lost"));
   mocks.getAccountSettings.mockResolvedValue({
     ...DEFAULT_ACCOUNT_APPEARANCE,
-    workingSetSyncEnabled: true,
+    statsForNerds: true,
   });
   await mount(false, async ({ read }) => {
     await act(async () => read().change(true));
@@ -346,7 +335,7 @@ it("does not let an older cross-tab confirmation overwrite the newest one", asyn
     for (const enabled of [true, false]) {
       writeAccountSettingsCache("account-a", {
         ...DEFAULT_ACCOUNT_APPEARANCE,
-        workingSetSyncEnabled: enabled,
+        statsForNerds: enabled,
       });
       await act(async () =>
         window.dispatchEvent(
@@ -354,13 +343,9 @@ it("does not let an older cross-tab confirmation overwrite the newest one", asyn
         ),
       );
     }
-    await act(async () =>
-      second.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: false }),
-    );
+    await act(async () => second.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, statsForNerds: false }));
     await waitFor(() => expect(read().confirmed).toBe(false));
-    await act(async () =>
-      first.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, workingSetSyncEnabled: true }),
-    );
+    await act(async () => first.resolve({ ...DEFAULT_ACCOUNT_APPEARANCE, statsForNerds: true }));
     expect(read().confirmed).toBe(false);
     expect(read().value).toBe(false);
   });
@@ -371,15 +356,14 @@ it("uses the complete save response when the initial account read was unavailabl
     language: "zh",
     theme: "dark",
     statsForNerds: true,
-    workingSetSyncEnabled: true,
   };
   mocks.updateAccountSettings.mockResolvedValue(settings);
   await mount(null, async ({ readAll }) => {
     await act(async () => readAll().preference("theme").change("dark"));
     await waitFor(() => expect(readAll().preference("theme").pending).toBe(false));
     expect(readAll().value).toEqual(settings);
-    expect(readAll().preference("workingSetSyncEnabled").confirmed).toBe(true);
-    expect(readAll().preference("workingSetSyncEnabled").available).toBe(true);
+    expect(readAll().preference("statsForNerds").confirmed).toBe(true);
+    expect(readAll().preference("statsForNerds").available).toBe(true);
   });
 });
 it("adopts untouched fields from an older successful intent while retaining the latest failed choice", async () => {
@@ -396,7 +380,6 @@ it("adopts untouched fields from an older successful intent while retaining the 
         language: "zh",
         theme: "dark",
         statsForNerds: true,
-        workingSetSyncEnabled: true,
       }),
     );
     await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
@@ -406,9 +389,8 @@ it("adopts untouched fields from an older successful intent while retaining the 
       language: "zh",
       theme: "ink-jade",
       statsForNerds: true,
-      workingSetSyncEnabled: true,
     });
-    expect(readAll().preference("workingSetSyncEnabled").confirmed).toBe(true);
+    expect(readAll().preference("statsForNerds").confirmed).toBe(true);
   });
 });
 
@@ -428,13 +410,13 @@ it("reconciles all unowned fields from a cross-tab server read", async () => {
   );
   mocks.getAccountSettings.mockResolvedValue({
     ...DEFAULT_ACCOUNT_APPEARANCE,
-    workingSetSyncEnabled: false,
+    statsForNerds: false,
   });
   await mount(false, async ({ readAll }) => {
     writeAccountSettingsCache("account-a", {
       ...DEFAULT_ACCOUNT_APPEARANCE,
       theme: "dark",
-      workingSetSyncEnabled: true,
+      statsForNerds: true,
     });
     await act(async () =>
       window.dispatchEvent(
@@ -444,14 +426,14 @@ it("reconciles all unowned fields from a cross-tab server read", async () => {
     await flush();
     expect(readAll().value).toEqual({
       ...DEFAULT_ACCOUNT_APPEARANCE,
-      workingSetSyncEnabled: false,
+      statsForNerds: false,
     });
   });
 });
 it("accepts a newer loader after settlement but rejects a loader that began before settlement", async () => {
   mocks.updateAccountSettings.mockResolvedValue({
     ...DEFAULT_ACCOUNT_APPEARANCE,
-    workingSetSyncEnabled: true,
+    statsForNerds: true,
   });
   await mount(false, async ({ read, setServerValue }) => {
     const staleReadGeneration = ++mocks.generation;
@@ -483,7 +465,6 @@ it("keeps newer language confirmation when an older recovery read witnesses them
         ...DEFAULT_ACCOUNT_APPEARANCE,
         theme: "dark",
         language: "zh",
-        workingSetSyncEnabled: false,
       }),
     );
     await waitFor(() => expect(readAll().preference("language").pending).toBe(false));
@@ -491,7 +472,7 @@ it("keeps newer language confirmation when an older recovery read witnesses them
       recovery.resolve({
         ...DEFAULT_ACCOUNT_APPEARANCE,
         theme: "dark",
-        workingSetSyncEnabled: false,
+        statsForNerds: false,
       }),
     );
     expect(readAll().preference("theme").error).toBeNull();

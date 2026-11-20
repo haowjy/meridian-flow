@@ -92,10 +92,6 @@ export function apiProjectWorksPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/works`;
 }
 
-export function apiProjectWorkingSetPath(projectId: string): string {
-  return `${API_PROJECTS_PATH}/${projectId}/working-set`;
-}
-
 /** The active branches with changes to one document, from any view. */
 export function apiProjectDocumentBranchesPath(projectId: string, documentId: string): string {
   return `${apiProjectPath(projectId)}/documents/${documentId}/branches`;

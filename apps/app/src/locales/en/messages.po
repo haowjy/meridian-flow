@@ -2027,7 +2027,6 @@ msgid "Couldn't compact"
 msgstr "Couldn't compact"
 
 #: src/features/account/SettingsDialog.tsx
-#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr "Couldn’t confirm this preference saved."
 
@@ -2353,7 +2352,6 @@ msgid "Couldn't save this document's home"
 msgstr "Couldn't save this document's home"
 
 #: src/features/account/SettingsDialog.tsx
-#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t save this preference."
 msgstr "Couldn’t save this preference."
 
@@ -4988,8 +4986,8 @@ msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Reopen your open documents on another device"
-msgstr "Reopen your open documents on another device"
+#~ msgid "Reopen your open documents on another device"
+#~ msgstr "Reopen your open documents on another device"
 
 #: src/features/connections/ConnectionPanel.tsx
 msgid "Replace"
@@ -5111,14 +5109,13 @@ msgid "Results"
 msgstr "Results"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Resume my documents on any device"
-msgstr "Resume my documents on any device"
+#~ msgid "Resume my documents on any device"
+#~ msgstr "Resume my documents on any device"
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/AccountMenu.tsx
-#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/agents/PackageSave.tsx
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
@@ -5822,8 +5819,8 @@ msgid "Switching Work…"
 msgstr "Switching Work…"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
-msgid "Sync error"
-msgstr "Sync error"
+#~ msgid "Sync error"
+#~ msgstr "Sync error"
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx

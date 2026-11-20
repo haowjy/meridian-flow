@@ -46,10 +46,9 @@ shape for parity and lower merge risk.
 
 The shipped route surface covers:
 
-- Project CRUD, preferences, working-set snapshots, library, works list, work
+- Project CRUD, preferences, library, works list, work
   threads, project thread list/create, and the flat project chat feed;
-  account settings expose the
-  working-set sync toggle.
+  account settings carry language, theme and Stats for nerds.
 - Package export.
 - Global thread list/create, snapshot, delete/restore, turn cancel, model-request debug,
   turn-context preview, and owner-gated favorite/read desired-state mutation.

@@ -27,15 +27,6 @@ export function contextErrorToHttp(error: ContextError): never {
         meridianErrorFromSystem("conflict", "Context path conflict", false),
         409,
       );
-    case "stale_source":
-      return throwHttpInterrupt(
-        meridianErrorFromSystem(
-          "stale_source",
-          "Context location changed; retry the operation",
-          true,
-        ),
-        409,
-      );
     case "destination_missing":
       return throwHttpInterrupt(
         meridianErrorFromSystem(

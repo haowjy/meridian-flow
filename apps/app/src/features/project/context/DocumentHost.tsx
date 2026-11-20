@@ -149,48 +149,7 @@ function MainDocumentBinding({
   document: OpenDocument;
   main: MainDocument;
 }) {
-  const contextRemoval = useContextRemovalCoordinator();
-
-  // The route is remembered once main paints this document live; a draft-only document's path
-  // dies with its draft, so it never is.
   const liveness = useDocumentLiveness(projectId, document);
-  useLayoutEffect(() => {
-    if (
-      main.local ||
-      main.draftOnly ||
-      main.isFetching ||
-      main.isError ||
-      liveness === "draft-only" ||
-      document.kind === "new" ||
-      main.scheme === null ||
-      main.path === null
-    )
-      return;
-    contextRemoval.recordRoute(
-      projectId,
-      document.documentId,
-      contextRouteRequest({
-        scheme: main.scheme,
-        path: main.path,
-        workId: main.workId,
-        rootThreadId: main.rootThreadId,
-      }),
-    );
-  }, [
-    contextRemoval,
-    projectId,
-    document.documentId,
-    document.kind,
-    main.local,
-    main.draftOnly,
-    main.isFetching,
-    main.isError,
-    main.scheme,
-    main.path,
-    main.workId,
-    main.rootThreadId,
-    liveness,
-  ]);
 
   // Recency is recorded from the document actually in main, once per arrival.
   const record = useRecordOpenedDocument();

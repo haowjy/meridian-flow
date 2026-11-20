@@ -99,7 +99,6 @@ export type AdapterFault =
   | { code: "destination_missing" }
   | { code: "permission_denied" }
   | { code: "conflict" }
-  | { code: "stale_source" }
   | { code: "stale_target" }
   | { code: "invalid_operation"; message?: string; reason?: InvalidOperationReason }
   | {
@@ -172,13 +171,6 @@ export type TreeReadInput<T> = {
   read: (scope: Pick<TreeScope, "writer" | "root" | "view">) => T;
 };
 
-export type AdapterDeleted = {
-  /** Source-relative path it stood at. */
-  path: string;
-  /** The documents and files the delete took. */
-  documentIds: string[];
-};
-
 /**
  * Tree writes in one source: records of the source's list. `afterWrite` runs inside the
  * command's transaction once the records are made, so a caller's own entry commits with them.
@@ -196,15 +188,6 @@ export interface ContextTreeAdapter {
   command<T>(input: TreeCommandInput<T>): Promise<Result<T, AdapterFault>>;
   /** The tree this adapter's source shows the reader: the Work's draft, else live (or live when asked). */
   read<T>(input: TreeReadInput<T>): Promise<Result<T, AdapterFault>>;
-  /** Deletes the node and what is inside it, live: one Trash entry. */
-  delete(input: {
-    node: ContextEntryRef;
-    fromSourceId: string;
-    /** Only while the node stands at this source-relative path. */
-    onlyAt?: string;
-    origin?: WriteProvenance;
-    afterWrite?: (deleted: AdapterDeleted) => Promise<void>;
-  }): Promise<Result<AdapterDeleted, AdapterFault>>;
 }
 
 /**

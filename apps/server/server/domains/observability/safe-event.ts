@@ -189,7 +189,6 @@ const SAFE_MERIDIAN_ERROR_CODES = new Set([
   "server_error",
   "spawn_depth_exceeded",
   "stale_generation",
-  "stale_source",
   "stale_target",
   "tool_arguments_parse",
   "tool_error",

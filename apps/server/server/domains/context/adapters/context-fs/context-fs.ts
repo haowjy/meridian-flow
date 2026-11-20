@@ -35,7 +35,6 @@ import {
   type ResultAwareCommandExecutor,
 } from "../../context/result-aware-command-executor.js";
 import type {
-  AdapterDeleted,
   AdapterFault,
   AdapterFileEntry,
   AdapterFileRef,
@@ -149,7 +148,6 @@ export class ContextFS implements ContextSchemeAdapter {
 
   readonly tree: ContextTreeAdapter = {
     sourceId: () => this.store.contextSourceId(),
-    delete: (input) => this.deleteNode(input),
     command: (input) => this.treeCommand(input),
     read: (input) => this.treeRead(input),
   };
@@ -718,25 +716,5 @@ export class ContextFS implements ContextSchemeAdapter {
         input.read,
       ),
     );
-  }
-
-  private deleteNode(
-    input: Parameters<ContextTreeAdapter["delete"]>[0],
-  ): Promise<Result<AdapterDeleted, AdapterFault>> {
-    return this.inTreeCommand(input, async (target) => {
-      const deleted = await this.writes.delete(target, {
-        node: input.node.nodeId,
-        kind: input.node.kind,
-        fromSourceId: input.fromSourceId,
-        ...(input.onlyAt !== undefined ? { onlyAt: input.onlyAt } : {}),
-      });
-      if (!deleted.ok) return deleted;
-      const result: AdapterDeleted = {
-        path: deleted.value.path.join("/"),
-        documentIds: deleted.value.documentIds,
-      };
-      await input.afterWrite?.(result);
-      return Ok(result);
-    });
   }
 }

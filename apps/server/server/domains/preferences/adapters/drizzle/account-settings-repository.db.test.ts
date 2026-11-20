@@ -18,24 +18,16 @@ else
     beforeEach(async () => {
       await database.current.insert(users).values(conformanceUserValues(id, "account-settings"));
     });
-    it("stores partial patches in JSONB without losing unrelated fields or sync", async () => {
+    it("stores partial patches in JSONB without losing unrelated fields", async () => {
       const db = database.current;
       const repository = createDrizzleAccountSettingsRepository({ db });
-      expect(await repository.read(id)).toEqual({
-        ...DEFAULT_ACCOUNT_APPEARANCE,
-        workingSetSyncEnabled: true,
-      });
+      expect(await repository.read(id)).toEqual(DEFAULT_ACCOUNT_APPEARANCE);
       await repository.update(id, { theme: "dark" });
-      await repository.update(id, {
-        language: "zh",
-        statsForNerds: true,
-        workingSetSyncEnabled: false,
-      });
+      await repository.update(id, { language: "zh", statsForNerds: true });
       expect(await repository.read(id)).toEqual({
         theme: "dark",
         language: "zh",
         statsForNerds: true,
-        workingSetSyncEnabled: false,
       });
       const [row] = await db.select().from(userPreferences).where(eq(userPreferences.userId, id));
       expect(row?.preferences).toEqual({ theme: "dark", language: "zh", statsForNerds: true });

@@ -105,6 +105,5 @@ races: native open clears the cancellation handle before the first frame settles
 attempt, and post-settlement close schedules a delayed reconnect that can replace a
 still-CONNECTING hinted socket.
 
-These listeners stay outside the shared hints: working-set pagehide and hidden-visibility flushes (persistence
-signals), and local document peers and session wakeup (content recovery, independent of
+These listeners stay outside the shared hints: local document peers and session wakeup (content recovery, independent of
 network jitter).

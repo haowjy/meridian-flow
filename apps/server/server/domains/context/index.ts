@@ -86,8 +86,6 @@ export type {
   BinaryFileEntry,
   BinaryFileRef,
   ContextCopyRequest,
-  ContextDeleted,
-  ContextDeleteOptions,
   ContextEnsureTrackedDocumentResult,
   ContextError,
   ContextFileEntry,

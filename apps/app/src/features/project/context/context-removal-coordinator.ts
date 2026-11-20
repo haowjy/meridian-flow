@@ -1,19 +1,11 @@
 /**
- * What a document's removal does around the route: its views are forgotten, a notice is told, its
- * recent routes are dropped. Where main goes is the route's (`ReadableProjectRoute`), which reads
+ * What a document's removal does around the route: its views are forgotten and a notice is told. Where main goes is the route's (`ReadableProjectRoute`), which reads
  * the document's standing; nothing here navigates main for a removal made elsewhere.
  */
 
-import type { ProjectContextTreeScheme, WorkingSetRoute } from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { readAccountRecents } from "@/client/recents";
 import type { OpenDocument } from "@/client/stores";
-import {
-  buildWorkingSetRoute,
-  type ReconcileContextRoutesInput,
-  readRecentRoutes,
-  reconcileContextRoutes,
-  replaceRecentRoutes,
-} from "@/client/working-set";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type {
   NavigationSettlement,
@@ -21,12 +13,6 @@ import type {
 } from "../routing/project-navigation";
 import type { ContextRouteRequest } from "../routing/project-route";
 import { PresentedDocuments } from "./presented-documents";
-
-type ContextRemovalWorkingSetPort = {
-  readRecentRoutes(projectId: string): WorkingSetRoute[];
-  reconcileContextRoutes(projectId: string, input: ReconcileContextRoutesInput): WorkingSetRoute[];
-  replaceRecentRoutes(projectId: string, routes: readonly WorkingSetRoute[]): WorkingSetRoute[];
-};
 
 /** Where main went: a document, or Recently opened (`documentId` null). */
 export type MainLanding = { documentId: string | null };
@@ -106,22 +92,9 @@ export type ContextRemovalLifetimeLease = {
   disposeIfSuspended(): boolean;
 };
 
-const productionWorkingSet: ContextRemovalWorkingSetPort = {
-  readRecentRoutes,
-  reconcileContextRoutes,
-  replaceRecentRoutes,
-};
-
-/** A route names a document the server holds: a local-only document's route waits for its materialization. */
-function workingSetRouteForTab(tab: OpenDocument): WorkingSetRoute | null {
-  if (tab.kind === "new" || (tab.kind === "tracked" && tab.localOnly)) return null;
-  return buildWorkingSetRoute(tab.documentId, tab.scheme, tab.path, tab);
-}
-
 export class ContextRemovalCoordinator {
   private readonly routePorts = new Map<string, { token: symbol; port: ContextRemovalRoutePort }>();
   private readonly presented: PresentedPort;
-  private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly copies: Pick<LiveDocumentSessionRegistry, "clearLocalCopy"> | null;
   private readonly drafts: BoundDraftsPort | null;
   private readonly draftOnly: DraftOnlyPort | null;
@@ -137,7 +110,6 @@ export class ContextRemovalCoordinator {
   constructor(
     dependencies: {
       presented?: PresentedPort;
-      workingSet?: ContextRemovalWorkingSetPort;
       copies?: Pick<LiveDocumentSessionRegistry, "clearLocalCopy">;
       drafts?: BoundDraftsPort;
       draftOnly?: DraftOnlyPort;
@@ -145,7 +117,6 @@ export class ContextRemovalCoordinator {
     } = {},
   ) {
     this.presented = dependencies.presented ?? new PresentedDocuments();
-    this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.copies = dependencies.copies ?? null;
     this.drafts = dependencies.drafts ?? null;
     this.draftOnly = dependencies.draftOnly ?? null;
@@ -231,30 +202,9 @@ export class ContextRemovalCoordinator {
     };
   }
 
-  /**
-   * Main shows `documentId` live at `locator`: it is the project's most recent route, and the
-   * routes of the documents views present repair their locators with it.
-   */
-  recordRoute(projectId: string, documentId: string, locator: ContextRouteRequest): void {
-    if (this.unavailable() || this.gone.has(`${projectId}/${documentId}`)) return;
-    const route = buildWorkingSetRoute(documentId, locator.scheme, locator.path, locator);
-    if (!route) return;
-    this.workingSet.reconcileContextRoutes(projectId, {
-      removedLocators: [],
-      survivingOwnedLocators: [
-        ...this.presented.documents(projectId).flatMap((tab) => workingSetRouteForTab(tab) ?? []),
-        route,
-      ],
-      promote: route,
-      clearAll: false,
-    });
-  }
-
-  /** The documents of the project a removal can touch: the ones views present and recent routes name. */
+  /** The documents of the project a removal can touch: the ones views present and account recents name. */
   watchedDocumentIds(projectId: string): string[] {
     const ids = new Set(this.presented.documents(projectId).map((tab) => tab.documentId));
-    for (const route of this.workingSet.readRecentRoutes(projectId))
-      if (route.documentId) ids.add(route.documentId);
     for (const item of readAccountRecents(projectId))
       if (item.address.kind === "document") ids.add(item.documentId);
     return [...ids];
@@ -307,18 +257,8 @@ export class ContextRemovalCoordinator {
   private applyGone(projectId: string, documentIds: readonly string[]): void {
     for (const documentId of documentIds) this.gone.add(`${projectId}/${documentId}`);
     const held = this.heldByDrafts(projectId, documentIds);
-    this.dropRecentRoutes(projectId, documentIds);
     const leaving = documentIds.filter((id) => !held.has(id));
     this.forget(projectId, leaving);
-  }
-
-  private dropRecentRoutes(projectId: string, documentIds: readonly string[]): void {
-    const routes = this.workingSet.readRecentRoutes(projectId);
-    if (routes.some((route) => documentIds.includes(route.documentId)))
-      this.workingSet.replaceRecentRoutes(
-        projectId,
-        routes.filter((route) => !documentIds.includes(route.documentId)),
-      );
   }
 
   /**
@@ -339,7 +279,6 @@ export class ContextRemovalCoordinator {
     const documentId = addressed.documentId;
     this.presented.forget(projectId, [documentId]);
     const finish = () => {
-      this.dropRecentRoutes(projectId, [documentId]);
       // After main's address has left the document, so its tab is not drawn again meanwhile.
       this.tabs?.close(projectId, [documentId]);
     };
@@ -407,11 +346,6 @@ export class ContextRemovalCoordinator {
   discardDraft(projectId: string, documentId: string): void {
     if (this.unavailable() || this.goingBack.has(`${projectId}/${documentId}`)) return;
     this.forget(projectId, [documentId]);
-    const tab = this.presented
-      .documents(projectId)
-      .find((candidate) => candidate.documentId === documentId);
-    if (tab === undefined || tab.kind !== "tracked") return;
-    this.dropRecentRoutes(projectId, [documentId]);
   }
 
   dispose(): void {

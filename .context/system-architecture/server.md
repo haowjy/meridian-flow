@@ -61,7 +61,7 @@ The writer's documents: live Yjs rooms, drafts, the context filesystem and who m
 
 Projects and Works: who owns what, and what the writer had open.
 
-`projects`, `working-set` and `recent-documents`. A Work is a task-scoped editing context in a project; these domains gate writes on it and remember what the writer was looking at.
+`projects` and `recent-documents`. A Work is a task-scoped editing context in a project; these domains gate writes on it and remember what the writer opened lately.
 
 - Kind: group
 - Opens: [Workspace](server-workspace.md)

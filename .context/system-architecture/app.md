@@ -101,11 +101,11 @@ A pill shows transport health; inspectors open by alt-clicking the transcript or
 
 Talking to the server: HTTP clients, query hooks, the thread store, providers.
 
-HTTP clients, React Query hooks, the thread store and the transport provider. Also chat submissions and the project creation record, which let the app show a result before the server answers, the working set and recents, `release` (what the tab knows about the app being deployed under it), and `project-shell`: main's open tabs, the last item of each kind on screen (the pane slots) and each document's view, per browser tab.
+HTTP clients, React Query hooks, the thread store and the transport provider. Also chat submissions and the project creation record, which let the app show a result before the server answers, recents, `release` (what the tab knows about the app being deployed under it), and `project-shell`: main's open tabs, the last item of each kind on screen (the pane slots) and each document's view, per browser tab.
 
 - Kind: module
 - Paths: `apps/app/src/client`
-- Docs: [app CONTEXT](../../apps/app/.context/CONTEXT.md), [chat-submissions CONTEXT](../../apps/app/src/client/chat-submissions/.context/CONTEXT.md), [working-set CONTEXT](../../apps/app/src/client/working-set/.context/CONTEXT.md), [recents CONTEXT](../../apps/app/src/client/recents/.context/CONTEXT.md)
+- Docs: [app CONTEXT](../../apps/app/.context/CONTEXT.md), [chat-submissions CONTEXT](../../apps/app/src/client/chat-submissions/.context/CONTEXT.md), [recents CONTEXT](../../apps/app/src/client/recents/.context/CONTEXT.md)
 - Machines: [chat submissions](../../apps/app/src/client/chat-submissions/.context/state-machines.md), [release](../../apps/app/src/client/release/.context/state-machines.md)
 - Drift: No written dependency rule covers the app's layers, and imports run both ways between them: `client` imports `features/project`, `components` imports `features/editor` and `features/project`, `core/editor` imports `components`, `client` and `features/project`, and `lib` imports `features/agents`.
 

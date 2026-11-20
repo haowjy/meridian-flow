@@ -602,34 +602,6 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return result.ok ? Ok(landedAt(r.value, result.value)) : result;
     },
 
-    async delete(node, area, options = {}) {
-      const r = await resolve(area);
-      if (!r.ok) return r;
-      const { adapter, canonical } = r.value;
-      if (!adapter.capabilities.writable || !adapter.tree)
-        return Err({ code: "permission_denied", uri: canonical });
-      const tree = adapter.tree;
-      const deleted = await callAdapter(canonical, async () =>
-        tree.delete({
-          node,
-          fromSourceId: await tree.sourceId(),
-          ...(options.onlyAt !== undefined ? { onlyAt: options.onlyAt } : {}),
-          ...(options.origin ? { origin: options.origin } : {}),
-          afterWrite: async (written) => {
-            await options.inTransaction?.({
-              uri: uriFor(r.value.scheme, written.path, r.value.authority),
-              documentIds: written.documentIds,
-            });
-          },
-        }),
-      );
-      if (!deleted.ok) return deleted;
-      return Ok({
-        uri: uriFor(r.value.scheme, deleted.value.path, r.value.authority),
-        documentIds: deleted.value.documentIds,
-      });
-    },
-
     async treeCommand(area, input) {
       const r = await resolve(area);
       if (!r.ok) return r;

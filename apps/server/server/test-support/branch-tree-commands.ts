@@ -77,7 +77,7 @@ export interface ScenarioWriter {
   /** The sidebar's rename or move: commits `from`'s exact identity at `to`. */
   move(from: string, to: string): ReturnType<ContextPort["treeCommand"]>;
   /** The sidebar's delete of the file or folder at `path` (recursive for a folder). */
-  delete(path: string): ReturnType<ContextPort["delete"]>;
+  delete(path: string): ReturnType<ContextPort["treeCommand"]>;
   /** The writer saves the whole document live, as the editor's Markdown save does. */
   write(path: string, markdown: string): Promise<void>;
   /**

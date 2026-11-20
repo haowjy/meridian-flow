@@ -46,7 +46,6 @@ import { useSharedAccountSettings } from "./AccountSettingsProvider";
 import { PhoneSettingsContent, type PhoneSettingsSectionItem } from "./PhoneSettings";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./settings-sections";
 import type { AccountPreference, SettingKey } from "./useAccountSettings";
-import { WorkingSetSyncPreferenceRow } from "./WorkingSetSyncPreferenceRow";
 
 /**
  * Open/close the settings overlay by patching `?settings=` on the CURRENT
@@ -402,7 +401,6 @@ function PreferencesSection({ presentation = "desktop" }: { presentation?: Secti
 
         <PreferenceError preference={language} />
         <StatsForNerdsRow />
-        <WorkingSetSyncPreferenceRow />
       </section>
       <section
         className="mt-6 space-y-4 border-t border-border-subtle pt-5"

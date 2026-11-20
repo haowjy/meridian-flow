@@ -333,24 +333,6 @@ export interface ContextWriteOptions {
   metadata?: DocumentCreationMetadata;
 }
 
-/** What a delete took: the documents and files in it, the node itself among them. */
-export type ContextDeleted = {
-  /** Where the entry stood. */
-  uri: string;
-  documentIds: string[];
-};
-
-export interface ContextDeleteOptions {
-  origin?: WriteProvenance;
-  /**
-   * Delete only while the node is still at this path of its area; a node the writer has
-   * renamed or moved since survives, and the delete answers `stale_target`.
-   */
-  onlyAt?: string;
-  /** Runs inside the delete's own transaction once its record is made. */
-  inTransaction?: (deleted: ContextDeleted) => Promise<void>;
-}
-
 /** Input for writing a binary (storage-backed) document through {@link ContextPort.writeBinary}. */
 export interface ContextWriteBinaryOptions extends ContextWriteOptions {
   fileType: DocumentFileType;
@@ -448,13 +430,6 @@ export interface ContextPort {
     uri: string,
     options: ContextWriteBinaryOptions,
   ): Promise<Result<ContextBinaryWriteResult, ContextError>>;
-
-  /** Delete the node `node` names, live, found by id under the locks (`area` as in the move). */
-  delete(
-    node: ContextEntryRef,
-    area: string,
-    options?: ContextDeleteOptions,
-  ): Promise<Result<ContextDeleted, ContextError>>;
 
   /**
    * One command on the tree of `area` (a source's top address): `make` decides under the

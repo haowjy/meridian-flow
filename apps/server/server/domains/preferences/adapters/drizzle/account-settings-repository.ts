@@ -16,38 +16,27 @@ export function createDrizzleAccountSettingsRepository({
     connection: DrizzleDb = db,
   ): Promise<AccountSettings> {
     const [row] = await connection
-      .select({ preferences: userPreferences.preferences, enabled: users.workingSetSyncEnabled })
+      .select({ preferences: userPreferences.preferences })
       .from(users)
       .leftJoin(userPreferences, eq(userPreferences.userId, users.id))
       .where(eq(users.id, userId));
     if (!row) throw new Error("Authenticated account not found");
-    return {
-      ...DEFAULT_ACCOUNT_APPEARANCE,
-      ...row.preferences,
-      workingSetSyncEnabled: row.enabled,
-    };
+    return { ...DEFAULT_ACCOUNT_APPEARANCE, ...row.preferences };
   }
   return {
     read,
     async update(userId, patch) {
       return db.transaction(async (tx) => {
-        // One account lock orders both preference homes and their returned snapshot.
+        // The account lock orders concurrent patches and their returned snapshot.
         await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for("update");
-        const { workingSetSyncEnabled, ...appearance } = patch;
-        if (workingSetSyncEnabled !== undefined) {
-          await tx
-            .update(users)
-            .set({ workingSetSyncEnabled, updatedAt: new Date().toISOString() })
-            .where(eq(users.id, userId));
-        }
-        if (Object.keys(appearance).length) {
+        if (Object.keys(patch).length) {
           await tx
             .insert(userPreferences)
-            .values({ userId, preferences: appearance })
+            .values({ userId, preferences: patch })
             .onConflictDoUpdate({
               target: userPreferences.userId,
               set: {
-                preferences: sql`${userPreferences.preferences} || ${JSON.stringify(appearance)}::jsonb`,
+                preferences: sql`${userPreferences.preferences} || ${JSON.stringify(patch)}::jsonb`,
                 updatedAt: new Date(),
               },
             });

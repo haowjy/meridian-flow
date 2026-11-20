@@ -63,11 +63,6 @@ export type OpenDocument =
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
       provisionalName?: boolean;
-      /**
-       * The writer made this document here and the server may not hold it yet. A working-set route
-       * names only held documents: one for this tab makes the server refuse the whole snapshot.
-       */
-      localOnly?: true;
     } & OpenDocumentOwner)
   | ({
       kind: "viewer";

@@ -1,7 +1,7 @@
 # client/recents
 
-Device-local account continuity for recently opened documents. It is not a cache,
-working set or sync engine.
+Device-local account continuity for recently opened documents. It is not a cache
+or sync engine.
 
 - Write an open before its server request. Rank by the later `openedAt`, so the
   server's batching interval can't reorder this device.
