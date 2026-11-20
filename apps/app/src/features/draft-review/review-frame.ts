@@ -1,5 +1,6 @@
 /** One immutable text projection and room snapshot. Every position belongs to its exact PM document. */
 import {
+  baseViewDelta,
   blocksEqual,
   diffBlocks,
   projectReview,
@@ -7,6 +8,7 @@ import {
   type ReviewGroup,
   type ReviewProjection,
 } from "@meridian/agent-edit/diff";
+import type { ReviewCut } from "@meridian/contracts/branches";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import {
@@ -118,8 +120,30 @@ export function buildFrame(yDoc: Y.Doc, base: readonly PMNode[], draft: PMNode):
   // change: the writer did not make it.
   const from = base.length === 0 && blocksEqual(base, blocks) ? blocks : base;
   const projection: ReviewProjection = projectReview(diffBlocks(from, blocks));
-  return { ...projection, doc: draft, snapshot: Y.snapshot(yDoc) };
+  return {
+    ...projection,
+    doc: draft,
+    snapshot: Y.snapshot(yDoc),
+    roomBase: readBase(yDoc, draft.type.schema),
+  };
 }
+
+/**
+ * What a command sends so the server names changes in the review `frame` drew: the room's
+ * snapshot, and the Applies this tab had in flight then as `baseViewDelta`. Without the delta
+ * the server reads the room's base, where an edit made twice is numbered differently.
+ */
+export function frameCut(frame: ReviewFrame): ReviewCut {
+  return {
+    snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
+    baseViewDelta: baseViewDelta(frame.doc.type.schema, frame.roomBase, frame.diff.base.blocks).map(
+      (patch) => ({ ...patch, blocks: patch.blocks.map((block) => block.toJSON()) }),
+    ),
+  };
+}
+
+const base64 = (bytes: Uint8Array) =>
+  btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 
 // A room has one runtime, but headless Discard also reads it directly. Both must use the same
 // retained nodes, not a fresh conversion or a second per-command cache.

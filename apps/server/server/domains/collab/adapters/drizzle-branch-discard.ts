@@ -32,19 +32,15 @@ import { discardCommandEffects, documentDrafts } from "@meridian/database/schema
 import { discardDraft, newId, pendingRecords, recordsOfItem } from "@meridian/project-tree";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkBranchDisposal, WorkProjectionMutation } from "../../projects/index.js";
-import {
-  ApplyClickUnsynced,
-  containsSnapshot,
-  decodeClickedSnapshot,
-} from "../domain/apply-click.js";
+import { readSeen } from "../domain/apply-click.js";
 import type {
   BranchDiscardStore,
   DiscardEnded,
+  DiscardItem,
   DiscardKernelInput,
   DiscardKernelResult,
 } from "../domain/branch-discard.js";
@@ -232,26 +228,6 @@ async function untakenNotes(
   });
 }
 
-/**
- * The base and text of `draft` at the snapshot a Discard's ids were read at. A snapshot the draft
- * does not hold yet (the writer's room is ahead of what reached the server) is refused as the room
- * Apply refuses it, and the client sends the same command again.
- */
-function cutOf(draft: Y.Doc, encoded: string | undefined) {
-  if (!encoded) return undefined;
-  const snapshot = decodeClickedSnapshot(encoded);
-  if (!containsSnapshot(Y.snapshot(draft), snapshot)) throw new ApplyClickUnsynced();
-  const cut = Y.createDocFromSnapshot(draft, snapshot, new Y.Doc({ gc: false }));
-  try {
-    return {
-      base: readBlocks(cut.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema),
-      text: readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema),
-    };
-  } finally {
-    cut.destroy();
-  }
-}
-
 export type DrizzleBranchDiscard = BranchDiscardStore & {
   /** The locked kernel: the caller holds §14's locks and proved the Work's state. */
   kernel(input: DiscardKernelInput): Promise<DiscardKernelResult>;
@@ -292,7 +268,7 @@ export function createDrizzleBranchDiscard(
     documentId: DocumentId;
     draftId: string;
     text: "all" | readonly string[];
-    snapshot?: string;
+    seen?: DiscardItem["seen"];
   }): Promise<boolean> {
     const base = await deps.coordinator.loadBase(input.draftId);
     let taken: ReturnType<typeof discardChanges> = null;
@@ -308,7 +284,7 @@ export function createDrizzleBranchDiscard(
           before,
           text,
           input.text,
-          cutOf(prefix, input.snapshot),
+          input.seen && readSeen(prefix, input.seen.snapshot, input.seen.baseViewDelta),
         );
         if (!taken) return [];
         const next = taken.text;
@@ -412,7 +388,7 @@ export function createDrizzleBranchDiscard(
               documentId: id,
               draftId: draft.id,
               text,
-              ...(item.snapshot ? { snapshot: item.snapshot } : {}),
+              ...(item.seen ? { seen: item.seen } : {}),
             })
           : false;
       if (!had.has(id) && !tookText) untaken.push(id);

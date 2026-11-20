@@ -1,6 +1,6 @@
 /** Settle a Work's drafted tree records discarded and merge the base's text into its drafts, for chosen items or the whole branch. */
 import type { BranchId, UserId } from "@meridian/contracts";
-import type { DiscardCommandResult } from "@meridian/contracts/branches";
+import type { DiscardCommandResult, ReviewCut } from "@meridian/contracts/branches";
 import type { Settlement } from "@meridian/contracts/commands";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
@@ -49,8 +49,8 @@ export type DiscardItem = {
    * taken whole.
    */
   text: "all" | readonly string[] | null;
-  /** Base64 of the draft's snapshot the named ids were read at; see `BranchDiscardRequestSchema`. */
-  snapshot?: string;
+  /** The review the named ids were read in: the room's snapshot and the tab's in-flight Applies (`readSeen`). */
+  seen?: ReviewCut;
 };
 
 export type DiscardKernelInput = {

@@ -14,23 +14,23 @@ import {
   draftOwnerFromKey,
   parseDraftItemKey,
 } from "@meridian/contracts";
-import type {
-  ApplyClickAnswer,
-  ApplyClickResult,
-  ApplyItemsClick,
-  ApplySpanPatch,
-  ApplyTextCut,
-  BranchDiscardRequest,
-  DiscardCommandResult,
-  DocumentDraftHint,
-  DocumentDraftHintsResponse,
-  DraftMetadataResponse,
-  ThreadDraftListItem,
-  ThreadDraftListResponse,
-  UnapplyClickAnswer,
-  UnapplyClickResult,
-  UndoDiscardAnswer,
-  UndoDiscardResult,
+import {
+  type ApplyClickAnswer,
+  type ApplyClickResult,
+  type ApplyItemsClick,
+  type ApplyTextCut,
+  BaseViewDeltaSchema,
+  type BranchDiscardRequest,
+  type DiscardCommandResult,
+  type DocumentDraftHint,
+  type DocumentDraftHintsResponse,
+  type DraftMetadataResponse,
+  type ThreadDraftListItem,
+  type ThreadDraftListResponse,
+  type UnapplyClickAnswer,
+  type UnapplyClickResult,
+  type UndoDiscardAnswer,
+  type UndoDiscardResult,
 } from "@meridian/contracts/branches";
 import {
   COMMAND_CONFLICT_CODE,
@@ -167,19 +167,6 @@ const _Base = {
   itemKey: z.string().max(80),
   commandId: CommandIdSchema,
 };
-const RangeBody = z
-  .strictObject({
-    from: z.number().int().nonnegative().safe(),
-    to: z.number().int().nonnegative().safe(),
-  })
-  .refine((range) => range.to >= range.from);
-const BaseViewDeltaBody = z.array(
-  z.strictObject({
-    base: RangeBody,
-    draft: RangeBody,
-    blocks: z.array(z.object({ type: z.string() }).catchall(z.unknown())),
-  }),
-);
 /** A state vector, decoded here once: one that isn't is a 400, and nothing downstream decodes. */
 const VectorBody = z.base64().transform((value, context) => {
   const bytes = new Uint8Array(Buffer.from(value, "base64"));
@@ -218,7 +205,7 @@ const ApplyClickBody = z
     commandId: CommandIdSchema,
     snapshot: z.string().min(1).optional(),
     whole: z.literal(true).optional(),
-    baseViewDelta: BaseViewDeltaBody,
+    baseViewDelta: BaseViewDeltaSchema,
     groupIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length),
     tree: TreeBody.optional(),
     restore: OldRestoreBody,
@@ -238,7 +225,7 @@ const ApplyTextBody = z.union([
   z.strictObject({
     draftId: z.string().min(1).max(128),
     snapshot: z.string().min(1),
-    baseViewDelta: BaseViewDeltaBody,
+    baseViewDelta: BaseViewDeltaSchema,
     groupIds: z
       .array(z.string().min(1))
       .min(1)
@@ -636,7 +623,7 @@ function itemsOfClick(documentId: DocumentId, click: ApplyClickRequest): ParsedA
       ? {
           draftId: click.draftId as string,
           snapshot: click.snapshot as string,
-          baseViewDelta: click.baseViewDelta as ApplySpanPatch[],
+          baseViewDelta: click.baseViewDelta,
           groupIds: click.groupIds,
         }
       : null;
@@ -1040,7 +1027,9 @@ export async function handleDiscardBranchRequest(
           documentId: entry.node as DocumentId,
           tree: entry.tree === true,
           text: entry.text ?? null,
-          ...(entry.snapshot ? { snapshot: entry.snapshot } : {}),
+          ...(entry.snapshot
+            ? { seen: { snapshot: entry.snapshot, baseViewDelta: entry.baseViewDelta ?? [] } }
+            : {}),
         })),
       }),
     };

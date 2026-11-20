@@ -2,13 +2,16 @@
 
 import { t } from "@lingui/core/macro";
 import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
-import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
+import type {
+  ReviewCut,
+  ThreadDraftListItem,
+  ThreadDraftListResponse,
+} from "@meridian/contracts/branches";
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
-import * as Y from "yjs";
 import { applyItems, branchOf, unapplyCommand, undoDiscard } from "@/client/api/branches-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
@@ -39,12 +42,7 @@ import {
 import { useClosedOwners } from "@/features/project/context/closed-owners";
 import { ApplyEntries, type Seat, serverPort } from "./apply-history";
 import type { RestoreAnswer } from "./discard-restores";
-import {
-  base64,
-  type CommandOutcome,
-  type DraftCommandOwner,
-  folderKey,
-} from "./draft-command-owner";
+import { type CommandOutcome, type DraftCommandOwner, folderKey } from "./draft-command-owner";
 import {
   type AppliedFact,
   type ApplyHalves,
@@ -53,6 +51,7 @@ import {
   type NoticeSurface,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
+import { frameCut } from "./review-frame";
 import type { ApplyTarget, ChangeTarget } from "./review-model";
 
 export type BranchCommandOutcome = CommandOutcome;
@@ -540,7 +539,7 @@ export function useWorkBranchCommands({
           draft: DraftReviewSelection;
           tree: boolean;
           text: "all" | string[] | null;
-          snapshot?: string;
+          seen?: ReviewCut;
           hides: boolean;
         }
       >();
@@ -555,10 +554,10 @@ export function useWorkBranchCommands({
         const held = taken.get(draft.documentId);
         taken.set(draft.documentId, {
           draft,
-          ...(held?.snapshot
-            ? { snapshot: held.snapshot }
+          ...(held?.seen
+            ? { seen: held.seen }
             : target.kind === "groups"
-              ? { snapshot: base64(Y.encodeSnapshotV2(target.frame.snapshot)) }
+              ? { seen: frameCut(target.frame) }
               : {}),
           tree: (held?.tree ?? false) || own.tree,
           text:
@@ -592,11 +591,11 @@ export function useWorkBranchCommands({
             ? { all: true, refs: [...refs, ...folderRefs] }
             : {
                 items: [
-                  ...[...taken.values()].map(({ draft, tree, text, snapshot, hides }) => ({
+                  ...[...taken.values()].map(({ draft, tree, text, seen, hides }) => ({
                     ref: ref(draft),
                     tree,
                     text,
-                    ...(snapshot ? { snapshot } : {}),
+                    ...(seen ? { seen } : {}),
                     hides,
                   })),
                   ...folderRefs.map((folderRef) => ({
