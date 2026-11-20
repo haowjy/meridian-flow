@@ -44,7 +44,7 @@
  */
 
 import type { Thread, Work } from "@meridian/contracts/protocol";
-import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useMemo, useState } from "react";
 
 import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
