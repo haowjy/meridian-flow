@@ -137,19 +137,6 @@ export function changeStateIn(
 }
 
 /**
- * Whether going from (`base`, `text`) to (`nextBase`, `nextText`) adds a pending change to Changes:
- * the check an applied change's Undo passes before it writes.
- */
-export function addsPendingChange(
-  base: readonly PMNode[],
-  text: readonly PMNode[],
-  nextBase: readonly PMNode[],
-  nextText: readonly PMNode[],
-): boolean {
-  return adds(projectReview(diffBlocks(base, text)), projectReview(diffBlocks(nextBase, nextText)));
-}
-
-/**
  * The state of a change in `text` against its review base: what `readChange` reports, for the press
  * that takes it out, which must act on exactly what the card offered.
  */
@@ -188,15 +175,6 @@ function stateIn(schema: Schema, change: EditChange, at: Window | null): ChangeS
   return putBack(change.after, inverse.blocks) || putBack(inverse.blocks, change.after)
     ? "stands"
     : "altered";
-}
-
-/**
- * Whether `change` stands in `text` on its own, which Restore asks of a Discard's change: it may
- * add a pending change back, which is what it is for, so the pending-change test of `readChange`
- * does not apply.
- */
-export function standsIn(schema: Schema, change: EditChange, text: readonly PMNode[]): boolean {
-  return stateIn(schema, change, windowIn(change, text)) === "stands";
 }
 
 /** The words a hunk removed and added, and the same with punctuation. */

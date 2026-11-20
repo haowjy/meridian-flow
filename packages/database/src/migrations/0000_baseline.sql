@@ -548,7 +548,7 @@ CREATE TABLE "document_edit_parts" (
 	"carried" jsonb,
 	"draft_branch_id" uuid,
 	CONSTRAINT "document_edit_parts_ordinal_valid" CHECK ("document_edit_parts"."ordinal" >= 0),
-	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' IN ('pending','live')),
+	CONSTRAINT "document_edit_parts_origin_valid" CHECK ("document_edit_parts"."origin"->>'kind' IN ('pending','base','live')),
 	CONSTRAINT "document_edit_parts_draft_branch_valid" CHECK (("document_edit_parts"."origin"->>'kind' = 'pending') = ("document_edit_parts"."draft_branch_id" IS NOT NULL))
 );
 --> statement-breakpoint
@@ -1218,6 +1218,7 @@ CREATE UNIQUE INDEX "works_project_handle" ON "works" USING btree ("project_id",
 CREATE UNIQUE INDEX "works_project_no_work_active" ON "works" USING btree ("project_id") WHERE "works"."is_no_work" = true AND "works"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "document_edit_parts_edit_ordinal" ON "document_edit_parts" USING btree ("edit_id","ordinal");--> statement-breakpoint
 CREATE INDEX "document_edit_parts_pending_origin_idx" ON "document_edit_parts" USING btree (("origin"->>'draftId')) WHERE "document_edit_parts"."origin"->>'kind' = 'pending';--> statement-breakpoint
+CREATE INDEX "document_edit_parts_base_origin_idx" ON "document_edit_parts" USING btree (("origin"->>'draftId')) WHERE "document_edit_parts"."origin"->>'kind' = 'base';--> statement-breakpoint
 CREATE INDEX "document_edits_document_idx" ON "document_edits" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "document_edits_turn_idx" ON "document_edits" USING btree ("turn_id");--> statement-breakpoint
 CREATE INDEX "document_edits_action_idx" ON "document_edits" USING btree ("action_id");--> statement-breakpoint

@@ -16,14 +16,10 @@ export const settledCause = (disposition: PartDisposition) =>
 export interface DraftDispositionView {
   draft: import("./draft-store.js").DraftSnapshot;
   /**
-   * `applied`: an Apply in force took a change of the part. `appliedChanges` names, by index in
-   * the part's delta, the Apply command that took each; the latest when two did. Else `pending`
-   * while the draft is open, and `discarded` once it is closed.
+   * `applied`: an Apply in force took a change of the part. Else `pending` while the draft is
+   * open, and `discarded` once it is closed.
    */
-  parts: readonly (DraftReceiptPart & {
-    disposition: PartDisposition;
-    appliedChanges: ReadonlyMap<number, string>;
-  })[];
+  parts: readonly (DraftReceiptPart & { disposition: PartDisposition })[];
 }
 
 export function createDraftDispositionReader(store: DraftDispositionStore) {
@@ -34,24 +30,13 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
     // Never manufacture an empty draft.
     if (!cut.draft.checkpoint) throw new Error(`Missing draft checkpoint: ${draftId}`);
     assertReadableDraft(draft);
-    // Effects arrive oldest first, so the later Apply wins a change two took.
-    const takenBy = new Map<number, Map<number, string>>();
-    for (const effect of cut.applied)
-      for (const [part, index] of effect.carried) {
-        const changes = takenBy.get(part) ?? new Map<number, string>();
-        changes.set(index, effect.commandId);
-        takenBy.set(part, changes);
-      }
+    const applied = new Set(cut.applied.flatMap((apply) => apply.carried.map(([part]) => part)));
     return {
       draft,
-      parts: cut.parts.map((part) => {
-        const appliedChanges = takenBy.get(part.id) ?? new Map<number, string>();
-        return {
-          ...part,
-          appliedChanges,
-          disposition: appliedChanges.size ? "applied" : "pending",
-        };
-      }),
+      parts: cut.parts.map((part) => ({
+        ...part,
+        disposition: applied.has(part.id) ? "applied" : "pending",
+      })),
     };
   };
 }

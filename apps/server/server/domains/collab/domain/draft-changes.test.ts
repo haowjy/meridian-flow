@@ -26,7 +26,7 @@ describe("an AI edit's Undo in the manuscript", () => {
   it("takes out only the AI's words when the writer typed beside them", () => {
     const typed = retype("Then the tiger sat on the mat, purring.");
     const undone = takeBack(typed, [part]);
-    expect(words(undone.live)).toEqual([
+    expect(words(undone.text)).toEqual([
       "Then the cat sat on the mat, purring.",
       "The door stayed shut.",
     ]);
@@ -36,7 +36,7 @@ describe("an AI edit's Undo in the manuscript", () => {
   it("does nothing when the writer typed inside them", () => {
     const typed = retype("The tigxer sat on the mat.");
     const undone = takeBack(typed, [part]);
-    expect(words(undone.live)).toEqual(words(typed));
+    expect(words(undone.text)).toEqual(words(typed));
     expect(undone.taken).toEqual([]);
   });
 });

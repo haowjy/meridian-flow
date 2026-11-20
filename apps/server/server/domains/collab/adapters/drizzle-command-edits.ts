@@ -1,18 +1,10 @@
 /**
  * A writer's press that writes text (Apply, Discard, and the Undo of either) records what it
- * changed as `document_edits` parts, the record AI writes keep. One operation takes any of them
- * back: `undoCommandText` takes each change of the command's parts out where it still stands, and
- * records an `undo` edit naming the parts it took. Un-Apply, Restore of a Discard and Redo (the
- * Undo of an Un-Apply) are that call.
+ * changed as `document_edits` parts, the record AI writes keep: one part per text it wrote (Live, a
+ * draft's text, a draft's review base). One operation takes any of them back: `undoCommandText`.
+ * Un-Apply, Restore of a Discard and Redo (the Undo of an Un-Apply) are that call.
  */
-import {
-  captureDelta,
-  changeStateIn,
-  editChanges,
-  readDelta,
-  type StoredDelta,
-  takeOut,
-} from "@meridian/agent-edit/content-merge";
+import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
 import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
@@ -25,12 +17,11 @@ import {
   documentEdits,
 } from "@meridian/database/schema";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import type { Node as PMNode } from "prosemirror-model";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
-import { draftSchema } from "../domain/draft-changes.js";
+import { draftSchema, takeBack } from "../domain/draft-changes.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import { partKey } from "../domain/inverse-actions.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
@@ -63,37 +54,61 @@ const partColumns = {
   carried: documentEditParts.carried,
 };
 
+/**
+ * A writer's command's own edits. A draft append under the command also records a system `write`
+ * receipt for its rows with the command's id; that is the append's, not the command's record.
+ */
+const commandKinds = inArray(documentEdits.kind, ["apply", "discard", "undo"]);
+
 /** The parts the command's edits wrote, newest first. */
 async function partsOf(tx: Tx, commandId: string): Promise<CommandPart[]> {
   return tx
     .select(partColumns)
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
-    .where(eq(documentEdits.commandId, commandId as CommandId))
+    .where(and(eq(documentEdits.commandId, commandId as CommandId), commandKinds))
     .orderBy(desc(documentEditParts.id));
 }
 
-/** Which of `parts` an Undo has taken back. */
-async function takenAmong(tx: Tx, parts: readonly CommandPart[]): Promise<Set<string>> {
+/**
+ * Which of `parts` are in force: no command Undo in force targets them. An Undo is itself a part,
+ * so a Redo (the Undo of an Un-Apply) puts the Apply's parts back in force. The card's and the
+ * model's Undo carry an `actionId` and never target a command's parts.
+ */
+async function inForceAmong(tx: Tx, parts: readonly CommandPart[]): Promise<Set<string>> {
   if (parts.length === 0) return new Set();
-  const keys = new Set(parts.map(partKey));
   const undos = await tx
-    .select({ targets: documentEditParts.targets })
+    .select({
+      editId: documentEditParts.editId,
+      ordinal: documentEditParts.ordinal,
+      targets: documentEditParts.targets,
+    })
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
     .where(
       and(
         eq(documentEdits.kind, "undo"),
+        isNull(documentEdits.actionId),
         inArray(documentEdits.documentId, [...new Set(parts.map((part) => part.documentId))]),
       ),
     );
-  const taken = new Set<string>();
-  for (const { targets } of undos)
-    for (const target of targets) if (keys.has(partKey(target))) taken.add(partKey(target));
-  return taken;
+  const takenBy = new Map<string, string[]>();
+  for (const undo of undos)
+    for (const target of undo.targets)
+      takenBy.set(partKey(target), [...(takenBy.get(partKey(target)) ?? []), partKey(undo)]);
+  const memo = new Map<string, boolean>();
+  const inForce = (key: string): boolean => {
+    let known = memo.get(key);
+    if (known === undefined) {
+      known = !(takenBy.get(key) ?? []).some(inForce);
+      memo.set(key, known);
+    }
+    return known;
+  };
+  return new Set(parts.map(partKey).filter(inForce));
 }
 
-/** The parts the commands wrote that no Undo has taken back, with each part's command. */
+/** The parts the commands wrote that are still in force, with each part's command. */
 export async function untakenPartsOf(
   tx: Tx,
   commandIds: readonly string[],
@@ -103,15 +118,15 @@ export async function untakenPartsOf(
     .select({ ...partColumns, commandId: sql<string>`${documentEdits.commandId}` })
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
-    .where(inArray(documentEdits.commandId, [...commandIds] as CommandId[]));
-  const taken = await takenAmong(tx, rows);
-  return rows.filter((row) => !taken.has(partKey(row)));
+    .where(and(inArray(documentEdits.commandId, [...commandIds] as CommandId[]), commandKinds));
+  const inForce = await inForceAmong(tx, rows);
+  return rows.filter((row) => inForce.has(partKey(row)));
 }
 
 /**
- * The parts of each draft's Applies still in force (carried set and no Undo took them), oldest
- * first, with the command that wrote them: what the card reads "Applied" from and what settles an
- * Apply's text half as already applied.
+ * Each draft's Applies in force: the review-base part of each, oldest first, with the AI changes
+ * it carried and its command. What the card reads "Applied" from, and what settles an Apply's
+ * text half as already applied.
  */
 export async function appliesInForce(
   tx: Tx,
@@ -126,15 +141,15 @@ export async function appliesInForce(
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
     .where(
       and(
-        isNotNull(documentEditParts.carried),
-        sql`${documentEditParts.origin}->>'kind' = 'live'`,
+        eq(documentEdits.kind, "apply"),
+        sql`${documentEditParts.origin}->>'kind' = 'base'`,
         inArray(sql`${documentEditParts.origin}->>'draftId'`, [...draftIds]),
       ),
     )
     .orderBy(documentEditParts.id);
-  const taken = await takenAmong(tx, rows);
+  const inForce = await inForceAmong(tx, rows);
   return rows.flatMap((row) =>
-    taken.has(partKey(row)) || !row.commandId || row.origin.kind !== "live" || !row.origin.draftId
+    !inForce.has(partKey(row)) || !row.commandId || row.origin.kind !== "base"
       ? []
       : [
           {
@@ -159,12 +174,16 @@ export async function documentsOfCommand(
     .innerJoin(commands, eq(commands.id, documentEdits.commandId))
     .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
     .where(
-      and(eq(documentEdits.commandId, commandId as CommandId), eq(commands.accountId, accountId)),
+      and(
+        eq(documentEdits.commandId, commandId as CommandId),
+        eq(commands.accountId, accountId),
+        commandKinds,
+      ),
     );
   const out = new Map<DocumentId, Set<string>>();
   for (const row of rows) {
     const drafts = out.get(row.documentId) ?? new Set<string>();
-    if (row.origin.draftId) drafts.add(row.origin.draftId);
+    if (row.origin.kind !== "live") drafts.add(row.origin.draftId);
     out.set(row.documentId, drafts);
   }
   return [...out].map(([documentId, drafts]) => ({ documentId, draftIds: [...drafts] }));
@@ -177,26 +196,6 @@ export type UndoneText = {
   drafts: { draftId: string; at: number }[];
 };
 
-type Change = ReturnType<typeof editChanges>[number];
-
-/** Each change of the parts that stands in `blocks`, taken out in turn, newest part first. */
-function takeStanding(
-  blocks: readonly PMNode[],
-  parts: readonly CommandPart[],
-  taken: (part: CommandPart, change: Change) => void,
-): readonly PMNode[] {
-  let text = blocks;
-  for (const part of parts) {
-    if (!part.delta) continue;
-    for (const change of editChanges(schema, readDelta(schema, part.delta)).reverse())
-      if (changeStateIn(schema, change, text) === "stands") {
-        text = takeOut(schema, change, text);
-        taken(part, change);
-      }
-  }
-  return text;
-}
-
 export type UndoTextDeps = {
   live: UpdateJournal;
   liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
@@ -207,9 +206,9 @@ export type UndoTextDeps = {
 
 /**
  * Takes back what `undoes` wrote, in the documents `only` names (all when absent): each change of
- * each part not already taken that still stands where the part wrote it, newest first. A Live
- * part that also wrote a draft's review base (an Apply's) is taken out of that base too, so the
- * change is pending in the draft again. Records one `undo` edit per document it changed. The
+ * each part in force that still stands in the text the part wrote (Live, a draft's text, a draft's
+ * review base), newest first. Records one `undo` edit per document whose parts name every part it
+ * was asked to take, whether or not a change still stood: "taken" means an Undo judged it. The
  * caller holds the command's claim and the documents' keys; writes are delivered after commit.
  */
 export async function undoCommandText(
@@ -226,135 +225,91 @@ export async function undoCommandText(
   const all = (await partsOf(tx, input.undoes)).filter(
     (part) => !input.only || input.only.has(part.documentId),
   );
-  const taken = await takenAmong(tx, all);
-  const open = all.filter((part) => !taken.has(partKey(part)));
-  // What the parts an Undo takes had themselves taken back: a part that took back an Apply's
-  // carries that Apply's AI changes into Live again.
-  const grand = new Map<string, [number, number][] | null>();
-  const targetKeys = open.flatMap((part) => part.targets);
-  if (targetKeys.length) {
-    const rows = await tx
-      .select({
-        editId: documentEditParts.editId,
-        ordinal: documentEditParts.ordinal,
-        carried: documentEditParts.carried,
-      })
-      .from(documentEditParts)
-      .where(inArray(documentEditParts.editId, [...new Set(targetKeys.map((key) => key.editId))]));
-    for (const row of rows) grand.set(partKey(row), row.carried);
-  }
+  const inForce = await inForceAmong(tx, all);
+  const open = all.filter((part) => inForce.has(partKey(part)));
+  const targets = (parts: readonly CommandPart[]) =>
+    parts.map(({ editId, ordinal }) => ({ editId, ordinal }));
   const out: UndoneText[] = [];
   for (const documentId of [...new Set(open.map((part) => part.documentId))].sort()) {
     const own = open.filter((part) => part.documentId === documentId);
     const result: UndoneText = { documentId, live: false, drafts: [] };
     const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
-    // Live, and with it each draft base its parts also wrote.
     const liveParts = own.filter((part) => part.origin.kind === "live");
-    const baseChanges = new Map<string, Change[]>();
     if (liveParts.length) {
       const snapshot = await deps.live.read(documentId);
       const doc = storedDocument(snapshot);
       try {
         const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
         const before = readBlocks(fragment, schema);
-        const tookParts: CommandPart[] = [];
-        const after = takeStanding(before, liveParts, (part, change) => {
-          if (!tookParts.includes(part)) tookParts.push(part);
-          const draftId = part.origin.kind === "live" ? part.origin.draftId : undefined;
-          if (draftId) baseChanges.set(draftId, [...(baseChanges.get(draftId) ?? []), change]);
-        });
-        // A part with no delta found Live already holding its text: there is nothing to take
-        // out, and it is taken back with the rest.
-        const empty = liveParts.filter((part) => !part.delta);
-        if (tookParts.length || empty.length) {
-          const updates = tookParts.length
-            ? captureMutationUpdates(doc, () =>
+        const after = takeBack(before, liveParts).text;
+        const updates =
+          after === before
+            ? []
+            : captureMutationUpdates(doc, () =>
                 doc.transact(() => writeBlocks(fragment, schema, after), "undo"),
-              )
-            : [];
-          const update = updates.length ? Y.mergeUpdates(updates) : new Uint8Array();
-          const seq = updates.length
-            ? await deps.live.append(
-                documentId,
-                update,
-                { seq: 0, origin: `human:${input.accountId}` },
-                snapshot.authority,
-              )
-            : 0;
-          const drafts = new Set(
-            [...tookParts, ...empty].flatMap((part) =>
-              part.origin.kind === "live" && part.origin.draftId ? [part.origin.draftId] : [],
-            ),
-          );
-          const carried = [...tookParts, ...empty].flatMap((part) =>
-            part.targets.flatMap((target) => grand.get(partKey(target)) ?? []),
-          );
-          const reapplies = [...tookParts, ...empty].some((part) =>
-            part.targets.some((target) => grand.get(partKey(target))),
-          );
-          receipts.push({
-            update,
-            effect: { inserted: [], deleted: [] },
-            origin: {
-              kind: "live",
-              seq,
-              ...(drafts.size === 1 ? { draftId: [...drafts][0] as string } : {}),
-            },
-            delta: captureDelta(before, after),
-            targets: [...tookParts, ...empty].map(({ editId, ordinal }) => ({ editId, ordinal })),
-            carried: reapplies ? carried : null,
+              );
+        const update = updates.length ? Y.mergeUpdates(updates) : new Uint8Array();
+        const seq = updates.length
+          ? await deps.live.append(
+              documentId,
+              update,
+              { seq: 0, origin: `human:${input.accountId}` },
+              snapshot.authority,
+            )
+          : 0;
+        receipts.push({
+          update,
+          effect: { inserted: [], deleted: [] },
+          origin: { kind: "live", seq },
+          delta: updates.length ? captureDelta(before, after) : null,
+          targets: targets(liveParts),
+        });
+        if (updates.length) {
+          result.live = true;
+          deferUntilDrizzleCommit(async () => {
+            await deps.liveCoordinator.deliver(documentId);
+            await deps.onCommitted(documentId);
           });
-          result.live = updates.length > 0;
-          if (updates.length)
-            deferUntilDrizzleCommit(async () => {
-              await deps.liveCoordinator.deliver(documentId);
-              await deps.onCommitted(documentId);
-            });
         }
       } finally {
         doc.destroy();
       }
     }
-    // Each draft: its text for the parts that wrote it, its base for the Live changes taken.
-    const textParts = own.filter((part) => part.origin.kind === "pending");
-    const draftIds = new Set([
-      ...baseChanges.keys(),
-      ...textParts.map((part) => (part.origin.kind === "pending" ? part.origin.draftId : "")),
-    ]);
+    const draftIds = new Set(
+      own.flatMap((part) => (part.origin.kind === "live" ? [] : [part.origin.draftId])),
+    );
     for (const draftId of [...draftIds].sort()) {
+      const textParts = own.filter(
+        (part) => part.origin.kind === "pending" && part.origin.draftId === draftId,
+      );
+      const baseParts = own.filter(
+        (part) => part.origin.kind === "base" && part.origin.draftId === draftId,
+      );
       const [row] = await tx
         .select({ id: documentDrafts.id })
         .from(documentDrafts)
         .where(eq(documentDrafts.id, draftId));
-      // A purged draft has nothing to write back into.
+      // A purged draft has nothing to write back into, and no branch for its parts to name.
       if (!row) continue;
-      const parts = textParts.filter(
-        (part) => part.origin.kind === "pending" && part.origin.draftId === draftId,
-      );
-      const tookParts: CommandPart[] = [];
-      let delta: StoredDelta | null = null;
-      let written: Uint8Array[] = [];
+      let text: { rows: Uint8Array[]; delta: StoredDelta | null } = { rows: [], delta: null };
+      let base: typeof text = { rows: [], delta: null };
       let at = 0;
       const write = deps.coordinator.prepareAppend(await deps.coordinator.loadBase(draftId), [], {
         work: "any",
         authorServerRows(prefix) {
-          const textFragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-          const baseFragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
-          const textBefore = readBlocks(textFragment, schema);
-          const textAfter = takeStanding(textBefore, parts, (part) => {
-            if (!tookParts.includes(part)) tookParts.push(part);
-          });
-          let base = readBlocks(baseFragment, schema);
-          const baseBefore = base;
-          for (const change of baseChanges.get(draftId) ?? []) base = takeOut(schema, change, base);
-          delta = tookParts.length ? captureDelta(textBefore, textAfter) : null;
-          const rows = captureMutationUpdates(prefix, () =>
-            prefix.transact(() => {
-              if (tookParts.length) writeBlocks(textFragment, schema, textAfter);
-              if (base !== baseBefore) writeBlocks(baseFragment, schema, base);
-            }, "undo"),
-          );
-          written = rows;
+          const take = (name: string, parts: readonly CommandPart[]) => {
+            const fragment = prefix.getXmlFragment(name);
+            const before = readBlocks(fragment, schema);
+            const after = takeBack(before, parts).text;
+            if (after === before) return { rows: [], delta: null };
+            const rows = captureMutationUpdates(prefix, () =>
+              prefix.transact(() => writeBlocks(fragment, schema, after), "undo"),
+            );
+            return { rows, delta: captureDelta(before, after) };
+          };
+          text = take(PROSEMIRROR_FRAGMENT_NAME, textParts);
+          base = take(REVIEW_BASE_FRAGMENT, baseParts);
+          const rows = [...text.rows, ...base.rows];
           if (rows.length) at = Y.getState(prefix.store, prefix.clientID);
           return rows;
         },
@@ -365,17 +320,26 @@ export async function undoCommandText(
       } finally {
         write.dispose();
       }
-      if (!at) continue;
-      result.drafts.push({ draftId, at });
-      if (tookParts.length)
+      const merged = (rows: Uint8Array[]) =>
+        rows.length ? Y.mergeUpdates(rows) : new Uint8Array();
+      if (textParts.length)
         receipts.push({
-          update: Y.mergeUpdates(written),
+          update: merged(text.rows),
           effect: { inserted: [], deleted: [] },
           origin: { kind: "pending", draftId },
-          delta,
-          targets: tookParts.map(({ editId, ordinal }) => ({ editId, ordinal })),
-          carried: null,
+          delta: text.delta,
+          targets: targets(textParts),
         });
+      if (baseParts.length)
+        receipts.push({
+          update: merged(base.rows),
+          effect: { inserted: [], deleted: [] },
+          origin: { kind: "base", draftId },
+          delta: base.delta,
+          targets: targets(baseParts),
+        });
+      if (!at) continue;
+      result.drafts.push({ draftId, at });
       // The draft holds a change again; the projection judges its count.
       await writeTextAnswer(db, deps.treeLists, {
         draftId,

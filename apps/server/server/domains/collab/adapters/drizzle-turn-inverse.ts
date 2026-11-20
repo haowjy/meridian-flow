@@ -23,7 +23,7 @@ import {
   type EditOrigin,
 } from "@meridian/database";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -159,8 +159,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       .where(
         and(
           inArray(documentEdits.documentId, documentIds),
-          // An Apply's and a Discard's edits are the writer's presses, never a turn's history.
-          inArray(documentEdits.kind, ["write", "undo", "revert"]),
+          // A turn's history: AI writes and the Undos that name an action. A writer's press (an
+          // Apply, a Discard, the Undo of either) names no action and is never a turn's.
+          or(eq(documentEdits.kind, "write"), isNotNull(documentEdits.actionId)),
         ),
       )
       .orderBy(documentEditParts.id);
@@ -344,9 +345,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           const changes = changesOf.get(part.id);
           return {
             ...part,
-            ...(classified?.appliedChanges.size
-              ? { appliedChanges: classified.appliedChanges }
-              : {}),
             ...(changes ? { changes, waiting: changes.some(isPending) } : { waiting: false }),
             disposition:
               classified?.disposition === "applied"
@@ -859,12 +857,9 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   }
 
   /**
-   * Changes that stand in Live, taken out of it by content: an edit the AI wrote straight into
-   * Live, or a drafted change an Apply took. For a drafted change the same inverse goes into the
-   * draft's base and text where the change stands there (an append under the draft's hold, which
-   * decides what Live takes), so the Undo leaves nothing pending. One receipt of kind `undo` names
-   * the parts it took. A change that stopped standing between the capture and the lock is left
-   * whole.
+   * Changes the AI wrote straight into Live that still stand there, taken out of it by content.
+   * One receipt of kind `undo` names the parts it took. A change that stopped standing between the
+   * capture and the lock is left whole.
    */
   async function commitManuscriptStep(
     entry: PlannedInverse,
@@ -875,20 +870,19 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const { document } = entry.plan;
     const live = entry.live;
     if (!live) throw new Error("A manuscript step runs inside the commit scope");
-    const parts = step.parts.map(({ part, only }) => ({ part, delta: part.delta, only }));
     const fragment = live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-    const back = takeBack(readBlocks(fragment, draftSchema), parts);
+    const back = takeBack(readBlocks(fragment, draftSchema), step.parts);
     if (!back.taken.length) return { handle: "", parts: 0 };
     // The receipts are read against Live as it was before the write.
     const before = new Y.Doc({ gc: false });
     Y.applyUpdate(before, Y.encodeStateAsUpdate(live));
     const written = captureMutationUpdates(live, () =>
-      live.transact(() => writeBlocks(fragment, draftSchema, back.live), "inverse"),
+      live.transact(() => writeBlocks(fragment, draftSchema, back.text), "inverse"),
     );
     // The model's echo shows Live around its Undo.
     const beforeState = query.model ? Y.encodeStateAsUpdate(before) : null;
     const receipts: ReceiptWrite["receipts"] = [];
-    const targets = back.taken.map(({ part }) => ({ editId: part.editId, ordinal: part.ordinal }));
+    const targets = back.taken.map((part) => ({ editId: part.editId, ordinal: part.ordinal }));
     try {
       for (const update of written) {
         const seq = await input.journal.append(document.documentId, update, {

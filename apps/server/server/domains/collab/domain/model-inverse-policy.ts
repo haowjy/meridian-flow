@@ -70,7 +70,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
       steps.push(
         destination.kind === "draft"
           ? { ...step, kind: "content", parts: selection, destination }
-          : { ...step, kind: "manuscript", parts: selection.map((part) => ({ part })) },
+          : { ...step, kind: "manuscript", parts: selection },
       );
       policy.planTakeOut(destination, selection);
     };

@@ -50,8 +50,8 @@ stateDiagram-v2
 ```
 
 No code steps this machine: each change's state is read on every read, so it cannot go stale.
-Applied is `carried` on an `apply` part no undo took (`appliesInForce`); it is read from the
-database, not from the draft's text.
+Applied is `carried` on an Apply's review-base part in force (`appliesInForce`); it is read from
+the database, not from the draft's text.
 
 ## Commands and policy
 
@@ -174,7 +174,7 @@ with no turn. A model write carries a
 
 Part disposition is computed once for each resolved destination.
 `createDraftDispositionReader` reads receipts from that draft and the draft's Applies in force
-(`carried`). A part with a change an Apply took is applied (and names each change's Apply);
+(`carried`). A part with a change an Apply took is applied;
 otherwise an active draft is pending and a gone draft is discarded. A
 revision mismatch between evidence and planning is not checked: the commit plans again on the
 committed text.

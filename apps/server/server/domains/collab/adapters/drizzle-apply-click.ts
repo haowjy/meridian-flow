@@ -21,6 +21,7 @@ import {
 } from "@meridian/agent-edit/content-merge";
 import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import type { UpdateJournal } from "@meridian/agent-edit/integration";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type {
   AppliedReviewItem,
@@ -209,9 +210,9 @@ export function createDrizzleApplyClick(
 
   /**
    * One document's text half of an Apply: its groups merge into live and into the draft's base,
-   * and the command's `apply` edit on the document records each group's change to Live as one
-   * part, which also names the draft whose base took it. The caller holds the document's key.
-   * Returns the draft's server clock once the base write is in, for the browser's queue.
+   * in turn. The command's `apply` edit on the document records two parts: Live's change, and the
+   * base's change with the AI changes it carried. The caller holds the document's key. Returns the
+   * draft's server clock once the base write is in, for the browser's queue.
    */
   async function applyText(
     command: ApplyCommand,
@@ -224,60 +225,65 @@ export function createDrizzleApplyClick(
     const draftId = base.snapshot.draftId;
     const snapshot = await deps.live.read(node);
     const live = storedDocument(snapshot);
-    let update: Uint8Array | undefined;
-    const capture = (bytes: Uint8Array) => {
-      update = bytes;
-    };
-    live.on("update", capture);
     try {
       let overrode = 0;
       const merged = ruleCounter();
-      const parts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
+      const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
       const fragment = live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-      for (const group of click.groups) {
-        const before = readBlocks(fragment, schema);
-        const groupMerge = contentMerge(schema, group.before, before, group.patched);
-        overrode += groupMerge.overrode;
-        addCounts(merged.fire, groupMerge.rules);
-        update = undefined;
-        live.transact(() => writeBlocks(fragment, schema, groupMerge.blocks), "apply");
-        // Live already held the group's text: nothing to record, and nothing for an Undo to take.
-        if (!update) continue;
+      const liveBefore = readBlocks(fragment, schema);
+      const liveUpdates = captureMutationUpdates(live, () => {
+        for (const group of click.groups) {
+          const groupMerge = contentMerge(
+            schema,
+            group.before,
+            readBlocks(fragment, schema),
+            group.patched,
+          );
+          overrode += groupMerge.overrode;
+          addCounts(merged.fire, groupMerge.rules);
+          live.transact(() => writeBlocks(fragment, schema, groupMerge.blocks), "apply");
+        }
+      });
+      if (liveUpdates.length) {
+        const update = Y.mergeUpdates(liveUpdates);
         const seq = await deps.live.append(
           node,
           update,
           { seq: 0, origin: `human:${accountId}` },
           snapshot.authority,
         );
-        parts.push({
+        receipts.push({
           update,
           effect: { inserted: [], deleted: [] },
-          origin: { kind: "live", seq, draftId },
-          delta: captureDelta(before, readBlocks(fragment, schema)) as StoredDelta,
-          carried: group.carried,
+          origin: { kind: "live", seq },
+          delta: captureDelta(liveBefore, readBlocks(fragment, schema)),
         });
       }
       deps.merged({ commandId, kind: "apply", rules: merged.counts, overrode });
       await testHook("apply.afterLive");
       let at: number | undefined;
+      let baseWrite: { rows: Uint8Array[]; delta: StoredDelta | null } | undefined;
       const write = deps.coordinator.prepareAppend(base, [], {
         work: "any",
         authorServerRows(prefix) {
-          const rows: Uint8Array[] = [];
-          const capture = (bytes: Uint8Array) => rows.push(bytes);
-          prefix.on("update", capture);
-          try {
-            const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+          const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
+          const before = readBlocks(fragment, schema);
+          const rows = captureMutationUpdates(prefix, () => {
             for (const group of click.groups) {
-              const before = readBlocks(fragment, schema);
-              const after = applyBase(schema, before, group.before, group.patched);
+              const after = applyBase(
+                schema,
+                readBlocks(fragment, schema),
+                group.before,
+                group.patched,
+              );
               prefix.transact(() => writeBlocks(fragment, schema, after), "apply");
             }
-            if (rows.length) at = Y.getState(prefix.store, prefix.clientID);
-            return rows;
-          } finally {
-            prefix.off("update", capture);
+          });
+          if (rows.length) {
+            at = Y.getState(prefix.store, prefix.clientID);
+            baseWrite = { rows, delta: captureDelta(before, readBlocks(fragment, schema)) };
           }
+          return rows;
         },
       });
       try {
@@ -286,22 +292,30 @@ export function createDrizzleApplyClick(
       } finally {
         write.dispose();
       }
-      if (parts.length)
+      if (baseWrite)
+        receipts.push({
+          update: Y.mergeUpdates(baseWrite.rows),
+          effect: { inserted: [], deleted: [] },
+          origin: { kind: "base", draftId },
+          delta: baseWrite.delta,
+          carried: click.groups.flatMap((group) => group.carried),
+        });
+      if (receipts.length)
         await recordDocumentEdit(tx, {
           documentId: node,
           actor: "human",
           actorUserId: accountId as UserId,
           kind: "apply",
           commandId,
-          receipts: parts,
+          receipts,
         });
-      deferUntilDrizzleCommit(async () => {
-        await deps.liveCoordinator.deliver(node);
-        await deps.onCommitted(node);
-      });
+      if (liveUpdates.length)
+        deferUntilDrizzleCommit(async () => {
+          await deps.liveCoordinator.deliver(node);
+          await deps.onCommitted(node);
+        });
       return { overrode, ...(at === undefined ? {} : { at }) };
     } finally {
-      live.off("update", capture);
       live.destroy();
     }
   }

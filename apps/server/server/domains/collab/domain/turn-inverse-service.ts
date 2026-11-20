@@ -63,8 +63,6 @@ export type StoredInversePart = Omit<CapturedPart, "update"> & {
   changes?: readonly ChangeRead[];
   /** A change of this part sits in a pending change of its open draft. */
   waiting?: boolean;
-  /** The changes of the part an Apply in force took, by index in its delta, with the Apply's command. */
-  appliedChanges?: ReadonlyMap<number, string>;
 };
 export type TurnInverseQuery = {
   threadId: ThreadId;
@@ -246,15 +244,12 @@ async function prepare(
           steps.push({ kind: "content", parts: proposed, destination, actionId, actionKind, at });
         continue;
       }
-      const back = takeBack(
-        manuscript,
-        selection.map((part) => ({ part, delta: part.delta })),
-      );
-      manuscript = back.live;
+      const back = takeBack(manuscript, selection);
+      manuscript = back.text;
       if (back.taken.length)
         steps.push({
           kind: "manuscript",
-          parts: back.taken.map(({ part }) => ({ part })),
+          parts: back.taken,
           destination,
           actionId,
           actionKind,
@@ -306,7 +301,7 @@ function draftStates(
       (part) => targetsTurn(part, query) && part.origin.kind === "pending",
     );
     if (!drafted.length) continue;
-    // An applied change an Undo took out of the manuscript is out, whatever the Apply still says.
+    // A part the card's Undo took reads undone, though an Apply took another change of it.
     const took = effectiveActionIndex(document.history, new Set(drafted.map(partKey))).byPart;
     states[document.documentId] = drafted.some((part) => part.waiting)
       ? "pending"

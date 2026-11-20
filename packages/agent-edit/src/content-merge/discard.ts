@@ -10,14 +10,7 @@ import { blocksEqual } from "../diff/equal.js";
 import { diffBlocks } from "../diff/hunks.js";
 import { composeGroups, projectReview } from "../diff/review.js";
 import { contentMerge } from "./merge.js";
-import {
-  captureDelta,
-  type EditDelta,
-  editChanges,
-  type StoredDelta,
-  standsIn,
-  takeOut,
-} from "./stands.js";
+import { captureDelta, type StoredDelta } from "./stands.js";
 
 /**
  * `text` with the changes of Changes named by `ids` (all of them for "all") set back to `base`,
@@ -47,21 +40,4 @@ export function discardChanges(
       : taken;
   const delta = captureDelta(text, next);
   return delta ? { text: next, delta } : null;
-}
-
-/** `text` with every change of the Discard's delta that still stands put back, and how many of its changes there were. */
-export function restoreChanges(
-  schema: Schema,
-  delta: EditDelta,
-  text: readonly PMNode[],
-): { text: readonly PMNode[]; brought: number; total: number } {
-  const changes = editChanges(schema, delta);
-  let blocks = text;
-  let brought = 0;
-  for (const change of changes)
-    if (standsIn(schema, change, blocks)) {
-      blocks = takeOut(schema, change, blocks);
-      brought++;
-    }
-  return { text: blocks, brought, total: changes.length };
 }

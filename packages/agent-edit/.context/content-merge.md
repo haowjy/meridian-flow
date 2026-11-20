@@ -56,7 +56,8 @@ Yjs item id:
   inverse for a change that stands. Undo is offered, and a press writes, only for `stands`: the
   press and the offer read the same state. The manuscript has no review base, so its read is
   `changeStateIn` (the same rule without the pending-change check), which an AI edit written into
-  Live and an Apply's parts (Un-Apply, `undoCommandText`) use.
+  Live and a writer's command parts (Un-Apply, Restore, Redo: `undoCommandText`) use, each part in
+  the text it wrote, through `takeBack` in `collab/domain/draft-changes.ts`.
 - **`readChange`**: which pending changes of Changes the change sits in. Forcing the change out
   (`contentMerge(after, window, before)`, so `before` wins where the text was altered) alters the
   pending changes whose hash goes. Joined with the pending changes that hold the change's words (or,

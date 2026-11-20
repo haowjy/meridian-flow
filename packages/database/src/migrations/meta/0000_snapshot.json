@@ -5514,6 +5514,22 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "document_edit_parts_base_origin_idx": {
+          "name": "document_edit_parts_base_origin_idx",
+          "columns": [
+            {
+              "expression": "(\"origin\"->>'draftId')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"document_edit_parts\".\"origin\"->>'kind' = 'base'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -5541,7 +5557,7 @@
         },
         "document_edit_parts_origin_valid": {
           "name": "document_edit_parts_origin_valid",
-          "value": "\"document_edit_parts\".\"origin\"->>'kind' IN ('pending','live')"
+          "value": "\"document_edit_parts\".\"origin\"->>'kind' IN ('pending','base','live')"
         },
         "document_edit_parts_draft_branch_valid": {
           "name": "document_edit_parts_draft_branch_valid",

@@ -104,7 +104,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     planned.set(
       place,
       place === "live"
-        ? takeBack(textIn(place), parts).live
+        ? takeBack(textIn(place), parts).text
         : takeOutStanding(textIn(place), baseOf(place), parts).text,
     );
   };

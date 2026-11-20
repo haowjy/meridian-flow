@@ -1027,28 +1027,31 @@ try {
       f.close();
     },
   );
-  await row("Un-Apply removes a null-live receipt without reopening a diff", async () => {
-    const f = await fixture(["The cat sat."], ["The big cat sat."]);
-    const click = f.click();
-    await f.liveWrite(["The big cat sat."]);
-    await applied(f, click);
-    const answer = await f.unapply(click);
-    assert.equal(answer.status, "unapplied", JSON.stringify(answer));
-    assert.deepEqual(await f.liveText(), ["The big cat sat."]);
-    const durable = await f.durable();
-    assert.deepEqual(
-      readBlocks(durable.getXmlFragment(REVIEW_BASE_FRAGMENT), schema).map(
-        (block) => block.textContent,
-      ),
-      ["The big cat sat."],
-    );
-    assert.deepEqual(
-      readBlocks(durable.getXmlFragment("prosemirror"), schema).map((block) => block.textContent),
-      ["The big cat sat."],
-    );
-    durable.destroy();
-    f.close();
-  });
+  await row(
+    "Un-Apply of text Live already held makes the change pending again, Live untouched",
+    async () => {
+      const f = await fixture(["The cat sat."], ["The big cat sat."]);
+      const click = f.click();
+      await f.liveWrite(["The big cat sat."]);
+      await applied(f, click);
+      const answer = await f.unapply(click);
+      assert.equal(answer.status, "unapplied", JSON.stringify(answer));
+      assert.deepEqual(await f.liveText(), ["The big cat sat."]);
+      const durable = await f.durable();
+      assert.deepEqual(
+        readBlocks(durable.getXmlFragment(REVIEW_BASE_FRAGMENT), schema).map(
+          (block) => block.textContent,
+        ),
+        ["The cat sat."],
+      );
+      assert.deepEqual(
+        readBlocks(durable.getXmlFragment("prosemirror"), schema).map((block) => block.textContent),
+        ["The big cat sat."],
+      );
+      durable.destroy();
+      f.close();
+    },
+  );
   await row("Apply of two documents is one command and one Un-Apply takes back both", async () => {
     const a = await fixture(["Alpha."], ["Alpha edited."]);
     const b = await fixture(["Beta."], ["Beta edited."], undefined, a);

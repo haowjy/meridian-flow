@@ -583,12 +583,32 @@ export class ApplyClickQueue {
     this.scheduleRetry(command);
   }
 
+  /**
+   * Out of retries. An Apply the server stored is settled on its stored answer, so a press whose
+   * every answer was lost still lands with its Undo; otherwise the click is given up as not sent,
+   * the draft shows it still pending and the commands behind it go.
+   */
+  private async giveUp(command: Command): Promise<void> {
+    if (command.kind === "apply" && command.sent) {
+      try {
+        const stored = await this.port.lookup(command.body);
+        if (this.commands[0] !== command) return;
+        if (stored.status === "applied" && stored.commandId === command.body.commandId) {
+          this.settle(command, stored);
+          return;
+        }
+      } catch {
+        // The server can't say: the click is given up below.
+      }
+    }
+    if (this.commands[0] === command)
+      this.settle(command, { status: "unsent", commandId: command.body.commandId });
+  }
+
   private scheduleRetry(command: Command): void {
     const delay = RETRY_DELAYS[command.attempts++];
     if (delay === undefined) {
-      // Out of retries: the click is given up as not sent, so the draft shows it still pending and
-      // the commands behind it go.
-      this.settle(command, { status: "unsent", commandId: command.body.commandId });
+      void this.giveUp(command);
       return;
     }
     this.retryTimer = setTimeout(() => void this.dispatch(command), delay);

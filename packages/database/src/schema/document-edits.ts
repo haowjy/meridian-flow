@@ -100,10 +100,9 @@ export const documentEditParts = pgTable(
     delta: jsonb("delta").$type<EditDeltaJson | null>(),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
     /**
-     * Set on a part that put a draft's change into the manuscript (an Apply's, or the Undo of an
-     * Un-Apply): the changes of AI edits it carried, as `[partId, index]` of a part and a change
-     * of its delta, empty when only the writer's text went. Null on every other part. The card
-     * reads "Applied" for the changes of such a part while no Undo has taken it back.
+     * Set on an Apply's review-base part: the changes of AI edits it carried, as `[partId, index]`
+     * of a part and a change of its delta, empty when only the writer's text went. Null on every
+     * other part. The card reads "Applied" for them while the part is in force.
      */
     carried: jsonb("carried").$type<[number, number][] | null>(),
     /**
@@ -117,8 +116,14 @@ export const documentEditParts = pgTable(
     index("document_edit_parts_pending_origin_idx")
       .on(sql`(${t.origin}->>'draftId')`)
       .where(sql`${t.origin}->>'kind' = 'pending'`),
+    index("document_edit_parts_base_origin_idx")
+      .on(sql`(${t.origin}->>'draftId')`)
+      .where(sql`${t.origin}->>'kind' = 'base'`),
     check("document_edit_parts_ordinal_valid", sql`${t.ordinal} >= 0`),
-    check("document_edit_parts_origin_valid", sql`${t.origin}->>'kind' IN ('pending','live')`),
+    check(
+      "document_edit_parts_origin_valid",
+      sql`${t.origin}->>'kind' IN ('pending','base','live')`,
+    ),
     check(
       "document_edit_parts_draft_branch_valid",
       sql`(${t.origin}->>'kind' = 'pending') = (${t.draftBranchId} IS NOT NULL)`,

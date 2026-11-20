@@ -92,7 +92,7 @@ export async function recordApply(
       {
         update: new Uint8Array(),
         effect: { inserted: [], deleted: [] },
-        origin: { kind: "live", seq: 0, draftId: input.draftId },
+        origin: { kind: "base", draftId: input.draftId },
         delta: null,
         carried,
       },

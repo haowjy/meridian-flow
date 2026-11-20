@@ -254,7 +254,7 @@ class Classifier {
     doc: Y.Doc,
     private readonly projection: ReviewProjection,
     private readonly provenance: Provenance,
-    readonly options: ClassifyOptions,
+    options: ClassifyOptions,
   ) {
     this.parts = provenance.parts;
     this.budget = options.budget ?? DIFF_BUDGET;

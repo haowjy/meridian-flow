@@ -147,27 +147,24 @@ export function carriedBy(
   return out;
 }
 
-/** A part and the changes of it an Undo may try: all when `only` is absent. */
-export type TakeBackPart = { delta: StoredDelta | null; only?: ReadonlySet<number> };
-
 /**
- * An Undo of changes the AI wrote straight into the manuscript: each change that stands in `live`
- * is taken out of it.
+ * An Undo of what parts wrote into one text (the manuscript, a draft's text or its review base):
+ * each change that stands in `text` is taken out of it, in the order `parts` gives. Returns the
+ * text and the parts a change was taken from.
  */
-export function takeBack<P extends TakeBackPart>(
-  live: readonly PMNode[],
+export function takeBack<P extends { delta: StoredDelta | null }>(
+  text: readonly PMNode[],
   parts: readonly P[],
-): { live: readonly PMNode[]; taken: P[] } {
-  let blocks = live;
+): { text: readonly PMNode[]; taken: P[] } {
+  let blocks = text;
   const taken: P[] = [];
   for (const part of parts) {
     if (!part.delta) continue;
-    editChanges(schema, readDelta(schema, part.delta)).forEach((change, index) => {
-      if (part.only && !part.only.has(index)) return;
-      if (changeStateIn(schema, change, blocks) !== "stands") return;
+    for (const change of editChanges(schema, readDelta(schema, part.delta))) {
+      if (changeStateIn(schema, change, blocks) !== "stands") continue;
       blocks = takeOut(schema, change, blocks);
       if (!taken.includes(part)) taken.push(part);
-    });
+    }
   }
-  return { live: blocks, taken };
+  return { text: blocks, taken };
 }

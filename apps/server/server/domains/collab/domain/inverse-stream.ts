@@ -10,9 +10,9 @@ import type { StoredInversePart } from "./turn-inverse-service.js";
  *
  * A step in an open draft is `content`: the parts of the original whose changes are read from
  * their delta and taken out of the draft's text as an append, so nothing is computed until the
- * draft's hold is taken. A `manuscript` step takes changes that stand in Live out of Live by
- * content: an edit the AI wrote straight into Live, or a drafted change an Apply took (which also
- * goes out of its draft's base and text, so nothing is left pending).
+ * draft's hold is taken. A `manuscript` step takes the changes of an edit the AI wrote straight
+ * into Live out of Live by content, where they still stand. A change an Apply took is the Apply's:
+ * its Un-Apply takes it back.
  */
 export type InverseStep = {
   actionId: string;
@@ -22,8 +22,7 @@ export type InverseStep = {
   | { kind: "content"; parts: StoredInversePart[]; destination: ActiveInverseDestination }
   | {
       kind: "manuscript";
-      /** `only`: the changes an Apply took, for a drafted part; every change of a Live part. */
-      parts: { part: StoredInversePart; only?: ReadonlySet<number> }[];
+      parts: StoredInversePart[];
       destination: InverseDestination;
     }
 );
