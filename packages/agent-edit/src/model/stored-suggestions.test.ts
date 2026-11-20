@@ -3,15 +3,20 @@
  * was typed when the press is taken back. Before the resolve was lowered exactly, the press's text
  * was rewritten and Undo moved the typing to after the word.
  *
+ * A model's planning view drops what the writer rejected since: the same rewrite asked for again
+ * after a Discard is a new suggestion, not a write that matches the view and changes nothing.
+ *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - `resolveStored` lowers a verdict through its transaction's mapping (`lowerResolved`), and the
  *   press's Undo is a Yjs undo of the press's stored id ranges (packages/suggestions/.context/CONTEXT.md, "Resolving").
+ * - `createPlanningView` takes rejected suggestions out by deleting their items (`withdrawRejected`).
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { viewBlock } from "@meridian/suggestions";
 import { prosemirrorJSONToYXmlFragment, yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
+import { createPlanningView } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { lowerBlock } from "../resolver/lower-block.js";
 import { pressStored, undoPressStored } from "./stored-suggestions.js";
@@ -26,6 +31,12 @@ function suggested(text: string, rewritten: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   const paragraph = { type: "paragraph", content: [{ type: "text", text }] };
   prosemirrorJSONToYXmlFragment(schema, { type: "doc", content: [paragraph] }, fragmentOf(doc));
+  rewrite(doc, rewritten);
+  return doc;
+}
+
+/** The AI rewrites the paragraph as `text` in the Work's view. */
+function rewrite(doc: Y.Doc, text: string): void {
   const model = suggestingModel(
     yProsemirrorModel(schema),
     { work },
@@ -38,10 +49,9 @@ function suggested(text: string, rewritten: string): Y.Doc {
   const handle = toDocHandle(doc);
   doc.transact(() => {
     const [shown] = model.projectBlocks(handle);
-    const next = schema.nodes.paragraph.create(shown.node.attrs, schema.text(rewritten));
+    const next = schema.nodes.paragraph.create(shown.node.attrs, schema.text(text));
     model.applyOps(handle, model.getBlocks(handle)[0], lowerBlock(shown.node, next));
   });
-  return doc;
 }
 
 function read(doc: Y.Doc, view: string | null): string {
@@ -68,4 +78,24 @@ it("a press's Undo leaves text typed inside a resolved word where it was typed",
   type(discarded, "at.", "X");
   expect(discard && undoPressStored(discarded, discard)).toBe(true);
   expect(read(discarded, null)).toBe("The cat sat on the mXat.");
+});
+
+it("the same rewrite after a Discard plans as a new suggestion; after an Apply it changes nothing", () => {
+  const discarded = suggested("The cat sat.", "The dog sat.");
+  const shown = Y.snapshot(discarded);
+  pressStored(discarded, schema, "reject", { work });
+  const view = createPlanningView(discarded, shown, []);
+  expect(view && read(view, work)).toBe("The cat sat.");
+  const written: Uint8Array[] = [];
+  view?.on("update", (update: Uint8Array) => written.push(update));
+  if (view) rewrite(view, "The dog sat.");
+  for (const update of written) Y.applyUpdate(discarded, update);
+  expect(discarded.store.pendingStructs).toBeNull();
+  expect([read(discarded, work), read(discarded, null)]).toEqual(["The dog sat.", "The cat sat."]);
+
+  const applied = suggested("The cat sat.", "The dog sat.");
+  const seen = Y.snapshot(applied);
+  pressStored(applied, schema, "accept", { work });
+  const kept = createPlanningView(applied, seen, []);
+  expect(kept && read(kept, work)).toBe("The dog sat.");
 });

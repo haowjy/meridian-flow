@@ -84,7 +84,12 @@ where Live text separates its pieces; `pending` the turns and the Works
   reads `list` from the editor's document, so the Changes list, the band, the change card and
   the phone's sheet draw a Work's suggestions as they drew a draft's.
 - Model: agent-edit's `suggestingModel(base, view, author)` replays a planned write as a
-  ProseMirror transaction, rewrites it, and lowers it back to Yjs with `lowerBlock`.
+  ProseMirror transaction, rewrites it, and lowers it back to Yjs with `lowerBlock`. A write plans
+  on what the model was last shown (its frontier), less every suggestion rejected since
+  (`withdrawRejected`, called by `createPlanningView`): without that, the same rewrite asked for
+  after a card Undo, a Discard or an inline Reject matched the model's view and changed nothing.
+  The verdict is read from Yjs items, since accept and reject delete opposite halves of a change;
+  an accepted change stays in the view, whose text is the same either way.
 - Resolving, everywhere: agent-edit's `resolveStored(doc, schema, verdict, filter)`
   (`model/stored-suggestions.ts`) runs `accept` or `reject` on the stored document and lowers
   each changed block with `lowerResolved`: the exact deletes, unmarks and attribute changes,
@@ -145,6 +150,8 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   wording comes back, in two paragraphs). Block edits inside a container the Work added (a
   table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.
 - Text the writer types inside a paragraph the AI added goes with it on reject.
+- A rejected change that only proposed block attributes (a heading level, a removal) stays in the
+  model's planning view: its items say nothing about the verdict. Proposing it again is a no-op.
 - Rejecting an earlier turn's change first leaves a later turn's insertion over it standing
   beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
   discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work

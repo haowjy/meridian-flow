@@ -186,8 +186,10 @@ auto-apply touches no draft; Apply stays the writer's command. Drafts carry
 no push policy. Active unapplied rows do not delay a terminal receipt.
 
 A write into a room where the model has no frontier plans on the current room.
-A write with a usable frontier plans on that offline view and merges onto the
-current room. Model inverse commands use the current destination grant and
+A write with a usable frontier plans on that offline view, less the suggestions the
+writer rejected since (`packages/suggestions/.context/CONTEXT.md`, "Who calls it"), and merges
+onto the current room. A write that changes nothing still reports the changes since the frontier
+and records its own. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
 Every model call reads its room fresh through agent-edit's `readRoom`. The

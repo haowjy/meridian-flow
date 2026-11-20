@@ -170,6 +170,151 @@ export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
   }
 }
 
+/**
+ * Takes out of a planning view (`createPlanningView`) the suggestions rejected in `room` since
+ * the view's cut: their inserted text and blocks go, the text they struck shows again. A view is
+ * what the model was shown, but a rejected suggestion is the writer's answer to it, so a write that
+ * proposes it again plans as a new suggestion instead of matching the view and changing nothing.
+ * An accepted one stays: the view's text is the same either way.
+ *
+ * Every step is a deletion of an item the room holds too (the struck text's mark goes with its
+ * format item), so a write planned on the view references nothing the room lacks. A block's
+ * attribute layers are taken out only when every layer on it was rejected.
+ */
+export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
+  const shown = suggestionItems(fragmentOf(view));
+  if (shown.changes.size === 0) return;
+  const pending = suggestionItems(fragmentOf(room)).changes;
+  const resolved = [...shown.changes].filter(([id]) => !pending.has(id));
+  if (resolved.length === 0) return;
+  const deleted = Y.createDeleteSetFromStructStore(room.store);
+  const gone = (id: Y.ID, len: number) => {
+    for (let clock = id.clock; clock < id.clock + len; clock++)
+      if (!Y.isDeleted(deleted, Y.createID(id.client, clock))) return false;
+    return true;
+  };
+  const rejected = new Set<string>();
+  for (const [id, parts] of resolved) {
+    // Accept keeps inserted text and deletes struck text; reject does the reverse.
+    const added = [...parts.inserted, ...parts.blocks];
+    const isRejected =
+      added.length > 0
+        ? added.every(({ id: item, len }) => gone(item, len))
+        : parts.struck.some(({ id: item, len }) => !gone(item, len));
+    if (isRejected) rejected.add(id);
+  }
+  if (rejected.size === 0) return;
+  const out: IdRanges = {};
+  const take = ({ id, len }: ItemRun) => {
+    if (!out[id.client]) out[id.client] = [];
+    out[id.client]?.push([id.clock, len]);
+  };
+  for (const id of rejected) {
+    const parts = shown.changes.get(id);
+    parts?.inserted.forEach(take);
+    parts?.blocks.forEach(take);
+    parts?.strikes.forEach(take);
+  }
+  for (const { item, ids } of shown.layers)
+    if (ids.every((id) => rejected.has(id))) take({ id: item.id, len: 1 });
+  for (const runs of Object.values(out)) runs.sort((a, b) => a[0] - b[0]);
+  // Undoing an insertion deletes its items: the press's Undo does the deleting.
+  undoPressStored(view, { insertions: out, deletions: {} });
+}
+
+type ItemRun = { id: Y.ID; len: number };
+
+/** One change's items in a document: what it inserted, what it strikes and the marks that strike it. */
+type ChangeItems = {
+  inserted: ItemRun[];
+  blocks: ItemRun[];
+  struck: ItemRun[];
+  strikes: ItemRun[];
+};
+
+const INSERTED = "suggest_ins";
+const STRUCK = "suggest_del";
+
+/**
+ * Every change a document's visible items carry, read from Yjs items, since a resolve is told by
+ * which items it deleted. Also each block's attribute layers, with the item that holds them.
+ */
+function suggestionItems(fragment: Y.XmlFragment): {
+  changes: Map<string, ChangeItems>;
+  layers: { item: Y.Item; ids: string[] }[];
+} {
+  const changes = new Map<string, ChangeItems>();
+  const layers: { item: Y.Item; ids: string[] }[] = [];
+  const of = (id: string) => {
+    let parts = changes.get(id);
+    if (!parts) {
+      parts = { inserted: [], blocks: [], struck: [], strikes: [] };
+      changes.set(id, parts);
+    }
+    return parts;
+  };
+  const markOf = (key: string) =>
+    key === INSERTED || key.startsWith(`${INSERTED}--`)
+      ? INSERTED
+      : key === STRUCK || key.startsWith(`${STRUCK}--`)
+        ? STRUCK
+        : null;
+  const walkText = (text: Y.XmlText) => {
+    const marks = new Map<string, string>();
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted) continue;
+      if (item.content instanceof Y.ContentFormat) {
+        const { key, value } = item.content;
+        const mark = markOf(key);
+        if (!mark) continue;
+        const id = changeId(value);
+        if (id) {
+          marks.set(key, id);
+          if (mark === STRUCK) of(id).strikes.push({ id: item.id, len: 1 });
+        } else marks.delete(key);
+        continue;
+      }
+      if (!item.countable) continue;
+      for (const [key, id] of marks)
+        of(id)[markOf(key) === INSERTED ? "inserted" : "struck"].push({
+          id: item.id,
+          len: item.length,
+        });
+    }
+  };
+  const walk = (parent: Y.XmlFragment | Y.XmlElement) => {
+    for (let item = parent._start; item; item = item.right) {
+      if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
+      const child = item.content.type;
+      if (child instanceof Y.XmlText) walkText(child);
+      else if (child instanceof Y.XmlElement) {
+        const sug = changeId(child.getAttribute("sug"));
+        if (sug) of(sug).blocks.push({ id: item.id, len: 1 });
+        const held = child._map.get("sugAttrs");
+        const ids = layerIds(child.getAttribute("sugAttrs"));
+        for (const id of ids) of(id);
+        if (held && !held.deleted && ids.length > 0) layers.push({ item: held, ids });
+        walk(child);
+      }
+    }
+  };
+  walk(fragment);
+  return { changes, layers };
+}
+
+function changeId(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const id = (value as { id?: unknown }).id;
+  return typeof id === "string" ? id : null;
+}
+
+function layerIds(value: unknown): string[] {
+  if (typeof value !== "object" || value === null) return [];
+  return Object.values(value as Record<string, unknown>).flatMap((layers) =>
+    Array.isArray(layers) ? layers.flatMap((layer) => changeId(layer) ?? []) : [],
+  );
+}
+
 type DeleteSet = ReturnType<typeof Y.createDeleteSet>;
 
 function rangesOf(set: DeleteSet): IdRanges {

@@ -11,6 +11,7 @@ import {
   getTopLevelXmlBlocks,
 } from "./model/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./model/prosemirror-fragment.js";
+import { withdrawRejected } from "./model/stored-suggestions.js";
 
 export interface ObservationFrontier {
   /** The host's opaque label for the room the document belongs to; carried, never read. */
@@ -415,8 +416,8 @@ export function planningSnapshot(
 }
 
 /**
- * A disposable offline peer of the request's cut plus kept staged and settled reply updates.
- * A save is not permanent membership: Discard can retire its structs or deletions later.
+ * A disposable offline peer of the request's cut plus kept staged and settled reply updates, less
+ * the suggestions the room has rejected since (`withdrawRejected`).
  */
 export function createPlanningView(
   room: Y.Doc,
@@ -424,6 +425,7 @@ export function createPlanningView(
   ownUpdates: readonly Uint8Array[],
 ): Y.Doc | null {
   const view = new Y.Doc({ gc: false });
+  let usable = false;
   try {
     const roomCut = Y.snapshot(room);
     Y.createDocFromSnapshot(room, snapshot, view);
@@ -431,15 +433,17 @@ export function createPlanningView(
     for (const update of ownUpdates) {
       if (Y.snapshotContainsUpdate(roomCut, update)) Y.applyUpdate(view, update);
     }
-    if (
+    usable =
       !view.store.pendingStructs &&
       !view.store.pendingDs &&
-      containsSnapshot(roomCut, Y.snapshot(view))
-    )
-      return view;
+      containsSnapshot(roomCut, Y.snapshot(view));
   } catch {
     // An unavailable retained cut is not a usable planning view.
   }
-  view.destroy();
-  return null;
+  if (!usable) {
+    view.destroy();
+    return null;
+  }
+  withdrawRejected(view, room);
+  return view;
 }
