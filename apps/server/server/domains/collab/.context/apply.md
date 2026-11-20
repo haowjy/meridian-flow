@@ -33,7 +33,7 @@ the command reads it under its locks and brings the document back.
 Editor Undo sends an `unapply` command for the original Apply command (`POST .../branches/:branchId/unapply`: the command's own records name its documents, the URL names none). It is
 `undoCommandText` (`adapters/drizzle-command-edits.ts`) over the Apply's `apply` edit: each part's
 changes come out of the text the part wrote where they still stand (`takeBack`, the
-`changeStateIn` and `takeOut` the card's Undo uses, `reversal.md`), so Live loses the change and
+take-out the card's Undo uses, `reversal.md`), so Live loses the change and
 the draft's base no longer has it, and it is pending again.
 
 The groups of one click are a chain: group *k* is compiled and merged against the base with groups
@@ -170,16 +170,17 @@ The command records its whole effect. Tree half: one `apply_command_trees` row p
 list's state vector right after, the created documents' journal heads once the text is in, the
 live restore records the Apply made (a "Restore and apply" brings a document out of Trash before
 its copies), and the nodes it touched. Text half: the `apply` edit, one per document. Un-Apply reverses all of it, across every document: `undoApply` in each list (the copies
-and the restores leave live), then each document's text groups. It runs the tree half before any
+and the restores leave live), then each document's text. It runs the tree half before any
 write. A change it cannot take back (a tree fact that changed since, a created document with text
-past its heads, a purged Work's records, a text group whose words hold later writing) stays as it
+past its heads, a purged Work's records, a change whose words hold later writing) stays as it
 stands, and the answer names only what it did take back: `textUndone` and `treeUndone`. Something
 an earlier press or another command took back is in neither, and so is what stayed; a press that
 took nothing is still `unapplied` with both empty. Nothing records a skip: each press judges the
 text as it stands. The Live half is a merge: the parts come out latest first, each change when it
-still stands in Live (`changeStateIn`, the rule a draft Undo uses) and as `takeOut`, so a word the
-writer typed over an applied change is never removed. When every group stays and the tree
-half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
+still stands in Live (`takeBack`, the rule a card's Undo uses), so a word the writer typed over an
+applied change is never removed. The `undo` edit has a part only for a text it changed, so a part
+nothing came out of stays in force: the change still reads Applied. When every change stays and
+the tree half comes back, the answer is still `unapplied`, with no reversed text. Lock order:
 the lists' keys, then the keys of the documents the Apply wrote text in or created.
 
 **Un-Apply is read by the Apply, not by a branch.** Its edits and tree rows are found by the
@@ -205,7 +206,8 @@ draft stays open and its history, receipts and room are untouched; the writer's 
 never rewritten. One `discard` edit per document records the appended update and its delta, and is
 what Restore reads; the tree half settles the Work's pending
 records `discarded` with the command's id, as before. A change the writer has since written over
-is not taken back by Restore, and nothing says so. `closed` in the answer names the items that
+is not taken back by Restore, and nothing says so. A Restore that brings no text back records nothing, so the Discard stays in force and its
+Trash entry stays until the purge. `closed` in the answer names the items that
 left Changes whole (`text: "all"`, or a tree-only item with no text held); the draft row is never
 closed. `whole` is true when the Discard took whole drafts (`text: "all"` on every item) or all
 of them; only such a Discard is listed in Trash, and a Discard of single changes is final but for
@@ -282,7 +284,7 @@ not from this answer. In `drizzle-apply-click.ts` `unapply`, under the locks:
    closed source stays.
 2. Then, per document, the parts an undo already took are dropped, and a document with none
    left is skipped. For the rest, where the document stands *after* the tree half is read, and a
-   closed source's text stays. Otherwise the inverse runs as before.
+   closed source's text stays. Otherwise `undoCommandText` takes the parts back.
 
 A Redo is an Apply command with `redoOf` naming the Un-Apply: its tree half replays what the
 Un-Apply took (`redoItems`), and its text half is `undoCommandText` over the Un-Apply's `undo`

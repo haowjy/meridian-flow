@@ -51,13 +51,7 @@ import {
 } from "../../file-policy/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type Attempt, runAttempt } from "../domain/draft-attempts.js";
-import {
-  draftSchema,
-  isPending,
-  readDraftChanges,
-  takeBack,
-  takeOutStanding,
-} from "../domain/draft-changes.js";
+import { draftSchema, isPending, readDraftChanges, takeBack } from "../domain/draft-changes.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
 import {
   createDraftDispositionReader,
@@ -159,9 +153,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       .where(
         and(
           inArray(documentEdits.documentId, documentIds),
-          // A turn's history: AI writes and the Undos that name an action. A writer's press (an
-          // Apply, a Discard, the Undo of either) names no action and is never a turn's.
-          or(eq(documentEdits.kind, "write"), isNotNull(documentEdits.actionId)),
+          // A turn's history: its chats' writes and the Undos that name an action. A writer's
+          // press (an Apply, a Discard, the Undo of either) and the system receipt of a draft
+          // append name neither, and are never a turn's.
+          or(isNotNull(documentEdits.threadId), isNotNull(documentEdits.actionId)),
         ),
       )
       .orderBy(documentEditParts.id);
@@ -823,10 +818,10 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       }),
       authorServerRows(prefix) {
         const fragment = prefix.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-        const out = takeOutStanding(
+        const out = takeBack(
           readBlocks(fragment, draftSchema),
-          readBlocks(prefix.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema),
           step.parts,
+          readBlocks(prefix.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema),
         );
         for (const part of out.taken) taken.add(part);
         if (!taken.size) return [];

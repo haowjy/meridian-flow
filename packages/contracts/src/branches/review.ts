@@ -117,7 +117,6 @@ export type ApplyClickResult = {
 };
 
 export type ApplyClickAnswer = ApplyClickResult | { status: "conflict"; commandId: CommandId };
-export type ApplyClickObservation = ApplyClickAnswer | { status: "none"; commandId: CommandId };
 
 /**
  * Take back one Apply command: the surviving text groups of every document it applied, and
@@ -144,6 +143,11 @@ export type UnapplyClickResult = {
   treeUndone: string[];
 };
 export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; commandId: CommandId };
+/** A writer's Apply or Un-Apply read back by its id: its stored answer, or `none` when the server has none. */
+export type ClickObservation =
+  | ApplyClickResult
+  | UnapplyClickResult
+  | { status: "none"; commandId: CommandId };
 
 /**
  * The text cut of one document in an Apply. Frozen: the writer's click on the review room their

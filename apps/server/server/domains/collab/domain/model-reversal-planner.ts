@@ -3,7 +3,7 @@
 import { REVIEW_BASE_FRAGMENT, readBlocks } from "@meridian/agent-edit/diff";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
-import { draftSchema, isPending, takeBack, takeOutStanding } from "./draft-changes.js";
+import { draftSchema, isPending, takeBack } from "./draft-changes.js";
 import { settledCause } from "./draft-disposition.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
@@ -78,7 +78,10 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   // Read once: the diff's memo follows node identity, so a fresh read of the same base costs every
   // later press its whole diff again.
   const bases = new Map<string, readonly PMNode[]>();
-  const baseOf = (draftId: string) => {
+  /** The review base a place's text is judged against: none for Live. */
+  const baseIn = (place: string) => {
+    if (place === "live") return undefined;
+    const draftId = place;
     let base = bases.get(draftId);
     if (!base) {
       const doc = document.drafts.get(draftId)?.doc;
@@ -93,20 +96,16 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
    */
   const stands = (part: StoredInversePart) => {
     const place = placeOf(part);
-    if (place === "live") return takeBack(textIn(place), [part]).taken.length > 0;
-    return planned.has(place)
-      ? takeOutStanding(textIn(place), baseOf(place), [part]).taken.length > 0
-      : (part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false);
+    if (place !== "live" && !planned.has(place))
+      return (
+        part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false
+      );
+    return takeBack(textIn(place), [part], baseIn(place)).taken.length > 0;
   };
   /** Records that `parts` were chosen to be taken out of where they landed. */
   const planTakeOut = (destination: InverseDestination, parts: readonly StoredInversePart[]) => {
     const place = draftIdOf(destination) ?? "live";
-    planned.set(
-      place,
-      place === "live"
-        ? takeBack(textIn(place), parts).text
-        : takeOutStanding(textIn(place), baseOf(place), parts).text,
-    );
+    planned.set(place, takeBack(textIn(place), parts, baseIn(place)).text);
   };
   /** A part whose text no longer reads as the edit wrote it. */
   const changed = (part: StoredInversePart) => !stands(part);

@@ -36,8 +36,9 @@ stateDiagram-v2
   the head stays `sent`, shown as Applying. Only a resend that times out too, or any other
   lost answer, moves to `retrying`.
 - **No answer is not a refusal.** A thrown request, or an answer for another command id, keeps
-  the head where it is. The head is tried again at 1, 2 and 4 seconds; after that it settles `unsent` (the change
-  is pending again, and the press shows the failure pill) and the commands behind it go.
+  the head where it is. The head is tried again at 1, 2 and 4 seconds; after that a sent head reads its stored
+  answer by command id (`lookup`) and settles on it, and only a head with none settles `unsent`
+  (the change is pending again, and the press shows the failure pill). The commands behind it go.
 - **Every command settles on its stored answer.** The answer for this item (`itemOf`, by the
   queue's node) says whether its text landed, and, when it did, `at`: the draft's server clock
   once the base write is in. The queue keeps folding the landed change (`held`) until the room's

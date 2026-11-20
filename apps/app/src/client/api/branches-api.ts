@@ -1,13 +1,13 @@
 /** HTTP client for draft-review read endpoints. */
-import { parseDraftItemKey } from "@meridian/contracts";
+import { type CommandId, parseDraftItemKey } from "@meridian/contracts";
 import type {
   ApplyClick,
   ApplyClickAnswer,
-  ApplyClickObservation,
   ApplyClickResult,
   ApplyItemsClick,
   BranchDiscardRequest,
   BranchDiscardResponse,
+  ClickObservation,
   DocumentDraftHintsResponse,
   DraftMetadataResponse,
   DraftStatesRequest,
@@ -18,6 +18,7 @@ import type {
   ThreadDraftListResponse,
   UnapplyClick,
   UnapplyClickAnswer,
+  UnapplyClickResult,
   UndoDiscardAnswer,
   UndoDiscardClick,
 } from "@meridian/contracts/branches";
@@ -120,14 +121,14 @@ export function applyDraftClick(draft: DraftAddress, body: ApplyClick) {
     body,
   );
 }
-export async function observeDraftClick(body: ApplyClick): Promise<ApplyClickObservation> {
+export async function observeClick(commandId: CommandId): Promise<ClickObservation> {
   // Only the typed `none` answer proves absence. A 404 may be a stale route, not an unclaimed id.
-  const found = await getJson<CommandLookupResponse>(apiCommandPath(body.commandId), {
+  const found = await getJson<CommandLookupResponse>(apiCommandPath(commandId), {
     signal: AbortSignal.timeout(10_000),
   });
   if (found.status === "none" || found.outcome.status === "never")
-    return { status: "none", commandId: body.commandId };
-  return found.outcome.result as ApplyClickResult;
+    return { status: "none", commandId };
+  return found.outcome.result as ApplyClickResult | UnapplyClickResult;
 }
 /** Several nodes, folders included, as one Apply command; or a Redo, which names an Un-Apply. */
 export function applyItems(projectId: string, branchId: string, body: ApplyItemsClick | RedoClick) {

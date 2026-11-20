@@ -144,8 +144,9 @@ only a change that stands, and leaves the others whole. The text decides, not wh
 A pull or Apply writes only the insertions inside a changed run that only gained characters
 (`retainShared` in `packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the
 run whole), which is why typing inside the AI's words in a draft ends up beside the new words in
-the pulled text. Un-Apply reads the same way: it takes out each change of the Apply's parts that
-stands in Live.
+the pulled text. Un-Apply reads the same way: it takes out each change of the Apply's Live part that
+stands in Live, and the base part's change out of the draft's review base, so the AI changes are
+pending again.
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from the package's walk (`undoReports`) as the lists
 stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's branch

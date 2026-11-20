@@ -30,7 +30,7 @@ export function createDraftDispositionReader(store: DraftDispositionStore) {
     // Never manufacture an empty draft.
     if (!cut.draft.checkpoint) throw new Error(`Missing draft checkpoint: ${draftId}`);
     assertReadableDraft(draft);
-    const applied = new Set(cut.applied.flatMap((apply) => apply.carried.map(([part]) => part)));
+    const applied = new Set(cut.applied.map(([part]) => part));
     return {
       draft,
       parts: cut.parts.map((part) => ({

@@ -29,7 +29,7 @@ import {
   applyItems,
   branchOf,
   discard as discardBranch,
-  observeDraftClick,
+  observeClick,
   unapplyDraftClick,
 } from "@/client/api/branches-api";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -324,7 +324,7 @@ export class DraftCommandOwner {
       queue: new ApplyClickQueue({
         node: ref.documentId,
         send: (body) => applyDraftClick(ref, body),
-        lookup: observeDraftClick,
+        lookup: observeClick,
         unapply: (body) => unapplyDraftClick(ref, body),
         redo: (body) => applyItems(ref.projectId, branchOf(ref.itemKey), body),
         changed: () => {

@@ -2,8 +2,8 @@
 import type {
   ApplyClick,
   ApplyClickAnswer,
-  ApplyClickObservation,
   ApplyClickResult,
+  ClickObservation,
   RedoClick,
   UnapplyClick,
   UnapplyClickAnswer,
@@ -144,7 +144,8 @@ export class ApplyClickQueue {
       /** The item's node: an Apply's answer is read from its entry, whatever its siblings did. */
       node: string;
       send(body: ApplyClick): Promise<ApplyClickAnswer>;
-      lookup(body: ApplyClick): Promise<ApplyClickObservation>;
+      /** A sent command's stored answer, by its id. */
+      lookup(commandId: string): Promise<ClickObservation>;
       unapply?(body: UnapplyClick): Promise<UnapplyClickAnswer>;
       redo?(body: RedoClick): Promise<ApplyClickAnswer>;
       changed(): void;
@@ -491,10 +492,10 @@ export class ApplyClickQueue {
     }
     this.request = command;
     command.sent = true;
-    let answer: ApplyClickObservation | undefined;
+    let answer: ApplyClickAnswer | ClickObservation | undefined;
     try {
       answer = await (command.closed
-        ? this.port.lookup(command.body)
+        ? this.port.lookup(command.body.commandId)
         : (command.send ?? this.port.send)(command.body));
     } catch {
       // Unknown delivery retains this immutable head.
@@ -545,17 +546,7 @@ export class ApplyClickQueue {
     if (answer?.commandId !== command.body.commandId) answer = undefined;
     if (this.commands[0] !== command) return;
     if (answer?.status === "unapplied") {
-      command.answer = answer;
-      const text = answer.textUndone.find((one) => one.node === this.port.node);
-      command.selectionChanged(text !== undefined, answer.treeUndone.includes(this.port.node));
-      // Its write is folded back out of the base until the room holds it.
-      if (text?.at !== undefined)
-        this.hold(command.draftId, {
-          before: command.patched,
-          after: command.optimistic,
-          at: text.at,
-        });
-      this.settle(command, answer);
+      this.unapplied(command, answer);
       return;
     }
     if (answer?.status === "conflict") {
@@ -565,9 +556,23 @@ export class ApplyClickQueue {
     this.scheduleRetry(command);
   }
 
+  private unapplied(command: UnapplyCommand, answer: UnapplyClickResult): void {
+    command.answer = answer;
+    const text = answer.textUndone.find((one) => one.node === this.port.node);
+    command.selectionChanged(text !== undefined, answer.treeUndone.includes(this.port.node));
+    // Its write is folded back out of the base until the room holds it.
+    if (text?.at !== undefined)
+      this.hold(command.draftId, {
+        before: command.patched,
+        after: command.optimistic,
+        at: text.at,
+      });
+    this.settle(command, answer);
+  }
+
   private async lookupClosed(command: ApplyCommand): Promise<void> {
     try {
-      const result = await this.port.lookup(command.body);
+      const result = await this.port.lookup(command.body.commandId);
       if (this.commands[0] !== command || result.commandId !== command.body.commandId) return;
       if (result.status === "applied") {
         this.settle(command, result);
@@ -584,18 +589,24 @@ export class ApplyClickQueue {
   }
 
   /**
-   * Out of retries. An Apply the server stored is settled on its stored answer, so a press whose
-   * every answer was lost still lands with its Undo; otherwise the click is given up as not sent,
-   * the draft shows it still pending and the commands behind it go.
+   * Out of retries. A sent command the server stored is settled on its stored answer, so a press
+   * whose every answer was lost still lands, with its Undo or Redo; otherwise it is given up as not
+   * sent, the draft shows what it showed before the press, and the commands behind it go.
    */
   private async giveUp(command: Command): Promise<void> {
-    if (command.kind === "apply" && command.sent) {
+    if (command.sent) {
       // slop-lint: allow swallowed-error a lookup that fails leaves delivery unknown; the click is given up below
-      const stored = await this.port.lookup(command.body).catch(() => null);
+      const stored = await this.port.lookup(command.body.commandId).catch(() => null);
       if (this.commands[0] !== command) return;
-      if (stored?.status === "applied" && stored.commandId === command.body.commandId) {
-        this.settle(command, stored);
-        return;
+      if (stored?.commandId === command.body.commandId) {
+        if (command.kind === "apply" && stored.status === "applied") {
+          this.settle(command, stored);
+          return;
+        }
+        if (command.kind === "unapply" && stored.status === "unapplied") {
+          this.unapplied(command, stored);
+          return;
+        }
       }
     }
     if (this.commands[0] === command)

@@ -24,9 +24,7 @@ export async function classifiedDraft(store: DraftDispositionStore, draftId: str
   if (!cut?.draft.checkpoint) return null;
   const doc = materializeDraftRead(cut.draft);
   try {
-    const applied = cut.parts.map((part) =>
-      cut.applied.some((effect) => effect.carried.some(([id]) => id === part.id)),
-    );
+    const applied = cut.parts.map((part) => cut.applied.some(([id]) => id === part.id));
     const provenance = {
       snapshot: Y.snapshot(doc),
       userId: cut.userId,

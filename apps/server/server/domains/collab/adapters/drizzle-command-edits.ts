@@ -124,19 +124,16 @@ export async function untakenPartsOf(
 }
 
 /**
- * Each draft's Applies in force: the review-base part of each, oldest first, with the AI changes
- * it carried and its command. What the card reads "Applied" from, and what settles an Apply's
- * text half as already applied.
+ * Each draft's Applies in force: the AI changes each carried, from its review-base part. What the
+ * card reads "Applied" from, and what settles an Apply's text half as already applied.
  */
 export async function appliesInForce(
   tx: Tx,
   draftIds: readonly string[],
-): Promise<
-  { draftId: string; commandId: string; carried: [number, number][]; documentId: DocumentId }[]
-> {
+): Promise<{ draftId: string; carried: [number, number][] }[]> {
   if (draftIds.length === 0) return [];
   const rows = await tx
-    .select({ ...partColumns, commandId: documentEdits.commandId })
+    .select(partColumns)
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
     .where(
@@ -145,20 +142,12 @@ export async function appliesInForce(
         sql`${documentEditParts.origin}->>'kind' = 'base'`,
         inArray(sql`${documentEditParts.origin}->>'draftId'`, [...draftIds]),
       ),
-    )
-    .orderBy(documentEditParts.id);
+    );
   const inForce = await inForceAmong(tx, rows);
   return rows.flatMap((row) =>
-    !inForce.has(partKey(row)) || !row.commandId || row.origin.kind !== "base"
-      ? []
-      : [
-          {
-            draftId: row.origin.draftId,
-            commandId: row.commandId,
-            carried: row.carried ?? [],
-            documentId: row.documentId,
-          },
-        ],
+    inForce.has(partKey(row)) && row.origin.kind === "base"
+      ? [{ draftId: row.origin.draftId, carried: row.carried ?? [] }]
+      : [],
   );
 }
 
@@ -207,9 +196,10 @@ export type UndoTextDeps = {
 /**
  * Takes back what `undoes` wrote, in the documents `only` names (all when absent): each change of
  * each part in force that still stands in the text the part wrote (Live, a draft's text, a draft's
- * review base), newest first. Records one `undo` edit per document whose parts name every part it
- * was asked to take, whether or not a change still stood: "taken" means an Undo judged it. The
- * caller holds the command's claim and the documents' keys; writes are delivered after commit.
+ * review base), newest first. Records one `undo` edit per document it changed, with one part per
+ * text it changed, naming every part of that text it was asked to take: a part partly taken is
+ * taken. A text where nothing stood keeps its parts in force. The caller holds the command's claim
+ * and the documents' keys; writes are delivered after commit.
  */
 export async function undoCommandText(
   db: Database,
@@ -248,23 +238,21 @@ export async function undoCommandText(
             : captureMutationUpdates(doc, () =>
                 doc.transact(() => writeBlocks(fragment, schema, after), "undo"),
               );
-        const update = updates.length ? Y.mergeUpdates(updates) : new Uint8Array();
-        const seq = updates.length
-          ? await deps.live.append(
-              documentId,
-              update,
-              { seq: 0, origin: `human:${input.accountId}` },
-              snapshot.authority,
-            )
-          : 0;
-        receipts.push({
-          update,
-          effect: { inserted: [], deleted: [] },
-          origin: { kind: "live", seq },
-          delta: updates.length ? captureDelta(before, after) : null,
-          targets: targets(liveParts),
-        });
         if (updates.length) {
+          const update = Y.mergeUpdates(updates);
+          const seq = await deps.live.append(
+            documentId,
+            update,
+            { seq: 0, origin: `human:${input.accountId}` },
+            snapshot.authority,
+          );
+          receipts.push({
+            update,
+            effect: { inserted: [], deleted: [] },
+            origin: { kind: "live", seq },
+            delta: captureDelta(before, after),
+            targets: targets(liveParts),
+          });
           result.live = true;
           deferUntilDrizzleCommit(async () => {
             await deps.liveCoordinator.deliver(documentId);
@@ -320,19 +308,17 @@ export async function undoCommandText(
       } finally {
         write.dispose();
       }
-      const merged = (rows: Uint8Array[]) =>
-        rows.length ? Y.mergeUpdates(rows) : new Uint8Array();
-      if (textParts.length)
+      if (text.rows.length)
         receipts.push({
-          update: merged(text.rows),
+          update: Y.mergeUpdates(text.rows),
           effect: { inserted: [], deleted: [] },
           origin: { kind: "pending", draftId },
           delta: text.delta,
           targets: targets(textParts),
         });
-      if (baseParts.length)
+      if (base.rows.length)
         receipts.push({
-          update: merged(base.rows),
+          update: Y.mergeUpdates(base.rows),
           effect: { inserted: [], deleted: [] },
           origin: { kind: "base", draftId },
           delta: base.delta,

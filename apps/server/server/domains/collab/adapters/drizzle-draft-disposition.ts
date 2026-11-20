@@ -140,9 +140,9 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
         });
         parts.set(row.draftId, list);
       }
-      const applied = new Map<string, DraftDispositionCapture["applied"][number][]>();
+      const applied = new Map<string, (readonly [number, number])[]>();
       for (const part of await appliesInForce(tx, ids))
-        applied.set(part.draftId, [...(applied.get(part.draftId) ?? []), part]);
+        applied.set(part.draftId, [...(applied.get(part.draftId) ?? []), ...part.carried]);
       for (const draft of drafts) {
         const id = draft.documentDraft.draftId;
         const found = project.get(id);

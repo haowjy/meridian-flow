@@ -32,9 +32,7 @@ export function createDraftProvenanceReader(store: DraftDispositionStore) {
       const doc = materializeDraftRead(cut.draft);
       try {
         const { reading, parts } = readDraftChanges(doc, cut.parts);
-        const carried = new Set(
-          cut.applied.flatMap((apply) => apply.carried.map((key) => key.join(":"))),
-        );
+        const carried = new Set(cut.applied.map((key) => key.join(":")));
         const applied = (id: number) => {
           const changes = parts.get(id)?.changes ?? [];
           return changes.length > 0 && changes.every((_, index) => carried.has(`${id}:${index}`));

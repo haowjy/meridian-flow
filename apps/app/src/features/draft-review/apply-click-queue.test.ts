@@ -4,11 +4,7 @@
  * - ordered Apply delivery, settled on the stored answer
  */
 
-import type {
-  ApplyClick,
-  ApplyClickAnswer,
-  ApplyClickObservation,
-} from "@meridian/contracts/branches";
+import type { ApplyClick, ApplyClickAnswer, ClickObservation } from "@meridian/contracts/branches";
 import type { Settlement } from "@meridian/contracts/commands";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApplyClickQueue } from "./apply-click-queue";
@@ -44,10 +40,7 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then gives t
     .fn<(body: ApplyClick) => Promise<ApplyClickAnswer>>()
     .mockRejectedValue(new Error("lost"));
   const lookup = vi.fn(
-    async (request: ApplyClick): Promise<ApplyClickObservation> => ({
-      status: "none",
-      commandId: request.commandId,
-    }),
+    async (commandId: string): Promise<ClickObservation> => ({ status: "none", commandId }),
   );
   const queue = new ApplyClickQueue({ node: "d", send, lookup, changed() {} });
   const first = frozen("first");
@@ -62,7 +55,7 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then gives t
   await vi.advanceTimersByTimeAsync(4000);
   expect(send.mock.calls.slice(0, 4).every(([request]) => request === first.body)).toBe(true);
   expect(await result).toEqual({ status: "unsent", commandId: "first" });
-  expect(lookup).toHaveBeenCalledWith(first.body);
+  expect(lookup).toHaveBeenCalledWith(first.body.commandId);
   expect(send).toHaveBeenCalledTimes(5);
   expect(send.mock.calls.at(-1)?.[0].commandId).toBe("second");
   queue.destroy();
@@ -111,15 +104,15 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
   for (const status of ["applied", "none"] as const) {
     const answer = deferred<ApplyClickAnswer>();
     const lookup = vi.fn(
-      async (request: ApplyClick): Promise<ApplyClickObservation> =>
+      async (commandId: string): Promise<ClickObservation> =>
         status === "applied"
           ? {
               status,
-              commandId: request.commandId,
+              commandId,
               items: [{ node: "d", text: { landed: true } }],
               applied: [],
             }
-          : { status, commandId: request.commandId },
+          : { status, commandId },
     );
     const queue = new ApplyClickQueue({
       node: "d",
@@ -135,7 +128,7 @@ it("a terminal close cancels unsent clicks and settles a sent head from its answ
     answer.resolve({ status: "conflict", commandId: "first" });
     await flush();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(lookup).toHaveBeenCalledWith(body("first"));
+    expect(lookup).toHaveBeenCalledWith("first");
     expect(await first).toEqual(
       status === "applied"
         ? {

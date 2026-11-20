@@ -111,29 +111,6 @@ export function readChangesAt(
   return { reading, parts: out };
 }
 
-/**
- * `text` with every change of `parts` that still stands taken out, in the order given, and the
- * parts that had one. The one rule a draft Undo applies, to the committed text under the draft's
- * hold and, as the model's plan, to a copy of it.
- */
-export function takeOutStanding<P extends { delta: StoredDelta | null }>(
-  text: readonly PMNode[],
-  base: readonly PMNode[],
-  parts: readonly P[],
-): { text: readonly PMNode[]; taken: P[] } {
-  let blocks = text;
-  const taken: P[] = [];
-  for (const part of parts) {
-    if (!part.delta) continue;
-    for (const change of editChanges(schema, readDelta(schema, part.delta)))
-      if (changeState(schema, change, blocks, base) === "stands") {
-        blocks = takeOut(schema, change, blocks);
-        if (!taken.includes(part)) taken.push(part);
-      }
-  }
-  return { text: blocks, taken };
-}
-
 /** The `[partId, index]` of each change of `parts` that sits in the pending change at `position` of the reading. */
 export function carriedBy(
   reading: DraftChangeReading,
@@ -148,20 +125,26 @@ export function carriedBy(
 }
 
 /**
- * An Undo of what parts wrote into one text (the manuscript, a draft's text or its review base):
- * each change that stands in `text` is taken out of it, in the order `parts` gives. Returns the
- * text and the parts a change was taken from.
+ * An Undo of what parts wrote into one text: each change of `parts` that still stands in `text` is
+ * taken out of it, in the order given, and the parts that had one come back. A draft's text is
+ * judged against its review `base` too, so a change stands only while it sits in a pending change;
+ * the manuscript and a review base have no base of their own. The one rule every Undo applies, to
+ * committed text under its hold and, as the model's plan, to a copy of it.
  */
 export function takeBack<P extends { delta: StoredDelta | null }>(
   text: readonly PMNode[],
   parts: readonly P[],
+  base?: readonly PMNode[],
 ): { text: readonly PMNode[]; taken: P[] } {
   let blocks = text;
   const taken: P[] = [];
   for (const part of parts) {
     if (!part.delta) continue;
     for (const change of editChanges(schema, readDelta(schema, part.delta))) {
-      if (changeStateIn(schema, change, blocks) !== "stands") continue;
+      const state = base
+        ? changeState(schema, change, blocks, base)
+        : changeStateIn(schema, change, blocks);
+      if (state !== "stands") continue;
       blocks = takeOut(schema, change, blocks);
       if (!taken.includes(part)) taken.push(part);
     }

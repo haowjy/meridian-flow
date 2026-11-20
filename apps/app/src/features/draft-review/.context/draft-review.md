@@ -219,8 +219,9 @@ shares of the notice, the room's and the server's, and only the server's answer 
 with its Undo, when it took any item, and `settled` when it took none. An Apply's Undo step
 holds the nodes its answer says landed, not the ones pressed.
 
-`ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds, then the click
-settles `unsent` (its optimistic fold ends, so the change is pending again, and the commands behind
+`ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds. Then a sent Apply or
+Un-Apply reads its stored answer by command id and settles on it; only a click with none settles
+`unsent` (its optimistic fold ends, so the change is pending again, and the commands behind
 it go), and the press shows one "Couldn't apply" pill per branch. A timeout is not one of those failures: the Apply and Un-Apply requests
 (`postCommand` in `branches-api.ts`) resend under the same id after a timeout and while the
 server answers `running`, so a large Apply stays `Applying` until its answer instead of
