@@ -41,10 +41,33 @@ export const CHANGE_META = "suggestions:change";
 export const DROPPED_META = "suggestions:dropped";
 
 /**
- * A Work's edit: whose draft it writes into, who writes it, and the document's authors, which say
- * who wrote each change the edit meets.
+ * On a rewritten transaction: the changes the edit started, by id, with their author. The caller
+ * records them in the document's authors when it applies the edit (`recordStarted`), so an edit
+ * that never lands leaves no entry.
  */
-type Writer = { work: string; author: Author; authors: Authors };
+export const STARTED_META = "suggestions:started";
+
+/**
+ * A Work's edit: whose draft it writes into, who writes it, the document's authors, which say
+ * who wrote each change the edit meets, and the changes it started.
+ */
+type Writer = {
+  work: string;
+  author: Author;
+  authors: Pick<Authors, "get">;
+  started: Map<string, Author>;
+};
+
+/** Who wrote change `id`: one this edit started, or one the document records. */
+function authorOf(writer: Writer, id: string): Author | undefined {
+  return writer.started.get(id) ?? writer.authors.get(id);
+}
+
+/** Record the changes a rewritten transaction started (`STARTED_META`); call when applying it. */
+export function recordStarted(tr: Transaction, authors: Authors): void {
+  const started = tr.getMeta(STARTED_META) as Map<string, Author> | undefined;
+  for (const [id, author] of started ?? []) authors.set(id, author);
+}
 
 /**
  * The change one edit's suggestions take: the first it picks (`found`, a change of the same
@@ -54,13 +77,13 @@ type Writer = { work: string; author: Author; authors: Authors };
  */
 type EditChange = (found: string | null) => string;
 
-/** A change the edit starts is recorded in the document's authors as `writer`'s. */
+/** A change the edit starts is staged as `writer`'s. */
 function editChange(writer: Writer | null): EditChange {
   let id: string | null = null;
   return (found) => {
     if (id === null) {
       id = found ?? newChangeId();
-      if (found === null) writer?.authors.set(id, writer.author);
+      if (found === null) writer?.started.set(id, writer.author);
     }
     return id;
   };
@@ -72,14 +95,15 @@ function editChange(writer: Writer | null): EditChange {
  * deletion, deleting its own insertion is a real delete, and another Work's text is never
  * touched. In the Live view (`view.work === null`) edits land, but hidden suggestions are kept
  * and nothing typed or pasted carries a suggestion. Returns the original transaction when it
- * needs no rewrite. A change the edit starts is recorded in `authors` as `author`'s.
+ * needs no rewrite. A change the edit starts is `author`'s, staged under `STARTED_META`; `authors`
+ * is only read.
  */
 export function rewrite(
   tr: Transaction,
   state: EditorState,
   view: View,
   author: Author | null,
-  authors: Authors,
+  authors: Pick<Authors, "get">,
 ): Transaction {
   if (!tr.docChanged || tr.getMeta(RAW_META)) return tr;
   if (
@@ -124,7 +148,7 @@ export function rewrite(
       });
   });
   const work: Writer | null =
-    view.work === null || !author ? null : { work: view.work, author, authors };
+    view.work === null || !author ? null : { work: view.work, author, authors, started: new Map() };
   const change = editChange(work);
   const ranges = work ? wholeBlockRanges(replaced, state.doc) : [...replaced];
   for (const range of [...ranges].reverse()) {
@@ -174,6 +198,7 @@ export function rewrite(
   for (const step of formatting.nodes)
     rewriteMarkup(out, step, out.mapping.slice(), view, work, change);
   out.setMeta(CHANGE_META, changes);
+  if (work?.started.size) out.setMeta(STARTED_META, work.started);
   if (caret !== null)
     out.setSelection(
       TextSelection.near(out.doc.resolve(Math.min(caret.map(caret.pos), out.doc.content.size))),
@@ -761,7 +786,7 @@ function marked(schema: Schema, content: Fragment, attrs: SuggestionAttrs): Frag
 
 /** Whether `writer` wrote the change `attrs` belongs to: same Work, chat, turn and author. */
 function sameAuthor(attrs: SuggestionAttrs, writer: Writer): boolean {
-  const wrote = writer.authors.get(attrs.id);
+  const wrote = authorOf(writer, attrs.id);
   return (
     attrs.work === writer.work &&
     !!wrote &&
@@ -836,7 +861,7 @@ function suggestRemoval(
  */
 function layers(written: SuggestionAttrs | null, writer: Writer): boolean {
   const turn = writer.author.turn;
-  return turn !== null && (written ? writer.authors.get(written.id)?.turn : null) !== turn;
+  return turn !== null && (written ? authorOf(writer, written.id)?.turn : null) !== turn;
 }
 
 /** Content the view's Work writes into its own block `sug`: marked when it layers over the block. */

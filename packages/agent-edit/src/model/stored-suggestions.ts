@@ -18,7 +18,7 @@ import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
-import { lowerBlock, lowerResolved } from "../resolver/lower-block.js";
+import { lowerBlock, lowerResolved, resolvedEdit } from "../resolver/lower-block.js";
 import { getTopLevelXmlBlocks } from "./block-hash.js";
 import { applyOps as applyRawOps, fragmentOf } from "./y-prosemirror.js";
 
@@ -71,6 +71,7 @@ export function resolveStored(
   // Read after `storedRoot`: converting the fragment deletes the elements it cannot convert, so
   // the elements left pair with the root's children by index.
   const elements = getTopLevelXmlBlocks(doc);
+  const edit = resolvedEdit(tr);
   const starts: number[] = [];
   root.forEach((_, offset) => {
     starts.push(offset);
@@ -84,8 +85,7 @@ export function resolveStored(
     else {
       const after = tr.doc.nodeAt(from) as PMNode;
       if (after.eq(before)) continue;
-      const ops =
-        lowerResolved(before, starts[index], tr.mapping, tr.doc) ?? lowerBlock(before, after);
+      const ops = lowerResolved(before, starts[index], edit) ?? lowerBlock(before, after);
       const applied = applyRawOps(elements[index], ops);
       if (!applied.ok) throw new Error(applied.message);
     }

@@ -17,8 +17,10 @@ import {
   liveView,
   proposals,
   RAW_META,
+  recordStarted,
   removedIn,
   rewrite,
+  STARTED_META,
   sameValue,
   type View,
   viewAttrs,
@@ -292,9 +294,14 @@ export const SuggestionModeExtension = Extension.create({
     const mode = suggestionModeKey.getState(state);
     // A peer's change, Undo and Redo come through the binding already in stored form.
     if (!mode || transaction.getMeta(ySyncPluginKey)?.isChangeOrigin) return next(transaction);
-    const out = rewrite(transaction, state, mode.view, mode.author, authorsIn(state));
+    const authors = authorsIn(state);
+    const out = rewrite(transaction, state, mode.view, mode.author, authors);
     // An edit the view cannot suggest in full does not happen at all, as for the model.
-    if (!out.getMeta(DROPPED_META)) next(out);
+    if (out.getMeta(DROPPED_META)) return;
+    next(out);
+    // A writer edit of its own, so unsent-edits counts it; the binding sends the text separately.
+    if (out.getMeta(STARTED_META))
+      editorDoc(state)?.transact(() => recordStarted(out, authors), DIRECT_WRITE_ORIGIN);
   },
 
   addProseMirrorPlugins() {
@@ -354,7 +361,8 @@ export function authorsIn(state: EditorState): Authors {
 /**
  * Apply or Reject in the tab: the server's resolve, run on this tab's Y.Doc as one writer edit of
  * its own, so it syncs as typing does and Ctrl+Z takes back only it. The binding then redraws the
- * editor from the Y.Doc, so the command's own transaction is not dispatched.
+ * editor from the Y.Doc, so the command's own transaction is not dispatched: in a `chain()`, the
+ * other commands' steps on that transaction are dropped with it. Run it on its own.
  */
 function resolveHere(
   state: EditorState,

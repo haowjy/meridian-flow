@@ -20,7 +20,9 @@ export {
   type ChangeAt,
   DROPPED_META,
   RAW_META,
+  recordStarted,
   rewrite,
+  STARTED_META,
 } from "./rewrite.js";
 export {
   type AttrProposal,

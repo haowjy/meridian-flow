@@ -18,6 +18,7 @@ import {
   DROPPED_META,
   newChangeId,
   type Run,
+  recordStarted,
   rewrite,
   runs,
   type SuggestionAttrs,
@@ -28,7 +29,7 @@ import {
 } from "@meridian/suggestions";
 import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
-import { EditorState } from "prosemirror-state";
+import { EditorState, type Transaction } from "prosemirror-state";
 import * as Y from "yjs";
 import type { BlockRef } from "../handles.js";
 import { unwrapBlock, unwrapDoc } from "../handles.js";
@@ -93,9 +94,11 @@ export function suggestingModel(
         written(unwrapBlock(block));
         return applied;
       }
-      const out = rewritten(before, ops, view, author, authorsOf(block), schema);
+      const authors = authorsOf(block);
+      const out = rewritten(before, ops, view, author, authors, schema);
       if (typeof out === "string") return refused(out);
       const applied = applyRawOps(unwrapBlock(block), lowerBlock(before, out.node));
+      if (applied.ok) recordStarted(out.tr, authors);
       written(unwrapBlock(block), out.node);
       if (out.endChange) tails.set(unwrapBlock(block), out.endChange);
       return applied;
@@ -127,7 +130,8 @@ export function suggestingModel(
         schema,
         doc: schema.topNodeType.create(null, [node, rest]),
       });
-      const out = rewrite(state.tr.delete(0, node.nodeSize), state, view, author, authorsOf(block));
+      const authors = authorsOf(block);
+      const out = rewrite(state.tr.delete(0, node.nodeSize), state, view, author, authors);
       // The view's own block this turn wrote is no suggestion to keep: it goes.
       if (out.doc.childCount === 1) {
         base.deleteBlock(doc, block);
@@ -135,6 +139,7 @@ export function suggestingModel(
       }
       const after = out.doc.firstChild as PMNode;
       applyRawOps(unwrapBlock(block), lowerBlock(node, after));
+      recordStarted(out, authors);
       written(unwrapBlock(block), after);
     },
   };
@@ -162,7 +167,7 @@ function rewritten(
   author: Author | null,
   authors: Authors,
   schema: Schema,
-): { node: PMNode; endChange: SuggestionAttrs | null } | string {
+): { node: PMNode; endChange: SuggestionAttrs | null; tr: Transaction } | string {
   const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
   const tr = state.tr;
   const map = (pos: number, assoc = 1) => tr.mapping.map(pos, assoc);
@@ -212,6 +217,7 @@ function rewritten(
   const changes = (out.getMeta(CHANGE_META) as ChangeAt[] | undefined) ?? [];
   return {
     node: out.doc.child(0),
+    tr: out,
     endChange: changes.find((at) => at.from < at.to && at.to === endAt)?.change ?? null,
   };
 }
