@@ -9,9 +9,9 @@
  * (`setReviewBarSlot`), which pushes the text below it down when it opens;
  * a failure arriving later takes the bar's own row there rather than growing it.
  *
- * The change is a decoration, and the plugin rebuilds every decoration on each
- * refetch and remote write, so its element (and the slot) is looked up again
- * after each transaction rather than held.
+ * The change is a decoration, and any edit or focus move can paint its block
+ * again, so its element (and the slot) is looked up again after each
+ * transaction rather than held.
  */
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";

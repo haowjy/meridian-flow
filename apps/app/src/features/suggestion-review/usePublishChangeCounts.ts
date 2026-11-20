@@ -18,6 +18,7 @@ export function usePublishChangeCounts(documentId: string, editor: Editor | null
       if (editor.isDestroyed) return;
       const pending = pendingChanges(editor.state.doc, authorsIn(editor.state));
       publishTabChangeCounts(
+        editor,
         documentId,
         Object.fromEntries(Object.entries(pending).map(([work, { changes }]) => [work, changes])),
       );
@@ -32,7 +33,7 @@ export function usePublishChangeCounts(documentId: string, editor: Editor | null
     return () => {
       clearTimeout(timer);
       editor.off("transaction", onTransaction);
-      publishTabChangeCounts(documentId, null);
+      publishTabChangeCounts(editor, documentId, null);
     };
   }, [documentId, editor]);
 }

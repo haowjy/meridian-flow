@@ -37,13 +37,7 @@ import type { DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import type * as Y from "yjs";
 import { DIRECT_WRITE_ORIGIN, endUndoStep } from "../../editor-history";
-import {
-  type Paint,
-  paintAll,
-  repaintEdit,
-  repaintFocus,
-  SUGGESTION_CHANGE_ATTR,
-} from "./suggestion-paint";
+import { type Paint, paintAll, repaint, SUGGESTION_CHANGE_ATTR } from "./suggestion-paint";
 import "./suggestion-mode.css";
 
 /** The marks always exist (the schema is shared); only the behaviour is behind the flag. */
@@ -313,12 +307,10 @@ export const SuggestionModeExtension = Extension.create({
             viewOfDoc.set(state.doc, next.view);
             if (next.view.work !== value.view.work)
               return { ...next, decorations: paintAll(state.doc, next) };
-            let decorations = tr.docChanged
-              ? repaintEdit(value.decorations, old.doc, state.doc, next)
-              : value.decorations;
-            if (next.focus !== value.focus || next.slot !== value.slot)
-              decorations = repaintFocus(decorations, state.doc, value.focus, next);
-            return { ...next, decorations };
+            return {
+              ...next,
+              decorations: repaint(value.decorations, old.doc, state.doc, value, next),
+            };
           },
         },
         props: {

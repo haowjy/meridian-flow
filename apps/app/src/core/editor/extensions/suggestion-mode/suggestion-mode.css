@@ -75,7 +75,14 @@
   box-shadow: none;
 }
 @media (forced-colors: active) {
-  .meridian-editor .ProseMirror[data-suggestion-marks="off"] .meridian-review-added {
+  /* The second selector only lifts this rule above inline-review.css's frame of an emphasized
+     added block, which loads later. */
+  .meridian-editor
+    .ProseMirror[data-suggestion-marks="off"]
+    :is(
+      .meridian-review-added,
+      .meridian-review-block.meridian-review-added.meridian-review-emphasized
+    ) {
     text-decoration: none;
     outline: none;
   }

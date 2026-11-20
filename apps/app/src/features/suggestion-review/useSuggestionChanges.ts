@@ -27,7 +27,12 @@ function useEditorDoc(editor: Editor | null): Node | null {
   useEffect(() => {
     if (!editor) return;
     const update = () => {
-      if (!editor.isDestroyed) startTransition(() => setRead({ editor, doc: editor.state.doc }));
+      if (editor.isDestroyed) return;
+      const doc = editor.state.doc;
+      // A selection alone leaves the document, and so the review, as it was.
+      startTransition(() =>
+        setRead((was) => (was?.editor === editor && was.doc === doc ? was : { editor, doc })),
+      );
     };
     update();
     editor.on("transaction", update);

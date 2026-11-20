@@ -38,20 +38,33 @@ export function paintAll(doc: PMNode, paint: Paint): DecorationSet {
 }
 
 /**
- * `set`, painted for `doc` after an edit from `before`: the decorations map through the edit, and
- * only the top-level blocks whose content differs are painted again. A block is the unit because
- * a block's decorations depend on its ancestors (a block the Work added, a removed list). The
- * difference is read from the documents, not the transaction's steps, so the binding's redraw of
- * the whole document (Undo, a peer's edit, the tab's Apply) repaints only what it changed.
+ * `set`, painted with `was` for `before`, painted again with `paint` for `doc`: only the
+ * top-level blocks the edit reached and those holding the old or new focused change. The bar's
+ * slot is placed again after every repaint, since an edit or a focus move can shift where the
+ * focused change ends.
  */
-export function repaintEdit(
+export function repaint(
   set: DecorationSet,
   before: PMNode,
   doc: PMNode,
+  was: Paint,
   paint: Paint,
 ): DecorationSet {
+  let next = before === doc ? set : repaintEdit(set, before, doc, paint);
+  if (was.focus !== paint.focus) next = repaintFocus(next, doc, was.focus, paint);
+  return withSlot(next, doc, paint);
+}
+
+/**
+ * The decorations map through the edit, and only the top-level blocks whose content differs are
+ * painted again. A block is the unit because a block's decorations depend on its ancestors (a
+ * block the Work added, a removed list). The difference is read from the documents, not the
+ * transaction's steps, so the binding's redraw of the whole document (Undo, a peer's edit, the
+ * tab's Apply) repaints only what it changed.
+ */
+function repaintEdit(set: DecorationSet, before: PMNode, doc: PMNode, paint: Paint): DecorationSet {
   const start = before.content.findDiffStart(doc.content);
-  if (start === null) return withSlot(set, doc, paint);
+  if (start === null) return set;
   const end = before.content.findDiffEnd(doc.content) ?? {
     a: before.content.size,
     b: doc.content.size,
@@ -64,8 +77,8 @@ export function repaintEdit(
   return repaintRange(mapped, doc, start, newEnd, paint);
 }
 
-/** `set` with `before`'s focused change and `paint`'s repainted: only the blocks holding either. */
-export function repaintFocus(
+/** The blocks holding `before`'s focused change and `paint`'s, painted again. */
+function repaintFocus(
   set: DecorationSet,
   doc: PMNode,
   before: string | null,
@@ -81,7 +94,7 @@ export function repaintFocus(
   }
   let next = set;
   for (const pos of blocks) next = repaintRange(next, doc, pos + 1, pos + 1, paint);
-  return withSlot(next, doc, paint);
+  return next;
 }
 
 /** Paints again every top-level block that `from`..`to` reaches. */
