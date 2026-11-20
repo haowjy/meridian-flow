@@ -8,14 +8,6 @@ import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
-import { createDraftCoordinator } from "../../domains/collab/domain/draft-coordinator.js";
-import { createDraftPullService } from "../../domains/collab/domain/draft-pulls.js";
-import { readDraftContent } from "../../domains/collab/test-support/draft-store-seam.js";
-import {
-  MemoryDraftStore,
-  memoryDraft,
-  testDraftRow,
-} from "../../domains/collab/test-support/memory-draft-store.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
