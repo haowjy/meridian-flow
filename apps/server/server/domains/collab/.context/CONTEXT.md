@@ -56,8 +56,10 @@ drafted write never applies itself: switching a chat to Auto-apply touches no su
 Apply stays the writer's press.
 
 A write into a room where the model has no frontier plans on the current room. A write with a
-usable frontier plans on that offline view and merges onto the current room. Every model call
-reads its room fresh through agent-edit's `readRoom`; the live adapter
+usable frontier plans on that offline view, less the suggestions the writer rejected since
+(`packages/suggestions/.context/CONTEXT.md`, "Who calls it"), and merges onto the current room.
+A write that changes nothing still reports the changes since the frontier and records its own.
+Every model call reads its room fresh through agent-edit's `readRoom`; the live adapter
 (`adapters/hocuspocus-coordinator.ts` `liveRoomCopy`) reads the journal and the room without the
 document mutex. A room is named `live:<documentId>:<authorityGeneration>` from the copy's bound
 authority (`domain/observation-rooms.ts`).
@@ -195,7 +197,16 @@ identity, generation, and retention under lock. Retention is tracked by the
 head's generation-local retired-through sequence. A stale checkpoint returns
 `stale_generation`; it does not manufacture a successful checkpoint ID.
 Compaction exists but has no production caller, so live journal rows are never
-deleted.
+deleted: the model's report of what changed since its last read attributes each
+change from the rows after its frontier, however old. A background checkpoint
+(`storeCheckpoint`, `background` set) deletes the document's other background
+checkpoints in its own transaction, before it updates the head row every keystroke
+frame waits on. A document holds its seed, its explicit checkpoints, one checkpoint
+per restore and one background checkpoint. A capture whose base a later store
+deleted replays from an older checkpoint and more rows. The manifest reads only the
+rows after the checkpoint it builds on. `compact()` retires rows through the latest
+checkpoint, which may be a background one the next store deletes: before it gets a
+caller, it must fold into a checkpoint that is kept.
 
 A document rebuilt from journal rows is integrable only after every row has applied with no
 pending structs and no pending delete set. State-vector equality, or a pending-struct check

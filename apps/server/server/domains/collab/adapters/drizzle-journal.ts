@@ -28,7 +28,7 @@ import {
   createCollabYDoc,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, lte, ne, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -291,6 +291,7 @@ async function insertCheckpoint(
   upToSeq: number,
   reason: string,
   authorityHead: CheckpointAuthority,
+  background = false,
 ): Promise<number> {
   const stateVector = Y.encodeStateVectorFromUpdate(state);
   const attributionManifest = await checkpointAttributionManifest(
@@ -310,6 +311,7 @@ async function insertCheckpoint(
       stateVector: toBuffer(stateVector),
       upToSeq,
       reason,
+      background,
     })
     .onConflictDoNothing({
       target: documentYjsCheckpoints.documentId,
@@ -335,6 +337,20 @@ async function insertCheckpoint(
       : [];
   const row = inserted ?? adopted;
   if (!row) throw new Error("Failed to insert Yjs checkpoint");
+
+  // Loads read only the newest checkpoint and the journal keeps every row, so a superseded
+  // background checkpoint has no reader. Deleted before the head update: every keystroke frame
+  // waits on the head row until this transaction commits.
+  if (background)
+    await db
+      .delete(documentYjsCheckpoints)
+      .where(
+        and(
+          eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
+          eq(documentYjsCheckpoints.background, true),
+          ne(documentYjsCheckpoints.id, row.id),
+        ),
+      );
 
   await advanceHead(db, documentId, {
     latestUpdateSeq: upToSeq,
@@ -437,6 +453,8 @@ async function checkpointAttributionManifest(
         eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
         eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
         eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
+        // The previous manifest already attributes every row through its checkpoint.
+        gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
         lte(documentYjsUpdates.id, upToSeq),
       ),
     )
@@ -845,12 +863,7 @@ export function createDrizzleJournal(
         await payload.validateInputs();
         const existing = await latestCheckpoint(txDb, docId, captured);
         if (existing && existing.upToSeq >= upToSeq) return;
-        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
-        if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
-          await txDb
-            .delete(documentYjsCheckpoints)
-            .where(eq(documentYjsCheckpoints.id, existing.id));
-        }
+        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured, true);
       });
     },
 
@@ -984,6 +997,7 @@ function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
           0,
           empty ? "checkpoint" : "seed",
           await readDocumentAuthorityHead(txDb, docId),
+          empty,
         );
         return true;
       });
@@ -997,6 +1011,7 @@ function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
       for (let offset = 0; offset < seeds.length; offset += SEED_BATCH) {
         const batch = seeds.slice(offset, offset + SEED_BATCH).map((seed) => ({
           ...seed,
+          empty: Y.decodeUpdate(seed.state).structs.length === 0,
           authorityId: crypto.randomUUID() as DocumentAuthorityId,
           stateVector: Y.encodeStateVectorFromUpdate(seed.state),
         }));
@@ -1013,7 +1028,8 @@ function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
               upToSeq: 0,
               // An empty authority's checkpoint is a placeholder the first stored checkpoint
               // replaces; a seed with content stays as the document's first version.
-              reason: Y.decodeUpdate(seed.state).structs.length === 0 ? "checkpoint" : "seed",
+              reason: seed.empty ? "checkpoint" : "seed",
+              background: seed.empty,
             })),
           )
           .returning({

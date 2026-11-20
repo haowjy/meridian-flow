@@ -16,6 +16,7 @@ import {
   type AnyPgColumn,
   bigint,
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -49,6 +50,12 @@ export const documentYjsCheckpoints = pgTable(
     stateVector: byteaColumn("state_vector").notNull(),
     upToSeq: bigint("up_to_seq", { mode: "number" }).notNull(),
     reason: text("reason"),
+    /**
+     * Written by a room store to shorten a load's replay: each one deletes the document's earlier
+     * background checkpoints. Seeds with content, explicit checkpoints and restores are never
+     * background, whatever their `reason` says.
+     */
+    background: boolean("background").notNull().default(false),
     createdAt: createdAt(),
   },
   (table) => [
