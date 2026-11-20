@@ -308,7 +308,8 @@ export function branchTreeCommands(
       if (!written.ok) throw new Error(JSON.stringify(written.error));
     },
     async editLive(documentId, edit) {
-      const sync = ports().documentSync;
+      const { ports, hocuspocus } = composed().runtime;
+      const sync = ports.documentSync;
       await sync.ensureDocumentAuthority(documentId);
       // The room holds the document as it is; the writer's tab edits its own copy and sends the difference.
       const document = new Y.Doc({ gc: false });
@@ -317,13 +318,20 @@ export function branchTreeCommands(
       const tab = new Y.Doc({ gc: false });
       Y.applyUpdate(tab, Y.encodeStateAsUpdate(document));
       edit(tab);
-      await sync.admitLiveWriterUpdate({
-        documentId,
-        document,
-        update: Y.encodeStateAsUpdate(tab, Y.encodeStateVector(document)),
-        origin: { type: "user", userId },
-        expectedGeneration: await sync.currentLiveGeneration(documentId),
-      });
+      hocuspocus.documents.set(documentId, document as never);
+      try {
+        await sync.admitLiveWriterUpdate({
+          documentId,
+          document,
+          update: Y.encodeStateAsUpdate(tab, Y.encodeStateVector(document)),
+          origin: { type: "user", userId },
+          expectedGeneration: await sync.currentLiveGeneration(documentId),
+        });
+      } finally {
+        hocuspocus.documents.delete(documentId);
+        document.destroy();
+        tab.destroy();
+      }
     },
   };
 

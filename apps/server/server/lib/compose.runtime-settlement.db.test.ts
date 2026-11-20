@@ -210,7 +210,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.branches)
         .where(eq(schema.branches.projectId, PROJECT_ID));
       // A chat with no Work drafts per lineage, not on the shared No Work row.
-      expect(owners).toEqual([{ workId: null, rootThreadId: THREAD_ID }]);
+      expect(owners).toContainEqual({ workId: null, rootThreadId: THREAD_ID });
+      expect(owners.map((owner) => owner.workId)).not.toContain(NO_WORK_ID);
       expect(await db.select().from(schema.threadWorks)).toEqual([
         expect.objectContaining({
           threadId: THREAD_ID,

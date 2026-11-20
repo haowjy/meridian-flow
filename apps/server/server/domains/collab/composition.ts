@@ -269,6 +269,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const agentEditRouter = createAgentEditRouter({
     liveUtilityCore: runtime.liveUtilityCore,
     workView: runtime.workView,
+    branches: workBranches,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);

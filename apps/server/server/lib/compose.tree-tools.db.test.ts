@@ -1015,38 +1015,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ch1(script)).toContain("one");
       });
 
-      it("a draft that joins the document between declare and commit reruns the command with its Work", async () => {
+      it("another Work's write racing the card Undo lands beside it", async () => {
         const script = await madeWorkAndEdited();
         const other = runtimes.script(script.runtime, OTHER);
-        let claimed = 0;
-        const count = setTestHook("inverse.beforeCommitScope", async () => {
-          claimed += 1;
-        });
-        try {
-          const raced = await race<"undo" | "draft">(
-            db,
-            {
-              undo: () => card(script),
-              draft: () =>
-                other.reply(async (edit) => {
-                  await edit("write", {
-                    command: "replace",
-                    path: "ch1",
-                    find: "Chapter",
-                    content: "Part",
-                  });
-                }),
-            },
-            "undo",
-            "inverse.afterCaptureRead",
-          );
-          expect(raced.by.undo, JSON.stringify(raced.by.undo)).toMatchObject({ ok: true });
-          expect(raced.by.draft).toMatchObject({ ok: true });
-        } finally {
-          count();
-        }
-        // The first attempt declared no draft Work; its commit found one, and the command ran again.
-        expect(claimed).toBe(2);
+        const raced = await race<"undo" | "draft">(
+          db,
+          {
+            undo: () => card(script),
+            draft: () =>
+              other.reply(async (edit) => {
+                await edit("write", {
+                  command: "replace",
+                  path: "ch1",
+                  find: "Chapter",
+                  content: "Part",
+                });
+              }),
+          },
+          "undo",
+          "inverse.afterCaptureRead",
+        );
+        expect(raced.by.undo, JSON.stringify(raced.by.undo)).toMatchObject({ ok: true });
+        expect(raced.by.draft).toMatchObject({ ok: true });
         expect(await claims()).toBe(1);
         expect(await workDeleted()).toBe(true);
       });

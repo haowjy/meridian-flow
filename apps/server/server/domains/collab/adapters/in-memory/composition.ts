@@ -88,6 +88,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
   const agentEdit = createAgentEditRouter({
     liveUtilityCore: runtime.liveUtilityCore,
     workView: runtime.workView,
+    branches,
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({

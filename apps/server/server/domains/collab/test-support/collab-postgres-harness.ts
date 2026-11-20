@@ -317,6 +317,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const agentEditRouter = createAgentEditRouter({
     liveUtilityCore: runtime.liveUtilityCore,
     workView: runtime.workView,
+    branches: workBranches,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -513,12 +514,14 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       hocuspocus.broadcasts.length = 0;
     },
     liveMarkdown: (documentId: DocumentId) =>
-      liveCoordinator.withDocument(documentId, async (doc) => serializeMarkdown(doc)),
+      liveCoordinator.withDocument(documentId, async (doc) =>
+        serializeMarkdown(doc, runtime.model),
+      ),
     liveUpdateCount: async () => (await db.select().from(schema.documentYjsUpdates)).length,
   };
 }
 
-function serializeMarkdown(doc: Y.Doc, view: typeof model = model): string {
+function serializeMarkdown(doc: Y.Doc, view: typeof model): string {
   const nodes = view.projectBlocks(toDocHandle(doc)).map((block) => block.node);
   return nodes.length === 0 ? "" : markupCodec.serialize(nodes, UNSCOPED_DOCUMENT_LINKS);
 }

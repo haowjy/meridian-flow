@@ -93,8 +93,9 @@ describe("inverse integration (postgres)", () => {
       ["red", "gold"],
       ["blue", "azure"],
     ]);
-    expect(await pressDriver(fixture.collab.presses).discardAll()).toMatchObject({
+    expect(await pressDriver(fixture.collab.presses).discard(ALPHA_ID)).toMatchObject({
       status: "pressed",
+      items: [{ node: ALPHA_ID, text: true }],
     });
     const outcome = await fixture.collab.reverseTurn({
       threadId: THREAD_ID,

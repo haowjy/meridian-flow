@@ -73,12 +73,16 @@ export function createAgentEditRuntime(input: {
       ? codec
       : createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, filetype));
   };
-  const liveCoreOver = (coreModel: YProsemirrorDocumentModel) =>
+  const liveCoreOver = (coreModel: YProsemirrorDocumentModel, work: string | null) =>
     createAgentEditCore({
       links: createScopedDocumentLinks({
         scopes: input.links,
         registrar: input.aheadRefs,
-        viewFor: liveViewFor,
+        // A Work's links spell in its tree, which its caller names.
+        viewFor: work
+          ? (_documentId, context) => context?.linkView ?? { kind: "live" }
+          : liveViewFor,
+        work,
       }),
       journal: input.journal,
       documentEdits: input.documentEdits,
@@ -88,10 +92,10 @@ export function createAgentEditRuntime(input: {
       model: coreModel,
       ...input.observability,
     });
-  const liveUtilityCore = asLiveAgentEditCore(liveCoreOver(model));
+  const liveUtilityCore = asLiveAgentEditCore(liveCoreOver(model, null));
   const workView: WorkViews = {
     model: (work) => suggestingModel(storedModel, { work }, null),
-    core: (work, author) => liveCoreOver(suggestingModel(storedModel, { work }, author)),
+    core: (work, author) => liveCoreOver(suggestingModel(storedModel, { work }, author), work),
   };
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({

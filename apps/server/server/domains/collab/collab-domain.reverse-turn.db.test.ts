@@ -5,7 +5,7 @@
  * - the certified projection as the sole publisher of stored Markdown
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
@@ -125,6 +125,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
+      const [responseA, responseB] = [
+        "00000000-0000-4000-8000-0000000007a1",
+        "00000000-0000-4000-8000-0000000007a2",
+      ];
+      await db.insert(modelResponses).values(
+        [
+          [responseA, TURN_ID],
+          [responseB, TURN_2_ID],
+        ].map(([id, turnId]) => ({
+          id: id as never,
+          turnId: turnId as never,
+          sequence: 0,
+          provider: "mock",
+          model: "mock",
+          requestMessageCount: 0,
+          predictedCacheState: "cold" as const,
+          predictedCacheReason: "facts_unavailable" as const,
+        })),
+      );
 
       await expect(
         modelWrite(
@@ -138,11 +157,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            grant: testFileGrant(DRAFT_DESTINATION),
+            grant: testFileGrant(DRAFT_DESTINATION, DOC_ID),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseIdentity: {
-              modelResponseId: "response-reused-provider-tool-id-db-a",
+              modelResponseId: responseA,
             },
           },
           { accountId: USER_ID, projectId: PROJECT_ID },
@@ -161,11 +180,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            grant: testFileGrant(DRAFT_DESTINATION),
+            grant: testFileGrant(DRAFT_DESTINATION, DOC_ID),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
             responseIdentity: {
-              modelResponseId: "response-reused-provider-tool-id-db-b",
+              modelResponseId: responseB,
             },
           },
           { accountId: USER_ID, projectId: PROJECT_ID },
@@ -173,10 +192,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "success" });
 
       const rows = await db
-        .select({ id: documentEdits.id })
+        .select({ responseId: documentEdits.responseId, toolCallId: documentEdits.toolCallId })
         .from(documentEdits)
-        .where(eq(documentEdits.documentId, DOC_ID as never));
-      expect(rows).toHaveLength(2);
+        .where(
+          and(eq(documentEdits.documentId, DOC_ID as never), eq(documentEdits.actor, "agent")),
+        );
+      expect(rows.map((row) => row.responseId).sort()).toEqual([responseA, responseB]);
     });
   });
 }

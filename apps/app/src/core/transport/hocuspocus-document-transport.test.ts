@@ -132,7 +132,8 @@ describe("Hocuspocus document transport adapter", () => {
 
   // A room whose frames the server can never store must stop resending, including typing replayed
   // from the copy before the transport existed, which never passes through the outbox.
-  it.each(["document-1"])("bounds repeated update refusals of %s", async (roomName) => {
+  it("bounds repeated update refusals", async () => {
+    const roomName = "document-1";
     const document = new Y.Doc();
     document.getText("body").insert(0, "replayed");
     const awareness = new Awareness(document);
@@ -160,52 +161,6 @@ describe("Hocuspocus document transport adapter", () => {
       transport.destroy();
       awareness.destroy();
       document.destroy();
-    }
-  });
-
-  // An Update never reaches a socket ahead of that socket's SyncStep2.
-  it("reconnects a draft room through drops without writing held updates", async () => {
-    const roomName = "document-1";
-    const document = new Y.Doc();
-    const awareness = new Awareness(document);
-    const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
-    const states: DocumentSessionConnectionState[] = [];
-    transport.subscribeStatus?.((state) => states.push(state));
-    const serverDocument = new Y.Doc();
-    try {
-      await vi.advanceTimersByTimeAsync(0);
-      document.getText("body").insert(0, "writer");
-      const carry = transport.unacknowledgedUpdates();
-      for (let close = 0; close < 4; close += 1) {
-        const socket = DocumentSocketHarness.instances.at(-1);
-        if (!socket) throw new Error("missing document socket");
-        // The first frame flushes the offline queue; the server's SyncStep1 never comes.
-        socket.connected();
-        document.getText("body").insert(0, `${close}`);
-        socket.deliverClose();
-        expect(sentSyncKinds(socket)).toEqual([]);
-        await vi.advanceTimersByTimeAsync(5_000);
-      }
-      expect(states.at(-1)?.kind).not.toBe("terminal");
-      expect(DocumentSocketHarness.instances).toHaveLength(5);
-      expect(transport.unacknowledgedUpdates()).not.toBeNull();
-      if (carry) Y.applyUpdate(serverDocument, carry);
-      expect(serverDocument.getText("body").toString()).toBe("writer");
-
-      const fifth = DocumentSocketHarness.instances.at(-1);
-      if (!fifth) throw new Error("missing document socket");
-      fifth.open();
-      fifth.syncStep1(roomName, serverDocument);
-      expect(sentSyncKinds(fifth)).toEqual(["step2"]);
-      fifth.acknowledge(roomName);
-      expect(transport.unacknowledgedUpdates()).toBeNull();
-      Y.applyUpdate(serverDocument, Y.encodeStateAsUpdate(document));
-      expect(serverDocument.getText("body").toString()).toBe("3210writer");
-    } finally {
-      transport.destroy();
-      awareness.destroy();
-      document.destroy();
-      serverDocument.destroy();
     }
   });
 

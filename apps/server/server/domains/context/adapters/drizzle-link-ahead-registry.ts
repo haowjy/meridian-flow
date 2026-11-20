@@ -9,7 +9,7 @@ import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, documentLinks, linkAheadRefs, works } from "@meridian/database/schema";
+import { documentLinks, documents, linkAheadRefs } from "@meridian/database/schema";
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -33,13 +33,13 @@ import {
   RegistrationInsideTransactionError,
   UnregistrableAheadRefError,
 } from "../ports/link-ahead-registry.js";
-import { ownerColumns, ownerFrom, sourceOwnerProjectId } from "../tree/source-owner.js";
+import { ownerColumns, ownerFrom } from "../tree/source-owner.js";
 import {
   type DocumentCoordinates,
   loadDocumentAddresses,
   presentSourceId,
 } from "../tree/tree-addresses.js";
-import { createTreeReader, LIVE_TREE, visibleDocuments } from "../tree/tree-view.js";
+import { createTreeReader, LIVE_TREE } from "../tree/tree-view.js";
 import { assertNamespaceKeysHeld, lockNamespaceKeys } from "./context-fs/document-locations.js";
 import {
   resolveCanonicalAddress,
@@ -257,21 +257,20 @@ export class DrizzleLinkAheadRegistry implements LinkAheadRegistry {
     page: AheadRecoveryPage,
   ): Promise<AheadRecoveryProgress> {
     if (isInDrizzleTransaction()) throw new RegistrationInsideTransactionError();
-    const documents = visibleDocuments(LIVE_TREE);
+    // Any view's document: a link typed in a document only a Work has registers as well.
     const pending = await this.db
       .selectDistinctOn([documentLinks.aheadId], {
         aheadId: documentLinks.aheadId,
         address: documentLinks.address,
-        holderProjectId: sql<ProjectId | null>`${sourceOwnerProjectId}`,
-        holderUserId: contextSources.userId,
+        holderProjectId: documents.projectId,
+        holderUserId: documents.userId,
       })
       .from(documentLinks)
       .innerJoin(documents, eq(documents.id, documentLinks.sourceDocumentId))
-      .innerJoin(contextSources, eq(contextSources.id, documents.contextSourceId))
-      .leftJoin(works, eq(works.id, contextSources.workId))
       .leftJoin(linkAheadRefs, eq(linkAheadRefs.aheadId, documentLinks.aheadId))
       .where(
         and(
+          isNull(documents.inNoViewSince),
           isNotNull(documentLinks.aheadId),
           isNotNull(documentLinks.address),
           isNull(linkAheadRefs.aheadId),

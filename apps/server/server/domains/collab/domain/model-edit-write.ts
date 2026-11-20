@@ -95,22 +95,30 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
             turn,
             by: "agent",
           });
-    return core.write(command, { ...given, linkView: { kind: "live" }, documentVersion: "live" });
+    const linkView = await deps.branches.viewForOwner(owner);
+    return core.write(command, { ...given, linkView, documentVersion: "live" });
   }
 
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
     const { grant, ...given } = routed;
     const documentId = documentIdFromCommand(command);
     return runInLockedWrite(async () => {
-      // An inverse takes its own locks in the turn-inverse service; its receipts name where the
-      // edits landed, so the live core serves it in either destination.
+      // An inverse takes its own locks in the turn-inverse service. A drafted one reads its echo
+      // in the Work's view, where the suggestions it took back show.
       if (command.command === "undo" || command.command === "revert") {
-        const linkView: LinkView =
-          grant.destination.kind === "live"
-            ? { kind: "live" }
-            : await deps.branches.viewForOwner(grant.destination.owner);
+        const drafted = grant.destination.kind === "live" ? null : grant.destination.owner;
+        const linkView: LinkView = drafted
+          ? await deps.branches.viewForOwner(drafted)
+          : { kind: "live" };
+        const core = drafted
+          ? deps.workView.core(draftOwnerKey(drafted), {
+              chat: given.threadId ?? null,
+              turn: given.turnId ?? null,
+              by: "agent",
+            })
+          : deps.liveCore;
         return runWithInversePrincipal(grant.principal, () =>
-          deps.liveCore.write(command, {
+          core.write(command, {
             ...given,
             linkView,
             documentVersion: grant.destination.kind,

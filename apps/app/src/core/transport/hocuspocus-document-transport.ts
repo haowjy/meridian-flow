@@ -31,7 +31,6 @@
  * reconnects and resends, as any close does; after `MAX_UPDATE_REFUSALS` in a row with
  * no acknowledgement between them, the room ends `UPDATES_REFUSED` instead of
  * resending forever, and the session's owner replaces it (`DocumentSession.holdsUndeliverableEdits`).
-
  */
 import {
   HocuspocusProvider,

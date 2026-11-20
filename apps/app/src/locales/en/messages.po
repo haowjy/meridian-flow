@@ -377,8 +377,8 @@ msgid "{count, plural, one {# more} other {# more}}"
 msgstr "{count, plural, one {# more} other {# more}}"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
-msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
-msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
+#~ msgid "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
+#~ msgstr "{count, plural, one {# paragraph removed} other {# paragraphs removed}}"
 
 #: src/features/agents/PackageSave.tsx
 msgid "{count, plural, one {# problem} other {# problems}}"
@@ -798,8 +798,8 @@ msgstr "{unavailable, plural, one {# unavailable} other {# unavailable}}"
 #~ msgstr "{who} discarded this document from the draft"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
-msgid "{words, plural, one {# word removed} other {# words removed}}"
-msgstr "{words, plural, one {# word removed} other {# words removed}}"
+#~ msgid "{words, plural, one {# word removed} other {# words removed}}"
+#~ msgstr "{words, plural, one {# word removed} other {# words removed}}"
 
 #: src/features/editor/WordCount.tsx
 msgid "{words, plural, one {# word} other {# words}}"
@@ -1250,7 +1250,6 @@ msgid "Back to all Work"
 msgstr "Back to all Work"
 
 #: src/features/draft-review/ReviewCompletion.tsx
-#: src/features/editor/EditorView.tsx
 msgid "Back to live"
 msgstr "Back to live"
 
@@ -1524,12 +1523,12 @@ msgid "Changes"
 msgstr "Changes"
 
 #: src/features/draft-review/DocumentChangeRows.tsx
-msgid "Changes couldn’t load"
-msgstr "Changes couldn’t load"
+#~ msgid "Changes couldn’t load"
+#~ msgstr "Changes couldn’t load"
 
 #: src/features/chat/DraftDock.tsx
-msgid "Changes couldn't load."
-msgstr "Changes couldn't load."
+#~ msgid "Changes couldn't load."
+#~ msgstr "Changes couldn't load."
 
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Changes couldn’t load."
@@ -1711,7 +1710,6 @@ msgstr "Clipboard unavailable"
 #: src/components/app/ViewerDialog.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
-#: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 #: src/features/project/mobile/MobileSideSheetHeader.tsx
@@ -2001,7 +1999,6 @@ msgstr "Copying from {source} into"
 msgid "Couldn't add the connection."
 msgstr "Couldn't add the connection."
 
-#: src/features/draft-review/draft-command-owner.ts
 #: src/features/suggestion-review/usePressCommands.ts
 msgid "Couldn't apply"
 msgstr "Couldn't apply"
@@ -2079,7 +2076,6 @@ msgstr "Couldn't delete {title}"
 msgid "Couldn't delete that Work"
 msgstr "Couldn't delete that Work"
 
-#: src/features/draft-review/draft-command-owner.ts
 #: src/features/suggestion-review/usePressCommands.ts
 msgid "Couldn't discard"
 msgstr "Couldn't discard"
@@ -2230,8 +2226,8 @@ msgid "Couldn't open"
 msgstr "Couldn't open"
 
 #: src/features/editor/EditorView.tsx
-msgid "Couldn't open review mode."
-msgstr "Couldn't open review mode."
+#~ msgid "Couldn't open review mode."
+#~ msgstr "Couldn't open review mode."
 
 #: src/features/project/context/ContextDocumentHost.tsx
 #: src/features/project/context/DocumentHost.tsx
@@ -2437,6 +2433,7 @@ msgstr "Couldn't switch Work"
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/apply-history.ts
 #: src/features/draft-review/CommandNotice.tsx
+#: src/features/project/shell/sidebar/TrashSource.tsx
 #: src/features/suggestion-review/usePressCommands.ts
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
@@ -3295,8 +3292,8 @@ msgid "Hide changes"
 msgstr "Hide changes"
 
 #: src/core/editor/extensions/inline-review/removal-widget.ts
-msgid "Hide removed text"
-msgstr "Hide removed text"
+#~ msgid "Hide removed text"
+#~ msgstr "Hide removed text"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
@@ -5153,7 +5150,6 @@ msgstr "Results"
 #: src/features/chat/ask/AskTakeover.tsx
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/derivation/HandoffBriefCard.tsx
-#: src/features/editor/EditorView.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/project/chat/RecentChatsLanding.tsx
 #: src/features/project/context/ContextDocumentHost.tsx
@@ -5169,7 +5165,6 @@ msgstr "Results"
 msgid "Retry"
 msgstr "Retry"
 
-#: src/features/draft-review/DocumentChangeRows.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Retry changes"
 msgstr "Retry changes"
@@ -6110,7 +6105,6 @@ msgstr "This call failed."
 msgid "This cell is not merged."
 msgstr "This cell is not merged."
 
-#: src/features/editor/EditorView.tsx
 #: src/features/editor/SessionEditor.tsx
 msgid "This chapter is temporarily unavailable"
 msgstr "This chapter is temporarily unavailable"
@@ -6548,8 +6542,8 @@ msgid "Undo switch to draft mode"
 msgstr "Undo switch to draft mode"
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Undoing Apply"
-msgstr "Undoing Apply"
+#~ msgid "Undoing Apply"
+#~ msgstr "Undoing Apply"
 
 #: src/features/chat/command-descriptor.ts
 #: src/features/chat/TurnEditsReceipt.tsx
@@ -6616,7 +6610,6 @@ msgstr "Untitled chat"
 
 #: src/features/chat/document-display-name.ts
 #: src/features/draft-review/tree-line.ts
-#: src/features/draft-review/useWorkBranchCommands.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Untitled document"

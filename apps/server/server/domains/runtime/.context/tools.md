@@ -158,7 +158,7 @@ with it. A command that refuses stores nothing (the effect's savepoint rolls bac
 `SourceTree.run` drops what `make` wrote). In a draft-mode chat the
 records are the Work's branch's and live is untouched until the user applies them; Scratch
 and upload content stays live while its placement can be drafted
-(`collab/.context/apply.md`). Skills retain Mars
+(`collab/.context/press.md`). Skills retain Mars
 filenames while `skills://` exposes the document codec's names.
 
 Command details the model sees:

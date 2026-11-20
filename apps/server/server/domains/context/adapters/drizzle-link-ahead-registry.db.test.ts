@@ -277,6 +277,7 @@ if (!RUN) {
           scopes: createTestDocumentLinkScopes(db),
           registrar: registry,
           viewFor: () => ({ kind: "live" }),
+          work: null,
         });
         const minted = crypto.randomUUID();
         await links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]);

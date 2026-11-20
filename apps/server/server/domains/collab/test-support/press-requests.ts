@@ -42,7 +42,6 @@ export function pressDriver(
   return {
     apply: (documentId: string) => press("apply", [{ node: documentId }]),
     discard: (documentId: string) => press("discard", [{ node: documentId }]),
-    discardAll: () => press("discard", "all"),
     undo: (pressCommandId: CommandId) =>
       presses.undo({
         envelope: pressEnvelope("unpress", userId, { pressCommandId }),

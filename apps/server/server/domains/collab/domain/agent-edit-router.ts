@@ -5,6 +5,7 @@ import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { LiveAgentEditCore, RoutedReadContext } from "./agent-edit-cores.js";
 import type { WorkViews } from "./agent-edit-runtime.js";
+import type { Branches } from "./branches.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
 
 export type AgentEditRouter = {
@@ -17,6 +18,8 @@ export function createAgentEditRouter(input: {
   liveUtilityCore: LiveAgentEditCore;
   /** A drafted read is Live through the Work's view. */
   workView: WorkViews;
+  /** Its links spell in the Work's tree. */
+  branches: Pick<Branches, "viewForOwner">;
 }): AgentEditRouter {
   return {
     async read(command, routed) {
@@ -32,7 +35,7 @@ export function createAgentEditRouter(input: {
           })
           .read(command, {
             ...context,
-            linkView: { kind: "live" },
+            linkView: await input.branches.viewForOwner(destination.owner),
             documentVersion: "live",
             ...(command.format === "edits" ? { frontiers: undefined } : {}),
           });

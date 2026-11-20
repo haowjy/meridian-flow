@@ -5,7 +5,7 @@
  */
 import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
 import { type LinkView, parseLinkRef } from "@meridian/contracts";
-import { documentRevision } from "./document-revision.js";
+import { documentRevision, viewRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -14,6 +14,8 @@ export function createScopedDocumentLinks(input: {
   registrar: AheadRefRegistrar;
   /** The view a command on this document reads and writes in. */
   viewFor(documentId: string, context: WriteContext | undefined): LinkView;
+  /** The Work whose view of Live the core reads; null for Live's. */
+  work: string | null;
 }): DocumentLinksPort {
   const { scopes } = input;
   const holder = (documentId: string, context: WriteContext | undefined) => ({
@@ -39,7 +41,7 @@ export function createScopedDocumentLinks(input: {
       if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
       else await input.registrar.register(registrations);
     },
-    revision: documentRevision,
+    revision: (doc, scope) => viewRevision(documentRevision(doc, scope), input.work),
   };
 }
 
