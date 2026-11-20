@@ -11,17 +11,13 @@
 import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import {
   type Author,
-  accept,
+  type Authors,
   blockKind,
   CHANGE_META,
   type ChangeAt,
   DROPPED_META,
-  type Filter,
   newChangeId,
-  pendingTurns,
-  pendingWorks,
   type Run,
-  reject,
   rewrite,
   runs,
   type SuggestionAttrs,
@@ -35,11 +31,12 @@ import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
 import type { BlockRef } from "../handles.js";
-import { unwrapBlock } from "../handles.js";
+import { unwrapBlock, unwrapDoc } from "../handles.js";
 import type { EditOp, EditOpsResult } from "../ports/model.js";
 import { lowerBlock } from "../resolver/lower-block.js";
 import { getTopLevelXmlBlocks } from "./block-hash.js";
 import { readRepairedRoot } from "./schema-repair.js";
+import { suggestionAuthors } from "./stored-suggestions.js";
 import {
   applyOps as applyRawOps,
   fragmentOf,
@@ -96,7 +93,7 @@ export function suggestingModel(
         written(unwrapBlock(block));
         return applied;
       }
-      const out = rewritten(before, ops, view, author, schema);
+      const out = rewritten(before, ops, view, author, authorsOf(block), schema);
       if (typeof out === "string") return refused(out);
       const applied = applyRawOps(unwrapBlock(block), lowerBlock(before, out.node));
       written(unwrapBlock(block), out.node);
@@ -106,11 +103,11 @@ export function suggestingModel(
 
     insertBlocks(doc, after, parsed) {
       if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
-      const sug = (after && tails.get(unwrapBlock(after))) ?? {
-        ...author,
-        work: view.work,
-        id: newChangeId(),
-      };
+      let sug = after && tails.get(unwrapBlock(after));
+      if (!sug) {
+        sug = { id: newChangeId(), work: view.work };
+        suggestionAuthors(unwrapDoc(doc)).set(sug.id, author);
+      }
       if (after) tails.delete(unwrapBlock(after));
       return base.insertBlocks(doc, after, {
         ...parsed,
@@ -130,7 +127,7 @@ export function suggestingModel(
         schema,
         doc: schema.topNodeType.create(null, [node, rest]),
       });
-      const out = rewrite(state.tr.delete(0, node.nodeSize), state, view, author);
+      const out = rewrite(state.tr.delete(0, node.nodeSize), state, view, author, authorsOf(block));
       // The view's own block this turn wrote is no suggestion to keep: it goes.
       if (out.doc.childCount === 1) {
         base.deleteBlock(doc, block);
@@ -141,6 +138,10 @@ export function suggestingModel(
       written(unwrapBlock(block), after);
     },
   };
+
+  function authorsOf(block: BlockRef): Authors {
+    return suggestionAuthors(unwrapBlock(block).doc as Y.Doc);
+  }
 
   function refused(message: string): EditOpsResult {
     return { ok: false, code: "invalid_write", message: `Cannot apply: ${message}` };
@@ -159,6 +160,7 @@ function rewritten(
   ops: readonly EditOp[],
   view: View,
   author: Author | null,
+  authors: Authors,
   schema: Schema,
 ): { node: PMNode; endChange: SuggestionAttrs | null } | string {
   const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
@@ -204,7 +206,7 @@ function rewritten(
       }
     }
   }
-  const out = rewrite(tr, state, view, author);
+  const out = rewrite(tr, state, view, author, authors);
   if (out.getMeta(DROPPED_META)) return "part of the write cannot be suggested here";
   if (out.doc.childCount !== 1) return "the write does not fit the block";
   const changes = (out.getMeta(CHANGE_META) as ChangeAt[] | undefined) ?? [];
@@ -316,141 +318,4 @@ function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
     nodes.set(element, node);
   }
   return node;
-}
-
-/**
- * Accept or reject a stored document's suggestions, as a client of the document would. Neither
- * adds a block: each one is kept, changed in place or removed, and a changed one is lowered
- * alone, so only the words and marks the verdict settles are written. Call inside one
- * transaction; returns whether anything changed.
- */
-export function resolveStored(
-  doc: Y.Doc,
-  schema: Schema,
-  verdict: "accept" | "reject",
-  filter: Filter,
-): boolean {
-  const root = storedRoot(doc, schema);
-  const state = EditorState.create({ schema, doc: root });
-  const tr = (verdict === "accept" ? accept : reject)(state, filter);
-  if (!tr.docChanged) return false;
-  const fragment = fragmentOf(doc);
-  // Read after `storedRoot`: converting the fragment deletes the elements it cannot convert, so
-  // the elements left pair with the root's children by index.
-  const elements = getTopLevelXmlBlocks(doc);
-  const starts: number[] = [];
-  root.forEach((_, offset) => {
-    starts.push(offset);
-  });
-  for (let index = elements.length - 1; index >= 0; index--) {
-    const before = root.child(index);
-    // A removed block maps to one point; a kept one to the block it became.
-    const from = tr.mapping.map(starts[index], 1);
-    const to = tr.mapping.map(starts[index] + before.nodeSize, -1);
-    if (to <= from) fragment.delete(fragment.toArray().indexOf(elements[index]), 1);
-    else {
-      const after = tr.doc.nodeAt(from) as PMNode;
-      if (after.eq(before)) continue;
-      const applied = applyRawOps(elements[index], lowerBlock(before, after));
-      if (!applied.ok) throw new Error(applied.message);
-    }
-  }
-  return true;
-}
-
-/** The turns whose suggestions a stored document still holds; one read per document state. */
-export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
-  let turns = pendingByDoc.get(doc);
-  if (!turns) {
-    turns = pendingTurns(storedRoot(doc, schema));
-    pendingByDoc.set(doc, turns);
-    doc.once("afterTransaction", () => pendingByDoc.delete(doc));
-  }
-  return turns;
-}
-
-const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
-
-/** Yjs item ids by client, as `[clock, len]` runs in clock order. */
-export type IdRanges = Record<string, [number, number][]>;
-
-/** What a press's one transaction did to a stored document: all a Yjs undo of it needs. */
-export type PressRecord = { insertions: IdRanges; deletions: IdRanges };
-
-/**
- * A press's text half: `resolveStored` as one transaction of its own, and the ids that transaction
- * inserted and deleted. Null when nothing changed.
- */
-export function pressStored(
-  doc: Y.Doc,
-  schema: Schema,
-  verdict: "accept" | "reject",
-  filter: Filter,
-): PressRecord | null {
-  const origin = Symbol("press");
-  const recorder = new Y.UndoManager(fragmentOf(doc), {
-    trackedOrigins: new Set([origin]),
-    captureTimeout: Number.POSITIVE_INFINITY,
-  });
-  try {
-    let changed = false;
-    doc.transact(() => {
-      changed = resolveStored(doc, schema, verdict, filter);
-    }, origin);
-    const item = recorder.undoStack[0];
-    return changed && item
-      ? { insertions: rangesOf(item.insertions), deletions: rangesOf(item.deletions) }
-      : null;
-  } finally {
-    recorder.destroy();
-  }
-}
-
-/**
- * Takes a press back from its record: the Yjs undo the tab's own `UndoManager` would run. Text
- * written since stays; a change whose text was removed since does not come back. The document must
- * keep deleted items (`gc: false`) and be the authority generation the press ran on. Returns
- * whether anything changed.
- */
-export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
-  const undo = new Y.UndoManager(fragmentOf(doc), { trackedOrigins: new Set() });
-  try {
-    // Yjs 13 does not export its stack item; `undo` reads only these three fields.
-    undo.undoStack.push({
-      insertions: deleteSetOf(record.insertions),
-      deletions: deleteSetOf(record.deletions),
-      meta: new Map(),
-    } as unknown as (typeof undo.undoStack)[number]);
-    return undo.undo() !== null;
-  } finally {
-    undo.destroy();
-  }
-}
-
-type DeleteSet = ReturnType<typeof Y.createDeleteSet>;
-
-function rangesOf(set: DeleteSet): IdRanges {
-  const out: IdRanges = {};
-  for (const [client, items] of set.clients)
-    out[client] = items.map((item): [number, number] => [item.clock, item.len]);
-  return out;
-}
-
-function deleteSetOf(ranges: IdRanges): DeleteSet {
-  const set = Y.createDeleteSet();
-  for (const [client, runs] of Object.entries(ranges))
-    set.clients.set(
-      Number(client),
-      runs.map(([clock, len]) => ({ clock, len }) as never),
-    );
-  return set;
-}
-
-/** The Works whose suggestions a stored document holds: the views that read it otherwise than Live. */
-export function storedPendingWorks(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
-  return pendingWorks(storedRoot(doc, schema));
-}
-
-function storedRoot(doc: Y.Doc, schema: Schema): PMNode {
-  return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
 }

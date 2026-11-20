@@ -10,17 +10,18 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { expect, it } from "vitest";
-import { reject, rewrite, type View, viewBlock } from "./index.js";
+import { type Author, reject, rewrite, type View, viewBlock } from "./index.js";
 
 const schema = buildDocumentSchema();
 const view: View = { work: "work-1" };
+const authors = new Map<string, Author>();
 const reply = (turn: string) => ({ chat: "chat-1", turn, by: "agent" });
 const paragraph = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));
 
 function suggest(state: EditorState, turn: string, edit: (tr: Transaction) => void) {
   const tr = state.tr;
   edit(tr);
-  return state.apply(rewrite(tr, state, view, reply(turn)));
+  return state.apply(rewrite(tr, state, view, reply(turn), authors));
 }
 
 function shown(doc: Node): string[] {
@@ -47,8 +48,10 @@ it("Undo of reply 2 brings back reply 1's word in the paragraph reply 1 added", 
   );
   expect(shown(state.doc)).toEqual(["Live one is here.", "The golden boat drifts."]);
 
-  state = state.apply(reject(state, { turn: "turn-2" }));
+  state = state.apply(reject(state, { turn: "turn-2" }, authors));
 
   expect(shown(state.doc)).toEqual(["Live one is here.", "The silver boat drifts."]);
-  expect(shown(state.apply(reject(state, { turn: "turn-1" })).doc)).toEqual(["Live one is here."]);
+  expect(shown(state.apply(reject(state, { turn: "turn-1" }, authors)).doc)).toEqual([
+    "Live one is here.",
+  ]);
 });

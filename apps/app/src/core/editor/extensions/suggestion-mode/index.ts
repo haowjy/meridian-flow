@@ -1,4 +1,5 @@
 export {
+  authorsIn,
   SuggestionModeExtension,
   shownText,
   suggestionModeEnabled,

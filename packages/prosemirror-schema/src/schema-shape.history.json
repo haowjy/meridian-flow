@@ -1332,7 +1332,7 @@
       "minor": 2,
       "patch": 0
     },
-    "compatibilityNote": "Adds suggestion mode: the `suggest_ins`, `suggest_del` and `comment` marks (all with defaults, overlapping) and the `sug` block attribute (default null). Additive: no stored content changes meaning. A 3.1 client must not edit a 3.2 head, since its binding would delete marks it cannot build; the minor fence already refuses it.",
+    "compatibilityNote": "Adds suggestion mode: the `suggest_ins` and `suggest_del` marks (`{ id, work }`; who wrote a change is kept once per change in the document's `suggestion_authors` map), the `comment` mark (all with defaults, overlapping) and the `sug` block attribute (default null). Additive: no stored content changes meaning. A 3.1 client must not edit a 3.2 head, since its binding would delete marks it cannot build; the minor fence already refuses it.",
     "surface": {
       "fragmentName": "prosemirror",
       "nodes": {
@@ -1767,19 +1767,7 @@
         },
         "suggest_del": {
           "attrs": {
-            "by": {
-              "hasDefault": true,
-              "default": null
-            },
-            "chat": {
-              "hasDefault": true,
-              "default": null
-            },
             "id": {
-              "hasDefault": true,
-              "default": null
-            },
-            "turn": {
               "hasDefault": true,
               "default": null
             },
@@ -1792,19 +1780,7 @@
         },
         "suggest_ins": {
           "attrs": {
-            "by": {
-              "hasDefault": true,
-              "default": null
-            },
-            "chat": {
-              "hasDefault": true,
-              "default": null
-            },
             "id": {
-              "hasDefault": true,
-              "default": null
-            },
-            "turn": {
               "hasDefault": true,
               "default": null
             },
@@ -2287,19 +2263,7 @@
         },
         "suggest_del": {
           "attrs": {
-            "by": {
-              "hasDefault": true,
-              "default": null
-            },
-            "chat": {
-              "hasDefault": true,
-              "default": null
-            },
             "id": {
-              "hasDefault": true,
-              "default": null
-            },
-            "turn": {
               "hasDefault": true,
               "default": null
             },
@@ -2312,19 +2276,7 @@
         },
         "suggest_ins": {
           "attrs": {
-            "by": {
-              "hasDefault": true,
-              "default": null
-            },
-            "chat": {
-              "hasDefault": true,
-              "default": null
-            },
             "id": {
-              "hasDefault": true,
-              "default": null
-            },
-            "turn": {
               "hasDefault": true,
               "default": null
             },
