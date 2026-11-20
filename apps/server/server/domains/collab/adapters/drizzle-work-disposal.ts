@@ -7,7 +7,7 @@
  * Its drafted creates are in no view afterwards and retention purges them.
  */
 import { dropWork, type UpdateJournal } from "@meridian/agent-edit/integration";
-import { type DraftOwnerKey, draftOwnerKey, type WorkId } from "@meridian/contracts";
+import { type BranchId, type DraftOwnerKey, draftOwnerKey, type WorkId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentBlockRooms, documents, works } from "@meridian/database/schema";
@@ -47,13 +47,12 @@ export function createDrizzleWorkBranchDisposal(
   }
 
   /**
-   * The owners' suggestions out of every document the pending index lists for them. The index
-   * lags a document's derivation by seconds, and an owner purged 30 days after its delete writes
-   * nothing in that time.
+   * The documents whose suggestions the pending index lists for the owners. The index lags a
+   * document's derivation by seconds, and an owner purged 30 days after its delete writes nothing
+   * in that time.
    */
-  async function dropText(workId: WorkId, owners: readonly DraftOwnerKey[]): Promise<void> {
-    const tx = currentDrizzleDb(db);
-    const held = await tx
+  async function heldBy(owners: readonly DraftOwnerKey[]) {
+    return currentDrizzleDb(db)
       .select({ id: documents.id, projectId: documents.projectId, userId: documents.userId })
       .from(documentBlockRooms)
       .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
@@ -63,43 +62,30 @@ export function createDrizzleWorkBranchDisposal(
           sql`, `,
         )}]::text[]`,
       );
-    if (held.length === 0) return;
-    const [work] = await tx
-      .select({ projectId: works.projectId })
-      .from(works)
-      .where(eq(works.id, workId));
-    // The lists before the documents (the press's lock order): purge writes the project's list next.
-    const lists = new Map<string, TreeList>();
-    for (const projectId of [work?.projectId, ...held.map((row) => row.projectId)])
-      if (projectId)
-        lists.set(`p:${projectId}`, { kind: "project", projectId: projectId as ProjectId });
-    for (const { userId } of held)
-      if (userId) lists.set(`u:${userId}`, { kind: "account", userId: userId as UserId });
-    await deps.treeLists.lock([...lists.values()]);
-    const ids = [...new Set(held.map((row) => row.id as DocumentId))].sort();
-    for (const id of ids) await lockDocumentMutation(tx, id);
-    for (const id of ids) {
-      const snapshot = await deps.live.read(id);
-      if (!snapshot.authority) continue;
-      const doc = storedDocument(snapshot);
-      try {
-        const before = Y.encodeStateVector(doc);
-        let changed = false;
-        for (const owner of owners) changed = dropWork(doc, schema, owner) || changed;
-        if (!changed) continue;
-        await deps.live.append(
-          id,
-          Y.encodeStateAsUpdate(doc, before),
-          { seq: 0, origin: "system" },
-          snapshot.authority,
-        );
-        deferUntilDrizzleCommit(async () => {
-          await deps.liveCoordinator.deliver(id);
-          await deps.onCommitted(id);
-        });
-      } finally {
-        doc.destroy();
-      }
+  }
+
+  /** The owners' suggestions out of one document, appended as nobody's edit. Its key is held. */
+  async function dropText(id: DocumentId, owners: readonly DraftOwnerKey[]): Promise<void> {
+    const snapshot = await deps.live.read(id);
+    if (!snapshot.authority) return;
+    const doc = storedDocument(snapshot);
+    try {
+      const before = Y.encodeStateVector(doc);
+      let changed = false;
+      for (const owner of owners) changed = dropWork(doc, schema, owner) || changed;
+      if (!changed) return;
+      await deps.live.append(
+        id,
+        Y.encodeStateAsUpdate(doc, before),
+        { seq: 0, origin: "system" },
+        snapshot.authority,
+      );
+      deferUntilDrizzleCommit(async () => {
+        await deps.liveCoordinator.deliver(id);
+        await deps.onCommitted(id);
+      });
+    } finally {
+      doc.destroy();
     }
   }
 
@@ -107,16 +93,43 @@ export function createDrizzleWorkBranchDisposal(
     workId: WorkId,
     lineageRootIds: readonly string[],
   ): Promise<{ releasedObjects: readonly string[] }> {
+    const owners = [
+      draftOwnerKey({ kind: "work", workId }),
+      ...lineageRootIds.map((rootThreadId) => draftOwnerKey({ kind: "lineage", rootThreadId })),
+    ];
     const owned = [
       ...(await deps.branches.byOriginWork(workId)),
       ...(await deps.branches.activeByOriginLineages(lineageRootIds as ThreadId[])),
     ];
+    const branchIds: BranchId[] = [];
     for (const branchId of owned.map((branch) => branch.id).sort())
-      if (await deps.branches.lockActive(branchId)) await disposeBranch(branchId);
-    await dropText(workId, [
-      draftOwnerKey({ kind: "work", workId }),
-      ...lineageRootIds.map((rootThreadId) => draftOwnerKey({ kind: "lineage", rootThreadId })),
-    ]);
+      if (await deps.branches.lockActive(branchId)) branchIds.push(branchId);
+    // Every list in one call, after the branches and before the documents (the press's lock
+    // order): the branches' lists, the held documents' lists, and the Work's project's list,
+    // which the purge writes next.
+    const held = await heldBy(owners);
+    const [work] = await currentDrizzleDb(db)
+      .select({ projectId: works.projectId })
+      .from(works)
+      .where(eq(works.id, workId));
+    const lists = new Map<string, TreeList>();
+    for (const branchId of branchIds)
+      for (const list of await treeListsOfBranch(db, branchId)) lists.set(listKey(list), list);
+    for (const projectId of [work?.projectId, ...held.map((row) => row.projectId)])
+      if (projectId) {
+        const list: TreeList = { kind: "project", projectId: projectId as ProjectId };
+        lists.set(listKey(list), list);
+      }
+    for (const { userId } of held)
+      if (userId) {
+        const list: TreeList = { kind: "account", userId: userId as UserId };
+        lists.set(listKey(list), list);
+      }
+    if (lists.size > 0) await deps.treeLists.lock([...lists.values()]);
+    for (const branchId of branchIds) await disposeBranch(branchId);
+    const ids = [...new Set(held.map((row) => row.id as DocumentId))].sort();
+    for (const id of ids) await lockDocumentMutation(currentDrizzleDb(db), id);
+    for (const id of ids) await dropText(id, owners);
     return { releasedObjects: [] };
   }
 
@@ -125,4 +138,8 @@ export function createDrizzleWorkBranchDisposal(
       return run((roots) => dispose(workId, roots));
     },
   };
+}
+
+function listKey(list: TreeList): string {
+  return list.kind === "project" ? `project:${list.projectId}` : `account:${list.userId}`;
 }

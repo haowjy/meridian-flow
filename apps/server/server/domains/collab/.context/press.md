@@ -47,7 +47,10 @@ quietly.
 A Work purged for good (`drizzle-work-disposal.ts`, inside the purge's transaction) has its
 branches' tree records discarded, and its suggestions, and those of the lineages the purge
 deletes, rejected in every document the pending index lists for them, with their
-`suggestion_authors` entries deleted (`dropWork`). Nothing records it: nothing can take it back.
+`suggestion_authors` entries deleted (`dropWork`). `dropWork` finds the Work's changes in the
+document's items, not in the review list, so a proposal Live has since matched goes too. Nothing
+records it: nothing can take it back. Changes the writer applied or discarded earlier keep their
+author entries: their documents are not in the index, and nothing reads the entries.
 Archive and delete leave the suggestions in place, frozen, so unarchive and restore find them, as
 drafts were.
 

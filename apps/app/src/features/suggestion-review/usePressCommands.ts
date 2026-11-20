@@ -114,11 +114,11 @@ export function usePressCommands({
      * A Discard's Undo: the press's Undo, sent through the one restore progress Trash reads too
      * (`DiscardRestores`), so a Restore from either place ends the other's.
      */
-    const undoDiscard = (commandId: string, driver: CommandDriver): DiscardUndo => ({
+    const undoDiscard = (commandId: string, sender: CommandDriver): DiscardUndo => ({
       undo: async () => ({
         landed: Promise.resolve(),
         ...(await owner.restores.restore(commandId, async () => {
-          const answer = await restorePressDiscard(driver, {
+          const answer = await restorePressDiscard(sender, {
             projectId,
             owner: ownerKey,
             pressCommandId: commandId,
