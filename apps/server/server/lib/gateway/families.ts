@@ -52,6 +52,7 @@ export const MODEL_FAMILIES: Readonly<Record<string, readonly ModelFamily[]>> = 
     { id: "luna", match: ["gpt-*-luna"] },
   ],
   deepseek: [{ id: "deepseek", match: ["deepseek-flash*"] }],
+  deepinfra: [{ id: "deepseek-test", match: ["deepseek-ai/DeepSeek-V4.1-Flash-1017"] }],
   gemini: [
     { id: "argon", match: ["gemini-4-argon*"] },
     { id: "hydrogen", match: ["gemini-4-hydrogen*"] },
