@@ -31,6 +31,7 @@ export interface TextSplice {
 export interface FormatRange {
   from: number;
   to: number;
+  /** The mark's stored key (`yjsMarkKey`): its name, or `name--<hash>` for one that may overlap. */
   mark: string;
   attrs: Record<string, unknown> | null;
 }

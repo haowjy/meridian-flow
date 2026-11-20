@@ -42,6 +42,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    changeLiveDocument: (input) =>
+      scopes.within(by(input.documentId), () => engine.changeLiveDocument(input)),
     mergeCodeText: (input) =>
       scopes.within(by(input.documentId), () => engine.mergeCodeText(input)),
     // None spells a link: a seed is encoded from bound blocks, and authority repair seeds an
