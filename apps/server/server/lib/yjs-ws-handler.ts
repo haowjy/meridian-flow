@@ -661,10 +661,16 @@ export function createHocuspocus(
           // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
           connectionConfig.readOnly = admission.access.level === "read";
           rooms.register(context.registration, admission.accessKeys);
-          // A Work change between admission and registration reached no room.
-          // Registered now, the room hears every later change; ask once more.
+          // A change between admission and registration reached no room. Registered now, the
+          // room hears every later change; ask once more, and refuse when the level or the
+          // owners the socket should be under differ (a document moved to another Work).
           const settled = await findRoomAccess(services, userId, admission.fileTarget);
-          if (settled?.access.level !== admission.access.level)
+          if (
+            !settled ||
+            settled.access.level !== admission.access.level ||
+            accessKeys(settled.facts, admission.target.documentId).join() !==
+              admission.accessKeys.join()
+          )
             refuse(accessChangedClose(closedOwnerWhy(settled?.facts)));
         });
       });

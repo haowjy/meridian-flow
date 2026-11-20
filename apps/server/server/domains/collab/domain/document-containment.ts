@@ -46,16 +46,6 @@ export function createDocumentContainment() {
   };
 }
 
-/** `update` judged against `document` once, with no cache: for a document built per call. */
-export function documentContainsUpdate(document: Y.Doc, update: Uint8Array): boolean {
-  return containedIn(
-    document,
-    Y.decodeStateVector(Y.encodeStateVector(document)),
-    () => Y.snapshot(document),
-    update,
-  );
-}
-
 /**
  * Whether applying `update` would change `document`: every struct is integrated or pending,
  * and every delete is applied or pending. Yjs holds structs whose predecessor has not arrived,

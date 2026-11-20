@@ -424,9 +424,16 @@ export function createHocuspocusPersistenceService(
         });
         throw new Error("reserved-writer-client-id");
       }
+      let novel: Uint8Array;
+      try {
+        novel = newToRoom(room, input.update);
+      } catch (cause) {
+        if (cause instanceof WriterFrameGapError) recordDroppedConnectionUpdate(input.documentId);
+        throw cause;
+      }
       const append = deps.journal.appendWriterUpdate(
         input.documentId,
-        newToRoom(room, input.update),
+        novel,
         deps.metaForOrigin(input.origin),
         authority,
       );
@@ -547,6 +554,12 @@ export function createHocuspocusPersistenceService(
   };
 }
 
+class WriterFrameGapError extends Error {
+  constructor() {
+    super("writer-frame-gap");
+  }
+}
+
 /**
  * What of `update` the room lacks. A frame that starts past the room's clock for one of its
  * clients is not storable: no later read could integrate it, so the socket closes and the
@@ -558,7 +571,7 @@ function newToRoom(room: Y.Doc, update: Uint8Array): Uint8Array {
   let overlaps = false;
   for (const [client, from] of Y.parseUpdateMeta(update).from) {
     const held = clocks.get(client) ?? 0;
-    if (from > held) throw new Error("writer-frame-gap");
+    if (from > held) throw new WriterFrameGapError();
     if (from < held) overlaps = true;
   }
   return overlaps ? Y.diffUpdate(update, stateVector) : update;

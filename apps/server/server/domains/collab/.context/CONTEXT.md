@@ -585,7 +585,7 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    key, so they follow the document keys there. A path that takes namespace keys first and then a
    document key can therefore cross with it; none does today (Apply's and a restore's settle
    under the keys they hold).
-5. The sorted document advisory keys (`lockDocumentMutation`, in ID order).
+5. The sorted document advisory keys (`lockDocumentMutation`, in ID order), each followed by that document's head row `FOR NO KEY UPDATE`, before the command reads. A keystroke takes only the head row.
 6. Writes: a list's journal append and the rows it materializes (`tree_nodes`,
    `branch_tree_nodes`, `tree_node_ids`, `documents`), then the draft rows, in ID order. Derivation
    certification takes a document key and then locks that document's `tree_nodes` row, so a path
