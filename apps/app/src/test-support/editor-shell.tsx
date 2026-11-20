@@ -11,7 +11,6 @@ import * as chrome from "@/features/editor/chrome/chrome-surfaces";
 import { EditorView } from "@/features/editor/EditorView";
 import * as references from "@/features/editor/references/useReferenceBrowserCatalog";
 import * as status from "@/features/editor/SyncStatus";
-import * as focus from "@/features/editor/useInlineReviewFocus";
 import * as links from "@/features/links";
 import * as account from "@/features/project/context/account-feature-context";
 import { ContextRemovalCoordinator } from "@/features/project/context/context-removal-coordinator";
@@ -57,7 +56,6 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
       .spyOn(links, "useLinkableDocuments")
       .mockReturnValue({ ...linkIndexOf([]), revision: "", complete: false }),
     vi.spyOn(references, "useReferenceBrowserCatalog").mockReturnValue(null),
-    vi.spyOn(focus, "useInlineReviewFocus").mockImplementation(() => {}),
     vi.spyOn(status, "SyncStatus").mockImplementation(() => null),
     vi.spyOn(chrome, "EDITOR_CHROME_SURFACES", "get").mockReturnValue([]),
   ];
@@ -75,13 +73,11 @@ export function ReviewEditorHost({
   documentId,
   projectId,
   session,
-  draftOnly,
   observe,
 }: {
   documentId: string;
   projectId: string;
   session?: DocumentSession;
-  draftOnly?: boolean;
   observe: (review: ReturnType<typeof useDraftReview>) => void;
 }) {
   const review = useDraftReview();
@@ -92,7 +88,6 @@ export function ReviewEditorHost({
       projectId={projectId}
       session={session}
       localContentReady={!!session}
-      draftOnly={draftOnly}
       reviewItemKey={review.controller.inlineReview?.itemKey}
     />
   );

@@ -111,11 +111,9 @@ export function useDocumentReview(
   const draftCommands = useDraftCommandOwner();
   const queryClient = useQueryClient();
   const reviewedItemKey = paint.draft?.itemKey ?? "";
-  const generation = () => draftCommands.generation(reviewedItemKey);
   const hidden = () => draftCommands.state(reviewedItemKey).hidden;
-  // A new generation of the item is a new port: admission retries what it refused. So is the
-  // end of a command that hid it: a refused Discard leaves the draft pending.
-  const itemGeneration = useSyncExternalStore(draftCommands.subscribe, generation, generation);
+  // The end of a press that hid the item is a new port: admission retries what it refused (a
+  // failed Discard leaves the draft pending).
   const itemHidden = useSyncExternalStore(draftCommands.subscribe, hidden, hidden);
   const enterInlineReview = value.controller.enterInlineReview;
   const port = useMemo<ReviewAdmissionPort>(
@@ -123,13 +121,10 @@ export function useDocumentReview(
       write: (review) => {
         if (documentId) setDocumentView(accountId, projectId, documentId, { pin: review });
       },
-      // A hidden draft (a Discard in flight) or a gone one (its Work or document was purged) has
-      // already ended its review: the room owner exits it. A draft-only document keeps naming it
-      // until settlement closes its tab, and admitting it again would re-open what the room
-      // owner just closed, every render.
+      // A draft a press has in flight has already left its review; admitting it again would
+      // re-open what the provider just closed, every render.
       admit: async (target) => {
-        const state = draftCommands.state(target.itemKey);
-        if (state.hidden || state.ended) return false;
+        if (draftCommands.state(target.itemKey).hidden) return false;
         enterInlineReview(target.documentId, target.itemKey);
         return true;
       },
@@ -141,7 +136,6 @@ export function useDocumentReview(
       enterInlineReview,
       draftCommands,
       queryClient,
-      itemGeneration,
       itemHidden,
     ],
   );

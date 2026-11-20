@@ -40,7 +40,7 @@ export function draftReviewReducer(
         ? state
         : { ...state, surface: { ...review, shown: action.shown } };
     case "changeFocused":
-      return review.focus?.id === action.focus?.id && review.focus?.frame === action.focus?.frame
+      return review.focus?.id === action.focus?.id
         ? state
         : { ...state, surface: { ...review, focus: action.focus } };
   }

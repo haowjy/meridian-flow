@@ -197,6 +197,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const pinMissing =
     pin !== undefined && pinList.status === "ready" && !pinListed && unlisted === null;
 
+  const queryClient = useQueryClient();
   const createsDraft = useCreatesDraft(projectId);
   const missingKey = pinMissing ? JSON.stringify([pin.ownerKey, pin.itemKey]) : null;
   useEffect(() => {

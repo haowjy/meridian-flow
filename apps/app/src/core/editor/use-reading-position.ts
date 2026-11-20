@@ -13,7 +13,7 @@ import { captureReadingPosition, restoreReadingPosition } from "./reading-positi
 import {
   markRestoredPlace,
   mayRestoreReadingPosition,
-  reportReviewEditorMounted,
+  reportEditorMounted,
 } from "./reading-position-navigation";
 import { type ReadingPosition, ReadingPositionStore } from "./reading-position-store";
 
@@ -23,7 +23,6 @@ export function useReadingPosition({
   accountId,
   documentId,
   active,
-  inReview,
   session,
   signal,
 }: {
@@ -32,8 +31,6 @@ export function useReadingPosition({
   accountId: string;
   documentId: string;
   active: boolean;
-  /** The editor shows a Draft; a review launch waits for its mount. */
-  inReview: boolean;
   session: DocumentSession;
   signal: AbortSignal;
 }): void {
@@ -63,7 +60,7 @@ export function useReadingPosition({
         }
       }
       stop = track(editor, scroller);
-      if (inReview) unreport = reportReviewEditorMounted(documentId, editor);
+      unreport = reportEditorMounted(documentId, editor);
     };
     const track = (editor: Editor, scroller: HTMLDivElement) => {
       let candidate: { place: ReadingPosition; at: number } | null = null;
@@ -110,5 +107,5 @@ export function useReadingPosition({
       stop?.();
       unreport?.();
     };
-  }, [editor, pane, store, documentId, active, inReview, session, signal]);
+  }, [editor, pane, store, documentId, active, session, signal]);
 }

@@ -64,7 +64,7 @@ export function reviewHasNoRoom(
   return item.tree?.deleted === true || (!item.hasDraft && hasTreeLine(item));
 }
 
-/** The tree line as a review row: one change with no text frame, keyed apart from text. */
+/** The tree line as a review row: one change with no text, keyed apart from text. */
 export function treeChange(
   item: Pick<ThreadDraftListItem, "itemKey">,
   line: TreeLine,
@@ -82,7 +82,6 @@ export function treeChange(
     attributed: false,
     anchor: 0,
     spans: [],
-    frame: null,
     tree: line,
     whole: true,
   };

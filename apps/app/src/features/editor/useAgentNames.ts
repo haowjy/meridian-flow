@@ -11,13 +11,10 @@ import { useEffect, useState } from "react";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { type AgentNameStore, createAgentNameStore } from "@/core/editor/agent-name-store";
 
-export function useAgentNames(
-  projectId: string | undefined,
-  options: { enabled: boolean },
-): AgentNameStore {
+export function useAgentNames(projectId: string | undefined): AgentNameStore {
   const [store] = useState(createAgentNameStore);
   const { threads } = useProjectThreads(projectId ?? "", {
-    enabled: Boolean(projectId) && options.enabled,
+    enabled: Boolean(projectId),
   });
 
   useEffect(() => {

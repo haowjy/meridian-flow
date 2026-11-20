@@ -6,9 +6,7 @@ import { draftOwnerKey } from "@meridian/contracts/branches";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   accessChangedClose,
-  encodeCaughtUpWsMessage,
   encodeReadOnlyWsMessage,
-  parseYjsClientStatelessMessage,
   parseYjsRoomName,
   WS_CLOSE,
 } from "@meridian/contracts/protocol";
@@ -531,15 +529,6 @@ export function createHocuspocus(
           )
             refuse(accessChangedClose(closedOwnerWhy(settled?.facts)));
         });
-      });
-    },
-    // `catch_up`: batched room updates go out first, so the answer never overtakes them.
-    async onStateless({ document, connection, payload }) {
-      const message = parseYjsClientStatelessMessage(payload);
-      if (!message) return;
-      return runWithEventCorrelation({ traceId: connection.context.traceId }, async () => {
-        document.flush();
-        connection.sendStateless(encodeCaughtUpWsMessage(message.id));
       });
     },
     async beforeHandleMessage({ context }) {

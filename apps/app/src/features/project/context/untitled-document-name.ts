@@ -2,7 +2,7 @@
 import { liveView, viewDoc } from "@meridian/suggestions";
 import type { JSONContent } from "@tiptap/core";
 import type * as Y from "yjs";
-import { roomContent } from "@/features/draft-review/review-frame";
+import { roomContent } from "@/core/editor/room-content";
 
 export function suggestedUntitledDocumentName(content: JSONContent): string {
   const firstBlock = content.type === "doc" ? content.content?.[0] : content;

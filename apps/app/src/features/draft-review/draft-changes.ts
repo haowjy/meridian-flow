@@ -12,11 +12,9 @@ export type ReviewChangeItem = {
 export type DraftChangesData = {
   documentId: string | null;
   itemKey: string | null;
-  /** `error`: the draft room could not be read. Never read it as "no changes". */
-  status: "idle" | "loading" | "error" | "ready" | "gone";
+  /** `gone`: the item left the list while on screen. */
+  status: "idle" | "loading" | "ready" | "gone";
   items: readonly ReviewChangeItem[];
-  /** Read the room again; present when `status` is `error`. */
-  retry?: () => void;
 };
 
 export type DraftChangesView = DraftChangesData & {

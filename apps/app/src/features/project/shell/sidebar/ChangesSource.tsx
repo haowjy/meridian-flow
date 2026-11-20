@@ -636,7 +636,7 @@ function ChangeRow({
             labels={{ apply: t`Apply draft of ${name}`, discard: t`Discard draft of ${name}` }}
             density="icon"
             touch={touch}
-            disabled={command.pending || controller.dispositionLocked}
+            disabled={command.hidden || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
             onDiscard={discard}
             onApply={
@@ -757,7 +757,7 @@ function FolderGroupRow({
     controller.owner.snapshot,
     controller.owner.snapshot,
   );
-  const pending = keys.some((key) => controller.owner.state(key).pending);
+  const pending = keys.some((key) => controller.owner.state(key).hidden);
   const { name, change } = folder;
   return (
     <li data-change-folder={folder.id}>

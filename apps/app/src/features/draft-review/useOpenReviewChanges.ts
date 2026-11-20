@@ -70,24 +70,17 @@ export function useOpenReviewChanges(
     itemKey: inline?.itemKey ?? null,
     changes,
     items,
-    // A draft gone while on screen has nothing to act on.
-    status: command.ended
-      ? "gone"
-      : withoutText
-        ? "ready"
-        : (read.status as DraftChangesData["status"]),
-
-    completing: command.discarding
-      ? ("discard" as const)
-      : command.applying
-        ? ("apply" as const)
+    status: withoutText ? "ready" : (read.status as DraftChangesData["status"]),
+    completing: command.applying
+      ? ("apply" as const)
+      : command.hidden
+        ? ("discard" as const)
         : null,
     // A listed new file is still its own change once its text is gone: Apply draft creates it.
     finished:
       read.status === "ready" &&
       !items.length &&
       !item?.isNew &&
-      !command.pending &&
-      !command.discarding,
+      !command.hidden,
   };
 }

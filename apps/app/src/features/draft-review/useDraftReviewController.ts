@@ -198,7 +198,7 @@ export function useDraftReviewController({
       type: "changeFocused",
       documentId: review.documentId,
       itemKey: review.itemKey,
-      focus: { id: change.id, frame: change.frame },
+      focus: { id: change.id },
     });
   }, []);
 

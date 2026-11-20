@@ -30,7 +30,7 @@ import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
-import { roomContent } from "@/features/draft-review/review-frame";
+import { roomContent } from "@/core/editor/room-content";
 import { MainSurface } from "@/features/editor/MainSurface";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";

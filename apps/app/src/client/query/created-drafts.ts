@@ -1,11 +1,11 @@
 /**
  * The drafts a Work's own creates make, before the server lists them. A document created in a
  * Work is drafted under an id its create names (`createdDraftId`), so the browser knows the whole
- * item from its copy of the list: where the Work puts the document, its item key and its room. It
+ * item from its copy of the list: where the Work puts the document and its item key. It
  * opens at once, offline too, and the server's row, when it comes, is the same draft and replaces
  * this one. A create the server dropped, discarded or applied is no longer pending, and leaves.
  */
-import { createdDraftId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
+import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import { pendingCreates, pendingRecords, replayView } from "@meridian/project-tree";
@@ -60,7 +60,6 @@ export function useCreatedDrafts(
         branchId,
         itemKey: draftItemKey(branchId, documentId),
         documentId,
-        draftId: createdDraftId(documentId),
         hasDraft: true,
         textChanges: 0,
         origin: "created",

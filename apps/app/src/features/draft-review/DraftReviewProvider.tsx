@@ -90,13 +90,10 @@ export function useDraftReviewScopeValue({
     stateOwner: scopeChanged ? { ...reviewState, state: EMPTY_DRAFT_REVIEW_STATE } : reviewState,
     marks,
   });
-  // A hidden draft (a Discard in flight) or a gone one leaves the review.
+  // A draft a press has in flight leaves the review.
   const commands = useDraftCommandOwner();
   const reviewItemKey = controller.inlineReview?.itemKey ?? "";
-  const leaves = () => {
-    const command = commands.state(reviewItemKey);
-    return command.hidden || command.ended;
-  };
+  const leaves = () => commands.state(reviewItemKey).hidden;
   const leaving = useSyncExternalStore(commands.subscribe, leaves, leaves);
   const { dispatch } = reviewState;
   useLayoutEffect(() => {

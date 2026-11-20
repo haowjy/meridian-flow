@@ -38,11 +38,7 @@ function streamIdentity(documentName: string | null): {
       correlation: { documentId: room.documentId },
     };
   }
-  if (room.kind === "tree") return { streamId: `yjs:${documentName}`, correlation: {} };
-  return {
-    streamId: `yjs:draft:${room.draftId}`,
-    correlation: { draftId: room.draftId },
-  };
+  return { streamId: `yjs:${documentName}`, correlation: {} };
 }
 
 function singleStructClient(update: UpdateSummary | undefined): number | undefined {

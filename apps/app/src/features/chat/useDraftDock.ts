@@ -83,31 +83,22 @@ export function useDraftDock({
     // Changes list, not pressed from here as this chat's.
     if (row.draft.hasDraft && row.draft.tree?.deleted !== true) {
       const file = wholeDockFile(row, reviewFileTargetName(row, untitled));
-      return controller.owner.state(row.draft.itemKey).discarding ||
-        isSharedDraft(row.draft, threadId)
+      return isSharedDraft(row.draft, threadId)
         ? { ...file, count: 0, actionable: [], alone: false }
         : file;
     }
     // A move or a delete: its tree line is its one change.
-    const file = dockFile(
+    return dockFile(
       row,
       reviewFileTargetName(row, untitled),
-      {
-        status: "ready",
-        items: listedItemChanges(row.draft, []).map((change) => ({ change })),
-      },
+      listedItemChanges(row.draft, []),
       threadId,
     );
-    return controller.owner.state(row.draft.itemKey).discarding
-      ? { ...file, actionable: [] }
-      : file;
   });
-  const files = drafted.filter((file) => {
-    const state = controller.owner.state(file.row.draft.itemKey);
-    // A command in flight hides its row.
-    if (state.hidden) return false;
-    return isOnStrip(file) || state.pending;
-  });
+  // A press in flight hides its rows.
+  const files = drafted.filter(
+    (file) => !controller.owner.state(file.row.draft.itemKey).hidden && isOnStrip(file),
+  );
   // What the Changes list holds beyond this chat's: its items (documents and folders), less the
   // documents the strip's Apply would empty. Counted over the listed drafts, not the rows on
   // screen, so an Apply in flight doesn't count its own documents as more.
@@ -119,9 +110,7 @@ export function useDraftDock({
         ? reviewCount(shell, work)
         : null;
   const more =
-    workCount === null || drafted.some((file) => file.status !== "ready")
-      ? 0
-      : Math.max(0, workCount - drafted.filter((file) => file.alone).length);
+    workCount === null ? 0 : Math.max(0, workCount - drafted.filter((file) => file.alone).length);
 
   const actionableFiles = files.filter((file) =>
     file.whole ? file.count > 0 : file.actionable.length > 0,
@@ -189,8 +178,7 @@ export function useDraftDock({
       if (work && shell?.ownerKey !== ownerKey) setWorkId(work.id);
       useSidebarTabs.getState().reveal("changes");
     },
-    /** Unread previews keep the controls visible but disabled until their scope is known. */
-    showCommands: actionableFiles.length > 0 || files.some((file) => file.status !== "ready"),
+    showCommands: actionableFiles.length > 0,
     canApply:
       controller.canApply &&
       applicable.some(
@@ -198,9 +186,7 @@ export function useDraftDock({
           (!file.row.draft.hasDraft && file.row.draft.isNew) ||
           hasTreeLine(file.row.draft) ||
           isDeletedLive(file.row.draft) ||
-          (file.whole
-            ? file.row.draft.textChanges > 0
-            : (reads[roomIndex(file.row.draft.itemKey)]?.frame?.groups.length ?? 0) > 0),
+          (file.whole && file.row.draft.textChanges > 0),
       ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,

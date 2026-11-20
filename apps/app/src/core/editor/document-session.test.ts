@@ -228,34 +228,11 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
-  it("reports reset as access-lost so draft review exits after server room close", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "draft:draft-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    await flushMicrotasks();
-
-    current().emit({
-      kind: "reset",
-      reason: WS_CLOSE.DRAFT_PURGED.reason,
-      disposition: "closed",
-      code: WS_CLOSE.DRAFT_PURGED.code,
-    });
-
-    expect(session.getSnapshot()).toMatchObject({
-      status: "access-lost",
-      connectionState: { kind: "reset", code: 4205 },
-    });
-    void session.destroy();
-  });
-
   // #940: an offline room that ends terminal keeps `offline`; its pill must still learn the new state.
   it("emits a terminal close that arrives while already offline", async () => {
     const { factory, current } = makeFakeTransport();
     const session = new DocumentSession({
-      roomKey: "draft:draft-1",
+      roomKey: "doc-1",
       persistence: { kind: "none" },
       transportFactory: factory,
     });

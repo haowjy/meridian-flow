@@ -16,8 +16,6 @@ function controlledSession(): ControlledSession {
   return { session: { destroy }, destroy };
 }
 
-const live = (roomKey = "doc") => ({ kind: "live" as const, roomKey });
-const documentDraft = (roomKey = "draft") => ({ kind: "draft" as const, roomKey });
 
 describe("DocumentSessionTeardownOwner", () => {
   it("joins one retirement attempt, quarantines the room, then retries after rejection", async () => {
@@ -29,17 +27,17 @@ describe("DocumentSessionTeardownOwner", () => {
     });
     item.destroy.mockImplementationOnce(() => first).mockResolvedValueOnce(undefined);
 
-    const a = owner.retire(live(), item.session as never);
-    const b = owner.retire(live(), item.session as never);
+    const a = owner.retire("doc", item.session as never);
+    const b = owner.retire("doc", item.session as never);
     expect(a).toBe(b);
-    expect(() => owner.assertAvailable(live())).toThrow("room retiring");
+    expect(() => owner.assertAvailable("doc")).toThrow("room retiring");
     rejectFirst(new Error("transient destroy failure"));
     await expect(a).rejects.toThrow("transient destroy failure");
 
     await expect(owner.drain()).resolves.toBeUndefined();
     expect(item.destroy).toHaveBeenCalledTimes(2);
-    expect(() => owner.assertAvailable(live())).not.toThrow();
-    await expect(owner.retire(live(), item.session as never)).resolves.toBeUndefined();
+    expect(() => owner.assertAvailable("doc")).not.toThrow();
+    await expect(owner.retire("doc", item.session as never)).resolves.toBeUndefined();
     expect(item.destroy).toHaveBeenCalledTimes(2);
   });
 
@@ -49,8 +47,8 @@ describe("DocumentSessionTeardownOwner", () => {
     const b = controlledSession();
     a.destroy.mockRejectedValueOnce(new Error("a")).mockResolvedValueOnce(undefined);
     b.destroy.mockRejectedValueOnce(new Error("b")).mockResolvedValueOnce(undefined);
-    void owner.retire(live("a"), a.session as never).catch(() => undefined);
-    void owner.retire(documentDraft("b"), b.session as never).catch(() => undefined);
+    void owner.retire("a", a.session as never).catch(() => undefined);
+    void owner.retire("b", b.session as never).catch(() => undefined);
 
     await expect(owner.drain()).rejects.toBeInstanceOf(AggregateError);
     await expect(owner.drain()).resolves.toBeUndefined();

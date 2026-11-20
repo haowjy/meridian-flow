@@ -10,6 +10,7 @@ import { liveView, type View } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
+import type { DocumentSession } from "@/core/editor/document-session";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
@@ -61,7 +62,6 @@ export function EditorView(props: EditorViewProps) {
     filetype: props.filetype,
     collaborationDecorations: props.showCollaborationDecorations ?? true,
     bindingKey: props.bindingKey,
-    surface: "live",
     detached: props.detached ?? false,
   };
   // The review's chrome (band, list, phone sheet) shows once the editor that holds it does.

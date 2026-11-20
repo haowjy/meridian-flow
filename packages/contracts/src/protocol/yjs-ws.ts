@@ -93,19 +93,9 @@ export interface ReadOnlyWsMessage {
   why?: ClosedOwnerWhy;
 }
 
-/**
- * A draft room's answer to the client's `catch_up` of the same `id`: Live's committed text has been
- * pulled into the draft, and the pull's update went out on this socket before this message.
- */
-export interface CaughtUpWsMessage {
-  type: "caught_up";
-  id: number;
-}
-
 type YjsStatelessMessageByType = {
   change_event: ChangeEventWsMessage;
   read_only: ReadOnlyWsMessage;
-  caught_up: CaughtUpWsMessage;
 };
 
 export type YjsStatelessMessage = YjsStatelessMessageByType[keyof YjsStatelessMessageByType];
@@ -161,11 +151,6 @@ const readOnlyWsMessageSchema: z.ZodType<ReadOnlyWsMessage> = z.object({
   why: z.enum(CLOSED_OWNER_WHYS).optional(),
 });
 
-const caughtUpWsMessageSchema: z.ZodType<CaughtUpWsMessage> = z.object({
-  type: z.literal("caught_up"),
-  id: z.number().int(),
-});
-
 function parseJson(payload: string): unknown {
   try {
     return JSON.parse(payload);
@@ -180,37 +165,7 @@ export function parseYjsStatelessMessage(payload: string): YjsStatelessMessage |
   const change = changeEventWsMessageSchema.safeParse(value);
   if (change.success) return change.data;
   const readOnly = readOnlyWsMessageSchema.safeParse(value);
-  if (readOnly.success) return readOnly.data;
-  const caughtUp = caughtUpWsMessageSchema.safeParse(value);
-  return caughtUp.success ? caughtUp.data : null;
-}
-
-/**
- * Sent by a client on a draft room: bring Live's committed text into this draft now, and answer
- * `caught_up` with the same `id` once the room holds it.
- */
-export interface CatchUpWsMessage {
-  type: "catch_up";
-  id: number;
-}
-
-const catchUpWsMessageSchema: z.ZodType<CatchUpWsMessage> = z.object({
-  type: z.literal("catch_up"),
-  id: z.number().int(),
-});
-
-export function encodeCatchUpWsMessage(id: number): string {
-  return JSON.stringify({ type: "catch_up", id } satisfies CatchUpWsMessage);
-}
-
-export function encodeCaughtUpWsMessage(id: number): string {
-  return JSON.stringify({ type: "caught_up", id } satisfies CaughtUpWsMessage);
-}
-
-/** The stateless messages a client sends; null for anything else. */
-export function parseYjsClientStatelessMessage(payload: string): CatchUpWsMessage | null {
-  const parsed = catchUpWsMessageSchema.safeParse(parseJson(payload));
-  return parsed.success ? parsed.data : null;
+  return readOnly.success ? readOnly.data : null;
 }
 
 export function yjsWsPath(): string {

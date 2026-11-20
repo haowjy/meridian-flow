@@ -38,34 +38,34 @@ export function mayRestoreReadingPosition(editor: Editor, documentId: string): b
   return !pending.has(documentId) && !targeted.has(editor);
 }
 
-const reviewEditors = new Map<string, Set<Editor>>();
-const reviewEditorWaiters = new Map<string, Set<() => void>>();
+const mountedEditors = new Map<string, Set<Editor>>();
+const mountWaiters = new Map<string, Set<() => void>>();
 
-/** A review (Draft view) editor of the document has decided whether to restore a place. */
-export function reportReviewEditorMounted(documentId: string, editor: Editor): () => void {
-  const editors = reviewEditors.get(documentId) ?? new Set<Editor>();
+/** An editor of the document has decided whether to restore a place. */
+export function reportEditorMounted(documentId: string, editor: Editor): () => void {
+  const editors = mountedEditors.get(documentId) ?? new Set<Editor>();
   editors.add(editor);
-  reviewEditors.set(documentId, editors);
-  for (const wake of reviewEditorWaiters.get(documentId) ?? []) wake();
+  mountedEditors.set(documentId, editors);
+  for (const wake of mountWaiters.get(documentId) ?? []) wake();
   return () => {
     editors.delete(editor);
-    if (!editors.size) reviewEditors.delete(documentId);
+    if (!editors.size) mountedEditors.delete(documentId);
   };
 }
 
-/** Resolves when a review editor of the document has mounted; `signal` bounds a mount that never comes. */
-export function whenReviewEditorMounted(documentId: string, signal: AbortSignal): Promise<void> {
-  if (reviewEditors.has(documentId) || signal.aborted) return Promise.resolve();
+/** Resolves when an editor of the document has decided its place; `signal` bounds a mount that never comes. */
+export function whenEditorMounted(documentId: string, signal: AbortSignal): Promise<void> {
+  if (mountedEditors.has(documentId) || signal.aborted) return Promise.resolve();
   return new Promise((resolve) => {
-    const waiters = reviewEditorWaiters.get(documentId) ?? new Set<() => void>();
+    const waiters = mountWaiters.get(documentId) ?? new Set<() => void>();
     const done = () => {
       signal.removeEventListener("abort", done);
       waiters.delete(done);
-      if (!waiters.size) reviewEditorWaiters.delete(documentId);
+      if (!waiters.size) mountWaiters.delete(documentId);
       resolve();
     };
     waiters.add(done);
-    reviewEditorWaiters.set(documentId, waiters);
+    mountWaiters.set(documentId, waiters);
     signal.addEventListener("abort", done, { once: true });
   });
 }

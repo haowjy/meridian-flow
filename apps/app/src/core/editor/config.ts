@@ -24,7 +24,6 @@ import type { DocumentHistory } from "./editor-history";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
 import { BlockIdExtension } from "./extensions/block-id";
-import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
@@ -106,12 +105,7 @@ export type CreateEditorExtensionsOptions = {
   assetRenderContext?: AssetRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
   showCollaborationDecorations?: boolean;
-  /**
-   * Mount the DraftInlineReviewExtension when the editor is bound to a draft
-   * room. Live editors omit this flag so they never pay the extra plugin cost.
-   */
-  enableDraftInlineReview?: boolean;
-  /** Live-session sidecar; omitted for draft rooms. */
+  /** Live-session sidecar. */
   markerStore?: SessionMarkerStore;
   /** Writer-facing thread names for agent-authored session marks. */
   agentNames?: AgentNameStore;
@@ -331,7 +325,6 @@ export function createEditorExtensions({
   user,
   assetRenderContext,
   showCollaborationDecorations,
-  enableDraftInlineReview = false,
   markerStore,
   agentNames,
   slashCommands,
@@ -365,14 +358,6 @@ export function createEditorExtensions({
     // ephemeral half of uploads mounts here rather than beside the doors.
     ...(schemaType === "document" ? [UploadPresenceExtension.configure({ presence })] : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
-    ...(enableDraftInlineReview
-      ? [
-          DraftInlineReviewExtension.configure({
-            document,
-            adoptDocumentClient: presence.adoptDocumentClient,
-          }),
-        ]
-      : []),
   ];
 }
 
@@ -490,7 +475,6 @@ export function createEditorConfig({
   user,
   assetRenderContext,
   showCollaborationDecorations,
-  enableDraftInlineReview,
   markerStore,
   agentNames,
   slashCommands,
@@ -523,8 +507,7 @@ export function createEditorConfig({
         user,
         assetRenderContext,
         showCollaborationDecorations,
-        enableDraftInlineReview,
-        markerStore,
+              markerStore,
         agentNames,
         slashCommands,
         atReferences,

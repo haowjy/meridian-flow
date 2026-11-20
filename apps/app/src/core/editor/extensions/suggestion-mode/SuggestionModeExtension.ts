@@ -40,7 +40,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import type * as Y from "yjs";
 import { DIRECT_WRITE_ORIGIN, endUndoStep } from "../../editor-history";
-import { createBarSlotElement } from "../inline-review/removal-widget";
+import { createBarSlotElement } from "./bar-slot";
 import "./suggestion-mode.css";
 
 /**
