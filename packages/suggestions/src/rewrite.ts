@@ -1,5 +1,5 @@
 import { ChangeSet, type TokenEncoder } from "prosemirror-changeset";
-import { type Attrs, Fragment, type Mark, type Node, type Schema, Slice } from "prosemirror-model";
+import { type Attrs, Fragment, Mark, type Node, type Schema, Slice } from "prosemirror-model";
 import { type EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import {
   AddMarkStep,
@@ -146,8 +146,9 @@ export function rewrite(
   // Formatting and block attributes where those steps reached content the transaction left in
   // place: the difference between the start and final documents there. What it replaced or made
   // already has its final form, from the final document.
-  for (const step of netFormatting(state.doc, tr.doc, ranges, reached, work !== null))
-    rewriteFormat(out, step, out.mapping.slice(), view, author);
+  const formatting = netFormatting(state.doc, tr.doc, ranges, reached, work !== null);
+  for (const run of formatting.runs) restyle(out, run, out.mapping.slice(), view, author);
+  for (const step of formatting.nodes) rewriteMarkup(out, step, out.mapping.slice(), view, author);
   out.setMeta(CHANGE_META, changes);
   if (caret !== null)
     out.setSelection(
@@ -206,13 +207,71 @@ function wholeBlockRanges(ranges: readonly Range[], doc: Node): Range[] {
   return out;
 }
 
+/** A run of text, in the start document, and the formatting marks it ends with. */
+type Restyle = { from: number; to: number; marks: readonly Mark[] };
+
+/**
+ * Give a run its final marks. A mark reaches only what the view shows; a comment anchors on any
+ * of it. In a Work's view, formatting Live text is suggested as that text struck and inserted
+ * again, formatted; a comment on it is added in place.
+ */
+function restyle(out: Transaction, run: Restyle, map: Mapping, view: View, author: Author | null) {
+  const styled = (node: Node) => {
+    let marks: readonly Mark[] = node.marks.filter(isSuggestionMark);
+    for (const mark of run.marks) marks = mark.addToSet(marks);
+    return node.mark(marks);
+  };
+  const commentsOnly = (node: Node) => {
+    const before = node.marks.filter((mark) => !isSuggestionMark(mark));
+    const strip = (marks: readonly Mark[]) => marks.filter((mark) => mark.type.name !== "comment");
+    return Mark.sameSet(strip(before), strip(run.marks));
+  };
+  const from = map.map(run.from, 1);
+  const to = map.map(run.to, -1);
+  for (const piece of pieces(out.doc, from, to, view).reverse()) {
+    const start = piece.blockPos + 1;
+    const content = piece.block.slice(piece.from - start, piece.to - start).content;
+    let comments = true;
+    content.forEach((node) => {
+      comments &&= commentsOnly(node);
+    });
+    if (piece.kind === "hidden" || (piece.kind === "own-del" && !comments)) continue;
+    if (view.work !== null && author && piece.kind === "live" && !comments) {
+      const formatted: Node[] = [];
+      content.forEach((node) => {
+        formatted.push(styled(node));
+      });
+      replaceInWork(
+        out,
+        piece.from,
+        piece.to,
+        new Slice(Fragment.from(formatted), 0, 0),
+        { first: null, last: null, rest: Fragment.empty, aimed: { first: false, last: false } },
+        view,
+        { ...author, work: view.work },
+        false,
+        () => {},
+      );
+      continue;
+    }
+    content.forEach((node, offset) => {
+      const a = piece.from + offset;
+      const b = a + node.nodeSize;
+      for (const mark of node.marks)
+        if (!isSuggestionMark(mark) && !mark.isInSet(run.marks)) out.removeMark(a, b, mark);
+      for (const mark of run.marks) if (!mark.isInSet(node.marks)) out.addMark(a, b, mark);
+    });
+  }
+}
+
 /** Where a formatting step reached, in the start document; `node` for a step on one node's markup. */
 type Reach = { from: number; to: number; node: boolean };
 
 /**
- * The formatting a transaction gave content it left in place, within `reached`: mark steps for
- * text whose marks differ (suggestion marks aside), then a markup step, with its final type and
- * attributes, for each node a step aimed at (the rewrite compares them with what the view
+ * The formatting a transaction gave content it left in place, within `reached`: runs of text
+ * whose marks differ (suggestion marks aside), with the marks each ends with, never joined across
+ * an edit's edge; and a markup step, with its final type and attributes, for each node a step
+ * aimed at (the rewrite compares them with what the view
  * shows), all in the start document. In a Work's view a textblock an edit is inside is left to
  * that edit, which settles the block from the final document.
  */
@@ -222,9 +281,10 @@ function netFormatting(
   ranges: readonly Range[],
   reached: readonly Reach[],
   inWork: boolean,
-): Step[] {
-  const marks: Step[] = [];
+): { runs: Restyle[]; nodes: Step[] } {
+  const runs: Restyle[] = [];
   const nodes: Step[] = [];
+  const edge = (pos: number) => ranges.some((r) => r.fromA === pos || r.toA === pos);
   const toB = (pos: number) =>
     ranges.reduce(
       (at, range) =>
@@ -247,11 +307,11 @@ function netFormatting(
           if (replacedAt(at) || seen.has(`${at}`)) continue;
           seen.add(`${at}`);
           const other = b.resolve(toB(at)).nodeAfter;
-          if (!other) continue;
-          for (const mark of formats(other))
-            if (!mark.isInSet(node.marks)) marks.push(new AddMarkStep(at, at + 1, mark));
-          for (const mark of formats(node))
-            if (!mark.isInSet(other.marks)) marks.push(new RemoveMarkStep(at, at + 1, mark));
+          if (!other || Mark.sameSet(formats(other), formats(node))) continue;
+          const last = runs.at(-1);
+          if (last && last.to === at && !edge(at) && Mark.sameSet(last.marks, formats(other)))
+            last.to = at + 1;
+          else runs.push({ from: at, to: at + 1, marks: formats(other) });
         }
         return false;
       }
@@ -277,27 +337,7 @@ function netFormatting(
       );
       return true;
     });
-  return [...joinMarks(marks), ...nodes];
-}
-
-/** Per-character mark steps joined into runs. */
-function joinMarks(steps: Step[]): Step[] {
-  const out: Array<AddMarkStep | RemoveMarkStep> = [];
-  for (const step of steps as Array<AddMarkStep | RemoveMarkStep>) {
-    const last = out.at(-1);
-    if (
-      last &&
-      last.constructor === step.constructor &&
-      last.to === step.from &&
-      last.mark.eq(step.mark)
-    )
-      out[out.length - 1] =
-        step instanceof AddMarkStep
-          ? new AddMarkStep(last.from, step.to, step.mark)
-          : new RemoveMarkStep(last.from, step.to, step.mark);
-    else out.push(step);
-  }
-  return out;
+  return { runs: runs.sort((x, y) => x.from - y.from), nodes };
 }
 
 /**
@@ -382,47 +422,13 @@ function touchesSuggestions(step: Step, doc: Node, view: View): boolean {
   );
 }
 
-function rewriteFormat(
+function rewriteMarkup(
   out: Transaction,
   step: Step,
   map: Mapping,
   view: View,
   author: Author | null,
 ): void {
-  const at: At = (pos, assoc = 1) => map.map(pos, assoc);
-  if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
-    const { from, to, mark } = step as unknown as { from: number; to: number; mark: Mark };
-    const add = step instanceof AddMarkStep;
-    const format = (node: Node) =>
-      node.mark(add ? mark.addToSet(node.marks) : mark.removeFromSet(node.marks));
-    // A mark reaches only what the view shows. A comment anchors on any of it. In a Work's view,
-    // formatting Live text is suggested as that text struck and inserted again, formatted.
-    for (const piece of pieces(out.doc, at(from, 1), at(to, -1), view).reverse()) {
-      if (piece.kind === "hidden" || (piece.kind === "own-del" && mark.type.name !== "comment"))
-        continue;
-      if (view.work !== null && author && piece.kind === "live" && mark.type.name !== "comment") {
-        const start = piece.blockPos + 1;
-        const copy = piece.block.slice(piece.from - start, piece.to - start).content;
-        const formatted: Node[] = [];
-        copy.forEach((node) => {
-          formatted.push(format(node));
-        });
-        replaceInWork(
-          out,
-          piece.from,
-          piece.to,
-          new Slice(Fragment.from(formatted), 0, 0),
-          { first: null, last: null, rest: Fragment.empty, aimed: { first: false, last: false } },
-          view,
-          { ...author, work: view.work },
-          false,
-          () => {},
-        );
-      } else if (add) out.addMark(piece.from, piece.to, mark);
-      else out.removeMark(piece.from, piece.to, mark);
-    }
-    return;
-  }
   // Attribute and structure steps. Live takes them; a Work's view takes them on its own blocks.
   const mapped = step.map(map);
   if (!mapped) return;
