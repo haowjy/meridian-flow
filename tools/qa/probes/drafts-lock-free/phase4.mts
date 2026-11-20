@@ -4,7 +4,6 @@
  * it, and the pauses that order two writers by a hook or a held call rather than by a sleep.
  */
 
-import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { novelToRoom } from "../../../../apps/server/server/domains/collab/domain/document-mutation-policy.ts";
@@ -30,9 +29,6 @@ import {
   readBlocks,
 } from "../../../../packages/agent-edit/src/diff/index.ts";
 import { gate, type Harness, settled, Y } from "./harness.mts";
-
-/** The resync close: not a refusal, never counted by the client (design §2.7). */
-export const PREFIX_MISSING_CLOSE = WS_CLOSE.DRAFT_PREFIX_MISSING;
 
 export type EffectWrite = Awaited<ReturnType<DraftStore["writeEffect"]>>;
 

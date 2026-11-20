@@ -23,7 +23,7 @@ import {
   type DocumentSessionConnectionState,
   type DocumentSessionSnapshot,
   type DocumentSessionTransportProvider,
-  DRAFT_UPDATES_REFUSED,
+  UPDATES_REFUSED,
 } from "./document-session";
 
 type FakeTransport = DocumentSessionTransportProvider & {
@@ -266,11 +266,11 @@ describe("DocumentSession status derivation", () => {
     current().emit({ kind: "disconnected" });
     const { snapshots, unsubscribe } = track(session);
 
-    current().emit({ kind: "terminal", reason: DRAFT_UPDATES_REFUSED, code: 1008 });
+    current().emit({ kind: "terminal", reason: UPDATES_REFUSED, code: 1013 });
 
     expect(snapshots.at(-1)).toMatchObject({
       status: "offline",
-      connectionState: { kind: "terminal", reason: DRAFT_UPDATES_REFUSED },
+      connectionState: { kind: "terminal", reason: UPDATES_REFUSED },
     });
     unsubscribe();
     await session.destroy();

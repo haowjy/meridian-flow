@@ -27,13 +27,10 @@
  * it), and each of its handshakes says what the document holds that the server
  * lacks (`handshake-difference.ts`); the session decides what to do with that.
  *
- * A draft room's update refusal (`1008`) is bounded. One refusal reconnects
- * and resends, as any close does; after `MAX_DRAFT_UPDATE_REFUSALS` in a row
- * with no acknowledgement between them, the room ends `DRAFT_UPDATES_REFUSED`
- * and keeps its outbox for the owner to show. Live rooms never count. A
- * `4207 draft-prefix-missing` close is not a refusal: the server received an
- * update before the bytes it depends on, and the reconnect's handshake repairs
- * that, so it reconnects like any drop and never counts.
+ * A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), Live or
+ * draft. One reconnects and resends, as any close does; after `MAX_UPDATE_REFUSALS` in a row with
+ * no acknowledgement between them, the room ends `UPDATES_REFUSED` instead of
+ * resending forever, and the session's owner replaces it (`DocumentSession.holdsUndeliverableEdits`).
  *
  * A draft room's handshake upload goes first. The client's SyncStep2 is the
  * whole Y.Doc diffed against the server's state vector, so it carries every
@@ -76,9 +73,9 @@ import {
   type DocumentSessionConnectionState,
   type DocumentSessionResetReason,
   type DocumentSessionTransportProvider,
-  DRAFT_UPDATES_REFUSED,
   type HandshakeDifference,
   type ResetDisposition,
+  UPDATES_REFUSED,
 } from "@/core/editor/document-session";
 
 import type { ConnectivityHintsPort } from "./connectivity-hints";
@@ -104,9 +101,7 @@ const TERMINAL_DENIAL_CODES = new Set<number>([
 // WebSocket.OPEN; the provider's own queue-or-send decision uses the same test.
 const SOCKET_OPEN = 1;
 
-// The server's close for a draft frame it would not admit (policy violation).
-const DRAFT_UPDATE_REFUSED_CODE = 1008;
-const MAX_DRAFT_UPDATE_REFUSALS = 3;
+const MAX_UPDATE_REFUSALS = 3;
 // No signal says a `catch_up` will go unanswered: a server older than the message ignores it, and
 // a pull can wait on the draft's row lock. A normal answer takes under 100 ms; past this bound the
 // Undo decides from what the room holds, as it does offline.
@@ -513,14 +508,11 @@ export function createHocuspocusDocumentTransport({
       publishTerminal(state);
       return;
     }
-    // Only a genuine refusal counts; 4207 draft-prefix-missing is a plain reconnect.
-    if (
-      event.code === DRAFT_UPDATE_REFUSED_CODE &&
-      isDraftRoom(roomName) &&
-      outbox !== null &&
-      ++refusals >= MAX_DRAFT_UPDATE_REFUSALS
-    )
-      publishTerminal({ kind: "terminal", reason: DRAFT_UPDATES_REFUSED, code: event.code });
+    // Any 1013 counts, whatever its reason, and whether or not the outbox holds the frame: typing
+    // replayed from the copy goes out in each handshake without passing through it. A reconnect
+    // that is acknowledged resets the count.
+    if (event.code === WS_CLOSE.WRITER_ADMISSION_FAILED.code && ++refusals >= MAX_UPDATE_REFUSALS)
+      publishTerminal({ kind: "terminal", reason: UPDATES_REFUSED, code: event.code });
   }
 
   // Each `catch_up` sent on this connection, by id, until its answer, the socket's end, or

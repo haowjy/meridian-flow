@@ -2356,8 +2356,8 @@ msgid "Couldn’t save this preference."
 msgstr "Couldn’t save this preference."
 
 #: src/features/editor/SyncStatus.tsx
-msgid "Couldn't save your latest changes"
-msgstr "Couldn't save your latest changes"
+#~ msgid "Couldn't save your latest changes"
+#~ msgstr "Couldn't save your latest changes"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't search"
@@ -6379,7 +6379,6 @@ msgstr "Trash"
 #: src/features/chat/ChatCards.tsx
 #: src/features/chat/subagent/SubagentStop.tsx
 #: src/features/connections/connection-status.ts
-#: src/features/editor/SyncStatus.tsx
 #: src/features/import/ImportPanel.tsx
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Try again"

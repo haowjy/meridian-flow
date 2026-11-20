@@ -648,14 +648,19 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
   the pill, and a room with no session in this tab is measured too. A copy with no mark (written
   before marks, or whose first mark write was lost) counts as marking nothing: all of it counts.
   A closed draft's copy stays for an Undo of its Discard, which delivers it.
-- What it cannot reach: a read admission has no such loss (see the next section). A document no
+- What it cannot reach: a read admission or a refused room has no such loss (see the next section). A document no
   tab has open keeps its typing in its copy until its next open or its purge.
 
-### Undeliverable edits (a room admitted read-only)
+### Undeliverable edits (a room admitted read-only, or refused)
 
 **A room the server admits read-only holds none of the writer's edits that the server lacks.**
 It is checked at every handshake of a read admission (`core/transport/handshake-difference.ts`),
-from the wire alone, with nothing stored between handshakes.
+from the wire alone, with nothing stored between handshakes. A room whose updates the server
+kept refusing (`updatesRefused`, the transport context's "Frames the server can't store") holds
+them by definition: the replacement skips the handshake, drops what its copy holds beyond the
+mark (with the pill) and advances the copy, Live or draft. It does that even when an owner retired
+the session first (a room nobody shows retires in the same emit that ends it), and then opens
+nothing; the next open loads from the server, and its older-copy read may show the pill once more.
 
 - The session (`unsent-edits.ts`) decides what counts: everything the server lacks, whoever wrote it,
   except *display writes*, what the editor binding writes while drawing (it deletes a node the
@@ -688,7 +693,8 @@ from the wire alone, with nothing stored between handshakes.
   follow through `observeReplacement` (live bindings and open tabs, draft room reads); a mount keeps its
   reading position across it, because the store is keyed by room (`use-reading-position.ts`).
 - **Who drops.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
-  it reads that and a snapshot, then makes the old session inert), the older-copy read below
+  it reads that and a snapshot, then makes the old session inert; for a refused room, its copy
+  beyond the mark), the older-copy read below
   (everything an older incarnation holds beyond the new session's first handshake), a closing or
   removing retirement and `LocalDocumentCopies.clear` (each, the copy beyond its mark). Nothing
   is stored: the copies are working storage only, and a drop that is told twice shows the one pill
@@ -733,12 +739,6 @@ from the wire alone, with nothing stored between handshakes.
   not a draft reset protocol. Schema fences, authorization loss and explicit
   session rebuild retain their own meanings; local text Discard does not retire
   the room, selection or UndoManager.
-- The server no longer sends `1008` or `4207` for a draft (a failed frame closes `1013`); the
-  client keeps handling them until that code is removed. A draft update refusal (`1008`) is bounded: after three consecutive refusals
-  without acknowledgement, the transport ends `DRAFT_UPDATES_REFUSED`
-  (`updatesRefused`). A retained room stays open read-only with the unsent text on
-  screen: `readDraftRoom` keeps it as `fenced`, and the status says "Couldn't save
-  your latest changes" with Try again, which rebuilds the room from IndexedDB and
-  resends the edits. It never retries on its own. A `4207
-  draft-prefix-missing` close is an ordinary reconnect, not a refusal. The next
-  handshake's SyncStep2 supplies missing bytes before held keystrokes.
+- A draft room whose updates the server kept refusing (`updatesRefused`) is kept by the pool
+  (`readDraftRoom` holds it `fenced`) only until the registry replaces it ("Undeliverable
+  edits"). A drop's next handshake SyncStep2 supplies missing bytes before held keystrokes.

@@ -9,10 +9,11 @@ export const WS_CLOSE = {
   /** Terminal: the draft's row was purged with its Work, so its room is gone. Never reconnect. */
   DRAFT_PURGED: { code: 4205, reason: "purged" },
   /**
-   * A draft update arrived before the update it depends on reached the draft's journal. Not a
-   * refusal: the client reconnects and its next handshake's SyncStep2 carries the missing prefix.
+   * The server could not store a writer's frame on a document room, Live or draft. Not terminal:
+   * the client reconnects and its handshake resends. A client counts these, since a frame the
+   * server can never store would otherwise loop.
    */
-  DRAFT_PREFIX_MISSING: { code: 4207, reason: "draft-prefix-missing" },
+  WRITER_ADMISSION_FAILED: { code: 1013, reason: "writer-journal-admission-failed" },
   /**
    * The server has no such document yet: a browser makes a document's id and connects its text
    * room as soon as it appends the `create`, which the server may not have admitted yet. Not

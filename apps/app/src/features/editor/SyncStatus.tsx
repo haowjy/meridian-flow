@@ -17,11 +17,6 @@
  *     the reconnect until the server has acknowledged every local change
  *     (`serverHasLocalChanges`), then swaps in place to "Back online (all
  *     changes saved)" for a few seconds and hides.
- *   - updates refused (`updatesRefused`: the server kept refusing a draft
- *     room's updates) → "Couldn't save your latest changes" with Try again
- *     when the owner offers `onReopen`, which reopens the room and resends
- *     them. The editor stays read-only behind it with the text on screen. Wins
- *     over the outage phase.
  *   - otherwise nothing: `detached` alone is not an outage (a healthy cold load
  *     spends about a second there), so there is no timer and a first load never
  *     shows a label.
@@ -31,12 +26,7 @@
 import { Trans } from "@lingui/react/macro";
 import { useEffect, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  type DocumentSession,
-  type DocumentSessionSnapshot,
-  updatesRefused,
-} from "@/core/editor/document-session";
+import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 
 const SAVED_CONFIRMATION_VISIBLE_MS = 3_000;
 
@@ -79,13 +69,7 @@ function trackSession(session: DocumentSession): Tracked {
   return { session, snapshot, phase: nextPhase("idle", snapshot, session.canDeliverUnsentEdits()) };
 }
 
-export type SyncStatusProps = {
-  session: DocumentSession;
-  /** Reopens a room whose updates were refused; only a draft review offers it. */
-  onReopen?: () => void;
-};
-
-export function SyncStatus({ session, onReopen }: SyncStatusProps) {
+export function SyncStatus({ session }: { session: DocumentSession }) {
   const [stored, setStored] = useState<Tracked>(() => trackSession(session));
 
   // A new session starts from its own snapshot with no outage history. Reset
@@ -123,24 +107,6 @@ export function SyncStatus({ session, onReopen }: SyncStatusProps) {
     );
     return () => clearTimeout(timer);
   }, [phase, session]);
-
-  if (updatesRefused(snapshot.connectionState)) {
-    return (
-      <div
-        className="pointer-events-auto -mr-1.5 inline-flex items-center gap-2 font-medium text-foreground"
-        role="alert"
-        data-sync-refused
-      >
-        <span aria-hidden className="size-1.5 rounded-full bg-destructive" />
-        <Trans>Couldn't save your latest changes</Trans>
-        {onReopen ? (
-          <Button type="button" size="xs" variant="secondary" onClick={onReopen}>
-            <Trans>Try again</Trans>
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
 
   // Autosync is assumed, so the healthy and transient states say nothing:
   // "no news is good news." Terminal states win over any outage phase. Rendered

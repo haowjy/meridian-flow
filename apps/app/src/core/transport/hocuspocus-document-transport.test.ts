@@ -15,7 +15,7 @@ import * as Y from "yjs";
 
 import {
   type DocumentSessionConnectionState,
-  DRAFT_UPDATES_REFUSED,
+  UPDATES_REFUSED,
 } from "@/core/editor/document-session";
 
 import { DocumentSocketHarness, sentSyncKinds } from "./test-support/DocumentSocketHarness";
@@ -130,53 +130,45 @@ describe("Hocuspocus document transport adapter", () => {
     },
   );
 
-  // #940: a draft the server keeps refusing must stop resending and keep its outbox.
-  it.each([
-    ["draft:draft-1", true],
-    ["document-1", false],
-  ] as const)("bounds repeated update refusals of %s", async (roomName, bounded) => {
-    const document = new Y.Doc();
-    const awareness = new Awareness(document);
-    const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
-    const states: DocumentSessionConnectionState[] = [];
-    transport.subscribeStatus?.((state) => states.push(state));
-    try {
-      await vi.advanceTimersByTimeAsync(0);
-      document.getText("body").insert(0, "writer");
-      const carry = transport.unacknowledgedUpdates();
-      for (let refusal = 0; refusal < 4; refusal += 1) {
-        const socket = DocumentSocketHarness.instances.at(-1);
-        if (!socket) throw new Error("missing document socket");
-        socket.open();
-        socket.syncStep1(roomName, document);
-        socket.deliverClose(1008, "draft-update-admission-failed");
-        await vi.advanceTimersByTimeAsync(5_000);
-      }
-      const sockets = DocumentSocketHarness.instances.length;
-      if (bounded) {
+  // A room whose frames the server can never store must stop resending, including typing replayed
+  // from the copy before the transport existed, which never passes through the outbox.
+  it.each(["draft:draft-1", "document-1"])(
+    "bounds repeated update refusals of %s",
+    async (roomName) => {
+      const document = new Y.Doc();
+      document.getText("body").insert(0, "replayed");
+      const awareness = new Awareness(document);
+      const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
+      const states: DocumentSessionConnectionState[] = [];
+      transport.subscribeStatus?.((state) => states.push(state));
+      try {
+        await vi.advanceTimersByTimeAsync(0);
+        for (let refusal = 0; refusal < 4; refusal += 1) {
+          const socket = DocumentSocketHarness.instances.at(-1);
+          if (!socket) throw new Error("missing document socket");
+          socket.open();
+          socket.syncStep1(roomName, document);
+          const { code, reason } = WS_CLOSE.WRITER_ADMISSION_FAILED;
+          socket.deliverClose(code, reason);
+          await vi.advanceTimersByTimeAsync(5_000);
+        }
         expect(states.at(-1)).toEqual({
           kind: "terminal",
-          reason: DRAFT_UPDATES_REFUSED,
-          code: 1008,
+          reason: UPDATES_REFUSED,
+          code: WS_CLOSE.WRITER_ADMISSION_FAILED.code,
         });
-        expect(sockets).toBe(3);
-        expect(transport.unacknowledgedUpdates()).toEqual(carry);
-      } else {
-        expect(states.at(-1)?.kind).not.toBe("terminal");
-        expect(sockets).toBe(5);
+        expect(DocumentSocketHarness.instances).toHaveLength(3);
+      } finally {
+        transport.destroy();
+        awareness.destroy();
+        document.destroy();
       }
-    } finally {
-      transport.destroy();
-      awareness.destroy();
-      document.destroy();
-    }
-  });
+    },
+  );
 
-  // design §2.7: a causal gap never ends a draft refused, and an Update
-  // never reaches a socket ahead of that socket's SyncStep2.
-  it("reconnects a draft room through prefix-missing closes without writing held updates", async () => {
+  // An Update never reaches a socket ahead of that socket's SyncStep2.
+  it("reconnects a draft room through drops without writing held updates", async () => {
     const roomName = "draft:draft-1";
-    const { code, reason } = WS_CLOSE.DRAFT_PREFIX_MISSING;
     const document = new Y.Doc();
     const awareness = new Awareness(document);
     const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
@@ -193,7 +185,7 @@ describe("Hocuspocus document transport adapter", () => {
         // The first frame flushes the offline queue; the server's SyncStep1 never comes.
         socket.connected();
         document.getText("body").insert(0, `${close}`);
-        socket.deliverClose(code, reason);
+        socket.deliverClose();
         expect(sentSyncKinds(socket)).toEqual([]);
         await vi.advanceTimersByTimeAsync(5_000);
       }

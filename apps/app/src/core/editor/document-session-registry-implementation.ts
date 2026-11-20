@@ -11,6 +11,7 @@ import {
   DocumentSession,
   type DocumentSessionAccess,
   type DocumentSessionSnapshot,
+  updatesRefused,
 } from "./document-session";
 import type {
   LiveDocumentSessionLease,
@@ -572,7 +573,8 @@ export class DocumentSessionRegistry {
     const quarantine = readSchemaFenceQuarantine(roomKey);
     if (quarantine) session.raiseSchemaFence(quarantine);
     session.subscribe((snapshot) => {
-      if (snapshot.holdsUndeliverableEdits) this.requestReplacement(session);
+      if (snapshot.holdsUndeliverableEdits)
+        this.requestReplacement(session, updatesRefused(snapshot.connectionState));
     });
     if (session.room.kind === "live")
       session.subscribe(() => {
@@ -583,9 +585,9 @@ export class DocumentSessionRegistry {
   }
 
   /** In a microtask, never inside the session's own `emit`. */
-  private requestReplacement(session: DocumentSession): void {
+  private requestReplacement(session: DocumentSession, refused: boolean): void {
     if (this.replacing.has(session)) return;
-    queueMicrotask(() => void this.replaceRoom(session).catch(reportError));
+    queueMicrotask(() => void this.replaceRoom(session, refused).catch(reportError));
   }
 
   private isRoomSession(session: DocumentSession): boolean {
@@ -600,12 +602,16 @@ export class DocumentSessionRegistry {
    * typing and is replaced by a session on the next incarnation of its copy, which loads from the
    * server; the old one is inert until its editors have gone. Nothing is emptied and nothing is
    * said to other tabs: each tab replaces its own session at its own read admission.
+   *
+   * A room whose updates the server refused holds them with no handshake to ask: its copy's typing
+   * beyond the mark is dropped and the copy advanced even when its owner retired the session first
+   * (a draining room retires in the same emit), so no later open resends them.
    */
-  private async replaceRoom(old: DocumentSession): Promise<void> {
-    if (this.replacing.has(old) || !this.isRoomSession(old)) return;
+  private async replaceRoom(old: DocumentSession, refused: boolean): Promise<void> {
+    if (this.replacing.has(old) || !(refused || this.isRoomSession(old))) return;
     this.replacing.add(old);
     // Words another tab stored that this one never received count too, and the verdict can end here.
-    if (!(await old.decideAgain()) || !this.isRoomSession(old)) {
+    if (!refused && (!(await old.decideAgain()) || !this.isRoomSession(old))) {
       this.replacing.delete(old);
       return;
     }
@@ -614,6 +620,7 @@ export class DocumentSessionRegistry {
     void old.makeInert().catch(reportError);
     // Typing into the old editor after this read goes to its copy, and the older-copy read's.
     if (edits) await readCopy(edits.copy, (document) => this.dropWords(document, edits.lacking));
+    if (refused) await this.dropCopy(incarnationName(copy.key, copy.incarnation));
     await this.copies.advance(copy.key, copy.incarnation);
     if (!this.isRoomSession(old)) return;
     if (old.room.kind === "live") {

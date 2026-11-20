@@ -72,27 +72,26 @@ stateDiagram-v2
   rebuilding --> usable: the room is rebuilt and bound
   rebuilding --> error: the rebuild threw
   usable --> fenced: this tab's document schema no longer fits the room (also asks the app to reload)
-  usable --> fenced: the server refused its updates three times in a row
+  usable --> fenced: the server refused its updates three times in a row, until a new session replaces it
   usable --> fenced: the server ended the draft (its Work or document was purged; 4205, or its answer first)
   usable --> usable: admitted read-only holding the writer's unsent edits; a new session replaces it
   usable --> unavailable: the room is gone, terminal, unauthorized or destroyed
   fenced --> usable: the session reports usable again
-  fenced --> rebuilding: retry, for a room whose updates were refused
   error --> rebuilding: retry
   unavailable --> rebuilding: retry
 ```
 
 - **Commands act only on `usable`** (`usable()`). The editor still shows a `fenced` room,
-  read-only with its notice: a schema fence, "Couldn't save your latest changes" with Try
-  again, or "This document is in Trash" with Restore. A command on it would write what the server
-  has refused.
+  read-only with its notice: a schema fence, or "This document is in Trash" with Restore. A
+  command on it would write what the server has refused.
 - **A closed draft stays closed.** The pool keeps a retained closed room's session
   (`draftClosed`; `endClosed` when the server's answer came before the socket's close) and
   refuses to open its id again: a draft ends only when it is deleted.
 - **An access change is not a state.** A 4409 reconnects the same session, which stays
-  `usable`; the server's new scope only makes it read-only or writable again. The one edge:
-  `usable → usable` with a new session, when a read admission's handshake shows the room holds
-  the writer's edits the server lacks. The pool's `replace` opens a session on the next copy
+  `usable`; the server's new scope only makes it read-only or writable again. A new session
+  replaces the room when it holds the writer's edits the server will never take: a read
+  admission's handshake shows some (`usable → usable`), or the server refused its updates
+  (`fenced`, then `usable` on the new session). The pool's `replace` opens a session on the next copy
   incarnation (read-only from its first frame), and `readDraftRoom` binds it on the registry's
   replacement notice (never on the old session's `destroyed`, which a removed room also sends).
 - **Retry from `unavailable` works only when the room can be opened again.** A room the pool
