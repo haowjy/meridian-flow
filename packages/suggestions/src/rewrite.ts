@@ -22,6 +22,9 @@ import {
 /** A transaction already in stored form (accept, reject, a peer's or Undo's): never rewritten. */
 export const RAW_META = "suggestions:raw";
 
+/** On a rewritten transaction: per step of the original, the change id a Work's edit took. */
+export const CHANGE_META = "suggestions:change";
+
 /** Who is writing: everything but the change id, which the rewrite picks, and the Work, the view's. */
 export type Author = Omit<SuggestionAttrs, "id" | "work">;
 
@@ -57,6 +60,7 @@ export function rewrite(
     out.setMeta(key, value);
   if (tr.storedMarksSet) out.setStoredMarks(tr.storedMarks);
   let caret: number | null = null;
+  const changes: Array<string | null> = [];
   tr.steps.forEach((step, index) => {
     // `Mapping.slice(...).invert()` inverts every map, not the slice's: build it from the maps.
     const back = new Mapping(tr.mapping.maps.slice(0, index)).invert();
@@ -69,8 +73,12 @@ export function rewrite(
         view,
         author,
         state.selection.empty ? state.selection.head : null,
+        (id) => {
+          changes[index] = id;
+        },
       ) ?? caret;
   });
+  out.setMeta(CHANGE_META, changes);
   if (caret !== null)
     out.setSelection(TextSelection.near(out.doc.resolve(Math.min(caret, out.doc.content.size))));
   if (tr.scrolledIntoView) out.scrollIntoView();
@@ -112,6 +120,7 @@ function rewriteStep(
   view: View,
   author: Author | null,
   caretBefore: number | null,
+  changed: (id: string) => void,
 ): number | null {
   if (step instanceof ReplaceStep) {
     const { from, to, slice } = step as unknown as { from: number; to: number; slice: Slice };
@@ -121,7 +130,16 @@ function rewriteStep(
     const forward = caretBefore !== null && caretBefore === a && slice.size === 0;
     return view.work === null || !author
       ? replaceLive(out, a, b, stripSlice(slice), view, forward)
-      : replaceInWork(out, a, b, stripSlice(slice), view, { ...author, work: view.work }, forward);
+      : replaceInWork(
+          out,
+          a,
+          b,
+          stripSlice(slice),
+          view,
+          { ...author, work: view.work },
+          forward,
+          changed,
+        );
   }
   if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
     const { from, to, mark } = step as unknown as { from: number; to: number; mark: Mark };
@@ -356,13 +374,19 @@ function retract(out: Transaction, from: number, to: number, del: Mark, attrs: S
   }
 }
 
-/** The id of the view's own insertion an edit over `[from, to)` replaces, from an earlier turn. */
+/**
+ * The id of the view's own insertion an edit over `[from, to)` replaces, from an earlier turn: an
+ * inline insertion's, or the block's when the Work added the whole block.
+ */
 function replacedId(doc: Node, from: number, to: number, view: View): string | null {
   let id: string | null = null;
   doc.nodesBetween(from, to, (node, _pos, parent) => {
     if (id || !node.isInline || !parent) return !id;
     if (kindOf(node.marks, parent, view) !== "own-ins") return false;
-    id = (node.marks.find((mark) => mark.type.name === "suggest_ins")?.attrs.id as string) ?? null;
+    id =
+      (node.marks.find((mark) => mark.type.name === "suggest_ins")?.attrs.id as string) ??
+      (parent.attrs.sug as SuggestionAttrs | null)?.id ??
+      null;
     return false;
   });
   return id;
@@ -392,6 +416,7 @@ function replaceInWork(
   view: View,
   author: Omit<SuggestionAttrs, "id">,
   forward: boolean,
+  changed: (id: string) => void,
 ): number | null {
   const startBlock = topBlock(out.doc, from);
   const endBlock = topBlock(out.doc, to);
@@ -399,6 +424,7 @@ function replaceInWork(
   if (!startBlock || !endBlock || !startBlock.node.isTextblock || !endBlock.node.isTextblock) {
     if (from !== to || slice.openStart !== 0 || slice.size === 0) return null;
     const attrs = { ...author, id: newChangeId() };
+    changed(attrs.id);
     const blocks: Node[] = [];
     slice.content.forEach((block) => {
       blocks.push(block.type.create({ ...block.attrs, sug: attrs }, block.content, block.marks));
@@ -414,6 +440,7 @@ function replaceInWork(
       (author.turn === null ? null : replacedId(out.doc, from, to, view)) ??
       newChangeId(),
   };
+  changed(attrs.id);
   const schema = out.doc.type.schema;
   const joining = startBlock.pos !== endBlock.pos;
   // What follows the cut in the last block moves to where the cut closes: kept as a copy, since

@@ -12,7 +12,7 @@ import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import {
   type Author,
   blockKind,
-  kindOf,
+  CHANGE_META,
   newChangeId,
   type Run,
   rewrite,
@@ -111,14 +111,11 @@ export function suggestingModel(
       }
       if (textOps.length === 0) return { ok: true };
       const current = stored(block);
-      const after = rewritten(current, textOps, view, author, schema);
-      if (!after) return refused("the write does not fit the block");
-      const applied = applyRawOps(unwrapBlock(block), lowerBlock(current, after));
-      written(unwrapBlock(block), after);
-      if (view.work !== null && deletesToEnd(textOps, runs(current, view))) {
-        const tail = endChange(after, view);
-        if (tail) tails.set(unwrapBlock(block), tail);
-      }
+      const out = rewritten(current, textOps, view, author, schema);
+      if (!out) return refused("the write does not fit the block");
+      const applied = applyRawOps(unwrapBlock(block), lowerBlock(current, out.node));
+      written(unwrapBlock(block), out.node);
+      if (out.endChange) tails.set(unwrapBlock(block), out.endChange);
       return applied;
     },
 
@@ -156,16 +153,22 @@ export function suggestingModel(
   }
 }
 
-/** The text edits of one block, planned in view units, replayed on the stored block and rewritten. */
+/**
+ * The text edits of one block, planned in view units, replayed on the stored block and rewritten.
+ * `endChange` is the change a Work's edit removing text to the block's visible end took: a block
+ * inserted right after it is the other half of a split.
+ */
 function rewritten(
   node: PMNode,
   ops: readonly Extract<EditOp, { kind: "text" }>[],
   view: View,
   author: Author | null,
   schema: Schema,
-): PMNode | null {
+): { node: PMNode; endChange: string | null } | null {
   const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
   const units = runs(node, view);
+  const end = units.reduce((n, run) => n + (visible(run.kind) ? run.to - run.from : 0), 0);
+  let endStep: number | null = null;
   const tr = state.tr;
   // Formats are planned on the text before the splices and do not move positions: first.
   for (const { from, to, mark, attrs } of ops.flatMap((op) => op.formats)) {
@@ -182,11 +185,18 @@ function rewritten(
   for (const { from, to, content } of splices) {
     const a = 1 + rawUnit(units, from, from === to ? "end" : "start");
     const b = from === to ? a : Math.max(a, 1 + rawUnit(units, to, "end"));
+    const step = tr.steps.length;
     if (content.size > 0) tr.replaceWith(a, b, content);
     else if (b > a) tr.delete(a, b);
+    if (from < to && to === end && tr.steps.length > step) endStep = step;
   }
   const out = rewrite(tr, state, view, author);
-  return out.doc.childCount === 1 ? out.doc.firstChild : null;
+  if (out.doc.childCount !== 1) return null;
+  const changes = (out.getMeta(CHANGE_META) as Array<string | null> | undefined) ?? [];
+  return {
+    node: out.doc.child(0),
+    endChange: endStep === null ? null : (changes[endStep] ?? null),
+  };
 }
 
 /**
@@ -254,27 +264,4 @@ function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
     nodes.set(element, node);
   }
   return node;
-}
-
-/** Whether a write removes text up to the end of the block as the view shows it. */
-function deletesToEnd(ops: readonly Extract<EditOp, { kind: "text" }>[], units: readonly Run[]) {
-  const end = units.reduce((n, run) => n + (visible(run.kind) ? run.to - run.from : 0), 0);
-  return ops.some((op) => op.splices.some(({ from, to }) => to === end && from < to));
-}
-
-/**
- * The change at the end of a block the view's write just cut short: the block's own insertion,
- * or the deletion over its last text. A block inserted right after it is the split's other half.
- */
-function endChange(block: PMNode, view: View): string | null {
-  if (blockKind(block, view) === "own") return (block.attrs.sug as { id: string }).id;
-  for (let index = block.childCount - 1; index >= 0; index--) {
-    const child = block.child(index);
-    if (kindOf(child.marks, block, view) !== "own-del") continue;
-    const del = child.marks.find(
-      (m) => m.type.name === "suggest_del" && m.attrs.work === view.work,
-    );
-    return (del?.attrs.id as string | undefined) ?? null;
-  }
-  return null;
 }
