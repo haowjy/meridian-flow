@@ -929,12 +929,12 @@ CREATE TABLE "document_block_rooms" (
 	"document_id" uuid NOT NULL,
 	"block_order" text[] NOT NULL,
 	"word_count" integer NOT NULL,
+	"pending_works" text[] DEFAULT '{}'::text[] NOT NULL,
 	"document_hash" "bytea" NOT NULL,
 	"cut_generation" bigint NOT NULL,
 	"cut_admission_seq" bigint NOT NULL,
 	"cut_location_version" bigint NOT NULL,
-	"extractor_version" integer NOT NULL,
-	"pending_changes" jsonb DEFAULT '{}'::jsonb NOT NULL
+	"extractor_version" integer NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "document_blocks" (

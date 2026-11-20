@@ -9329,6 +9329,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "pending_works": {
+          "name": "pending_works",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
         "document_hash": {
           "name": "document_hash",
           "type": "bytea",
@@ -9358,13 +9365,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
-        },
-        "pending_changes": {
-          "name": "pending_changes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         }
       },
       "indexes": {

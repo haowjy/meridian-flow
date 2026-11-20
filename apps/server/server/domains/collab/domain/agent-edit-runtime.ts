@@ -6,7 +6,6 @@ import {
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentEdits,
-  storedPending,
   suggestingModel,
   type UpdateJournal,
   type UpdateMeta,
@@ -17,7 +16,6 @@ import type { DocumentId, TurnId } from "@meridian/contracts/runtime";
 import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { type Author, liveView } from "@meridian/suggestions";
-import type * as Y from "yjs";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
@@ -96,10 +94,6 @@ export function createAgentEditRuntime(input: {
     ? {
         model: (work) => suggestingModel(storedModel, { work }, null),
         core: (work, author) => liveCoreOver(suggestingModel(storedModel, { work }, author)),
-        pending: (doc) =>
-          Object.fromEntries(
-            [...storedPending(doc, schema).works].map(([work, ids]) => [work, ids.size]),
-          ),
       }
     : null;
   const markdownDocuments = scopeMarkdownEngine(
@@ -183,8 +177,6 @@ export function createAgentEditRuntime(input: {
 export type WorkViews = {
   model(work: string): YProsemirrorDocumentModel;
   core(work: string, author: Author): AgentEditCore;
-  /** Each Work's pending change count in a stored document: the derivation's pending index. */
-  pending(doc: Y.Doc): Record<string, number>;
 };
 
 export function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {

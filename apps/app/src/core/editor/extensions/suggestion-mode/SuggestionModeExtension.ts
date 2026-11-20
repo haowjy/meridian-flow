@@ -20,6 +20,7 @@ import {
   sameValue,
   type View,
   viewAttrs,
+  visible,
   visibleSlice,
 } from "@meridian/suggestions";
 import { Extension, Mark } from "@tiptap/core";
@@ -114,6 +115,38 @@ declare module "@tiptap/core" {
 /** The view the editor shows: what every reader of the editor's blocks reads them through. */
 export function suggestionView(state: EditorState): View {
   return suggestionModeKey.getState(state)?.view ?? liveView;
+}
+
+/**
+ * The text the editor's view reads between `from` and `to` (inside one textblock), and where an
+ * offset in that text lies in the document: the bridge for a command that shows a range's words
+ * and edits them back. At an offset between two shown runs with unshown text between them,
+ * `side` -1 is the end of the earlier run, 1 the start of the later.
+ */
+export function shownText(
+  state: EditorState,
+  from: number,
+  to: number,
+): { text: string; at(offset: number, side: -1 | 1): number } {
+  const view = suggestionView(state);
+  const runs: Array<{ offset: number; pos: number; length: number }> = [];
+  let text = "";
+  state.doc.nodesBetween(from, to, (node, pos, parent) => {
+    if (!node.isText || !parent || !visible(kindOf(node.marks, parent, view))) return;
+    const start = Math.max(from, pos);
+    const end = Math.min(to, pos + node.nodeSize);
+    runs.push({ offset: text.length, pos: start, length: end - start });
+    text += (node.text ?? "").slice(start - pos, end - pos);
+  });
+  const at = (offset: number, side: -1 | 1) => {
+    const run =
+      (side < 0
+        ? runs.find((r) => offset > r.offset && offset <= r.offset + r.length)
+        : runs.find((r) => offset >= r.offset && offset < r.offset + r.length)) ??
+      (side < 0 ? runs[0] : runs.at(-1));
+    return run ? run.pos + Math.max(0, Math.min(run.length, offset - run.offset)) : from;
+  };
+  return { text, at };
 }
 
 /** The view each editor document is shown in, for a command that holds only its transaction. */

@@ -292,21 +292,17 @@ export const documentBlockRooms = pgTable(
     /** Block ids ("<clientID>:<clock>" of the top-level element) in document order. */
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
+    /**
+     * Works (`draftOwnerKey`) with suggestions in the cut. The blocks hold Live's text, so a
+     * reader in one of these Works' views reads the document itself.
+     */
+    pendingWorks: text("pending_works").array().notNull().default(sql`'{}'::text[]`),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
     cutGeneration: bigint("cut_generation", { mode: "bigint" }).notNull(),
     cutAdmissionSeq: bigint("cut_admission_seq", { mode: "bigint" }).notNull(),
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),
-    /**
-     * Suggestion mode: per Work (its draft owner key), the number of its pending changes in the
-     * cut. A cache of the document's suggestion marks, behind them by the derivation's debounce: a
-     * press on a whole Work visits these, with the documents the pressing tab has open.
-     */
-    pendingChanges: jsonb("pending_changes")
-      .$type<Record<string, number>>()
-      .notNull()
-      .default(sql`'{}'::jsonb`),
   },
   (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
 );

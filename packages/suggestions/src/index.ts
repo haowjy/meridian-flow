@@ -1,4 +1,12 @@
-export { accept, type Change, type Filter, list, pending, reject } from "./resolve.js";
+export {
+  accept,
+  type Change,
+  type Filter,
+  list,
+  pendingTurns,
+  pendingWorks,
+  reject,
+} from "./resolve.js";
 export {
   type Author,
   CHANGE_META,
@@ -24,6 +32,7 @@ export {
   type View,
   viewAttrs,
   viewBlock,
+  viewDoc,
   visible,
   visibleSlice,
 } from "./view.js";

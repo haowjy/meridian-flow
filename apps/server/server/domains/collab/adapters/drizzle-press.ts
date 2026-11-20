@@ -137,7 +137,7 @@ export function createDrizzlePress(
               : undefined,
             eq(documents.userId, envelope.accountId as UserId),
           ),
-          sql`${documentBlockRooms.pendingChanges} ? ${work}`,
+          sql`${work} = ANY(${documentBlockRooms.pendingWorks})`,
         ),
       );
     return rows.map((row) => row.id as string);

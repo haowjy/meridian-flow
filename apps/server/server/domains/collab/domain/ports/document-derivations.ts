@@ -4,7 +4,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
 // Changing the extractor must bump this version to invalidate older output.
-export const DOCUMENT_EXTRACTOR_VERSION = 5;
+export const DOCUMENT_EXTRACTOR_VERSION = 6;
 export type DerivationWatermark = {
   generation: bigint;
   admissionSequence: bigint;
@@ -30,13 +30,13 @@ export type DocumentDerivationOutputs = {
   /** In document order. */
   blocks: DerivedBlock[];
   wordCount: number;
+  /** The Works (`draftOwnerKey`) whose suggestions the cut holds: `blocks` is not their view. */
+  pendingWorks: string[];
   /** Sum of the blocks' text bytes. */
   documentBytes: number;
   /** Ordered block content hashes plus the link facts: the edit signal behind `updated_at`. */
   documentHash: Buffer;
   links: DocumentLinkRow[];
-  /** Suggestion mode: each Work's (draft owner key's) pending change count; empty for none. */
-  pendingChanges: Record<string, number>;
 };
 export type DocumentDerivationStore = {
   capture(documentId: DocumentId): Promise<DocumentDerivationCut | null>;

@@ -18,7 +18,8 @@ import {
   DROPPED_META,
   type Filter,
   newChangeId,
-  pending,
+  pendingTurns,
+  pendingWorks,
   type Run,
   reject,
   rewrite,
@@ -340,21 +341,18 @@ export function resolveStored(
   return true;
 }
 
-/**
- * What a stored document holds pending (`pending`): its turns, and each Work's change ids. One read
- * per document state, from the blocks the model has already read when it has.
- */
-export function storedPending(doc: Y.Doc, schema: Schema): ReturnType<typeof pending> {
-  let found = pendingByDoc.get(doc);
-  if (!found) {
-    found = pending(schema.topNodeType.create(null, [...projectionsOf(doc, schema).values()]));
-    pendingByDoc.set(doc, found);
+/** The turns whose suggestions a stored document still holds; one read per document state. */
+export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
+  let turns = pendingByDoc.get(doc);
+  if (!turns) {
+    turns = pendingTurns(storedRoot(doc, schema));
+    pendingByDoc.set(doc, turns);
     doc.once("afterTransaction", () => pendingByDoc.delete(doc));
   }
-  return found;
+  return turns;
 }
 
-const pendingByDoc = new WeakMap<Y.Doc, ReturnType<typeof pending>>();
+const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
 
 /** Yjs item ids by client, as `[clock, len]` runs in clock order. */
 export type IdRanges = Record<string, [number, number][]>;
@@ -429,6 +427,11 @@ function deleteSetOf(ranges: IdRanges): DeleteSet {
       runs.map(([clock, len]) => ({ clock, len }) as never),
     );
   return set;
+}
+
+/** The Works whose suggestions a stored document holds: the views that read it otherwise than Live. */
+export function storedPendingWorks(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
+  return pendingWorks(storedRoot(doc, schema));
 }
 
 function storedRoot(doc: Y.Doc, schema: Schema): PMNode {

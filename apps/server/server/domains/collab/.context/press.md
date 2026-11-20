@@ -44,9 +44,9 @@ purged with discards after 30 days.
 
 ## The pending index
 
-`document_block_rooms.pending_changes` is `{ owner: count }` per document, written by the
-document derivation from `pending(doc)` and read only by a whole-Work press, scoped to the
-Work's project and account documents. It lags the derivation's debounce (2–10 s for room
+`document_block_rooms.pending_works` names the Works with suggestions in each document, written
+by the document derivation. The press reads it only for a whole Work, scoped to the Work's
+project and account documents. It lags the derivation's debounce (2–10 s for room
 typing), so it never decides what a named press touches. A whole-Work press can miss a
 document typed into in another tab seconds before; the pressing tab's open documents come in
 through `seen`.
