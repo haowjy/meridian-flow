@@ -63,3 +63,6 @@ review route; moving that onto Live is the review UI's work.
 - Trash's discard list reads `draft_discards`, so a press Discard does not show there; Undo is
   the press's own.
 - No per-document grant check: the press is the Work owner's, like Apply all.
+- A press Apply leaves `apply_command_trees.created_heads` as the tree Apply's placeholders:
+  the press never calls `recordCreatedHeads`, since its Undo keeps every created document in
+  Live. Anything that comes to read those heads for a press must record them first.
