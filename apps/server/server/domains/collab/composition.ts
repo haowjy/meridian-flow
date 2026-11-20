@@ -621,12 +621,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     replaceAuthorityGeneration,
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
-  const lineage = createTurnLiveLineageReadModel({
-    store: lineageStore,
-    receiptStore: turnInverse,
-    resolveDocumentUri: documentUriResolver,
-    resolveLastDocumentUri,
-  });
   // Suggestion mode (prototype): a card's Undo rejects the turn's suggestions.
   const suggestionTurnUndo = runtime.suggestionCore
     ? createSuggestionTurnUndo({
@@ -635,12 +629,25 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         resolveDocumentUri: documentUriResolver,
         changeLiveDocument: runtime.markdownDocuments.changeLiveDocument,
         reverseLiveTurn: turnInverse.reverseTurn,
+        withLiveDocument: runtime.markdownDocuments.withLiveDocument,
+        liveTurnChip: turnInverse.getDocumentAndTreeChip,
       })
     : null;
+  const turnUndo = suggestionTurnUndo
+    ? {
+        ...turnInverse,
+        reverseTurn: suggestionTurnUndo.reverseTurn,
+        getDocumentAndTreeChip: suggestionTurnUndo.chip,
+      }
+    : turnInverse;
+  const lineage = createTurnLiveLineageReadModel({
+    store: lineageStore,
+    receiptStore: turnUndo,
+    resolveDocumentUri: documentUriResolver,
+    resolveLastDocumentUri,
+  });
   const turnReversal = createTurnReversalService({
-    turnInverse: suggestionTurnUndo
-      ? { ...turnInverse, reverseTurn: suggestionTurnUndo }
-      : turnInverse,
+    turnInverse: turnUndo,
     lockOwners: createDrizzleReversalLocks(deps.db),
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,

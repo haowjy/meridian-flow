@@ -2,10 +2,11 @@
  * Suggestion mode (prototype): the card's Undo of a turn whose edits are still suggestions rejects
  * them, as a client of the document would: read the stored document, reject the turn's marks, write
  * the blocks back. Text the writer typed beside them is untouched. The documents where the turn
- * left no suggestion (it wrote Live there) are undone the existing way.
+ * left no suggestion (it wrote Live there) are undone the existing way. The card offers Undo while
+ * any of the turn's documents still holds its suggestions, whatever the writer edited since.
  */
 import { writeBlocks } from "@meridian/agent-edit/diff";
-import type { ReversalOutcome } from "@meridian/contracts/protocol";
+import type { ReversalOutcome, TurnReceiptChip } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { reject } from "@meridian/suggestions";
@@ -13,7 +14,7 @@ import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import type * as Y from "yjs";
-import type { DocumentWriteOrigin } from "../contracts.js";
+import type { DocumentWriteOrigin, HeldLiveDocument } from "../contracts.js";
 import type { TurnInverseQuery } from "./turn-inverse-service.js";
 
 type Query = TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } };
@@ -31,8 +32,41 @@ export function createSuggestionTurnUndo(deps: {
     mutate(doc: Y.Doc): void;
   }): Promise<void>;
   reverseLiveTurn(query: Query): Promise<ReversalOutcome>;
+  withLiveDocument<T>(
+    documentId: string,
+    operation: (held: HeldLiveDocument) => Promise<T>,
+  ): Promise<T>;
+  liveTurnChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 }) {
-  return async (query: Query): Promise<ReversalOutcome> => {
+  const rootOf = (doc: Y.Doc) =>
+    yXmlFragmentToProseMirrorRootNode(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), deps.schema);
+
+  async function holdsSuggestions(threadId: ThreadId, turn: TurnId): Promise<boolean> {
+    const targets = await deps.listTurnDocuments(threadId, turn);
+    for (const documentId of new Set(targets.map((target) => target.documentId))) {
+      const holds = await deps.withLiveDocument(documentId, async ({ doc }) => {
+        let found = false;
+        rootOf(doc).descendants((node) => {
+          if (found) return false;
+          found =
+            (node.attrs.sug as { turn?: string } | null)?.turn === turn ||
+            node.marks.some((mark) => mark.attrs.turn === turn);
+          return !found;
+        });
+        return found;
+      });
+      if (holds) return true;
+    }
+    return false;
+  }
+
+  async function chip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
+    const live = await deps.liveTurnChip(threadId, turnId);
+    if (live?.control === "undo" || !(await holdsSuggestions(threadId, turnId))) return live;
+    return { drafts: live?.drafts, control: "undo" };
+  }
+
+  const reverseTurn = async (query: Query): Promise<ReversalOutcome> => {
     const turn = query.turnId;
     if (!turn) return { status: "nothing_to_undo", documents: [] };
     const targets = await deps.listTurnDocuments(query.threadId, turn);
@@ -48,10 +82,7 @@ export function createSuggestionTurnUndo(deps: {
             : { type: "agent", actorTurnId: turn },
         mutate: (doc) => {
           const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-          const state = EditorState.create({
-            schema: deps.schema,
-            doc: yXmlFragmentToProseMirrorRootNode(fragment, deps.schema),
-          });
+          const state = EditorState.create({ schema: deps.schema, doc: rootOf(doc) });
           const tr = reject(state, { turn });
           if (!tr.docChanged) return;
           rejected = true;
@@ -77,4 +108,5 @@ export function createSuggestionTurnUndo(deps: {
     const live = await deps.reverseLiveTurn({ ...query, documentIds: rest });
     return { ...live, status: "reversed", documents: [...documents, ...live.documents] };
   };
+  return { reverseTurn, chip };
 }
