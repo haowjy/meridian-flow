@@ -4,6 +4,7 @@ import { RAW_META } from "./rewrite.js";
 import {
   type AttrProposal,
   blockKind,
+  isSuggestionMark,
   kindOf,
   layered,
   proposals,
@@ -20,7 +21,7 @@ export function pendingTurns(doc: Node): Set<string> {
   doc.descendants((node) => {
     note(node.attrs.sug);
     for (const proposal of Object.values(proposals(node)).flat()) note(proposal);
-    for (const mark of node.marks) if (isSuggestion(mark)) note(mark.attrs as SuggestionAttrs);
+    for (const mark of node.marks) if (isSuggestionMark(mark)) note(mark.attrs as SuggestionAttrs);
     return true;
   });
   return turns;
@@ -53,7 +54,7 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
   const unmark: Array<[number, number, Mark]> = [];
   const remove: Array<[number, number]> = [];
   const set: Array<[number, string, unknown]> = [];
-  state.doc.descendants((block, blockPos, parent) => {
+  state.doc.descendants((block, blockPos, parent, index) => {
     if (block.isInline) return false;
     const blockFate = fateOf(block.attrs.sug);
     if (blockFate) {
@@ -68,11 +69,19 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
       for (const [work, layers] of pending) {
         const accepted = layers.filter((layer) => fateOf(layer) === "accept");
         // A block its container cannot do without (a cell's only block) stays, emptied.
-        if (accepted.some((layer) => layer.remove) && parent && parent.childCount > 1)
+        if (accepted.some((layer) => layer.remove) && parent?.canReplace(index, index + 1))
           remove.push([blockPos, blockPos + block.nodeSize]);
         for (const [key, value] of Object.entries(layered(accepted)))
           set.push([blockPos, key, value]);
-        const kept = layers.filter((layer) => !fateOf(layer));
+        // An earlier layer that stays loses what a later accepted one set: Live has that now.
+        const kept = layers.flatMap((layer, index) => {
+          if (fateOf(layer)) return [];
+          const later = layered(accepted.filter((each) => layers.indexOf(each) > index));
+          const attrs = Object.fromEntries(
+            Object.entries(layer.attrs).filter(([key]) => !(key in later)),
+          );
+          return layer.remove || Object.keys(attrs).length > 0 ? [{ ...layer, attrs }] : [];
+        });
         if (kept.length > 0) left.push([work, kept]);
       }
       set.push([blockPos, "sugAttrs", left.length > 0 ? Object.fromEntries(left) : null]);
@@ -113,7 +122,7 @@ function fates(
     doc.descendants((node) => {
       for (const proposal of [node.attrs.sug, ...Object.values(proposals(node)).flat()])
         if (matches(proposal, filter)) chosen.add(proposal.id);
-      const marks = node.marks.filter(isSuggestion);
+      const marks = node.marks.filter(isSuggestionMark);
       for (const mark of marks)
         if (matches(mark.attrs as SuggestionAttrs, filter)) chosen.add(mark.attrs.id);
       if (
@@ -128,10 +137,6 @@ function fates(
   for (const id of chosen) superseded.delete(id);
   return (attrs) =>
     matches(attrs, filter) ? action : attrs && superseded.has(attrs.id) ? "reject" : null;
-}
-
-function isSuggestion(mark: Mark): boolean {
-  return mark.type.name === "suggest_ins" || mark.type.name === "suggest_del";
 }
 
 /** Sorted, with touching ranges joined, so each delete sees the positions it was planned on. */
