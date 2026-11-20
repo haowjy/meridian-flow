@@ -130,19 +130,19 @@ describe("Hocuspocus document transport adapter", () => {
     },
   );
 
-  // A room whose frames the server can never store must stop resending and keep its outbox.
+  // A room whose frames the server can never store must stop resending, including typing replayed
+  // from the copy before the transport existed, which never passes through the outbox.
   it.each(["draft:draft-1", "document-1"])(
     "bounds repeated update refusals of %s",
     async (roomName) => {
       const document = new Y.Doc();
+      document.getText("body").insert(0, "replayed");
       const awareness = new Awareness(document);
       const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
       const states: DocumentSessionConnectionState[] = [];
       transport.subscribeStatus?.((state) => states.push(state));
       try {
         await vi.advanceTimersByTimeAsync(0);
-        document.getText("body").insert(0, "writer");
-        const carry = transport.unacknowledgedUpdates();
         for (let refusal = 0; refusal < 4; refusal += 1) {
           const socket = DocumentSocketHarness.instances.at(-1);
           if (!socket) throw new Error("missing document socket");
@@ -158,7 +158,6 @@ describe("Hocuspocus document transport adapter", () => {
           code: WS_CLOSE.WRITER_ADMISSION_FAILED.code,
         });
         expect(DocumentSocketHarness.instances).toHaveLength(3);
-        expect(transport.unacknowledgedUpdates()).toEqual(carry);
       } finally {
         transport.destroy();
         awareness.destroy();

@@ -29,7 +29,7 @@
  *
  * A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), Live or
  * draft. One reconnects and resends, as any close does; after `MAX_UPDATE_REFUSALS` in a row with
- * unsent edits and no acknowledgement between them, the room ends `UPDATES_REFUSED` instead of
+ * no acknowledgement between them, the room ends `UPDATES_REFUSED` instead of
  * resending forever, and the session's owner replaces it (`DocumentSession.holdsUndeliverableEdits`).
  *
  * A draft room's handshake upload goes first. The client's SyncStep2 is the
@@ -508,12 +508,10 @@ export function createHocuspocusDocumentTransport({
       publishTerminal(state);
       return;
     }
-    // Any 1013 counts, whatever its reason: a reconnect that is acknowledged resets the count.
-    if (
-      event.code === WS_CLOSE.WRITER_ADMISSION_FAILED.code &&
-      outbox !== null &&
-      ++refusals >= MAX_UPDATE_REFUSALS
-    )
+    // Any 1013 counts, whatever its reason, and whether or not the outbox holds the frame: typing
+    // replayed from the copy goes out in each handshake without passing through it. A reconnect
+    // that is acknowledged resets the count.
+    if (event.code === WS_CLOSE.WRITER_ADMISSION_FAILED.code && ++refusals >= MAX_UPDATE_REFUSALS)
       publishTerminal({ kind: "terminal", reason: UPDATES_REFUSED, code: event.code });
   }
 

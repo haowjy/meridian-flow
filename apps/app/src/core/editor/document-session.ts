@@ -651,10 +651,8 @@ export class DocumentSession {
    * Reads the local copy (words another tab stored that this tab never received) and takes one
    * more handshake, so the verdict is the whole browser's. Resolves whether the room still holds
    * edits the server will not take; false when the connection ended or turned editable meanwhile.
-   * A room whose updates were refused has no connection left to ask, and holds them.
    */
   async decideAgain(): Promise<boolean> {
-    if (updatesRefused(this.transportState)) return true;
     await this.localPeers?.catchUp().catch((error) => reportError(error));
     const provider = this.transportProvider;
     if (!provider || this.access !== "read") return false;

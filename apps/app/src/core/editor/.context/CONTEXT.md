@@ -648,7 +648,7 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
   the pill, and a room with no session in this tab is measured too. A copy with no mark (written
   before marks, or whose first mark write was lost) counts as marking nothing: all of it counts.
   A closed draft's copy stays for an Undo of its Discard, which delivers it.
-- What it cannot reach: a read admission has no such loss (see the next section). A document no
+- What it cannot reach: a read admission or a refused room has no such loss (see the next section). A document no
   tab has open keeps its typing in its copy until its next open or its purge.
 
 ### Undeliverable edits (a room admitted read-only, or refused)
@@ -657,9 +657,10 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
 It is checked at every handshake of a read admission (`core/transport/handshake-difference.ts`),
 from the wire alone, with nothing stored between handshakes. A room whose updates the server
 kept refusing (`updatesRefused`, the transport context's "Frames the server can't store") holds
-them by definition: it skips the handshake (`decideAgain` answers yes at once, with no difference
-to read) and is replaced the same way, Live or draft. Its typing is dropped by the older-copy
-read, never by the replacement.
+them by definition: the replacement skips the handshake, drops what its copy holds beyond the
+mark (with the pill) and advances the copy, Live or draft. It does that even when an owner retired
+the session first (a room nobody shows retires in the same emit that ends it), and then opens
+nothing; the next open loads from the server, and its older-copy read may show the pill once more.
 
 - The session (`unsent-edits.ts`) decides what counts: everything the server lacks, whoever wrote it,
   except *display writes*, what the editor binding writes while drawing (it deletes a node the
@@ -692,7 +693,8 @@ read, never by the replacement.
   follow through `observeReplacement` (live bindings and open tabs, draft room reads); a mount keeps its
   reading position across it, because the store is keyed by room (`use-reading-position.ts`).
 - **Who drops.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
-  it reads that and a snapshot, then makes the old session inert), the older-copy read below
+  it reads that and a snapshot, then makes the old session inert; for a refused room, its copy
+  beyond the mark), the older-copy read below
   (everything an older incarnation holds beyond the new session's first handshake), a closing or
   removing retirement and `LocalDocumentCopies.clear` (each, the copy beyond its mark). Nothing
   is stored: the copies are working storage only, and a drop that is told twice shows the one pill
