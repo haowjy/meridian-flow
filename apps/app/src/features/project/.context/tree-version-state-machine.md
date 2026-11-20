@@ -85,15 +85,13 @@ stateDiagram-v2
   a row's Undo is the same step (`undoStep`): whichever runs first, the other finds nothing. The
   notice ends at the next gesture or press, or when the writer opens a document from the tree.
   The stack is record ids per list copy, in memory; a reload empties it. A step `undoChange`
-  refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. An Apply is one step in
-  either view (`ApplyStep`, undone through `ApplyEntries`): the press asks the server's Un-Apply and
-  is spent once the server answered, so it never falls through to an older step; one that didn't
-  reach the server toasts and stays. On the Changes tab a press takes the
-  latest step of any source. The applied rows in Changes carry the same step's Undo. An Apply step
-  has two halves, from its answer: its text ends only by an Un-Apply, and its tree half ends by
-  itself when `appliedNodes` (over the Apply's command and the restores its answer named) reads
-  empty in the list copies (`endWhenTakenBack`). With both ended it ends. It sits on the stack
-  until an Un-Apply took something back or it ended.
+  refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. A review's Apply or Discard is
+  one step in either view (`PressStep`): the press sends that press's own Undo, the same one its
+  notice and an open editor's Ctrl+Z send (an Apply through `ApplyEntries`), and is spent once the
+  server answered, so it never falls through to an older step; one that didn't reach the server
+  toasts and stays. On the Changes tab a press takes the latest step of any source; in a source's
+  list, a step whose documents showed there in the Work's tree when it was pressed. It leaves the
+  stack once the press is taken back from anywhere, and an editor's Redo of an Apply puts it back.
 - **A step that waits for a closed owner keeps its place.** A tree step whose every record would
   change such an owner's notes, goes back where it was, and its rows say who it waits for ("The
   move stayed: Notes is archived. Unarchive it to undo this."). A press passes over it while every

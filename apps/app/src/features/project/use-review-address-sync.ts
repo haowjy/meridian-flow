@@ -14,6 +14,7 @@ import {
   type DraftPin,
   readDocumentView,
   setDocumentView,
+  useDocumentView,
 } from "@/client/project-shell/document-views";
 import { writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useAccountId } from "./context/account-feature-context";
@@ -84,9 +85,10 @@ export function useReviewAddressSync({
       : JSON.stringify([arrivalOf(history, entryKey), documentId]);
   /** The arrival, and main's document in it, whose address main's view has taken in. */
   const arrived = useRef<string | undefined>(undefined);
-  // What main's document shows, by the one rule: the address follows it.
+  // What main's document shows, by the one rule: the address follows it. `shownOf` reads the
+  // store when called, so `stored` is what re-runs the follow when the pin moves (a change focused).
   const shownOf = useShownDraft(projectId, chatThreadId);
-  const pin = documentId ? shownOf(documentId) : undefined;
+  const stored = useDocumentView(accountId, projectId, documentId ?? null);
   const scopeOwnerKey = useScopeDraftOwner(projectId, chatThreadId).ownerKey || null;
 
   useLayoutEffect(() => {
@@ -127,7 +129,7 @@ export function useReviewAddressSync({
     address.itemKey,
     address.changeId,
     address.owner,
-    pin,
+    stored,
     shownOf,
     writeItemKey,
   ]);

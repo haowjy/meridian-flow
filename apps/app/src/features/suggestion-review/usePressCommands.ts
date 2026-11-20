@@ -5,7 +5,8 @@
  *
  * The rows a press takes leave the list as it is sent; a press that fails puts them back with a
  * pill. Its notice is the draft notice: a Discard's rows struck with Undo, an Apply's rows with
- * Undo, and both Undos are the press's.
+ * Undo. Each press is one step on the sidebar's Undo stack too (`PressStep`), and every Undo of
+ * it, there, on its notice or in an editor, is the press's one Undo.
  */
 import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
@@ -14,7 +15,8 @@ import type {
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
-import type { Work } from "@meridian/contracts/works";
+import { type Work, workLifecycleState } from "@meridian/contracts/works";
+import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
@@ -28,7 +30,15 @@ import {
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { ApplyEntries, type ApplyPort } from "@/features/draft-review/apply-history";
+import {
+  dropUndoStep,
+  type PressStep,
+  pushUndoStep,
+  shownSourceOf,
+} from "@/core/project-tree/tree-undo";
+import { draftTreeVersion } from "@/core/project-tree/tree-version";
+import type { TreeListHandle } from "@/core/tree-list/tree-list-registry";
+import { ApplyEntries, type ApplyPort, type Seat } from "@/features/draft-review/apply-history";
 import { type CommandOutcome, folderKey } from "@/features/draft-review/draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
 import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
@@ -36,10 +46,12 @@ import type { ChangeTarget } from "@/features/draft-review/review-model";
 import {
   useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
+  useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 
 type Verdict = "apply" | "discard";
-type Pressed = { commandId: string; result: PressResult };
+/** `sources`: where the press's nodes showed in the Work's tree as it was sent. */
+type Pressed = { commandId: string; result: PressResult; sources: readonly string[] };
 /** A node the press takes: whole, or only its tree change (a review's tree line). */
 type PressItem = { node: string; half?: "tree" };
 const whole = (nodes: readonly string[]): PressItem[] => nodes.map((node) => ({ node }));
@@ -65,6 +77,7 @@ export function usePressCommands({
   const owner = useDraftCommandOwner();
   const driver = useCommandDriver();
   const registry = useLiveDocumentSessionRegistry();
+  const treeLists = useOptionalTreeLists();
   const queryClient = useQueryClient();
   const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
   const locked = !ownerKey || !driver;
@@ -106,12 +119,51 @@ export function usePressCommands({
       return settled?.state === "done";
     };
 
-    /** A Discard's Undo, once: the notice and every row that offers it send this. */
-    const undoOf = (commandId: string) => {
+    /**
+     * Where the nodes show in the Work's tree now (`sources`), its view showing both what Live
+     * holds and what the Work made.
+     */
+    const sourcesOf = (nodes: readonly string[]): string[] => {
+      if (!treeLists) return [];
+      const branchId = queryClient.getQueryData<ThreadDraftListResponse>(
+        projectQueryKeys.ownerDrafts(projectId, ownerKey),
+      )?.branchId;
+      const handle = treeLists.acquire({ kind: "project", projectId });
+      const { view, pendingText } = branchId
+        ? draftTreeVersion(branchId, rows(), work ? workLifecycleState(work) : "active")
+        : { view: LIVE, pendingText: undefined };
+      const shown = handle.session.replay(view, pendingText);
+      handle.release();
+      return [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))];
+    };
+
+    /** A press's step on the project list's Undo stack, held there while it is on it. */
+    const seatOf = (step: PressStep): Seat => {
+      let held: TreeListHandle | null = null;
+      return {
+        push: () => {
+          if (held || !treeLists) return;
+          held = treeLists.acquire({ kind: "project", projectId });
+          pushUndoStep(held.session, step);
+        },
+        drop: () => {
+          if (!held) return;
+          dropUndoStep(held.session, step);
+          held.release();
+          held = null;
+        },
+      };
+    };
+
+    /** A Discard's Undo, once: the notice, every row that offers it and the sidebar send this. */
+    const undoOf = (commandId: string, undone: () => void) => {
       let sent: Promise<boolean> | null = null;
       return () => {
         sent ??= unpress(commandId).then((done) => {
-          if (done) return true;
+          if (done) {
+            undone();
+            return true;
+          }
           notifyFailure({ key: `unpress:${commandId}`, title: t`Couldn't undo`, brief: true });
           sent = null;
           return false;
@@ -121,8 +173,9 @@ export function usePressCommands({
     };
 
     /**
-     * An Apply in the history of every editor open on its documents, as a draft's Apply is
-     * (`ApplyEntries`): Ctrl+Z there, or a row's Undo, takes back the press; Redo presses again.
+     * An Apply in the history of every editor open on its documents and on the sidebar's stack
+     * (`ApplyEntries`): Ctrl+Z in either, or a row's Undo, takes back the press; an editor's Redo
+     * presses again.
      */
     const remember = (pressed: Pressed): ApplyEntries => {
       const taken: PressItem[] = pressed.result.items.map((item) =>
@@ -139,14 +192,21 @@ export function usePressCommands({
           return again ? { commandId: again.commandId } : "failed";
         },
       };
+      const seat = seatOf({
+        kind: "press",
+        sources: pressed.sources,
+        nodes: taken.map(({ node }) => node),
+        undo: async () => (await entries.undo(null)).kind !== "failed",
+      });
       const entries: ApplyEntries = new ApplyEntries(
         pressed.commandId,
         port,
         () => taken.map(({ node }) => registry.history(node)),
         {
-          push: () => {},
+          push: seat.push,
           // Taken back: its rows' Undo goes with it.
           drop: () => {
+            seat.drop();
             if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step === entries))
               notices.end(ownerKey);
           },
@@ -184,6 +244,7 @@ export function usePressCommands({
             .filter((node) => !rows().some((item) => item.documentId === node))
             .map((node) => folderKey(listed.branchId as string, node))
         : [];
+      const sources = sourcesOf(nodes);
       const release = owner.hold([...rowKeys, ...folders], verdict === "apply");
       try {
         const open = nodes.flatMap((documentId) => {
@@ -215,7 +276,11 @@ export function usePressCommands({
           });
           return null;
         }
-        return { commandId: record.sendId, result: settled.outcome.result as PressResult };
+        return {
+          commandId: record.sendId,
+          result: settled.outcome.result as PressResult,
+          sources,
+        };
       } finally {
         release();
       }
@@ -266,7 +331,21 @@ export function usePressCommands({
             })),
           });
         } else {
-          const undo = undoOf(pressed.commandId);
+          const seat = seatOf({
+            kind: "press",
+            sources: pressed.sources,
+            nodes: changed,
+            undo: () => undo(),
+          });
+          let shown: number | null = null;
+          const undo = undoOf(pressed.commandId, () => {
+            seat.drop();
+            // Taken back from the sidebar: the notice's Undo goes with it. Its own Undo ends it.
+            const notice = notices.get(ownerKey);
+            if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")
+              notice.dismiss();
+          });
+          seat.push();
           const [first] = changed;
           const part: DiscardPart = {
             documentId: input.documentId ?? first ?? "",
@@ -282,7 +361,7 @@ export function usePressCommands({
               end: () => {},
             },
           };
-          notices.showDiscard({ projectId, ownerKey, surface: where, parts: [part] });
+          shown = notices.showDiscard({ projectId, ownerKey, surface: where, parts: [part] });
         }
         return answer;
       });
@@ -362,6 +441,7 @@ export function usePressCommands({
     owner,
     driver,
     registry,
+    treeLists,
     queryClient,
     frozen,
     locked,
