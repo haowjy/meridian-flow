@@ -79,6 +79,7 @@ function parseChange(payload: string): FileAccessChange {
     workId?: unknown;
     rootThreadId?: unknown;
     projectId?: unknown;
+    documentId?: unknown;
     closed?: ClosedOwnerWhy;
   };
   if (typeof value.workId === "string")
@@ -86,5 +87,6 @@ function parseChange(payload: string): FileAccessChange {
   if (typeof value.rootThreadId === "string")
     return { rootThreadId: value.rootThreadId, closed: value.closed };
   if (typeof value.projectId === "string") return { projectId: value.projectId };
+  if (typeof value.documentId === "string") return { documentId: value.documentId };
   throw new Error("Malformed file access change");
 }

@@ -31,6 +31,7 @@ import {
 } from "../domains/collab/index.js";
 import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
 import {
+  documentAccessKey,
   type FileAccessChanges,
   FileEditRefusedError,
   type FileFacts,
@@ -39,6 +40,7 @@ import {
   fileAccessChangeKey,
   grantOwnerLocks,
   isFileAccessDenied,
+  projectAccessKey,
   runWithEditGrants,
 } from "../domains/file-policy/index.js";
 import {
@@ -405,7 +407,7 @@ async function classifyYjsConnectionAdmission(input: {
   const access = {
     fileTarget,
     access: admitted.access,
-    accessKeys: accessKeys(admitted.facts),
+    accessKeys: accessKeys(admitted.facts, documentId),
   };
   if (room.kind === "live") {
     return {
@@ -440,12 +442,18 @@ function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | u
   return owner.archived ? "work_archived" : undefined;
 }
 
-/** Room access follows these owners, each under its `draftOwnerKey`. */
-function accessKeys(facts: FileFacts): string[] {
+/**
+ * Room access follows the file's owners (each under its `draftOwnerKey`), its project and the
+ * document itself: access is decided once, when the socket opens, so every change that can end
+ * it must reach a key the socket is under.
+ */
+function accessKeys(facts: FileFacts, documentId: DocumentId): string[] {
   const { workIds, lineageRootIds } = grantOwnerLocks(facts);
   return [
     ...workIds.map((workId) => draftOwnerKey({ kind: "work", workId })),
     ...lineageRootIds.map((rootThreadId) => draftOwnerKey({ kind: "lineage", rootThreadId })),
+    ...(facts.owner.kind === "project" ? [projectAccessKey(facts.owner.projectId)] : []),
+    documentAccessKey(documentId),
   ];
 }
 
@@ -575,8 +583,6 @@ async function admitLiveSync(
     });
     return admission;
   } catch (cause) {
-    // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
-    if (cause instanceof FileEditRefusedError) throw cause;
     refuse({ code: 1013, reason: "writer-journal-admission-failed" }, cause);
   }
 }
@@ -720,7 +726,9 @@ export function createHocuspocus(
               expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
               context,
             });
-          if (access.level === "read") {
+          // A Live frame is judged in the room and stored with one insert; its access was
+          // decided when the socket opened and ends when `rooms` closes the socket.
+          if (access.level === "read" || target.kind === "live") {
             await admit();
             return;
           }

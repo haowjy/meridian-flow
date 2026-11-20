@@ -79,9 +79,11 @@ stateDiagram-v2
   reconnects on. One connection's messages are admitted in order. A refused
   connection is marked, and the messages Hocuspocus has queued behind the refusal are refused
   without reaching the store.
-- **Access has a lifecycle.** The connection registers under the room's name with the gateway's
-  access index; a project's deletion publishes a file-access change that closes it with `4409`,
-  and the reconnect is refused (`4403`). A Work's archive or delete, or a chat's move to Trash that
+- **Access has a lifecycle.** A tree connection registers under the room's name with the gateway's
+  access index, a document connection under its Work and lineage owners, its project and its
+  document; a project's deletion publishes a file-access change that closes them with `4409`,
+  and the reconnect is refused (`4403`). A document that changes source (a move between Works)
+  publishes a change under its own key, and its open sockets close and are admitted again. A Work's archive or delete, or a chat's move to Trash that
   leaves its lineage with no live chat, closes its rooms with `4409 access-changed:<why>`
   (`work_archived`, `work_deleted`, `chat_frozen`, carried on the file-access change); an unarchive,
   a restore to an open Work, or a thaw sends plain `4409`; a restore of a Work that is still archived

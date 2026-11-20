@@ -1,7 +1,7 @@
 # collab TODO
 
 - Live rooms lose typing the same way a Work draft did: a writer typing offline inside a block a
-  peer or the model deletes live has the typing swallowed (`admitLiveWriterUpdate` journals it, the
+  peer or the model deletes live has the typing swallowed (`admitLiveWriterUpdate` stores it, the
   room merges it under the deleted block). `findLostEdits` and `recoverLatePeerEdits` are pure over a
   Y.Doc and would apply, but the live path needs a server-authored write into the room that commits
   with the journal row, which no live path has yet (the live agent core writes only as a model

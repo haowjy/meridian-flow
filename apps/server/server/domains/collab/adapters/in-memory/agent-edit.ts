@@ -13,18 +13,13 @@ import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
 import type { CapturedCheckpointCut } from "../../domain/checkpoint-cut.js";
-import { documentContainsUpdate } from "../../domain/document-containment.js";
 import { bindDocumentAuthority } from "../../domain/document-handle.js";
 import type {
   CheckpointAuthority,
   CheckpointJournal,
 } from "../../domain/ports/checkpoint-authority.js";
 import type { LiveDocumentCoordinator } from "../../domain/ports/live-document-coordinator.js";
-import type {
-  LiveWriterAppend,
-  LiveWriterJournal,
-} from "../../domain/ports/live-writer-journal.js";
-import { storedDocument } from "../../domain/stored-document.js";
+import type { LiveWriterJournal } from "../../domain/ports/live-writer-journal.js";
 import { mintCheckpointCut, resolveCheckpointCut } from "../checkpoint-capability.js";
 import { materializeCheckpoint } from "../checkpoint-materialization.js";
 import { loadDocumentState } from "../document-loader.js";
@@ -77,24 +72,12 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
 
   private readonly checkpoints: InMemoryCheckpointRecord[] = [];
   private nextCheckpointId = 1;
-  // The document lock the Drizzle journal judges novelty under.
-  private readonly writerAdmissions = new KeyedMutex();
-
-  appendWriterUpdate(
+  async appendWriterUpdate(
     docId: string,
     update: Uint8Array,
     meta: Parameters<UpdateJournal["append"]>[2],
-  ): Promise<LiveWriterAppend> {
-    return this.writerAdmissions.run(docId, async () => {
-      const stored = storedDocument(await this.read(docId));
-      try {
-        if (documentContainsUpdate(stored, update)) return { status: "contained" };
-      } finally {
-        stored.destroy();
-      }
-      const seq = await this.append(docId, update, meta);
-      return { status: "appended", seq };
-    });
+  ): Promise<{ seq: number }> {
+    return { seq: await this.append(docId, update, meta) };
   }
 
   async captureCheckpoint(docId: string, authority: CheckpointAuthority) {

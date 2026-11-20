@@ -18,7 +18,7 @@ import {
   retireDocumentHandle,
 } from "./domain/document-handle.js";
 import {
-  admitWriterUpdate,
+  assertWriterAuthorship,
   ReservedWriterClientIdError,
 } from "./domain/document-mutation-policy.js";
 import type { DraftCoordinator } from "./domain/draft-coordinator.js";
@@ -110,7 +110,6 @@ export function createHocuspocusPersistenceService(
   }
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
-  const unsafeCheckpointDocuments = new Map<string, number>();
   // A reconnected client has current transport authority but can replay cached
   // pre-restore structs/deletes. Handle fencing cannot identify that byte history.
   const retiredStateVectors = new Map<string, Uint8Array>();
@@ -141,22 +140,6 @@ export function createHocuspocusPersistenceService(
         pendingAppends.delete(id);
       });
     pendingAppends.set(id, { documentId, startedAt: Date.now(), promise: tracked });
-  }
-
-  function rejectReservedClientIdUpdate(input: {
-    documentId: DocumentId;
-    origin: UpdateOrigin;
-    reservedClientId: number;
-  }): void {
-    unsafeCheckpointDocuments.set(input.documentId, input.reservedClientId);
-    recordDroppedConnectionUpdate(input.documentId);
-    deps.emitAgentEditInvariantViolation({
-      message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${input.reservedClientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
-      documentId: input.documentId,
-      originType: input.origin.type,
-      reservedClientId: input.reservedClientId,
-      reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
-    });
   }
 
   function recordDroppedConnectionUpdate(documentId: string): void {
@@ -345,7 +328,6 @@ export function createHocuspocusPersistenceService(
     },
 
     async loadHocuspocusDocument(documentId, document) {
-      unsafeCheckpointDocuments.delete(documentId);
       if (!document) return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
       try {
         const state = await loadDocumentState(deps.journal, documentId, document);
@@ -412,57 +394,51 @@ export function createHocuspocusPersistenceService(
     unloadedHocuspocusDraftRoom: unloadedDraftRoom,
 
     async admitLiveWriterUpdate(input) {
-      const authority = documentAuthority(input.document);
-      const liveDocument = deps.hocuspocus()?.documents.get(input.documentId);
+      const room = input.document;
+      const authority = documentAuthority(room);
+      if (authority.generation !== input.expectedGeneration) {
+        recordDroppedConnectionUpdate(input.documentId);
+        throw new Error("stale-durable-authority-generation");
+      }
+      if (deps.hocuspocus()?.documents.get(input.documentId) !== room) {
+        throw new Error("live-document-room-mismatch");
+      }
       const retiredStateVector = retiredStateVectors.get(input.documentId);
+      if (retiredStateVector && replaysRetiredGeneration(input.update, room, retiredStateVector)) {
+        recordDroppedConnectionUpdate(input.documentId);
+        throw new Error("retired-durable-authority-generation");
+      }
+      // Reconnects replay state the room already holds: acknowledged, nothing stored.
+      if (documentContainment.contains(room, input.update)) return { admitted: false };
       try {
-        const admission = await admitWriterUpdate({
-          targetDocument: input.document,
-          update: input.update,
-          validateTarget() {
-            if (authority.generation !== input.expectedGeneration) {
-              recordDroppedConnectionUpdate(input.documentId);
-              throw new Error("stale-durable-authority-generation");
-            }
-            if (!liveDocument || liveDocument !== input.document) {
-              throw new Error("live-document-room-mismatch");
-            }
-            if (
-              retiredStateVector &&
-              replaysRetiredGeneration(input.update, liveDocument, retiredStateVector)
-            ) {
-              recordDroppedConnectionUpdate(input.documentId);
-              throw new Error("retired-durable-authority-generation");
-            }
-          },
-          // A fast path only: reconnects replay cached state and delete sets the room already
-          // holds, refused here without a transaction. The room lags admissions still in their
-          // transaction, so the journal judges novelty again under the document lock (#946).
-          isContained: () => documentContainment.contains(input.document, input.update),
-          async append() {
-            const append = deps.journal.appendWriterUpdate(
-              input.documentId,
-              input.update,
-              deps.metaForOrigin(input.origin),
-              authority,
-            );
-            trackAppend(input.documentId, append);
-            return await append;
-          },
-        });
-        // Refused before the lock, or under it: another copy of this update was stored first.
-        if (!admission.admitted || admission.value.status === "contained")
-          return { admitted: false };
-        return {
-          admitted: true,
-        };
+        assertWriterAuthorship(room, input.update);
       } catch (cause) {
-        if (cause instanceof ReservedWriterClientIdError) {
-          rejectReservedClientIdUpdate({ ...input, reservedClientId: cause.clientId });
-          throw new Error("reserved-writer-client-id");
-        }
+        if (!(cause instanceof ReservedWriterClientIdError)) throw cause;
+        recordDroppedConnectionUpdate(input.documentId);
+        deps.emitAgentEditInvariantViolation({
+          message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${cause.clientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
+          documentId: input.documentId,
+          originType: input.origin.type,
+          reservedClientId: cause.clientId,
+          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
+        });
+        throw new Error("reserved-writer-client-id");
+      }
+      const append = deps.journal.appendWriterUpdate(
+        input.documentId,
+        newToRoom(room, input.update),
+        deps.metaForOrigin(input.origin),
+        authority,
+      );
+      trackAppend(input.documentId, append);
+      try {
+        await append;
+      } catch (cause) {
+        // The head moved on (a restore): this room's state belongs to the old generation.
+        if (cause instanceof RetiredDocumentHandleError) retireRoom(input.documentId, room);
         throw cause;
       }
+      return { admitted: true };
     },
 
     admitDraftWriterUpdate(input) {
@@ -500,16 +476,6 @@ export function createHocuspocusPersistenceService(
       if (isDocumentHandleRetired(document)) return;
       const authority = documentAuthority(document);
       await drainPending(documentId);
-      const reservedClientId = unsafeCheckpointDocuments.get(documentId);
-      if (reservedClientId !== undefined) {
-        deps.emitAgentEditInvariantViolation({
-          message: `Skipped Hocuspocus checkpoint for document ${documentId} because a rejected connection update with reserved Yjs clientID ${reservedClientId} may still be present in the live Y.Doc. The reserved band is [0, ${RESERVED_CLIENT_ID_MAX}].`,
-          documentId,
-          reservedClientId,
-          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
-        });
-        return;
-      }
       const pending: PendingCheckpoint = { document, authority };
       // Releasing a server-side room runs this hook inline in the releaser's
       // async context, often inside its DB transaction. Capturing the cut takes the
@@ -579,6 +545,23 @@ export function createHocuspocusPersistenceService(
       return latestMetrics();
     },
   };
+}
+
+/**
+ * What of `update` the room lacks. A frame that starts past the room's clock for one of its
+ * clients is not storable: no later read could integrate it, so the socket closes and the
+ * reconnect's handshake carries the prefix.
+ */
+function newToRoom(room: Y.Doc, update: Uint8Array): Uint8Array {
+  const stateVector = Y.encodeStateVector(room);
+  const clocks = Y.decodeStateVector(stateVector);
+  let overlaps = false;
+  for (const [client, from] of Y.parseUpdateMeta(update).from) {
+    const held = clocks.get(client) ?? 0;
+    if (from > held) throw new Error("writer-frame-gap");
+    if (from < held) overlaps = true;
+  }
+  return overlaps ? Y.diffUpdate(update, stateVector) : update;
 }
 
 function replaysRetiredGeneration(

@@ -1337,7 +1337,8 @@ BEGIN
       ORDER BY c.up_to_seq DESC, c.id DESC
       LIMIT 1;
       v_floor := coalesce(v_floor, 0);
-      -- Admissions allocate IDs under the mutation lock. The generation's
+      -- Admissions allocate IDs under the head row, which a keystroke holds without the mutation
+      -- lock and a command holds with it, so IDs follow commit order. The generation's
       -- admission index avoids scanning retained rows of retired generations.
       SELECT u.id INTO v_ceiling FROM document_yjs_updates u
       WHERE u.document_id = p_document_id::uuid

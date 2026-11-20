@@ -117,10 +117,7 @@ function tombstoneBearingDoc(): Y.Doc {
 
 function fakeJournal(): CheckpointJournal & LiveWriterJournal {
   return {
-    appendWriterUpdate: vi.fn(async () => ({
-      status: "appended" as const,
-      seq: 1,
-    })),
+    appendWriterUpdate: vi.fn(async () => ({ seq: 1 })),
     reserveWriteOrdinal: async () => {
       throw new Error("Transport does not allocate edit ordinals");
     },

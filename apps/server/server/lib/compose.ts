@@ -670,6 +670,7 @@ export async function createProductionAppPorts(input: {
     draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
     liveChangedUnder: (branchIds) => workProjectionMutation.liveChangedUnder(branchIds),
+    fileAccessChanges,
   });
   const draftClose = createDraftClose();
   const documentLinks = createDrizzleDocumentLinkScopes({

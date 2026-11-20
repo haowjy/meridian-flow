@@ -472,7 +472,7 @@ Live merges only into drafts someone has open (`domain/draft-pulls.ts`). Two ent
 `liveCommitted(documentId)`, a plain notice that carries nothing from the calling process; and
 `catchUpDraft(draftId)`, which every reader that shows a draft's text calls before it takes any
 lock. Every Live write sends the notice from one place: the live journal's `append`,
-`appendWriterUpdate` (when it stores a row) and `appendBatch` fire it after the writing
+`appendWriterUpdate` and `appendBatch` fire it after the writing
 transaction commits (`createDrizzleJournal`'s `appended` hook). Live sync, a model's live
 commit, `writeDocument`, a code merge, Apply, Un-Apply and a live Undo step all pass it. An
 authority replace or restore changes Live without an append, so it sends the notice itself.
@@ -634,8 +634,8 @@ commit, the next connection to the room, or the next read or open of the draft, 
 
 A live document's authority identity and generation bind its loaded Y.Doc,
 room, checkpoint, writer frame, Markdown replacement, and agent journal batch.
-Persistence validates the binding under the document mutation lock and drops
-stale bytes rather than relabeling them. Restore retires acquired handles and
+Persistence validates the binding under the document mutation lock (a writer frame, under the
+head row it bumps) and drops stale bytes rather than relabeling them. Restore retires acquired handles and
 rooms; late load or connection completion revalidates the binding. Sequence
 bounds never authorize retired-generation history.
 
