@@ -1,6 +1,4 @@
 /** One project-lifetime owner for Trash restore progress and outcomes, by node id. */
-import type { TrashEntry } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
   type ReactNode,
@@ -10,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { type TrashEntry, useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { GoneRow } from "@/components/app/RowWord";
 import { endTreeNotice } from "@/core/project-tree/tree-undo";
@@ -57,7 +55,7 @@ export function DocumentTrashRestoreProvider({
   const accountId = useAccountId();
   const projectList = useTreeList({ kind: "project", projectId });
   const accountList = useTreeList({ kind: "account", userId: accountId });
-  const queryClient = useQueryClient();
+  const listed = useDocumentTrash(projectId).data?.entries ?? [];
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
   const [restored, setRestored] = useState<readonly GoneRow<TrashEntry>[]>([]);
 
@@ -117,10 +115,6 @@ export function DocumentTrashRestoreProvider({
     (entries: readonly Restorable[], destination?: TreeDestination) => {
       if (entries.length === 0) return;
       leaveSelections(entries.map(({ ref }) => ref));
-      const listed =
-        queryClient.getQueryData<{ entries: readonly TrashEntry[] }>(
-          projectQueryKeys.trash(projectId),
-        )?.entries ?? [];
       const ids = new Set(entries.map(({ ref }) => ref.id));
       setRestored(
         listed.flatMap((entry, at) =>
@@ -141,7 +135,7 @@ export function DocumentTrashRestoreProvider({
       append(entries, destination);
       markRestored(entries.map(({ ref }) => ref.id));
     },
-    [append, markRestored, queryClient, projectId],
+    [append, markRestored, listed],
   );
 
   const value = useMemo(

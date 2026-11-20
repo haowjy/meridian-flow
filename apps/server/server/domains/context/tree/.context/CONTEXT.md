@@ -46,7 +46,10 @@ One window (`deletionPurgeCutoff`) for both kinds.
   rows held, which sort after the list's key).
 - **A document in no view** past the window: no record exists to append. The job takes the
   lists that could reshow it, rechecks, and releases it.
-- **Release** (`release-document-content.ts`): the journal, derived rows and drafts go; the
+- **A Work's purge** ends the nodes of the Work's sources the same way, in one submission with the
+  Work's transaction: it deletes what stands, then appends a `purge` record per Trash entry the
+  sources hold (`projects/adapters/drizzle-work-purge.ts`), then releases the documents.
+- **Release** (`release-document-content.ts`, the one way a document ends): the journal, derived rows and drafts go; the
   `documents` row stays, marked `content_purged_at`, so a bound link resolves to "gone". Storage
   objects are deleted after the commit.
 

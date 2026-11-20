@@ -134,7 +134,8 @@ Two owners:
   `ContextRemovalCoordinator.applyRemovals`: a document in Trash or purged closes its views and
   leaves the recents, one back in the tree is let back, and when main shows a document that went
   to Trash main opens its Trash view (who deleted it, Restore). A purged document's local copy is
-  deleted, and so is the copy of a document whose source ended (Work or chat deleted; an archived
+  deleted (Trash retention and a Work's purge both write the `purge` record, so the list is the one
+  source of it), and so is the copy of a document whose source ended (Work or chat deleted; an archived
   Work's source stays) or whose project the account lost (`denied`).
 
 The writer's own removal sends main back: the tree delete and a Discard of a

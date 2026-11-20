@@ -1,10 +1,13 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { TrashEntry } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { Folder } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { useDocumentTrash, useTrashDiscards } from "@/client/query/useDocumentTrash";
+import {
+  type TrashEntry,
+  useDocumentTrash,
+  useTrashDiscards,
+} from "@/client/query/useDocumentTrash";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -16,7 +19,7 @@ import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { useDraftCommandOwner } from "../../context/account-feature-context";
 import { useEntryMenu } from "../../context/ContextEntryActions";
 import { fileKindIcon } from "../../context/context-file-icon";
-import { documentPlace } from "../../context/context-schemes";
+import { schemeLocation } from "../../context/context-schemes";
 import { useDocumentTrashRestore } from "../../context/DocumentTrashRestoreProvider";
 import { trashDragEntry, trashRef } from "../../context/entry-drag/entry";
 import { useEntryRow } from "../../context/entry-drag/use-entry-row";
@@ -64,7 +67,12 @@ export function TrashSource({
   );
   const discards = useTrashDiscardRows(projectId);
   const lines = [
-    ...rows.map(({ row, gone }) => ({ at: row.removal.time, entry: row, gone, discard: null })),
+    ...rows.map(({ row, gone }) => ({
+      at: row.kept?.removal.time ?? new Date(now).toISOString(),
+      entry: row,
+      gone,
+      discard: null,
+    })),
     ...discards.rows.map((discard) => ({
       at: discard.entry.at,
       entry: null,
@@ -96,7 +104,7 @@ export function TrashSource({
               <ListRow
                 key={entry.nodeId}
                 gone
-                detail={deletedFrom(entry, documentPlace(entry.scheme, entry.formerPath))}
+                detail={deletedFrom(entry, schemeLocation(entry.scheme, entry.folders))}
                 icon={entry.kind === "folder" ? Folder : fileKindIcon(entry.name)}
                 title={entry.name}
                 notice={notices.word(entry.nodeId, true)}
@@ -171,7 +179,7 @@ function TrashRow({
   /** Restores these entries by node id: this row, or the selection its menu acted on. */
   onRestore: (nodeIds: readonly string[]) => void;
 }) {
-  const location = documentPlace(entry.scheme, entry.formerPath);
+  const location = schemeLocation(entry.scheme, entry.folders);
   const dragged = useMemo(() => trashDragEntry(entry), [entry]);
   const row = useEntryRow(dragged, { active, draggable: true, source: "trash" });
   const menu = useEntryMenu(
@@ -184,7 +192,7 @@ function TrashRow({
     <ListRow
       icon={entry.kind === "folder" ? Folder : fileKindIcon(entry.name)}
       title={entry.name}
-      meta={relativeTime(entry.removal.time, now)}
+      meta={entry.kept ? relativeTime(entry.kept.removal.time, now) : undefined}
       detail={<span title={location}>{deletedFrom(entry, location)}</span>}
       onOpen={onOpen}
       current={active && "page"}

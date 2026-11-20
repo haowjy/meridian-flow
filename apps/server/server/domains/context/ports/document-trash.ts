@@ -1,6 +1,6 @@
 /** Restorable document trash and the retention path that eventually purges its content. */
 import type { DocumentId, ProjectId } from "@meridian/contracts";
-import type { DocumentTrashEntry, TrashEntry } from "@meridian/contracts/protocol";
+import type { DocumentTrashEntry, TrashEntryFacts } from "@meridian/contracts/protocol";
 
 export type DocumentPurgeDraftDisposal = {
   /**
@@ -18,8 +18,8 @@ export type DocumentTrash = {
     projectId: ProjectId,
     documentIds: readonly DocumentId[],
   ): Promise<ReadonlySet<DocumentId>>;
-  /** The project's Trash entries, newest first: documents on their own and deleted folders. */
-  list(projectId: ProjectId): Promise<readonly TrashEntry[]>;
+  /** The server's facts of the project's Trash entries, newest first: documents on their own and deleted folders. */
+  list(projectId: ProjectId): Promise<readonly TrashEntryFacts[]>;
   /** Reads one restorable removal and its text, serialized from its frozen Yjs. */
   read(projectId: ProjectId, documentId: DocumentId): Promise<DocumentTrashEntry | null>;
   /** Whether a missing trash entry belonged here and has since been permanently purged. */

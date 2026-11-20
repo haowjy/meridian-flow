@@ -20,7 +20,6 @@ found and deleted by its id). It runs when one of them changes; nothing polls.
 | The connection dropped, or the list is read-only | stay | kept |
 | A Discard of the document's draft | the review closes | kept |
 | The node's `purge` in the list (a discarded create's purge is a `purge` record too) | close | **deleted** |
-| The node's source was purged: absent from the sources and from `ended`, read after the list first named it | close | **deleted** |
 | The account was removed from the project (4403) | close | **deleted** |
 | The writer signs out here, or another account loads | | **deleted**, in every tab |
 

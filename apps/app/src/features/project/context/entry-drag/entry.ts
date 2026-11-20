@@ -8,8 +8,8 @@ import type {
   ContextOwner,
   CopyContextEntryView,
   ProjectContextTreeScheme,
-  TrashEntry,
 } from "@meridian/contracts/protocol";
+import type { TrashEntry } from "@/client/query/useDocumentTrash";
 import type { TreeEntry } from "@/core/project-tree/tree-view";
 
 /** A document or a folder, by its node id. */

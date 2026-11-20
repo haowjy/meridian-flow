@@ -8,24 +8,19 @@
  *   source ended (a deleted Work or chat, which can be restored). The copy and its session stay,
  *   with any unsent text, until the document comes back or is gone for good.
  * - **A copy is deleted** only when the document is gone for good (`goneForGood`, the one
- *   predicate every deletion goes through): its node's purge in the list, its source purged, or
- *   the account removed from the project. Losing the connection, an expired sign-in and a source
+ *   predicate every deletion goes through): its node's purge in the list (Trash retention and a
+ *   Work's purge both write one), or the account removed from the project. Losing the connection, an expired sign-in and a source
  *   that ended but can be restored are not final.
  */
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import type { ContextRemovalCoordinator, RemovalCommand } from "./context-removal-coordinator";
 import type { ProjectStandings } from "./project-standings";
 
-/** What the sources queries said, and when: an absence is believed only if it was read after the node was first seen. */
-export type SourceFacts = {
-  live: ReadonlySet<string>;
-  /** Ended and restorable: a deleted Work's or chat's source. */
-  ended: ReadonlySet<string>;
-  fetchedAt: number;
-};
+/** The sources that ended and can still be restored: a deleted Work's or chat's. */
+export type EndedSources = ReadonlySet<string>;
 
 export type ListRemovalObserver = {
-  setSources(facts: SourceFacts | null): void;
+  setEndedSources(ended: EndedSources | null): void;
   stop(): void;
 };
 
@@ -40,16 +35,12 @@ export function observeListRemovals(input: {
     LiveDocumentSessionRegistry,
     "observeLocalCopies" | "observeRetainedLiveDocuments"
   >;
-  /** Asks the sources again: a source the list names that the sources do not is read once more before it counts as purged. */
-  refreshSources(): void;
   /** The sign-in did not hold: the writer signs in again. Called once per time it begins. */
   signInRequired(): void;
 }): ListRemovalObserver {
   const { projectId, standings, removal, registry } = input;
   const cleared = new Set<string>();
-  /** When the list first named each source the sources did not. */
-  const unlisted = new Map<string, number>();
-  let facts: SourceFacts | null = null;
+  let ended: EndedSources | null = null;
   /** Sessions kept open for unsent edits after their view went: a purge ends them too. */
   let retained: string[] = [];
   /** Every document this browser holds a copy of: a purge arrives whether or not a view remains. */
@@ -57,27 +48,15 @@ export function observeListRemovals(input: {
   let askedToSignIn = false;
   let stopped = false;
 
-  const sourceState = (source: string): "unknown" | "live" | "ended" | "purged" => {
-    if (!facts) return "unknown";
-    if (facts.live.has(source)) return "live";
-    if (facts.ended.has(source)) return "ended";
-    const seen = unlisted.get(source);
-    if (seen === undefined) {
-      unlisted.set(source, Date.now());
-      input.refreshSources();
-      return "unknown";
-    }
-    return facts.fetchedAt > seen ? "purged" : "unknown";
-  };
-
   /** Whether the document can never come back to this account. */
   const goneForGood = (documentId: string): boolean => {
     const standing = standings.standing(projectId, documentId);
     if (standing.kind === "purged") return true;
-    if (standing.kind !== "in-tree" && standing.kind !== "in-trash") return false;
-    if (standings.status(projectId) === "denied" && standings.inProjectList(projectId, documentId))
-      return true;
-    return sourceState(standing.node.source) === "purged";
+    return (
+      (standing.kind === "in-tree" || standing.kind === "in-trash") &&
+      standings.status(projectId) === "denied" &&
+      standings.inProjectList(projectId, documentId)
+    );
   };
 
   const clear = (documentIds: readonly string[]) => {
@@ -101,7 +80,7 @@ export function observeListRemovals(input: {
       const standing = standings.standing(projectId, documentId);
       const sourceEnded =
         (standing.kind === "in-tree" || standing.kind === "in-trash") &&
-        ["ended", "purged"].includes(sourceState(standing.node.source));
+        ended?.has(standing.node.source) === true;
       if (
         standing.kind === "in-trash" ||
         standing.kind === "purged" ||
@@ -126,8 +105,8 @@ export function observeListRemovals(input: {
   const stop = standings.watch(projectId, refresh);
   refresh();
   return {
-    setSources(next) {
-      facts = next;
+    setEndedSources(next) {
+      ended = next;
       refresh();
     },
     stop() {

@@ -1050,6 +1050,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
         branches: createPostgresWorkBranchDisposal(db),
+        tree: treeSeeder(db).store,
         works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },
       });
@@ -1088,6 +1089,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         objectStore,
         eventSink,
         branches: createPostgresWorkBranchDisposal(db),
+        tree: treeSeeder(db).store,
         works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },
       });
@@ -1302,9 +1304,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(schema.contextSources)
           .where(eq(schema.contextSources.id, lineageSource.id)),
       ).toEqual([]);
+      // The document ends as Trash retention ends one: a purged tombstone, and a `purge` record.
       expect(
         await db.select().from(schema.documents).where(eq(schema.documents.id, lineageNote.id)),
-      ).toEqual([]);
+      ).toMatchObject([{ contentPurgedAt: expect.any(Date) }]);
+      const purged = await treeSeeder(db).store.read({
+        lists: [{ kind: "project", projectId: PROJECT_ID }],
+        view: ([{ writer }]) => writer.view(LIVE).nodes.get(lineageNote.id)?.purged,
+      });
+      expect(purged).toBe(true);
       expect(
         await db.select().from(schema.treeNodes).where(eq(schema.treeNodes.id, lineageNote.id)),
       ).toEqual([]);
