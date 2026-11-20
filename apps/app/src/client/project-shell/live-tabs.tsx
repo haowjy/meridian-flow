@@ -66,11 +66,7 @@ function useProjectLiveTabs(projectId: string): LiveTabs {
         const { document } = tab;
         // A draft-only document is one live doesn't hold, so the list says nothing about it: its
         // draft settlement owns it.
-        if (
-          document.kind === "new" ||
-          !PROJECT_SCOPED_SCHEMES.has(document.scheme)
-        )
-          return [tab];
+        if (document.kind === "new" || !PROJECT_SCOPED_SCHEMES.has(document.scheme)) return [tab];
         const current = currentTab(trees, document);
         if (current) return [{ kind: "document", document: current }];
         // Not in the list: gone once the list has synced, not before.

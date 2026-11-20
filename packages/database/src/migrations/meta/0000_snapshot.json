@@ -5463,12 +5463,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "draft_branch_id": {
-          "name": "draft_branch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -5489,22 +5483,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "document_edit_parts_pending_origin_idx": {
-          "name": "document_edit_parts_pending_origin_idx",
-          "columns": [
-            {
-              "expression": "(\"origin\"->>'draftId')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"document_edit_parts\".\"origin\"->>'kind' = 'pending'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5535,11 +5513,7 @@
         },
         "document_edit_parts_origin_valid": {
           "name": "document_edit_parts_origin_valid",
-          "value": "\"document_edit_parts\".\"origin\"->>'kind' IN ('pending','live')"
-        },
-        "document_edit_parts_draft_branch_valid": {
-          "name": "document_edit_parts_draft_branch_valid",
-          "value": "(\"document_edit_parts\".\"origin\"->>'kind' = 'pending') = (\"document_edit_parts\".\"draft_branch_id\" IS NOT NULL)"
+          "value": "\"document_edit_parts\".\"origin\"->>'kind' = 'live'"
         }
       },
       "isRLSEnabled": false
@@ -8861,148 +8835,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.apply_command_effects": {
-      "name": "apply_command_effects",
-      "schema": "",
-      "columns": {
-        "command_id": {
-          "name": "command_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ordinal": {
-          "name": "ordinal",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "group_id": {
-          "name": "group_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "draft_id": {
-          "name": "draft_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "live_delta": {
-          "name": "live_delta",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "carried": {
-          "name": "carried",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "place": {
-          "name": "place",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "base_start": {
-          "name": "base_start",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "base_delta": {
-          "name": "base_delta",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "unapplied_by": {
-          "name": "unapplied_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "apply_command_effects_group": {
-          "name": "apply_command_effects_group",
-          "columns": [
-            {
-              "expression": "command_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "group_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "apply_command_effects_command_id_commands_id_fk": {
-          "name": "apply_command_effects_command_id_commands_id_fk",
-          "tableFrom": "apply_command_effects",
-          "tableTo": "commands",
-          "columnsFrom": [
-            "command_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "apply_command_effects_document_id_documents_id_fk": {
-          "name": "apply_command_effects_document_id_documents_id_fk",
-          "tableFrom": "apply_command_effects",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "apply_command_effects_command_id_ordinal_pk": {
-          "name": "apply_command_effects_command_id_ordinal_pk",
-          "columns": [
-            "command_id",
-            "ordinal"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.apply_command_trees": {
       "name": "apply_command_trees",
       "schema": "",
@@ -9028,12 +8860,6 @@
         "mark": {
           "name": "mark",
           "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_heads": {
-          "name": "created_heads",
-          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
@@ -9163,8 +8989,8 @@
           "method": "btree",
           "with": {}
         },
-        "commands_discard_project": {
-          "name": "commands_discard_project",
+        "commands_press_project": {
+          "name": "commands_press_project",
           "columns": [
             {
               "expression": "project_id",
@@ -9180,7 +9006,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"commands\".\"kind\" IN ('discard', 'undo_discard', 'unapply')",
+          "where": "\"commands\".\"kind\" = 'press'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -9207,87 +9033,9 @@
       "checkConstraints": {
         "commands_kind_valid": {
           "name": "commands_kind_valid",
-          "value": "\"commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress')"
+          "value": "\"commands\".\"kind\" IN ('model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.discard_command_effects": {
-      "name": "discard_command_effects",
-      "schema": "",
-      "columns": {
-        "command_id": {
-          "name": "command_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "draft_id": {
-          "name": "draft_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delta": {
-          "name": "delta",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ended_by": {
-          "name": "ended_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "discard_command_effects_command_id_commands_id_fk": {
-          "name": "discard_command_effects_command_id_commands_id_fk",
-          "tableFrom": "discard_command_effects",
-          "tableTo": "commands",
-          "columnsFrom": [
-            "command_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "discard_command_effects_document_id_documents_id_fk": {
-          "name": "discard_command_effects_document_id_documents_id_fk",
-          "tableFrom": "discard_command_effects",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "discard_command_effects_command_id_document_id_pk": {
-          "name": "discard_command_effects_command_id_document_id_pk",
-          "columns": [
-            "command_id",
-            "document_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.document_block_rooms": {
@@ -9477,235 +9225,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.document_drafts": {
-      "name": "document_drafts",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "branch_id": {
-          "name": "branch_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state_vector": {
-          "name": "state_vector",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seed_origins": {
-          "name": "seed_origins",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "seed_live_room": {
-          "name": "seed_live_room",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "seed_live_snapshot": {
-          "name": "seed_live_snapshot",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "seed_draft_snapshot": {
-          "name": "seed_draft_snapshot",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "seed_live_state": {
-          "name": "seed_live_state",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "seed_live_position": {
-          "name": "seed_live_position",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "has_effect": {
-          "name": "has_effect",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "text_changes": {
-          "name": "text_changes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "has_effect_revision": {
-          "name": "has_effect_revision",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": -1
-        },
-        "schema_version": {
-          "name": "schema_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 3003000
-        },
-        "revision": {
-          "name": "revision",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "checkpoint_revision": {
-          "name": "checkpoint_revision",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "checkpoint_seq": {
-          "name": "checkpoint_seq",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "document_drafts_branch_document": {
-          "name": "document_drafts_branch_document",
-          "columns": [
-            {
-              "expression": "document_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "branch_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"document_drafts\".\"kind\" = 'work_draft'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "document_drafts_work_draft_by_branch": {
-          "name": "document_drafts_work_draft_by_branch",
-          "columns": [
-            {
-              "expression": "branch_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"document_drafts\".\"kind\" = 'work_draft'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "document_drafts_document_id_documents_id_fk": {
-          "name": "document_drafts_document_id_documents_id_fk",
-          "tableFrom": "document_drafts",
-          "tableTo": "documents",
-          "columnsFrom": [
-            "document_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "document_drafts_branch_id_branches_id_fk": {
-          "name": "document_drafts_branch_id_branches_id_fk",
-          "tableFrom": "document_drafts",
-          "tableTo": "branches",
-          "columnsFrom": [
-            "branch_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "document_drafts_kind_valid": {
-          "name": "document_drafts_kind_valid",
-          "value": "\"document_drafts\".\"kind\" = 'work_draft'"
-        },
-        "document_drafts_seed_record_shape": {
-          "name": "document_drafts_seed_record_shape",
-          "value": "((\"document_drafts\".\"seed_origins\" IS NULL AND \"document_drafts\".\"seed_live_room\" IS NULL AND \"document_drafts\".\"seed_live_snapshot\" IS NULL AND \"document_drafts\".\"seed_draft_snapshot\" IS NULL) OR (\"document_drafts\".\"kind\" = 'work_draft' AND \"document_drafts\".\"seed_origins\" IS NOT NULL AND \"document_drafts\".\"seed_live_room\" IS NOT NULL AND \"document_drafts\".\"seed_live_snapshot\" IS NOT NULL AND \"document_drafts\".\"seed_draft_snapshot\" IS NOT NULL)) AND ((\"document_drafts\".\"seed_live_state\" IS NULL AND \"document_drafts\".\"seed_live_position\" IS NULL) OR (\"document_drafts\".\"seed_live_state\" IS NOT NULL AND \"document_drafts\".\"seed_live_position\" IS NOT NULL))"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.document_yjs_checkpoints": {
@@ -10175,194 +9694,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.draft_write_journal": {
-      "name": "draft_write_journal",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigserial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "draft_id": {
-          "name": "draft_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "w_id": {
-          "name": "w_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tool_call_id": {
-          "name": "tool_call_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'agent'"
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "turn_id": {
-          "name": "turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "actor_user_id": {
-          "name": "actor_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "update_data": {
-          "name": "update_data",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "update_meta": {
-          "name": "update_meta",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "draft_write_journal_draft": {
-          "name": "draft_write_journal_draft",
-          "columns": [
-            {
-              "expression": "draft_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "draft_write_journal_thread_turn": {
-          "name": "draft_write_journal_thread_turn",
-          "columns": [
-            {
-              "expression": "draft_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "thread_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "turn_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "draft_write_journal_draft_id_document_drafts_id_fk": {
-          "name": "draft_write_journal_draft_id_document_drafts_id_fk",
-          "tableFrom": "draft_write_journal",
-          "tableTo": "document_drafts",
-          "columnsFrom": [
-            "draft_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "draft_write_journal_thread_id_threads_id_fk": {
-          "name": "draft_write_journal_thread_id_threads_id_fk",
-          "tableFrom": "draft_write_journal",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "draft_write_journal_turn_id_turns_id_fk": {
-          "name": "draft_write_journal_turn_id_turns_id_fk",
-          "tableFrom": "draft_write_journal",
-          "tableTo": "turns",
-          "columnsFrom": [
-            "turn_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "draft_write_journal_actor_user_id_users_id_fk": {
-          "name": "draft_write_journal_actor_user_id_users_id_fk",
-          "tableFrom": "draft_write_journal",
-          "tableTo": "users",
-          "columnsFrom": [
-            "actor_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "draft_write_journal_source_valid": {
-          "name": "draft_write_journal_source_valid",
-          "value": "\"draft_write_journal\".\"source\" IN ('agent', 'writer', 'server')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.pending_notices": {

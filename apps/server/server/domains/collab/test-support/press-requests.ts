@@ -33,7 +33,11 @@ export function pressDriver(
   const press = (verdict: PressRequest["verdict"], items: PressRequest["items"]) => {
     const request = { owner: draftOwnerKey(owner), verdict, items };
     const envelope = pressEnvelope("press", userId, request);
-    return presses.press({ envelope, owner, request: { ...request, commandId: envelope.commandId } });
+    return presses.press({
+      envelope,
+      owner,
+      request: { ...request, commandId: envelope.commandId },
+    });
   };
   return {
     apply: (documentId: string) => press("apply", [{ node: documentId }]),

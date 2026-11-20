@@ -21,7 +21,11 @@ export function useDraftView(
 ): DraftChangesView {
   const deleteLine = item?.tree?.deleted && !item.isNew ? treeLineOf(item) : null;
   const changes =
-    item && enabled ? (deleteLine ? [treeChange(item, deleteLine)] : listedItemChanges(item, [])) : [];
+    item && enabled
+      ? deleteLine
+        ? [treeChange(item, deleteLine)]
+        : listedItemChanges(item, [])
+      : [];
   return {
     documentId: draft.documentId,
     itemKey: draft.itemKey,

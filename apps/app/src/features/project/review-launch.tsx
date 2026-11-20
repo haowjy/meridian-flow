@@ -12,10 +12,7 @@ import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import {
-  claimDocumentTarget,
-  whenEditorMounted,
-} from "@/core/editor/reading-position-navigation";
+import { claimDocumentTarget, whenEditorMounted } from "@/core/editor/reading-position-navigation";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";

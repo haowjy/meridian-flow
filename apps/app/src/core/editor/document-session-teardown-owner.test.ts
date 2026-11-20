@@ -16,7 +16,6 @@ function controlledSession(): ControlledSession {
   return { session: { destroy }, destroy };
 }
 
-
 describe("DocumentSessionTeardownOwner", () => {
   it("joins one retirement attempt, quarantines the room, then retries after rejection", async () => {
     const owner = new DocumentSessionTeardownOwner(() => new Error("room retiring"));

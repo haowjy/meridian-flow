@@ -190,10 +190,7 @@ export function createDrizzleTreeHistory(
       // walked in order, carrying what stood at `at`.
       const touched = (address: string | null, node: string) =>
         address === at ||
-        (address !== null &&
-          address.endsWith("/") &&
-          at.startsWith(address) &&
-          holds(node, at.slice(address.length)));
+        (address?.endsWith("/") && at.startsWith(address) && holds(node, at.slice(address.length)));
       const rows = await tx()
         .select({
           node: treeEditReceiptNodes.nodeId,

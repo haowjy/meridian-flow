@@ -187,10 +187,6 @@ export function useAccountId(): string {
   return accountId;
 }
 
-export function useOptionalAccountId(): string | null {
-  return useContext(AccountIdContext);
-}
-
 /**
  * Account epoch for command owners that also render outside the authenticated
  * shell (tests, SSR). `null` means there is no account lifetime to fence yet.
@@ -205,27 +201,12 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
   return owner;
 }
 
-/** The draft command owner; null outside the authenticated shell. */
-export function useOptionalDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] | null {
-  return useContext(DraftCommandsContext);
-}
-
 /** The documents this browser tab's hosts mount and present; null outside the authenticated shell. */
 export function useOptionalPresentedDocuments(): AccountFeatureLifetime["presented"] | null {
   return useContext(PresentedContext);
 }
 
 const NOTHING_PRESENTED: readonly OpenDocument[] = [];
-
-/** The documents this browser tab's hosts present in a project, main's first. */
-export function usePresentedDocuments(projectId: string): readonly OpenDocument[] {
-  const presented = useContext(PresentedContext);
-  return useSyncExternalStore(
-    presented?.subscribe ?? noSubscription,
-    () => presented?.documents(projectId) ?? NOTHING_PRESENTED,
-    () => NOTHING_PRESENTED,
-  );
-}
 
 /** The documents mounted in a project, newest on screen first (`PresentedDocuments.shown`). */
 export function useShownDocuments(projectId: string): readonly OpenDocument[] {

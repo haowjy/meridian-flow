@@ -16,8 +16,8 @@
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { BAR_SLOT_ATTR } from "@/core/editor/extensions/suggestion-mode/bar-slot";
 import { suggestionView } from "@/core/editor/extensions/suggestion-mode";
+import { BAR_SLOT_ATTR } from "@/core/editor/extensions/suggestion-mode/bar-slot";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";

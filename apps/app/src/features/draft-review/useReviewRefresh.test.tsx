@@ -43,7 +43,9 @@ async function mountOwner(run: (invalidated: () => string[]) => Promise<void>) {
   const client = new QueryClient();
   const invalidated: string[] = [];
   vi.spyOn(client, "invalidateQueries").mockImplementation(async (filters) => {
-    invalidated.push(JSON.stringify(filters?.queryKey) === JSON.stringify(listKey) ? "list" : "other");
+    invalidated.push(
+      JSON.stringify(filters?.queryKey) === JSON.stringify(listKey) ? "list" : "other",
+    );
   });
   await withReactRoot(
     <QueryClientProvider client={client}>

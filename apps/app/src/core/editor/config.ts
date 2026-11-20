@@ -507,7 +507,7 @@ export function createEditorConfig({
         user,
         assetRenderContext,
         showCollaborationDecorations,
-              markerStore,
+        markerStore,
         agentNames,
         slashCommands,
         atReferences,

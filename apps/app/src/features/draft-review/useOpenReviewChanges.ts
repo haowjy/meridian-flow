@@ -77,10 +77,6 @@ export function useOpenReviewChanges(
         ? ("discard" as const)
         : null,
     // A listed new file is still its own change once its text is gone: Apply draft creates it.
-    finished:
-      read.status === "ready" &&
-      !items.length &&
-      !item?.isNew &&
-      !command.hidden,
+    finished: read.status === "ready" && !items.length && !item?.isNew && !command.hidden,
   };
 }

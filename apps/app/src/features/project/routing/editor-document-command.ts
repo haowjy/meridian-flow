@@ -1,8 +1,7 @@
 import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
 import { readSegment } from "@meridian/contracts/protocol";
-import { isEditorOpenDocument, type OpenDocument } from "@/client/stores";
+import type { OpenDocument } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
-import { openDocumentMatchesRoute } from "../context/open-document-identity";
 import { addressReviewOwner } from "./document-address-review";
 import { resolveLaunchLocator } from "./launch-locator";
 import {
@@ -71,9 +70,7 @@ export function createEditorDocumentCommand({
       const reviewOwner =
         options?.reviewOwner ??
         (sameDocument ? (addressReviewOwner(current.address, scope) ?? undefined) : undefined);
-      const itemKey =
-        options?.itemKey ??
-        (sameDocument ? current.address.itemKey : undefined);
+      const itemKey = options?.itemKey ?? (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
         { address: current.address, scope },
         target,

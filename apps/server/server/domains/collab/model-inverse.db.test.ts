@@ -5,11 +5,8 @@
  * - card-target eligibility for model inverses and bounded receipt context (kb/wiki/architecture/collaboration/turn-receipts.md#reversal-availability-is-the-servers)
  */
 import { randomUUID } from "node:crypto";
-import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
-import { applyTextEdit } from "@meridian/agent-edit/test-support";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import { allocateDocumentClient, buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { eq } from "drizzle-orm";
+import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { testFileGrant } from "../../test-support/file-grants.js";

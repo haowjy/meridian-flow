@@ -4,12 +4,7 @@ import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
-import {
-  DocumentSession,
-  type DocumentSessionAccess,
-  type DocumentSessionSnapshot,
-  updatesRefused,
-} from "./document-session";
+import { DocumentSession, type DocumentSessionAccess, updatesRefused } from "./document-session";
 import type {
   LiveDocumentSessionLease,
   RetainedLiveDocumentReference,

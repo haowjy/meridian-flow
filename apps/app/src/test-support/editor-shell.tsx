@@ -4,11 +4,8 @@ import { vi } from "vitest";
 import * as threads from "@/client/query/useProjectThreads";
 import * as trees from "@/client/query/useProjectTrees";
 import * as works from "@/client/query/useWorks";
-import type { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import * as chrome from "@/features/editor/chrome/chrome-surfaces";
-import { EditorView } from "@/features/editor/EditorView";
 import * as references from "@/features/editor/references/useReferenceBrowserCatalog";
 import * as status from "@/features/editor/SyncStatus";
 import * as links from "@/features/links";
@@ -66,29 +63,4 @@ export function installEditorShell(registry: LiveDocumentSessionRegistry) {
       removal.dispose();
     },
   };
-}
-
-/** Caller supplies real session ownership; no hidden room or paint modes. */
-export function ReviewEditorHost({
-  documentId,
-  projectId,
-  session,
-  observe,
-}: {
-  documentId: string;
-  projectId: string;
-  session?: DocumentSession;
-  observe: (review: ReturnType<typeof useDraftReview>) => void;
-}) {
-  const review = useDraftReview();
-  observe(review);
-  return (
-    <EditorView
-      documentId={documentId}
-      projectId={projectId}
-      session={session}
-      localContentReady={!!session}
-      reviewItemKey={review.controller.inlineReview?.itemKey}
-    />
-  );
 }

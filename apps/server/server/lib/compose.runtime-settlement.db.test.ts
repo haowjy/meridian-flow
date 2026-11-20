@@ -6,7 +6,7 @@
  */
 
 import { toolContentText } from "@meridian/contracts/threads";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { treeSeeder } from "../test-support/tree-seed.js";

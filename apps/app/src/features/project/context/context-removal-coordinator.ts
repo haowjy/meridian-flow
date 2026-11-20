@@ -3,7 +3,6 @@
  * the document's standing; nothing here navigates main for a removal made elsewhere.
  */
 
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { readAccountRecents } from "@/client/recents";
 import type { OpenDocument } from "@/client/stores";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
@@ -166,8 +165,7 @@ export class ContextRemovalCoordinator {
       const removed = mine.filter(
         (command) => command.kind === "gone" && !this.gone.has(key(command)),
       );
-      for (const command of mine)
-        if (command.kind === "back") this.gone.delete(key(command));
+      for (const command of mine) if (command.kind === "back") this.gone.delete(key(command));
       if (removed.length > 0)
         this.applyGone(
           projectId,

@@ -30,7 +30,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -175,8 +174,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const heldItem =
     painted?.documentId === documentId && painted.chose === choseKey ? painted.draft : null;
   // What became of it here: `ended` once it is gone or a press holds it.
-  const fateOf = () =>
-    !heldItem || commands.state(heldItem.itemKey).hidden ? "ended" : "open";
+  const fateOf = () => (!heldItem || commands.state(heldItem.itemKey).hidden ? "ended" : "open");
   const fate = useSyncExternalStore(commands.subscribe, fateOf, fateOf);
   const held = heldItem && fate !== "ended" ? heldItem : null;
   const pin = chosen ?? held ?? undefined;

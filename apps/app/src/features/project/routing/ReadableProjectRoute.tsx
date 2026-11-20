@@ -24,7 +24,6 @@ import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
 import {
   useContextRemovalCoordinator,
-  useDraftCommandOwner,
   useOptionalPresentedDocuments,
 } from "../context/account-feature-context";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
@@ -425,8 +424,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   // The Trash view shows in place of the document: nothing of the address is presented.
   const presentedDestination = routeTrashed ? null : documentDestination;
   // A prerequisite that failed ends the wait: the address stays, with a way to retry.
-  const addressFailed =
-    addressKind === "plain" ? addressTree.isError : placeTrees.isError;
+  const addressFailed = addressKind === "plain" ? addressTree.isError : placeTrees.isError;
   const documentIssue: ProjectRouteIssue | undefined = !presentedDestination
     ? undefined
     : !documentResult
@@ -444,8 +442,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const removalNow = useRemovalAnswer(projectId, removedDocumentId);
   const reviewGone =
     !!address.itemKey &&
-    (closingDocumentId == null ||
-      (endUndecided && removalNow?.kind === "available"));
+    (closingDocumentId == null || (endUndecided && removalNow?.kind === "available"));
   useLayoutEffect(() => {
     if (!reviewGone || !navigation) return;
     const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");

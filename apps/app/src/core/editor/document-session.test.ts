@@ -14,7 +14,7 @@
  * - staged document-session destruction
  */
 
-import { type ChangeEventWsMessage, WS_CLOSE } from "@meridian/contracts/protocol";
+import type { ChangeEventWsMessage } from "@meridian/contracts/protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { releaseStore } from "@/client/release/release";
 import { memoryStorage } from "@/test-support/memory-storage";

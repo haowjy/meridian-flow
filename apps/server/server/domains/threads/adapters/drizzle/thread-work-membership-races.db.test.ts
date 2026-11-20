@@ -19,11 +19,7 @@ import {
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
 
-const {
-  threadId: THREAD_ID,
-  workId: WORK_ID,
-  targetWorkId: TARGET_WORK_ID,
-} = THREAD_WORK_RACE;
+const { threadId: THREAD_ID, workId: WORK_ID, targetWorkId: TARGET_WORK_ID } = THREAD_WORK_RACE;
 const ADVISORY_KEY = 748_210_471;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {

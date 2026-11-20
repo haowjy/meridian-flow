@@ -175,11 +175,7 @@ export function pickWorkViews(
  * pin, or moves to the draft `successor` names for its document. The version stays: an open
  * review of the ended draft keeps its editor until Live.
  */
-export function endPin(
-  accountId: string,
-  projectId: string,
-  pin: DraftPin,
-): void {
+export function endPin(accountId: string, projectId: string, pin: DraftPin): void {
   const views = read(accountId, projectId);
   const next: Record<string, DocumentView> = {};
   let changed = false;
@@ -248,14 +244,5 @@ export function useDocumentView(
     (listener) => subscribe(accountId, projectId, listener),
     () => (documentId ? readDocumentView(accountId, projectId, documentId) : DEFAULT_DOCUMENT_VIEW),
     () => DEFAULT_DOCUMENT_VIEW,
-  );
-}
-
-/** Every view of a project that differs from the default, re-read when one changes. */
-export function useDocumentViews(accountId: string, projectId: string): Views {
-  return useSyncExternalStore(
-    (listener) => subscribe(accountId, projectId, listener),
-    () => read(accountId, projectId),
-    () => EMPTY,
   );
 }

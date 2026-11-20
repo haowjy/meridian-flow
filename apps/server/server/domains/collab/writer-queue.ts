@@ -78,7 +78,7 @@ export function createWriterQueue(deps: {
       /** What the queue counts the frame's refusals under. */
       key: string;
       origin: UpdateOrigin;
-      subject: { documentId: string } | { draftId: string };
+      subject: { documentId: string };
     }): Uint8Array | null {
       try {
         return novelToRoom(input.room, input.update);
@@ -88,7 +88,7 @@ export function createWriterQueue(deps: {
         } else if (cause instanceof ReservedWriterClientIdError) {
           recordDropped(input.key);
           deps.emitAgentEditInvariantViolation({
-            message: `Rejected connection update for ${Object.values(input.subject)[0]}: Yjs clientID ${cause.clientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
+            message: `Rejected connection update for ${input.subject.documentId}: Yjs clientID ${cause.clientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
             ...input.subject,
             originType: input.origin.type,
             reservedClientId: cause.clientId,

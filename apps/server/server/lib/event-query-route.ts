@@ -48,7 +48,6 @@ const correlationParsers = {
   pushId: parseStringCorrelation,
   branchId: parseStringCorrelation,
   folderIds: parseStringCorrelation,
-  releasedDraftIds: parseStringCorrelation,
 } satisfies Record<keyof EventCorrelation, CorrelationParser>;
 
 function singleValue(query: EventQueryParameters, key: string): string | undefined {

@@ -1,11 +1,15 @@
 /** useDraftReviewController — shared state machine for reviewing AI document drafts. */
 
 import type { Work } from "@meridian/contracts/works";
-import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { keepsRestoredPlace } from "@/core/editor/reading-position-navigation";
+import {
+  type CommandStart,
+  usePressCommands,
+  type WorkBranchCommands,
+} from "@/features/suggestion-review/usePressCommands";
+import type { CommandOutcome } from "./draft-command-owner";
 import {
   type DraftReviewSelection,
   draftReviewReducer,
@@ -14,12 +18,6 @@ import {
   inlineReviewFromState,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-model";
-import type { CommandOutcome } from "./draft-command-owner";
-import {
-  type CommandStart,
-  usePressCommands,
-  type WorkBranchCommands,
-} from "@/features/suggestion-review/usePressCommands";
 
 export type { DraftReviewSelection, InlineDraftReview };
 
@@ -122,7 +120,6 @@ export function useDraftReviewController({
   /** Show changes, which belongs to the presented tab's view, not to this review. */
   marks: { visible: boolean; set: (visible: boolean) => void };
 }): DraftReviewController {
-  const queryClient = useQueryClient();
   const { state, dispatch } = stateOwner;
   const stateRef = useRef(state);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
@@ -142,32 +139,14 @@ export function useDraftReviewController({
 
   const enterInlineReview = useCallback(
     (documentId: string, itemKey: string) => {
-      // The review opens on the newest proposal the caches know of, and a command
-      // already in flight on this draft (sent from the strip or the Work page)
-      // is its to show: it adopts the claim if it acted on that generation.
-      dispatch({
-        type: "enterInline",
-        documentId,
-        itemKey,
-      });
+      dispatch({ type: "enterInline", documentId, itemKey });
     },
-    [projectId, queryClient, ownerKey],
+    [dispatch],
   );
 
   const exitInlineReview = useCallback(() => {
-    const inline = stateRef.current.surface.kind === "inline" ? stateRef.current.surface : null;
-    if (inline) {
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.ownerDraftMetadata(
-          projectId,
-          ownerKey,
-          inline.documentId,
-          inline.itemKey,
-        ),
-      });
-    }
     dispatch({ type: "exitInline" });
-  }, [projectId, queryClient, ownerKey]);
+  }, [dispatch]);
 
   const exitReview = useCallback(() => {
     dispatch({ type: "exitReview" });

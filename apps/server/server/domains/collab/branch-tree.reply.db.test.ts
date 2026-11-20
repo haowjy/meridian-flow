@@ -9,7 +9,7 @@ import type { DocumentId, WorkId } from "@meridian/contracts";
 import { toolContentText } from "@meridian/contracts/threads";
 import { createDb } from "@meridian/database";
 import { branches, documentEdits, users } from "@meridian/database/schema";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   type BranchTreeScenario,

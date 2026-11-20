@@ -14,6 +14,7 @@ import type {
   ThreadDraftListItem,
   ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
+import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
@@ -31,7 +32,6 @@ import { ApplyEntries, type ApplyPort } from "@/features/draft-review/apply-hist
 import { type CommandOutcome, folderKey } from "@/features/draft-review/draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
 import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
-import type { Work } from "@meridian/contracts/works";
 import type { ChangeTarget } from "@/features/draft-review/review-model";
 import {
   useDraftCommandOwner,

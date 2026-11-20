@@ -2,8 +2,7 @@
 
 import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { type ReactNode, useRef, useState } from "react";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
   ApplyAllQuestion,

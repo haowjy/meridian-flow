@@ -161,14 +161,7 @@ export function useDraftReviewScopeValue({
       showLive,
       setActiveEditorDocumentId,
     }),
-    [
-      showLive,
-      controller,
-      files,
-      drafts,
-      fileForDocument,
-      activeEditorDocumentId,
-    ],
+    [showLive, controller, files, drafts, fileForDocument, activeEditorDocumentId],
   );
 
   return value;

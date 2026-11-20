@@ -129,15 +129,7 @@ export function useDocumentReview(
         return true;
       },
     }),
-    [
-      accountId,
-      projectId,
-      documentId,
-      enterInlineReview,
-      draftCommands,
-      queryClient,
-      itemHidden,
-    ],
+    [accountId, projectId, documentId, enterInlineReview, draftCommands, queryClient, itemHidden],
   );
 
   const main = useContext(MainReviewAddressContext);

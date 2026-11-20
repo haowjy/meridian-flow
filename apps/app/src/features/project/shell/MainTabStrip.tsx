@@ -384,13 +384,10 @@ function DocumentTabChip({
   const file = paint.draft ? drafts.fileForDocument(document.documentId) : null;
   const reviewing = active && paint.showing === "draft";
   const drag = useReferenceDrag(
-    tabSubject(
-      document,
-      {
-        reviewing,
-        view: file && paint.draft ? draftCopyView(file, paint.draft.ownerKey) : null,
-      },
-    ),
+    tabSubject(document, {
+      reviewing,
+      view: file && paint.draft ? draftCopyView(file, paint.draft.ownerKey) : null,
+    }),
   );
   const heldWidth = useHeldTabWidth();
   const closeByPointer = (chip: HTMLElement | null) => {

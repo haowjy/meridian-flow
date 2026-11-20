@@ -96,7 +96,8 @@ export function useReviewChanges(
       const outcome = await controller.commandChange(mode, review, targetOfChanges([change]));
       // The change is back: the writer returns to it. Only in the review the command was sent
       // from: the writer may have opened another while it was in flight.
-      if (outcome.kind === "settled") controller.focusReviewChange(review, change, { scroll: true });
+      if (outcome.kind === "settled")
+        controller.focusReviewChange(review, change, { scroll: true });
     },
     [controller.commandChange, controller.focusReviewChange, review, settleFocus, editor],
   );

@@ -1,8 +1,9 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { useQueryClient } from "@tanstack/react-query";
 import { Folder } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { useCommandDriver } from "@/client/commands/driver-context";
+import { rediscard } from "@/client/query/press-commands";
 import {
   type TrashEntry,
   useDocumentTrash,
@@ -10,14 +11,11 @@ import {
 } from "@/client/query/useDocumentTrash";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
+import { notifyFailure } from "@/components/app/failure-toast";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
-import { useCommandDriver } from "@/client/commands/driver-context";
-import { rediscard } from "@/client/query/press-commands";
-import { notifyFailure } from "@/components/app/failure-toast";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
-import { useDraftCommandOwner } from "../../context/account-feature-context";
 import { useEntryMenu } from "../../context/ContextEntryActions";
 import { fileKindIcon } from "../../context/context-file-icon";
 import { schemeLocation } from "../../context/context-schemes";
@@ -294,7 +292,12 @@ function useTrashDiscardRows(projectId: string) {
           if (done)
             // The restored row gives way to the new entry the refetch lists.
             restored.current.delete(keyOf(entry));
-          else notifyFailure({ key: `rediscard:${entry.commandId}`, title: t`Couldn't undo`, brief: true });
+          else
+            notifyFailure({
+              key: `rediscard:${entry.commandId}`,
+              title: t`Couldn't undo`,
+              brief: true,
+            });
           mark(keyOf(entry), false);
         });
       };
@@ -309,4 +312,6 @@ function useTrashDiscardRows(projectId: string) {
 const keyOf = (entry: DiscardEntry) => entry.commandId;
 
 /** What a Discard took: the documents whose suggestions it rejected and every node its tree half settled. */
-const documentsOf = (entry: DiscardEntry) => [...new Set([...entry.documents, ...entry.tree.nodes])];
+const documentsOf = (entry: DiscardEntry) => [
+  ...new Set([...entry.documents, ...entry.tree.nodes]),
+];

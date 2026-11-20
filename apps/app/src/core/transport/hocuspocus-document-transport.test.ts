@@ -40,7 +40,7 @@ const { classifyDocumentTransportClose, createHocuspocusDocumentTransport } = aw
 );
 
 describe("Hocuspocus document transport adapter", () => {
-  it("classifies terminal draft closes and leaves reconnects alone", () => {
+  it("classifies terminal closes and leaves reconnects alone", () => {
     expect(
       classifyDocumentTransportClose({
         code: 4403,
@@ -49,10 +49,10 @@ describe("Hocuspocus document transport adapter", () => {
     ).toEqual({ kind: "unauthorized", reason: "permission-denied", code: 4403 });
     expect(
       classifyDocumentTransportClose({
-        code: 4205,
-        reason: "purged",
+        code: 4208,
+        reason: "document-deleted",
       }),
-    ).toEqual({ kind: "reset", reason: "purged", disposition: "closed", code: 4205 });
+    ).toEqual({ kind: "reset", reason: "document-deleted", disposition: "removed", code: 4208 });
     expect(
       classifyDocumentTransportClose({
         code: 1006,
@@ -64,22 +64,22 @@ describe("Hocuspocus document transport adapter", () => {
   it.each([
     {
       signal: "close",
-      contract: WS_CLOSE.DRAFT_PURGED,
+      contract: WS_CLOSE.DOCUMENT_DELETED,
       pending: true,
-      disposition: "closed",
+      disposition: "removed",
     },
     {
       signal: "denial",
-      contract: WS_CLOSE.DRAFT_PURGED,
+      contract: WS_CLOSE.DOCUMENT_DELETED,
       pending: true,
-      disposition: "closed",
+      disposition: "removed",
     },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: true, disposition: null },
     { signal: "native", contract: WS_CLOSE.ACCESS_CHANGED, pending: false, disposition: null },
   ] as const)(
     "classifies $signal $contract.reason with pending=$pending",
     async ({ signal, contract, pending, disposition }) => {
-      const roomName = "draft:draft-1";
+      const roomName = "document-1";
       const document = new Y.Doc();
       const awareness = new Awareness(document);
       const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
@@ -132,43 +132,40 @@ describe("Hocuspocus document transport adapter", () => {
 
   // A room whose frames the server can never store must stop resending, including typing replayed
   // from the copy before the transport existed, which never passes through the outbox.
-  it.each(["draft:draft-1", "document-1"])(
-    "bounds repeated update refusals of %s",
-    async (roomName) => {
-      const document = new Y.Doc();
-      document.getText("body").insert(0, "replayed");
-      const awareness = new Awareness(document);
-      const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
-      const states: DocumentSessionConnectionState[] = [];
-      transport.subscribeStatus?.((state) => states.push(state));
-      try {
-        await vi.advanceTimersByTimeAsync(0);
-        for (let refusal = 0; refusal < 4; refusal += 1) {
-          const socket = DocumentSocketHarness.instances.at(-1);
-          if (!socket) throw new Error("missing document socket");
-          socket.open();
-          socket.syncStep1(roomName, document);
-          const { code, reason } = WS_CLOSE.WRITER_ADMISSION_FAILED;
-          socket.deliverClose(code, reason);
-          await vi.advanceTimersByTimeAsync(5_000);
-        }
-        expect(states.at(-1)).toEqual({
-          kind: "terminal",
-          reason: UPDATES_REFUSED,
-          code: WS_CLOSE.WRITER_ADMISSION_FAILED.code,
-        });
-        expect(DocumentSocketHarness.instances).toHaveLength(3);
-      } finally {
-        transport.destroy();
-        awareness.destroy();
-        document.destroy();
+  it.each(["document-1"])("bounds repeated update refusals of %s", async (roomName) => {
+    const document = new Y.Doc();
+    document.getText("body").insert(0, "replayed");
+    const awareness = new Awareness(document);
+    const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });
+    const states: DocumentSessionConnectionState[] = [];
+    transport.subscribeStatus?.((state) => states.push(state));
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      for (let refusal = 0; refusal < 4; refusal += 1) {
+        const socket = DocumentSocketHarness.instances.at(-1);
+        if (!socket) throw new Error("missing document socket");
+        socket.open();
+        socket.syncStep1(roomName, document);
+        const { code, reason } = WS_CLOSE.WRITER_ADMISSION_FAILED;
+        socket.deliverClose(code, reason);
+        await vi.advanceTimersByTimeAsync(5_000);
       }
-    },
-  );
+      expect(states.at(-1)).toEqual({
+        kind: "terminal",
+        reason: UPDATES_REFUSED,
+        code: WS_CLOSE.WRITER_ADMISSION_FAILED.code,
+      });
+      expect(DocumentSocketHarness.instances).toHaveLength(3);
+    } finally {
+      transport.destroy();
+      awareness.destroy();
+      document.destroy();
+    }
+  });
 
   // An Update never reaches a socket ahead of that socket's SyncStep2.
   it("reconnects a draft room through drops without writing held updates", async () => {
-    const roomName = "draft:draft-1";
+    const roomName = "document-1";
     const document = new Y.Doc();
     const awareness = new Awareness(document);
     const transport = createHocuspocusDocumentTransport({ roomName, document, awareness });

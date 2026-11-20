@@ -1,15 +1,4 @@
-/**
- * The branch-tree DB tests' command verbs (contract §16.1): a model's replies, the writer's
- * route cores, readers' ports, and review commands, all driving the composed production
- * runtime (the real tool executor, route cores and ports) over a `BranchTreeWorld`.
- *
- * Paths are source-relative, Manuscript by default; prefix `kb://` or `unfiled://` for
- * the other project sources, or `user://` for the writer's personal source.
- */
-
-import { randomUUID } from "node:crypto";
 import {
-  type BranchId,
   type DocumentId,
   type DocumentLinkAnswer,
   draftOwnerKey,
@@ -385,7 +374,6 @@ export function branchTreeCommands(
       },
     };
   }
-
 
   const routes = () => selectBranchRouteServices(composed().runtime.app);
 

@@ -222,14 +222,7 @@ function useDescriptions(projectId: string): Descriptions {
       },
       request,
     }),
-    [
-      shown,
-      answers,
-      request,
-      store,
-      projectList.snapshot?.version,
-      accountList.snapshot?.version,
-    ],
+    [shown, answers, request, store, projectList.snapshot?.version, accountList.snapshot?.version],
   );
 }
 
@@ -458,9 +451,4 @@ export function usePlaceChat(): (threadId: string, from: PanePlace | undefined) 
 /** Counts items placed in the side: the desktop opens the side on each. */
 export function useSideRevealed(): number {
   return useSideView().revealed;
-}
-
-/** Whether documents open beside, as the side's rule describes them. */
-export function useSideDescriptions(): Descriptions {
-  return useSideView().descriptions;
 }

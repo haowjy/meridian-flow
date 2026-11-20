@@ -30,9 +30,7 @@ export function dockFile(
   items: readonly ReviewChange[],
   threadId: string,
 ): DockFile {
-  const changes = items.filter(
-    (change) => !change.attributed || change.members.includes(threadId),
-  );
+  const changes = items.filter((change) => !change.attributed || change.members.includes(threadId));
   return {
     row,
     name,
