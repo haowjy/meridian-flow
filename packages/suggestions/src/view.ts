@@ -14,7 +14,7 @@ export type SuggestionAttrs = {
 
 /**
  * One turn's layer of a Work's pending change to a block's attributes (a heading level, a list),
- * kept in the block's `sugAttrs` by Work, oldest first, all under one change id. The block and
+ * kept in the block's `sugAttrs` by Work, oldest first, each under its turn's change id. The block and
  * its text stay Live: accept sets the layers' attributes, reject drops layers, and nothing
  * anchored in the block moves. Rejecting a later turn leaves the earlier turn's layer, as a later
  * turn's deletion layered over an earlier insertion does for text.

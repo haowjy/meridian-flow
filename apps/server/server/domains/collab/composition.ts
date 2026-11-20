@@ -628,6 +628,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         reverseLiveTurn: turnInverse.reverseTurn,
         fileAccess: deps.fileAccess,
         enterLiveSeam: (documentId) => enterLiveWriteSeam(deps.db, documentId),
+        confirmGrants: async () => {
+          await lockSeamWorks(deps.db, []);
+        },
         withLiveDocument: runtime.markdownDocuments.withLiveDocument,
         liveTurnChip: turnInverse.getDocumentAndTreeChip,
       })

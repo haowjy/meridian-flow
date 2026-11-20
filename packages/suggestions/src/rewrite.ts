@@ -527,7 +527,7 @@ function settle(
 
 /**
  * The Work's pending change to the Live block at `pos`, from attributes `shown` (as the Work sees
- * them) to `attrs`: part of the block's attribute change so far, or else of the edit's change.
+ * them) to `attrs`: part of the edit's change, which continues this author's attribute change.
  * Who suggests and a block's identity are never themselves proposed.
  */
 function proposeAttrs(
@@ -545,7 +545,7 @@ function proposeAttrs(
   if (Object.keys(set).length === 0) return;
   const stored = out.doc.nodeAt(pos) as Node;
   const layers = proposals(stored)[author.work] ?? [];
-  const id = layers.find((layer) => !layer.remove)?.id ?? change(null);
+  const id = change(layers.find((layer) => !layer.remove && sameAuthor(layer, author))?.id ?? null);
   setLayers(out, pos, author.work, addLayer(stored, layers, { ...author, id, attrs: set }));
 }
 

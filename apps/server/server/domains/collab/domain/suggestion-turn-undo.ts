@@ -37,6 +37,8 @@ export function createSuggestionTurnUndo(deps: {
   }): Promise<void>;
   reverseLiveTurn(query: Query): Promise<ReversalOutcome>;
   fileAccess: Pick<FileAccess, "authorize" | "authorizeAt" | "confirmEdit">;
+  /** Confirms the bound grants under their Works' locks, before any list or document key. */
+  confirmGrants(): Promise<void>;
   /** The seam a Live write enters first: the grants' Works, their confirmation, the document's lock. */
   enterLiveSeam(documentId: DocumentId): Promise<void>;
   withLiveDocument<T>(
@@ -90,17 +92,18 @@ export function createSuggestionTurnUndo(deps: {
       if (isFileAccessDenied(grant)) throw new FileEditRefusedError([grant]);
       grants.push(grant);
     }
-    // The rest goes to the Live inverse first: its commit takes the tree list keys and then every
-    // document key, these included, in one order, and the rejects below run under them.
-    const rest = documentIds.filter((documentId) => !pending.includes(documentId));
-    const live = rest.length
-      ? await deps.reverseLiveTurn({ ...query, documentIds: rest, alsoLock: pending })
-      : null;
     const origin: DocumentWriteOrigin =
       query.actor.type === "user"
         ? { type: "user", actorUserId: query.actor.userId as UserId }
         : { type: "agent", actorTurnId: turn };
+    const rest = documentIds.filter((documentId) => !pending.includes(documentId));
     const confirmed = await runWithEditGrants(deps.fileAccess, grants, async () => {
+      // Confirmed before anything is written, so a refusal leaves the whole press undone.
+      await deps.confirmGrants();
+      // The Live inverse first, for the other documents and the reply's tree changes: its commit
+      // takes the tree list keys and then every document key, these included, in one order, and
+      // the rejects below run under them.
+      const live = await deps.reverseLiveTurn({ ...query, documentIds: rest, alsoLock: pending });
       const rejected: DocumentId[] = [];
       for (const documentId of pending) {
         await deps.enterLiveSeam(documentId);
@@ -114,23 +117,20 @@ export function createSuggestionTurnUndo(deps: {
         });
         if (changed) rejected.push(documentId);
       }
-      return rejected;
+      return { live, rejected };
     });
     if (!confirmed.ok) throw confirmed.refusal;
+    const { live, rejected } = confirmed.value;
     const documents = await Promise.all(
-      confirmed.value.map(async (documentId) => ({
+      rejected.map(async (documentId) => ({
         documentId,
         uri: (await deps.resolveDocumentUri(documentId)) ?? documentId,
         destination: { kind: "live" as const },
         status: "reversed" as const,
       })),
     );
-    if (!live) return { status: documents.length ? "reversed" : "nothing_to_undo", documents };
-    return {
-      ...live,
-      status: documents.length ? "reversed" : live.status,
-      documents: [...live.documents, ...documents],
-    };
+    if (!documents.length) return live;
+    return { ...live, status: "reversed", documents: [...live.documents, ...documents] };
   };
   return { reverseTurn, chip };
 }
