@@ -52,10 +52,9 @@ function fixture(existingUpstream?: Y.Doc) {
     }),
     drafts: {
       getDraft: async (id) => snapshot(id),
-      listActiveWorkDraftIds: async () => ["draft"],
       resolveWorkDraftForThread: async () => snapshot("draft"),
     },
-    flushLivePull: async () => {},
+    catchUpDraft: async () => {},
     journalRows: {
       listConcurrentJournalRows: async () => rows,
     },

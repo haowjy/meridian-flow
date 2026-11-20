@@ -36,13 +36,13 @@ export function createDraftProjectionDiagnostics(
 
 export function createDraftPullDiagnostics(eventSink?: EventSink): DraftPullDiagnostics {
   return {
-    backgroundFailed({ documentId, cause }) {
+    backgroundFailed({ documentId, draftId, cause }) {
       if (!eventSink) return;
       emitEvent(eventSink, {
         level: "error",
         source: "collab.draft_pull",
         name: "background.failed",
-        correlation: { documentId },
+        correlation: { ...(documentId ? { documentId } : {}), ...(draftId ? { draftId } : {}) },
         payload: unknownToEventPayload(cause),
       });
     },

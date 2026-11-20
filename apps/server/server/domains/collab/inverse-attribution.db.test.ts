@@ -206,7 +206,6 @@ it("an already-connected live room sees Undo without a repairing read", async ()
           eq(schema.documentDrafts.kind, "work_draft"),
         ),
       );
-    expect(await view.draftStore.listActiveWorkDraftIds(ALPHA_ID)).toEqual([]);
     await vi.waitFor(() => expect(prose()).toBe("Alpha Gamma.\n\nBlue."));
     const broadcasts = view.hocuspocus.broadcasts.length;
     expect(

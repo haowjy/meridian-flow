@@ -50,7 +50,7 @@ it("card keeps Undo after Live splits a paragraph and the pull ran", async () =>
         seq: 0,
       });
     });
-    await fixture.draftPulls.flushLivePull(ALPHA_ID);
+    await fixture.draftPulls.catchUpDraft(draftId);
     expect(await fixture.collab.getDocumentAndTreeChip(THREAD_ID, TURN_ID)).toMatchObject({
       control: "undo",
     });

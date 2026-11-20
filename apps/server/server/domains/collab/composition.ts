@@ -125,6 +125,7 @@ import { createDraftCoordinator } from "./domain/draft-coordinator.js";
 import { createDraftProjection } from "./domain/draft-projection.js";
 import { createDraftProvenanceReader } from "./domain/draft-provenance.js";
 import { createDraftPullService } from "./domain/draft-pulls.js";
+import { DraftNotFoundError } from "./domain/draft-resolver.js";
 import { createDraftRetirement } from "./domain/draft-retirement.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import { createModelDocumentEdits } from "./domain/model-document-edits.js";
@@ -185,7 +186,9 @@ type CollabDomainDeps = {
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
-  const persistence = createDrizzleCollabPersistence(deps.db);
+  const persistence = createDrizzleCollabPersistence(deps.db, (documentId) =>
+    draftPulls.liveCommitted(documentId),
+  );
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     onArrivals: (ids) => deps.arrivals?.settle(ids) ?? Promise.resolve(0),
@@ -239,7 +242,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     outsideTransaction: runOutsideWrite,
     liveJournal: persistence.journal,
     draftCoordinator,
-    drafts,
+    openDraftRooms: (documentId) => hocuspocusPersistence.openDraftRooms(documentId),
     diagnostics: createDraftPullDiagnostics(deps.eventSink),
     ...(deps.livePullDebounceMs === undefined ? {} : { debounceMs: deps.livePullDebounceMs }),
   });
@@ -388,15 +391,23 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     liveRoomOf: async (documentId) =>
       liveRoom(documentId, await readAuthorityGeneration(documentId)),
-    afterLiveCommit: (documentId) =>
-      deferUntilDrizzleCommit(() => draftPulls.scheduleLivePull(documentId)),
+    draftBehindLive: (documentId) =>
+      deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
   });
   const modelEdits = createDrizzleModelEdits(
     deps.db,
     {
       write: scopeModelEditWrite(modelEditWrite, deps.links),
       read: modelEditRead,
-      catchUp: (documentId) => draftPulls.flushLivePull(documentId),
+      catchUp: async (documentId, threadId) => {
+        try {
+          const draft = await drafts.resolveWorkDraftForThread(documentId, threadId);
+          await draftPulls.catchUpDraft(draft.draftId);
+        } catch (cause) {
+          // A thread with no draft of the document writes live or ensures one from live.
+          if (!(cause instanceof DraftNotFoundError)) throw cause;
+        }
+      },
     },
     modelEvidence,
   );
@@ -423,10 +434,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     readAuthorityHeadGeneration: readAuthorityGeneration,
     emitAgentEditInvariantViolation: createAgentEditInvariantDiagnostic(deps.eventSink),
     onLiveUpdatePersisted: (documentId) => {
-      draftPulls.scheduleLivePull(documentId);
       derivations.schedule(documentId);
       deps.liveTextHints?.hint(documentId);
     },
+    catchUpOpenedDraft: draftPulls.catchUpOpenedDraft,
     onDraftWriterUpdateAdmitted: (draftId) => draftAheads.schedule(draftId),
   });
 
@@ -445,7 +456,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
     refreshDocument: (documentId) => projectionRefresher.refresh({ documentId }),
-    flushLivePull: draftPulls.flushLivePull,
     notices: deps.notices
       ? createReversalNoticePort({
           notices: deps.notices,
@@ -512,7 +522,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       treeLists: deps.treeLists,
       tree: treeReader,
       onCommitted: async (documentId) => {
-        await draftPulls.flushLivePull(documentId);
         await runDocumentWriteHook({ documentId }, "collab.apply");
       },
       merged: ({ commandId, kind, rules, overrode }) => {
@@ -599,7 +608,10 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
     checkpoints: persistence.store,
     disconnectGeneration: hocuspocusPersistence.disconnectLiveGeneration,
-    onReplaced: derivations.schedule,
+    onReplaced: (documentId) => {
+      draftPulls.liveCommitted(documentId);
+      derivations.schedule(documentId);
+    },
   });
   const checkpoints = createCheckpointService({
     coordinator: liveCoordinator,
@@ -640,6 +652,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
       draftExists: hocuspocusPersistence.draftExists,
       openDraftIds: hocuspocusPersistence.openDraftIds,
+      openDraftRooms: hocuspocusPersistence.openDraftRooms,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
@@ -662,6 +675,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
       reconcileHocuspocusDraftRoom: hocuspocusPersistence.reconcileHocuspocusDraftRoom,
       enrollHocuspocusDraftRoom: hocuspocusPersistence.enrollHocuspocusDraftRoom,
+      connectedHocuspocusDraftRoom: hocuspocusPersistence.connectedHocuspocusDraftRoom,
+      unloadedHocuspocusDraftRoom: hocuspocusPersistence.unloadedHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     agentEdit: {

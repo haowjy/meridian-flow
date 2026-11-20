@@ -8,14 +8,6 @@ import { COLLAB_SCHEMA_VERSION, formatCollabSchemaSubprotocol } from "@meridian/
 import { describe, expect, it, vi } from "vitest";
 import { messageYjsSyncStep1, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
-import { createDraftCoordinator } from "../../domains/collab/domain/draft-coordinator.js";
-import { createDraftPullService } from "../../domains/collab/domain/draft-pulls.js";
-import { readDraftContent } from "../../domains/collab/test-support/draft-store-seam.js";
-import {
-  MemoryDraftStore,
-  memoryDraft,
-  testDraftRow,
-} from "../../domains/collab/test-support/memory-draft-store.js";
 import {
   createAllowAllFileAccess,
   createLocalFileAccessChanges,
@@ -74,99 +66,6 @@ function connectionConfig() {
 }
 
 describe("Yjs draft handshake route guard", () => {
-  it("pulls live changes into a Work draft without blocking draft-room connection", async () => {
-    const live = new Y.Doc({ gc: false });
-    const paragraph = new Y.XmlElement("paragraph");
-    paragraph.setAttribute("id", "p");
-    paragraph.insert(0, [new Y.XmlText("live advanced")]);
-    live.getXmlFragment("prosemirror").insert(0, [paragraph]);
-    const loadedRoom = new Y.Doc({ gc: false });
-    let releasePull: (() => void) | undefined;
-    const pullBlocked = new Promise<void>((resolve) => {
-      releasePull = resolve;
-    });
-    const store = new MemoryDraftStore([
-      memoryDraft(
-        testDraftRow({
-          draftId: "draft_1",
-          documentId: "document-1" as never,
-          workId: "work-1" as never,
-        }),
-        new Y.Doc({ gc: false }),
-      ),
-    ]);
-    // The pull's rewrite waits here, so the room connects before the pull commits.
-    const appendRows = store.appendRows.bind(store);
-    store.appendRows = async (append) => {
-      await pullBlocked;
-      return appendRows(append);
-    };
-    const draftCoordinator = createDraftCoordinator({
-      onAppendCommitted: () => {},
-      store,
-      onDraftUpdate: ({ update }) => {
-        Y.applyUpdate(loadedRoom, update);
-      },
-    });
-    const draftPulls = createDraftPullService({
-      outsideTransaction: (operation) => operation(),
-      draftCoordinator,
-      liveJournal: {
-        read: async () => ({ checkpoint: Y.encodeStateAsUpdate(live), updates: [] }),
-      },
-      drafts: {
-        listActiveWorkDraftIds: async () => ["draft_1"],
-      },
-    });
-    const flushDraftLivePull = vi.fn(draftPulls.flushLivePull);
-    const hocuspocus = createHocuspocus(
-      {
-        fileAccess: createAllowAllFileAccess(),
-        fileAccessChanges: createLocalFileAccessChanges(),
-        documentSync: {
-          roomRemoval: vi.fn(async () => null),
-          ensureDocumentAuthority: vi.fn(async () => {}),
-          bindHocuspocus: vi.fn(),
-          resolveDraftHocuspocusRoom: vi.fn(async () => ({
-            draftId: "draft_1",
-            documentId: "document-1",
-            owner: { kind: "work" as const, workId: "work-1" },
-            schemaVersion: COLLAB_SCHEMA_VERSION,
-            status: "active",
-          })),
-          headSchemaVersion: vi.fn(async () => null),
-          flushDraftLivePull,
-        } as never,
-        eventSink: { emit() {} } as never,
-        treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
-      },
-      createYjsRoomAccessIndex(),
-    );
-
-    await expect(
-      hocuspocus.configuration.onConnect?.({
-        connectionConfig: connectionConfig(),
-        documentName,
-        context: { userId: "user-1", clientSchemaVersion: COLLAB_SCHEMA_VERSION },
-      } as never),
-    ).resolves.toBeUndefined();
-    expect(flushDraftLivePull).toHaveBeenCalledWith("document-1");
-    expect(loadedRoom.getXmlFragment("prosemirror").toString()).toBe("");
-
-    releasePull?.();
-    await flushDraftLivePull.mock.results[0]?.value;
-    await vi.waitFor(() => {
-      expect(loadedRoom.getXmlFragment("prosemirror").toString()).toBe(
-        '<paragraph id="p">live advanced</paragraph>',
-      );
-    });
-    const persisted = new Y.Doc({ gc: false });
-    Y.applyUpdate(persisted, await readDraftContent(store, "draft_1"));
-    expect(persisted.getXmlFragment("prosemirror").toString()).toBe(
-      '<paragraph id="p">live advanced</paragraph>',
-    );
-  });
-
   it("closes with 1008 when draft admission throws", async () => {
     const admitDraftWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
@@ -358,7 +257,7 @@ describe("Yjs room access", () => {
         schemaVersion: COLLAB_SCHEMA_VERSION,
         status: "active",
       })),
-      flushDraftLivePull: vi.fn(async () => undefined),
+      catchUpDraft: vi.fn(async () => undefined),
     };
     return {
       fileAccess: {

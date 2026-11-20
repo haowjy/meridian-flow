@@ -62,7 +62,7 @@ const liveCoordinator = {
 const pulls = createDraftPullService({
   outsideTransaction: runOutsideWrite,
   draftCoordinator: coordinator,
-  drafts: h.store,
+  openDraftRooms: async () => [],
   liveJournal: h.persistence.journal,
 });
 const fragment = (doc: Y.Doc) => doc.getXmlFragment("prosemirror");
@@ -188,7 +188,7 @@ try {
       await gate;
     });
     try {
-      const rebase = pulls.flushLivePull(s.documentId);
+      const rebase = pulls.catchUpDraft(s.draftId);
       await reached(arrived);
       const frames = Promise.all([writer(s, a), writer(s, b)]);
       remove();
@@ -218,7 +218,7 @@ try {
       a,
     );
     await live(s, [quote("Base words.")]);
-    await pulls.flushLivePull(s.documentId);
+    await pulls.catchUpDraft(s.draftId);
     const result = await read(s);
     // A wrap is an attribute change, so the draft's typing lands in the one quoted block.
     assert.equal(result.length, 1);
@@ -231,7 +231,7 @@ try {
     const stale = clone(s.room);
     const first = captured(stale, () => textAt(stale).insert(4, "lateA"));
     await live(s, [quote("Base words.")]);
-    await pulls.flushLivePull(s.documentId);
+    await pulls.catchUpDraft(s.draftId);
     assert.equal((await writer(s, first)).admitted, true);
     const second = captured(stale, () => textAt(stale).insert(9, "B"));
     await writer(s, second);
@@ -250,7 +250,7 @@ try {
       textAt(stale).insert(3, "Y");
     });
     await live(s, [rebuilt("ab")]);
-    await pulls.flushLivePull(s.documentId);
+    await pulls.catchUpDraft(s.draftId);
     await writer(s, first);
     assert.equal((await read(s)).length, 3);
     await writer(
@@ -276,7 +276,7 @@ try {
       textAt(stale).insert(3, "Y");
     });
     await live(s, [rebuilt("ab")]);
-    await pulls.flushLivePull(s.documentId);
+    await pulls.catchUpDraft(s.draftId);
     await writer(s, first);
     const deletion = captured(stale, () => textAt(stale).delete(2, 1));
     let resume!: () => void, signal!: () => void;
@@ -469,7 +469,7 @@ try {
     await effect.flush();
     assert.equal((await h.store.readDraftAt(s.draftId))?.documentDraft.hasEffect, true);
     await live(s, [paragraph("Base change words.")]);
-    await pulls.flushLivePull(s.documentId);
+    await pulls.catchUpDraft(s.draftId);
     await effect.flush();
     assert.equal((await h.store.readDraftAt(s.draftId))?.documentDraft.hasEffect, false);
   });
@@ -477,7 +477,7 @@ try {
     const s = await seed("r-reconnect");
     const old = clone(s.room);
     await live(s, [rebuilt("Base words.")]);
-    await pulls.flushLivePull(s.documentId);
+    await pulls.catchUpDraft(s.draftId);
     await coordinator.readDraft(s.draftId, async (doc) => {
       Y.applyUpdate(old, Y.encodeStateAsUpdate(doc));
     });
@@ -505,7 +505,6 @@ try {
       resolveDocumentUri: async () => "probe.md",
       resolveLastDocumentUri: async () => null,
       refreshDocument: async () => {},
-      flushLivePull: (id) => pulls.flushLivePull(id),
       notices: { record: async () => {} },
       workProjection: h.projection,
       removals: createTestRemovalDeps(h.db).removals,

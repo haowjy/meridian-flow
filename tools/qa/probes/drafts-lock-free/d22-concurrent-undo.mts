@@ -107,7 +107,6 @@ function inverseService(harness: Harness, handle: string) {
     resolveDocumentUri: async () => `scratch://@${handle}/probe.md`,
     resolveLastDocumentUri: async () => null,
     refreshDocument: async () => {},
-    flushLivePull: async () => {},
     notices: { record: async () => {} },
     workProjection: harness.projection,
     removals: createTestRemovalDeps(harness.db).removals,

@@ -63,6 +63,8 @@ type HocuspocusPersistenceDeps = {
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
   onLiveUpdatePersisted?(documentId: DocumentId): void;
+  /** Brings Live's committed text into a draft whose room just opened or took a connection. */
+  catchUpOpenedDraft?(draftId: string): Promise<void>;
   /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
   onDraftWriterUpdateAdmitted?(draftId: string): void;
 };
@@ -72,6 +74,7 @@ export type HocuspocusPersistenceService = Pick<
   | "resolveDraftHocuspocusRoom"
   | "draftExists"
   | "openDraftIds"
+  | "openDraftRooms"
   | "loadHocuspocusDocument"
   | "loadHocuspocusDraftState"
   | "admitLiveWriterUpdate"
@@ -85,6 +88,8 @@ export type HocuspocusPersistenceService = Pick<
   | "closeHocuspocusDraftRoom"
   | "reconcileHocuspocusDraftRoom"
   | "enrollHocuspocusDraftRoom"
+  | "connectedHocuspocusDraftRoom"
+  | "unloadedHocuspocusDraftRoom"
   | "getPersistenceQueueMetrics"
 > & {
   disconnectLiveGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
@@ -93,6 +98,17 @@ export type HocuspocusPersistenceService = Pick<
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,
 ): HocuspocusPersistenceService {
+  // The draft rooms open in this process, by document: what a Live commit pushes to.
+  const draftRoomsOf = new Map<DocumentId, Set<string>>();
+  const documentOfDraftRoom = new Map<string, DocumentId>();
+  function unloadedDraftRoom(draftId: string): void {
+    const documentId = documentOfDraftRoom.get(draftId);
+    if (!documentId) return;
+    documentOfDraftRoom.delete(draftId);
+    const rooms = draftRoomsOf.get(documentId);
+    rooms?.delete(draftId);
+    if (!rooms?.size) draftRoomsOf.delete(documentId);
+  }
   const pendingAppends = new Map<number, PendingAppend>();
   const droppedByDocument = new Map<string, number>();
   const unsafeCheckpointDocuments = new Map<string, number>();
@@ -325,6 +341,10 @@ export function createHocuspocusPersistenceService(
       return requireDraftStore().openDraftIds(userId, draftIds);
     },
 
+    async openDraftRooms(documentId) {
+      return [...(draftRoomsOf.get(documentId) ?? [])];
+    },
+
     async loadHocuspocusDocument(documentId, document) {
       unsafeCheckpointDocuments.delete(documentId);
       if (!document) return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
@@ -358,7 +378,19 @@ export function createHocuspocusPersistenceService(
           room: document,
           trigger: "enrollment",
         });
-        if (!base) closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_PURGED);
+        if (!base) {
+          closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_PURGED);
+          return;
+        }
+        // The room may have unloaded, or been replaced, while the read above ran: its unload
+        // hook found nothing to remove, so listing it now would outlive it.
+        if (hocuspocus.documents.get(document.name) !== document) return;
+        const documentId = base.snapshot.documentId as DocumentId;
+        draftRoomsOf.set(documentId, (draftRoomsOf.get(documentId) ?? new Set()).add(draftId));
+        documentOfDraftRoom.set(draftId, documentId);
+        // Listed, so a Live commit from here on pushes to this room, and this pull reads
+        // whatever committed before it.
+        await deps.catchUpOpenedDraft?.(draftId);
       })().catch((cause: unknown) => {
         if (!deps.eventSink) return;
         emitEvent(deps.eventSink, {
@@ -372,6 +404,13 @@ export function createHocuspocusPersistenceService(
       // A store of this room, and a drain of this draft, wait the enrollment out.
       trackAppend(draftRoomName(draftId), enrollment);
     },
+
+    connectedHocuspocusDraftRoom(draftId) {
+      // A room still enrolling catches up when it finishes.
+      if (documentOfDraftRoom.has(draftId)) void deps.catchUpOpenedDraft?.(draftId);
+    },
+
+    unloadedHocuspocusDraftRoom: unloadedDraftRoom,
 
     async admitLiveWriterUpdate(input) {
       const authority = documentAuthority(input.document);

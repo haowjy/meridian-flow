@@ -304,7 +304,7 @@ describe("writer frames racing rewrites (postgres)", () => {
     async (first) => {
       const draftId = await draftBehindLive();
       const frame = await writerFrame(draftId, appendParagraph("Extra."));
-      const pull = () => fixture.view.draftPulls.flushLivePull(ALPHA_ID);
+      const pull = () => fixture.view.draftPulls.catchUpDraft(draftId);
       try {
         const run =
           first === "pull"

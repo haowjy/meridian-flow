@@ -604,7 +604,7 @@ export function createHocuspocus(
 ): Hocuspocus<YjsConnectionContext> {
   /** Brings Live's committed text into the draft's base and prose; a failure is logged, not thrown. */
   const pullLiveIntoDraft = (target: Extract<YjsAdmissionTarget, { kind: "draft" }>) =>
-    services.documentSync.flushDraftLivePull(target.documentId).catch((cause: unknown) => {
+    services.documentSync.catchUpDraft(target.draftId).catch((cause: unknown) => {
       emitEvent(services.eventSink, {
         level: "warn",
         source: "collab.hocuspocus",
@@ -660,19 +660,11 @@ export function createHocuspocus(
           const settled = await findRoomAccess(services, userId, admission.fileTarget);
           if (settled?.access.level !== admission.access.level)
             refuse(accessChangedClose(closedOwnerWhy(settled?.facts)));
-
-          if (admission.target.kind === "draft") {
-            const target = admission.target;
-            // Do not delay room admission: a cold room may briefly render its persisted
-            // state before this pull arrives. A pull that commits while the room loads is
-            // brought in by the room's enrollment once Hocuspocus registers it.
-            void pullLiveIntoDraft(target);
-          }
         });
       });
     },
     // A draft room's `catch_up`: Live's committed text is pulled into the draft now, rather than
-    // after the pull's debounce, and the answer follows the pull's update on this socket.
+    // after the push's debounce, and the answer follows the pull's update on this socket.
     async onStateless({ document, connection, payload }) {
       const message = parseYjsClientStatelessMessage(payload);
       if (!message) return;
@@ -812,6 +804,7 @@ export function createHocuspocus(
           // must not take a late connection.
           if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
             refuse(WS_CLOSE.DRAFT_PURGED);
+          services.documentSync.connectedHocuspocusDraftRoom(room.draftId);
           return;
         }
         try {
@@ -828,6 +821,8 @@ export function createHocuspocus(
     },
     async afterUnloadDocument({ documentName }) {
       treeRooms.unloaded(documentName);
+      const room = parseYjsRoomName(documentName);
+      if (room?.kind === "draft") services.documentSync.unloadedHocuspocusDraftRoom(room.draftId);
     },
     async onStoreDocument({ documentName, document }) {
       const room = parseAnyRoomOrDeny(documentName);

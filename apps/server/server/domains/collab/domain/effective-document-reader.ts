@@ -47,7 +47,7 @@ export function createEffectiveDocumentReader(input: {
   drafts: ApplicationDraftStore;
   draftCoordinator: Pick<DraftCoordinator, "copyDraft" | "loadBase" | "prepareAppend">;
   blockText: BlockText;
-  draftPulls: Pick<DraftPullService, "flushLivePull">;
+  draftPulls: Pick<DraftPullService, "catchUpDraft">;
   agentEdit: AgentEditRouter;
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   model: YProsemirrorDocumentModel;
@@ -106,9 +106,9 @@ export function createEffectiveDocumentReader(input: {
     command: { documentId: DocumentId; owner: DraftOwner },
     read: (doc: DocHandle) => Promise<T>,
   ): Promise<Result<T, WorkDraftMissing>> {
-    await input.draftPulls.flushLivePull(command.documentId);
     const draft = await input.drafts.findOwnerDraft(command.documentId, command.owner);
     if (!draft) return Err({ code: "draft_not_found", documentId: command.documentId });
+    await input.draftPulls.catchUpDraft(draft.draftId);
     const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
     try {
       return Ok(await read(toDocHandle(doc)));
@@ -134,16 +134,16 @@ export function createEffectiveDocumentReader(input: {
         draftOwner: version.destination === "draft" ? version.owner : null,
       }),
     readStoredWordCounts: (documentIds) => input.blockText.wordCounts(documentIds),
-    flushDraftLivePull(documentId) {
-      return input.draftPulls.flushLivePull(documentId);
+    catchUpDraft(draftId) {
+      return input.draftPulls.catchUpDraft(draftId);
     },
     async readOwnerMarkdown({ documentId, owner }) {
-      await input.draftPulls.flushLivePull(documentId);
       const draft = await input.drafts.findOwnerDraft(documentId, owner);
       if (!draft)
         return readEffective({ documentId, destination: "live" }, async (doc) =>
           input.documents.serializeVersionedDocument(documentId, unwrapDoc(doc), { kind: "live" }),
         );
+      await input.draftPulls.catchUpDraft(draft.draftId);
       const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
       try {
         return Ok(

@@ -71,7 +71,7 @@ export const appendTailOrder: Probe = {
           await pause.entered;
           appendToFirstParagraph(draft.live, " LIVE");
           const pull = independently(() =>
-            rebaseLive(other, b.coordinator, draft.documentId, draft.live),
+            rebaseLive(other, b.coordinator, draft.documentId, draft.live, draft.draftId),
           );
           const waiting = await harness.waitForLockWaiter(/document_drafts/);
           pause.release();

@@ -20,7 +20,7 @@ writes are refused; Apply, Un-Apply and Discard still work (Apply and Un-Apply l
 
 Nothing holds a write: each lands in its command's transaction, so a read always shows
 the writes before it. Rebinding is resolved again for each query; a read-only draft query
-without a Work draft may rebase live content into the owner's draft but creates none.
+without a Work draft may catch live content up into the owner's draft but creates none.
 
 The composition root wires required services and provider ports. It owns no
 business behavior, mutable runtime state, or optional capability matrix.
@@ -188,7 +188,7 @@ current room. Model inverse commands use the current destination grant and
 the immutable edit policy, not a legacy journal selection.
 
 Every model call reads its room fresh through agent-edit's `readRoom`. The
-draft adapter (`domain/draft-agent-edit.ts`) runs the live→Work rebase, copies
+draft adapter (`domain/draft-agent-edit.ts`) catches the Work draft up with live, copies
 the Work draft replica. The live adapter
 (`adapters/hocuspocus-coordinator.ts` `liveRoomCopy`) reads the journal and
 the room without the document mutex. A room is named from what was read:
@@ -468,14 +468,49 @@ the capture changes what a step takes, never whether the inverse runs, so it nev
 same edit: the second finds the edit already out and takes nothing (probe `d22-concurrent-undo`
 in [the lock-free probe index](qa/drafts-lock-free-probes.md)).
 
-A live commit schedules a content rebase (2 s debounce, 10 s maximum). Off-lock,
-the service reads committed live and skips drafts whose base already matches.
-Under the draft row hold its async append author re-reads committed live through
+Live merges only into drafts someone has open (`domain/draft-pulls.ts`). Two entry points:
+`liveCommitted(documentId)`, a plain notice that carries nothing from the calling process; and
+`catchUpDraft(draftId)`, which every reader that shows a draft's text calls before it takes any
+lock. Every Live write sends the notice from one place: the live journal's `append`,
+`appendWriterUpdate` (when it stores a row) and `appendBatch` fire it after the writing
+transaction commits (`createDrizzleJournal`'s `appended` hook). Live sync, a model's live
+commit, `writeDocument`, a code merge, Apply, Un-Apply and a live Undo step all pass it. An
+authority replace or restore changes Live without an append, so it sends the notice itself. The
+notice debounces per document (2 s, 10 s maximum); when it fires it reads Live once for the
+up-to-date check all the open drafts share and catches up each draft room open then. It never waits, and a draft with no room is not touched, so
+background merge work grows with the drafts open on a screen, not with the drafts that exist.
+`openDraftRooms(documentId)` is an in-memory index in `hocuspocus-persistence.ts` (document →
+open draft rooms), added when a room enrolls and dropped at `afterUnloadDocument`; it makes no
+database call. A draft catches up when it is read or opened: a room's first catch-up runs in
+`enrollHocuspocusDraftRoom` once Hocuspocus has registered the room (any Live commit before it
+falls inside that read, any after finds the room), each later client connection to an open room
+catches it up again (so a failed push heals on the next connect), and the room's `catch_up`
+message, model tools (`modelEdits().catchUp`, `readRoom`) and effective reads (Copy, export,
+search fallback) call it. A failure of an opened-room catch-up is reported as the pull service's
+`background.failed`. A caller joining a running catch-up of the same draft waits for a rerun that
+reads Live after its call. Readers that merge (Apply, Discard, Un-Apply, card Undo and revert)
+never catch up: they merge against the base they find, and a catch-up inside their lock would
+open a second connection (`assertOutsideCommandTransaction`).
+Accepted: an unopened draft that Live has caught up to still counts as pending, and may hold
+its document under retention a little longer, until someone opens it (the stored `has_effect` and
+`text_changes` only move on a write): the Changes list, counts and Work badge over-count, never
+under-count. A long-unopened draft takes one big merge when opened. Open-room state is this
+process's: one server process runs today (KB `architecture/hosting.md`, #588). A catch-up
+re-reads committed Live and the draft under the draft row hold, so a duplicate or late notice
+is harmless and nothing depends on the notice and the pull sharing a process. Several processes
+need one of two changes, neither built: route each document's draft rooms to one process, or
+replace the `openDraftRooms` index with shared presence and fan `liveCommitted` out to every
+process (for instance Postgres LISTEN/NOTIFY); otherwise a draft open on another process
+misses Live edits until its next read.
+
+A catch-up skips drafts whose base already matches live. Off-lock,
+the service reads committed live. Under the draft row hold its async append author re-reads committed live through
 the live journal's single-statement authority/checkpoint/tail read, rematerializing
 it fully rather than caching an incremental cut. It calls `rebase(base, live, draft)`
 and writes both fragments in one client-1 transaction, one `source: server` row.
-It takes neither a live lock nor a Work boundary, capture or revision predicate;
-background rebases keep archived drafts current. Server append events include
+It takes neither a live lock nor a Work boundary, capture or revision predicate, and runs for
+any Work lifecycle (`work: "any"`): a server rebase is not an incoming edit, so an archived
+Work's draft opened read-only shows current text. Server append events include
 `holdMs` and `serverRows` for measuring hold time.
 
 Writer and agent admission runs `findLostEdits` against the committed prefix.
@@ -584,8 +619,8 @@ transaction. A card Undo's Work receipts run in the same command as its document
 (`reversal.md`): the command declares every Work and thread it will lock and takes them before
 its first document key, and reruns when its commit finds a Work it did not declare.
 No process-level draft lease or mutex exists: no save, frame, pull, Discard,
-inverse or compaction takes one. Background timers remain armed across failed
-pulls; only a committed run with no newer work may clear them.
+inverse or compaction takes one. A failed push is reported and not retried: the next Live
+commit, the next connection to the room, or the next read or open of the draft, catches it up.
 
 ## Authority, checkpoints, and derivation
 
@@ -728,7 +763,7 @@ addressed draft and leaves the Work's other documents alone.
 
 ## Producer shutdown
 
-`DraftPullService.shutdown`, ahead-reference registration `shutdown`, and
+`DraftPullService.shutdown` (joins pushes and catch-ups), ahead-reference registration `shutdown`, and
 `DraftProjection.dispose` stop scheduling and join their running work. Callers await collaboration disposal before destroying
 warm documents or resetting fixture rows. The PostgreSQL collab harness
 owns that ordering in `dispose`; its mid-case `cancelScheduledPulls` and

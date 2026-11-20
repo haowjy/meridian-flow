@@ -19,7 +19,6 @@ import * as Y from "yjs";
 import { partitionConcurrentUpdates } from "./concurrent-updates.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftJournalRow, DraftReplayJournalReads } from "./draft-journal.js";
-import type { WorkDraftLookup } from "./draft-pulls.js";
 import type { ResolvedDraft } from "./draft-resolver.js";
 import { blockOriginsFromDraftSeed, type DraftSnapshot } from "./draft-store.js";
 import { inLockedWrite } from "./locked-write.js";
@@ -31,8 +30,8 @@ export function createDraftAgentEditCoordinator(input: {
   drafts: DraftLookupWithSnapshots;
   journalRows: DraftReplayJournalReads;
   liveJournal: Pick<UpdateJournal, "readUpdates">;
-  /** The live→Work rebase at the tool boundary: every room read runs it first. */
-  flushLivePull(documentId: DocumentId): Promise<void>;
+  /** The live→Work rebase at the tool boundary: every room read runs it on its draft first. */
+  catchUpDraft(draftId: string): Promise<void>;
 }): DocumentCoordinator {
   function rowsFor(draftId: string, entries: readonly JournalBatchAppendEntry[]) {
     return entries.flatMap((entry) => {
@@ -61,10 +60,10 @@ export function createDraftAgentEditCoordinator(input: {
 
   return {
     async readRoom(docId, access) {
-      // A model edit read under its lock pulled before it took it (a pull opens its own connection).
-      if (!inLockedWrite()) await input.flushLivePull(docId as DocumentId);
       const workDraftId =
         access?.workDraftId ?? (await threadWorkDraft(docId as DocumentId)).draftId;
+      // A model edit read under its lock pulled before it took it (a pull opens its own connection).
+      if (!inLockedWrite()) await input.catchUpDraft(workDraftId);
       const { doc, position } = await drafts.copyDraft(workDraftId);
       return { doc, room: draftRoom(workDraftId), position };
     },
@@ -234,7 +233,7 @@ export function createDraftAgentEditJournal(input: {
   };
 }
 
-export type DraftLookupWithSnapshots = WorkDraftLookup & {
+export type DraftLookupWithSnapshots = {
   getDraft(
     draftId: string,
   ): Promise<Pick<DraftSnapshot, "branchId" | "documentId" | "seed"> | null>;

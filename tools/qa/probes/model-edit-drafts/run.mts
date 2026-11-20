@@ -112,15 +112,18 @@ async function writerTypesLive(h: Harness, documentId: string, suffix: string) {
   }
 }
 
-/** The Work's one draft, once its paragraphs equal `expected` (a pull is scheduled, not inline). */
-async function draftEventually(h: Harness, documentId: string, expected: string[]) {
-  const until = Date.now() + 10_000;
-  for (;;) {
-    const [found] = await drafts(h, documentId);
-    if (found && JSON.stringify(found.doc) === JSON.stringify(expected)) return found;
-    if (Date.now() > until) assert.deepEqual(found?.doc, expected);
-    await sleep(100);
-  }
+/**
+ * The Work's one draft after its room opens: Live merges only into drafts someone has open, so
+ * the typing made before the model's first write reaches the draft when it is opened.
+ */
+async function draftAfterOpen(h: Harness, child: Child, documentId: string, expected: string[]) {
+  const found = await h.raw<{ id: string }[]>`
+    select id from document_drafts where document_id=${documentId} and kind='work_draft'`;
+  for (const { id } of found) await child.call({ op: "openDraft", draftId: id });
+  assert.deepEqual(
+    (await drafts(h, documentId)).map((d) => d.doc),
+    [expected],
+  );
 }
 
 /**
@@ -159,7 +162,7 @@ function typedBeforeFirstWrite(
       await writerTypesLive(h, documentId, " typed");
       await send(child, h, thread, "again");
       await waitForAssistantTurn(h, thread, { count: 2 });
-      await draftEventually(h, documentId, draftAfter);
+      await draftAfterOpen(h, child, documentId, draftAfter);
     },
   };
 }

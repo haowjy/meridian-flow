@@ -31,7 +31,7 @@ The [collab contracts][collab-context] define each guard. Sources are under
 | `f1-inverse-grant` | Undo locks its grant's Work before its other locks. | Run Archive from the inverse confirmation and run inverse from the Archive boundary. |
 | `f1-inverse-deadlock` | Undo and a journal append do not deadlock. | Hold the document lock in Undo while a rival append starts for the same Work. |
 | `d22-concurrent-undo` | Two Undos of one edit land once; one answers `success`, the other `cant_undo_changed` (its commit took nothing). | Hold two independent Undo operations at `inverse.beforeCommitScope`, for live and Work destinations. |
-| `d23-archived-draft-rebases` | An archived Work draft keeps rebasing while its writer stays frozen. | Archive, commit a live edit, flush the background pull, write to the draft, then unarchive. |
+| `d23-archived-draft-rebases` | An archived Work draft opened read-only shows current text and gets pushes while open; an unopened one is left alone; its writer stays frozen. | Archive, commit a live edit, push with no room open (draft unchanged), open it (catch-up lands), commit another edit and push, write to the draft, then unarchive. |
 | `two-process-frames` | Two coordinators deliver one sequence point per frame. | Two stores and rooms commit frames over one database, then read each draft as a tab handshake does. |
 | `two-process-fold` | A content rebase delivers another process's committed row. | Pause A before append, commit `FOREIGN` from B, let A incorporate it, then type. |
 | `two-process-compaction` | Background compaction delivers the row it folds. | Pause A's 512-row rewrite while B commits `FOREIGN`, then complete compaction and type. B's own compaction is stopped, so A's fold is the only one. |
@@ -50,7 +50,7 @@ The [collab contracts][collab-context] define each guard. Sources are under
 
 The former Work-first pull and pull-recapture probes are retired: Work rebases
 are unfenced server appends. Work-draft fixtures persist live edits through the
-live journal and flush the production content-rebase service; they never merge
+live journal and catch the draft up through the production content-rebase service; they never merge
 live Yjs items into a Work draft.
 
 ## Timing in a probe

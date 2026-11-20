@@ -31,7 +31,11 @@ import {
 import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  deferUntilDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import { requireAgentWriteGrant } from "../../../shared/edit-confirmation.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
@@ -571,7 +575,19 @@ async function materializeCurrentCheckpoint(
   }
 }
 
-export function createDrizzleJournal(db: JournalDb): CollabJournal {
+/**
+ * `appended` runs for each document a Live row was written to, once the writing transaction
+ * commits: the one place every Live write passes.
+ */
+export function createDrizzleJournal(
+  db: JournalDb,
+  appended?: (documentId: DocumentId) => void,
+): CollabJournal {
+  const afterCommit = (docIds: Iterable<string>) => {
+    if (!appended) return;
+    for (const docId of new Set(docIds))
+      deferUntilDrizzleCommit(() => appended(docId as DocumentId));
+  };
   return {
     headSchemaVersion: (documentId) => findHeadSchemaVersion(db, documentId),
 
@@ -580,7 +596,9 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         const txDb = await enterJournalSeam(db, [docId], agentAuthored(meta) ? [docId] : []);
         await validateAppendAuthority(txDb, docId, authority);
         // Agent and system appends carry their own fresh structs and are not judged.
-        return (await insertUpdate(txDb, docId, update, meta)).seq;
+        const { seq } = await insertUpdate(txDb, docId, update, meta);
+        afterCommit([docId]);
+        return seq;
       });
     },
 
@@ -594,10 +612,9 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
         const stored = storedDocument(await createDrizzleJournal(txDb).read(docId));
         try {
           if (documentContainsUpdate(stored, update)) return { status: "contained" } as const;
-          return {
-            status: "appended",
-            ...(await insertUpdate(txDb, docId, update, meta)),
-          } as const;
+          const row = await insertUpdate(txDb, docId, update, meta);
+          afterCommit([docId]);
+          return { status: "appended", ...row } as const;
         } finally {
           stored.destroy();
         }
@@ -685,6 +702,7 @@ export function createDrizzleJournal(db: JournalDb): CollabJournal {
           updateRows,
         );
 
+        afterCommit(entries.map((entry) => entry.docId));
         return updateRows.map((row, index) => ({
           seq: row.id,
           beforeState: beforeStates.get(entries[index].docId) as Uint8Array,
@@ -1102,8 +1120,11 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
   };
 }
 
-export function createDrizzleCollabPersistence(db: JournalDb): DrizzleCollabPersistence {
-  const journal = createDrizzleJournal(db);
+export function createDrizzleCollabPersistence(
+  db: JournalDb,
+  appended?: (documentId: DocumentId) => void,
+): DrizzleCollabPersistence {
+  const journal = createDrizzleJournal(db, appended);
   return {
     journal,
     seeds: createServerInitialDocumentSeeds(db),

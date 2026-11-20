@@ -131,7 +131,7 @@ export function scopeDraftPeer(
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
-    flushDraftLivePull: access.flushDraftLivePull,
+    catchUpDraft: access.catchUpDraft,
     readStoredGrepTexts: access.readStoredGrepTexts,
     readStoredWordCounts: access.readStoredWordCounts,
     readOwnerMarkdown: (command) =>

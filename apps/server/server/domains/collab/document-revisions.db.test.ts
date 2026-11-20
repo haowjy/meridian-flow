@@ -334,10 +334,11 @@ describe("document revisions (postgres and collab)", () => {
     const workDraftId = draft.draftId;
     const contending = deferred();
     let pulling: Promise<void> | undefined;
+    let contendingPull = false;
     let reading: ReturnType<typeof f.current> | undefined;
     let reached = false;
     f.draftCoordinator.loadBase = async (...args) => {
-      if (pulling && args[0] === workDraftId) {
+      if (contendingPull && args[0] === workDraftId) {
         reached = true;
         contending.resolve();
       }
@@ -347,7 +348,8 @@ describe("document revisions (postgres and collab)", () => {
     f.draftCoordinator.copyDraft = async (id) => {
       if (!pulling && id === workDraftId) {
         await f.writerDelete();
-        pulling = runOutsideDrizzleTransaction(() => f.draftPulls.flushLivePull(ALPHA_ID));
+        contendingPull = true;
+        pulling = runOutsideDrizzleTransaction(() => f.draftPulls.catchUpDraft(workDraftId));
         await Promise.race([contending.promise, pulling]);
       }
       return originalCopy(id);
@@ -395,7 +397,8 @@ describe("document revisions (postgres and collab)", () => {
       }
       return snapshot;
     };
-    const older = f.draftPulls.flushLivePull(ALPHA_ID);
+    const { draftId } = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
+    const older = f.draftPulls.catchUpDraft(draftId);
     const started = [older];
     try {
       await Promise.race([
@@ -405,8 +408,7 @@ describe("document revisions (postgres and collab)", () => {
         }),
       ]);
       await f.writerDelete();
-      f.draftPulls.scheduleLivePull(ALPHA_ID);
-      const joined = f.draftPulls.flushLivePull(ALPHA_ID);
+      const joined = f.draftPulls.catchUpDraft(draftId);
       started.push(joined);
       release.resolve();
       await Promise.all(started);
@@ -416,7 +418,7 @@ describe("document revisions (postgres and collab)", () => {
       );
       const blocks = f.model.getBlocks(toDocHandle(draft.doc)).length;
       draft.doc.destroy();
-      await f.draftPulls.flushLivePull(ALPHA_ID);
+      await f.draftPulls.catchUpDraft(draftId);
       expect(blocks).toBe(1);
       expect(await f.current()).not.toBe(before);
     } finally {

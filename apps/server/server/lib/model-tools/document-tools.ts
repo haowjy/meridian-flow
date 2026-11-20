@@ -23,7 +23,7 @@ import {
   splitDocumentFile,
   survivingDraftNotice,
 } from "@meridian/agent-edit/integration";
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, ThreadId } from "@meridian/contracts";
 import type { ReturnedWhy } from "@meridian/contracts/commands";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentRemovalRecord } from "@meridian/contracts/protocol";
@@ -678,7 +678,9 @@ export function createWriteHandler(deps: ToolWiringDeps) {
     if (!isInverse && !creates) {
       const found = await resolveDocumentAddress(context, parsed.command, parsed.path);
       if (isToolError(found)) return found;
-      await deps.documentSync.modelEdits().catchUp(found.documentId as DocumentId);
+      await deps.documentSync
+        .modelEdits()
+        .catchUp(found.documentId as DocumentId, ctx.threadId as ThreadId);
       existing = found;
     }
 
@@ -739,7 +741,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
                       subject: documentId,
                       nodes: [{ nodeId: documentId, beforeAt: null, afterAt: uri }],
                       records: [...folders, { record, node: documentId }],
-                      threadId: ctx.threadId as import("@meridian/contracts").ThreadId,
+                      threadId: ctx.threadId as ThreadId,
                       ...(ctx.turnId
                         ? { turnId: ctx.turnId as import("@meridian/contracts").TurnId }
                         : {}),

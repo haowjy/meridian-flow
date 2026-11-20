@@ -283,7 +283,7 @@ function openServer(harness: Harness, workId: string) {
     documentSync: {
       ...persistence,
       bindHocuspocus: binding.bind,
-      flushDraftLivePull: async () => {},
+      catchUpDraft: async () => {},
     },
     eventSink: { emit() {} },
     treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} },
