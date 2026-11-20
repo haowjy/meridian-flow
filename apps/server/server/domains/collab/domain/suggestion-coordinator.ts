@@ -138,7 +138,7 @@ export function createSuggestionCoordinator(
 
 /**
  * Accepts or rejects suggestions in a live document as a client would: one update, saved on the
- * write path. Run under the document's lock, inside the caller's transaction. False when the
+ * write path, inside the caller's transaction; the append takes the document's lock. False when the
  * filter names none.
  */
 export async function settleInLive(
