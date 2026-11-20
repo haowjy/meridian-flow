@@ -202,6 +202,8 @@ export function list(doc: Node, view: View, authors: Authors): Change[] {
   const work = view.work;
   if (work === null) return [];
   const byId = new Map<string, Change>();
+  /** Where each change's last listed piece on a side ended. */
+  const ends = new Map<string, { inserted: number; deleted: number }>();
   const note = (attrs: SuggestionAttrs, from: number, to: number, add: Partial<Change>) => {
     const change = byId.get(attrs.id) ?? {
       ...(changeAuthor(attrs, authors) ?? { ...attrs, chat: null, turn: null, by: null }),
@@ -211,8 +213,16 @@ export function list(doc: Node, view: View, authors: Authors): Change[] {
       from,
       to,
     };
-    change.inserted += add.inserted ?? "";
-    change.deleted += add.deleted ?? "";
+    const end = ends.get(attrs.id) ?? { inserted: from, deleted: from };
+    for (const side of ["inserted", "deleted"] as const) {
+      const piece = add[side];
+      if (!piece) continue;
+      // Pieces with Live text between them read as separate words, not one run.
+      const gap = change[side] && from > end[side] ? " " : "";
+      change[side] += gap + piece;
+      end[side] = to;
+    }
+    ends.set(attrs.id, end);
     change.attrs = add.attrs ?? change.attrs;
     change.from = Math.min(change.from, from);
     change.to = Math.max(change.to, to);

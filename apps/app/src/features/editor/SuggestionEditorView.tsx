@@ -29,6 +29,8 @@ export function SuggestionEditorView(props: EditorViewProps) {
   const file = fileForDocument(props.documentId);
   const workOnly = props.draftOnly === true || file?.draft.isNew === true;
   const owner = requestedItemKey && !workOnly ? controller.ownerKey : "";
+  // The phone reviews without typing; it types again once the review closes.
+  const reviewReadOnly = props.reviewReadOnly === true && requestedItemKey !== null;
   const view = useMemo<View>(() => (owner ? { work: owner } : liveView), [owner]);
   const session = props.session ?? null;
   const identity: EditorMountIdentity = {
@@ -80,8 +82,8 @@ export function SuggestionEditorView(props: EditorViewProps) {
               key={surface}
               identity={identity}
               surfaceOptions={{
-                editable: props.editable && !props.reviewReadOnly,
-                showToolbar: props.showToolbar,
+                editable: props.editable && !reviewReadOnly,
+                showToolbar: props.showToolbar && !reviewReadOnly,
                 active: props.active,
                 ariaLabel: props.ariaLabel,
                 localContentReady: props.localContentReady,

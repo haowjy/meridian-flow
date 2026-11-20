@@ -16,6 +16,7 @@ import {
 import { hasApply, hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
@@ -99,10 +100,11 @@ export function useDraftDock({
         })),
     [candidates, projectId, ownerKey],
   );
-  // The open review keeps its own refresh; the strip refreshes the rest.
+  // The open review keeps its own refresh; the strip refreshes the rest. Suggestion mode has no
+  // draft rooms: every row is its whole document, pressed (`usePressCommands`).
   const roomed = useMemo(
     () =>
-      targets.filter(
+      suggestionModeEnabled ? [] : targets.filter(
         (target, index) =>
           index < ROOM_ROWS ||
           isSharedDraft(
@@ -120,8 +122,11 @@ export function useDraftDock({
       row.draft.hasDraft && row.draft.tree?.deleted !== true && roomIndex(row.draft.itemKey) < 0;
     if (isWhole) {
       const file = wholeDockFile(row, reviewFileTargetName(row, untitled));
-      return controller.owner.state(row.draft.itemKey).discarding
-        ? { ...file, count: 0, actionable: [] }
+      // A press takes the whole document: one another chat drafted too is reviewed in the
+      // Changes list, not pressed from here as this chat's.
+      const shared = suggestionModeEnabled && isSharedDraft(row.draft, threadId);
+      return controller.owner.state(row.draft.itemKey).discarding || shared
+        ? { ...file, count: 0, actionable: [], alone: false }
         : file;
     }
     const read = reads[roomIndex(row.draft.itemKey)];

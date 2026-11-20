@@ -152,8 +152,13 @@ const committed = (documentId: string): OpenDocumentOutcome => ({ kind: "committ
 function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOutcome> {
   const openEditorReview = useOptionalOpenEditorReview();
   const place = useOptionalPlaceHere();
+  const shell = useShellTreeVersion();
+  // A draft of the toggle's Work is that Work's version of the page: the toggle goes to Draft.
+  const showsWork = shell?.show;
+  const workOwner = shell?.ownerKey;
   return useCallback(
     (target) => {
+      if (showsWork && target.ownerKey === workOwner) showsWork("draft");
       const draft = {
         ownerKey: target.ownerKey,
         itemKey: target.itemKey,
@@ -171,22 +176,17 @@ function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOu
         },
       );
     },
-    [place, openEditorReview],
+    [place, openEditorReview, showsWork, workOwner],
   );
 }
 
 export function useAiDraftLauncher() {
   const openDraft = useOpenDraft();
-  const shell = useShellTreeVersion();
-  // A draft of the toggle's Work is that Work's version of the page: the toggle goes to Draft.
-  const showsWork = shell?.show;
-  const workOwner = shell?.ownerKey;
   const openAiDraft = useCallback(
     (target: AiDraftLaunchTarget) => {
-      if (showsWork && target.ownerKey === workOwner) showsWork("draft");
       void openDraft(target);
     },
-    [openDraft, showsWork, workOwner],
+    [openDraft],
   );
 
   /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */

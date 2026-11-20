@@ -19,7 +19,6 @@ import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { ChatRef, ReviewChange } from "@/features/draft-review/review-model";
 import { resolveFocusedChange } from "@/features/draft-review/review-model";
 
-
 /** The editor's document, read again on every transaction. */
 function useEditorDoc(editor: Editor | null) {
   return useSyncExternalStore(
@@ -53,6 +52,12 @@ export function useSuggestionChanges(
   }, [doc, editor, work, titles]);
 }
 
+/** As a draft's excerpt reads (`agent-edit`'s review): one line, clipped. */
+function excerptOf(text: string): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > 120 ? `${line.slice(0, 119).trimEnd()}…` : line;
+}
+
 function reviewChange(change: Change, titles: ReadonlyMap<string, string>): ReviewChange {
   const byline: Author[] = [];
   const chats: ChatRef[] = [];
@@ -65,8 +70,8 @@ function reviewChange(change: Change, titles: ReadonlyMap<string, string>): Revi
     });
   }
   if (change.by?.startsWith("user:")) byline.push({ kind: "user", userId: change.by.slice(5) });
-  const removed = change.deleted.replace(/\n+/g, " ").trim();
-  const inserted = change.inserted.replace(/\n+/g, " ").trim();
+  const removed = excerptOf(change.deleted);
+  const inserted = excerptOf(change.inserted);
   return {
     id: change.id,
     kind: "change",
@@ -129,4 +134,3 @@ export function useSuggestionReviewFocus({
     return () => dom.removeEventListener("click", onClick);
   }, [live, documentId, itemKey, reportFocusedChange]);
 }
-
