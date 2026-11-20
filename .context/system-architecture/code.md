@@ -14,7 +14,7 @@ flowchart TB
   www["www<br/><small>the landing site</small>"]:::module
   thread-client["thread-client<br/><small>chat events into a view model</small>"]:::package
   agent-edit["agent-edit<br/><small>the model's document reads and writes</small>"]:::package
-  suggestions["suggestions<br/><small>prototype: a Work's draft as marks in Live</small>"]:::package
+  suggestions["suggestions<br/><small>a Work's draft as marks in Live</small>"]:::package
   project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
   command-driver["command-driver<br/><small>one delivery loop for commands</small>"]:::package
   tree-list-sync["tree-list-sync<br/><small>how a client keeps its copy of the list</small>"]:::package
@@ -29,7 +29,7 @@ flowchart TB
   server -->|"applies the model's edits with"| agent-edit
   agent-edit -->|"rewrites a Work's write with"| suggestions
   app -->|"shows and rewrites a view with"| suggestions
-  server -->|"serializes Live and undoes a turn with"| suggestions
+  server -->|"chooses Live's or a Work's view with"| suggestions
   server -->|"saves everything with"| database
   agent-edit -->|"reads and writes text with"| markup
   markup -->|"builds documents from"| prosemirror-schema
@@ -151,12 +151,13 @@ Plans, lowers and describes one model write on a document room, and builds the i
 
 ## suggestions
 
-Prototype (direction 3, behind `FLOW_SUGGESTIONS` / `VITE_FLOW_SUGGESTIONS`): a Work's draft stored as suggestion marks inside the Live document.
+A Work's draft stored as suggestion marks inside the Live document, behind `FLOW_SUGGESTIONS` / `VITE_FLOW_SUGGESTIONS` until the draft documents go.
 
-One decision table (`kindOf`) says what a view shows and what an edit there does; `rewrite` applies it to any ProseMirror transaction, so the editor's typing and the model's writes take the same path. Imports no workspace code.
+One decision table (`kindOf`) says what a view shows and what an edit there does; `rewrite` applies it to any ProseMirror transaction, so the editor's typing and the model's writes take the same path. Discard is `reject`. Imports no workspace code and no Yjs.
 
 - Kind: package
 - Paths: `packages/suggestions/src`
+- Docs: [CONTEXT](../../packages/suggestions/.context/CONTEXT.md), [AGENTS](../../packages/suggestions/AGENTS.md)
 
 ## project-tree
 
