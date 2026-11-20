@@ -4,19 +4,30 @@
 
 Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
 
-- `suggest_ins` and `suggest_del` marks on text, each `{ id, work, chat, turn, by }`.
+- `suggest_ins` and `suggest_del` marks on text, each `{ id, work }` (`SuggestionAttrs`).
   `excludes: ""`, so two Works can mark one word; the Yjs binding then stores each under
   `name--<hash>` (`yjsMarkKey`).
-- `sug` on a block that exists only as one Work's suggestion. Every block inside it carries the
-  same `sug`.
+- `sug` on a block that exists only as one Work's suggestion, `{ id, work }`. Every block inside
+  it carries the same `sug`.
 - `sugAttrs` on a block: by Work, one layer per turn of a pending change to the block's
-  attributes (`{ ...author, id, attrs, remove? }`). `remove: true` is the Work removing the
+  attributes (`{ id, work, attrs, remove? }`). `remove: true` is the Work removing the
   whole block, which is how a block with no text is deleted.
+- Who wrote each change, `{ chat, turn, by }` (`Author`), once per change id in the Y.Doc's
+  `suggestion_authors` map beside the fragment. The pure code reads and writes it as `Authors`
+  (`get`/`set`, a `Map` in tests); agent-edit's `suggestionAuthors(doc)` is the map on a Y.Doc,
+  and reads an entry that is not an author as none (any client writes the map).
+
+A mark holds only what `kindOf` reads per run, because every changed word carries it on its
+insertion and its deletion and Live's history keeps it for good. `work` stays on the mark rather
+than in the map: the view is `{ work }` for any document, and a map lookup per run would make every
+reader's view depend on the document's map. Change ids are 12 base-36 characters (`newChangeId`).
 - `comment` marks an anchor (`markdown: false`: the model's Markdown never writes or removes it).
 
 `id` is one change, the unit of review: an insertion and the deletion it replaces share it.
 One edit is one change: every suggestion a rewritten transaction makes takes the first id it
-picks (the same author's change it touches, or a fresh one). The model writes a block in one
+picks (the same author's change it touches, or a fresh one, which `rewrite` records in
+`Authors`). "Same author" and "same turn" are read from `Authors`; an id with no entry is no
+one's, so an edit over it layers and never continues it. The model writes a block in one
 transaction, so a write that rewrites two sentences of a paragraph is one change; each block it
 writes is its own. An edit never takes another author's change (another turn or chat), even where
 it rewrites that change's text: a later turn's rewrite is its own row in `list`.
@@ -56,9 +67,10 @@ agent-edit pairs a split's new block with it.
 
 ## Resolving: `accept` and `reject`
 
-Each is one local transaction (`RAW_META`), filtered by `{ id }`, `{ turn }` or `{ work }`.
-Accept makes insertions Live, deletes deleted text, applies attribute layers. Reject is the
-reverse. Accepting a deletion rejects every other Work's change deleting the same text: the
+Each is one local transaction (`RAW_META`), filtered by `{ id }`, `{ turn }` (read through
+`Authors`) or `{ work }`. Accept makes insertions Live, deletes deleted text, applies attribute
+layers. Reject is the reverse. Either only deletes text and blocks and removes marks and
+attributes: nothing it keeps is rewritten. Accepting a deletion rejects every other Work's change deleting the same text: the
 first applied wins. A block the Work added that stays (accepted) still holds what later turns
 layered on it. `list` gives the view's changes for review; `pending` the turns and the Works
 (with their change ids) that still have something to resolve.
@@ -69,15 +81,18 @@ layered on it. `list` gives the view's changes for review; `pending` the turns a
   through `rewrite` and paints the view. `SuggestionBand.tsx` is a throwaway review surface.
 - Model: agent-edit's `suggestingModel(base, view, author)` replays a planned write as a
   ProseMirror transaction, rewrites it, and lowers it back to Yjs with `lowerBlock`.
-- Server: the runtime's `workView(work, author)` is the one way to read or write a Work's view
-  (a model and an agent-edit core over Live). `model` is Live's view for every Live reader.
-  Card Undo calls `resolveStored(doc, schema, "reject", { turn })`, which lowers each block the
-  verdict changes alone (`lowerBlock`), so only the settled words and marks are written and other
-  text keeps its Yjs items.
+- Resolving, everywhere: agent-edit's `resolveStored(doc, schema, verdict, filter)`
+  (`model/stored-suggestions.ts`) runs `accept` or `reject` on the stored document and lowers
+  each changed block with `lowerResolved`: the exact deletes, unmarks and attribute changes,
+  paired through the transaction's mapping, not diffed. Every Yjs item the verdict keeps stays,
+  so text typed inside a resolved word, a comment's anchor and a cursor keep their place. The
+  tab's Apply and Reject (`acceptSuggestions`, `rejectSuggestions`) run it on the editor's
+  Y.Doc as one writer edit (origin `ySyncPluginKey`, `addToHistory`), so Ctrl+Z takes back
+  only it; the binding then redraws the editor. Card Undo runs it with `{ turn }`.
 - Press: Apply or Discard on documents, folders or a Work is a server command
-  (`domains/collab/adapters/drizzle-press.ts`). agent-edit's `pressStored` runs `accept` or
-  `reject({ work })` as one Yjs transaction and returns its inserted and deleted id ranges;
-  `undoPressStored` takes those ranges back as a Yjs undo. A whole-Work press finds its
+  (`domains/collab/adapters/drizzle-press.ts`). `pressStored` runs `resolveStored` as one Yjs
+  transaction and returns its inserted and deleted id ranges; `undoPressStored` takes those
+  ranges back as a Yjs undo, the same undo Ctrl+Z is in the tab. A whole-Work press finds its
   documents through `pending_works`.
 
 ## Readers
@@ -126,8 +141,10 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.
 - Text the writer types inside a paragraph the AI added goes with it on reject.
 - The editor repaints every decoration on each change.
-- Live's history keeps every suggestion for good. Measured (B2, dev stack): a 4,200-word chapter
-  whose own history is 30 KB stores about 730 KB per whole-chapter AI rewrite and about 40 KB per
-  discard; after ten discarded rewrites it holds 7.5 MB, its state takes 114 ms to apply instead
-  of 1.3 ms, and a server read is about 1.1 s slower. The marks' attributes are most of it: each
-  changed word carries `{ id, work, chat, turn, by }` on its insertion and its deletion.
+- Live's history keeps every suggestion for good. A 4,200-word chapter (24 KB of history)
+  stores about 400 KB per whole-chapter AI rewrite (30% of words changed) and under 1 KB per
+  discard; ten discarded rewrites come to 3.9 MB (A2, measured as B2 did; with the earlier
+  `{ id, work, chat, turn, by }` marks and diffed resolves it was 7.5 MB). What is left per changed
+  word is Yjs structure: the new text, and a format item at each edge of its insertion and its
+  deletion, each holding the mark's key and `{ id, work }`. Dropping `work` from the mark would
+  save about another 20%.
