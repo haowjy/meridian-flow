@@ -97,7 +97,7 @@ where Live text separates its pieces; `pending` the turns and the Works
   (`domains/collab/adapters/drizzle-press.ts`). `pressStored` runs `resolveStored` as one Yjs
   transaction and returns its inserted and deleted id ranges; `undoPressStored` takes those
   ranges back as a Yjs undo, the same undo Ctrl+Z is in the tab. A whole-Work press finds its
-  documents through `pending_works`.
+  documents through `pending_changes`.
 
 ## Readers
 
@@ -113,7 +113,7 @@ to)` for a range's words with their positions back in the stored document.
 | Reader | View | Why |
 |---|---|---|
 | Export, the frozen and Markdown reads, derived blocks and word counts, `ls -v` | Live | What the project is until someone applies |
-| AI `read`, `grep`, copy from a Work | The chat's Work | The AI works on its own draft; `grep` skips stored text for a Work in `pending_works` |
+| AI `read`, `grep`, copy from a Work | The chat's Work | The AI works on its own draft; `grep` skips stored text for a Work in `pending_changes` |
 | Editor word count, search passage landing, link form and dragged link name | The editor's | What the writer is looking at |
 | Trash preview, an untitled document's suggested name | Live | No Work's draft is open on it |
 | The derivation's `document_hash` (behind `updated_at`) | Live | A Work's suggestion is not an edit to the document |

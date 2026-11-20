@@ -619,7 +619,7 @@ projects the cut's own private doc with `projectBlocks`, with no copy. Recovery 
 stale rooms and retries failures without advancing certification.
 
 Storage is `document_block_rooms` (one row per document: `block_order`, word count,
-`pending_works`, `document_hash`, and the `cut_*` and `extractor_version` watermark) and
+`pending_changes`, `document_hash`, and the `cut_*` and `extractor_version` watermark) and
 `document_blocks` (one row per top-level block, keyed by its Yjs item id: `text`,
 `content_hash`). A block row never holds its position, so inserting a
 paragraph rewrites one array and no block row. Certify (`certifyDocumentDerivation`) is
@@ -637,8 +637,8 @@ Reads of the block rows go through one port, `BlockText` (`domain/ports/block-te
 reader trusts a room only when its `cut_*` match the head and location version and its
 `extractor_version` equals the code's (`staleForReaders`); anything else is unknown to the
 reader, which reads the document itself (grep) or shows nothing (`ls -v` word counts). The
-blocks hold Live's view (`packages/suggestions`); `pending_works` names the Works whose
-suggestions the cut holds, and `grepTexts` leaves a document out for a reader in one of those
+blocks hold Live's view (`packages/suggestions`); `pending_changes` names the Works whose
+suggestions the cut holds, with their change counts, and `grepTexts` leaves a document out for a reader in one of those
 Works, which then reads its own view from the room copy. The
 sweep (`staleForSweep`, on the writer port's `stale`) differs on one point: it skips a room a
 newer extractor certified, because builds overlap in a deploy, the older build's certify

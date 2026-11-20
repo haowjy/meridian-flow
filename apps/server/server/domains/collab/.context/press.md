@@ -45,8 +45,10 @@ purged with discards after 30 days.
 
 ## The pending index
 
-`document_block_rooms.pending_works` names the Works with suggestions in each document, written
-by the document derivation. The press reads it only for a whole Work, scoped to the Work's
+`document_block_rooms.pending_changes` holds, for each Work with suggestions in a document, its
+review's change count, the chats that wrote them and whether one is no chat's, written by the
+document derivation (`pendingChanges` in `packages/suggestions`). The Work's counts, the Changes
+list's rows and export's pending count read it. The press reads it only for a whole Work, scoped to the Work's
 project and account documents. It lags the derivation's debounce (2–10 s for room
 typing), so it never decides what a named press touches. A whole-Work press can miss a
 document typed into in another tab seconds before; the pressing tab's open documents come in
