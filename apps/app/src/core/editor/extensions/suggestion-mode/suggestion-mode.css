@@ -1,0 +1,19 @@
+/* Text the view does not contain stays in the document but takes no space. */
+.meridian-editor .sug-hidden {
+  display: none;
+}
+
+.sug-ins,
+.meridian-editor .sug-ins-block {
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  box-shadow: inset 0 -1px 0 0 color-mix(in oklab, var(--color-primary) 40%, transparent);
+}
+
+.sug-del {
+  color: var(--color-destructive);
+  text-decoration: line-through;
+}
+
+.meridian-editor .meridian-comment {
+  box-shadow: inset 0 -2px 0 0 color-mix(in oklab, var(--color-warning) 60%, transparent);
+}

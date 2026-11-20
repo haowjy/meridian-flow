@@ -70,8 +70,15 @@ export const NESTING_ATTRS = Object.keys(nestingAttrs);
  */
 const idAttr = { default: null };
 
-/** The attributes of a node that is a block: its identity and its nesting. */
-const blockAttrs = { id: idAttr, ...nestingAttrs };
+/**
+ * Suggestion mode (`@meridian/suggestions`): `sug` marks a block that exists only as one Work's
+ * suggestion (`{ id, work, chat, turn, by }`). The binding drops marks on blocks, so it is an
+ * attribute.
+ */
+const suggestionBlockAttrs = { sug: { default: null } };
+
+/** The attributes of a node that is a block: its identity, its nesting and its suggestions. */
+const blockAttrs = { id: idAttr, ...nestingAttrs, ...suggestionBlockAttrs };
 
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
@@ -240,12 +247,34 @@ const customMarks = {
   },
 
   strike: {},
+
+  // Suggestion mode (`@meridian/suggestions`). `excludes: ""` lets two Works mark the same text:
+  // the binding then keys each mark `name--<hash>` instead of overwriting one with the other.
+  suggest_ins: suggestionMark(),
+  suggest_del: suggestionMark(),
+  // A comment's anchor; its body lives outside the document.
+  comment: { attrs: { id: { default: null } }, inclusive: false, excludes: "" },
 } satisfies Record<string, MarkSpec>;
+
+function suggestionMark(): MarkSpec {
+  return {
+    attrs: {
+      id: { default: null },
+      work: { default: null },
+      chat: { default: null },
+      turn: { default: null },
+      by: { default: null },
+    },
+    inclusive: false,
+    excludes: "",
+  };
+}
 
 // ─── Exports ────────────────────────────────────────────────────────
 
 export * from "./block-id.js";
 export * from "./empty-document.js";
+export * from "./mark-key.js";
 export * from "./nesting.js";
 export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 

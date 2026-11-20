@@ -1,0 +1,246 @@
+/**
+ * Suggestion mode: a Work's draft is that Work's suggestion marks inside the Live document.
+ * The editor always holds the whole document and shows one view of it (`@meridian/suggestions`):
+ * hidden text is `display: none`, the caret never rests inside it, a copy leaves it out, and every
+ * local edit passes through `rewrite` before it lands.
+ */
+import {
+  accept,
+  type Author,
+  blockKind,
+  type Filter,
+  kindOf,
+  liveView,
+  RAW_META,
+  reject,
+  rewrite,
+  stripSlice,
+  type View,
+  visible,
+} from "@meridian/suggestions";
+import { Extension, Mark } from "@tiptap/core";
+import { Fragment, type Node as PMNode, Slice } from "@tiptap/pm/model";
+import { type EditorState, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { ySyncPluginKey } from "@tiptap/y-tiptap";
+import "./suggestion-mode.css";
+
+type ModeState = { view: View; author: Author | null; decorations: DecorationSet };
+
+export const suggestionModeKey = new PluginKey<ModeState>("suggestionMode");
+
+const unrendered = { default: null, rendered: false };
+
+/**
+ * A mark's attributes ride its element as JSON, so the editor's re-read of a DOM change keeps
+ * them. Attribute order is the shared schema's: the binding hashes a mark's JSON to key it.
+ */
+function annotationAttributes(names: readonly string[]) {
+  return () =>
+    Object.fromEntries(
+      names.map((name) => [
+        name,
+        {
+          ...unrendered,
+          parseHTML: (element: HTMLElement) =>
+            (JSON.parse(element.dataset.annotation ?? "{}") as Record<string, unknown>)[name] ?? null,
+        },
+      ]),
+    );
+}
+
+function annotationMark(name: string, attributes: readonly string[], className?: string) {
+  return Mark.create({
+    name,
+    inclusive: false,
+    excludes: "",
+    addAttributes: annotationAttributes(attributes),
+    parseHTML: () => [{ tag: `span[data-${name}]` }],
+    renderHTML: ({ mark }) => [
+      "span",
+      { [`data-${name}`]: "", "data-annotation": JSON.stringify(mark.attrs), ...(className ? { class: className } : {}) },
+      0,
+    ],
+  });
+}
+
+const SUGGESTION_ATTRIBUTES = ["id", "work", "chat", "turn", "by"] as const;
+export const SuggestIns = annotationMark("suggest_ins", SUGGESTION_ATTRIBUTES);
+export const SuggestDel = annotationMark("suggest_del", SUGGESTION_ATTRIBUTES);
+export const CommentMark = annotationMark("comment", ["id"], "meridian-comment");
+
+const SUGGESTION_BLOCK_TYPES = [
+  "paragraph",
+  "code_block",
+  "table",
+  "figure",
+  "horizontal_rule",
+  "jsx_leaf",
+  "jsx_container",
+];
+
+declare module "@tiptap/core" {
+  interface Commands<ReturnType> {
+    suggestionMode: {
+      /** Show `view`; `author` writes this tab's suggestions (null in the Live view). */
+      setSuggestionView: (view: View, author: Author | null) => ReturnType;
+      acceptSuggestions: (filter: Filter) => ReturnType;
+      rejectSuggestions: (filter: Filter) => ReturnType;
+      /** A comment anchor over the selection: a bare mark with an id. */
+      addComment: () => ReturnType;
+    };
+  }
+}
+
+export function suggestionView(state: EditorState): View {
+  return suggestionModeKey.getState(state)?.view ?? liveView;
+}
+
+export const SuggestionModeExtension = Extension.create({
+  name: "suggestionMode",
+
+  addExtensions() {
+    return [SuggestIns, SuggestDel, CommentMark];
+  },
+
+  addGlobalAttributes() {
+    return [{ types: SUGGESTION_BLOCK_TYPES, attributes: { sug: { ...unrendered, keepOnSplit: false } } }];
+  },
+
+  addCommands() {
+    return {
+      setSuggestionView:
+        (view, author) =>
+        ({ tr, dispatch }) => {
+          dispatch?.(tr.setMeta(suggestionModeKey, { view, author }).setMeta(RAW_META, true));
+          return true;
+        },
+      acceptSuggestions:
+        (filter) =>
+        ({ state, dispatch }) => {
+          dispatch?.(accept(state, filter));
+          return true;
+        },
+      rejectSuggestions:
+        (filter) =>
+        ({ state, dispatch }) => {
+          dispatch?.(reject(state, filter));
+          return true;
+        },
+      addComment:
+        () =>
+        ({ state, tr, dispatch }) => {
+          if (state.selection.empty) return false;
+          const mark = state.schema.marks.comment.create({ id: globalThis.crypto.randomUUID() });
+          dispatch?.(tr.addMark(state.selection.from, state.selection.to, mark).setMeta(RAW_META, true));
+          return true;
+        },
+    };
+  },
+
+  addKeyboardShortcuts() {
+    return { "Mod-Alt-m": () => this.editor.commands.addComment() };
+  },
+
+  dispatchTransaction({ transaction, next }) {
+    const state = this.editor.state;
+    const mode = suggestionModeKey.getState(state);
+    // A peer's change, Undo and Redo come through the binding already in stored form.
+    if (!mode || transaction.getMeta(ySyncPluginKey)?.isChangeOrigin) return next(transaction);
+    next(rewrite(transaction, state, mode.view, mode.author));
+  },
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<ModeState>({
+        key: suggestionModeKey,
+        state: {
+          init: (_, state) => ({ view: liveView, author: null, decorations: paint(state.doc, liveView) }),
+          apply(tr, value, _old, state) {
+            const set = tr.getMeta(suggestionModeKey) as Pick<ModeState, "view" | "author"> | undefined;
+            if (set) return { ...set, decorations: paint(state.doc, set.view) };
+            if (!tr.docChanged) return value;
+            return { ...value, decorations: paint(state.doc, value.view) };
+          },
+        },
+        props: {
+          decorations: (state) => suggestionModeKey.getState(state)?.decorations,
+          transformCopied: (slice, view) => visibleSlice(slice, view.state),
+        },
+        // The caret never rests inside hidden text: it goes to the edge it was moving toward.
+        appendTransaction(trs, oldState, newState) {
+          if (!trs.some((tr) => tr.selectionSet || tr.docChanged)) return null;
+          const { selection } = newState;
+          if (!selection.empty) return null;
+          const target = outOfHidden(newState, selection.head, selection.head >= oldState.selection.head ? 1 : -1);
+          return target === null ? null : newState.tr.setSelection(TextSelection.create(newState.doc, target)).setMeta(RAW_META, true);
+        },
+      }),
+    ];
+  },
+});
+
+function paint(doc: PMNode, view: View): DecorationSet {
+  const decorations: Decoration[] = [];
+  doc.forEach((block, blockPos) => {
+    const owner = blockKind(block, view);
+    if (owner === "hidden") {
+      decorations.push(Decoration.node(blockPos, blockPos + block.nodeSize, { class: "sug-hidden" }));
+      return;
+    }
+    if (owner === "own") {
+      decorations.push(Decoration.node(blockPos, blockPos + block.nodeSize, { class: "sug-ins-block" }));
+      return;
+    }
+    if (!block.isTextblock) return;
+    block.forEach((child, offset) => {
+      const kind = kindOf(child.marks, block, view);
+      if (kind === "live") return;
+      const from = blockPos + 1 + offset;
+      decorations.push(
+        Decoration.inline(from, from + child.nodeSize, {
+          class: kind === "hidden" ? "sug-hidden" : kind === "own-ins" ? "sug-ins" : "sug-del",
+        }),
+      );
+    });
+  });
+  return DecorationSet.create(doc, decorations);
+}
+
+function hiddenAt(state: EditorState, pos: number, side: -1 | 1): boolean {
+  const $pos = state.doc.resolve(pos);
+  if ($pos.depth >= 1 && blockKind($pos.node(1), suggestionView(state)) === "hidden") return true;
+  const node = side < 0 ? $pos.nodeBefore : $pos.nodeAfter;
+  return !!node && node.isInline && kindOf(node.marks, $pos.parent, suggestionView(state)) === "hidden";
+}
+
+function outOfHidden(state: EditorState, pos: number, direction: -1 | 1): number | null {
+  const inside = (at: number) => hiddenAt(state, at, -1) && hiddenAt(state, at, 1);
+  if (!inside(pos)) return null;
+  let at = pos;
+  const size = state.doc.content.size;
+  while (at > 0 && at < size && inside(at)) at += direction;
+  if (inside(at)) {
+    at = pos;
+    while (at > 0 && at < size && inside(at)) at -= direction;
+  }
+  return TextSelection.near(state.doc.resolve(at), direction).head;
+}
+
+/** A copy carries what the view shows, and no suggestion. */
+function visibleSlice(slice: Slice, state: EditorState): Slice {
+  const view = suggestionView(state);
+  const parent = state.selection.$from.parent;
+  const keep = (fragment: Fragment, block: PMNode): Fragment => {
+    const nodes: PMNode[] = [];
+    fragment.forEach((node) => {
+      if (node.isInline) {
+        if (visible(kindOf(node.marks, block, view))) nodes.push(node);
+      } else if (blockKind(node, view) !== "hidden") {
+        nodes.push(node.copy(node.isTextblock ? keep(node.content, node) : node.content));
+      }
+    });
+    return Fragment.from(nodes);
+  };
+  return stripSlice(new Slice(keep(slice.content, parent), slice.openStart, slice.openEnd));
+}

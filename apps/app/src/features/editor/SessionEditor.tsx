@@ -48,6 +48,7 @@ import { claimEditorFocus, joinMain } from "./focus-on-open";
 import { InTrashStatus } from "./InTrashStatus";
 import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaNotices } from "./SchemaNotices";
+import { SuggestionBand, suggestionModeEnabled } from "./SuggestionBand";
 import { SyncStatus } from "./SyncStatus";
 import { FileDropRuntime } from "./surfaces/files";
 import { ImageIngressRuntime } from "./surfaces/images";
@@ -80,6 +81,8 @@ type SessionEditorProps = {
   focusKey?: string;
   /** Main's document: the caret main gives (`joinMain`) goes here, never to a side or a sheet. */
   inMain?: boolean;
+  /** Suggestion mode: the Work whose draft this Live editor can show. */
+  suggestionOwner?: string | null;
 };
 
 /** The Work an owner key names; a lineage names none. */
@@ -148,6 +151,7 @@ function ActiveSessionEditorView({
   holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
+  suggestionOwner,
 }: ActiveSessionEditorViewProps) {
   const {
     editable = true,
@@ -428,6 +432,14 @@ function ActiveSessionEditorView({
           )}
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>
+        {suggestionModeEnabled && suggestionOwner && editor ? (
+          <SuggestionBand
+            editor={editor}
+            doc={session.document}
+            ownerKey={suggestionOwner}
+            accountId={accountId}
+          />
+        ) : null}
         <EditorCanvas
           editor={editor}
           active={active}
