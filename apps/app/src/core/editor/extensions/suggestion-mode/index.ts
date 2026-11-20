@@ -1,1 +1,6 @@
-export { SuggestionModeExtension, suggestionModeEnabled } from "./SuggestionModeExtension";
+export {
+  SuggestionModeExtension,
+  shownText,
+  suggestionModeEnabled,
+  suggestionView,
+} from "./SuggestionModeExtension";

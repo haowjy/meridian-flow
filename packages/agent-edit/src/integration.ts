@@ -53,6 +53,7 @@ export {
 export {
   resolveStored,
   storedPendingTurns,
+  storedPendingWorks,
   suggestingModel,
 } from "./model/suggesting-model.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";

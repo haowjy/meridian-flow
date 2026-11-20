@@ -19,6 +19,7 @@ import {
   type Filter,
   newChangeId,
   pendingTurns,
+  pendingWorks,
   type Run,
   reject,
   rewrite,
@@ -367,6 +368,11 @@ export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<stri
 }
 
 const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
+
+/** The Works whose suggestions a stored document holds: the views that read it otherwise than Live. */
+export function storedPendingWorks(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
+  return pendingWorks(storedRoot(doc, schema));
+}
 
 function storedRoot(doc: Y.Doc, schema: Schema): PMNode {
   return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);

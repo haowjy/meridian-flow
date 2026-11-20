@@ -24,6 +24,7 @@ import {
   resolveAnchorIn,
 } from "../anchors";
 import { endUndoStep } from "../editor-history";
+import { shownText } from "../extensions/suggestion-mode";
 import { assignWrittenHref } from "./link-assignment";
 import { linkKeyOfMark } from "./link-resolution";
 import { getLinkAnswerCache } from "./link-storage";
@@ -120,7 +121,7 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
       existing: false,
       identity: null,
       needsText: empty,
-      text: editor.state.doc.textBetween(from, to),
+      text: shownText(editor.state, from, to).text,
       href: "",
     };
   }
@@ -130,7 +131,7 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
     existing: true,
     identity: link.identity,
     needsText: false,
-    text: editor.state.doc.textBetween(link.from, link.to),
+    text: shownText(editor.state, link.from, link.to).text,
     href: linkKeyOfMark(link.attributes).href,
   };
 }
@@ -220,8 +221,8 @@ export function commitLinkDraft(
     const { state } = editor;
     const linkType = state.schema.marks.link;
     if (!linkType) return false;
-    const original = state.doc.textBetween(range.from, range.to);
-    const before = Array.from(original);
+    const shown = shownText(state, range.from, range.to);
+    const before = Array.from(shown.text);
     const after = Array.from(text);
     let prefix = 0;
     let suffix = 0;
@@ -232,8 +233,8 @@ export function commitLinkDraft(
       before[before.length - suffix - 1] === after[after.length - suffix - 1]
     )
       suffix += 1;
-    const from = range.from + before.slice(0, prefix).join("").length;
-    const to = range.to - before.slice(before.length - suffix).join("").length;
+    const from = shown.at(before.slice(0, prefix).join("").length, 1);
+    const to = shown.at(before.slice(0, before.length - suffix).join("").length, -1);
     const inserted = after.slice(prefix, after.length - suffix).join("");
     // Surviving text keeps its mark runs. New wording inherits only marks
     // common to the replaced slice, never formatting sampled from its first word.
@@ -246,7 +247,7 @@ export function commitLinkDraft(
     const tr = state.tr;
     if (inserted) tr.replaceWith(from, to, state.schema.text(inserted, marks));
     else tr.delete(from, to);
-    tr.addMark(range.from, range.from + text.length, linkType.create(attrs));
+    tr.addMark(range.from, tr.mapping.map(range.to), linkType.create(attrs));
     editor.view.dispatch(tr);
     editor.commands.focus();
     return true;

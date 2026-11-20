@@ -107,10 +107,7 @@ import { createBranchReviewItems } from "./domain/branch-review-items.js";
 import { createBranches } from "./domain/branches.js";
 import { createDocumentAttribution } from "./domain/document-attribution.js";
 import { createDocumentCreationAggregate } from "./domain/document-creation.js";
-import {
-  createBlockDeriver,
-  createDocumentDerivationService,
-} from "./domain/document-derivations.js";
+import { createCutReader, createDocumentDerivationService } from "./domain/document-derivations.js";
 import {
   scopeAgentEdit,
   scopeDraftPeer,
@@ -284,7 +281,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   );
   const derivations = createDocumentDerivationService({
     store: derivationStore,
-    deriveBlocks: createBlockDeriver({
+    readCut: createCutReader({
       runtime: () => runtime,
       resolveFiletype: lookups.resolveDocumentFiletype,
     }),
