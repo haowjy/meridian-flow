@@ -440,9 +440,12 @@ function replaceInWork(
       (author.turn === null ? null : replacedId(out.doc, from, to, view)) ??
       newChangeId(),
   };
-  // Text cut from a block the Work added stays that block's insertion, whichever turn cuts it.
-  const added = startBlock.node.attrs.sug as SuggestionAttrs | null;
-  changed(added?.id === attrs.id ? added : attrs);
+  // Text cut from a block the Work added stays that block's insertion, whoever cuts it.
+  const change =
+    blockKind(startBlock.node, view) === "own"
+      ? (startBlock.node.attrs.sug as SuggestionAttrs)
+      : attrs;
+  changed(change);
   const schema = out.doc.type.schema;
   const joining = startBlock.pos !== endBlock.pos;
   // What follows the cut in the last block moves to where the cut closes: kept as a copy, since
@@ -491,10 +494,10 @@ function replaceInWork(
   const template = parts.last ?? targetNow.node;
   const blocks = [
     ...parts.middle.map((block) =>
-      block.type.create({ ...block.attrs, id: null, sug: attrs }, block.content, block.marks),
+      block.type.create({ ...block.attrs, id: null, sug: change }, block.content, block.marks),
     ),
     template.type.create(
-      { ...template.attrs, id: null, sug: attrs },
+      { ...template.attrs, id: null, sug: change },
       (parts.last?.content ?? Fragment.empty).append(rest),
     ),
   ];

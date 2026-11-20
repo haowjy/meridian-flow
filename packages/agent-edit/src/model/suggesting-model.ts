@@ -45,7 +45,7 @@ export function suggestingModel(
   author: Author | null,
 ): YProsemirrorDocumentModel {
   const schema = base.schema;
-  /** Per block, the change a write cut its end with: a block inserted right after joins it. */
+  /** Per block, the change the text a write cut from its end belongs to: a block inserted right after joins it. */
   const tails = new Map<Y.XmlElement, SuggestionAttrs>();
   const viewAt = (block: BlockRef) => viewOf(unwrapBlock(block).doc as Y.Doc);
   const stored = (block: BlockRef) => storedNode(unwrapBlock(block), schema);
@@ -159,8 +159,8 @@ export function suggestingModel(
 
 /**
  * The text edits of one block, planned in view units, replayed on the stored block and rewritten.
- * `endChange` is the change a Work's edit removing text to the block's visible end took: a block
- * inserted right after it is the other half of a split.
+ * `endChange` is the change the text a Work's edit cut from the block's visible end belongs to: a
+ * block inserted right after it is the other half of a split.
  */
 function rewritten(
   node: PMNode,
