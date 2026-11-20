@@ -544,6 +544,8 @@ export type DraftReviewApi = {
 
 export type CollabBranches = {
   draftReview: DraftReviewApi;
+  /** Suggestion mode (`FLOW_SUGGESTIONS`): Apply and Discard as presses; null with the flag off. */
+  presses: import("./adapters/drizzle-press.js").PressStore | null;
 };
 
 /** The one branch resolver (Work → active branch, made only at the write boundary). */

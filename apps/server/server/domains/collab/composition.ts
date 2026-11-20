@@ -2,9 +2,9 @@
 
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { documentDrafts } from "@meridian/database/schema";
+import { branchTreeNodes, documentDrafts } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -84,6 +84,7 @@ import { createDrizzleDraftStore } from "./adapters/drizzle-drafts.js";
 import { createDrizzleCollabPersistence, enterLiveWriteSeam } from "./adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "./adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "./adapters/drizzle-model-evidence.js";
+import { createDrizzlePress } from "./adapters/drizzle-press.js";
 import { createDrizzleReversalLocks } from "./adapters/drizzle-reversal-locks.js";
 import { createDrizzleTreeHistory } from "./adapters/drizzle-tree-history.js";
 import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse.js";
@@ -394,6 +395,21 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     liveRoomOf: async (documentId) =>
       liveRoom(documentId, await readAuthorityGeneration(documentId)),
+    existsOnlyInWork: async (documentId, owner) => {
+      const branch = await workBranches.activeForOwner(owner);
+      if (!branch) return false;
+      const [row] = await currentDrizzleDb(deps.db)
+        .select({ id: branchTreeNodes.id })
+        .from(branchTreeNodes)
+        .where(
+          and(
+            eq(branchTreeNodes.branchId, branch.id),
+            eq(branchTreeNodes.id, documentId),
+            eq(branchTreeNodes.existsOnlyInDraft, true),
+          ),
+        );
+      return row !== undefined;
+    },
     draftBehindLive: (documentId) =>
       deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
   });
@@ -736,7 +752,23 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       readDraftProvenance: createDraftProvenanceReader(createDrizzleDraftDispositionStore(deps.db)),
     },
     draftPeers,
-    branches,
+    branches: {
+      ...branches,
+      presses: runtime.workView
+        ? createDrizzlePress(deps.db, {
+            workProjection: deps.workProjectionMutation,
+            branches: workBranches,
+            live: persistence.journal,
+            liveCoordinator,
+            arrivals: deps.arrivals,
+            treeLists: deps.treeLists,
+            tree: treeReader,
+            onCommitted: async (documentId) => {
+              await runDocumentWriteHook({ documentId }, "collab.press");
+            },
+          })
+        : null,
+    },
     branchResolver: {
       branches: workBranches,
       draftLinks: draftAheads,

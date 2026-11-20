@@ -7,12 +7,7 @@
  * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
  */
 import { z } from "zod";
-import {
-  type ClosedOwnerWhy,
-  CommandIdSchema,
-  type CommandOutcome,
-  type Settlement,
-} from "../commands/index.js";
+import { CommandIdSchema, type CommandOutcome, type Settlement } from "../commands/index.js";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchId, CommandId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
@@ -259,7 +254,9 @@ export type StoredDocumentCommandResult =
   | UndoDiscardResult
   | ModelEditCommandResult
   | ReverseTurnCommandResult
-  | CopyCommandResult;
+  | CopyCommandResult
+  | import("./press.js").PressResult
+  | import("./press.js").PressUndoResult;
 
 /** A chat card's Undo or Redo: always `done`; the outcome says what changed and what each target left. */
 export type ReverseTurnCommandResult = {

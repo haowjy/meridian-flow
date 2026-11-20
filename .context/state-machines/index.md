@@ -37,6 +37,7 @@ have it:
 | Upload intake | One uploaded file, from a reserved address to a file in the project | [context/uploads](../../apps/server/server/domains/context/uploads/.context/state-machines.md) |
 | Document content | Whether a document is shown, in Trash, in no view, or its content released | [context](../../apps/server/server/domains/context/.context/state-machines.md) |
 | Draft, branch | Whether a draft or branch still accepts writes | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
+| Press text effect | One press's text change to one document: in force or taken back | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 | Tree list room connection | Whether a connection may send records to a project's list, and what a refusal does | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 

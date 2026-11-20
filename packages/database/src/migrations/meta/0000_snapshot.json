@@ -9207,7 +9207,7 @@
       "checkConstraints": {
         "commands_kind_valid": {
           "name": "commands_kind_valid",
-          "value": "\"commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides')"
+          "value": "\"commands\".\"kind\" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress')"
         }
       },
       "isRLSEnabled": false
@@ -10437,6 +10437,90 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.press_text_effects": {
+      "name": "press_text_effects",
+      "schema": "",
+      "columns": {
+        "command_id": {
+          "name": "command_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authority_generation": {
+          "name": "authority_generation",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "insertions": {
+          "name": "insertions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deletions": {
+          "name": "deletions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "undone_by": {
+          "name": "undone_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "press_text_effects_command_id_commands_id_fk": {
+          "name": "press_text_effects_command_id_commands_id_fk",
+          "tableFrom": "press_text_effects",
+          "tableTo": "commands",
+          "columnsFrom": [
+            "command_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "press_text_effects_document_id_documents_id_fk": {
+          "name": "press_text_effects_document_id_documents_id_fk",
+          "tableFrom": "press_text_effects",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "press_text_effects_command_id_document_id_pk": {
+          "name": "press_text_effects_command_id_document_id_pk",
+          "columns": [
+            "command_id",
+            "document_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

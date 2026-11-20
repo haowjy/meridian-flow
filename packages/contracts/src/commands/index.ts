@@ -25,6 +25,8 @@ export const COMMAND_KINDS = [
   "work_restore",
   "project_create",
   "thread_set_overrides",
+  "press",
+  "unpress",
 ] as const;
 export type CommandKind = (typeof COMMAND_KINDS)[number];
 

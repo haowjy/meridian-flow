@@ -6482,6 +6482,7 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/connections/ConnectionRow.tsx
 #: src/features/draft-review/CommandNotice.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx
