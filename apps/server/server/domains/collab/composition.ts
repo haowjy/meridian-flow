@@ -629,6 +629,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         resolveDocumentUri: documentUriResolver,
         changeLiveDocument: runtime.markdownDocuments.changeLiveDocument,
         reverseLiveTurn: turnInverse.reverseTurn,
+        fileAccess: deps.fileAccess,
+        enterLiveSeam: (documentId) => enterLiveWriteSeam(deps.db, documentId),
         withLiveDocument: runtime.markdownDocuments.withLiveDocument,
         liveTurnChip: turnInverse.getDocumentAndTreeChip,
       })

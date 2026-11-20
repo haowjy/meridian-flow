@@ -15,6 +15,9 @@ Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
 - `comment` marks an anchor (`markdown: false`: the model's Markdown never writes or removes it).
 
 `id` is one change, the unit of review: an insertion and the deletion it replaces share it.
+One edit is one change: every suggestion a rewritten transaction makes takes the first id it
+picks (an id it continues, or a fresh one). The model writes a block in one transaction, so a
+write that rewrites two sentences of a paragraph is one change; each block it writes is its own.
 
 ## The view
 
@@ -66,7 +69,9 @@ have something to reject.
   ProseMirror transaction, rewrites it, and lowers it back to Yjs with `lowerBlock`.
 - Server: the runtime's `workView(work, author)` is the one way to read or write a Work's view
   (a model and an agent-edit core over Live). `model` is Live's view for every Live reader.
-  Card Undo calls `resolveStored(doc, schema, "reject", { turn })`.
+  Card Undo calls `resolveStored(doc, schema, "reject", { turn })`, which lowers each block the
+  verdict changes alone (`lowerBlock`), so only the settled words and marks are written and other
+  text keeps its Yjs items.
 
 ## Known limits
 
@@ -84,3 +89,8 @@ have something to reject.
   table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.
 - Text the writer types inside a paragraph the AI added goes with it on reject.
 - The editor repaints every decoration on each change.
+- Live's history keeps every suggestion for good. Measured (B2, dev stack): a 4,200-word chapter
+  whose own history is 30 KB stores about 730 KB per whole-chapter AI rewrite and about 40 KB per
+  discard; after ten discarded rewrites it holds 7.5 MB, its state takes 114 ms to apply instead
+  of 1.3 ms, and a server read is about 1.1 s slower. The marks' attributes are most of it: each
+  changed word carries `{ id, work, chat, turn, by }` on its insertion and its deletion.
