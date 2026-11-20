@@ -27,7 +27,7 @@ function services() {
     liveDocuments: {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
-    eventSink: {} as never,
+    eventSink: { emit() {} } as never,
     treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
     documentSync: {
       roomRemoval: vi.fn(async () => null),
@@ -43,7 +43,7 @@ function gatewayServices() {
     liveDocuments: {
       findById: async () => ({ kind: "found" as const, document: {} as never, clashesWith: [] }),
     },
-    eventSink: {} as never,
+    eventSink: { emit() {} } as never,
     treeLists: { onCommitted: () => () => {}, onJournalAdvanced: () => () => {} } as never,
     documentSync: {
       bindHocuspocus: () => undefined,

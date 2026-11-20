@@ -149,17 +149,6 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     await this.insertCheckpoint(cut, "checkpoint", true);
   }
 
-  override async compact(docId: string, before: Date) {
-    const result = await super.compact(docId, before);
-    if (result.updatesFolded > 0) {
-      const snapshot = await super.read(docId);
-      if (snapshot.checkpoint) {
-        this.checkpoints.push(this.checkpointRecord(docId, snapshot.checkpoint, "compact", false));
-      }
-    }
-    return result;
-  }
-
   private checkpointRecord(
     documentId: string,
     state: Uint8Array,

@@ -42,9 +42,3 @@ export interface JournalSnapshot {
    */
   persistenceWatermark?: number;
 }
-
-/** Outcome of folding old updates into a checkpoint. */
-export interface CompactionResult {
-  /** Number of update rows folded into the new checkpoint. */
-  updatesFolded: number;
-}

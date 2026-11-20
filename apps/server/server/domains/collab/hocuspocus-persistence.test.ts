@@ -410,7 +410,6 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
       createInMemoryJournal().captureCheckpoint(docId, authority),
     ),
     storeCheckpoint: vi.fn(async () => undefined),
-    compact: vi.fn(async () => ({ updatesFolded: 0 })),
   };
 }
 
