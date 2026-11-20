@@ -25,4 +25,6 @@ holds only the row; commands hold both, always the key first.
 Access is decided when the socket opens and ends when the gateway closes it: a frame takes
 no edit grant and locks no Work. Document sockets register under their Work and lineage owners,
 their project and their document (`accessKeys` in `yjs-ws-handler.ts`), so an archive, a project's
-deletion or a document's move to another source closes them (`4409`).
+deletion, a document's move to another source, or its coming into Live from a Work's draft (an
+applied create, whose socket was admitted as the Work's) closes them (`4409`), and the client
+reconnects at the new access (`writeLive` in `context/adapters/tree-list-rows.ts` names both).

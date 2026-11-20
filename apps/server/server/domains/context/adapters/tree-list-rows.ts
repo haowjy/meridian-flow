@@ -335,6 +335,7 @@ async function writeLive(
   listId: string,
   next: Map<string, ProjectedRow>,
   trash: ReadonlyMap<string, { record: string; by: string | null }>,
+  made: ReadonlySet<string>,
 ): Promise<{ changed: string[]; reassigned: string[] }> {
   const prev = await loadLive(tx, listId);
   await dropUnowned(tx, listId, prev, next);
@@ -429,9 +430,14 @@ async function writeLive(
   }
   if (vacated.length > 0 || claimed.length > 0)
     await recordLocationHistory(tx as unknown as Database, { vacated, claimed });
-  // A document that changed source may have changed Work, and so who may write it.
-  const reassigned = bumped.filter(
-    (id) => next.get(id)?.kind === "document" && was.get(id)?.source !== now.get(id)?.source,
+  // A document that changed source may have changed Work, and so who may write it; so has one
+  // that comes into Live from a Work's draft (its create applied), whose sockets were admitted as
+  // that Work's.
+  const reassigned = [...next].flatMap(([id, row]) =>
+    row.kind === "document" &&
+    (prev.has(id) ? was.get(id)?.source !== now.get(id)?.source : !made.has(id))
+      ? [id]
+      : [],
   );
   return { changed: [...changed.keys(), ...gone], reassigned };
 }
@@ -604,7 +610,13 @@ export async function syncRows(
         )
       : [];
   const actors = new Map(listRecords(doc).map((record) => [record.id, record.actor]));
-  const { changed, reassigned } = await writeLive(tx, listId, liveRows, trashRecords(live, actors));
+  const { changed, reassigned } = await writeLive(
+    tx,
+    listId,
+    liveRows,
+    trashRecords(live, actors),
+    new Set(created.map((record) => record.node)),
+  );
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadBranches(tx, listId);

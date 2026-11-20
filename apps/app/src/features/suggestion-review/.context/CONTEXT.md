@@ -26,6 +26,3 @@ with more than suggestions (a tree change, a whole item) stay the server's.
   dropped unsent (the room refused), the resolve is lost silently: the dropped-copy check
   (`dropWords` in `document-session-registry-implementation.ts`) speaks only for lost words, and a
   resolve adds none.
-- A socket admitted to a Work-only document's room keeps its draft target after the document is
-  applied into Live: a later change to that Work (archived) re-checks the old target and can
-  close or freeze the tab until it reconnects (`lib/yjs-ws-handler.ts`).

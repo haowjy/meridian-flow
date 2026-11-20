@@ -20,12 +20,6 @@
   determine what remains of [#931].
 - Live document persistence and mutation adapters: move the remaining live
   in-process/advisory lock model to checkpoint, tail and revision under [#934].
-- A Work's purge deletes its tree records but leaves its suggestion marks in Live documents:
-  nothing reads them, but they stay in the bytes. Reject them in the purge, as a Discard press
-  would.
-- The model's edit list (`model-inverse-policy.ts`) says `changed` for an edit whose
-  suggestions the writer applied; drafts said `applied`. Telling the two apart needs the press's
-  text effects (`press_text_effects`) read beside the edit's parts.
 - A closed Work's dropped create of a Work-only document is no longer ended client-side by
   `watchBounces`, so its Live room can retry `DOCUMENT_UNKNOWN` until the tab closes it.
 - The Live turn inverse can't undo a word edit grouped with a block the same AI edit moved:

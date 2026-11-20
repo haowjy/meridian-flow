@@ -23,6 +23,7 @@ export {
   schemaRepairCounts,
 } from "./model/schema-repair.js";
 export {
+  dropWork,
   type IdRanges,
   type PressRecord,
   pressStored,
@@ -31,6 +32,7 @@ export {
   storedPendingTurns,
   suggestionAuthors,
   undoPressStored,
+  writeVerdict,
 } from "./model/stored-suggestions.js";
 export {
   markdownSections,

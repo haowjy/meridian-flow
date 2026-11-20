@@ -5,6 +5,7 @@ import {
   type DocumentEditResult,
   type ModelInverseCommand,
   storedPendingTurns,
+  writeVerdict,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -240,6 +241,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             );
             const popped = index.byPart;
             const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
+            // What the writer did with the suggestions each part left: the model reads Apply and
+            // Discard apart from an edit of its text.
+            const verdicts = entry.parts.map((part) =>
+              writeVerdict(document.live, part.effect.inserted),
+            );
+            const applied = verdicts.filter((verdict) => verdict === "applied").length;
             const state = fullyUndone
               ? undos.some((undo) =>
                   undo.parts.some(
@@ -248,11 +255,17 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 )
                 ? "undone by the user"
                 : "undone"
-              : entry.parts.some((part) => policy.changed(part))
-                ? "changed"
-                : entry.parts.some((part) => suggesting(part.turnId))
-                  ? "pending"
-                  : "live";
+              : applied
+                ? applied === entry.parts.length
+                  ? "applied"
+                  : `partly applied (${applied} of ${entry.parts.length})`
+                : verdicts.every((verdict) => verdict === "discarded")
+                  ? "discarded"
+                  : entry.parts.some((part) => policy.changed(part))
+                    ? "changed"
+                    : entry.parts.some((part) => suggesting(part.turnId))
+                      ? "pending"
+                      : "live";
             let command = "none";
             const revertPlan = policy.textPlan(entry, "revert");
             const revert = "failure" in revertPlan ? 0 : revertPlan.selection.length;

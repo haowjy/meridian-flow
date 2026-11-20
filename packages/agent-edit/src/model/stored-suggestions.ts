@@ -19,6 +19,8 @@ import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
 import { lowerBlock, lowerResolved, resolvedEdit } from "../resolver/lower-block.js";
+import type { EditRange } from "../undo/receipt.js";
+import { itemsInRange } from "../yjs-mutation.js";
 import { getTopLevelXmlBlocks } from "./block-hash.js";
 import { applyOps as applyRawOps, fragmentOf } from "./y-prosemirror.js";
 
@@ -112,6 +114,94 @@ const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
  */
 export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string, WorkPending> {
   return pendingChanges(storedRoot(doc, schema), suggestionAuthors(doc));
+}
+
+/**
+ * Takes a Work's suggestions out of a stored document for good, as its owner ends: they are
+ * rejected and their authors forgotten, in one transaction with no record, since nothing can take
+ * it back. Every change the Work's items carry goes, a proposal Live has since matched included,
+ * which no review lists. Returns whether anything changed.
+ */
+export function dropWork(doc: Y.Doc, schema: Schema, work: string): boolean {
+  const { changes } = suggestionItems(fragmentOf(doc));
+  const ids = [...changes].filter(([, parts]) => parts.work === work).map(([id]) => id);
+  if (ids.length === 0) return false;
+  doc.transact(() => {
+    resolveStored(doc, schema, "reject", { work });
+    const authors = doc.getMap<unknown>(AUTHORS_ROOT);
+    for (const id of ids) authors.delete(id);
+  });
+  return true;
+}
+
+/**
+ * What the writer did with the suggestions one write left, read from the items it inserted
+ * (`EditEffect.inserted`): `applied` when accepted, `discarded` when rejected, null when it left
+ * none or one is still pending. The verdict is `verdicts`'s, on the write's own items.
+ */
+export function writeVerdict(
+  doc: Y.Doc,
+  inserted: readonly EditRange[],
+): "applied" | "discarded" | null {
+  const ids = new Set<string>();
+  const parts: ChangeItems = {
+    work: null,
+    inserted: [],
+    blocks: [],
+    struck: [],
+    strikes: [],
+    proposed: [],
+  };
+  const run = (item: Y.Item): ItemRun => ({ id: item.id, len: item.length });
+  for (const range of inserted)
+    for (const { item } of itemsInRange(doc, range)) {
+      const { content } = item;
+      if (content instanceof Y.ContentFormat) {
+        const mark = markOf(content.key);
+        const id = mark ? changeId(content.value) : null;
+        if (!id) continue;
+        ids.add(id);
+        if (mark === STRUCK) parts.struck.push(...markedAfter(item, content.key).map(run));
+      } else if (item.parentSub === null && item.countable) parts.inserted.push(run(item));
+      else if (item.parentSub === "sug") {
+        const id = changeId(content.getContent()[0]);
+        if (id) ids.add(id);
+      } else if (item.parentSub === "sugAttrs") {
+        const block = (item.parent as Y.AbstractType<unknown>)._item;
+        if (!block) continue;
+        for (const layer of layersOf(content.getContent()[0])) {
+          ids.add(layer.id);
+          parts.proposed.push({ block: block.id, attrs: layer.attrs, remove: layer.remove });
+        }
+      }
+    }
+  if (ids.size === 0) return null;
+  const now = itemsNow(doc);
+  if ([...ids].some((id) => now.changes.has(id))) return null;
+  return verdicts(doc, now.blocks)(parts) ? "discarded" : "applied";
+}
+
+/** `suggestionItems` of the document as it stands; one read per document state. */
+function itemsNow(doc: Y.Doc): ReturnType<typeof suggestionItems> {
+  let items = itemsByDoc.get(doc);
+  if (!items) {
+    items = suggestionItems(fragmentOf(doc));
+    itemsByDoc.set(doc, items);
+    doc.once("afterTransaction", () => itemsByDoc.delete(doc));
+  }
+  return items;
+}
+
+const itemsByDoc = new WeakMap<Y.Doc, ReturnType<typeof suggestionItems>>();
+
+/** The countable items a mark started at `start` covered, deleted ones too, up to its end. */
+function markedAfter(start: Y.Item, key: string): Y.Item[] {
+  const out: Y.Item[] = [];
+  for (let item = start.right; item; item = item.right) {
+    if (item.content instanceof Y.ContentFormat && item.content.key === key) break;
+    if (item.countable) out.push(item);
+  }
+  return out;
 }
 
 /** Yjs item ids by client, as `[clock, len]` runs in clock order. */
@@ -236,6 +326,8 @@ type ItemRun = { id: Y.ID; len: number };
 
 /** One change's items in a document: what it inserted, what it strikes, the marks that strike it, its attribute layers. */
 type ChangeItems = {
+  /** The Work whose draft it is. */
+  work: string | null;
   inserted: ItemRun[];
   blocks: ItemRun[];
   struck: ItemRun[];
@@ -245,6 +337,14 @@ type ChangeItems = {
 
 const INSERTED = "suggest_ins";
 const STRUCK = "suggest_del";
+
+function markOf(key: string): typeof INSERTED | typeof STRUCK | null {
+  return key === INSERTED || key.startsWith(`${INSERTED}--`)
+    ? INSERTED
+    : key === STRUCK || key.startsWith(`${STRUCK}--`)
+      ? STRUCK
+      : null;
+}
 
 /**
  * Every change a document's visible items carry, read from Yjs items, since a resolve is told by
@@ -259,22 +359,16 @@ function suggestionItems(fragment: Y.XmlFragment): {
   const changes = new Map<string, ChangeItems>();
   const layers: { item: Y.Item; ids: string[] }[] = [];
   const blocks = new Map<string, Record<string, unknown>>();
-  const of = (id: string) => {
+  const of = (id: string, work: string | null) => {
     let parts = changes.get(id);
     if (!parts) {
-      parts = { inserted: [], blocks: [], struck: [], strikes: [], proposed: [] };
+      parts = { work, inserted: [], blocks: [], struck: [], strikes: [], proposed: [] };
       changes.set(id, parts);
     }
     return parts;
   };
-  const markOf = (key: string) =>
-    key === INSERTED || key.startsWith(`${INSERTED}--`)
-      ? INSERTED
-      : key === STRUCK || key.startsWith(`${STRUCK}--`)
-        ? STRUCK
-        : null;
   const walkText = (text: Y.XmlText) => {
-    const marks = new Map<string, string>();
+    const marks = new Map<string, { id: string; work: string | null }>();
     for (let item = text._start; item; item = item.right) {
       if (item.deleted) continue;
       if (item.content instanceof Y.ContentFormat) {
@@ -283,14 +377,14 @@ function suggestionItems(fragment: Y.XmlFragment): {
         if (!mark) continue;
         const id = changeId(value);
         if (id) {
-          marks.set(key, id);
-          if (mark === STRUCK) of(id).strikes.push({ id: item.id, len: 1 });
+          marks.set(key, { id, work: workOf(value) });
+          if (mark === STRUCK) of(id, workOf(value)).strikes.push({ id: item.id, len: 1 });
         } else marks.delete(key);
         continue;
       }
       if (!item.countable) continue;
-      for (const [key, id] of marks)
-        of(id)[markOf(key) === INSERTED ? "inserted" : "struck"].push({
+      for (const [key, { id, work }] of marks)
+        of(id, work)[markOf(key) === INSERTED ? "inserted" : "struck"].push({
           id: item.id,
           len: item.length,
         });
@@ -305,12 +399,16 @@ function suggestionItems(fragment: Y.XmlFragment): {
         const attrs = child.getAttributes() as Record<string, unknown>;
         blocks.set(itemKey(item.id), attrs);
         const sug = changeId(attrs.sug);
-        if (sug) of(sug).blocks.push({ id: item.id, len: 1 });
+        if (sug) of(sug, workOf(attrs.sug)).blocks.push({ id: item.id, len: 1 });
         const held = child._map.get("sugAttrs");
         const ids: string[] = [];
         for (const layer of layersOf(attrs.sugAttrs)) {
           ids.push(layer.id);
-          of(layer.id).proposed.push({ block: item.id, attrs: layer.attrs, remove: layer.remove });
+          of(layer.id, layer.work).proposed.push({
+            block: item.id,
+            attrs: layer.attrs,
+            remove: layer.remove,
+          });
         }
         if (held && !held.deleted && ids.length > 0) layers.push({ item: held, ids });
         walk(child);
@@ -329,6 +427,12 @@ function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
+function workOf(value: unknown): string | null {
+  if (typeof value !== "object" || value === null) return null;
+  const work = (value as { work?: unknown }).work;
+  return typeof work === "string" ? work : null;
+}
+
 function changeId(value: unknown): string | null {
   if (typeof value !== "object" || value === null) return null;
   const id = (value as { id?: unknown }).id;
@@ -337,7 +441,7 @@ function changeId(value: unknown): string | null {
 
 function layersOf(
   value: unknown,
-): { id: string; attrs: Record<string, unknown>; remove?: boolean }[] {
+): { id: string; work: string | null; attrs: Record<string, unknown>; remove?: boolean }[] {
   if (typeof value !== "object" || value === null) return [];
   return Object.values(value as Record<string, unknown>).flatMap((layers) =>
     Array.isArray(layers)
@@ -348,6 +452,7 @@ function layersOf(
           return [
             {
               id,
+              work: workOf(layer),
               attrs:
                 typeof attrs === "object" && attrs !== null
                   ? (attrs as Record<string, unknown>)
