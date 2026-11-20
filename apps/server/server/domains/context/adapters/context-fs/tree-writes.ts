@@ -164,12 +164,6 @@ export type CreatedNode = {
 
 export type InsertedTrees = { landed: ReadonlyMap<string, string>; folders: string[] };
 
-export type DeletedNode = {
-  /** The documents and files the delete took, the node itself among them. */
-  documentIds: string[];
-  path: string[];
-};
-
 /** One node of a tree to insert, under the id it will have. */
 export type NewNode =
   | { kind: "folder"; id: string; filename: string; children: readonly NewNode[] }
@@ -225,11 +219,6 @@ export interface SourceTree {
     filename: string,
     into?: string,
   ): Promise<{ id: string; kind: "document" | "file" | "folder"; path: string } | null>;
-  /** Deletes the node and what is inside it, in live: one Trash entry. */
-  delete(
-    target: TreeWriteTarget,
-    input: { node: string; kind: "file" | "folder"; fromSourceId: string; onlyAt?: string },
-  ): Promise<Result<DeletedNode, AdapterFault>>;
   /**
    * Trees of new nodes at their destination folders, made as one change: folders before what
    * they hold, children in the order given. Answers the source-relative path each node landed
@@ -362,27 +351,6 @@ export function createSourceTree(deps: {
             ? { id: found.id, kind: found.kind, path: pathOf(projection, found.id).join("/") }
             : null;
         },
-      });
-    },
-
-    async delete(target, input) {
-      return write<DeletedNode>([await list()], ([{ writer }]) => {
-        const projection = writer.view(target.view);
-        const node = projection.nodes.get(input.node);
-        if (!node || node.trashed || node.purged) return Err({ code: "not_found" } as AdapterFault);
-        if ((input.kind === "file") !== (node.kind !== "folder"))
-          return Err({ code: "not_found" } as AdapterFault);
-        if (node.source !== input.fromSourceId)
-          return Err({ code: "stale_source" } as AdapterFault);
-        const path = pathOf(projection, node.id);
-        if (input.onlyAt !== undefined && path.join("/") !== input.onlyAt)
-          return Err({ code: "stale_target" } as AdapterFault);
-        const record = writer.delete(target.view, target.actor, node.id);
-        const taken = [node.id, ...record.cascade].flatMap((id) => {
-          const taken = projection.nodes.get(id);
-          return taken && taken.kind !== "folder" ? [id] : [];
-        });
-        return Ok({ documentIds: taken, path });
       });
     },
 

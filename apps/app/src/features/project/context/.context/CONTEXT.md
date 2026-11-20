@@ -128,8 +128,7 @@ recently-opened documents and navigates on click. Main's header "Recently opened
 (`showEditorRecents`) reaches it.
 The address requests a document; the displayed-props seam above decides what is visible
 while admission is pending or blocked. The address includes a local-document history
-pointer on `/editor`. Clearing that pointer leaves the working set intact, and
-Back returns to the document that was showing. Already on the chooser is a no-op.
+pointer on `/editor`. Back returns to the document that was showing. Already on the chooser is a no-op.
 Recording
 is not the navigation adapter's job: the document row materializes after the
 open intent, so a write there races persistence and is lost. Main's host

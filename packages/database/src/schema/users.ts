@@ -6,7 +6,7 @@
  */
 import type { DocumentId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
-import { boolean, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable(
   "users",
@@ -23,7 +23,6 @@ export const users = pgTable(
     name: text("name"),
     avatarUrl: text("avatar_url"),
     stripeCustomerId: text("stripe_customer_id"),
-    workingSetSyncEnabled: boolean("working_set_sync_enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
       .defaultNow()
       .notNull(),

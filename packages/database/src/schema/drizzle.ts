@@ -18,5 +18,4 @@ export * from "./tree-nodes";
 export * from "./user";
 export * from "./users";
 export * from "./waitlist";
-export * from "./working-sets";
 export * from "./yjs";

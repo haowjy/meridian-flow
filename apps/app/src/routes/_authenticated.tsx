@@ -87,10 +87,6 @@ export const Route = createFileRoute("/_authenticated")({
       ...authMe.user,
       accountSettingsReadGeneration,
       accountSettings: settingsResult.status === "fulfilled" ? settingsResult.value : null,
-      workingSetSyncEnabled:
-        settingsResult.status === "fulfilled"
-          ? (settingsResult.value?.workingSetSyncEnabled ?? null)
-          : null,
     };
     return {
       user: currentUser,
@@ -135,7 +131,6 @@ function AuthenticatedAccountProviderTree({
   now: number;
   user: {
     userId: string;
-    workingSetSyncEnabled: boolean | null;
     accountSettings: AccountSettings | null;
     accountSettingsReadGeneration: number;
   };
@@ -165,7 +160,6 @@ function AuthenticatedProviderTree({
   now: number;
   user: {
     userId: string;
-    workingSetSyncEnabled: boolean | null;
     accountSettings: AccountSettings | null;
     accountSettingsReadGeneration: number;
   };

@@ -22,7 +22,6 @@ export type ContextError =
   | { code: "destination_missing"; uri: string }
   | { code: "permission_denied"; uri: string }
   | { code: "conflict"; uri: string }
-  | { code: "stale_source"; uri: string }
   | { code: "stale_target"; uri: string }
   | { code: "invalid_operation"; uri: string; message?: string; reason?: InvalidOperationReason }
   | {

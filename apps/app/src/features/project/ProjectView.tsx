@@ -9,7 +9,7 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
 import { useProject } from "@/client/query/useProjectList";
@@ -18,7 +18,6 @@ import { useProjectWake } from "@/client/query/useProjectWake";
 import { useRenameProject } from "@/client/query/useRenameProject";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { patchAccountRecentsFromDocuments } from "@/client/recents";
-import { retryWorkingSetHydration, type WorkingSetHydrationPlan } from "@/client/working-set";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
@@ -69,7 +68,6 @@ export type ProjectViewProps = {
   project: Project;
   /** The chat main shows; null when main holds no chat. */
   chatDisplay: ChatDisplay | null;
-  entryHydration: WorkingSetHydrationPlan;
   routeLocationKey?: string;
   routeIssues?: {
     main?: ProjectRouteIssue;
@@ -146,13 +144,6 @@ export function ProjectView(props: ProjectViewProps) {
       stopDraftOnly?.();
     };
   }, [accountId, draftOnlyDocuments, presented, props.projectId]);
-  // A retry answers the entry plan it retried; new route data brings a new one.
-  const [retriedHydration, setRetriedHydration] = useState<{
-    entry: WorkingSetHydrationPlan;
-    plan: WorkingSetHydrationPlan;
-  } | null>(null);
-  const workingSetHydration =
-    retriedHydration?.entry === props.entryHydration ? retriedHydration.plan : props.entryHydration;
   const worksQuery = useWorks(props.projectId);
   const { works, noWork } = worksQuery;
   const editorScope = useWorkScopeState(props.projectId);
@@ -160,17 +151,6 @@ export function ProjectView(props: ProjectViewProps) {
   const editorWork =
     (editorWorkId === noWork?.id ? noWork : works?.find((work) => work.id === editorWorkId)) ??
     null;
-  useEffect(() => {
-    if (workingSetHydration.status !== "read-degraded") return;
-    const entry = props.entryHydration;
-    const retry = () => {
-      void retryWorkingSetHydration(props.projectId).then((plan) =>
-        setRetriedHydration({ entry, plan }),
-      );
-    };
-    window.addEventListener("online", retry);
-    return () => window.removeEventListener("online", retry);
-  }, [props.projectId, props.entryHydration, workingSetHydration.status]);
 
   // Gate the whole project on prefs-store hydration so DesktopProject mounts
   // exactly once against final persisted prefs. rehydrate() is synchronous

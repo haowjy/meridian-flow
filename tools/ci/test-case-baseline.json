@@ -294,7 +294,7 @@
     "apps/server/server/lib/routes/context-thread-manifest-lock.db.test.ts": 1,
     "apps/server/server/lib/routes/yjs-reconnect.test.ts": 1,
     "apps/server/server/lib/routes/yjs-version-gate.test.ts": 10,
-    "apps/server/server/lib/routes/yjs.test.ts": 10,
+    "apps/server/server/lib/routes/yjs.test.ts": 9,
     "apps/server/server/lib/runtime-host/media-resolver.test.ts": 6,
     "apps/server/server/lib/thread-creation.test.ts": 10,
     "apps/server/server/lib/thread-deletion-proof.db.test.ts": 30,

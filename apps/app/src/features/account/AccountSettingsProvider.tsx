@@ -1,12 +1,7 @@
-/** One account-lifetime owner for settings and the confirmed working-set driver. */
+/** One account-lifetime owner for settings. */
 import type { AccountSettings } from "@meridian/contracts/protocol";
-import { createContext, useContext, useEffect, useLayoutEffect, useState } from "react";
-import { useConnectivityHints } from "@/client/providers/ConnectivityProvider";
-import { bindWorkingSetSyncLifetime, configureWorkingSetSync } from "@/client/working-set";
-import {
-  useAccountEpochSignal,
-  useAccountId,
-} from "@/features/project/context/account-feature-context";
+import { createContext, useContext, useLayoutEffect, useState } from "react";
+import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
 import { changeLocale, resolveQueryLocale } from "@/lib/i18n";
 import { changeStatsForNerds } from "@/lib/stats-for-nerds";
 import { changeUiTheme } from "@/lib/ui-theme";
@@ -23,7 +18,6 @@ export function AccountSettingsProvider({
   serverReadGeneration: number;
   children: React.ReactNode;
 }) {
-  const accountId = useAccountId();
   const accountEpoch = useAccountEpochSignal();
   // Remount the owner when the account epoch changes so a previous account's
   // confirmed override can neither seed nor drive the next account. In
@@ -38,7 +32,6 @@ export function AccountSettingsProvider({
   return (
     <AccountSettingsOwner
       key={generation}
-      accountId={accountId}
       serverValue={serverValue}
       serverReadGeneration={serverReadGeneration}
     >
@@ -48,18 +41,15 @@ export function AccountSettingsProvider({
 }
 
 function AccountSettingsOwner({
-  accountId,
   serverValue,
   serverReadGeneration,
   children,
 }: {
-  accountId: string;
   serverValue: AccountSettings | null;
   serverReadGeneration: number;
   children: React.ReactNode;
 }) {
   const settings = useAccountSettings(serverValue, serverReadGeneration);
-  const preference = settings.preference("workingSetSyncEnabled");
   useLayoutEffect(() => {
     changeUiTheme(settings.value.theme);
     // A link can choose the initial language, but never veto the writer’s choice.
@@ -68,16 +58,6 @@ function AccountSettingsOwner({
     );
     changeStatsForNerds(settings.value.statsForNerds);
   }, [settings.value]);
-  const connectivityHints = useConnectivityHints();
-  const accountEpoch = useAccountEpochSignal();
-  useEffect(
-    () => bindWorkingSetSyncLifetime(accountEpoch, connectivityHints),
-    [accountEpoch, connectivityHints],
-  );
-  // Configure during render, ahead of the descendant project-route bootstrap's
-  // hydration layout commit. The driver must already know its enabled state;
-  // `configure` is idempotent for an unchanged account/value pair.
-  configureWorkingSetSync(accountId, preference.confirmed && !accountEpoch.aborted);
   return (
     <AccountSettingsContext.Provider value={settings}>{children}</AccountSettingsContext.Provider>
   );

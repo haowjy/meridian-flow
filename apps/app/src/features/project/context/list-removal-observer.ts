@@ -1,5 +1,5 @@
 /**
- * Reads a project's list for the documents the app is holding (views, recent routes, local
+ * Reads a project's list for the documents the app is holding (views, account recents, local
  * copies) and acts on what it says. Nothing is polled: it runs when the list, the sources or the
  * browser's copies change.
  *

@@ -22,7 +22,6 @@ import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProj
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
 import { projectWorkBranchFiles } from "@/client/query/work-branch-files";
 import { isEditorScheme } from "@/client/stores";
-import type { WorkingSetHydrationPlan } from "@/client/working-set";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
 import {
@@ -75,12 +74,11 @@ import { rememberedRouteDocument, routeDocumentMark, routePlaceKey } from "./rou
 
 type ReadableProjectRouteProps = {
   project: Project;
-  entryHydration: WorkingSetHydrationPlan;
-  user: { userId: string; workingSetSyncEnabled?: boolean | null };
+  user: { userId: string };
 };
 const NO_TREE: TreeViewResult = { tree: null, isComplete: false, isError: false };
 
-export function ReadableProjectRoute({ project, entryHydration, user }: ReadableProjectRouteProps) {
+export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProps) {
   const projectId = project.id;
   const router = useRouter();
   const location = useRouterState({ select: (state) => state.location });
@@ -654,7 +652,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
             project={project}
             projectId={projectId}
             chatDisplay={chat.display}
-            entryHydration={entryHydration}
             routeLocationKey={location.state.__TSR_key ?? location.href}
             routeIssues={{
               main: mainIssue,

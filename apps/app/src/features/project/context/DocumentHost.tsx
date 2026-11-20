@@ -89,7 +89,7 @@ export function DocumentHost(props: DocumentHostProps) {
     <PanePlaceContext.Provider value={place === "side" ? "side" : "main"}>
       <DocumentReviewProvider projectId={projectId} document={tab} showing={onScreen}>
         {place === "main" && props.main ? (
-          <MainDocumentBinding projectId={projectId} document={tab} main={props.main} />
+          <MainDocumentBinding projectId={projectId} document={tab} />
         ) : null}
         {props.presentation === "phone" ? (
           place === "main" ? (
@@ -138,59 +138,16 @@ function useMountDocument(projectId: string, tab: OpenDocument, place: DocumentP
 }
 
 /**
- * Records main's route once live has its document, and the opening in Recent. Renders nothing.
+ * Records the opening in Recent once main shows the document live. Renders nothing.
  */
 function MainDocumentBinding({
   projectId,
   document,
-  main,
 }: {
   projectId: string;
   document: OpenDocument;
-  main: MainDocument;
 }) {
-  const contextRemoval = useContextRemovalCoordinator();
-
-  // The route is remembered once main paints this document live; a draft-only document's path
-  // dies with its draft, so it never is.
   const liveness = useDocumentLiveness(projectId, document);
-  useLayoutEffect(() => {
-    if (
-      main.local ||
-      main.draftOnly ||
-      main.isFetching ||
-      main.isError ||
-      liveness === "draft-only" ||
-      document.kind === "new" ||
-      main.scheme === null ||
-      main.path === null
-    )
-      return;
-    contextRemoval.recordRoute(
-      projectId,
-      document.documentId,
-      contextRouteRequest({
-        scheme: main.scheme,
-        path: main.path,
-        workId: main.workId,
-        rootThreadId: main.rootThreadId,
-      }),
-    );
-  }, [
-    contextRemoval,
-    projectId,
-    document.documentId,
-    document.kind,
-    main.local,
-    main.draftOnly,
-    main.isFetching,
-    main.isError,
-    main.scheme,
-    main.path,
-    main.workId,
-    main.rootThreadId,
-    liveness,
-  ]);
 
   // Recency is recorded from the document actually in main, once per arrival.
   const record = useRecordOpenedDocument();

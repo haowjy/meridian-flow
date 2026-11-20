@@ -225,9 +225,9 @@ dropped `ThreadStoreProvider` during transitions.
 Account replacement synchronously fences the old lifetime before constructing the
 new one; local rehydration does not gate initial render.
 
-`AccountSettingsProvider` owns language, theme, Stats for nerds, and working-set
-sync. Pending/failed setting commands own displayed intent; only confirmed
-values are relayed, cached, or used to configure sync. Its account-stamped
+`AccountSettingsProvider` owns language, theme and Stats for nerds.
+Pending/failed setting commands own displayed intent; only confirmed
+values are relayed or cached. Its account-stamped
 first-paint cache contains confirmed snapshots only, and is used only when the
 SSR server theme seed is unavailable (the seed wins). Text size is device-local.
 `?locale=` is a local seed; explicit language commands take over. Settings is

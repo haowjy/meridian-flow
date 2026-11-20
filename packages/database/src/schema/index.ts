@@ -13,7 +13,6 @@ export * from "./tree-nodes";
 export * from "./user";
 export * from "./users";
 export * from "./waitlist";
-export * from "./working-sets";
 export * from "./yjs";
 
 import * as agentDefinitionRevisions from "./agent-definition-revisions";
@@ -32,7 +31,6 @@ import * as treeNodes from "./tree-nodes";
 import * as user from "./user";
 import { users } from "./users";
 import * as waitlist from "./waitlist";
-import * as workingSets from "./working-sets";
 import * as yjs from "./yjs";
 
 /** Runtime Drizzle client schema (public tables + views). */
@@ -51,7 +49,6 @@ export const schema = {
   ...results,
   ...user,
   ...waitlist,
-  ...workingSets,
   ...yjs,
   ...documentEdits,
   ...modelEvidence,

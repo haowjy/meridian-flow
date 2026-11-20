@@ -6,18 +6,9 @@
  */
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
-import type {
-  ListWorksResponse,
-  ProjectWorkingSet,
-  ThreadListItem,
-} from "@meridian/contracts/protocol";
+import type { ListWorksResponse, ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
-import {
-  getProject,
-  getProjectWorkingSet,
-  listProjectThreads,
-  listProjectWorks,
-} from "@/client/api/projects-api";
+import { getProject, listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 
 import { projectQueryKeys } from "./project-query-keys";
@@ -31,10 +22,6 @@ export type ProjectRouteData = {
   threads: ThreadListItem[] | null;
   works: ListWorksResponse | null;
   worksStarted: WorksRequestStart;
-  workingSet:
-    | { status: "row"; row: ProjectWorkingSet }
-    | { status: "absent" }
-    | { status: "unavailable" };
 };
 
 function errorMessage(error: unknown): string {
@@ -71,22 +58,15 @@ export async function loadProjectEntry(
 export async function loadProjectRouteData(projectId: string): Promise<ProjectRouteData> {
   const init = ssrApiRequestInit();
   const worksStarted = beginWorksSnapshotRequest(projectId);
-  const [threads, works, workingSet] = await Promise.allSettled([
+  const [threads, works] = await Promise.allSettled([
     listProjectThreads(projectId, init),
     listProjectWorks(projectId, init),
-    getProjectWorkingSet(projectId, init),
   ]);
 
   return {
     threads: settledValue(threads),
     works: settledValue(works),
     worksStarted,
-    workingSet:
-      workingSet.status === "rejected"
-        ? { status: "unavailable" }
-        : workingSet.value
-          ? { status: "row", row: workingSet.value }
-          : { status: "absent" },
   };
 }
 

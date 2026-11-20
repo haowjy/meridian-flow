@@ -10,7 +10,7 @@ not authorization for the requested document.
 - **Bare `/editor`:** explicitly empty on direct entry, reload and Back/Forward. Main shows the
   Recently opened landing, a chooser painted from the device record without waiting for the server
   list. Nothing reopens a document on its own.
-- **Recently opened door** (main's header): clears the document address and leaves the working set alone.
+- **Recently opened door** (main's header): clears the document address.
 - **Readable URL, reload, Back/Forward:** `ProjectAddressDocument` canonicalizes the address and
   publishes its admission issue from the replay's file (the server's entry for a review). It installs
   nothing and invokes no second live opener. Until the list has synced, an address publishes no

@@ -856,7 +856,6 @@ CREATE TABLE "users" (
 	"name" text,
 	"avatar_url" text,
 	"stripe_customer_id" text,
-	"working_set_sync_enabled" boolean DEFAULT true NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_tree_list_id_unique" UNIQUE("tree_list_id"),
@@ -869,15 +868,6 @@ CREATE TABLE "waitlist_emails" (
 	"email" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "waitlist_emails_email_unique" UNIQUE("email")
-);
---> statement-breakpoint
-CREATE TABLE "project_user_working_sets" (
-	"user_id" uuid NOT NULL,
-	"project_id" uuid NOT NULL,
-	"recent_routes" jsonb DEFAULT '[]'::jsonb NOT NULL,
-	"revision" integer DEFAULT 1 NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "project_user_working_sets_pk" PRIMARY KEY("user_id","project_id")
 );
 --> statement-breakpoint
 CREATE TABLE "agent_edit_wid_counters" (
@@ -1161,8 +1151,6 @@ ALTER TABLE "tree_nodes" ADD CONSTRAINT "tree_nodes_parent_in_source" FOREIGN KE
 ALTER TABLE "user_preferences" ADD CONSTRAINT "user_preferences_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "project_user_working_sets" ADD CONSTRAINT "project_user_working_sets_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_effects" ADD CONSTRAINT "apply_command_effects_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

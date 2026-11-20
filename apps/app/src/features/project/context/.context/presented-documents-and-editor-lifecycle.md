@@ -16,8 +16,8 @@ reads the list's replay for a document and says it is in the tree, in Trash, pur
 list, or waiting for the list (an absence is not an answer until the list has been read). The
 removal observer (`list-removal-observer.ts`), the editor and the route all
 read it, so nothing is polled and nothing is stamped with a generation. A document that leaves the
-live tree closes its views and leaves the recent routes; one that comes back is let back. The
-removal's effect on views and recent routes is applied by
+live tree closes its views; one that comes back is let back. The
+removal's effect on views is applied by
 `ContextRemovalCoordinator.applyRemovals`; the route follows the replay itself.
 
 `useFileSuggestions` projects directly from the normalized scope views. It
@@ -34,7 +34,7 @@ scheme-scoped environment. Mobile renders one level at a time via route params.
 ## Presented documents
 
 The writer-facing destination is **Editor**. `ContextRemovalCoordinator` owns
-the effect of a removal on presented documents and recent routes from what the list says;
+the effect of a removal on presented documents from what the list says;
 route continuity is the route's (the history entry's remembered id, `ReadableProjectRoute`). The account's document sessions (`core/editor/local-document-copies.ts`) independently
 own content durability. Neither owns the other's state.
 
@@ -129,7 +129,7 @@ Two owners:
   stamped. `useRemovalAnswer` is the React reader: `SessionEditor`, the review room owner and the
   reopened review address.
 - **The observer.** `observeListRemovals` (`list-removal-observer.ts`, mounted per project by
-  `ProjectContextRemovalController`) watches the documents the app holds (views, recent routes,
+  `ProjectContextRemovalController`) watches the documents the app holds (views, account recents,
   retained sessions) and applies what the list says as one batch through
   `ContextRemovalCoordinator.applyRemovals`: a document in Trash or purged closes its views and
   leaves the recents, one back in the tree is let back, and when main shows a document that went

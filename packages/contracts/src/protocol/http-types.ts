@@ -8,15 +8,9 @@ import { z } from "zod";
 import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
 import type { DraftOwnerKey } from "../branches/owner.js";
 import type { StoredResult } from "../commands/index.js";
-import {
-  CONTEXT_URI_SCHEMES,
-  type ContextUriScheme,
-  isWorkScopedScheme,
-  type OwnedContextUriScheme,
-} from "../context-uri.js";
-import type { DocumentId, UserId, WorkId } from "../ids.js";
+import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "../context-uri.js";
+import type { UserId, WorkId } from "../ids.js";
 import type { ProjectDto } from "../projects/index.js";
-import { parseRequestId } from "../request-id.js";
 import type {
   Block,
   BlockType,
@@ -266,64 +260,7 @@ export function isProjectContextTreeScheme(value: unknown): value is ProjectCont
   );
 }
 
-/**
- * A recent document and its owner. Scratch names a Work, or for a No Work chat its
- * lineage by the first chat's id (`rootThreadId`). An upload names the chat it was
- * attached in (`chatId`).
- */
-export type WorkingSetRoute =
-  | {
-      documentId: DocumentId;
-      scheme: Exclude<ProjectContextTreeScheme, OwnedContextUriScheme>;
-      path: string;
-      workId?: never;
-      rootThreadId?: never;
-      chatId?: never;
-    }
-  | {
-      documentId: DocumentId;
-      scheme: "scratch";
-      path: string;
-      workId: WorkId | null;
-      rootThreadId?: never;
-      chatId?: never;
-    }
-  | {
-      documentId: DocumentId;
-      scheme: "scratch";
-      path: string;
-      workId?: never;
-      rootThreadId: string;
-      chatId?: never;
-    }
-  | {
-      documentId: DocumentId;
-      scheme: "uploads";
-      path: string;
-      workId?: never;
-      rootThreadId?: never;
-      chatId: string;
-    };
-
-export type WorkingSetRouteParseResult =
-  | { ok: true; value: WorkingSetRoute }
-  | { ok: false; message: string };
-
-export type WorkingSetRouteListParseResult =
-  | { ok: true; value: WorkingSetRoute[] }
-  | { ok: false; message: string };
-
-export type ProjectWorkingSet = {
-  userId: string;
-  projectId: string;
-  recentRoutes: WorkingSetRoute[];
-  revision: number;
-  updatedAt: string;
-};
-
-export type AccountSettings = import("../preferences/index.js").AccountAppearancePreferences & {
-  workingSetSyncEnabled: boolean;
-};
+export type AccountSettings = import("../preferences/index.js").AccountAppearancePreferences;
 
 /** Authenticated identity resolved through Meridian's user provisioning boundary. */
 export type AuthenticatedUser = {
@@ -339,100 +276,6 @@ export type AuthenticatedUser = {
 export const authIdentitySchema = z.object({ user: z.object({ userId: z.uuid() }) });
 
 export type AuthMeResponse = { user: AuthenticatedUser };
-
-export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, message: "Working-set route must be an object" };
-  }
-
-  const route = input as Record<string, unknown>;
-  const documentId = parseRequestId(route.documentId);
-  if (!documentId) {
-    return { ok: false, message: "Working-set route requires a valid documentId" };
-  }
-  if (!isProjectContextTreeScheme(route.scheme)) {
-    return { ok: false, message: "Working-set route has an unknown scheme" };
-  }
-  if (typeof route.path !== "string" || route.path.length === 0 || route.path.length > 1024) {
-    return { ok: false, message: "Working-set route path must contain 1 to 1024 characters" };
-  }
-
-  if (route.chatId !== undefined) {
-    const chatId = parseRequestId(route.chatId);
-    if (route.scheme !== "uploads" || route.workId !== undefined || !chatId) {
-      return { ok: false, message: "Only upload routes name a chat, and without a workId" };
-    }
-    return {
-      ok: true,
-      value: {
-        documentId: documentId as DocumentId,
-        scheme: route.scheme,
-        path: route.path,
-        chatId,
-      },
-    };
-  }
-
-  if (route.rootThreadId !== undefined) {
-    const rootThreadId = parseRequestId(route.rootThreadId);
-    if (route.scheme !== "scratch" || route.workId !== undefined || !rootThreadId) {
-      return { ok: false, message: "Only Scratch routes name a lineage, and without a workId" };
-    }
-    return {
-      ok: true,
-      value: {
-        documentId: documentId as DocumentId,
-        scheme: route.scheme,
-        path: route.path,
-        rootThreadId,
-      },
-    };
-  }
-
-  if (route.scheme === "uploads") {
-    return { ok: false, message: "Upload routes require a chatId" };
-  }
-
-  if (isWorkScopedScheme(route.scheme)) {
-    if (!("workId" in route) || (route.workId !== null && typeof route.workId !== "string")) {
-      return { ok: false, message: "Work-scoped routes require an explicit workId or null" };
-    }
-    const workId = route.workId === null ? null : parseRequestId(route.workId);
-    if (route.workId !== null && !workId) {
-      return { ok: false, message: "Working-set route workId must be a valid UUID or null" };
-    }
-    return {
-      ok: true,
-      value: {
-        documentId: documentId as DocumentId,
-        scheme: route.scheme,
-        path: route.path,
-        workId: workId as WorkId | null,
-      },
-    };
-  }
-
-  if (route.workId !== undefined) {
-    return { ok: false, message: "Non-work-scoped routes must not include a workId" };
-  }
-  return {
-    ok: true,
-    value: { documentId: documentId as DocumentId, scheme: route.scheme, path: route.path },
-  };
-}
-
-export function parseWorkingSetRouteList(input: unknown): WorkingSetRouteListParseResult {
-  if (!Array.isArray(input)) {
-    return { ok: false, message: "Working-set routes must be an array" };
-  }
-  const routes: WorkingSetRoute[] = [];
-  for (const entry of input) {
-    const parsed = parseWorkingSetRoute(entry);
-    if (!parsed.ok) return parsed;
-    routes.push(parsed.value);
-  }
-  return { ok: true, value: routes };
-}
 
 export type ContextReadTrackedResponse = {
   kind: "tracked";
