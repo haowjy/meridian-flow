@@ -325,7 +325,7 @@
     "packages/agent-edit/src/model/block-address.test.ts": 2,
     "packages/agent-edit/src/model/grep-text.test.ts": 9,
     "packages/agent-edit/src/model/markdown-yjs-roundtrip.test.ts": 2,
-    "packages/agent-edit/src/model/stored-suggestions.test.ts": 1,
+    "packages/agent-edit/src/model/stored-suggestions.test.ts": 2,
     "packages/agent-edit/src/prosemirror-lowering.test.ts": 5,
     "packages/agent-edit/src/resolver/resolve.test.ts": 19,
     "packages/agent-edit/src/resolver/stale-view-write.test.ts": 17,
