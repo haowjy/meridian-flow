@@ -39,9 +39,11 @@ backwards, and takes formatting from the final document. In a Work's view:
 - **A later turn over an earlier turn's text layers.** When a model turn removes text another
   turn (or the writer) wrote, inline or inside an added block, the text stays under the later
   turn's `suggest_del`, and what it writes into an earlier turn's block carries its own
-  `suggest_ins`. Removing an earlier turn's whole block is a `remove` layer. So `reject({ turn })`
-  of the later turn, the card's Undo, brings the earlier wording back. Text the same turn
-  wrote, and anything the writer removes, really goes.
+  `suggest_ins`. Removing an earlier turn's whole block treats it as a removed Live block: a
+  `remove` layer, its text under the later turn's `suggest_del`. So `reject({ turn })` of the
+  later turn, the card's Undo, brings the earlier wording back. Text the same turn wrote, and
+  anything the writer removes, really goes. Attributes do not layer: a later turn that makes an
+  earlier turn's paragraph a heading sets it directly, and its Undo leaves the heading.
 
 In the Live view, edits land as typed, but hidden suggestions stay where they are and nothing
 pasted carries a suggestion. `CHANGE_META` reports, per replaced range, the change an edit took;
@@ -78,6 +80,7 @@ have something to reject.
 - Joining an added paragraph to a Live one leaves two paragraphs: Live text never moves into a
   block the Work added.
 - A later turn's split of an earlier turn's block stays after the later turn is rejected (the
-  wording comes back, in two paragraphs). Edits inside a table the Work added are real.
+  wording comes back, in two paragraphs). Block edits inside a container the Work added (a
+  table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.
 - Text the writer types inside a paragraph the AI added goes with it on reject.
 - The editor repaints every decoration on each change.

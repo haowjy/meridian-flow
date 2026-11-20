@@ -491,7 +491,7 @@ function settle(
   if (final.type === node.type && sameValue(attrs, before)) return;
   const kind = blockKind(node, view);
   if (kind === "own" && final.type.validContent(node.content))
-    out.setNodeMarkup(pos, final.type, { ...attrs, sugAttrs: null });
+    out.setNodeMarkup(pos, final.type, attrs);
   else if (kind === "live" && final.type === node.type)
     proposeAttrs(out, pos, viewAttrs(node, view), attrs, author, id);
   else out.setMeta(DROPPED_META, true);
@@ -762,33 +762,33 @@ function suggestRemoval(
 ): void {
   const schema = out.doc.type.schema;
   const del = schema.marks.suggest_del.create(attrs);
-  const own = wholeBlocks(out.doc, from, to).filter(({ node }) => blockKind(node, view) === "own");
-  const inOwn = (pos: number) =>
-    own.some((block) => pos >= block.pos && pos < block.pos + block.node.nodeSize);
-  const work = pieces(out.doc, from, to, view).filter((piece) => !inOwn(piece.from));
-  for (const { node, pos } of wholeBlocks(out.doc, from, to))
-    if (blockKind(node, view) === "live" && "sug" in node.attrs)
+  // The Work's own block goes outright, unless the edit layers over it (`layers`): then it stays,
+  // as a removed Live block does, with a removal layer and its text struck.
+  const gone = wholeBlocks(out.doc, from, to).filter(
+    ({ node }) => blockKind(node, view) === "own" && !layers(node.attrs.sug, attrs),
+  );
+  const inGone = (pos: number) =>
+    gone.some((block) => pos >= block.pos && pos < block.pos + block.node.nodeSize);
+  const work = pieces(out.doc, from, to, view).filter((piece) => !inGone(piece.from));
+  for (const { node, pos } of wholeBlocks(out.doc, from, to)) {
+    const kind = blockKind(node, view);
+    if (
+      (kind === "live" && "sug" in node.attrs) ||
+      (kind === "own" && layers(node.attrs.sug, attrs))
+    )
       setLayers(
         out,
         pos,
         attrs.work,
         addLayer(node, proposals(node)[attrs.work] ?? [], { ...attrs, attrs: {}, remove: true }),
       );
-  for (const { node, pos } of own)
-    if (layers(node.attrs.sug, attrs))
-      setLayers(
-        out,
-        pos,
-        attrs.work,
-        addLayer(node, proposals(node)[attrs.work] ?? [], { ...attrs, attrs: {}, remove: true }),
-      );
+  }
   const map = since(out);
   for (const piece of work.reverse()) {
     if (piece.kind === "live") out.addMark(piece.from, piece.to, del);
     else if (piece.kind === "own-ins") retract(out, piece.from, piece.to, del, attrs);
   }
-  for (const block of own.reverse()) {
-    if (layers(block.node.attrs.sug, attrs)) continue;
+  for (const block of gone.reverse()) {
     const a = map(block.pos, 1);
     out.delete(a, a + block.node.nodeSize);
   }

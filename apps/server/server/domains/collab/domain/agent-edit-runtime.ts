@@ -91,9 +91,9 @@ export function createAgentEditRuntime(input: {
     });
   const liveUtilityCore = asLiveAgentEditCore(liveCoreOver(model));
   const workView: WorkViews | null = suggestionMode
-    ? (work, author) => {
-        const viewModel = suggestingModel(storedModel, { work }, author);
-        return { model: viewModel, core: liveCoreOver(viewModel) };
+    ? {
+        model: (work) => suggestingModel(storedModel, { work }, null),
+        core: (work, author) => liveCoreOver(suggestingModel(storedModel, { work }, author)),
       }
     : null;
   const markdownDocuments = scopeMarkdownEngine(
@@ -170,14 +170,14 @@ export function createAgentEditRuntime(input: {
 }
 
 /**
- * Suggestion mode: a Work's view of Live, Live plus that Work's suggestions. `model` reads it;
- * `core` reads it for the model's tools and writes into Live as the Work's suggestions by `author`
- * (a read needs none).
+ * Suggestion mode: a Work's view of Live, Live plus that Work's suggestions. `model` only reads
+ * it; `core` serves the model's tools, and its writes go into Live as the Work's suggestions by
+ * `author`.
  */
-export type WorkViews = (
-  work: string,
-  author: Author | null,
-) => { model: YProsemirrorDocumentModel; core: AgentEditCore };
+export type WorkViews = {
+  model(work: string): YProsemirrorDocumentModel;
+  core(work: string, author: Author): AgentEditCore;
+};
 
 export function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {
   if (origin.type === "agent") {

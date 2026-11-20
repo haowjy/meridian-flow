@@ -82,9 +82,13 @@ export function createAgentEditRouter(input: {
       const version = liveVersion ? "live" : grant.destination.kind;
       if (input.workView && version === "draft" && grant.destination.kind === "draft") {
         const destination = grant.destination;
-        const outcome = await input
-          .workView(draftOwnerKey(destination.owner), null)
-          .core.read(command, {
+        const outcome = await input.workView
+          .core(draftOwnerKey(destination.owner), {
+            chat: context.threadId ?? null,
+            turn: null,
+            by: "agent",
+          })
+          .read(command, {
             ...context,
             linkView: { kind: "live" },
             documentVersion: "live",

@@ -8,7 +8,6 @@ import {
   kindOf,
   layered,
   proposals,
-  removedIn,
   type SuggestionAttrs,
   sameValue,
   type View,
@@ -193,15 +192,7 @@ export function list(doc: Node, view: View): Change[] {
     const owner = "sug" in block.attrs ? blockKind(block, view) : "live";
     if (owner === "hidden") return false;
     const end = blockPos + block.nodeSize;
-    if (owner === "own") {
-      // A block the Work added and then removed shows nothing, and changes nothing once applied.
-      if (removedIn(block, view)) return false;
-      const shown = viewBlock(block, view)?.textContent ?? "";
-      note(block.attrs.sug, blockPos, end, { inserted: `${shown}\n` });
-      // Within a block the Work added, what is listed beyond it is a later turn's deletion.
-      if (!block.isTextblock) return false;
-    }
-    const layers = owner === "own" ? [] : (proposals(block)[work] ?? []);
+    const layers = proposals(block)[work] ?? [];
     for (const id of new Set(layers.map((layer) => layer.id))) {
       const ofChange = layers.filter((layer) => layer.id === id);
       const attrs = shownChange(block, ofChange);
@@ -209,6 +200,12 @@ export function list(doc: Node, view: View): Change[] {
       // A removed block: its text, if any, is listed struck below; the break is what it removes.
       const removal = ofChange.find((layer) => layer.remove);
       if (removal) note(removal, blockPos, end, { deleted: "\n" });
+    }
+    if (owner === "own") {
+      const shown = viewBlock(block, view)?.textContent ?? "";
+      note(block.attrs.sug, blockPos, end, { inserted: `${shown}\n` });
+      // Within a block the Work added, what is listed beyond it is a later turn's deletion.
+      if (!block.isTextblock) return false;
     }
     if (!block.isTextblock) return true;
     block.forEach((child, offset) => {

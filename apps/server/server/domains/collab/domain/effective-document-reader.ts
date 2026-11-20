@@ -83,7 +83,7 @@ export function createEffectiveDocumentReader(input: {
     read: (doc: DocHandle, model: YProsemirrorDocumentModel) => Promise<T>,
     owner: DraftOwner | undefined = command.destination === "draft" ? command.owner : undefined,
   ): Promise<Result<T, SyncError>> {
-    const viewed = owner && input.workView ? input.workView(draftOwnerKey(owner), null) : null;
+    const viewed = owner && input.workView ? input.workView.model(draftOwnerKey(owner)) : null;
     let room: Awaited<ReturnType<AgentEditRouter["readRoom"]>>;
     try {
       room = await input.agentEdit.readRoom({
@@ -97,7 +97,7 @@ export function createEffectiveDocumentReader(input: {
       throw cause;
     }
     try {
-      return Ok(await read(toDocHandle(room.doc), viewed?.model ?? input.model));
+      return Ok(await read(toDocHandle(room.doc), viewed ?? input.model));
     } finally {
       room.dispose();
     }
@@ -144,7 +144,8 @@ export function createEffectiveDocumentReader(input: {
       return input.draftPulls.catchUpDraft(draftId);
     },
     async readOwnerMarkdown({ documentId, owner }) {
-      const draft = await input.drafts.findOwnerDraft(documentId, owner);
+      // In suggestion mode a Work's text is Live through its view, never an older draft.
+      const draft = input.workView ? null : await input.drafts.findOwnerDraft(documentId, owner);
       if (!draft)
         return readEffective(
           { documentId, destination: "live" },
@@ -200,7 +201,7 @@ export function createEffectiveDocumentReader(input: {
             aheadSettlements: settledAheads(blocks, scope),
           };
         };
-      if (command.destination === "draft") {
+      if (command.destination === "draft" && !input.workView) {
         const draft = await readWorkDraft(command, project("draft"));
         if (draft.ok) return draft;
       }
