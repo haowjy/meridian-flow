@@ -31,7 +31,9 @@ has no branch row.
 - **A resend answers only with the stored result.** The driver reads any 2xx as the command's
   result, so a resend that finds the first request still running is a 503 (sent again), and an
   id stored for another body, or settled `never`, is the routes' 409 `command_conflict`
-  (`storedAnswer` in `lib/branch-review-route.ts`).
+  (`storedAnswer` in `lib/branch-review-route.ts`). The driver then resolves the id: a `never`
+  settles as never-ran, but an id that holds another body's `done` resolves to that body's result,
+  since resolve reads the id alone. Every command route shares this; only a client bug reaches it.
 - Lock order is the Apply click's: Works, branch, lists, documents in id order, then writes.
   Deliveries and the derivation hook run after commit.
 
