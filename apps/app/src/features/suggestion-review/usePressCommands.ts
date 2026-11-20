@@ -130,7 +130,14 @@ export function usePressCommands({
         pressed.commandId,
         port,
         () => nodes.map((node) => registry.history(node)),
-        null,
+        {
+          push: () => {},
+          // Taken back: its rows' Undo goes with it.
+          drop: () => {
+            if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step === entries))
+              notices.end(ownerKey);
+          },
+        },
         () => owner.applied.delete(entries),
       );
       owner.applied.add(entries);
