@@ -15,8 +15,11 @@ export type PressRequest = {
   /** The Work: its draft owner key, `work:<id>` or `lineage:<rootThreadId>`. */
   owner: string;
   verdict: PressVerdict;
-  /** Documents and folders (a folder takes what is under it), or everything the Work has pending. */
-  items: { node: string }[] | "all";
+  /**
+   * Documents and folders (a folder takes what is under it), or everything the Work has pending.
+   * `half: "tree"` takes only the node's tree change (a move, rename or delete), not its text.
+   */
+  items: { node: string; half?: "tree" }[] | "all";
   /** The tree cut the press was drawn from: records admitted after it stay pending. */
   saw?: TreeSaw;
   /**

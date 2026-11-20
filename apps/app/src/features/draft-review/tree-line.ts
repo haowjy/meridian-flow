@@ -84,6 +84,7 @@ export function treeChange(
     spans: [],
     frame: null,
     tree: line,
+    whole: true,
   };
 }
 

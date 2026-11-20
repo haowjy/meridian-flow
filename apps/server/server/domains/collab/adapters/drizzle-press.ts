@@ -137,7 +137,7 @@ export function createDrizzlePress(
               : undefined,
             eq(documents.userId, envelope.accountId as UserId),
           ),
-          sql`${work} = ANY(${documentBlockRooms.pendingWorks})`,
+          sql`${documentBlockRooms.pendingChanges} ? ${work}`,
         ),
       );
     return rows.map((row) => row.id as string);
@@ -169,14 +169,14 @@ export function createDrizzlePress(
             continue;
           }
           const view = writer.view(branchId ? { draft: branchId } : LIVE);
-          for (const { node } of items) {
+          for (const { node, half } of items) {
             const under = [
               node,
               ...(view.nodes.get(node)?.kind === "folder" ? descendantsOf(view, node) : []),
             ];
             for (const id of under) {
               tree.add(id);
-              if (view.nodes.get(id)?.kind === "document") text.add(id);
+              if (half !== "tree" && view.nodes.get(id)?.kind === "document") text.add(id);
             }
           }
         }

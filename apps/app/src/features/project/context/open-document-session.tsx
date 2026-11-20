@@ -16,6 +16,8 @@ type OpenDocumentSessionProps = {
   documentId: string;
   /** False for a document with no live room yet (draft-only until Apply promotes it). */
   liveRoom?: boolean;
+  /** Suggestion mode: the live room of a document only a Work holds. */
+  workOnly?: boolean;
   bindingOwner?: DocumentPresentation["bindingOwner"];
   children: (
     session: DocumentSession | null,
@@ -42,6 +44,7 @@ function OpenDocumentSession({
   projectId,
   documentId,
   liveRoom = true,
+  workOnly = false,
   bindingOwner = "desktop-document-host",
   children,
   onReopen,
@@ -50,6 +53,7 @@ function OpenDocumentSession({
     projectId,
     documentId: liveRoom ? documentId : null,
     owner: bindingOwner,
+    ...(workOnly ? { workOnly: true as const } : {}),
   });
   const state = binding.state;
   const opened = state.kind === "opened" && state.documentId === documentId ? state.session : null;

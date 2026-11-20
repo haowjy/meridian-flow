@@ -9329,12 +9329,12 @@
           "primaryKey": false,
           "notNull": true
         },
-        "pending_works": {
-          "name": "pending_works",
-          "type": "text[]",
+        "pending_changes": {
+          "name": "pending_changes",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'::text[]"
+          "default": "'{}'::jsonb"
         },
         "document_hash": {
           "name": "document_hash",
@@ -9381,6 +9381,21 @@
           "isUnique": true,
           "concurrently": false,
           "method": "btree",
+          "with": {}
+        },
+        "document_block_rooms_pending_changes": {
+          "name": "document_block_rooms_pending_changes",
+          "columns": [
+            {
+              "expression": "pending_changes",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
           "with": {}
         }
       },

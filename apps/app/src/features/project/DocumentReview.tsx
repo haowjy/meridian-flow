@@ -20,10 +20,10 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
-import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import {
@@ -31,6 +31,7 @@ import {
   type DraftReviewContextValue,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import { HostEditor, HostEditorContext } from "@/features/suggestion-review/host-editor";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { useShellTreeVersion } from "./tree-version";
 import {
@@ -49,7 +50,12 @@ export type MainReviewAddress = {
 };
 export const MainReviewAddressContext = createContext<MainReviewAddress | null>(null);
 
-export type DocumentReview = { value: DraftReviewContextValue; paint: DocumentPaint };
+export type DocumentReview = {
+  value: DraftReviewContextValue;
+  paint: DocumentPaint;
+  /** The editor the host shows: suggestion mode's review chrome reads the review there. */
+  editor: HostEditor;
+};
 
 const DocumentPaintContext = createContext<DocumentPaint | null>(null);
 
@@ -160,8 +166,9 @@ export function useDocumentReview(
         : null,
     [tab, paint.draft, paint.view.version],
   );
-  useReviewAdmission({ review: value, presented, admission, port });
-  return { value, paint };
+  const [editor] = useState(() => new HostEditor());
+  useReviewAdmission({ review: value, presented, admission, port, editor });
+  return { value, paint, editor };
 }
 
 /** Exposes one host's review to everything that host renders, in one or several subtrees. */
@@ -174,7 +181,9 @@ export function DocumentReviewBoundary({
 }) {
   return (
     <DraftReviewBoundary value={review.value}>
-      <DocumentPaintContext.Provider value={review.paint}>{children}</DocumentPaintContext.Provider>
+      <DocumentPaintContext.Provider value={review.paint}>
+        <HostEditorContext.Provider value={review.editor}>{children}</HostEditorContext.Provider>
+      </DocumentPaintContext.Provider>
     </DraftReviewBoundary>
   );
 }

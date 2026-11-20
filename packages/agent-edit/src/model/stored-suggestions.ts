@@ -9,9 +9,10 @@ import {
   type Authors,
   accept,
   type Filter,
+  pendingChanges,
   pendingTurns,
-  pendingWorks,
   reject,
+  type WorkPending,
 } from "@meridian/suggestions";
 import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
@@ -105,9 +106,12 @@ export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<stri
 
 const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
 
-/** The Works whose suggestions a stored document holds: the views that read it otherwise than Live. */
-export function storedPendingWorks(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
-  return pendingWorks(storedRoot(doc, schema));
+/**
+ * The Works whose suggestions a stored document holds, each with what it has pending: the views
+ * that read it otherwise than Live.
+ */
+export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string, WorkPending> {
+  return pendingChanges(storedRoot(doc, schema), suggestionAuthors(doc));
 }
 
 /** Yjs item ids by client, as `[clock, len]` runs in clock order. */

@@ -5,13 +5,14 @@ import { countWords } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodecFactory,
   blockItemIdKey,
-  storedPendingWorks,
+  storedPendingChanges,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks, type StoredLinkOccurrence } from "@meridian/markup/stored-links";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type { WorkPending } from "@meridian/suggestions";
 import * as Y from "yjs";
 import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
 import { type DocumentLinkRow, deriveDocumentLinkRows } from "./document-link-rows.js";
@@ -36,7 +37,7 @@ export type ReadCut = (documentId: DocumentId, doc: Y.Doc) => Promise<CutRead>;
 export type CutRead = {
   blocks: DerivedBlock[];
   links: StoredLinkOccurrence[];
-  pendingWorks: string[];
+  pendingChanges: Record<string, WorkPending>;
 };
 
 export function createDocumentDerivationService(input: {
@@ -131,7 +132,7 @@ export async function deriveDocumentOutputs(
   readCut: ReadCut,
 ): Promise<DocumentDerivationOutputs> {
   const read = await readCut(cut.documentId, doc);
-  const { blocks, pendingWorks } = read;
+  const { blocks, pendingChanges } = read;
   const rows = (occurrences: readonly StoredLinkOccurrence[]) =>
     cut.holderUri ? deriveDocumentLinkRows({ occurrences, holderUri: cut.holderUri }) : [];
   // Every Work's links, for ahead registration; only Live's say whether the document was edited.
@@ -139,7 +140,7 @@ export async function deriveDocumentOutputs(
   return {
     blocks,
     wordCount: blocks.reduce((sum, block) => sum + countWords(block.text), 0),
-    pendingWorks,
+    pendingChanges,
     documentBytes: blocks.reduce((sum, block) => sum + Buffer.byteLength(block.text, "utf8"), 0),
     documentHash: documentHash(blocks, rows(read.links)),
     links,
@@ -172,7 +173,7 @@ export function createCutReader(deps: {
         ref: attrs.ref,
         href: attrs.href,
       })),
-      pendingWorks: [...storedPendingWorks(doc, model.schema)].sort(),
+      pendingChanges: storedPendingChanges(doc, model.schema),
     };
   };
 }

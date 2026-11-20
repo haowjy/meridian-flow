@@ -24,6 +24,7 @@ import type {
   DocumentSessionAccess,
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
@@ -218,7 +219,10 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      liveRoom={liveness === "live"}
+      // Suggestion mode: a document only a Work has is plain text in its Live room, open while the
+      // Work has it: a Discard closes the room, and its Undo opens it again.
+      liveRoom={liveness === "live" || suggestionModeEnabled}
+      workOnly={suggestionModeEnabled && fileForDocument(document.documentId)?.draft.isNew === true}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}

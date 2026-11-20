@@ -1,5 +1,6 @@
 /** Open review ownership holds a stable room; projection readiness is independent of command delivery. */
 import { type Dispatch, useEffect, useSyncExternalStore } from "react";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { DraftReviewAction, InlineDraftReview } from "./draft-review-session";
 import { useRoomBindings } from "./useRoomReview";
@@ -21,8 +22,9 @@ export function useReviewRoomOwner(input: {
   useEffect(() => {
     if (review && leaving) dispatch({ type: "exitInline" });
   }, [leaving, review?.itemKey, dispatch]);
+  // Suggestion mode reviews the Live document: there is no draft room to open.
   const read = useRoomBindings(
-    review
+    review && !suggestionModeEnabled
       ? [
           {
             projectId: input.projectId,

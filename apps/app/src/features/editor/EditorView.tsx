@@ -8,12 +8,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { Button } from "@/components/ui/button";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { InlineDraftReview } from "@/features/draft-review/draft-review-session";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./SessionEditor";
+import { SuggestionEditorView } from "./SuggestionEditorView";
 import { useInlineReviewFocus } from "./useInlineReviewFocus";
 import { useInlineReviewSync } from "./useInlineReviewSync";
 
@@ -44,6 +46,14 @@ const REVIEW_MARKS_WAIT_MS = 1500;
 type EditorSurface = "pending" | "review-error" | `live:${string}` | `review:${string}`;
 
 export function EditorView(props: EditorViewProps) {
+  return suggestionModeEnabled ? (
+    <SuggestionEditorView {...props} />
+  ) : (
+    <DraftEditorView {...props} />
+  );
+}
+
+function DraftEditorView(props: EditorViewProps) {
   const { controller, roomOwner, fileForDocument } = useDraftReview();
   // Resolve once against the canonical scope binding, never host-mirrored room/Work fields.
   const requestedItemKey = props.reviewItemKey ?? null;
@@ -196,7 +206,6 @@ export function EditorView(props: EditorViewProps) {
               session={liveSession}
               focusKey={props.focusKey}
               inMain={props.inMain}
-              suggestionOwner={controller.ownerKey || null}
             />
           </div>
         </PaintScope>

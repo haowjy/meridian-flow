@@ -73,13 +73,16 @@ Each is one local transaction (`RAW_META`), filtered by `{ id }`, `{ turn }` (re
 layers. Reject is the reverse. Either only deletes text and blocks and removes marks and
 attributes: nothing it keeps is rewritten. Accepting a deletion rejects every other Work's change deleting the same text: the
 first applied wins. A block the Work added that stays (accepted) still holds what later turns
-layered on it. `list` gives the view's changes for review; `pending` the turns and the Works
+layered on it. `list` gives the view's changes for review, each change's text joined with a space
+where Live text separates its pieces; `pending` the turns and the Works
 (with their change ids) that still have something to resolve.
 
 ## Who calls it
 
 - Editor: `apps/app/src/core/editor/extensions/suggestion-mode/` runs every local transaction
-  through `rewrite` and paints the view. `SuggestionBand.tsx` is a throwaway review surface.
+  through `rewrite` and paints the view. The review (`apps/app/src/features/suggestion-review/`)
+  reads `list` from the editor's document, so the Changes list, the band, the change card and
+  the phone's sheet draw a Work's suggestions as they drew a draft's.
 - Model: agent-edit's `suggestingModel(base, view, author)` replays a planned write as a
   ProseMirror transaction, rewrites it, and lowers it back to Yjs with `lowerBlock`.
 - Resolving, everywhere: agent-edit's `resolveStored(doc, schema, verdict, filter)`
@@ -94,7 +97,7 @@ layered on it. `list` gives the view's changes for review; `pending` the turns a
   (`domains/collab/adapters/drizzle-press.ts`). `pressStored` runs `resolveStored` as one Yjs
   transaction and returns its inserted and deleted id ranges; `undoPressStored` takes those
   ranges back as a Yjs undo, the same undo Ctrl+Z is in the tab. A whole-Work press finds its
-  documents through `pending_works`.
+  documents through `pending_changes`.
 
 ## Readers
 
@@ -110,13 +113,14 @@ to)` for a range's words with their positions back in the stored document.
 | Reader | View | Why |
 |---|---|---|
 | Export, the frozen and Markdown reads, derived blocks and word counts, `ls -v` | Live | What the project is until someone applies |
-| AI `read`, `grep`, copy from a Work | The chat's Work | The AI works on its own draft; `grep` skips stored text for a Work in `pending_works` |
+| AI `read`, `grep`, copy from a Work | The chat's Work | The AI works on its own draft; `grep` skips stored text for a Work in `pending_changes` |
 | Editor word count, search passage landing, link form and dragged link name | The editor's | What the writer is looking at |
 | Trash preview, an untitled document's suggested name | Live | No Work's draft is open on it |
 | The derivation's `document_hash` (behind `updated_at`) | Live | A Work's suggestion is not an edit to the document |
 
-A passage landing resolves in the editor's view, which can differ from the view the search ran
-in: a Work's hit in text the editor shows only in Draft reads as changed until the writer
+A passage landing resolves in the editor's view. A chat's own hit in a document it drafted opens
+in its Work's view (`useOpenDraft` turns the sidebar's toggle to Draft); a hit opened anywhere
+else reads in the view on screen, so text only a Work has reads as changed until the writer
 switches. A code block takes no marks, so its text holds no suggestion.
 
 Read from the stored document on purpose, because none of them shows text as the document's:
@@ -141,6 +145,10 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   wording comes back, in two paragraphs). Block edits inside a container the Work added (a
   table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.
 - Text the writer types inside a paragraph the AI added goes with it on reject.
+- Rejecting an earlier turn's change first leaves a later turn's insertion over it standing
+  beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
+  discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work
+  the writer did not reject.
 - The editor repaints every decoration on each change.
 - An author entry is never removed: a change that is accepted, rejected or deleted keeps its
   entry in `suggestion_authors` (about 60 bytes each).

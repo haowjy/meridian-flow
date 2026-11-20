@@ -3,20 +3,26 @@
   display: none;
 }
 
-.sug-ins,
-.meridian-editor .sug-ins-block {
-  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
-  box-shadow: inset 0 -1px 0 0 color-mix(in oklab, var(--color-primary) 40%, transparent);
-}
-
-.sug-del {
+/* The view's own deletions read as the draft review's removed text (inline-review.css), but they
+   are the document's text, not a widget: the writer can select and edit them. */
+.meridian-editor .ProseMirror .sug-del {
   color: var(--color-destructive);
+  background: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  border-radius: var(--radius-sm);
   text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in oklab, currentColor 70%, transparent);
+}
+.meridian-editor .ProseMirror .sug-del.sug-focused {
+  background: color-mix(in oklab, var(--color-destructive) 22%, transparent);
 }
 
 /* A Live block the view removes: its text is struck; the bar marks the break that goes too. */
 .meridian-editor .sug-del-block {
   box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--color-destructive) 50%, transparent);
+}
+.meridian-editor .sug-del-block.sug-focused {
+  box-shadow: inset 3px 0 0 0 var(--color-destructive);
 }
 
 .meridian-editor .meridian-comment {

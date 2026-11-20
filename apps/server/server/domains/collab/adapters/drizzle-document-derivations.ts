@@ -1,7 +1,9 @@
 /** Journal-locked cuts and compare-and-set writes of document derived outputs. */
+import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
+  branches,
   documentBlockRooms,
   documentBlocks,
   documentLinks,
@@ -9,7 +11,8 @@ import {
   documentYjsHeads,
   treeNodes,
 } from "@meridian/database";
-import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { sameValue } from "@meridian/suggestions";
+import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -20,6 +23,7 @@ import {
 import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import { documentHash } from "../domain/document-derivations.js";
 import {
   DOCUMENT_EXTRACTOR_VERSION,
@@ -93,6 +97,8 @@ export async function certifyDocumentDerivation(
   cut: DocumentDerivationCut,
   outputs: DocumentDerivationOutputs,
   at: Date,
+  /** The Works (`draftOwnerKey`) whose pending suggestions in the document moved. */
+  pendingMoved?: (owners: readonly string[]) => Promise<void>,
 ): Promise<boolean> {
   const w = cut.watermark;
   const [head] = await tx
@@ -140,10 +146,16 @@ export async function certifyDocumentDerivation(
     .returning({ id: documents.id });
   if (!updated) return false;
 
+  const before = room?.pendingChanges ?? {};
+  const moved = [
+    ...new Set([...Object.keys(before), ...Object.keys(outputs.pendingChanges)]),
+  ].filter((owner) => !sameValue(before[owner], outputs.pendingChanges[owner]));
+  if (moved.length > 0) await pendingMoved?.(moved);
+
   const blockOrder = outputs.blocks.map((block) => block.id);
   const roomValues = {
     wordCount: outputs.wordCount,
-    pendingWorks: outputs.pendingWorks,
+    pendingChanges: outputs.pendingChanges,
     documentHash: outputs.documentHash,
     cutGeneration: w.generation,
     cutAdmissionSeq: w.admissionSequence,
@@ -231,7 +243,34 @@ export function createDrizzleDocumentDerivationStore(
   db: Database,
   lastAddress: DocumentLastAddress,
   aheads?: { registry: AheadRegistrationRecovery; eventSink?: EventSink },
+  /** Wakes a Work's review list and recounts it when its suggestions in a document moved. */
+  workProjection?: Pick<WorkProjectionMutation, "liveChangedUnder" | "recountAfterCommit">,
 ): DocumentDerivationStore {
+  const pendingMoved = workProjection
+    ? async (owners: readonly string[]) => {
+        const parsed = owners.flatMap((key) => parseDraftOwnerKey(key) ?? []);
+        const workIds = parsed.flatMap((owner) => (owner.kind === "work" ? [owner.id] : []));
+        const lineageRootIds = parsed.flatMap((owner) =>
+          owner.kind === "lineage" ? [owner.id] : [],
+        );
+        const rows = await currentDrizzleDb(db)
+          .select({ id: branches.id })
+          .from(branches)
+          .where(
+            and(
+              eq(branches.status, "active"),
+              or(
+                workIds.length ? inArray(branches.originWorkId, workIds) : undefined,
+                lineageRootIds.length
+                  ? inArray(branches.originRootThreadId, lineageRootIds)
+                  : undefined,
+              ),
+            ),
+          );
+        workProjection.liveChangedUnder(rows.map((row) => row.id));
+        workProjection.recountAfterCommit({ workIds, lineageRootIds });
+      }
+    : undefined;
   const page = async (
     scope: Parameters<AheadRegistrationRecovery["registerUnregistered"]>[0],
     after: string | undefined,
@@ -285,7 +324,7 @@ export function createDrizzleDocumentDerivationStore(
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);
         await lockDocumentMutation(tx, cut.documentId);
-        return certifyDocumentDerivation(tx, cut, outputs, at);
+        return certifyDocumentDerivation(tx, cut, outputs, at, pendingMoved);
       });
     },
     async stale(page) {

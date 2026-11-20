@@ -30,6 +30,8 @@ export interface ReviewChange extends ChangeAttribution {
   attributed: boolean;
   /** The branch's move or delete of the document: a row of its own, with no text frame. */
   tree?: TreeLine;
+  /** The change is the item itself (a creation, a picture, a move or a delete), not some of its text. */
+  whole?: true;
 }
 
 export function reviewChanges(
@@ -65,6 +67,7 @@ export function itemChange(
     anchor: 0,
     spans: [],
     frame: null,
+    whole: true,
   };
 }
 

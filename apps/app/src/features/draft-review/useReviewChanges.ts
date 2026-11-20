@@ -11,6 +11,8 @@
  * only the open review's focus, stepping and command behavior.
  */
 import { useCallback, useMemo } from "react";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
+import { useHostEditor } from "@/features/suggestion-review/host-editor";
 
 import type { DraftChangesView } from "./draft-changes";
 import { type ReviewChange, resolveFocusedChange, targetOfChanges } from "./review-model";
@@ -80,11 +82,18 @@ export function useReviewChanges(
     [changes, focus, focused],
   );
 
+  const editor = useHostEditor();
   const run = useCallback(
     async (change: ReviewChange, mode: "apply" | "discard", instant: boolean) => {
       // Apply draft and Discard draft handle what has no per-change commands.
       if (!review) return;
       settleFocus(change, instant);
+      // A suggestion is resolved in the tab, as one edit of the writer's: Ctrl+Z takes it back.
+      if (suggestionModeEnabled && !change.tree && !change.whole) {
+        if (mode === "apply") editor?.commands.acceptSuggestions({ id: change.id });
+        else editor?.commands.rejectSuggestions({ id: change.id });
+        return;
+      }
       const outcome = await controller.commandChange(mode, review, targetOfChanges([change]));
       // The change is back (or was updated): the writer returns to it, where its
       // reason is shown. Only in the review the command was sent from: the
@@ -96,7 +105,7 @@ export function useReviewChanges(
         controller.focusReviewChange(review, change, { scroll: true });
       }
     },
-    [controller.commandChange, controller.focusReviewChange, review, settleFocus],
+    [controller.commandChange, controller.focusReviewChange, review, settleFocus, editor],
   );
   const apply = useCallback((change: ReviewChange) => run(change, "apply", false), [run]);
   const discard = useCallback((change: ReviewChange) => run(change, "discard", true), [run]);

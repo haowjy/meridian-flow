@@ -19,9 +19,26 @@ export function pendingTurns(doc: Node, authors: Authors): Set<string> {
   return pendingBy(doc, (attrs) => authors.get(attrs.id)?.turn ?? null);
 }
 
-/** The Works with suggestions still in `doc`: the views that read it differently from Live. */
-export function pendingWorks(doc: Node): Set<string> {
-  return pendingBy(doc, (attrs) => attrs.work);
+/** What one Work has pending in a document: its changes, the chats that wrote them, and whether
+ * a change is no chat's (the writer's own typing). */
+export type WorkPending = { changes: number; chats: string[]; writer: boolean };
+
+/**
+ * The Works with suggestions still in `doc`, each with what it has pending: the views that read it
+ * differently from Live, counted as their review lists them (`list`).
+ */
+export function pendingChanges(doc: Node, authors: Authors): Record<string, WorkPending> {
+  const out: Record<string, WorkPending> = {};
+  for (const work of [...pendingBy(doc, (attrs) => attrs.work)].sort()) {
+    const changes = list(doc, { work }, authors);
+    const chats = new Set(changes.flatMap((change) => (change.chat ? [change.chat] : [])));
+    out[work] = {
+      changes: changes.length,
+      chats: [...chats].sort(),
+      writer: changes.some((change) => !change.chat),
+    };
+  }
+  return out;
 }
 
 function pendingBy(doc: Node, key: (attrs: SuggestionAttrs) => string | null): Set<string> {
@@ -185,6 +202,8 @@ export function list(doc: Node, view: View, authors: Authors): Change[] {
   const work = view.work;
   if (work === null) return [];
   const byId = new Map<string, Change>();
+  /** Where each change's last listed piece on a side ended. */
+  const ends = new Map<string, { inserted: number; deleted: number }>();
   const note = (attrs: SuggestionAttrs, from: number, to: number, add: Partial<Change>) => {
     const change = byId.get(attrs.id) ?? {
       ...(changeAuthor(attrs, authors) ?? { ...attrs, chat: null, turn: null, by: null }),
@@ -194,8 +213,16 @@ export function list(doc: Node, view: View, authors: Authors): Change[] {
       from,
       to,
     };
-    change.inserted += add.inserted ?? "";
-    change.deleted += add.deleted ?? "";
+    const end = ends.get(attrs.id) ?? { inserted: from, deleted: from };
+    for (const side of ["inserted", "deleted"] as const) {
+      const piece = add[side];
+      if (!piece) continue;
+      // Pieces with Live text between them read as separate words, not one run.
+      const gap = change[side] && from > end[side] ? " " : "";
+      change[side] += gap + piece;
+      end[side] = to;
+    }
+    ends.set(attrs.id, end);
     change.attrs = add.attrs ?? change.attrs;
     change.from = Math.min(change.from, from);
     change.to = Math.max(change.to, to);

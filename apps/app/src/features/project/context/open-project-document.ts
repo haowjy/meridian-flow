@@ -77,6 +77,8 @@ export type ProjectDocumentLiveOpenRequest = {
   documentId: DocumentId;
   /** Also admits a document in Trash: its Trash view shows the text the session holds. */
   trashed?: true;
+  /** Suggestion mode: a document only a Work holds, which the project's list doesn't show yet. */
+  workOnly?: true;
   signal?: AbortSignal;
 };
 
@@ -121,6 +123,7 @@ export class ProjectDocumentLiveOpener {
         break;
       case "not-in-list":
       case "waiting":
+        if (input.workOnly) break;
         return { kind: "unavailable", reason: "not-visible" };
       case "in-tree":
         if (standing.node.kind !== "document") return { kind: "not-editable" };

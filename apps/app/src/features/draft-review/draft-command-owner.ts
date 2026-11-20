@@ -40,6 +40,7 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { readRoomOnce } from "@/core/editor/room-read-once";
 import {
   type ApplyClickOutcome,
@@ -254,6 +255,18 @@ export class DraftCommandOwner {
    */
   state(itemKey: string): DraftCommandState {
     return this.records.get(this.generation(itemKey)) ?? EMPTY;
+  }
+  /**
+   * Items a command outside this owner's queues has in flight (suggestion mode's press): hidden,
+   * so their rows and review leave as a queued Apply's do, until the returned release.
+   */
+  hold(itemKeys: readonly string[], applying: boolean): () => void {
+    const held = itemKeys.map((itemKey) => [itemKey, this.generation(itemKey)] as const);
+    for (const [itemKey, id] of held) this.setState(itemKey, { hidden: true, applying }, id);
+    return () => {
+      for (const [itemKey, id] of held)
+        this.setState(itemKey, { hidden: false, applying: false }, id);
+    };
   }
   /** The draft the item's state currently follows; the key itself before any draft is known. */
   generation(itemKey: string): string {
@@ -479,6 +492,9 @@ export class DraftCommandOwner {
    * generation known when asked: a draft bound meanwhile is a newer one, and stays open.
    */
   askEnd(ref: DraftRef): Promise<void> {
+    // A suggestion item is its document's marks, not a room: it leaves the list when they go and
+    // comes back with the next, so nothing ends it and there is nothing to ask.
+    if (suggestionModeEnabled) return Promise.resolve();
     return this.resolveEnd(ref, this.generation(ref.itemKey));
   }
 

@@ -40,11 +40,13 @@ Binds the document session, chooses live or review presentation and mounts the t
 
 Review of a draft: Changes, Apply, Discard, Undo.
 
-Review is derived from the draft's text, not from stored change records.
+Review is derived from the draft's text, not from stored change records. In suggestion mode the
+same surfaces read the Work's suggestions in the Live editor and press Apply or Discard on the
+server (`suggestion-review`).
 
 - Kind: feature
-- Paths: `apps/app/src/features/draft-review`
-- Docs: [AGENTS](../../apps/app/src/features/draft-review/AGENTS.md)
+- Paths: `apps/app/src/features/draft-review`, `apps/app/src/features/suggestion-review`
+- Docs: [AGENTS](../../apps/app/src/features/draft-review/AGENTS.md), [suggestion review](../../apps/app/src/features/suggestion-review/.context/CONTEXT.md)
 - Machines: [draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md)
 
 ## links

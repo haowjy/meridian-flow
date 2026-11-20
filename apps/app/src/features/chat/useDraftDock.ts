@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
@@ -99,17 +100,20 @@ export function useDraftDock({
         })),
     [candidates, projectId, ownerKey],
   );
-  // The open review keeps its own refresh; the strip refreshes the rest.
+  // The open review keeps its own refresh; the strip refreshes the rest. Suggestion mode has no
+  // draft rooms: every row is its whole document, pressed (`usePressCommands`).
   const roomed = useMemo(
     () =>
-      targets.filter(
-        (target, index) =>
-          index < ROOM_ROWS ||
-          isSharedDraft(
-            candidates.find((row) => row.draft.itemKey === target.itemKey)?.draft,
-            threadId,
+      suggestionModeEnabled
+        ? []
+        : targets.filter(
+            (target, index) =>
+              index < ROOM_ROWS ||
+              isSharedDraft(
+                candidates.find((row) => row.draft.itemKey === target.itemKey)?.draft,
+                threadId,
+              ),
           ),
-      ),
     [targets, candidates, threadId],
   );
   const reads = useRoomReviews(roomed);
@@ -120,8 +124,11 @@ export function useDraftDock({
       row.draft.hasDraft && row.draft.tree?.deleted !== true && roomIndex(row.draft.itemKey) < 0;
     if (isWhole) {
       const file = wholeDockFile(row, reviewFileTargetName(row, untitled));
-      return controller.owner.state(row.draft.itemKey).discarding
-        ? { ...file, count: 0, actionable: [] }
+      // A press takes the whole document: one another chat drafted too is reviewed in the
+      // Changes list, not pressed from here as this chat's.
+      const shared = suggestionModeEnabled && isSharedDraft(row.draft, threadId);
+      return controller.owner.state(row.draft.itemKey).discarding || shared
+        ? { ...file, count: 0, actionable: [], alone: false }
         : file;
     }
     const read = reads[roomIndex(row.draft.itemKey)];

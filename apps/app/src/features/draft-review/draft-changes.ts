@@ -31,7 +31,7 @@ export type DraftChangesView = DraftChangesData & {
 
 /** A ready new document is the file itself, not a header followed by a second named row. */
 export function isWholeDocumentChange(view: Pick<DraftChangesData, "status" | "items">): boolean {
-  return view.status === "ready" && view.items.length === 1 && view.items[0]?.change.frame === null;
+  return view.status === "ready" && view.items.length === 1 && view.items[0]?.change.whole === true;
 }
 
 /** Subscribe to this item's record, not another draft's command activity. */

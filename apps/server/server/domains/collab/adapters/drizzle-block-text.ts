@@ -86,7 +86,7 @@ export function createDrizzleBlockText(db: Database): BlockText {
             current(ids),
             // A Work's reader sees its own suggestions, which the stored blocks leave out.
             draftOwner
-              ? sql`not (${draftOwnerKey(draftOwner)} = any(${documentBlockRooms.pendingWorks}))`
+              ? sql`not (${documentBlockRooms.pendingChanges} ? ${draftOwnerKey(draftOwner)})`
               : undefined,
             // A draft reader sees the draft, which the live room doesn't hold.
             draftOwner

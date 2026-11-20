@@ -293,10 +293,14 @@ export const documentBlockRooms = pgTable(
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
     /**
-     * Works (`draftOwnerKey`) with suggestions in the cut. The blocks hold Live's text, so a
+     * By Work (`draftOwnerKey`), what it has pending in the cut: its review's change count, the
+     * chats that wrote them, and whether one is no chat's. The blocks hold Live's text, so a
      * reader in one of these Works' views reads the document itself.
      */
-    pendingWorks: text("pending_works").array().notNull().default(sql`'{}'::text[]`),
+    pendingChanges: jsonb("pending_changes")
+      .$type<Record<string, { changes: number; chats: string[]; writer: boolean }>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
     cutGeneration: bigint("cut_generation", { mode: "bigint" }).notNull(),
@@ -304,7 +308,11 @@ export const documentBlockRooms = pgTable(
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),
   },
-  (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
+  (table) => [
+    uniqueIndex("document_block_rooms_document").on(table.documentId),
+    // A Work's documents with suggestions: `pending_changes ? <owner key>`.
+    index("document_block_rooms_pending_changes").using("gin", table.pendingChanges),
+  ],
 );
 
 /** One row per top-level block of a room, keyed by its Yjs item id. */

@@ -1139,12 +1139,10 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
-#: src/features/editor/SuggestionBand.tsx
 msgid "Apply"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
-#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply all"
 msgstr ""
@@ -1284,16 +1282,16 @@ msgid "Block alignment"
 msgstr ""
 
 #: src/features/editor/SuggestionBand.tsx
-msgid "Block format"
-msgstr ""
+#~ msgid "Block format"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "blockquote"
 msgstr ""
 
 #: src/features/editor/SuggestionBand.tsx
-msgid "Body text"
-msgstr ""
+#~ msgid "Body text"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2004,6 +2002,7 @@ msgid "Couldn't add the connection."
 msgstr ""
 
 #: src/features/draft-review/draft-command-owner.ts
+#: src/features/suggestion-review/usePressCommands.ts
 msgid "Couldn't apply"
 msgstr ""
 
@@ -2081,6 +2080,7 @@ msgid "Couldn't delete that Work"
 msgstr ""
 
 #: src/features/draft-review/draft-command-owner.ts
+#: src/features/suggestion-review/usePressCommands.ts
 msgid "Couldn't discard"
 msgstr ""
 
@@ -2437,6 +2437,7 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/apply-history.ts
 #: src/features/draft-review/CommandNotice.tsx
+#: src/features/suggestion-review/usePressCommands.ts
 msgid "Couldn't undo"
 msgstr ""
 
@@ -2728,7 +2729,6 @@ msgid "Didn't run: {label}"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
-#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
@@ -2851,8 +2851,8 @@ msgstr ""
 
 #. placeholder {0}: changes.length
 #: src/features/editor/SuggestionBand.tsx
-msgid "Draft ({0})"
-msgstr ""
+#~ msgid "Draft ({0})"
+#~ msgstr ""
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
@@ -3192,6 +3192,10 @@ msgstr ""
 msgid "Fork from here"
 msgstr ""
 
+#: src/features/suggestion-review/useSuggestionChanges.ts
+msgid "Formatting"
+msgstr ""
+
 #: src/features/chat/subagent/DeliveryEventRows.tsx
 msgid "From {senderName}: "
 msgstr "来自 {senderName}："
@@ -3270,8 +3274,8 @@ msgstr ""
 
 #. placeholder {0}: String(attrs.level)
 #: src/features/editor/SuggestionBand.tsx
-msgid "Heading {0}"
-msgstr ""
+#~ msgid "Heading {0}"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading {level}"
@@ -3599,7 +3603,6 @@ msgid "litrpg"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
-#: src/features/editor/SuggestionBand.tsx
 msgid "Live"
 msgstr ""
 
@@ -4924,8 +4927,8 @@ msgid "Refused"
 msgstr ""
 
 #: src/features/editor/SuggestionBand.tsx
-msgid "Reject"
-msgstr ""
+#~ msgid "Reject"
+#~ msgstr ""
 
 #: src/features/editor/SuggestionBand.tsx
 #~ msgid "Reject all"
@@ -6482,7 +6485,6 @@ msgstr ""
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/connections/ConnectionRow.tsx
 #: src/features/draft-review/CommandNotice.tsx
-#: src/features/editor/SuggestionBand.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 #: src/features/project/context/use-tree-notice-words.tsx
 #: src/features/project/shell/sidebar/ChatsBody.tsx

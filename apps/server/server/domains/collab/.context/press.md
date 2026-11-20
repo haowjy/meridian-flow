@@ -13,7 +13,8 @@ has no branch row.
 
 - **Selection.** `items` expands folders to what is under them in the Work's view. The tree half
   takes the Work's pending records on those nodes; the text half takes every document among
-  them, since resolving a document with no suggestion changes nothing. `"all"` takes every
+  them, since resolving a document with no suggestion changes nothing, except an item sent with
+  `half: "tree"` (a review's tree line), whose text stays pending. `"all"` takes every
   pending record, and for text the documents the pending index lists for the Work plus the ones
   in `seen`.
 - **The branch is read under the owner's lock**, where it is made and closed: a branch read
@@ -45,8 +46,10 @@ purged with discards after 30 days.
 
 ## The pending index
 
-`document_block_rooms.pending_works` names the Works with suggestions in each document, written
-by the document derivation. The press reads it only for a whole Work, scoped to the Work's
+`document_block_rooms.pending_changes` holds, for each Work with suggestions in a document, its
+review's change count, the chats that wrote them and whether one is no chat's, written by the
+document derivation (`pendingChanges` in `packages/suggestions`). The Work's counts, the Changes
+list's rows and export's pending count read it. The press reads it only for a whole Work, scoped to the Work's
 project and account documents. It lags the derivation's debounce (2–10 s for room
 typing), so it never decides what a named press touches. A whole-Work press can miss a
 document typed into in another tab seconds before; the pressing tab's open documents come in
@@ -56,8 +59,10 @@ through `seen`.
 
 A document that exists only in a Work is the tree's drafted create; its text is plain in Live,
 not suggestions (`model-edit-write.ts`, `existsOnlyInWork`). Applying the create makes it
-visible; discarding it hides it. The browser still opens such a document through the old draft
-review route; moving that onto Live is the review UI's work.
+visible; discarding it hides it. The browser opens it in its Live room as plain text: the
+project's list does not have it, so the opener admits it as the Work's (`workOnly`) and the Yjs
+gateway admits the room through `documentSync.workOnlyOwners`. The tab follows the Work's row, so
+a Discard closes the room and its Undo opens it again.
 
 ## Not covered yet
 

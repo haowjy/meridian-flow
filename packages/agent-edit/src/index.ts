@@ -27,8 +27,8 @@ export {
   type PressRecord,
   pressStored,
   resolveStored,
+  storedPendingChanges,
   storedPendingTurns,
-  storedPendingWorks,
   suggestionAuthors,
   undoPressStored,
 } from "./model/stored-suggestions.js";

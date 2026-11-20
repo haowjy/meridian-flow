@@ -2,10 +2,11 @@
 
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { branchTreeNodes, documentDrafts } from "@meridian/database/schema";
+import { branches as branchRows, branchTreeNodes, documentDrafts } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
+import { ownerOfColumns } from "../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -279,6 +280,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
           ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
         }
       : undefined,
+    deps.workProjectionMutation,
   );
   const derivations = createDocumentDerivationService({
     store: derivationStore,
@@ -694,6 +696,25 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
+      async workOnlyOwners(documentId) {
+        if (!runtime.workView) return [];
+        const rows = await currentDrizzleDb(deps.db)
+          .select({
+            projectId: branchRows.projectId,
+            workId: branchRows.originWorkId,
+            rootThreadId: branchRows.originRootThreadId,
+          })
+          .from(branchTreeNodes)
+          .innerJoin(branchRows, eq(branchRows.id, branchTreeNodes.branchId))
+          .where(
+            and(
+              eq(branchTreeNodes.id, documentId),
+              eq(branchTreeNodes.existsOnlyInDraft, true),
+              eq(branchRows.status, "active"),
+            ),
+          );
+        return rows.flatMap((row) => ownerOfColumns(row) ?? []);
+      },
       async roomRemoval(room) {
         const documentId =
           "documentId" in room
