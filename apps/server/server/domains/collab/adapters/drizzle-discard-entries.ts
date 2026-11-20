@@ -1,18 +1,18 @@
 /**
  * The document half of Trash's Discard entries (design section 5): every Discard of whole drafts
- * the day-30 purge hasn't removed, with the drafts it took text from that no Restore has ended. A
- * Discard of single changes has no entry: its Undo is the notice's or Ctrl+Z, and it is final
- * otherwise. A Restore ends an
- * entry by setting `ended_by` on the command's effects. A Work in Trash keeps its entries, as an
+ * the day-30 purge hasn't removed, with the drafts it took text from whose text no Restore has
+ * brought back (its `discard` edit's parts no Undo took). A Discard of single changes has no entry:
+ * its Undo is the notice's or Ctrl+Z, and it is final otherwise. A Work in Trash keeps its entries, as an
  * archived Work does (a Restore answers `returned` until the Work is restored); a purged Work's
  * branches (and so its entries) are gone.
  */
 import type { BranchId, CommandId, ProjectId } from "@meridian/contracts";
 import type { DiscardEntry } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import { branches, commands, discardCommandEffects } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { branches, commands } from "@meridian/database/schema";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { untakenPartsOf } from "./drizzle-command-edits.js";
 
 export function createDrizzleDiscardEntries(db: Database) {
   return {
@@ -49,22 +49,22 @@ export function createDrizzleDiscardEntries(db: Database) {
             .where(inArray(branches.id, [...new Set(ran.map((command) => command.branchId))]))
         ).map((row) => [row.id, row.workId]),
       );
-      const drafts = await tx
-        .select({
-          commandId: discardCommandEffects.commandId,
-          draftId: discardCommandEffects.draftId,
-          documentId: discardCommandEffects.documentId,
-        })
-        .from(discardCommandEffects)
-        .where(
-          and(
-            inArray(
-              discardCommandEffects.commandId,
-              ran.map((command) => command.id),
-            ),
-            isNull(discardCommandEffects.endedBy),
-          ),
-        );
+      const drafts = (
+        await untakenPartsOf(
+          tx,
+          ran.map((command) => command.id),
+        )
+      ).flatMap((part) =>
+        part.origin.kind === "pending"
+          ? [
+              {
+                commandId: part.commandId,
+                draftId: part.origin.draftId,
+                documentId: part.documentId,
+              },
+            ]
+          : [],
+      );
       return ran.flatMap((command): DiscardEntry[] =>
         owners.has(command.branchId)
           ? [

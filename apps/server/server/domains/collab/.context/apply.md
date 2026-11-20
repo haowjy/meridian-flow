@@ -8,9 +8,9 @@ room: snapshot, `baseViewDelta`, `groupIds`; the server refuses `unsynced` when 
 lacks the snapshot, and `malformed` for a group the cut's projection doesn't have. A whole cut
 (`{draftId, whole: true}`) is what a tab with no room open sends (Changes rows, folders, Apply
 all): `compileClick` cuts at the replica `loadBase` returned, with an empty `baseViewDelta`, and
-takes every group of that projection, or, for a Redo (`redoOf` on the Apply route has the server read what the Un-Apply took from the effect rows it marked, `redoItems`), only the groups whose AI changes an Un-Applied effect all `carried` (`carriedBy`: membership; a group that a neighbour the Un-Apply didn't take has merged into is left in Changes, where Apply still offers it, and the Redo says nothing) or, for a change no AI edit made, has an effect's group id. A whole cut with no group
-compiles to an empty click; the adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and
-the Un-Apply records are the same for both.
+takes every group of that projection. A whole cut with no group compiles to an empty click; the
+adapter skips its text and names its item in the answer's `skipped`. Receipts, the compile and the
+record are the same for both. A Redo compiles nothing: it is the Undo of its Un-Apply (below).
 
 The projection job (`domain/draft-projection.ts`) stores `text_changes`, the review groups of
 the draft against its base, with `has_effect`; the owner draft list carries it as the row's
@@ -30,16 +30,16 @@ uses `restoreGrant` alone: the branch view has no draft of it to grant. A delete
 commits after the route resolved the item doesn't refuse the live grant (`command` ignores it):
 the command reads it under its locks and brings the document back.
 
-Editor Undo sends an `unapply` command for the original Apply command (`POST .../branches/:branchId/unapply`: the command's own records name its documents, the URL names none). This path
-merges the effect's recorded `live_delta` back out of Live (the same `stands` and `takeOut` the card's
-Undo uses, `reversal.md`), not through the model/turn reversal planner, and folds only the
-reversed groups out of the current review base.
+Editor Undo sends an `unapply` command for the original Apply command (`POST .../branches/:branchId/unapply`: the command's own records name its documents, the URL names none). It is
+`undoCommandText` (`adapters/drizzle-command-edits.ts`) over the Apply's `apply` edit: each part
+comes out of Live where it still stands (the `changeStateIn` and `takeOut` the card's Undo uses,
+`reversal.md`) and out of the draft's review base, so the change is pending again.
 
 The groups of one click are a chain: group *k* is compiled and merged against the base with groups
 1..*k*−1 already applied, one live update each. Merging each group against the click's base would
 see its sibling groups as concurrent changes, and two groups that change one structure (one removes
-a paragraph break, the next adds one nearby) would undo each other. Un-Apply inverts the latest
-group first, because a group's update builds on the earlier groups' items; an earlier group stays
+a paragraph break, the next adds one nearby) would undo each other. Undo takes the latest
+part first, because a group's update builds on the earlier groups' items; an earlier group stays
 when a later one was edited in live.
 
 Every Apply, Un-Apply, Discard and chat-card Undo (`reverse_turn`, `reversal.md`) is one `commands` row (`shared/commands/`, which every kind of request shares; `adapters/drizzle-document-commands.ts` is the document side).
@@ -63,19 +63,19 @@ While it runs, a slow Apply holds two pooled connections: the first request's, a
 parked for up to 5 s. The pool is 10 per instance, so about five slow Apply alls at once would
 starve every other request.
 
-Each group's effect row also records what the Apply did to the text it merged: `carried`, the
-changes of AI edits (`[partId, index]` of a `document_edit_parts` row and of the change in its
-`delta`) that sat in the applied change, read on the draft as the click found it
-(`compileClick`, `draft-changes.ts` `carriedBy`); and `live_delta`, the blocks of the manuscript
-the group changed, before and after (null when Live already held the text). `carried` is why the
-card reads "Applied" for a change whatever the text does later; `live_delta` is what Un-Apply takes
-out of Live. No Yjs item id is recorded: the draft's Apply record keeps only the command and group
-ids the browser's queue reads.
-
-The command stores one full starting base plus per-group deltas, not a full
-before/after document for every group. A later Un-Apply rebuilds the complete delta
-chain before selecting effects that remain active, so an earlier partial reversal
-can't remove the starting point or an intermediate delta.
+**One record.** An Apply, a Discard and the Undo of either are rows of the edit record an AI edit
+writes (`document_edits`, one per document, and its `document_edit_parts`), with kinds `apply`,
+`discard` and `undo`. An Apply's part is one per group, origin `{kind:"live", seq, draftId}`, with
+the group's manuscript `delta` (before and after) and `carried`: the changes of AI edits
+(`[partId, index]`) that sat in the group, read on the draft as the click found it (`compileClick`,
+`draft-changes.ts` `carriedBy`). A group whose Live write was empty records no part. A Discard's part
+has origin `{kind:"pending", draftId}`, the update it appended, and its delta. An Un-Apply, a Restore
+and a Redo are each an `undo` edit whose `targets` name the parts they took; an undo part's
+`carried` is the union of what its taken parts carried, so a Redo, the undo of an Un-Apply, carries
+again. "Applied" is `carried` on a live part of that draft no undo took (`appliesInForce`): the card
+reads it whatever the text does later. Nothing is written into the draft's room but its review
+base; the browser's queue settles on the stored answer, which carries `at`, the draft's server
+clock once the base write is in.
 
 `apply.measured` emits compile and Work-boundary times by command id. The draft
 append's lock-to-root-commit `holdMs` joins them through an async diagnostic scope. Apply
@@ -164,33 +164,31 @@ or settled, as above.
 The command records its whole effect. Tree half: one `apply_command_trees` row per list, with the
 list's state vector right after, the created documents' journal heads once the text is in, the
 live restore records the Apply made (a "Restore and apply" brings a document out of Trash before
-its copies), and the nodes it touched. Text half: `apply_command_effects`, one row per group per
-document. Un-Apply reverses all of it, across every document: `undoApply` in each list (the copies
+its copies), and the nodes it touched. Text half: the `apply` edit, one per document. Un-Apply reverses all of it, across every document: `undoApply` in each list (the copies
 and the restores leave live), then each document's text groups. It runs the tree half before any
 write. A change it cannot take back (a tree fact that changed since, a created document with text
 past its heads, a purged Work's records, a text group whose words hold later writing) stays as it
 stands, and the answer names only what it did take back: `textUndone` and `treeUndone`. Something
 an earlier press or another command took back is in neither, and so is what stayed; a press that
 took nothing is still `unapplied` with both empty. Nothing records a skip: each press judges the
-text as it stands. The Live half is a merge: the groups come out latest first, each when its
-`live_delta` still stands in Live (`changeStateIn`, the rule a draft Undo uses) and as `takeOut`, so
-a word the writer typed over an applied change is never removed. A group whose `live_delta` is null
-reverses with nothing written to Live. When every group stays and the tree
+text as it stands. The Live half is a merge: the parts come out latest first, each change when it
+still stands in Live (`changeStateIn`, the rule a draft Undo uses) and as `takeOut`, so a word the
+writer typed over an applied change is never removed. When every group stays and the tree
 half comes back, the answer is still `unapplied`, with no reversed groups. Lock order:
 the lists' keys, then the keys of the documents the Apply wrote text in or created.
 
-**Un-Apply is read by the Apply, not by a branch.** Its effects and tree rows are found by the
+**Un-Apply is read by the Apply, not by a branch.** Its edits and tree rows are found by the
 Apply's command id and the account; the URL's branch only names the Work. A Restore moves a draft
-to another branch, and that changes nothing an Un-Apply finds. A text effect whose draft exists is
-reversed in the draft's base (`reverseBaseHalf`, `reverse-base-half.ts`): the group's text is merged
-out of the base and its Apply records come out of the draft. A purged draft has no draft half. A
+to another branch, and that changes nothing an Un-Apply finds. A part whose draft exists is
+taken out of the draft's base too, by an unconditional `takeOut` merge. A purged draft has no draft
+half. A
 closed branch alone does not stop the tree half. An Apply of a drafted delete leaves the Work's
 drafts of that document open, so an Un-Apply has no draft to reopen, swap or replay.
 
 Every route that writes documents on behalf of a command takes `command` grants before it runs:
 Apply the draft's and the live document's on each item (a restore grant for one live has deleted),
 Un-Apply the live document's, and Discard and its Restore the draft's, on each document the
-command's own record names (`commandDocuments`; for a Discard, its effect rows). `command` ignores lifecycle (a closed Work or chat,
+command's own record names (`commandDocuments`, read from its edits). `command` ignores lifecycle (a closed Work or chat,
 a deleted document) and keeps the person and agent terms, so the route never answers for a closed
 owner; the owners' locks do, in the command's transaction (below). A folder has no file of its own: the project's
 owner is its only writer, which the branch's identity step proved.
@@ -201,8 +199,8 @@ owner is its only writer, which the branch's identity step proved.
 appends to the draft's own text the update that makes the draft read as the base for those
 changes (`discardChanges`, `content-merge/discard.ts`), exactly as a model's edit appends, so the
 draft stays open and its history, receipts and room are untouched; the writer's later typing is
-never rewritten. One `discard_command_effects` row per document keeps the delta (draft side before,
-base side after, `StoredDelta`) and is what Restore reads; the tree half settles the Work's pending
+never rewritten. One `discard` edit per document records the appended update and its delta, and is
+what Restore reads; the tree half settles the Work's pending
 records `discarded` with the command's id, as before. A change the writer has since written over
 is not taken back by Restore, and nothing says so. `closed` in the answer names the items that
 left Changes whole (`text: "all"`, or a tree-only item with no text held); the draft row is never
@@ -213,10 +211,10 @@ draft. A Work purge deletes its drafts' rows (`disposeBranchLocked`), and their 
 commit.
 
 `POST .../branches/:branchId/undo-discard` (kind `undo_discard`) restores a Discard, from the notice
-right after it or from Trash; `discardCommandId` may also name an earlier restore. Each effect row's
-delta is read backwards (`restoreChanges`, `standsIn`): the changes that still stand on the draft's
-current text come back as one more appended update, the rest are gone silently, and the effect row is
-marked `ended_by` when everything (or nothing) came back so it leaves Trash. The tree records come
+right after it or from Trash; `discardCommandId` may also name an earlier restore. It is
+`undoCommandText` over the Discard's edits: each change still taken out of the draft's text comes
+back as one more appended `undo` edit, the rest are gone silently. A part counts as taken only when
+it brought something back, so a partial Restore leaves the rest in Trash. The tree records come
 back as pending copies (`restoreDiscard`) on the Work's current branch (`ensureActiveForWrite`). Restore never refuses and
 reads no clock; one that brings nothing back is `done` with `restored: 0`. A command of another kind
 or one the day-30 purge took finds nothing. A purged Work's branch is a 404 at the route, and a branch
@@ -225,7 +223,7 @@ chat in Trash) bounces: stored `done`, nothing changed, `restored: 0`,
 `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
 The Work lock throws and `closedOwnerBounce` (`adapters/closed-owner-bounce.ts`) turns the throw into that
 result in the command's mapper; Discard bounces the same way. Apply and
-Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries: one per Discard of whole drafts (`whole`) with an effect not yet ended.
+Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries: one per Discard of whole drafts (`whole`) with a `discard` part no undo took (`untakenPartsOf`).
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
 the copies act on, then the draft rows.
 
@@ -239,7 +237,7 @@ stayed and why (the answer).
 *Estimate, before the locks* (`withTreeOwners`, `shared/tree-owners.ts`). Apply: the `sources` of
 each pending record of the branch in the Work's view, and where live has each node those records and
 the items name. Un-Apply: the `sources` of each copy the Apply made (`madeBy`), where live has each
-of those nodes, and where each document with an applied text effect stands. It is a guess and can
+of those nodes, and where each document with an `apply` edit stands. It is a guess and can
 miss without any race: an Apply that moved six notes out of six folders, whose folders live then
 moved into six other sources, returns each note to a source the estimate never saw. Its owners are
 locked with the branch's in the same `mutate` call (Works sorted by id, then lineages, before lists
@@ -272,23 +270,22 @@ whose folder's create is in archived notes says so and not `needs`. Apply answer
 `{ landed: false, settled: [returned] }`, the rest landing. The restore Apply makes so a document's
 text can land (`restoredByApply`) is made only for a document whose source is open.
 
-**Un-Apply's answer is what it took back.** `UnapplyClickResult` has `textUndone` (`{ node, groupIds }`
-per document: one change made in two documents has one group id, and a press can take it back in
-one of them and leave it in the other, so a Redo replays `(document, group)`, never the id alone)
-and `treeUndone` (the nodes with a tree fact taken back). A closed owner's notes and a closed
+**Un-Apply's answer is what it took back.** `UnapplyClickResult` has `textUndone` (`{ node, at }`
+per document whose text came out, `at` the draft's clock once the base write is in) and `treeUndone` (the nodes with a tree fact taken back). A closed owner's notes and a closed
 source's text stay as they stand and are in neither; the writer reads what stayed from the review,
 not from this answer. In `drizzle-apply-click.ts` `unapply`, under the locks:
 
 1. The tree half runs first (`undoApply` with the judge): a record whose effect would change a
    closed source stays.
-2. Then, per document, the text effects already taken back are dropped, and a document with none
+2. Then, per document, the parts an undo already took are dropped, and a document with none
    left is skipped. For the rest, where the document stands *after* the tree half is read, and a
    closed source's text stays. Otherwise the inverse runs as before.
 
-A Redo names what an Un-Apply took, from the effect rows it marked (`unapplied_by`): an AI change
-by `carried`, a change only the writer made by its `place` (its hash and its first block's id), so
-an equal change elsewhere never takes its name. A Redo pressed before its Un-Apply answered waits
-for the answer on the client.
+A Redo is an Apply command with `redoOf` naming the Un-Apply: its tree half replays what the
+Un-Apply took (`redoItems`), and its text half is `undoCommandText` over the Un-Apply's `undo`
+edit, which puts each taken change back where the Un-Apply's own removal still stands. It does not
+ask the closed-owner judge for its text half (a gap). A Redo pressed before its Un-Apply answered
+waits for the answer on the client.
 
 Restore and Discard write no live file, so they judge the branch's owner only. A file in the project
 (no Work, no lineage) has no closed owner.
@@ -301,8 +298,8 @@ bring back the miss of move destinations and folders.
 **The day-30 purge** (`recovery.purgeDiscards`, `adapters/drizzle-discard-purge.ts`, run hourly
 beside `purgeWorks` and `purgeDocuments`) is the only reader of the clock for Trash's command
 entries. For each due command row of the three entry kinds it takes the Work lock with no
-`requireActive` (an archived or deleted Work's entries expire too) and deletes the row, which
-cascades its effects. That is a prefix of Restore's order. A Restore takes the same Work
+`requireActive` (an archived or deleted Work's entries expire too) and deletes the row and the
+Discard's `discard` edits; the undo edits stay as history. That is a prefix of Restore's order. A Restore takes the same Work
 lock, so it sees all of an entry or none. The tree's `purgeUnviewed` purges a drafted create (and
 its draft and content) on its own clock, so the sweep leaves those drafts alone; the tree's
 `discarded` records stay. A row whose branch is gone (a Work purge cascades the branch and its

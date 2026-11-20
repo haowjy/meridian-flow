@@ -267,7 +267,7 @@ const ApplyItemsBody = z.strictObject({
   saw: SawBody.optional(),
 });
 /** An Apply as the route parsed it: the items, and the press's cut decoded. */
-type ParsedApply = Omit<ApplyItemsClick, "saw"> & { saw?: TreeCut };
+type ParsedApply = Omit<ApplyItemsClick, "saw"> & { saw?: TreeCut; redoOf?: CommandId };
 const UndoDiscardBody = z.strictObject({
   commandId: CommandIdSchema,
   discardCommandId: CommandIdSchema,
@@ -740,7 +740,11 @@ async function applyItems(
     callDraftReview(
       deps.documentSync.draftReview.apply({
         branchId: input.branchId,
-        request: { commandId: request.commandId, items: request.items },
+        request: {
+          commandId: request.commandId,
+          items: request.items,
+          ...(request.redoOf ? { redoOf: request.redoOf } : {}),
+        },
         ...(request.saw ? { saw: request.saw } : {}),
         envelope,
       }),
@@ -823,6 +827,7 @@ export async function handleApplyItemsRequest(
   const request: ParsedApply = redo.success
     ? {
         commandId: redo.data.commandId as CommandId,
+        redoOf: redo.data.redoOf as CommandId,
         items: await deps.documentSync.draftReview.commandDocuments.redoItems({
           unapplyCommandId: redo.data.redoOf as CommandId,
           accountId: input.userId,

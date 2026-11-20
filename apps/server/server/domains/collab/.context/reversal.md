@@ -22,10 +22,8 @@ step order, newest edit first, each judged on what the steps before it leave:
 - **A change proposed in an open draft** (a `content` step): taken out of the draft's text as an
   append under the draft's hold (`commitContentStep`), when it stands there and sits in a pending
   change.
-- **A change an Apply took** (a `manuscript` step on the drafted part): the Apply's effect row
-  names it in `carried`; it is taken out of Live when it still stands there, and out of the draft's
-  base and text where it stands there (`takeBack` in `domain/draft-changes.ts`), so nothing is left
-  pending. A change the writer typed inside does not stand, and the card has no Undo for it.
+- **A change an Apply took**: not the card's. The Apply's `apply` edit owns it, and its Un-Apply
+  (a Changes row's Undo, or Ctrl+Z) takes it back to pending; the card reads it "Applied".
 - **An edit the AI wrote straight into Live** (a `manuscript` step): taken out of Live when it
   stands.
 
@@ -46,17 +44,14 @@ stateDiagram-v2
   proposed --> altered: the writer or a later reply changes its words, or taking it out would add a pending change
   altered --> proposed: the words are back as the edit wrote them
   proposed --> out: the card's Undo, the model's undo or revert, or a Discard of it
-  applied --> out: the card's Undo
   live --> out: the card's Undo
   altered --> out: a Discard of it, or it is typed away
   out --> proposed: Restore of that Discard, or anything else that puts the words back
 ```
 
 No code steps this machine: each change's state is read on every read, so it cannot go stale.
-Applied is the effect row's `carried` while its `unapplied_by` is null; it is read from the
-database, not from the draft's text. The card's Undo of an applied change leaves the Apply in force
-(a Changes row's Undo and Ctrl+Z still take the rest of it back), and a row's Un-Apply of an Apply
-whose words the card already took out finds `live_delta` no longer standing and writes nothing.
+Applied is `carried` on an `apply` part no undo took (`appliesInForce`); it is read from the
+database, not from the draft's text.
 
 ## Commands and policy
 
@@ -74,7 +69,7 @@ reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or d
 in Trash) is planned per target, not refused: the reversal lands Live and open targets and plans nothing
 for a closed one, and the card says nothing about it (its Undo is absent while the owner is
 closed). A reversal whose every target is closed answers `expired`. An owner that closes (or a branch that is purged) between the capture and the commit takes nothing, as one closed at the capture does: a text step's closed draft is dropped before the locks, and a closure the locks find rolls the commit back to a result that took nothing, so the card answers `expired` and the model what a fresh plan would. A denial for another reason refuses the
-whole reversal (`permission_denied`), which the card shows as a failed press. A drafted step is decided under the locks too: an Apply that lands after the capture moves the changes it took into Live, and the card's press takes them from there (`landedApplies`).
+whole reversal (`permission_denied`), which the card shows as a failed press. A drafted step is decided under the locks too.
 A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
 `"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
 A Work's thread and Work locks come before every document lock (the order in `CONTEXT.md`), so the
@@ -149,7 +144,7 @@ only a change that stands, and leaves the others whole. The text decides, not wh
 A pull or Apply writes only the insertions inside a changed run that only gained characters
 (`retainShared` in `packages/agent-edit/src/resolver/lower-block.ts`; any other change writes the
 run whole), which is why typing inside the AI's words in a draft ends up beside the new words in
-the pulled text. Un-Apply reads the same way: it takes out the Apply's own `live_delta` when that
+the pulled text. Un-Apply reads the same way: it takes out each change of the Apply's parts that
 stands in Live.
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from the package's walk (`undoReports`) as the lists

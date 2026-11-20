@@ -2,11 +2,12 @@
  * The attribution classifier's named risks, one table: a writer-only change credited to a chat, a chat
  * named for text it did not write, a chat dropped from a change it did write, and an AI part read as
  * applied while a change still holds it. Every row asserts byline and membership; the server suite checks real status.
- * Each row also runs on a gc-on reload of the draft, which has only what the draft itself carries (the
- * restoration links Undo recorded into it), and must give the same answer.
+ * Each row also runs on a gc-on reload of the draft, which has only what the draft itself carries,
+ * and must give the same answer.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Conservative attribution when Apply evidence is unavailable
+ * - The draft keeps no record of what an Apply or an Undo moved: an applied part is the server's
+ *   `applied` flag (an Apply in force carried all of it); text an Undo brought back reads as new
  */
 import { buildDocumentSchema, withoutBlockIds } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
@@ -15,17 +16,14 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { tagBySide } from "../content-merge/merge.fixtures.js";
 import { contentMerge } from "../content-merge/merge.js";
-import { appendApplyRecord, readApplyRecord } from "./apply-record.js";
 import {
   type AttributionPart,
   type Author,
-  applyRecordOf,
   classifyChanges,
   type ItemRange,
 } from "./attribution.js";
 import { readBlocks } from "./fragments.js";
 import { diffBlocks } from "./hunks.js";
-import { recordRestorations } from "./restorations.js";
 import { projectReview } from "./review.js";
 import { writeBlocks } from "./writer.js";
 
@@ -94,19 +92,10 @@ function room(blocks: Array<string | PMNode>) {
       run(d);
       Y.applyUpdate(draft, Y.encodeStateAsUpdate(d));
     },
-    /** Apply: the base takes the draft's text and the server records what moved, as `branch-push` does. */
-    apply(record = true) {
-      if (record) {
-        const classified = classifyChanges(draft, projection(), provenance(), {
-          record: true,
-        });
-        draft.clientID = 1;
-        draft.transact(() =>
-          appendApplyRecord(draft, applyRecordOf(classified, classified.keys())),
-        );
-        draft.clientID = 9;
-      }
+    /** Apply of everything: the base takes the draft's text, and the server's record carries every part. */
+    apply() {
       base = readBlocks(frag(draft), schema);
+      for (const part of parts) part.applied = true;
     },
     /** The writer Discards (`run`) and Undoes it, `rounds` times: Yjs re-creates what the AI wrote. */
     discardUndo(run: (d: Y.Doc) => void, rounds = 1) {
@@ -117,7 +106,6 @@ function room(blocks: Array<string | PMNode>) {
             trackedOrigins: new Set([origin]),
             captureTimeout: 0,
           });
-          recordRestorations(history);
           d.transact(() => run(d), origin);
           history.undo();
           history.destroy();
@@ -138,13 +126,11 @@ function room(blocks: Array<string | PMNode>) {
     read(options: { budget?: number; slide?: number } = {}) {
       const view = projection();
       const read = (doc: Y.Doc) => {
-        const out = classifyChanges(doc, view, provenance(), { ...options, record: true });
+        const out = classifyChanges(doc, view, provenance(), options);
         const footprint = (result: ReturnType<typeof classifyChanges>) =>
-          [...result.values()].map(({ members, applied }) => ({ members, applied }));
+          [...result.values()].map(({ members }) => ({ members }));
         expect(
-          footprint(
-            classifyChanges(doc, view, provenance(), { budget: 0, slide: 0, record: true }),
-          ),
+          footprint(classifyChanges(doc, view, provenance(), { budget: 0, slide: 0 })),
         ).toEqual(footprint(out));
         const names = (a: Author) => (a.kind === "user" ? "user" : a.threadId);
         return [...out.values()].map((c) => ({ byline: c.byline.map(names), members: c.members }));
@@ -210,18 +196,7 @@ const ROWS: Row[] = [
     members: [0],
   },
   {
-    name: "the writer types beside an applied AI space: the writer's, and the part may still be in the change",
-    text: "alphabeta gamma delta",
-    run: (r) => {
-      r.ai((d) => textOf(d).insert(5, " "));
-      r.apply(false);
-      r.writer((d) => textOf(d).insert(6, "MAGIC "));
-    },
-    byline: ["user"],
-    members: [0],
-  },
-  {
-    name: "the same with the Apply record: the space is the base's, so no chat is in it",
+    name: "the writer types beside an applied AI space: the space is the base's, so no chat is in it",
     text: "alphabeta gamma delta",
     run: (r) => {
       r.ai((d) => textOf(d).insert(5, " "));
@@ -232,18 +207,7 @@ const ROWS: Row[] = [
     members: [],
   },
   {
-    name: "the writer deletes beside an applied AI deletion, without a record: no name, the chat stays in",
-    text: "one AIOLD two three four",
-    run: (r) => {
-      r.ai((d) => textOf(d).delete(4, 6));
-      r.apply(false);
-      r.writer((d) => textOf(d).delete(4, 4));
-    },
-    byline: [],
-    members: [0],
-  },
-  {
-    name: "the writer deletes beside an applied AI deletion, with the record",
+    name: "the writer deletes beside an applied AI deletion",
     text: "one AIOLD two three four",
     run: (r) => {
       r.ai((d) => textOf(d).delete(4, 6));
@@ -276,18 +240,7 @@ const ROWS: Row[] = [
     members: [],
   },
   {
-    name: "a block the writer deletes next to an applied AI block deletion, without a record",
-    blocks: ["first block gone", "second block gone", "third block stays"],
-    run: (r) => {
-      r.ai((d) => frag(d).delete(0, 1));
-      r.apply(false);
-      r.writer((d) => frag(d).delete(0, 1));
-    },
-    byline: [],
-    members: [0],
-  },
-  {
-    name: "the same with the record",
+    name: "a block the writer deletes next to an applied AI block deletion",
     blocks: ["first block gone", "second block gone", "third block stays"],
     run: (r) => {
       r.ai((d) => frag(d).delete(0, 1));
@@ -312,16 +265,6 @@ const ROWS: Row[] = [
       { byline: [T(1)], members: [1] },
     ],
   },
-  {
-    name: "Discard then Undo of text at the end of a run keeps its chat (no right neighbor to infer from)",
-    text: "alpha beta gamma delta",
-    run: (r) => {
-      r.ai((d) => textOf(d).insert(textOf(d).length, " tail"));
-      r.discardUndo((d) => textOf(d).delete(textOf(d).length - 5, 5), 2);
-    },
-    byline: [T()],
-    members: [0],
-  },
   ...(
     [
       ["red", "bed"],
@@ -344,33 +287,6 @@ const ROWS: Row[] = [
     }),
   ),
   {
-    name: "33 Discard and Undo rounds of an insertion still name its chat",
-    text: "alpha beta gamma delta",
-    run: (r) => {
-      r.ai((d) => textOf(d).insert(0, "zeta "));
-      r.discardUndo((d) => textOf(d).delete(0, 5), 33);
-    },
-    byline: [T()],
-    members: [0],
-  },
-  {
-    name: "Discard then Undo of a replacement keeps its chat",
-    text: "alpha beta gamma delta",
-    run: (r) => {
-      r.ai((d) => {
-        textOf(d).delete(6, 4);
-        textOf(d).insert(6, "BETA");
-      });
-      r.discardUndo((d) => {
-        const at = textOf(d).toString().indexOf("BETA");
-        textOf(d).delete(at, 4);
-        textOf(d).insert(at, "beta");
-      });
-    },
-    byline: [T()],
-    members: [0],
-  },
-  {
     name: "a second Discard and Undo of a deletion",
     text: "alpha beta gamma delta",
     run: (r) => {
@@ -388,17 +304,6 @@ const ROWS: Row[] = [
       r.discardUndo((d) => frag(d).insert(0, [paragraphXml("first block gone")]));
     },
     byline: [T()],
-    members: [0],
-  },
-  {
-    name: "the writer types inside a restored AI insertion: both are named, the part stays pending",
-    text: "alpha beta gamma",
-    run: (r) => {
-      r.ai((d) => textOf(d).insert(6, "MAGIC "));
-      r.discardUndo((d) => textOf(d).delete(6, 6));
-      r.writer((d) => textOf(d).insert(8, "x"));
-    },
-    byline: ["user", T()],
     members: [0],
   },
   {
@@ -460,34 +365,14 @@ const ROWS: Row[] = [
     ],
   },
   {
-    name: "Discard then Undo of an AI paragraph keeps its chat",
+    name: "Discard then Undo of an AI paragraph reads as the writer's: no record follows Undo",
     text: "alpha tail",
     run: (r) => {
       r.ai((d) => frag(d).insert(0, [paragraphXml("AI new block")]));
       r.discardUndo((d) => frag(d).delete(0, 1), 2);
     },
-    byline: [T()],
-    members: [0],
-  },
-  {
-    name: "Discard then Undo of AI bold keeps its chat",
-    text: "alpha beta gamma delta",
-    run: (r) => {
-      r.ai((d) => textOf(d).format(6, 4, { strong: true }));
-      r.discardUndo((d) => textOf(d).format(6, 4, { strong: null }), 2);
-    },
-    byline: [T()],
-    members: [0],
-  },
-  {
-    name: "Discard then Undo of an AI heading level keeps its chat",
-    blocks: [heading(1, "alpha tail")],
-    run: (r) => {
-      r.ai((d) => (frag(d).get(0) as Y.XmlElement).setAttribute("level", 2 as never));
-      r.discardUndo((d) => (frag(d).get(0) as Y.XmlElement).setAttribute("level", 1 as never), 2);
-    },
-    byline: [T()],
-    members: [0],
+    byline: ["user"],
+    members: [],
   },
   {
     name: "an AI that turns a bullet list into a numbered one is still in the change",
@@ -568,30 +453,6 @@ describe("attribution", () => {
     row.run(r);
     const read = r.read({ budget: row.budget, slide: row.slide });
     expect(read).toEqual(row.groups ?? [{ byline: row.byline, members: row.members }]);
-  });
-
-  it("the Apply record holds what the applied change moved into the base, and only that", () => {
-    const r = room(["one AIOLD two three four"]);
-    r.ai((d) => textOf(d).insert(0, "NEW "));
-    r.ai((d) => textOf(d).delete(8, 6));
-    const recordOf = (budget?: number) => {
-      const classified = classifyChanges(
-        r.draft,
-        r.projection(),
-        { userId: "u", parts: r.parts, snapshot: Y.snapshot(r.draft) },
-        { record: true, budget },
-      );
-      return applyRecordOf(classified, classified.keys());
-    };
-    const entry = recordOf();
-    const [insert, remove] = r.parts;
-    expect(entry.base).toEqual(insert.inserted);
-    expect(entry.settled).toEqual(remove.deleted);
-    // Running out of diff budget silences names; the record Apply persists must not shrink with it.
-    expect(recordOf(1)).toEqual(entry);
-    r.draft.clientID = 1;
-    r.draft.transact(() => appendApplyRecord(r.draft, entry));
-    expect(readApplyRecord(r.draft)).toEqual([entry]);
   });
 });
 

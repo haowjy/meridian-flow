@@ -71,12 +71,7 @@ export class GroupApply {
       answered: (answer) => {
         // Only a sent click's answer came from the server: an unsent one ends cancelled.
         if (!this.handed.has(index)) return;
-        if (
-          answer.status !== "landed" &&
-          answer.status !== "cancelled" &&
-          answer.status !== "unsent"
-        )
-          this.heard(answer);
+        if (answer.status !== "cancelled" && answer.status !== "unsent") this.heard(answer);
       },
     };
   }

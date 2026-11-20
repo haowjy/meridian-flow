@@ -32,6 +32,13 @@ export function createDraftProvenanceReader(store: DraftDispositionStore) {
       const doc = materializeDraftRead(cut.draft);
       try {
         const { reading, parts } = readDraftChanges(doc, cut.parts);
+        const carried = new Set(
+          cut.applied.flatMap((apply) => apply.carried.map((key) => key.join(":"))),
+        );
+        const applied = (id: number) => {
+          const changes = parts.get(id)?.changes ?? [];
+          return changes.length > 0 && changes.every((_, index) => carried.has(`${id}:${index}`));
+        };
         const members: Record<string, string[]> = {};
         for (const part of cut.parts) {
           if (!part.owner) continue;
@@ -49,13 +56,14 @@ export function createDraftProvenanceReader(store: DraftDispositionStore) {
           userId: cut.userId,
           snapshot: Array.from(Y.encodeSnapshot(Y.snapshot(doc))),
           parts: cut.parts.map(
-            ({ threadId, turnId, toolCallId, inserted, deleted, owner, taken }) => ({
+            ({ id, threadId, turnId, toolCallId, inserted, deleted, owner, taken }) => ({
               threadId,
               turnId,
               ...(toolCallId ? { toolCallId } : {}),
               inserted,
               deleted,
               ...(taken ? { taken: true as const } : {}),
+              ...(applied(id) ? { applied: true as const } : {}),
               owner,
             }),
           ),

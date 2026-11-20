@@ -1,4 +1,4 @@
-/** What the browser's classifier says about a draft's pending changes, and a test's Apply: an effect row that carries every change of the draft's parts. */
+/** What the browser's classifier says about a draft's pending changes, and a test's Apply: an `apply` edit whose part carries every change of the draft's parts. */
 
 import { randomUUID } from "node:crypto";
 import { editChanges, readDelta } from "@meridian/agent-edit/content-merge";
@@ -10,9 +10,10 @@ import {
   readBlocks,
 } from "@meridian/agent-edit/diff";
 import type { CommandId, DocumentId, UserId } from "@meridian/contracts";
-import { applyCommandEffects, commands, type Database } from "@meridian/database";
+import { commands, type Database } from "@meridian/database";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { recordDocumentEdit } from "../adapters/drizzle-document-edits.js";
 import { materializeDraftRead } from "../domain/draft-store.js";
 import type { DraftDispositionStore } from "../domain/ports/draft-disposition-store.js";
 
@@ -43,7 +44,7 @@ export async function classifiedDraft(store: DraftDispositionStore, draftId: str
     return {
       projection,
       provenance,
-      classifications: classifyChanges(doc, projection, provenance, { record: true }),
+      classifications: classifyChanges(doc, projection, provenance),
     };
   } finally {
     doc.destroy();
@@ -51,8 +52,8 @@ export async function classifiedDraft(store: DraftDispositionStore, draftId: str
 }
 
 /**
- * An Apply as the card reads it: a command and its effect row, which carries every change of every
- * part the draft's receipts hold. The caller has already moved the draft's base.
+ * An Apply as the card reads it: a command and its `apply` edit, whose one part carries every
+ * change of every part the draft's receipts hold. The caller has already moved the draft's base.
  */
 export async function recordApply(
   db: Database,
@@ -81,16 +82,21 @@ export async function recordApply(
     projectId: input.projectId as never,
     outcome: { status: "done", result: {} },
   });
-  await db.insert(applyCommandEffects).values({
-    commandId,
-    ordinal: 0,
-    groupId: "all",
+  await recordDocumentEdit(db, {
     documentId: input.documentId,
-    draftId: input.draftId,
-    liveDelta: null,
-    baseDelta: [],
-    carried,
-    place: "all",
+    actor: "human",
+    actorUserId: input.accountId,
+    kind: "apply",
+    commandId,
+    receipts: [
+      {
+        update: new Uint8Array(),
+        effect: { inserted: [], deleted: [] },
+        origin: { kind: "live", seq: 0, draftId: input.draftId },
+        delta: null,
+        carried,
+      },
+    ],
   });
   return commandId;
 }

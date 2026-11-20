@@ -1,5 +1,5 @@
 /** One evidence reader per retained room, shared by editor, dock and Work surfaces. */
-import { APPLY_RECORD_ROOT, type ItemRange, RESTORED_ROOT } from "@meridian/agent-edit/diff";
+import type { ItemRange } from "@meridian/agent-edit/diff";
 import { DRAFTS_PROVENANCE_MAX, type DraftProvenanceResponse } from "@meridian/contracts/branches";
 import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import * as Y from "yjs";
@@ -83,8 +83,6 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
   const doc = room.document;
   let data: DraftProvenanceResponse | null = null;
   let localDeletions = Y.createDeleteSet();
-  let roots = 0;
-  let coveredRoots = -1;
   let requested = "";
   let disposed = false;
   let queued = false;
@@ -107,12 +105,11 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
       }
     const ranges = [...unresolved.values()].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     hasUnresolved = ranges.length > 0;
-    const key = JSON.stringify([roots, ranges]);
-    if (data && !hasUnresolved && coveredRoots === roots) requested = key;
+    const key = JSON.stringify(ranges);
+    if (data && !hasUnresolved) requested = key;
     const roomName = parseYjsRoomName(room.getSnapshot().roomKey);
     if (key !== requested && room.getSnapshot().status === "synced" && roomName?.kind === "draft") {
       requested = key;
-      const revision = roots;
       const ask = ++asked;
       void askEvidence(draft, roomName.draftId).then((next) => {
         if (disposed || ask !== asked || !next) return;
@@ -123,7 +120,6 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
           return;
         }
         data = next;
-        coveredRoots = revision;
         const covered = Y.decodeSnapshot(Uint8Array.from(next.snapshot)).ds;
         // Keep only unacknowledged local witnesses; acknowledged deletion history lives in the cut.
         for (const [client, ranges] of localDeletions.clients) {
@@ -149,14 +145,6 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
     if (transaction.local && transaction.deleteSet.clients.size > 0)
       localDeletions = Y.mergeDeleteSets([localDeletions, transaction.deleteSet]);
   };
-  const onRoot = () => {
-    roots++;
-    refresh();
-  };
-  const applied = doc.getArray(APPLY_RECORD_ROOT);
-  const restored = doc.getArray(RESTORED_ROOT);
-  applied.observeDeep(onRoot);
-  restored.observeDeep(onRoot);
   doc.on("afterTransaction", onTransaction);
   let wasSynced = room.getSnapshot().status === "synced";
   let wasSaved = room.getSnapshot().serverHasLocalChanges;
@@ -173,8 +161,6 @@ function install(room: DocumentSession, runtime: ReviewRuntime, draft: DraftRef)
   return () => {
     disposed = true;
     unsubscribe();
-    applied.unobserveDeep(onRoot);
-    restored.unobserveDeep(onRoot);
     doc.off("afterTransaction", onTransaction);
     runtime.setAttributionProvider(() => new Map());
   };

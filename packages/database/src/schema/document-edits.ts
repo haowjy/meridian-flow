@@ -55,7 +55,12 @@ export const documentEdits = pgTable(
       .$type<UserId>()
       .references(() => users.id, { onDelete: "set null" }),
     wId: integer("w_id"),
-    kind: text("kind").$type<"write" | "undo" | "revert">().notNull(),
+    /**
+     * `write`, `undo` and `revert` are the model's and the card's; `apply` and `discard` are the
+     * writer's presses. An `undo` the writer pressed (Un-Apply, Restore, Redo) names the parts it
+     * took back in `targets`, as every Undo does.
+     */
+    kind: text("kind").$type<"write" | "undo" | "revert" | "apply" | "discard">().notNull(),
     actionId: uuid("action_id"),
     createdAt: createdAt(),
   },
@@ -65,7 +70,10 @@ export const documentEdits = pgTable(
     index("document_edits_action_idx").on(t.actionId),
     index("document_edits_command_idx").on(t.commandId),
     check("document_edits_actor_valid", sql`${t.actor} IN ('agent','human','system')`),
-    check("document_edits_kind_valid", sql`${t.kind} IN ('write','undo','revert')`),
+    check(
+      "document_edits_kind_valid",
+      sql`${t.kind} IN ('write','undo','revert','apply','discard')`,
+    ),
   ],
 );
 export type EditDeltaJson = { before: Record<string, unknown>[]; after: Record<string, unknown>[] };
@@ -91,6 +99,13 @@ export const documentEditParts = pgTable(
      */
     delta: jsonb("delta").$type<EditDeltaJson | null>(),
     origin: jsonb("origin").$type<EditOrigin>().notNull(),
+    /**
+     * Set on a part that put a draft's change into the manuscript (an Apply's, or the Undo of an
+     * Un-Apply): the changes of AI edits it carried, as `[partId, index]` of a part and a change
+     * of its delta, empty when only the writer's text went. Null on every other part. The card
+     * reads "Applied" for the changes of such a part while no Undo has taken it back.
+     */
+    carried: jsonb("carried").$type<[number, number][] | null>(),
     /**
      * A drafted part's branch, as its draft row named it when the part was written; null for a
      * live part. No foreign key: the turn's card finds its owner here after the draft is purged.

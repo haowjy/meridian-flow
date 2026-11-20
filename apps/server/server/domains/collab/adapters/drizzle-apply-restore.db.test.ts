@@ -145,6 +145,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         branches: workBranches,
         treeLists,
         coordinator,
+        live: persistence.journal,
+        liveCoordinator: { deliver: async () => {} },
+        onCommitted: async () => {},
       }),
     });
     const identity = createBranchReviewIdentity({

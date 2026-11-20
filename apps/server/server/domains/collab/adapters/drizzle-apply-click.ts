@@ -5,31 +5,22 @@
  * lists that hold the drafted records (`drizzle-apply-tree.ts`), then merges each document's
  * text at the result. Each half of an item is answered on its own evidence: the text lands
  * wherever its draft is open and its document stands in live, whatever the tree half did. The
- * command keeps both halves (`apply_command_trees`, `apply_command_effects`), and Un-Apply takes
- * back all of it, across every document.
+ * command keeps both halves (`apply_command_trees`, and an `apply` edit per document whose parts
+ * hold what each group changed in Live), and Un-Apply takes back all of it, across every
+ * document: its text half is the one Undo of a writer's command (`undoCommandText`).
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   addCounts,
   applyBase,
   captureDelta,
-  changeStateIn,
   contentMerge,
   type RuleCounts,
-  readDelta,
   ruleCounter,
   type StoredDelta,
-  takeOut,
 } from "@meridian/agent-edit/content-merge";
-import {
-  appendApplyRecord,
-  baseViewDelta,
-  REVIEW_BASE_FRAGMENT,
-  readBlocks,
-  writeBlocks,
-} from "@meridian/agent-edit/diff";
-import type { JournalSnapshot, UpdateJournal } from "@meridian/agent-edit/integration";
-import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
+import { REVIEW_BASE_FRAGMENT, readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
+import type { UpdateJournal } from "@meridian/agent-edit/integration";
 import { type BranchId, type DocumentId, draftItemKey, type UserId } from "@meridian/contracts";
 import type {
   AppliedReviewItem,
@@ -41,8 +32,9 @@ import type {
 import type { Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import {
-  applyCommandEffects,
+  applyCommandTrees,
   branches,
+  commands,
   documentDrafts,
   treeNodes,
 } from "@meridian/database/schema";
@@ -54,10 +46,9 @@ import {
   type TreeWriter,
   undoApply,
 } from "@meridian/project-tree";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
-import type { Node as PMNode } from "prosemirror-model";
-import type * as Y from "yjs";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -71,15 +62,9 @@ import type { DocumentArrivals } from "../../context/ports/document-arrivals.js"
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { TreeReader } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import type {
-  ApplyCommand,
-  ApplyCommandStore,
-  PreparedApplyItem,
-  PreparedUnapply,
-} from "../domain/apply-click.js";
+import type { ApplyCommand, ApplyCommandStore, PreparedApplyItem } from "../domain/apply-click.js";
 import type { Branches } from "../domain/branches.js";
 import type { DraftCoordinator } from "../domain/draft-coordinator.js";
-import type { DraftBase } from "../domain/draft-runtime.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { storedDocument } from "../domain/stored-document.js";
 import {
@@ -88,18 +73,15 @@ import {
   textWrittenSince,
 } from "./drizzle-apply-tree.js";
 import { treeListOfNode, treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
+import { documentsOfCommand, undoCommandText } from "./drizzle-command-edits.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
+import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import {
   type ItemSettlement,
   noteOf,
   type Settled,
   settlementOf,
 } from "./drizzle-settlement-of.js";
-import { writeTextAnswer } from "./drizzle-text-answer.js";
-import { loadPreparedUnapply } from "./drizzle-unapply-read.js";
-import { reverseBaseHalf } from "./reverse-base-half.js";
-
-const documentSchema = buildDocumentSchema();
 
 const applyTiming = new AsyncLocalStorage<{
   commandId: string;
@@ -227,18 +209,19 @@ export function createDrizzleApplyClick(
 
   /**
    * One document's text half of an Apply: its groups merge into live and into the draft's base,
-   * and each is recorded as an effect (`ordinal` counts on from `ordinalFrom`, across the
-   * command's documents). The caller holds the document's key.
+   * and the command's `apply` edit on the document records each group's change to Live as one
+   * part, which also names the draft whose base took it. The caller holds the document's key.
+   * Returns the draft's server clock once the base write is in, for the browser's queue.
    */
   async function applyText(
     command: ApplyCommand,
     node: DocumentId,
     { base, click }: NonNullable<PreparedApplyItem["text"]>,
-    ordinalFrom: number,
-  ): Promise<{ overrode: number }> {
+  ): Promise<{ overrode: number; at?: number }> {
     const tx = currentDrizzleDb(db);
     const { commandId, accountId } = command.envelope;
     const { schema } = click;
+    const draftId = base.snapshot.draftId;
     const snapshot = await deps.live.read(node);
     const live = storedDocument(snapshot);
     let update: Uint8Array | undefined;
@@ -249,7 +232,7 @@ export function createDrizzleApplyClick(
     try {
       let overrode = 0;
       const merged = ruleCounter();
-      const liveEffects: { groupId: string; delta: StoredDelta | null }[] = [];
+      const parts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
       const fragment = live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
       for (const group of click.groups) {
         const before = readBlocks(fragment, schema);
@@ -258,53 +241,39 @@ export function createDrizzleApplyClick(
         addCounts(merged.fire, groupMerge.rules);
         update = undefined;
         live.transact(() => writeBlocks(fragment, schema, groupMerge.blocks), "apply");
-        if (update)
-          await deps.live.append(
-            node,
-            update,
-            { seq: 0, origin: `human:${accountId}` },
-            snapshot.authority,
-          );
-        liveEffects.push({
-          groupId: group.groupId,
-          delta: update ? captureDelta(before, readBlocks(fragment, schema)) : null,
+        // Live already held the group's text: nothing to record, and nothing for an Undo to take.
+        if (!update) continue;
+        const seq = await deps.live.append(
+          node,
+          update,
+          { seq: 0, origin: `human:${accountId}` },
+          snapshot.authority,
+        );
+        parts.push({
+          update,
+          effect: { inserted: [], deleted: [] },
+          origin: { kind: "live", seq, draftId },
+          delta: captureDelta(before, readBlocks(fragment, schema)) as StoredDelta,
+          carried: group.carried,
         });
       }
       deps.merged({ commandId, kind: "apply", rules: merged.counts, overrode });
       await testHook("apply.afterLive");
-      const baseEffects: { groupId: string; start?: unknown[]; delta: unknown[] }[] = [];
+      let at: number | undefined;
       const write = deps.coordinator.prepareAppend(base, [], {
         work: "any",
         authorServerRows(prefix) {
           const rows: Uint8Array[] = [];
-          let row: Uint8Array | undefined;
-          const capture = (bytes: Uint8Array) => {
-            row = bytes;
-          };
+          const capture = (bytes: Uint8Array) => rows.push(bytes);
           prefix.on("update", capture);
           try {
+            const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
             for (const group of click.groups) {
-              row = undefined;
-              const fragment = prefix.getXmlFragment(REVIEW_BASE_FRAGMENT);
               const before = readBlocks(fragment, schema);
               const after = applyBase(schema, before, group.before, group.patched);
-              prefix.transact(() => {
-                writeBlocks(fragment, schema, after);
-                appendApplyRecord(prefix, group.record);
-              }, "apply");
-              if (!row) throw new Error("Apply must append its command record");
-              rows.push(row);
-              baseEffects.push({
-                groupId: group.groupId,
-                ...(baseEffects.length === 0
-                  ? { start: before.map((block) => block.toJSON()) }
-                  : {}),
-                delta: baseViewDelta(schema, before, after).map((patch) => ({
-                  ...patch,
-                  blocks: patch.blocks.map((block) => block.toJSON()),
-                })),
-              });
+              prefix.transact(() => writeBlocks(fragment, schema, after), "apply");
             }
+            if (rows.length) at = Y.getState(prefix.store, prefix.clientID);
             return rows;
           } finally {
             prefix.off("update", capture);
@@ -317,30 +286,20 @@ export function createDrizzleApplyClick(
       } finally {
         write.dispose();
       }
-      await tx.insert(applyCommandEffects).values(
-        click.groups.map((group, at) => {
-          const liveEffect = liveEffects.find((effect) => effect.groupId === group.groupId);
-          const baseEffect = baseEffects.find((effect) => effect.groupId === group.groupId);
-          if (!liveEffect || !baseEffect) throw new Error("Apply effect was not captured");
-          return {
-            commandId,
-            ordinal: ordinalFrom + at,
-            groupId: group.groupId,
-            documentId: node,
-            draftId: base.snapshot.draftId,
-            liveDelta: liveEffect.delta,
-            carried: group.carried,
-            place: group.place,
-            baseStart: baseEffect.start,
-            baseDelta: baseEffect.delta,
-          };
-        }),
-      );
+      if (parts.length)
+        await recordDocumentEdit(tx, {
+          documentId: node,
+          actor: "human",
+          actorUserId: accountId as UserId,
+          kind: "apply",
+          commandId,
+          receipts: parts,
+        });
       deferUntilDrizzleCommit(async () => {
         await deps.liveCoordinator.deliver(node);
         await deps.onCommitted(node);
       });
-      return { overrode };
+      return { overrode, ...(at === undefined ? {} : { at }) };
     } finally {
       live.off("update", capture);
       live.destroy();
@@ -375,15 +334,48 @@ export function createDrizzleApplyClick(
         throw cause;
       }
     },
-    loadUnapply: (command) => loadPreparedUnapply(db, command),
+    async loadUnapply(command) {
+      const tx = currentDrizzleDb(db);
+      const applied = command.request.applyCommandId;
+      const trees = await tx
+        .select({
+          branchId: applyCommandTrees.branchId,
+          scope: applyCommandTrees.scope,
+          createdHeads: applyCommandTrees.createdHeads,
+          restored: applyCommandTrees.restored,
+        })
+        .from(applyCommandTrees)
+        .innerJoin(commands, eq(commands.id, applyCommandTrees.commandId))
+        .where(
+          and(
+            eq(applyCommandTrees.commandId, applied),
+            eq(commands.accountId, command.envelope.accountId),
+            eq(commands.kind, "apply"),
+          ),
+        );
+      const texts = await documentsOfCommand(tx, applied, command.envelope.accountId as UserId);
+      if (!trees.length && !texts.length) return null;
+      // The branch the Apply's drafts are on now: a Restore may have moved one since.
+      const draftId = texts.flatMap((text) => text.draftIds)[0];
+      const [draft] = draftId
+        ? await tx
+            .select({ branchId: documentDrafts.branchId })
+            .from(documentDrafts)
+            .where(eq(documentDrafts.id, draftId))
+        : [];
+      return {
+        branchId: trees[0]?.branchId ?? draft?.branchId ?? command.branchId,
+        texts: texts.map(({ documentId }) => ({ documentId })),
+        trees,
+      };
+    },
     async unapply(command, found) {
       // Nothing left to take back: the command still runs, so a resend finds its answer.
       const prepared = found ?? { branchId: command.branchId, texts: [], trees: [] };
       const commandId = command.envelope.commandId;
       const applyCommandId = command.request.applyCommandId;
       const by = `user:${command.envelope.accountId}`;
-      const lives: Y.Doc[] = [];
-      try {
+      {
         // Where each document whose text the Apply wrote stands in live, by list.
         const placesOfTexts = (ends: readonly { writer: TreeWriter }[]) => {
           const out = new Map<string, string>();
@@ -492,158 +484,27 @@ export function createDrizzleApplyClick(
                     },
                   });
                 }
-                // What each document's text would give back, read before any text is written.
-                const stillActive = await tx
-                  .select({ ordinal: applyCommandEffects.ordinal })
-                  .from(applyCommandEffects)
-                  .where(
-                    and(
-                      eq(applyCommandEffects.commandId, applyCommandId),
-                      isNull(applyCommandEffects.unappliedBy),
-                    ),
-                  );
-                const activeOrdinals = new Set(stillActive.map((row) => row.ordinal));
-                const plans: {
-                  documentId: DocumentId;
-                  /** Null: the draft was purged. */
-                  currentBase: DraftBase | null;
-                  snapshot: JournalSnapshot;
-                  live: Y.Doc;
-                  /** Live's blocks once the reversed groups are out. */
-                  blocks: readonly PMNode[];
-                  reversed: PreparedUnapply["texts"][number]["effects"];
-                }[] = [];
-                // A document in notes that take no change keeps its text as the Apply left it. Only an
-                // effect still applied can be held, and where the document stands is read after the
-                // tree half, which may have moved it.
+                // A document in notes that take no change keeps its text as the Apply left it.
+                // Where the document stands is read after the tree half, which may have moved it.
                 const stands = prepared.texts.length
                   ? await deps.treeLists.read({ lists: branchLists, view: placesOfTexts })
                   : new Map<string, string>();
-                const textFates = new Map<string, SourceFate>();
+                const open = new Set<string>();
                 for (const text of prepared.texts) {
-                  if (!text.effects.some((effect) => activeOrdinals.has(effect.ordinal))) continue;
                   const source = stands.get(text.documentId);
-                  const fate = source === undefined ? null : judge.fate(source);
-                  if (fate) textFates.set(text.documentId, fate);
+                  if (!(source !== undefined && judge.fate(source))) open.add(text.documentId);
                 }
                 judge.assertLocked();
-                for (const text of prepared.texts) {
-                  const effects = text.effects.filter((effect) =>
-                    activeOrdinals.has(effect.ordinal),
-                  );
-                  if (!effects.length) continue;
-                  // A closed owner's notes take no change, and a purged Work's rows went with it.
-                  if (textFates.has(text.documentId)) continue;
-                  const [draft] = await tx
-                    .select({ id: documentDrafts.id })
-                    .from(documentDrafts)
-                    .where(eq(documentDrafts.id, text.draftId));
-                  const currentBase = draft ? await deps.coordinator.loadBase(text.draftId) : null;
-                  const snapshot = await deps.live.read(text.documentId);
-                  const live = storedDocument(snapshot);
-                  lives.push(live);
-                  // The latest group first: a group's change builds on the earlier groups', so the
-                  // earlier one comes out cleanly only once the later one is out. Each is judged
-                  // on what the ones before it leave. A group that changed nothing in live has
-                  // nothing to take out and reverses.
-                  let blocks: readonly PMNode[] = readBlocks(
-                    live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-                    documentSchema,
-                  );
-                  const taken = new Set<number>();
-                  for (const effect of [...effects].reverse()) {
-                    if (!effect.liveDelta) {
-                      taken.add(effect.ordinal);
-                      continue;
-                    }
-                    const change = readDelta(documentSchema, effect.liveDelta);
-                    if (changeStateIn(documentSchema, change, blocks) !== "stands") continue;
-                    blocks = takeOut(documentSchema, change, blocks);
-                    taken.add(effect.ordinal);
-                  }
-                  const reversed = effects.filter((effect) => taken.has(effect.ordinal));
-                  plans.push({
-                    documentId: text.documentId,
-                    currentBase,
-                    snapshot,
-                    live,
-                    blocks,
-                    reversed,
-                  });
-                }
-                for (const plan of plans) {
-                  if (!plan.reversed.length) continue;
-                  const { documentId, live, snapshot, blocks, currentBase } = plan;
-                  const fragment = live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-                  const written = captureMutationUpdates(live, () =>
-                    live.transact(() => writeBlocks(fragment, documentSchema, blocks), "unapply"),
-                  );
-                  for (const update of written)
-                    await deps.live.append(
-                      documentId,
-                      update,
-                      { seq: 0, origin: "system" },
-                      snapshot.authority,
-                    );
-
-                  if (currentBase) {
-                    const groupIds = new Set(plan.reversed.map((effect) => effect.groupId));
-                    let reversal: ReturnType<typeof reverseBaseHalf> | undefined;
-                    const write = deps.coordinator.prepareAppend(currentBase, [], {
-                      work: "any",
-                      authorServerRows(prefix) {
-                        reversal = reverseBaseHalf(prefix, {
-                          applyCommandId,
-                          groupIds,
-                          merges: plan.reversed.filter((effect) => effect.liveDelta !== null),
-                        });
-                        return reversal.rows;
-                      },
-                    });
-                    try {
-                      await write.persist();
-                      write.transfer();
-                    } finally {
-                      write.dispose();
-                    }
-                    // The take-back puts the draft's text back, so its row is right at this commit.
-                    // Its watermark stays stale: the projection judges it again.
-                    await writeTextAnswer(db, deps.treeLists, {
-                      draftId: currentBase.snapshot.draftId,
-                      hasEffect: true,
-                      hasEffectRevision: -1,
-                      listsHeld: true,
-                    });
-                    deps.merged({
-                      commandId,
-                      kind: "unapply",
-                      rules: reversal?.rules ?? {},
-                      overrode: reversal?.overrode ?? 0,
-                    });
-                  }
-                  await tx
-                    .update(applyCommandEffects)
-                    .set({ unappliedBy: commandId })
-                    .where(
-                      and(
-                        eq(applyCommandEffects.commandId, applyCommandId),
-                        inArray(
-                          applyCommandEffects.ordinal,
-                          plan.reversed.map((effect) => effect.ordinal),
-                        ),
-                        isNull(applyCommandEffects.unappliedBy),
-                      ),
-                    );
-                  deferUntilDrizzleCommit(async () => {
-                    await deps.liveCoordinator.deliver(documentId);
-                    await deps.onCommitted(documentId);
-                  });
-                }
-                // One change made in two documents has one group id: each is named with its document.
-                const textUndone = plans.flatMap((plan) => {
-                  const groupIds = [...new Set(plan.reversed.map((effect) => effect.groupId))];
-                  return groupIds.length ? [{ node: plan.documentId, groupIds }] : [];
+                const undone = await undoCommandText(db, deps, {
+                  commandId,
+                  undoes: applyCommandId,
+                  accountId: command.envelope.accountId as UserId,
+                  only: open,
                 });
+                const textUndone = undone.map((one) => ({
+                  node: one.documentId,
+                  ...(one.drafts[0] ? { at: one.drafts[0].at } : {}),
+                }));
                 return {
                   status: "unapplied",
                   commandId,
@@ -656,8 +517,6 @@ export function createDrizzleApplyClick(
             ),
           ),
         );
-      } finally {
-        for (const live of lives) live.destroy();
       }
     },
     measured: deps.measured,
@@ -763,7 +622,6 @@ export function createDrizzleApplyClick(
                   const fact = (node: string) => facts.get(node) as TreeItemFacts;
                   // The text half, in id order, every document's key held.
                   const texts = new Map<string, ApplyHalfResult>();
-                  let ordinal = 0;
                   let overrode = 0;
                   for (const item of [...items].sort((a, b) => a.node.localeCompare(b.node))) {
                     if (!draftOf(item)) continue;
@@ -815,22 +673,29 @@ export function createDrizzleApplyClick(
                       });
                       continue;
                     }
-                    const wrote = await applyText(
-                      command,
-                      item.node as DocumentId,
-                      item.text,
-                      ordinal,
-                    );
-                    ordinal += item.text.click.groups.length;
+                    const wrote = await applyText(command, item.node as DocumentId, item.text);
                     overrode += wrote.overrode;
-                    texts.set(
-                      item.node,
-                      one.restore
-                        ? { landed: true, settled: [{ rule: "restored", documentId: item.node }] }
-                        : { landed: true },
-                    );
+                    texts.set(item.node, {
+                      landed: true,
+                      ...(one.restore
+                        ? { settled: [{ rule: "restored", documentId: item.node }] }
+                        : {}),
+                      ...(wrote.at === undefined ? {} : { at: wrote.at }),
+                    });
                   }
 
+                  // A Redo's text half is the Undo of the Un-Apply it names.
+                  const { redoOf } = command.request;
+                  if (redoOf)
+                    for (const one of await undoCommandText(db, deps, {
+                      commandId,
+                      undoes: redoOf,
+                      accountId: userId,
+                    }))
+                      texts.set(one.documentId, {
+                        landed: true,
+                        ...(one.drafts[0] ? { at: one.drafts[0].at } : {}),
+                      });
                   const results = items.map((item): ApplyItemResult => {
                     const one = fact(item.node);
                     const text = texts.get(item.node);

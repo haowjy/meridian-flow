@@ -30,19 +30,15 @@ and coordination.
 
 ## Draft review admission and Apply clicks
 
-`domain/provenance.ts` declares `SERVER_OWNED_ROOTS`: `review_base` and
-`__meridian_review_applied_v1`. Writer and agent admission rejects insertion
-into these roots and new deletion of their live items. Repeated tombstones are
+`domain/provenance.ts` declares `SERVER_OWNED_ROOTS`: `review_base` alone (the draft holds no
+Apply or restoration record; an Apply is a row of the edit record, `apply.md`). Writer and agent
+admission rejects insertion into it and new deletion of their live items. Repeated tombstones are
 not a new deletion. The per-document namespace cache invalidates when protected
 roots change; deletion checks read current item flags. Provenance roots retain
 their existing stricter admission, including live's repeated-delete refusal.
 
 A writer's frame is judged in its room (see below); `finalizeAppend` judges incoming agent
-rows under the draft row hold. Server rows bypass agent freshness checks. Restoration
-records in `__meridian_review_restored_v1` are writer-writable and the server does not check
-them: their readers (`readRestorations`, the browser's attribution) drop any entry whose ranges are
-not integers, not known or overlap. Browser restoration certificates are not written into
-journal metadata.
+rows under the draft row hold. Server rows bypass agent freshness checks.
 
 Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
 snapshot off-lock, then commits live, the prefix-authored review base and Apply

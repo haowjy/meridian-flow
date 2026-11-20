@@ -5,11 +5,10 @@
 import { t } from "@lingui/core/macro";
 import { applyBase } from "@meridian/agent-edit/content-merge";
 import {
-  APPLY_RECORD_ROOT,
   applySpanPatches,
   baseViewDelta,
   composeGroups,
-  readApplyRecord,
+  DRAFT_SERVER_CLIENT_ID,
 } from "@meridian/agent-edit/diff";
 import {
   type BranchId,
@@ -134,7 +133,7 @@ type Entry = {
   binding: Binding | null;
   /**
    * The room that ended, kept for its projection only: it folds the clicks the server applied
-   * without a record (`ApplyClickQueue.landedUnrecorded`) until a room opens again.
+   * whose write it never received, until a room opens again.
    */
   ended: Binding | null;
   users: number;
@@ -358,11 +357,10 @@ export class DraftCommandOwner {
     return entry.item.queue.clicks.filter((click) => frozenOn(click, entry.draftId));
   }
 
-  /** A draft with clicks outstanding keeps its room read, surface or not, to observe their record. */
+  /** A draft with clicks outstanding keeps its room read, surface or not, so their typing is delivered. */
   private holdRoom(entry: Entry) {
-    // A click whose room ended settles on its answer: no room needs opening to see its record.
     const pending =
-      this.textClicks(entry).some((click) => !click.roomEnded) ||
+      (this.textClicks(entry).length > 0 && entry.ended === null) ||
       entry.item.queue.unapplies.some((command) => command.draftId === entry.draftId);
     if (pending && !entry.lease) {
       const lease = readDraftRoom(this.registry, {
@@ -396,7 +394,6 @@ export class DraftCommandOwner {
   private attach(entry: Entry, session: DocumentSession) {
     if (entry.binding?.session === session || entry.ended?.session === session) return;
     this.detach(entry);
-    if (!session.isRoomEnded()) entry.item.queue.roomOpened(entry.draftId);
     const hold = retainReviewRuntime(session);
     const binding: Binding = {
       session,
@@ -409,30 +406,17 @@ export class DraftCommandOwner {
       return entry.item.queue.project(
         entry.draftId,
         readBase(session.document, schema),
+        Y.getState(session.document.store, DRAFT_SERVER_CLIENT_ID),
         // A headless room projects with a schema of its own each time: a click frozen on an earlier
         // one is read into this one, or no block would ever equal the base.
         (base, before, after) =>
           applyBase(schema, base, inSchema(schema, before), inSchema(schema, after)),
       );
     });
-    const record = session.document.getArray(APPLY_RECORD_ROOT);
-    const observe = () => {
-      binding.runtime.invalidateBase();
-      const rows = readApplyRecord(session.document);
-      this.publishQueue(entry.item);
-      entry.item.queue.observe(
-        entry.draftId,
-        rows.flatMap((row) =>
-          row.commandId ? [{ commandId: row.commandId, groupId: row.groupId }] : [],
-        ),
-      );
-    };
-    record.observeDeep(observe);
     let stopSession = () => {};
     binding.stop = () => {
       stopSession();
       for (const end of binding.notices) end();
-      record.unobserveDeep(observe);
       binding.runtime.setBaseProvider((room, schema) => readBase(room.document, schema));
       hold.release();
     };
@@ -445,8 +429,7 @@ export class DraftCommandOwner {
       ) {
         void this.resolveEnd(entry.ref, entry.draftId);
       } else if (session.isRoomEnded()) {
-        entry.item.queue.roomEnded(entry.draftId);
-        // It records nothing more, but its rows go on showing what the queue applies.
+        // It receives nothing more, but its rows go on showing what the queue applies.
         entry.binding = null;
         entry.ended = binding;
       }
@@ -455,7 +438,6 @@ export class DraftCommandOwner {
     });
     // subscribe publishes synchronously, including an already retired session.
     if (entry.binding !== binding) stopSession();
-    else observe();
   }
 
   /**
@@ -555,7 +537,7 @@ export class DraftCommandOwner {
     entry.item.rooms.delete(entry);
     if (this.byItem.get(entry.ref.itemKey) === entry) this.byItem.delete(entry.ref.itemKey);
     // The Apply stays in force after its review closes (Draft view to Live): its Ctrl+Z goes on
-    // without the queue, which settles only by watching this room.
+    // without the queue, which projects only through this room.
     for (const [band, held] of this.bandApplies) {
       if (held.draftId !== entry.draftId || !held.handle) continue;
       band.switchPort(
@@ -619,7 +601,6 @@ export class DraftCommandOwner {
           : [],
       };
     }
-    if (answer.status === "landed") return { kind: "done", commandId: answer.commandId };
     if (answer.status === "cancelled") return { kind: "blocked" };
     return { kind: "change-refused", code: "unsynced" };
   }
@@ -759,11 +740,7 @@ export class DraftCommandOwner {
       ...(joint ? { send: joint.send } : {}),
     };
     const scheduled = histories
-      ? entry.item.queue.enqueueHistory({
-          frozen,
-          patchFor: (groupIds) =>
-            applySpanPatches(optimistic, composeGroups(schema, frame, groupIds, "apply"), "base"),
-        })
+      ? entry.item.queue.enqueueHistory({ frozen })
       : { outcome: entry.item.queue.enqueue(frozen), handle: null };
     let band: ApplyEntries | undefined;
     if (scheduled.handle && histories) {

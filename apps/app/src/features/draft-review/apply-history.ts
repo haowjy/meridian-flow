@@ -197,7 +197,7 @@ export class ApplyEntries {
  */
 export function queuePort(handle: ApplyCommandHandle, node: string): ApplyPort {
   const landed = (outcome: ApplyClickOutcome) =>
-    outcome.status === "landed" || (outcome.status === "applied" && itemLanded(outcome, node));
+    outcome.status === "applied" && itemLanded(outcome, node);
   return {
     unapply: async () => {
       const outcome = await handle.undo();

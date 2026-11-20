@@ -1,17 +1,10 @@
-/**
- * Apply compilation and command identity. A frozen cut is the writer's click on their room; a
- * whole cut is the server's replica on receipt. No live state or locks enter either.
- */
-import type { StoredDelta } from "@meridian/agent-edit/content-merge";
 import {
-  type ApplyEntry,
   applySpanPatches,
   composeHunks,
   diffBlocks,
   type Hunk,
   projectReview,
   REVIEW_BASE_FRAGMENT,
-  type ReviewGroup,
   readBlocks,
   type SpanPatch,
   validateSpanPatches,
@@ -44,27 +37,14 @@ export type TreeCut = {
   account?: { list: string; vector: Uint8Array };
 };
 type UnapplyClickCommand = Parameters<CollabBranches["draftReview"]["unapplyClick"]>[0];
-/** What an Un-Apply takes back: the Apply's text effects on each document it wrote, and its tree half. */
+/** What an Un-Apply takes back: the documents the Apply wrote text in, and its tree half. */
 export type PreparedUnapply = {
   branchId: import("@meridian/contracts").BranchId;
-  /** One per document the Apply wrote text in, by document id; empty for a tree-only Apply. */
-  texts: {
-    /** The draft the effects were written in; it may be closed, on another branch, or purged. */
-    draftId: string;
-    documentId: import("@meridian/contracts").DocumentId;
-    effects: {
-      ordinal: number;
-      groupId: string;
-      /** What the group changed in the manuscript; null when it already held the text. */
-      liveDelta: StoredDelta | null;
-      baseBefore: unknown[];
-      baseAfter: unknown[];
-    }[];
-  }[];
+  /** One per document the Apply wrote text in; empty for a tree-only Apply. */
+  texts: { documentId: import("@meridian/contracts").DocumentId }[];
   /** One per list the Apply settled records in: the list's state vector it left. */
   trees: {
     scope: "project" | "account";
-    mark: Uint8Array;
     createdHeads: Record<string, { live: number; draft: number }>;
     /** The live restore records the Apply made in this list. */
     restored: string[];
@@ -85,12 +65,8 @@ type CompiledApplyGroup = {
   groupId: string;
   before: readonly PMNode[];
   patched: readonly PMNode[];
-  /** The draft's record of the Apply: which command took the group (the browser's queue reads it). */
-  record: ApplyEntry;
   /** The changes of AI edits that sat in this group, as `[partId, index]`, on the draft as the click found it. */
   carried: [number, number][];
-  /** Where the group sat (`placeOf`). */
-  place: string;
 };
 /**
  * One item of an Apply with its cuts prepared: the text compiled against the draft's replica.
@@ -161,14 +137,6 @@ export function decodeClickedSnapshot(encoded: string): Y.Snapshot {
   }
 }
 
-/** A change's hash and the id of the first block it touches: an equal change elsewhere has another. */
-function placeOf(projection: ReturnType<typeof projectReview>, group: ReviewGroup): string {
-  const [span] = group.spans;
-  const { base, draft } = projection.diff;
-  const block = draft.blocks[span.draft.from] ?? base.blocks[span.base.from];
-  return `${group.id.replace(/~\d+$/, "")}@${block?.attrs.id}`;
-}
-
 export function compileClick(
   doc: Y.Doc,
   request: ApplyTextCut & { commandId: string },
@@ -202,18 +170,7 @@ export function compileClick(
     const reading = readChangesAt(optimistic, draftText, parts);
     let groupIds: readonly string[];
     if ("whole" in request) {
-      const places = request.places && new Set(request.places);
-      const carried = request.carried && new Set(request.carried.map((key) => key.join(":")));
-      const named = places || carried;
-      // A group is re-applied by `carried` only while every AI change in it is one the Un-Apply took:
-      // a neighbour the writer never chose stays in Changes.
-      groupIds = projection.groups.flatMap((group, position) => {
-        const keys = carriedBy(reading, position);
-        if (!named || (!keys.length && places?.has(placeOf(projection, group)))) return [group.id];
-        return carried && keys.length > 0 && keys.every((key) => carried.has(key.join(":")))
-          ? [group.id]
-          : [];
-      });
+      groupIds = projection.groups.map((group) => group.id);
       if (groupIds.length === 0) return { schema, groups: [] };
     } else groupIds = request.groupIds;
     const known = new Set(projection.groups.map((group) => group.id));
@@ -238,12 +195,10 @@ export function compileClick(
         groupId,
         before,
         patched,
-        record: { base: [], settled: [], commandId: request.commandId, groupId },
         carried: carriedBy(
           reading,
           projection.groups.findIndex((candidate) => candidate.id === groupId),
         ),
-        place: placeOf(projection, group),
       };
       before = patched;
       return step;
@@ -274,7 +229,8 @@ export function createApplyClickService(input: {
         const cut = item.text;
         if (!cut) {
           // A tree cut alone: a move, a delete or a creation with no text room (design-v2 §4).
-          if (!tree) throw new ApplyClickMalformed();
+          // A Redo names the documents its Un-Apply took text from with no cut of their own.
+          if (!tree && !command.request.redoOf) throw new ApplyClickMalformed();
           prepared.push({ node: item.node, tree, text: null });
           continue;
         }

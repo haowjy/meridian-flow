@@ -86,8 +86,7 @@ the root. Cached evidence must not become a cached final classification across e
 
 Classification has two phases over raw word and structural boundaries. The mandatory
 footprint collects live item IDs, tombstones over the entire repeated-text slide
-envelope, format items and changed attribute keys. Membership and the Apply record are
-derived only here. Token-edge whitespace belongs to the raw boundary; neighbouring
+envelope, format items and changed attribute keys. Membership is derived only here. Token-edge whitespace belongs to the raw boundary; neighbouring
 unchanged words do not.
 
 Optional character refinement can name fewer authors but cannot mutate the footprint. A
@@ -102,42 +101,34 @@ evidence.
 - Whole-word evidence names a remover only when their character count exceeds the
   characters outside a visible deletion. Surviving base characters or unresolved inserted
   identities exclude this check.
-- Without an Apply record, surviving AI items inside a later raw-word change stay
-  conservatively pending even if the character edit touches only writer text.
+- A provenance part an Apply in force carried whole arrives marked `applied`: its insertions read
+  as base and its deletions as settled. A part applied only in part stays conservatively
+  pending, even where a later character edit touches only writer text.
 
 Discard's `writeDiscardBlocks` preserves text-run identities even with inline atoms or
 low similarity. Structural rebuilds record copied equal spans as source links; only the
 other inserted IDs become base write-backs. AI and pull `writeBlocks` retains a
 one-to-one same-type flat paragraph even with no shared words.
 
-`recordRestorations` wraps each history's Undo and Redo in a transaction with the
-manager's origin, so prose and links travel in one update. The same record includes
-Undo's deletions: removing a Discard base copy must not count as a second deletion of the
-review base. Its origin stays base for Redo, and later ordinary deletions still name the
-writer. Links resolve through chains and validate known ID ranges, not tombstone content,
-because originals and intermediate copies can be GC structs.
+The draft records no restoration: text a writer's Ctrl+Z brings back reads as the writer's.
 
 Provenance includes the snapshot its parts cover. An unlisted ID is the writer only within
 that state vector or from the caller's identified local browser client; an unlisted
 deletion requires coverage in the snapshot's delete set or a supplied locally witnessed
 delete set. A state vector alone cannot fence deletion-only writes. The classifier returns
 unresolved item ranges so the browser requests evidence revisions rather than every
-snapshot. Deletion evidence addresses the actual item ID, never an ancestor reached by a
-restoration link; chains recover insertion origin only.
+snapshot. Deletion evidence addresses the actual item ID.
 
 A wholly removed paragraph can text-align with a fresh empty replacement. When that
 replacement has no character tombstones, its block deletion witness supplies the deleter
 even for rebased base text that never existed in the draft. Recreated blocks do not bound
 that witness: the candidate region extends to retained base containers, and competing or
 uncovered tombstones leave the byline empty. A surviving container, or one with ordinary
-character tombstones, cannot borrow another block's author. Only proven Undo deletions of
-Discard base copies are excluded from that guard, so undoing Discard keeps the original
-byline.
+character tombstones, cannot borrow another block's author.
 
-Whether a part was applied is not read from this evidence: the Apply records the changes it took
-(`apply_command_effects.carried`), and the card reads those. The Apply record's item ranges are
-no longer written (only its command and group ids); the classifier still reads what an older
-record holds, until the browser's byline classifier goes.
+Whether a part was applied is not read from the draft: the Apply's `apply` edit records the
+changes it took (`carried`), the card reads those, and the server marks a provenance part
+`applied` from them (`draft-provenance.ts`).
 
 ## Apply and local Discard are the same operation on two sides
 

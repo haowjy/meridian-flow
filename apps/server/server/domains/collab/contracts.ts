@@ -455,7 +455,10 @@ export type DraftReviewApi = {
    */
   apply(input: {
     branchId: BranchId;
-    request: Omit<import("@meridian/contracts/branches").ApplyItemsClick, "saw">;
+    request: Omit<import("@meridian/contracts/branches").ApplyItemsClick, "saw"> & {
+      /** A Redo: the Un-Apply whose Undo is this command's text half. */
+      redoOf?: CommandId;
+    };
     /** The press's cut, decoded at the route. */
     saw?: import("./domain/apply-click.js").TreeCut;
     envelope: CommandEnvelope;

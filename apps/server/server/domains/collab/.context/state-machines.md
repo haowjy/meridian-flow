@@ -27,10 +27,10 @@ stateDiagram-v2
 ```
 
 - **A Discard leaves the draft open.** It appends the update that makes the draft read as its base
-  for the chosen changes and records a `discard_command_effects` row; Restore appends the inverse
-  for the changes that still stand. Only a Discard of whole drafts is listed in Trash. The
-  day-30 purge (`adapters/drizzle-discard-purge.ts`) deletes the Discard's command row, which
-  cascades its effects; a Restore after that finds nothing. A turn's card reads what became of
+  for the chosen changes and records it as a `discard` edit; Restore appends the inverse
+  for the changes that still stand, as an `undo` edit. Only a Discard of whole drafts is listed in
+  Trash. The day-30 purge (`adapters/drizzle-discard-purge.ts`) deletes the Discard's command row
+  and its `discard` edits; a Restore after that finds nothing. A turn's card reads what became of
   each part from the draft's own text.
 - **An Apply of a delete leaves the Work's drafts of that document open**, like a delete in Live
   any other way. Its text half answers `already removed`; the Un-Apply takes the tree half back and

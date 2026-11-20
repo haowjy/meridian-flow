@@ -1,9 +1,7 @@
 /** Repeatable-read historical draft evidence, indexed by immutable receipt origin, never placement. */
 import type { ItemRange } from "@meridian/agent-edit/diff";
 import {
-  applyCommandEffects,
   branches,
-  commands,
   type Database,
   documentDrafts,
   documentEditParts,
@@ -11,7 +9,7 @@ import {
   draftWriteJournal,
   projects,
 } from "@meridian/database";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInRootDrizzleReadSnapshot,
@@ -22,6 +20,7 @@ import type {
   DraftDispositionStore,
   DraftReceiptPart,
 } from "../domain/ports/draft-disposition-store.js";
+import { appliesInForce } from "./drizzle-command-edits.js";
 import { readDraftsAt } from "./drizzle-draft-storage.js";
 import { resolveEditOwners } from "./drizzle-edit-owners.js";
 
@@ -92,7 +91,7 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
       const actionRows = await tx
         .select({
           id: documentEditParts.id,
-          kind: documentEdits.kind,
+          kind: sql<"undo" | "revert">`${documentEdits.kind}`,
           actor: documentEdits.actor,
           actionId: documentEdits.actionId,
           targets: documentEditParts.targets,
@@ -141,21 +140,9 @@ export function createDrizzleDraftDispositionStore(db: Database): DraftDispositi
         });
         parts.set(row.draftId, list);
       }
-      const effects = await tx
-        .select({
-          draftId: applyCommandEffects.draftId,
-          commandId: applyCommandEffects.commandId,
-          carried: applyCommandEffects.carried,
-        })
-        .from(applyCommandEffects)
-        .innerJoin(commands, eq(commands.id, applyCommandEffects.commandId))
-        .where(
-          and(inArray(applyCommandEffects.draftId, ids), isNull(applyCommandEffects.unappliedBy)),
-        )
-        .orderBy(commands.createdAt, applyCommandEffects.ordinal);
       const applied = new Map<string, DraftDispositionCapture["applied"][number][]>();
-      for (const effect of effects)
-        applied.set(effect.draftId, [...(applied.get(effect.draftId) ?? []), effect]);
+      for (const part of await appliesInForce(tx, ids))
+        applied.set(part.draftId, [...(applied.get(part.draftId) ?? []), part]);
       for (const draft of drafts) {
         const id = draft.documentDraft.draftId;
         const found = project.get(id);

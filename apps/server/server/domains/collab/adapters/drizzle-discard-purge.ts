@@ -1,6 +1,7 @@
 /**
- * Day-30 purge of Trash's Discard entries: the command row, which carries its effects (the only
- * copy of the discarded text) with it, in one transaction. This is the only reader of the clock for
+ * Day-30 purge of Trash's Discard entries: the command row and the Discard's `discard` edits (the
+ * only copy of the discarded text), in one transaction. An Undo's edits stay: they are what says an
+ * Apply was taken back. This is the only reader of the clock for
  * them: Trash lists and Restore merges whatever still exists, so what is listed is exactly what
  * restores, and a Restore after the purge finds no command and answers `left_out purged`. A
  * drafted create's draft is not ours: the tree purges the create on its own clock
@@ -14,7 +15,7 @@
 import type { CommandId } from "@meridian/contracts";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
-import { commands } from "@meridian/database/schema";
+import { commands, documentEdits } from "@meridian/database/schema";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
@@ -35,7 +36,11 @@ export function createDrizzleDiscardPurge(
     await deps.workProjection.mutate(
       branchId ? { branches: [branchId as never] } : {},
       async () => {
-        await currentDrizzleDb(db).delete(commands).where(eq(commands.id, id));
+        const tx = currentDrizzleDb(db);
+        await tx
+          .delete(documentEdits)
+          .where(and(eq(documentEdits.commandId, id), eq(documentEdits.kind, "discard")));
+        await tx.delete(commands).where(eq(commands.id, id));
       },
     );
   }

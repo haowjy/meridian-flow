@@ -8,6 +8,8 @@ export type DraftProvenancePart = {
   deleted: readonly DraftItemRange[];
   /** An Undo took the part out of the text: its tombstones are no pending change's evidence. */
   taken?: true;
+  /** An Apply in force carried every change of the part: its text is the base's. */
+  applied?: true;
   owner: {
     threadId: string;
     title: string;

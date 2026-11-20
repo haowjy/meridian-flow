@@ -43,6 +43,7 @@ export interface ReceiptWrite {
     origin: EditOrigin;
     targets?: EditTarget[];
     delta?: StoredDelta | null;
+    carried?: [number, number][] | null;
   })[];
 }
 
@@ -96,6 +97,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,
+      carried: p.carried ?? null,
       draftBranchId:
         p.origin.kind === "pending"
           ? sql`(select ${documentDrafts.branchId} from ${documentDrafts} where ${documentDrafts.id} = ${p.origin.draftId})`
@@ -103,7 +105,7 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
     })),
   );
   for (const [ordinal, p] of input.receipts.entries()) {
-    if (p.origin.kind !== "pending") continue;
+    if (p.origin.kind !== "pending" || p.origin.rowId === undefined) continue;
     await db
       .update(draftWriteJournal)
       .set({

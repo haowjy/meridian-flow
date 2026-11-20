@@ -7,12 +7,7 @@
  * A command's `commandId` is client-generated; resends reuse it and the server deduplicates.
  */
 import { z } from "zod";
-import {
-  type ClosedOwnerWhy,
-  CommandIdSchema,
-  type CommandOutcome,
-  type Settlement,
-} from "../commands/index.js";
+import { CommandIdSchema, type CommandOutcome, type Settlement } from "../commands/index.js";
 import type { ParsedContextUri } from "../context-uri.js";
 import type { BranchId, CommandId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
@@ -75,7 +70,15 @@ export type AppliedReviewItem = {
  * `item` or `items` always names the entry's node.
  */
 export type ApplyHalfResult =
-  | { landed: true; settled?: Settlement[] }
+  | {
+      landed: true;
+      settled?: Settlement[];
+      /**
+       * A text half's draft clock once the command's write is in: a room holds the write when its
+       * server client (id 1) reached this clock. Absent when the draft's base did not change.
+       */
+      at?: number;
+    }
   | { landed: false; settled: Settlement[] };
 
 /** One item of an Apply: a document or a folder, with each of its two halves answered on its own. */
@@ -133,10 +136,10 @@ export type UnapplyClickResult = {
   /** The branch the command ran on: where a draft it swapped out is closed, and Restore names it. */
   branchId: BranchId;
   /**
-   * The text groups taken back, per document: one change made in two
-   * documents has one group id, and a press may take it back in one of them only.
+   * The documents whose text it took back, each with its draft's clock once the write is in
+   * (`ApplyHalfResult.at`); absent when the draft was purged.
    */
-  textUndone: Array<{ node: string; groupIds: string[] }>;
+  textUndone: Array<{ node: string; at?: number }>;
   /** The nodes with a tree fact this command took back (a restore it undid included). */
   treeUndone: string[];
 };
@@ -146,10 +149,7 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * The text cut of one document in an Apply. Frozen: the writer's click on the review room their
  * tab holds. Whole: every group of the draft as the server's replica has it on receipt, for a
  * click made with no room open (a Changes row, a folder, Apply all); a draft with no group then
- * is skipped, not refused. A whole cut that names what to take (a Redo's, from its Un-Apply's own
- * records) takes the pending changes of the replica that hold named AI changes and nothing else
- * (`carried`, as `[partId, index]`) or sit at a named place (`places`, for a change no AI edit made), and
- * passes over the rest.
+ * is skipped, not refused.
  */
 export type ApplyTextCut =
   | {
@@ -159,7 +159,7 @@ export type ApplyTextCut =
       baseViewDelta: ApplySpanPatch[];
       groupIds: string[];
     }
-  | { draftId: string; whole: true; places?: string[]; carried?: [number, number][] };
+  | { draftId: string; whole: true };
 
 /**
  * Apply several nodes, documents or folders, as one command and one Undo step: each item's tree
@@ -173,11 +173,9 @@ export type ApplyItemsClick = {
 };
 
 /**
- * Apply again what the Un-Apply `redoOf` took back, which is all the browser says: the server
- * reads the Un-Apply's own records for the documents, groups and tree halves, so a change another
- * chat proposed since is never applied with it, and an identical change in two documents is
- * applied only in the one the Un-Apply took. A pending change that has since merged with a
- * neighbour the Un-Apply didn't take stays in Changes, where Apply still offers it.
+ * Apply again what the Un-Apply `redoOf` took back, which is all the browser says: its text half
+ * is the Undo of the Un-Apply (each change it took out, back where it still stands), and its tree
+ * half lands again the records it took back.
  */
 export type RedoClick = {
   commandId: CommandId;

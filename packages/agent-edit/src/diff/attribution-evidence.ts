@@ -1,9 +1,7 @@
-/** Receipt and room evidence outlive projections; snapshot decisions and restoration walks do not. */
-import * as Y from "yjs";
-import { APPLY_RECORD_ROOT, readApplyRecord } from "./apply-record.js";
+/** Receipt evidence outlives projections; snapshot decisions do not. */
+import type * as Y from "yjs";
 import { DRAFT_SERVER_CLIENT_ID } from "./draft-base.js";
-import { IdIndex, type ItemRange, indexRanges } from "./id-index.js";
-import { RESTORED_ROOT, type RestorationLink, readRestorations } from "./restorations.js";
+import { type IdIndex, type ItemRange, indexRanges } from "./id-index.js";
 
 /** One AI write: the item ranges it inserted and deleted. Parts are listed latest first. */
 export interface AttributionPart {
@@ -15,6 +13,11 @@ export interface AttributionPart {
   deleted: readonly ItemRange[];
   /** An Undo took the part out: its tombstones are history, no pending change's evidence. */
   taken?: boolean;
+  /**
+   * An Apply in force carried every change of the part (the server's record of the Apply): its
+   * text is the base's now, and its deletions are settled.
+   */
+  applied?: boolean;
 }
 export interface WriterReceipt {
   userId: string;
@@ -40,7 +43,7 @@ export const UNKNOWN = -3;
 
 const receipts = new WeakMap<
   readonly AttributionPart[],
-  { inserted: IdIndex; deleted: IdIndex; taken: IdIndex }
+  { inserted: IdIndex; deleted: IdIndex; taken: IdIndex; applied: IdIndex }
 >();
 function receiptEvidence(parts: readonly AttributionPart[]) {
   let evidence = receipts.get(parts);
@@ -49,75 +52,15 @@ function receiptEvidence(parts: readonly AttributionPart[]) {
       inserted: indexRanges(parts.map((part) => part.inserted)),
       deleted: indexRanges(parts.map((part) => part.deleted)),
       taken: indexRanges([
-        parts.filter((part) => part.taken).flatMap((part) => [...part.inserted, ...part.deleted]),
+        parts.flatMap((part) =>
+          part.taken ? [...part.inserted, ...part.deleted] : part.applied ? part.deleted : [],
+        ),
       ]),
+      applied: indexRanges([parts.filter((part) => part.applied).flatMap((part) => part.inserted)]),
     };
     receipts.set(parts, evidence);
   }
   return evidence;
-}
-
-type AppliedEvidence = { applied: IdIndex; settled: IdIndex };
-type RestoredEvidence = {
-  writeBack: IdIndex;
-  undone: IdIndex;
-  linkList: readonly RestorationLink[];
-  links: IdIndex;
-  superseded: IdIndex;
-  missing: Map<number, number>;
-};
-type RoomEvidence = { applied: AppliedEvidence | null; restored: RestoredEvidence | null };
-const rooms = new WeakMap<Y.Doc, RoomEvidence>();
-function rootChanged(doc: Y.Doc, transaction: Y.Transaction | null, name: string): boolean {
-  const root = doc.share.get(name);
-  return !!root && !!transaction?.changed.has(root);
-}
-function roomEvidence(doc: Y.Doc) {
-  let evidence = rooms.get(doc);
-  if (!evidence) {
-    evidence = { applied: null, restored: null };
-    rooms.set(doc, evidence);
-    const owned = evidence;
-    const invalidate = (transaction: Y.Transaction) => {
-      // Invalidate before any root observer can project against the new contents.
-      if (rootChanged(doc, transaction, APPLY_RECORD_ROOT)) owned.applied = null;
-      if (rootChanged(doc, transaction, RESTORED_ROOT)) owned.restored = null;
-    };
-    doc.on("beforeObserverCalls", invalidate);
-    doc.once("destroy", () => doc.off("beforeObserverCalls", invalidate));
-  }
-  // A caller may classify within the transaction, before root observers have run.
-  if (rootChanged(doc, doc._transaction, APPLY_RECORD_ROOT)) evidence.applied = null;
-  if (rootChanged(doc, doc._transaction, RESTORED_ROOT)) evidence.restored = null;
-  if (!evidence.applied) {
-    const record = readApplyRecord(doc);
-    evidence.applied = {
-      applied: indexRanges([record.flatMap((entry) => entry.base)]),
-      settled: indexRanges([record.flatMap((entry) => entry.settled)]),
-    };
-  }
-  // Invalid future references can become valid when their missing clocks arrive, even without a
-  // root edit. Normal causally complete records have no dependencies and pay no history scan.
-  if (
-    evidence.restored &&
-    [...evidence.restored.missing].some(([client, end]) => Y.getState(doc.store, client) >= end)
-  )
-    evidence.restored = null;
-  if (!evidence.restored) {
-    const missing = new Map<number, number>();
-    const restored = readRestorations(doc, (client, end) => {
-      missing.set(client, Math.min(missing.get(client) ?? end, end));
-    });
-    evidence.restored = {
-      writeBack: indexRanges([restored.base]),
-      undone: indexRanges([restored.undone]),
-      linkList: restored.links,
-      links: new IdIndex(restored.links.map((link, i) => [link[0], link[1], link[2], i] as const)),
-      superseded: indexRanges([restored.links.map((link) => [link[3], link[4], link[2]] as const)]),
-      missing,
-    };
-  }
-  return { ...evidence.applied, ...evidence.restored };
 }
 
 type EvidenceRun = readonly [value: number, length: number];
@@ -147,61 +90,28 @@ function deletionRun(
 export class AttributionEvidence {
   private readonly inserted: IdIndex;
   private readonly deleted: IdIndex;
-  private readonly applied: IdIndex;
-  private readonly writeBack: IdIndex;
-  private readonly undone: IdIndex;
-  private readonly settled: IdIndex;
   private readonly taken: IdIndex;
-  private readonly links: IdIndex;
-  private readonly superseded: IdIndex;
-  private readonly linkList: readonly RestorationLink[];
-  constructor(
-    doc: Y.Doc,
-    private readonly provenance: Provenance,
-  ) {
+  private readonly applied: IdIndex;
+  constructor(private readonly provenance: Provenance) {
     const receipts = receiptEvidence(provenance.parts);
-    const room = roomEvidence(doc);
     this.inserted = receipts.inserted;
     this.deleted = receipts.deleted;
-    this.applied = room.applied;
-    this.settled = room.settled;
     this.taken = receipts.taken;
-    this.writeBack = room.writeBack;
-    this.undone = room.undone;
-    this.linkList = room.linkList;
-    this.links = room.links;
-    this.superseded = room.superseded;
+    this.applied = receipts.applied;
   }
 
-  /** Resolve one homogeneous origin run, following restoration intervals with the same offset. */
+  /** Resolve one homogeneous origin run. */
   private originRun(client: number, clock: number, length: number): EvidenceRun {
-    let c = client;
-    let k = clock;
-    let available = length;
-    for (let hops = 0; ; hops++) {
-      const [applied, appliedLength] = this.applied.run(c, k);
-      available = Math.min(available, appliedLength);
-      if (applied >= 0) return [BASE, available];
-      const [linkAt, linkLength] = this.links.run(c, k);
-      available = Math.min(available, linkLength);
-      const [writeBack, writeBackLength] = this.writeBack.run(c, k);
-      available = Math.min(available, writeBackLength);
-      if (linkAt < 0 && writeBack >= 0) return [BASE, available];
-      const [part, partLength] = this.inserted.run(c, k);
-      available = Math.min(available, partLength);
-      if (part >= 0) return [part, available];
-      if (c === DRAFT_SERVER_CLIENT_ID) return [BASE, available];
-      if (linkAt < 0) {
-        const seen = this.provenance.snapshot.sv.get(c) ?? 0;
-        if (c === this.provenance.localClientId) return [USER, available];
-        if (k < seen) return [USER, Math.min(available, seen - k)];
-        return [UNKNOWN, available];
-      }
-      if (hops > this.linkList.length) return [UNKNOWN, available];
-      const link = this.linkList[linkAt];
-      c = link[3];
-      k = link[4] + (k - link[1]);
-    }
+    const [applied, appliedLength] = this.applied.run(client, clock);
+    if (applied >= 0) return [BASE, Math.min(length, appliedLength)];
+    const [part, partLength] = this.inserted.run(client, clock);
+    const available = Math.min(length, partLength, appliedLength);
+    if (part >= 0) return [part, available];
+    if (client === DRAFT_SERVER_CLIENT_ID) return [BASE, available];
+    const seen = this.provenance.snapshot.sv.get(client) ?? 0;
+    if (client === this.provenance.localClientId) return [USER, available];
+    if (clock < seen) return [USER, Math.min(available, seen - clock)];
+    return [UNKNOWN, available];
   }
 
   /** `BASE`, `USER`, `UNKNOWN`, or the index of the AI part that wrote the item. */
@@ -222,43 +132,9 @@ export class AttributionEvidence {
     }
   }
 
-  private writeBackRun(client: number, clock: number, length: number): EvidenceRun {
-    let c = client;
-    let k = clock;
-    let available = length;
-    for (let hops = 0; ; hops++) {
-      const [applied, appliedLength] = this.applied.run(c, k);
-      available = Math.min(available, appliedLength);
-      if (applied >= 0) return [0, available];
-      const [linkAt, linkLength] = this.links.run(c, k);
-      available = Math.min(available, linkLength);
-      const [writeBack, writeBackLength] = this.writeBack.run(c, k);
-      available = Math.min(available, writeBackLength);
-      if (linkAt < 0) return [writeBack >= 0 ? 1 : 0, available];
-      if (hops > this.linkList.length) return [0, available];
-      const link = this.linkList[linkAt];
-      c = link[3];
-      k = link[4] + (k - link[1]);
-    }
-  }
-
-  /** Whether every id is a known Undo removal of a Discard base copy. */
-  isAllUndoneWriteBack(client: number, clock: number, length: number): boolean {
-    for (let offset = 0; offset < length; ) {
-      const at = clock + offset;
-      const [undone, undoneLength] = this.undone.run(client, at);
-      const [writeBack, writeBackLength] = this.writeBackRun(client, at, length - offset);
-      if (undone < 0 || writeBack !== 1) return false;
-      offset += Math.min(length - offset, undoneLength, writeBackLength);
-    }
-    return true;
-  }
-
-  /** Whether an Apply took the id into the base or an Undo took its part out: no pending change's evidence. */
+  /** Whether an Undo took the id's part out, or an Apply took all of it: no pending change's evidence. */
   private settledRun(client: number, clock: number): EvidenceRun {
-    const [settled, settledLength] = this.settled.run(client, clock);
-    const [taken, takenLength] = this.taken.run(client, clock);
-    return [settled >= 0 || taken >= 0 ? 0 : -1, Math.min(settledLength, takenLength)];
+    return this.taken.run(client, clock);
   }
 
   /** Deletion evidence belongs to this item, never to its restored insertion's source. */
@@ -306,22 +182,10 @@ export class AttributionEvidence {
     for (let offset = 0; offset < length; ) {
       const at = clock + offset;
       const [settled, settledLength] = this.settledRun(client, at);
-      const [undone, undoneLength] = this.undone.run(client, at);
-      const [writeBack, writeBackLength] = this.writeBackRun(client, at, length - offset);
       const [origin, originLength] = this.originRun(client, at, length - offset);
-      const [superseded, supersededLength] = this.superseded.run(client, at);
       const [who, deleterLength] = this.deleterRun(client, at, length - offset);
-      const run = Math.min(
-        length - offset,
-        settledLength,
-        undoneLength,
-        writeBackLength,
-        originLength,
-        supersededLength,
-        deleterLength,
-      );
-      if (settled < 0 && !(undone >= 0 && writeBack === 1) && origin === BASE && superseded < 0)
-        visit(who, run);
+      const run = Math.min(length - offset, settledLength, originLength, deleterLength);
+      if (settled < 0 && origin === BASE) visit(who, run);
       offset += run;
     }
   }

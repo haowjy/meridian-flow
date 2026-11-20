@@ -32,7 +32,7 @@ import { byteaColumn, createdAt, updatedAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { branches } from "./branches";
 import { documents, projects } from "./content";
-import { documentEdits, type EditDeltaJson } from "./document-edits";
+import { documentEdits } from "./document-edits";
 import { users } from "./users";
 
 type DocumentDraftKind = "work_draft";
@@ -392,73 +392,4 @@ export const applyCommandTrees = pgTable(
     nodes: jsonb("nodes").$type<string[]>().notNull(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
-);
-
-/**
- * What a Discard took out of one draft: the blocks it changed, before and after, with one block
- * either side (the shape of `document_edit_parts.delta`). It is the only copy of the discarded
- * text, so Restore merges it back from here and the day-30 purge deletes it with the command.
- */
-export const discardCommandEffects = pgTable(
-  "discard_command_effects",
-  {
-    commandId: uuid("command_id")
-      .$type<CommandId>()
-      .notNull()
-      .references(() => commands.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    draftId: text("draft_id").notNull(),
-    delta: jsonb("delta").$type<EditDeltaJson>().notNull(),
-    /** The Restore that ended this entry: it brought every change back, or none that could come. */
-    endedBy: uuid("ended_by").$type<CommandId>(),
-  },
-  (table) => [primaryKey({ columns: [table.commandId, table.documentId] })],
-);
-
-/** The actual text effect of each frozen Apply group, independent of compactable journals. */
-export const applyCommandEffects = pgTable(
-  "apply_command_effects",
-  {
-    commandId: uuid("command_id")
-      .$type<CommandId>()
-      .notNull()
-      .references(() => commands.id, { onDelete: "cascade" }),
-    ordinal: integer("ordinal").notNull(),
-    groupId: text("group_id").notNull(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    draftId: text("draft_id").notNull(),
-    /**
-     * What this group changed in the manuscript: the blocks before and after, with one unchanged
-     * block either side. Null means live already held the group's text, so Un-Apply removes no live
-     * or base text.
-     */
-    liveDelta: jsonb("live_delta").$type<EditDeltaJson | null>(),
-    /**
-     * The changes of AI edits this group took, as `[partId, index]`: the part of a
-     * `document_edit_parts` row and the index of the change in the part's delta. Written with the
-     * effect, so the card reads "applied" for them whatever the text does later.
-     */
-    carried: jsonb("carried").$type<[number, number][]>().notNull(),
-    /**
-     * Where the group sat, as its change's hash and the id of its first block: how a Redo finds a
-     * change only the writer made (`carried` finds an AI edit's), which an equal change elsewhere
-     * cannot take over.
-     */
-    place: text("place").notNull(),
-    /** The command's base before its first group; stored once rather than once per group. */
-    baseStart: jsonb("base_start").$type<unknown[]>(),
-    /** This group's bounded change to the preceding committed base. */
-    baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
-    unappliedBy: uuid("unapplied_by").$type<CommandId>(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.commandId, table.ordinal] }),
-    uniqueIndex("apply_command_effects_group").on(table.commandId, table.documentId, table.groupId),
-  ],
 );

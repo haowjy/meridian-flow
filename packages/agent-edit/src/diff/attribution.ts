@@ -10,14 +10,13 @@
  *
  * An alignment is one place the text allows an edit to sit (a repeated word or a boundary space can
  * slide). The footprint uses raw word/structural boundaries; only names use character edits. It reads
- * only lengths, ids and restoration links, so a browser (gc on) and the server (gc off) agree.
+ * only lengths and ids, so a browser (gc on) and the server (gc off) agree.
  */
 
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
-import type { ApplyEntry } from "./apply-record.js";
 import {
   AttributionEvidence,
   type AttributionPart,
@@ -49,14 +48,10 @@ export interface ChangeClassification {
   unresolved: boolean;
   /** Unclassified item identities, independent of unrelated local edits. */
   unresolvedItems: ItemRange[];
-  /** With `record`: what Apply moves into the base if this change is applied. */
-  applied?: ApplyEntry;
 }
 export interface ClassifyOptions {
   /** Characters of span the classification may diff (default 64k). */
   budget?: number;
-  /** Also return each change's Apply record. */
-  record?: boolean;
   /** Characters a repeated-text slide may scan each way before the exact byline gives way to membership (tests lower it). */
   slide?: number;
 }
@@ -187,8 +182,6 @@ interface Footprint {
   members: Set<number>;
   unresolvedItems: ItemRange[];
   unresolved: boolean;
-  base: ItemRange[];
-  settled: ItemRange[];
 }
 
 /** Phase 2 cannot mutate the footprint. Any unfinished precision work silences the byline. */
@@ -261,12 +254,12 @@ class Classifier {
     doc: Y.Doc,
     private readonly projection: ReviewProjection,
     private readonly provenance: Provenance,
-    private readonly options: ClassifyOptions,
+    readonly options: ClassifyOptions,
   ) {
     this.parts = provenance.parts;
     this.budget = options.budget ?? DIFF_BUDGET;
     this.slide = options.slide ?? SLIDE_SCAN;
-    this.evidence = new AttributionEvidence(doc, provenance);
+    this.evidence = new AttributionEvidence(provenance);
     const items: Y.Item[] = [];
     const gaps: Y.Item[][] = [[]];
     for (let it = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)._start; it; it = it.right) {
@@ -337,8 +330,6 @@ class Classifier {
       members: new Set(),
       unresolved: false,
       unresolvedItems: [],
-      base: [],
-      settled: [],
     };
     const include = (who: number) => {
       if (who >= 0) footprint.members.add(who);
@@ -349,14 +340,12 @@ class Classifier {
         if (who === BASE) return;
         include(who);
         if (who === UNKNOWN) pushRange(footprint.unresolvedItems, client, at, run);
-        if (this.options.record) pushRange(footprint.base, client, at, run);
       });
     };
     const dead = (item: Y.Item) => {
       const c = item.id.client;
       this.evidence.deletions(c, item.id.clock, item.length, (who, settled, clock, length) => {
         if (settled) return;
-        if (this.options.record) pushRange(footprint.settled, c, clock, length);
         include(who);
         if (who === UNKNOWN) pushRange(footprint.unresolvedItems, c, clock, length);
       });
@@ -496,16 +485,14 @@ class Classifier {
 
   /** A fresh empty container can stand in for a removed paragraph after rebase.
    * Ordinary character tombstones mean this may be text cleared in its original
-   * container. Undo's deletions of Discard base copies do not witness that edit. */
+   * container. */
   private paragraphRemovals(b: number): Array<readonly Y.Item[]> {
     const retained = (at: number) => {
       const { id } = this.blocks.items[at];
       return this.evidence.origin(id.client, id.clock) === BASE;
     };
     if (this.text(1, b).text !== "" || retained(b)) return [];
-    for (const { item } of this.index(b).dead)
-      if (!this.evidence.isAllUndoneWriteBack(item.id.client, item.id.clock, item.length))
-        return [];
+    if (this.index(b).dead.length) return [];
     let candidates = this.removalRegions.get(b);
     if (!candidates) {
       let lo = b;
@@ -939,9 +926,6 @@ class Classifier {
         unresolved: footprint.unresolved,
         unresolvedItems: joined(footprint.unresolvedItems),
         members: [...footprint.members].sort((x, y) => x - y),
-        ...(this.options.record
-          ? { applied: { base: joined(footprint.base), settled: joined(footprint.settled) } }
-          : {}),
       });
     }
     return out;
@@ -978,17 +962,4 @@ export function classifyChanges(
   const classifier = new Classifier(doc, projection, provenance, options);
   // A fragment that moved on since the projection was computed no longer lines up block for block.
   return classifier.aligned ? classifier.classify() : new Map();
-}
-
-/** The Apply record for the changes `ids`, from a classification made with `record: true`. */
-export function applyRecordOf(
-  classified: ReadonlyMap<string, ChangeClassification>,
-  ids: Iterable<string>,
-): ApplyEntry {
-  const entry: ApplyEntry = { base: [], settled: [] };
-  for (const id of ids) {
-    entry.base.push(...(classified.get(id)?.applied?.base ?? []));
-    entry.settled.push(...(classified.get(id)?.applied?.settled ?? []));
-  }
-  return entry;
 }

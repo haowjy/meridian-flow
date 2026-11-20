@@ -93,7 +93,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
    */
   const stands = (part: StoredInversePart) => {
     const place = placeOf(part);
-    if (place === "live") return takeBack(textIn(place), null, [part]).taken.length > 0;
+    if (place === "live") return takeBack(textIn(place), [part]).taken.length > 0;
     return planned.has(place)
       ? takeOutStanding(textIn(place), baseOf(place), [part]).taken.length > 0
       : (part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false);
@@ -104,7 +104,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
     planned.set(
       place,
       place === "live"
-        ? takeBack(textIn(place), null, parts).live
+        ? takeBack(textIn(place), parts).live
         : takeOutStanding(textIn(place), baseOf(place), parts).text,
     );
   };

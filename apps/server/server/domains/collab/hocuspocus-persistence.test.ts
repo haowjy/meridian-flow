@@ -5,7 +5,7 @@
  */
 
 import { Hocuspocus } from "@hocuspocus/server";
-import { APPLY_RECORD_ROOT } from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
@@ -14,11 +14,10 @@ import {
   documentAuthority,
   RetiredDocumentHandleError,
 } from "./domain/document-handle.js";
-import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.js";
+import { DraftStaleUpdateError } from "./domain/draft-store.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
-import { testDraftRow } from "./test-support/memory-draft-store.js";
 
 const DRAFT_ID = "draft-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
@@ -387,10 +386,10 @@ describe("createHocuspocusPersistenceService draft frames", () => {
     [
       "nested insert",
       (doc: Y.Doc) =>
-        (doc.getMap(APPLY_RECORD_ROOT).get("nested") as Y.Array<unknown>).push(["hostile"]),
+        (doc.getMap(REVIEW_BASE_FRAGMENT).get("nested") as Y.Array<unknown>).push(["hostile"]),
     ],
-    ["delete-only change", (doc: Y.Doc) => doc.getMap(APPLY_RECORD_ROOT).delete("nested")],
-    ["top-level collision", (doc: Y.Doc) => doc.getArray(APPLY_RECORD_ROOT).push([1])],
+    ["delete-only change", (doc: Y.Doc) => doc.getMap(REVIEW_BASE_FRAGMENT).delete("nested")],
+    ["top-level collision", (doc: Y.Doc) => doc.getArray(REVIEW_BASE_FRAGMENT).push([1])],
   ])("rejects hostile reserved namespace %s before journaling", async (_name, mutate) => {
     const liveDocument = documentWithReservedFacts();
     const journal = fakeJournal();
@@ -550,7 +549,7 @@ function writerUpdate(): Uint8Array {
 function documentWithReservedFacts(): Y.Doc {
   const doc = boundDoc({ gc: false });
   const nested = new Y.Array<unknown>();
-  doc.getMap(APPLY_RECORD_ROOT).set("nested", nested);
+  doc.getMap(REVIEW_BASE_FRAGMENT).set("nested", nested);
   nested.push(["authority fact"]);
   return doc;
 }

@@ -564,6 +564,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       branches: workBranches,
       treeLists: deps.treeLists,
       coordinator: draftCoordinator,
+      live: persistence.journal,
+      liveCoordinator,
+      onCommitted: async (documentId) => {
+        await runDocumentWriteHook({ documentId }, "collab.apply");
+      },
     }),
   });
   const branches = createWorkBranchReviewService({

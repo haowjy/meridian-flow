@@ -10,7 +10,6 @@ import type { DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   agentEditWidCounters,
-  applyCommandEffects,
   documentBlockRooms,
   documentDrafts,
   documentEdits,
@@ -57,7 +56,6 @@ export async function releaseDocumentContent(
         ...drafts.map(({ draftId }) => like(observationFrontiers.roomKey, `draft:${draftId}`)),
       ),
     );
-  await tx.delete(applyCommandEffects).where(inArray(applyCommandEffects.documentId, list));
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));
   await tx.delete(userRecentDocuments).where(inArray(userRecentDocuments.documentId, list));

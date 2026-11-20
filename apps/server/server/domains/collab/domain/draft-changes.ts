@@ -6,7 +6,6 @@
  * changes whose blocks it touched (`agent-edit/content-merge/stands.ts`).
  */
 import {
-  addsPendingChange,
   type ChangeMemo,
   type ChangeRead,
   changeState,
@@ -152,40 +151,23 @@ export function carriedBy(
 export type TakeBackPart = { delta: StoredDelta | null; only?: ReadonlySet<number> };
 
 /**
- * An Undo of changes that are in the manuscript: each change that stands in `live` is taken out of
- * it, and out of the draft's base and text where it stands there. A change whose removal would add
- * a pending change to Changes is left whole, so what the card offers is what the press does. With
- * no `draft` (a change the AI wrote straight into Live) only the manuscript is written.
+ * An Undo of changes the AI wrote straight into the manuscript: each change that stands in `live`
+ * is taken out of it.
  */
 export function takeBack<P extends TakeBackPart>(
   live: readonly PMNode[],
-  draft: { base: readonly PMNode[]; text: readonly PMNode[] } | null,
   parts: readonly P[],
-): { live: readonly PMNode[]; base?: readonly PMNode[]; text?: readonly PMNode[]; taken: P[] } {
+): { live: readonly PMNode[]; taken: P[] } {
   let blocks = live;
-  let base = draft?.base;
-  let text = draft?.text;
   const taken: P[] = [];
   for (const part of parts) {
     if (!part.delta) continue;
     editChanges(schema, readDelta(schema, part.delta)).forEach((change, index) => {
       if (part.only && !part.only.has(index)) return;
       if (changeStateIn(schema, change, blocks) !== "stands") return;
-      const nextBase =
-        base && changeStateIn(schema, change, base) === "stands"
-          ? takeOut(schema, change, base)
-          : base;
-      const nextText =
-        text && changeStateIn(schema, change, text) === "stands"
-          ? takeOut(schema, change, text)
-          : text;
-      if (base && text && nextBase && nextText && addsPendingChange(base, text, nextBase, nextText))
-        return;
       blocks = takeOut(schema, change, blocks);
-      base = nextBase;
-      text = nextText;
       if (!taken.includes(part)) taken.push(part);
     });
   }
-  return { live: blocks, ...(base ? { base } : {}), ...(text ? { text } : {}), taken };
+  return { live: blocks, taken };
 }

@@ -102,11 +102,11 @@ hidden creation.
 `ApplyClickQueue` per item key holds its text, tree and text+tree clicks, so a tree cut
 waits behind the text clicks before it. Draft rooms are resources the item attaches:
 `bind(ref, session)` installs a replaceable session binding on that draft's room. A text
-click names its draft (`body.draftId`), and only that room records it, folds it, holds a
+click names its draft (`body.draftId`), and only that room folds it, holds a
 reader for it (following replacement sessions even without a surface) and cancels it on
 close, so a newer draft under the same key can't inherit an old click. The client never
 refuses a click: when its draft's room ends (reset, terminal, access ended, destroyed) before
-the click is sent, the click goes anyway (`roomEnded`), and the server's answer is the truth
+the click is sent, the click goes anyway, and the server's answer is the truth
 about the draft (closed, archived, applied).
 
 
@@ -132,15 +132,13 @@ server won't open (closed, access ended) sends the frame's own cut and the serve
 this build can't open (schema stale or superseded) can't be read either, so the click isn't sent:
 it settles `unsent` in the client, freeing the draft's queue, and the press shows the failure pill. The ended room stays bound for its
 projection only (`Entry.ended`): its rows fold the click while it runs, as any Apply's do, and
-keep folding it once it lands (`landedUnrecorded`), since no record will show, until a room opens
-on the draft again. No lease opens a room for such a click. A click
+keep folding it once it lands, until a room on the draft holds the write (`at`). No lease opens a room for such a click. A click
 whose typing was acknowledged before the room ended goes frozen as it is. Either way a click whose
 room ended settles on its answer, and never waits on the server's sync (`unsynced` stays for live
 rooms). The queue keeps its own `readDraftRoom` lease until
 terminal. With no room ready, a whole-draft target (`{kind: "draft", draftId}`, the list's id)
 sends a whole cut instead (`captureOnReceipt`): the server applies every change its copy of the
-draft holds on receipt. That click has no optimistic base and no room to record it (`frozenOn`
-is false), so it settles on the server's answer; its row hides until then, and the commands
+draft holds on receipt. That click has no optimistic base (`frozenOn` is false), so nothing folds it; its row hides until then, and the commands
 drop what it took from the cached list (`dropTaken`). An editor on the draft meanwhile leaves
 inline review (the item is `hidden`, `useReviewRoomOwner`) and its Apply waits on the pending
 command, so no frozen click can follow the whole cut onto the same changes. A draft with no
@@ -185,11 +183,11 @@ commands behind any intent. The Un-Apply goes when either half of the Apply land
 landed rename with settled text still has something to take back.
 
 Every Redo is one request that names its Un-Apply: `{ commandId, redoOf }` (`RedoClick`, on the
-Apply route). The server reads what that Un-Apply took from its own records (`redoItems`: the
-effect rows it marked, with their draft, and its `treeUndone`), so a partial Ctrl+Z redoes only
-what it took back, a change another chat proposed since is never applied with it, and one made in
-two documents is applied only where the Un-Apply took it. A group the draft no longer holds, or that a neighbour the
-Un-Apply didn't take has merged into, is passed over, and a Redo that lands nothing ends, applying nothing else. The review's queue paints a
+Apply route). The server takes back that Un-Apply's own `undo` edit and replays its
+`treeUndone` (`redoItems`), so a partial Ctrl+Z redoes only what it took back, a change another
+chat proposed since is never applied with it, and one made in two documents is applied only where
+the Un-Apply took it. A change the writer has since written over stays out, and a Redo that lands
+nothing ends, applying nothing else. The review's queue paints a
 Redo at once from the selection the Un-Apply took; what it sends is the id. Every port reads the
 same landed rule (`itemLanded`: the item's text or tree landed): an `applied` answer only says the
 command finished.
@@ -231,13 +229,11 @@ hides a folder whose own cut is in flight once nothing under it is listed. Trans
 independent duties:
 
 - *Release* (the head leaves the FIFO and its optimistic contribution ends) happens once:
-  on the room's record or a terminal answer. The queue knows its item's node and reads its
-  own entry: an answer whose entry says this item's text landed waits for the record, and one
-  whose text was settled is final, whatever a sibling in the same command landed.
+  on its stored answer. The queue knows its item's node and reads its own entry: a landed text
+  half moves to `held` until the room's server clock reaches the answer's `at`.
 - *Completion* (the caller's outcome) comes from the full answer, which alone carries
   `restored`. When the answer is missing or lost, the queue reads the stored result back
-  under the same command id, never a resend, at 0/1/2/4 seconds. Exhausted reads complete
-  as `landed`, with `restored` unknown.
+  under the same command id, never a resend, at 0/1/2/4 seconds.
 
 A closed owner (an archived or deleted Work, or a chat in Trash) locks nothing: Apply and Un-Apply land and
 leave the Work closed. A Discard, Discard all, a folder's ×, a change's Discard and an Undo of a Discard come
@@ -324,9 +320,7 @@ change rather than waiting for animation frames. A write finds the room as it is
 and takes the chosen changes from it by `readChosen`.
 
 Direct writes never impersonate the binding origin: its delete-only transactions without a
-writer ProseMirror transaction are schema-repair evidence. The draft-only editor plugin
-installs restoration recording when its view mounts, before any writer Undo/Redo; live
-editors never install it. A side or Work notice owns a separate manager and pool lease.
+writer ProseMirror transaction are schema-repair evidence. A side or Work notice owns a separate manager and pool lease.
 The notice
 belongs to its exact session binding, so replacement documents never inherit the manager.
 

@@ -1,7 +1,7 @@
 /** Delivery schedules a browser cannot reliably hold: immutable retries, row/answer ordering and closes.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - ordered Apply delivery and dual-witness settlement
+ * - ordered Apply delivery, settled on the stored answer
  */
 
 import type {
@@ -61,7 +61,7 @@ it("retries a lost answer with the identical body at 1/2/4 seconds, then gives t
   queue.destroy();
 });
 
-it("releases the head on the record before an answer and reports the answer's outcome, or waits for the record after an applied answer; a later ack never blocks a ready head", async () => {
+it("settles the head on its stored answer and sends the next once its ack is in; a later ack never blocks a ready head", async () => {
   const answer = deferred<ApplyClickAnswer>();
   const laterAck = deferred<void>();
   const send = vi
@@ -78,30 +78,19 @@ it("releases the head on the record before an answer and reports the answer's ou
   const second = queue.enqueue(frozen("second", laterAck.promise));
   await flush();
   expect(send).toHaveBeenCalledTimes(1);
-  queue.observe("draft", ["first"]);
+  const stored: ApplyClickAnswer = {
+    status: "applied",
+    commandId: "first",
+    items: [
+      { node: "d", text: { landed: true, settled: [{ rule: "restored", documentId: "d" }] } },
+    ],
+    applied: [],
+  };
+  answer.resolve(stored);
+  expect(await result).toEqual(stored);
   await flush();
   expect(send).toHaveBeenCalledTimes(1);
   laterAck.resolve();
-  await flush();
-  expect(send).toHaveBeenCalledTimes(2);
-  // Landed by the record; the late answer still says what the record can't.
-  answer.resolve({
-    status: "applied",
-    commandId: "first",
-    items: [
-      { node: "d", text: { landed: true, settled: [{ rule: "restored", documentId: "d" }] } },
-    ],
-    applied: [],
-  });
-  expect(await result).toEqual({
-    status: "applied",
-    commandId: "first",
-    items: [
-      { node: "d", text: { landed: true, settled: [{ rule: "restored", documentId: "d" }] } },
-    ],
-    applied: [],
-  });
-  queue.observe("draft", ["first", "second"]);
   await expect(second).resolves.toEqual({
     status: "applied",
     commandId: "second",
@@ -111,7 +100,7 @@ it("releases the head on the record before an answer and reports the answer's ou
   queue.destroy();
 });
 
-it("a terminal close cancels unsent clicks and settles a sent head from its answer or same-id durable lookup without a room record", async () => {
+it("a terminal close cancels unsent clicks and settles a sent head from its answer or same-id durable lookup", async () => {
   for (const status of ["applied", "none"] as const) {
     const answer = deferred<ApplyClickAnswer>();
     const lookup = vi.fn(
@@ -203,8 +192,6 @@ it("one settled click in the middle removes only its contribution, answers its o
   const second = queue.enqueue(frozen("second"));
   const third = queue.enqueue(frozen("third"));
   await flush();
-  queue.observe("draft", ["first"]);
-  await flush();
   expect(await second).toEqual({
     status: "applied",
     commandId: "second",
@@ -216,7 +203,6 @@ it("one settled click in the middle removes only its contribution, answers its o
     "second",
     "third",
   ]);
-  queue.observe("draft", ["first", "third"]);
   await expect(third).resolves.toEqual({
     status: "applied",
     commandId: "third",

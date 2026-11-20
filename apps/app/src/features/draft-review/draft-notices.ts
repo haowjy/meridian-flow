@@ -5,11 +5,7 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
-import type {
-  ApplyClickResult,
-  ApplyItemResult,
-  UnapplyClickResult,
-} from "@meridian/contracts/branches";
+import type { ApplyClickResult, ApplyItemResult } from "@meridian/contracts/branches";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import type { ApplyEntries } from "./apply-history";
 import type { DiscardRestores } from "./discard-restores";
@@ -42,11 +38,6 @@ export function itemOf(answer: ApplyClickResult, node: string): ApplyItemResult 
 export function itemLanded(answer: ApplyClickResult, node: string): boolean {
   const item = itemOf(answer, node);
   return item?.text?.landed === true || item?.tree?.landed === true;
-}
-
-/** The text groups of `node` an Un-Apply took back. */
-export function textUndoneOf(answer: UnapplyClickResult, node: string): string[] {
-  return answer.textUndone.find((text) => text.node === node)?.groupIds ?? [];
 }
 
 /** What of an Apply landed, command-wide: its Undo step's two halves. */

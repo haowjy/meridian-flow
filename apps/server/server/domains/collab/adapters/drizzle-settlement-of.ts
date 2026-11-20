@@ -6,7 +6,7 @@
 import type { BranchId } from "@meridian/contracts";
 import type { Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
-import { applyCommandEffects, commands, documentDrafts } from "@meridian/database/schema";
+import { documentDrafts } from "@meridian/database/schema";
 import {
   listRecords,
   pendingRecords,
@@ -15,10 +15,11 @@ import {
   settledRecords,
   type TreeRecord,
 } from "@meridian/project-tree";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { TreeCut } from "../domain/apply-click.js";
+import { appliesInForce } from "./drizzle-command-edits.js";
 
 export type Settled = { kind: "applied" | "discarded" | "removed" } | { kind: "purged" };
 
@@ -166,24 +167,12 @@ async function textHalf(db: Database, draftIds: readonly string[]) {
     .from(documentDrafts)
     .where(inArray(documentDrafts.id, [...draftIds]));
   const open = rows.map((row) => row.id);
-  const effects = open.length
-    ? await tx
-        .selectDistinctOn([applyCommandEffects.draftId], {
-          draftId: applyCommandEffects.draftId,
-        })
-        .from(applyCommandEffects)
-        .innerJoin(commands, eq(commands.id, applyCommandEffects.commandId))
-        .where(
-          and(inArray(applyCommandEffects.draftId, open), isNull(applyCommandEffects.unappliedBy)),
-        )
-        .orderBy(applyCommandEffects.draftId, desc(commands.createdAt))
-    : [];
+  const applied = new Set((await appliesInForce(tx, open)).map((part) => part.draftId));
   for (const row of rows) {
-    const effect = effects.find((one) => one.draftId === row.id);
     out.set(row.id, {
       open: true,
       branchId: row.branchId,
-      last: effect ? { kind: "applied" } : null,
+      last: applied.has(row.id) ? { kind: "applied" } : null,
     });
   }
   return out;

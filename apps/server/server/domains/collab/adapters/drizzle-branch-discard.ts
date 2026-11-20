@@ -6,7 +6,7 @@
  * package's `discardDraft`, run through `treeListStore.submit` in each list the Work spans: the
  * Work's pending records are settled discarded with the command's id. The text half merges the
  * review base's side of the chosen changes into the draft as an append, under the draft's hold,
- * and stores the delta in `discard_command_effects`, which Restore reads. The draft stays open.
+ * and records it as a `discard` edit, which Restore takes back. The draft stays open.
  * A drafted create is then in no view, and its document and text stay until retention purges them;
  * nothing here releases a document.
  *
@@ -24,11 +24,11 @@ import {
   writeBlocks,
 } from "@meridian/agent-edit/diff";
 import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
-import type { BranchId, CommandId, UserId, WorkId } from "@meridian/contracts";
+import type { BranchId, UserId, WorkId } from "@meridian/contracts";
 import type { Settlement } from "@meridian/contracts/commands";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { discardCommandEffects, documentDrafts } from "@meridian/database/schema";
+import { documentDrafts } from "@meridian/database/schema";
 import { discardDraft, newId, pendingRecords, recordsOfItem } from "@meridian/project-tree";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -55,6 +55,7 @@ import { draftHoldsText } from "../domain/draft-projection.js";
 import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { treeListOfNode, treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
+import { recordDocumentEdit } from "./drizzle-document-edits.js";
 import type { DraftClose } from "./drizzle-draft-close.js";
 import { noteOf, type Settled, settlementOf } from "./drizzle-settlement-of.js";
 import { writeTextAnswer } from "./drizzle-text-answer.js";
@@ -289,6 +290,7 @@ export function createDrizzleBranchDiscard(
    */
   async function discardText(input: {
     commandId: string;
+    userId: UserId | undefined;
     documentId: DocumentId;
     draftId: string;
     text: "all" | readonly string[];
@@ -297,6 +299,7 @@ export function createDrizzleBranchDiscard(
     const base = await deps.coordinator.loadBase(input.draftId);
     let taken: ReturnType<typeof discardChanges> = null;
     let holds = true;
+    let rows: Uint8Array[] = [];
     const write = deps.coordinator.prepareAppend(base, [], {
       work: "active",
       authorServerRows(prefix) {
@@ -313,9 +316,10 @@ export function createDrizzleBranchDiscard(
         if (!taken) return [];
         const next = taken.text;
         holds = !blocksEqual(before, next);
-        return captureMutationUpdates(prefix, () =>
+        rows = captureMutationUpdates(prefix, () =>
           prefix.transact(() => writeBlocks(fragment, draftSchema, next)),
         );
+        return rows;
       },
     });
     try {
@@ -326,11 +330,20 @@ export function createDrizzleBranchDiscard(
     }
     if (!taken) return false;
     const tx = currentDrizzleDb(db);
-    await tx.insert(discardCommandEffects).values({
-      commandId: input.commandId as CommandId,
+    await recordDocumentEdit(tx, {
       documentId: input.documentId,
-      draftId: input.draftId,
-      delta: (taken as { delta: StoredDelta }).delta,
+      actor: "human",
+      actorUserId: input.userId ?? null,
+      kind: "discard",
+      commandId: input.commandId,
+      receipts: [
+        {
+          update: Y.mergeUpdates(rows),
+          effect: { inserted: [], deleted: [] },
+          origin: { kind: "pending", draftId: input.draftId },
+          delta: (taken as { delta: StoredDelta }).delta,
+        },
+      ],
     });
     // A draft left with nothing to review leaves the list at this commit, not at the judgement.
     if (!holds) {
@@ -368,7 +381,13 @@ export function createDrizzleBranchDiscard(
     await discardTreeRecords(db, deps, { branchId, userId: input.userId, commandId });
     const drafts = await lockActiveDrafts(db, deps.coordinator, branchId, documents);
     for (const [documentId, draft] of drafts)
-      await discardText({ commandId, documentId, draftId: draft.id, text: "all" });
+      await discardText({
+        commandId,
+        userId: input.userId,
+        documentId,
+        draftId: draft.id,
+        text: "all",
+      });
     // The tree's rows are the ones the Work's view showed: they go with the records.
     await deps.treeLists.resync(await treeListsOfBranch(db, branchId));
     return { closed: documents, settled: [] };
@@ -409,6 +428,7 @@ export function createDrizzleBranchDiscard(
         text && draft
           ? await discardText({
               commandId,
+              userId: input.userId,
               documentId: id,
               draftId: draft.id,
               text,

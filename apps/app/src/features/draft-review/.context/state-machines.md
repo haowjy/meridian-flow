@@ -12,7 +12,7 @@ stateDiagram-v2
   [*] --> queued: click
   queued --> cancelled: the click is taken back before it is sent
   queued --> sent: it is the head, and nothing else is in flight
-  sent --> settled: applied (its own text landed and recorded, or settled), or a final refusal
+  sent --> settled: its stored answer, or a final refusal
   sent --> sent: a timeout, or the server says the first request is still running
   sent --> retrying: no usable answer
   retrying --> sent: after 1, 2, then 4 seconds, with the same body
@@ -38,20 +38,16 @@ stateDiagram-v2
 - **No answer is not a refusal.** A thrown request, or an answer for another command id, keeps
   the head where it is. The head is tried again at 1, 2 and 4 seconds; after that it settles `unsent` (the change
   is pending again, and the press shows the failure pill) and the commands behind it go.
-- **A frozen Apply settles when the server's record shows it**, not on the answer, when its own
-  item's text landed. The server keeps a row for each applied command, and the command settles
-  once its id is among them. A click with no frozen cut (a tree cut alone, or a whole-draft cut
-  sent with no room open) settles on the answer: no room here records it. An answer whose entry
-  for this item (`itemOf`, by the queue's node) says its text was settled, or carried no text,
-  settles at once, whatever a sibling of the same command landed. An Undo settles when the rows it
-  reversed are gone.
+- **Every command settles on its stored answer.** The answer for this item (`itemOf`, by the
+  queue's node) says whether its text landed, and, when it did, `at`: the draft's server clock
+  once the base write is in. The queue keeps folding the landed change (`held`) until the room's
+  server clock reaches `at`, so the review doesn't flash back; an Undo's answer carries `at` for
+  each document it took text from, and is held the same way.
 - **An Undo waits for the Apply it takes back** and is sent when either half of that Apply
   landed; when neither did, the Undo ends `cancelled` without a request.
 - **An Undo's answer is acted on when it arrives** (`heard`): the notice and the history don't wait
   for its rows to leave the room. A Redo pressed before the answer narrows to what the Undo took
   back, and is cancelled when it took nothing.
-- **`landed`** means the rows show the Apply happened but its answer was never read, or the
-  queue was destroyed while the command waited on its rows. The writer sees a success.
 - A closed queue stops sending and only looks up what its sent head became.
 - **A member of an Apply of several is `sent` by its group** (`group-apply.ts`): its send waits
   until every member is its own queue's head, then the group posts the one command, and each
@@ -82,8 +78,8 @@ stateDiagram-v2
 ```
 
 - **Redo names its Un-Apply and nothing else.** The entry sends `redoOf` with the Un-Apply's id;
-  the server reads from its own records what that Un-Apply took (the effect rows it marked, its
-  `treeUndone`) and applies those groups again. So a change another chat proposed since, or the
+  the server takes back that Un-Apply's own `undo` edit and replays its `treeUndone`, so what
+  comes back is what it took. So a change another chat proposed since, or the
   same change in a document the Un-Apply left, is never applied with it. A Redo pressed before
   the Un-Apply answered waits for the answer.
 - **The step leaves the sidebar's stack once taken back**, with its watch and notice; a Redo that

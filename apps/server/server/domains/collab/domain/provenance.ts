@@ -1,13 +1,13 @@
 /** Deterministic safety-provenance facts, replay, and client namespace admission. */
 
-import { APPLY_RECORD_ROOT, RESTORED_ROOT, REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
+import { REVIEW_BASE_FRAGMENT } from "@meridian/agent-edit/diff";
 import type { LineageRange } from "@meridian/agent-edit/integration";
 import { indexDecodedStructs } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentAuthorityId } from "@meridian/contracts";
 import { PROSEMIRROR_FRAGMENT_NAME, RESERVED_CLIENT_ID_MAX } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 
-export const SERVER_OWNED_ROOTS = [REVIEW_BASE_FRAGMENT, APPLY_RECORD_ROOT] as const;
+export const SERVER_OWNED_ROOTS = [REVIEW_BASE_FRAGMENT] as const;
 const RESERVED_TYPE_NAMES = new Set<string>(SERVER_OWNED_ROOTS);
 const RESERVED_CLIENT_IDS = new Set(
   Array.from({ length: RESERVED_CLIENT_ID_MAX + 1 }, (_, clientId) => clientId),

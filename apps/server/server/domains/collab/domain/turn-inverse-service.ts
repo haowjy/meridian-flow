@@ -31,7 +31,7 @@ import type * as Y from "yjs";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
 import type { Learned } from "../../../shared/tree-owners.js";
 import type { Principal } from "../../file-policy/index.js";
-import { draftBlocks, draftSchema, isPending, takeBack } from "./draft-changes.js";
+import { draftSchema, isPending, takeBack } from "./draft-changes.js";
 import type { PartDisposition } from "./draft-disposition.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { effectiveActionIndex, partKey } from "./inverse-actions.js";
@@ -187,7 +187,6 @@ const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>
  * something back.
  */
 async function prepare(
-  store: TurnInverseStore,
   documents: InverseDocument[],
   query: TurnInverseQuery,
   actionId: string,
@@ -226,7 +225,6 @@ async function prepare(
     let manuscript: readonly PMNode[] = originals.length
       ? readBlocks(document.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), draftSchema)
       : [];
-    const drafted = new Map<string, { base: readonly PMNode[]; text: readonly PMNode[] }>();
     for (const { at, parts } of originals) {
       const entry = {
         id: parts[0]?.editId ?? "",
@@ -239,45 +237,17 @@ async function prepare(
       const selection = planned.selection as StoredInversePart[];
       if (destination.kind === "draft" && destination.state === "active") {
         // An open draft's proposed changes are taken out as content: a change that stands and sits
-        // in a pending change. The changes an Apply took go out of Live, and out of the draft where
-        // they stand there, when they stand in Live and taking them out adds no pending change.
-        const draft =
-          drafted.get(destination.draftId) ??
-          draftBlocks(document.drafts.get(destination.draftId)?.doc);
-        const back = takeBack(
-          manuscript,
-          draft,
-          selection.flatMap((part) =>
-            part.appliedChanges?.size
-              ? [{ part, delta: part.delta, only: new Set(part.appliedChanges.keys()) }]
-              : [],
-          ),
+        // in a pending change. A change an Apply took is the writer's now: undo the Apply instead.
+        const proposed = selection.filter(
+          (part) =>
+            part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false,
         );
-        manuscript = back.live;
-        drafted.set(destination.draftId, {
-          base: back.base ?? draft.base,
-          text: back.text ?? draft.text,
-        });
-        const backed = new Set(back.taken.map(({ part }) => part));
-        const standing = (part: StoredInversePart) =>
-          part.changes?.some((change) => change.state === "stands" && isPending(change)) ?? false;
-        const proposed = selection.filter(standing);
         if (proposed.length)
           steps.push({ kind: "content", parts: proposed, destination, actionId, actionKind, at });
-        if (backed.size)
-          steps.push({
-            kind: "manuscript",
-            parts: back.taken.map(({ part, only }) => ({ part, only })),
-            destination,
-            actionId,
-            actionKind,
-            at,
-          });
         continue;
       }
       const back = takeBack(
         manuscript,
-        null,
         selection.map((part) => ({ part, delta: part.delta })),
       );
       manuscript = back.live;
@@ -368,12 +338,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
         if (!documents.length && !tree.acting && !tree.taken && !Object.keys(treeStates).length)
           return null;
         const drafts = draftStates(documents, query, treeStates);
-        const { plans: undo, undoneByWriter } = await prepare(
-          store,
-          documents,
-          query,
-          randomUUID(),
-        );
+        const { plans: undo, undoneByWriter } = await prepare(documents, query, randomUUID());
         if (hasSteps(undo) || tree.acting) return { control: "undo", drafts };
         return {
           control: "view_change",
@@ -395,7 +360,7 @@ export function createTurnInverseService(store: TurnInverseStore) {
       query: TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } },
     ): Promise<ReversalOutcome> {
       return store.withCapturedDocuments(query, async (documents) => {
-        const { plans, undoneByWriter } = await prepare(store, documents, query, randomUUID());
+        const { plans, undoneByWriter } = await prepare(documents, query, randomUUID());
         const tree = await store.treeSteps(query);
         const treeSteps = tree.acting + tree.taken;
         if (!query.documentIds && !plans.length && !treeSteps)

@@ -139,6 +139,9 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)(
         branches: workBranches,
         treeLists,
         coordinator,
+        live: {} as never,
+        liveCoordinator: {} as never,
+        onCommitted: async () => {},
       }),
     });
 

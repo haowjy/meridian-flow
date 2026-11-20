@@ -52,7 +52,6 @@ import {
   diffBlocks,
   projectReview,
   REVIEW_BASE_FRAGMENT,
-  readApplyRecord,
   readBlocks,
   writeBlocks,
 } from "../../../../packages/agent-edit/src/diff/index.ts";
@@ -426,8 +425,13 @@ try {
       readBlocks(d.getXmlFragment("prosemirror"), schema)[0].textContent,
       "The big black cat sat.",
     );
-    assert.equal(readApplyRecord(d)[0].commandId, c.request.commandId);
     d.destroy();
+    assert.equal(
+      (
+        await h.raw`select count(*)::int as n from document_edits where command_id=${c.request.commandId} and kind='apply'`
+      )[0].n,
+      1,
+    );
     await applied(f, c);
     assert.equal(
       (await h.raw`select count(*)::int as n from commands where id=${c.request.commandId}`)[0].n,
@@ -480,9 +484,12 @@ try {
         (await h.raw`select count(*)::int as n from commands where id=${c.request.commandId}`)[0].n,
         0,
       );
-      const doc = await f.durable();
-      assert.equal(readApplyRecord(doc).length, 0);
-      doc.destroy();
+      assert.equal(
+        (
+          await h.raw`select count(*)::int as n from document_edits where command_id=${c.request.commandId}`
+        )[0].n,
+        0,
+      );
       await applied(f, c);
       await applied(f, c);
       f.close();
@@ -965,14 +972,11 @@ try {
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));
     if (answer.status === "unapplied") {
       assert.deepEqual(
-        answer.textUndone.flatMap((text) => text.groupIds),
-        click.request.groupIds,
+        answer.textUndone.map((text) => text.node),
+        [f.documentId],
       );
     }
     assert.deepEqual(await f.liveText(), ["The cat sat."]);
-    const durable = await f.durable();
-    assert.deepEqual(readApplyRecord(durable), []);
-    durable.destroy();
     assert.deepEqual(await f.unapply(click, commandId), answer);
     f.close();
   });
@@ -995,7 +999,7 @@ try {
     ]);
     const answer = await f.unapply(click);
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));
-    if (answer.status === "unapplied") assert.equal(answer.textUndone[0]?.groupIds.length, 2);
+    if (answer.status === "unapplied") assert.equal(answer.textUndone.length, 1);
     assert.deepEqual(await f.liveText(), [
       "She turned away",
       "She waited by",
@@ -1018,13 +1022,8 @@ try {
       await f.liveWrite(["The big very cat sat.", "The small dog slept."]);
       const answer = await f.unapply(click);
       assert.equal(answer.status, "unapplied", JSON.stringify(answer));
-      if (answer.status === "unapplied") {
-        assert.equal(answer.textUndone[0]?.groupIds.length, 2);
-      }
+      if (answer.status === "unapplied") assert.equal(answer.textUndone.length, 1);
       assert.deepEqual(await f.liveText(), ["The very cat sat.", "The dog slept."]);
-      const durable = await f.durable();
-      assert.equal(readApplyRecord(durable).length, 0);
-      durable.destroy();
       f.close();
     },
   );
@@ -1037,7 +1036,6 @@ try {
     assert.equal(answer.status, "unapplied", JSON.stringify(answer));
     assert.deepEqual(await f.liveText(), ["The big cat sat."]);
     const durable = await f.durable();
-    assert.deepEqual(readApplyRecord(durable), []);
     assert.deepEqual(
       readBlocks(durable.getXmlFragment(REVIEW_BASE_FRAGMENT), schema).map(
         (block) => block.textContent,
@@ -1078,7 +1076,7 @@ try {
     // One command carries both documents' effects.
     assert.equal(
       (
-        await h.raw`select count(distinct document_id)::int as n from apply_command_effects where command_id=${commandId}`
+        await h.raw`select count(distinct document_id)::int as n from document_edits where command_id=${commandId} and kind='apply'`
       )[0].n,
       2,
     );
@@ -1091,11 +1089,6 @@ try {
     if (undone.status === "unapplied") assert.equal(undone.textUndone.length, 2);
     assert.deepEqual(await a.liveText(), ["Alpha."]);
     assert.deepEqual(await b.liveText(), ["Beta."]);
-    for (const f of [a, b]) {
-      const durable = await f.durable();
-      assert.deepEqual(readApplyRecord(durable), []);
-      durable.destroy();
-    }
     a.close();
     b.close();
   });
