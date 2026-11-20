@@ -149,8 +149,9 @@ writes and seeds at once and writer typing 2 s after typing stops, at most every
 
 Seed snapshots use the same mutation lock. A first seed is
 initialize-only, becomes the generation's base checkpoint, and reconciles an
-already open room before success. Writer admission rejects reserved client IDs
-and reserved provenance namespace mutations before append or Yjs apply.
+already open room before success. Writer admission refuses no client ID and no
+Yjs root: nothing on the server writes under a fixed client ID or into a root of
+its own, so a writer frame has nothing it could collide with.
 
 WebSocket admission checks the declared schema major/minor against the document's
 head for each connection. Patch differences do not gate;

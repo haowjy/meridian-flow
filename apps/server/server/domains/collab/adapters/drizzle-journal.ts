@@ -21,7 +21,6 @@ import {
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
-  createCollabYDoc,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, lte, ne, sql } from "drizzle-orm";
@@ -1080,7 +1079,7 @@ async function captureLiveEdits(
   rows: readonly { id: number }[],
 ): Promise<void> {
   for (const [docId, state] of states) {
-    const doc = createCollabYDoc({ gc: false }),
+    const doc = new Y.Doc({ gc: false }),
       groups = new Map<
         string,
         {

@@ -2,7 +2,6 @@
 
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./contracts.js";
@@ -74,7 +73,7 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
         return Err({ code: "checkpoint_not_found", checkpointId });
       }
       try {
-        const restored = createCollabYDoc({ gc: false });
+        const restored = new Y.Doc({ gc: false });
         Y.applyUpdate(restored, checkpoint.state);
         if (deps.replaceAuthorityGeneration) {
           await deps.replaceAuthorityGeneration(documentId as DocumentId, checkpointId);

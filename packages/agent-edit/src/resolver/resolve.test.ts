@@ -6,11 +6,7 @@
  */
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  createCollabYDoc,
-  PROSEMIRROR_FRAGMENT_NAME,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import { describe, expect, it } from "vitest";
 import { Doc, XmlElement } from "yjs";
@@ -283,7 +279,7 @@ describe("resolveWrite", () => {
 });
 
 function createDoc(markdown: string) {
-  const doc = createCollabYDoc({ gc: false });
+  const doc = new Doc({ gc: false });
   doc.clientID = 1;
   const parsed = codec.parse(markdown);
   const root = schema.node("doc", null, parsed.blocks);

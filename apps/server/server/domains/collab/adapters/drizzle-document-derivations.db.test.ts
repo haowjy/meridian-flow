@@ -183,7 +183,6 @@ describe("durable document derivations", () => {
         journal: persistence.journal,
         hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,
         metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
-        emitAgentEditInvariantViolation: () => {},
       });
       const client = new Y.Doc({ gc: false });
       client.getText("prose").insert(0, "Words typed just before reload");
@@ -272,7 +271,6 @@ describe("durable document derivations", () => {
       journal: persistence.journal,
       hocuspocus: () => ({ documents: new Map([[documentId, room]]) }) as never,
       metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
-      emitAgentEditInvariantViolation: () => {},
     });
     const commandDoc = new Y.Doc({ gc: false });
     commandDoc.getText("prose").insert(0, "model");
@@ -395,7 +393,6 @@ describe("durable document derivations", () => {
       journal: persistence.journal,
       hocuspocus: () => hp as never,
       metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
-      emitAgentEditInvariantViolation: () => {},
     });
     const coordinator = createHocuspocusCoordinatorForTest({
       journal: persistence.journal,
@@ -654,7 +651,6 @@ describe("durable document derivations", () => {
       journal: persistence.journal,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: `human:${userId}`, seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     const explicit = createCheckpointService({
       coordinator: {

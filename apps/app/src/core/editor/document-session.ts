@@ -47,7 +47,6 @@ import {
   WS_CLOSE,
   type YjsRoomName,
 } from "@meridian/contracts/protocol";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
@@ -361,7 +360,7 @@ export class DocumentSession {
     this.access = access;
     this.room = room;
     this.documentId = room.documentId;
-    this.document = createCollabYDoc();
+    this.document = new Y.Doc();
     this.history = DocumentHistory.forDocument(this.document);
     this.unsent = new UnsentEdits(this.document, () => this.persistence?.db ?? null);
     this.serverMark = createServerMark(() =>

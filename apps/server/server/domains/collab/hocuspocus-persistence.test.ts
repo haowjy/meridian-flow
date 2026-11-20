@@ -5,7 +5,6 @@
  */
 
 import { Hocuspocus } from "@hocuspocus/server";
-import { APPLY_RECORD_ROOT } from "@meridian/agent-edit/diff";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
@@ -55,7 +54,6 @@ describe("createHocuspocusPersistenceService room loading", () => {
       hocuspocus: () => hp,
       readAuthorityHeadGeneration: async () => generation,
       metaForOrigin: () => ({ origin: "system", seq: 0 }),
-      emitAgentEditInvariantViolation: () => {},
     });
     const loading = hp.openDirectConnection(DOCUMENT_ID, {}).catch((cause: unknown) => cause);
     await ready;
@@ -93,7 +91,6 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
       afterCallerCommit: (callback) => {
         queued.push(callback);
       },
-      emitAgentEditInvariantViolation: () => undefined,
     });
     return {
       journal,
@@ -164,7 +161,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     const insertionClient = cloneDoc(liveDocument);
     const beforeInsertion = Y.encodeStateVector(insertionClient);
@@ -226,7 +222,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
       journal,
       hocuspocus: () => ({ documents, closeConnections }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
 
     await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
@@ -255,7 +250,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
       journal,
       hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
     const current = cloneDoc(retired, 2n);
@@ -278,48 +272,14 @@ describe("createHocuspocusPersistenceService writer frames", () => {
     expect(current.getText("content").toString()).toBe("retained");
   });
 
-  it.each([
-    [
-      "nested insert",
-      (doc: Y.Doc) =>
-        (doc.getMap(APPLY_RECORD_ROOT).get("nested") as Y.Array<unknown>).push(["hostile"]),
-    ],
-    ["delete-only change", (doc: Y.Doc) => doc.getMap(APPLY_RECORD_ROOT).delete("nested")],
-    ["top-level collision", (doc: Y.Doc) => doc.getArray(APPLY_RECORD_ROOT).push([1])],
-  ])("rejects hostile reserved namespace %s before journaling", async (_name, mutate) => {
-    const liveDocument = documentWithReservedFacts();
-    const journal = fakeJournal();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    const client = cloneDoc(liveDocument);
-    const vector = Y.encodeStateVector(client);
-    mutate(client);
-
-    await expect(
-      persistence.admitLiveWriterUpdate({
-        documentId: DOCUMENT_ID,
-        document: liveDocument,
-        update: Y.encodeStateAsUpdate(client, vector),
-        origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
-      }),
-    ).rejects.toThrow();
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-  });
-
   it("rejects a caller-supplied document that is not the bound room liveDocument", async () => {
-    const liveDocument = documentWithReservedFacts();
+    const liveDocument = boundDoc({ gc: false });
     const wrongDocument = boundDoc({ gc: false });
     const journal = fakeJournal();
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
 
     await expect(
@@ -331,30 +291,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
         expectedGeneration: 1n,
       }),
     ).rejects.toThrow("live-document-room-mismatch");
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-  });
-
-  it("rejects reserved-client-ID injection before journaling", async () => {
-    const liveDocument = boundDoc({ gc: false });
-    const journal = fakeJournal();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    const client = boundDoc();
-    client.clientID = 999;
-    client.getText("content").insert(0, "hostile");
-    await expect(
-      persistence.admitLiveWriterUpdate({
-        documentId: DOCUMENT_ID,
-        document: liveDocument,
-        update: Y.encodeStateAsUpdate(client),
-        origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
-      }),
-    ).rejects.toThrow("reserved-writer-client-id");
     expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
   });
 
@@ -377,7 +313,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     const update = writerUpdate();
     const admission = persistence
@@ -415,7 +350,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
           getConnectionsCount: () => 0,
         }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     let appliedOrAcknowledged = false;
 
@@ -442,13 +376,6 @@ function writerUpdate(): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
-function documentWithReservedFacts(): Y.Doc {
-  const doc = boundDoc({ gc: false });
-  const nested = new Y.Array<unknown>();
-  doc.getMap(APPLY_RECORD_ROOT).set("nested", nested);
-  nested.push(["authority fact"]);
-  return doc;
-}
 function tombstoneBearingDoc(): Y.Doc {
   const doc = docWithText("seed");
   const text = doc.getText("content");

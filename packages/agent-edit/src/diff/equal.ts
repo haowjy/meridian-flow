@@ -1,4 +1,4 @@
-/** Block-sequence equality for `has_effect` and `already_live`: whitespace and marks included, first difference wins. */
+/** Block-sequence equality: whitespace and marks included, first difference wins. */
 import { isEmptyDocument } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 

@@ -36,8 +36,8 @@ and an Update sent ahead of the handshake would start past them on every reconne
 room ends. Three such closes in a row
 with no acknowledgement between end the room `UPDATES_REFUSED`, whether or not the outbox holds
 anything (typing replayed from the copy goes out in each handshake without passing through it), because a frame
-the server can never store (one authored in the reserved client band) would otherwise resend
-forever. The session then holds undeliverable edits, and the registry replaces the room as it
+the server can never store (a replay of a retired generation, refused in `live-room.ts`) would
+otherwise resend forever. The session then holds undeliverable edits, and the registry replaces the room as it
 does a read admission's (editor context, "Undeliverable edits"): the typing is dropped with one
 "Couldn't save" pill and the editor shows the server's text. Any `1013` counts, whatever its
 reason.

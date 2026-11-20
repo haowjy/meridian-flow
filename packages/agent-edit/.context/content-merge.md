@@ -1,7 +1,10 @@
 # The content merge: its rules, repairs, rescues and known losses
 
-`src/content-merge/` merges a draft's blocks with live's. The server runs it on a Work's pull
-and on Apply and un-Apply; the browser runs `applyBase` to fold queued clicks. This page lists
+`src/content-merge/` merges two versions of a block list against their base. The server runs it in
+two places: an agent package's Save merges each package file (a code document, one code block) into
+the project's copy (`mergeCodeText`, `collab/domain/code-merge.ts`, where the project's text is the
+`draft` side), and the Live turn inverse reads and takes out an AI edit's change with it
+(`stands.ts`, below). The sides keep the names `base`, `live` and `draft`. This page lists
 everything in the system that changes document text other than a person's or a model's own edit,
 and everything that gives text back. Adding a merge rule, a repair or a rescue is the owner's
 decision; `rules.ts` is the one place a rule's name is declared, so a new one is a visible
@@ -9,9 +12,7 @@ one-line change.
 
 ## The rule
 
-Where the merge cannot tell what each side meant, **the draft wins, as one counted clash**.
-Live's change there shows in review as a difference from the review base, and the writer can take
-it. No rule drops a word the draft has, and no rule drops a word live wrote except through the
+Where the merge cannot tell what each side meant, **the draft wins, as one counted clash**. No rule drops a word the draft has, and no rule drops a word live wrote except through the
 clashes below. The oracle in `merge.test.ts` follows each word through a merge and fails on one
 lost, doubled or invented.
 
@@ -21,18 +22,15 @@ same change on both sides applies once. A **merge rule** is anything the merge d
 ## Where the code is
 
 `content-merge/` depends on `diff/` (tokens, `align`, `correspond`, `buildBlocks`), never the
-other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge`, `applyBase`, `RULES`.
+other way. Import it as `@meridian/agent-edit/content-merge`: `contentMerge` and the `stands.ts` reads.
 
 `contentMerge(schema, base, live, draft)` returns `{ blocks, rules, overrode, conflicts, orderConflict }`.
 `rules` is the rule name to the number of times it fired in that merge. It carries no text.
 `overrode` is the count of live's words the draft replaced in contested text, and it overstates
 that when the draft deleted words live never touched. `conflicts` holds the clashes with their
-tokens for the tests' oracle and does not leave the package. Every block it returns has an id (a
-paragraph it makes from nothing gets a fresh one, so `writeBlocks` never throws on its output).
-
-Counts reach the server's event sink as `merge.counted` (source `collab.draft_pull`) and
-`apply.merge.counted` or `unapply.merge.counted` (source `collab.draft_review`). Apply and un-Apply report the sum over the click's
-groups.
+tokens for the tests' oracle; `mergeCodeText` reports their count as the file's clashes. Every
+block it returns has an id (a paragraph it makes from nothing gets a fresh one, so `writeBlocks`
+never throws on its output).
 
 Order of work in `merge.ts`: pair blocks by id (`correspond`), unify blocks both sides added
 (`unifyAdded`), settle the stretches that cannot be trusted to the token merge (`settleStretches`),
@@ -40,51 +38,24 @@ merge attributes, merge block order (`mergeOrder`), align both sides to base as 
 moved text, then group the touching hunks into clusters and decide each, and last put whitespace
 back (`settleWhitespace`) and build blocks (`buildBlocks`).
 
-## Reading an AI edit against a text: `stands` and membership
+## Reading an AI edit against a text: `stands`
 
-`content-merge/stands.ts` answers two questions about one change of an AI edit from the edit's recorded
-delta (`document_edit_parts.delta`: the blocks the write changed, before and after) and a text, with no
-Yjs item id:
+`content-merge/stands.ts` answers one question about one change of an AI edit, from the edit's
+recorded delta (`document_edit_parts.delta`: the blocks the write changed, before and after) and the
+manuscript, with no Yjs item id. `editChanges` cuts the delta into changes
+([diff](diff.md#hunks-and-changes)); `changeStateIn` reads each:
 
-- **`changeState`**: `stands` when the text holds the whole change, the merge can take it out
-  (`contentMerge(after, before, window)` has no conflict, changes the window, and putting the change
-  back on its result gives the window again, with either side named first, since words typed at the
-  very edge of the change sit on either side of it) and taking it out adds no pending change (checked on the
-  result `takeOut` writes, when that has no conflict, so the check and the press are one merge); `altered` when
-  the text holds it changed, or when taking it out would leave Changes with a group it has not got (a
-  group cut in two, or one sitting where none went); `out` when it is gone. `takeOut` writes the
-  inverse for a change that stands. Undo is offered, and a press writes, only for `stands`: the
-  press and the offer read the same state. The manuscript has no review base, so its read is
-  `changeStateIn` (the same rule without the pending-change check), which an AI edit written into
-  Live, an applied change (the Apply's `carried`) and Un-Apply's `live_delta` all use;
-  `addsPendingChange` is the check an applied change's Undo makes on the draft it also writes.
-- **`readChange`**: which pending changes of Changes the change sits in. Forcing the change out
-  (`contentMerge(after, window, before)`, so `before` wins where the text was altered) alters the
-  pending changes whose hash goes. Joined with the pending changes that hold the change's words (or,
-  for a change with no words, its blocks or marks), for what the merge cannot pair: a paragraph the AI
-  wrote that Live joined into another, a stray quote mark. Equal hashes are paired in document order.
-  A change an Undo took (`taken`, from the Undo's record, never from the text) reads `out` and sits in
-  no pending change, whatever the text holds later: a later reply that proposes the same words must
-  not revive it. Two replies that propose the
-  very same words stay one change to this read.
+- `stands` when the text holds the whole change, the merge can take it out
+  (`contentMerge(after, before, window)` has no conflict and changes the window), and putting the
+  change back on the result gives the window again, with either side named first, since words typed
+  at the very edge of the change sit on either side of it;
+- `altered` when the text holds it changed;
+- `out` when it is gone.
 
-The removal diff covers the change's window (its blocks and one either side, with `base` cut to the
-blocks that pair with it by id); when they are not one run it diffs the whole document. A `ChangeMemo`
-keyed on the blocks a read looked at lets a re-read after a write elsewhere skip the merges.
-`.context/qa/sentence-scale.md` is the differential (misses, glue, a second press) and the cost bench
-(19,000 words, 75 changes: about 330 ms cold, 60 to 65 ms re-read).
-
-Known limits: the windowed read names fewer pending changes than the whole-document one (the whole read
-re-aligns the document tail). At four fresh seeds of 4,000 rows each, no Undo added a pending change,
-none left a change standing, and no second press changed the text; about 2 % of rows (64 to 86 per
-4,000) of that stress workload (a reply plus one to four later edits, many in the same paragraph) lose
-an Undo to the offer rule, mostly where taking the change out would cut a neighbouring pending change
-in two (the same words in two groups, which Changes would show as one card more). Dropping that rule
-adds real pending changes (8 rows per 4,000 at seed 300000). Four of 16,000 rows miss a pending
-change the edit caused (after a Live move and a join or split); the change
-then reads altered, so no Undo is offered. An Undo puts back `before` as the AI saw it, not as the
-review base holds it now; restoring the base's version of the touched blocks was tried and made a
-change still read as standing after its Undo more often, so it was not kept.
+`takeOut` writes the inverse for a change that stands. The window is the change's blocks, found by
+id, and one either side; a block of the change that was joined away leaves the whole text as the
+window. The server's Live turn inverse (`inverse-text.ts`) runs these for an AI edit written into
+Live. An Undo puts back `before` as the AI saw it.
 
 ## Merge rules
 
@@ -128,7 +99,7 @@ side where the same two tokens are neighbours is how the patch is put back, not 
 | `draft-wins-space` | Both sides changed the space before one word differently: the draft's | `settleWhitespace` | `draft-wins-space` |
 | `space-added-between-words` | A word that no side had after the token before it gets a space when that token is a word or ends a clause or sentence, except in scripts written without spaces | `settleWhitespace` | `coords` |
 
-**Shape** (`buildBlocks` in `diff/tokens.ts`; review's `composeHunks` shares it and does not count)
+**Shape** (`buildBlocks` in `diff/tokens.ts`; `composeHunks` shares it and does not count)
 
 | Rule | What it does |
 |---|---|
@@ -145,7 +116,7 @@ a count from production says it never fires.
 - `draftAbsorbsLive` decides that an overlap is no clash because the draft's text already holds live's
   change. It is part of how `draft-wins-text` counts.
 - The diff's own choices of where a change sits (`align`: `separateBlocks`, `canonicalize`,
-  `refine`) run on every diff, review's too. `canonicalize` puts a pure insertion or deletion, among its equal places, at the first that
+  `refine`) run on every diff. `canonicalize` puts a pure insertion or deletion, among its equal places, at the first that
   starts a sentence (after a full stop, `!`, `?` or a block start), else the leftmost: a sentence
   added after a full stop sits after it, not as ". Text" before it, so the writer's words typed
   beside it begin at the same place and a full stop is not shared between two sentences.
@@ -156,7 +127,7 @@ a count from production says it never fires.
 
 ## Mechanics of some rules
 
-Blocks pair by id first: see "Block correspondence: by id" in [diff review](diff-review.md).
+Blocks pair by id first: see "Block correspondence: by id" in [diff](diff.md#block-correspondence-by-id).
 
 ### Block attributes: `block-attributes-merged`
 
@@ -179,8 +150,8 @@ range.
 
 What stays doubled: text one side carried out of a block into another place (a cut and paste, a
 split then a join) while the other side changed the block it came from. Characters have no id across
-a draft and live, so the draft's paragraph stands and the carried text is in the result twice; review
-shows the draft's paragraph as an addition the writer can refuse. `moved-text-dropped` is as it was
+a draft and live, so the draft's paragraph stands and the carried text is in the result twice.
+`moved-text-dropped` is as it was
 (three words, where live's pasted text meets a source the draft changed).
 
 ### Stretches: `draft-wins-stretch`
@@ -269,7 +240,7 @@ room admitted read-only, its updates refused three times in a row) is dropped wi
 Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its cause.
 
 - A sentence live moved between paragraphs, while the draft changed its source, appears twice after
-  the merge; review shows it (28 of 3,000 generated merges). Text one side carried out of a block
+  the merge (28 of 3,000 generated merges). Text one side carried out of a block
   while the other changed the source block does the same (34 of 3,000). Two similar
   but unequal paragraphs typed once on each side are two blocks.
 - Where the merge cannot tell (one side removed a block the other changed, both changed which blocks
@@ -286,9 +257,8 @@ Each is a row in [EDGE-CASES][edge], left as it is because no fix exists at its 
 - Yjs: a cut-and-paste racing an edit of the cut text doubles it; offline typing into a run another
   person deletes beside an image is lost; a paragraph split while someone types in it re-creates the
   text under the splitter's byline.
-- Typing into a block that a peer, the model, a pull or a Discard deletes at the same moment, from a
-  tab that was offline or whose frame was still on its way, follows plain Yjs in Live rooms and in
-  Work drafts alike: the text lands under the deleted block and disappears with it. The browser's
+- Typing into a block that a peer, the model or a Discard deletes at the same moment, from a
+  tab that was offline or whose frame was still on its way, follows plain Yjs: the text lands under the deleted block and disappears with it. The browser's
   outbox and the "Some text was removed" bar are the only trace.
 - The words a schema repair removed, after a reload: the notice lives in the session's memory, and
   the words are no longer in the document.
