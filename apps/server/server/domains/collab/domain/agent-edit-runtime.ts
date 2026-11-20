@@ -1,6 +1,7 @@
 /** Shared agent-edit and markdown runtime construction for collab compositions. */
 import {
   type AgentEditCodecFactory,
+  type AgentEditCore,
   createAgentEditCodecFactory,
   createAgentEditCore,
   type DocumentCoordinator,
@@ -14,8 +15,7 @@ import {
 import type { DocumentId, TurnId } from "@meridian/contracts/runtime";
 import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { type Author, hiddenWorks } from "@meridian/suggestions";
-import type * as Y from "yjs";
+import { type Author, liveView } from "@meridian/suggestions";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
@@ -62,28 +62,11 @@ export function createAgentEditRuntime(input: {
   const codec = createAgentEditCodecFactory(markupCodec);
   const storedModel = yProsemirrorModel(schema);
   // Suggestion mode (prototype): `model` is the Live view for every reader and writer of Live; it
-  // keeps every Work's suggestions where they are. A Work's write goes into Live as that Work's
-  // suggestions (`suggestionCore`). A whole replacement (restore) through it keeps Live's text
-  // and drops the document's pending suggestions.
+  // keeps every Work's suggestions where they are. A Work's view is `workView`, the one way the
+  // server reads a Work's draft or writes its suggestions. A whole replacement (restore) through
+  // `model` keeps Live's text and drops the document's pending suggestions.
   const suggestionMode = process.env.FLOW_SUGGESTIONS === "1";
-  const viewModel = (work: string | null, author: Author | null) =>
-    suggestingModel(storedModel, (doc) => ({ work, hidden: hiddenWorks(doc) }), author);
-  // A drafted read's private copy of the room reads as its Work's view through `model` too, so
-  // every reader (Markdown, blocks, hashlines) shows the Work's draft without its own path.
-  const readers = new WeakMap<Y.Doc, string>();
-  const model = suggestionMode
-    ? suggestingModel(
-        storedModel,
-        (doc) => ({ work: readers.get(doc) ?? null, hidden: hiddenWorks(doc) }),
-        null,
-      )
-    : storedModel;
-  /** Mark a private read copy as `work`'s: never the room itself, which every reader shares. */
-  const readAs = suggestionMode
-    ? (doc: Y.Doc, work: string) => {
-        readers.set(doc, work);
-      }
-    : null;
+  const model = suggestionMode ? suggestingModel(storedModel, liveView, null) : storedModel;
   /** A code document's text is one code block, not Markdown: its codec reads and writes it so. */
   const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> => {
     const filetype = await codeFiletypeOf(input.resolveDocumentFiletype, documentId);
@@ -107,9 +90,11 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     });
   const liveUtilityCore = asLiveAgentEditCore(liveCoreOver(model));
-  /** A core over Live that reads a Work's view and writes its suggestions as `author`. */
-  const suggestionCore = suggestionMode
-    ? (work: string, author: Author) => liveCoreOver(viewModel(work, author))
+  const workView: WorkViews | null = suggestionMode
+    ? (work, author) => {
+        const viewModel = suggestingModel(storedModel, { work }, author);
+        return { model: viewModel, core: liveCoreOver(viewModel) };
+      }
     : null;
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
@@ -177,13 +162,22 @@ export function createAgentEditRuntime(input: {
     linkBinder,
     importBinder,
     liveUtilityCore,
-    suggestionCore,
-    readAs,
+    workView,
     markdownDocuments,
     markupCodec,
     model,
   };
 }
+
+/**
+ * Suggestion mode: a Work's view of Live, Live plus that Work's suggestions. `model` reads it;
+ * `core` reads it for the model's tools and writes into Live as the Work's suggestions by `author`
+ * (a read needs none).
+ */
+export type WorkViews = (
+  work: string,
+  author: Author | null,
+) => { model: YProsemirrorDocumentModel; core: AgentEditCore };
 
 export function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {
   if (origin.type === "agent") {

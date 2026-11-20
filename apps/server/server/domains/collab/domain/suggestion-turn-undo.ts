@@ -5,14 +5,10 @@
  * left no suggestion (it wrote Live there) are undone the existing way. The card offers Undo while
  * any of the turn's documents still holds its suggestions, whatever the writer edited since.
  */
-import { writeBlocks } from "@meridian/agent-edit/diff";
+import { resolveStored, storedPendingTurns } from "@meridian/agent-edit/integration";
 import type { ReversalOutcome, TurnReceiptChip } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { pendingTurns, reject } from "@meridian/suggestions";
-import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
-import type { Node as PMNode, Schema } from "prosemirror-model";
-import { EditorState } from "prosemirror-state";
+import type { Schema } from "prosemirror-model";
 import type * as Y from "yjs";
 import type { DocumentWriteOrigin, HeldLiveDocument } from "../contracts.js";
 import type { TurnInverseQuery } from "./turn-inverse-service.js";
@@ -38,24 +34,15 @@ export function createSuggestionTurnUndo(deps: {
   ): Promise<T>;
   liveTurnChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
 }) {
-  const rootOf = (doc: Y.Doc) =>
-    yXmlFragmentToProseMirrorRootNode(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), deps.schema);
-  // Every card of a long thread asks after each pause in typing: one read per document state.
-  const pending = new WeakMap<Y.Doc, Set<string>>();
-  const turnsIn = (doc: Y.Doc) => {
-    let turns = pending.get(doc);
-    if (!turns) {
-      turns = pendingTurns(rootOf(doc));
-      pending.set(doc, turns);
-      doc.once("afterTransaction", () => pending.delete(doc));
-    }
-    return turns;
-  };
-
   async function holdsSuggestions(threadId: ThreadId, turn: TurnId): Promise<boolean> {
     const targets = await deps.listTurnDocuments(threadId, turn);
+    // Every card of a long thread asks after each pause in typing: one read per document state.
     for (const documentId of new Set(targets.map((target) => target.documentId)))
-      if (await deps.withLiveDocument(documentId, async ({ doc }) => turnsIn(doc).has(turn)))
+      if (
+        await deps.withLiveDocument(documentId, async ({ doc }) =>
+          storedPendingTurns(doc, deps.schema).has(turn),
+        )
+      )
         return true;
     return false;
   }
@@ -81,16 +68,7 @@ export function createSuggestionTurnUndo(deps: {
             ? { type: "user", actorUserId: query.actor.userId as UserId }
             : { type: "agent", actorTurnId: turn },
         mutate: (doc) => {
-          const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-          const state = EditorState.create({ schema: deps.schema, doc: rootOf(doc) });
-          const tr = reject(state, { turn });
-          if (!tr.docChanged) return;
-          rejected = true;
-          const blocks: PMNode[] = [];
-          tr.doc.forEach((block) => {
-            blocks.push(block);
-          });
-          writeBlocks(fragment, deps.schema, blocks);
+          rejected = resolveStored(doc, deps.schema, "reject", { turn });
         },
       });
       if (!rejected) continue;

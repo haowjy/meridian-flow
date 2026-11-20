@@ -45,7 +45,6 @@
     "postgres": "catalog:",
     "proper-lockfile": "^4.1.2",
     "prosemirror-model": "^1.25.13",
-    "prosemirror-state": "^1.4.4",
     "prosemirror-transform": "^1.12.5",
     "re2js": "^2.10.0",
     "rehype-parse": "^9.0.1",

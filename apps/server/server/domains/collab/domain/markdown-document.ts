@@ -122,11 +122,15 @@ type DraftMutation = (
 export type MarkdownDocumentEngine = {
   /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
-  /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
+  /**
+   * `view` is the version `doc` is: a Work draft's links spell in its branch's view. `model` reads
+   * the content (in suggestion mode, a Work's view of Live); the engine's own model by default.
+   */
   serializeVersionedDocument(
     documentId: DocumentId,
     doc: Y.Doc,
     view: LinkView,
+    model?: YProsemirrorDocumentModel,
   ): Promise<{ content: string; revision: string }>;
   /**
    * The markdown of a document's stored state, whatever its lifecycle (a trashed document keeps
@@ -241,12 +245,18 @@ export function createMarkdownDocumentEngine(
     schemaType: YjsTrackedSchemaType,
     links: DocumentLinkScope,
     codec: MarkupCodec = deps.codec,
+    model: YProsemirrorDocumentModel = deps.model,
   ): string {
-    return projectBlocks(documentId, doc, (blocks) => {
-      if (blocks.length === 0) return "";
-      if (schemaType === "code") return blocks[0]?.textContent ?? "";
-      return codec.serialize(blocks, links);
-    });
+    return projectBlocks(
+      documentId,
+      doc,
+      (blocks) => {
+        if (blocks.length === 0) return "";
+        if (schemaType === "code") return blocks[0]?.textContent ?? "";
+        return codec.serialize(blocks, links);
+      },
+      model,
+    );
   }
 
   /**
@@ -271,6 +281,7 @@ export function createMarkdownDocumentEngine(
     documentId: DocumentId,
     doc: Y.Doc,
     read: (blocks: ParsedContent["blocks"]) => T,
+    model: YProsemirrorDocumentModel = deps.model,
   ): T {
     const state = Y.encodeStateAsUpdate(doc);
     const nodeSpans = xmlNodeSpans(state);
@@ -281,7 +292,7 @@ export function createMarkdownDocumentEngine(
     clone.on("update", observeRepair);
 
     try {
-      return read(deps.model.projectBlocks(toDocHandle(clone)).map((block) => block.node));
+      return read(model.projectBlocks(toDocHandle(clone)).map((block) => block.node));
     } finally {
       clone.off("update", observeRepair);
       const anomaly = serializationAnomaly(repairUpdates, nodeSpans);
@@ -540,12 +551,12 @@ export function createMarkdownDocumentEngine(
       }
     },
 
-    async serializeVersionedDocument(documentId, doc, view) {
+    async serializeVersionedDocument(documentId, doc, view, model) {
       const format = await documentFormat(documentId);
       if (!format.ok) throwSyncError(format.error);
       const links = await spelling(documentId, [doc], view);
       return versioned(doc, links, (doc) =>
-        serializeForSchema(documentId, doc, format.value.schemaType, links),
+        serializeForSchema(documentId, doc, format.value.schemaType, links, deps.codec, model),
       );
     },
 

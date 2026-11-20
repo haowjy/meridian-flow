@@ -264,19 +264,21 @@ function paint(doc: PMNode, view: View): DecorationSet {
     if (block.isInline) return false;
     const end = blockPos + block.nodeSize;
     const owner = "sug" in block.attrs ? blockKind(block, view) : "live";
-    if (owner !== "live") {
-      decorations.push(
-        Decoration.node(blockPos, end, {
-          class: owner === "hidden" ? "sug-hidden" : "sug-ins-block",
-        }),
-      );
+    if (owner === "hidden") {
+      decorations.push(Decoration.node(blockPos, end, { class: "sug-hidden" }));
       return false;
     }
+    if (owner === "own")
+      decorations.push(Decoration.node(blockPos, end, { class: "sug-ins-block" }));
     if (removedIn(block, view))
       decorations.push(Decoration.node(blockPos, end, { class: "sug-del-block" }));
     // A pending change to the block's attributes shows them; the element is still Live's.
     const shown = viewAttrs(block, view);
-    if (block.attrs.sugAttrs && !sameValue(shown, { ...block.attrs, sug: null, sugAttrs: null }))
+    if (
+      owner === "live" &&
+      block.attrs.sugAttrs &&
+      !sameValue(shown, { ...block.attrs, sug: null, sugAttrs: null })
+    )
       decorations.push(
         Decoration.node(blockPos, end, {
           class: "sug-attrs",
@@ -286,7 +288,8 @@ function paint(doc: PMNode, view: View): DecorationSet {
     if (!block.isTextblock) return true;
     block.forEach((child, offset) => {
       const kind = kindOf(child.marks, block, view);
-      if (kind === "live") return;
+      // The Work's own block shows its text as added already; a later turn's deletion is struck.
+      if (kind === "live" || (owner === "own" && kind === "own-ins")) return;
       const from = blockPos + 1 + offset;
       decorations.push(
         Decoration.inline(from, from + child.nodeSize, {

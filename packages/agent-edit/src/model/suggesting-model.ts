@@ -11,12 +11,16 @@
 import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import {
   type Author,
+  accept,
   blockKind,
   CHANGE_META,
   type ChangeAt,
   DROPPED_META,
+  type Filter,
   newChangeId,
+  pendingTurns,
   type Run,
+  reject,
   rewrite,
   runs,
   type SuggestionAttrs,
@@ -29,8 +33,9 @@ import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
+import { writeBlocks } from "../diff/writer.js";
 import type { BlockRef } from "../handles.js";
-import { unwrapBlock, unwrapDoc } from "../handles.js";
+import { unwrapBlock } from "../handles.js";
 import type { EditOp, EditOpsResult } from "../ports/model.js";
 import { lowerBlock } from "../resolver/lower-block.js";
 import { getTopLevelXmlBlocks } from "./block-hash.js";
@@ -41,18 +46,17 @@ import {
   type YProsemirrorDocumentModel,
 } from "./y-prosemirror.js";
 
-/** `viewOf` reads the view from the document itself: which Works' drafts it has discarded. */
+/** The model of `view` over `base`, the stored document; a write in a Work's view is by `author`. */
 export function suggestingModel(
   base: YProsemirrorDocumentModel,
-  viewOf: (doc: Y.Doc) => View,
+  view: View,
   author: Author | null,
 ): YProsemirrorDocumentModel {
   const schema = base.schema;
   /** Per block, the change the text a write cut from its end belongs to: a block inserted right after joins it. */
   const tails = new Map<Y.XmlElement, SuggestionAttrs>();
-  const viewAt = (block: BlockRef) => viewOf(unwrapBlock(block).doc as Y.Doc);
   const stored = (block: BlockRef) => storedNode(unwrapBlock(block), schema);
-  const shown = (block: BlockRef) => viewBlock(stored(block), viewAt(block));
+  const shown = (block: BlockRef) => viewBlock(stored(block), view);
   return {
     ...base,
 
@@ -67,7 +71,6 @@ export function suggestingModel(
     getText: (block) => shown(block)?.textContent ?? "",
 
     projectBlocks(doc) {
-      const view = viewOf(unwrapDoc(doc));
       return base.projectBlocks(doc).flatMap((projected) => {
         const node = viewBlock(projected.node, view);
         return node ? [{ ...projected, node }] : [];
@@ -76,7 +79,7 @@ export function suggestingModel(
 
     textblockLineage(block, path, from, to) {
       if (path.length > 0) return base.textblockLineage(block, path, from, to);
-      const units = runs(stored(block), viewAt(block));
+      const units = runs(stored(block), view);
       return base.textblockLineage(
         block,
         path,
@@ -86,7 +89,6 @@ export function suggestingModel(
     },
 
     applyOps(doc, block, ops) {
-      const view = viewAt(block);
       const before = stored(block);
       // Nothing in the block that the view hides or marks: view units are stored units.
       if (view.work === null && viewBlock(before, view) === before) {
@@ -103,7 +105,6 @@ export function suggestingModel(
     },
 
     insertBlocks(doc, after, parsed) {
-      const view = viewOf(unwrapDoc(doc));
       if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
       const sug = (after && tails.get(unwrapBlock(after))) ?? {
         ...author,
@@ -118,9 +119,8 @@ export function suggestingModel(
     },
 
     deleteBlock(doc, block) {
-      const view = viewAt(block);
       const node = stored(block);
-      if (view.work === null || !author || blockKind(node, view) === "own") {
+      if (view.work === null || !author) {
         base.deleteBlock(doc, block);
         return;
       }
@@ -131,6 +131,11 @@ export function suggestingModel(
         doc: schema.topNodeType.create(null, [node, rest]),
       });
       const out = rewrite(state.tr.delete(0, node.nodeSize), state, view, author);
+      // The view's own block this turn wrote is no suggestion to keep: it goes.
+      if (out.doc.childCount === 1) {
+        base.deleteBlock(doc, block);
+        return;
+      }
       const after = out.doc.firstChild as PMNode;
       applyRawOps(unwrapBlock(block), lowerBlock(node, after));
       written(unwrapBlock(block), after);
@@ -311,4 +316,43 @@ function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
     nodes.set(element, node);
   }
   return node;
+}
+
+/**
+ * Accept or reject a stored document's suggestions, as a client of the document would: the
+ * blocks that change are written back. Call inside one transaction; returns whether anything
+ * changed.
+ */
+export function resolveStored(
+  doc: Y.Doc,
+  schema: Schema,
+  verdict: "accept" | "reject",
+  filter: Filter,
+): boolean {
+  const state = EditorState.create({ schema, doc: storedRoot(doc, schema) });
+  const tr = (verdict === "accept" ? accept : reject)(state, filter);
+  if (!tr.docChanged) return false;
+  const blocks: PMNode[] = [];
+  tr.doc.forEach((block) => {
+    blocks.push(block);
+  });
+  writeBlocks(fragmentOf(doc), schema, blocks);
+  return true;
+}
+
+/** The turns whose suggestions a stored document still holds; one read per document state. */
+export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
+  let turns = pendingByDoc.get(doc);
+  if (!turns) {
+    turns = pendingTurns(storedRoot(doc, schema));
+    pendingByDoc.set(doc, turns);
+    doc.once("afterTransaction", () => pendingByDoc.delete(doc));
+  }
+  return turns;
+}
+
+const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
+
+function storedRoot(doc: Y.Doc, schema: Schema): PMNode {
+  return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
 }

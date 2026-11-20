@@ -28,7 +28,7 @@ export function proposals(node: Node): Record<string, AttrProposal[]> {
 
 /** Whether a view removes a block: one of its own layers on it proposes so. */
 export function removedIn(node: Node, view: View): boolean {
-  if (view.work === null || view.hidden.has(view.work)) return false;
+  if (view.work === null) return false;
   return (proposals(node)[view.work] ?? []).some((layer) => layer.remove);
 }
 
@@ -45,13 +45,10 @@ export function sameValue(a: unknown, b: unknown): boolean {
 /** Attributes that say who suggested what: never themselves suggested, accepted or shown. */
 export const SUGGESTION_ATTRS = ["sug", "sugAttrs"];
 
-/**
- * Whose suggestions a view shows: one Work's, or none (`work: null`, the Live view). A Work in
- * `hidden` (its draft is discarded) is absent from every view, its own included.
- */
-export type View = { work: string | null; hidden: ReadonlySet<string> };
+/** Whose suggestions a view shows: one Work's, or none (`work: null`, the Live view). */
+export type View = { work: string | null };
 
-export const liveView: View = { work: null, hidden: new Set() };
+export const liveView: View = { work: null };
 
 /**
  * The one decision table every writer uses. `live`: Live text the view shows and may suggest
@@ -67,12 +64,8 @@ export function isSuggestionMark(mark: Mark): boolean {
   return mark.type.name === "suggest_ins" || mark.type.name === "suggest_del";
 }
 
-function present(attrs: SuggestionAttrs | null, view: View): attrs is SuggestionAttrs {
-  return !!attrs?.work && !view.hidden.has(attrs.work);
-}
-
 function mine(attrs: SuggestionAttrs | null, view: View): boolean {
-  return present(attrs, view) && attrs.work === view.work;
+  return !!attrs?.work && attrs.work === view.work;
 }
 
 /**
@@ -103,16 +96,20 @@ export function ownerOf(
   return { kind: "live", sug: null };
 }
 
+/**
+ * Inside a block the view's Work added, text is its insertion, and the Work's own deletion still
+ * counts: a later turn that rewrites an earlier turn's paragraph strikes the earlier wording
+ * instead of losing it, so rejecting the later turn brings it back, as in a Live paragraph.
+ */
 export function kindOf(marks: readonly Mark[], block: Node, view: View): RunKind {
   const owner = blockKind(block, view);
   if (owner === "hidden") return "hidden";
-  if (owner === "own") return "own-ins";
   let ownDel = false;
-  let ownIns = false;
+  let ownIns = owner === "own";
   for (const mark of marks) {
     const attrs = mark.attrs as SuggestionAttrs;
     if (mark.type.name === "suggest_ins") {
-      // Another Work's insertion, or a discarded Work's, is absent.
+      // Another Work's insertion is absent.
       if (!mine(attrs, view)) return "hidden";
       ownIns = true;
     }
@@ -152,7 +149,7 @@ export function viewBlock(block: Node, view: View): Node | null {
 /** A block's attributes in a view: Live's, with the view's own pending change applied. */
 export function viewAttrs(node: Node, view: View): Attrs {
   if (!("sug" in node.attrs)) return node.attrs;
-  const own = view.work !== null && !view.hidden.has(view.work) ? proposals(node)[view.work] : null;
+  const own = view.work !== null ? proposals(node)[view.work] : null;
   return { ...node.attrs, ...layered(own ?? []), sug: null, sugAttrs: null };
 }
 
@@ -253,40 +250,4 @@ export function visibleSlice(slice: Slice, parent: Node, view: View): Slice {
     return Fragment.from(nodes);
   };
   return stripSlice(new Slice(keep(slice.content, parent), slice.openStart, slice.openEnd));
-}
-
-/** The document's root that lists, by Work, the drafts discarded in it. */
-const HIDDEN_ROOT = "suggest_hidden";
-
-type HiddenMap = {
-  keys(): IterableIterator<string>;
-  set(work: string, at: number): unknown;
-  delete(work: string): void;
-  observe(listener: () => void): void;
-  unobserve(listener: () => void): void;
-};
-
-/** Works whose suggestions in this document are discarded: absent from every view. */
-export function hiddenWorks(doc: { getMap(name: string): HiddenMap }): Set<string> {
-  return new Set(doc.getMap(HIDDEN_ROOT).keys());
-}
-
-/** Discard a Work's draft in this document: its suggestions stay stored, in no view. */
-export function discard(doc: { getMap(name: string): HiddenMap }, work: string): void {
-  doc.getMap(HIDDEN_ROOT).set(work, Date.now());
-}
-
-export function restore(doc: { getMap(name: string): HiddenMap }, work: string): void {
-  doc.getMap(HIDDEN_ROOT).delete(work);
-}
-
-/** Calls `onChange` with the discarded Works whenever they change; returns the unsubscribe. */
-export function observeHidden(
-  doc: { getMap(name: string): HiddenMap },
-  onChange: (hidden: Set<string>) => void,
-): () => void {
-  const map = doc.getMap(HIDDEN_ROOT);
-  const listener = () => onChange(hiddenWorks(doc));
-  map.observe(listener);
-  return () => map.unobserve(listener);
 }

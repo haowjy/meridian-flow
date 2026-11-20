@@ -370,8 +370,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts,
     liveUtilityCore: runtime.liveUtilityCore,
     threadCore,
-    suggestionCore: runtime.suggestionCore,
-    readAs: runtime.readAs,
+    workView: runtime.workView,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -380,7 +379,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const modelEditWrite = createModelEditWriter({
     liveCore: runtime.liveUtilityCore,
     threadCore,
-    suggestionCore: runtime.suggestionCore,
+    workView: runtime.workView,
     branches: workBranches,
     fileAccess: deps.fileAccess,
     enterLiveSeam: (documentId) => enterLiveWriteSeam(deps.db, documentId),
@@ -597,6 +596,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       agentEdit,
       documents: runtime.markdownDocuments,
       model: runtime.model,
+      workView: runtime.workView,
       codec: runtime.codec,
       links: deps.links,
       branches: workBranches,
@@ -622,7 +622,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   // Suggestion mode (prototype): a card's Undo rejects the turn's suggestions.
-  const suggestionTurnUndo = runtime.suggestionCore
+  const suggestionTurnUndo = runtime.workView
     ? createSuggestionTurnUndo({
         schema: buildDocumentSchema(),
         listTurnDocuments: lineageStore.listEditedDocumentIdsForTurn,

@@ -132,6 +132,7 @@ export function rewrite(
                 first: aimedAt(reached, textblockAtOrThrow(out.doc, a).pos),
                 last: aimedAt(reached, textblockAtOrThrow(out.doc, b).pos),
               },
+              blockKind(textblockAtOrThrow(out.doc, b).node, view) === "own",
             ),
             view,
             work,
@@ -343,6 +344,8 @@ function netFormatting(
 /**
  * Where an edit lands in the final document: the textblocks holding its two ends, and the content
  * after its end there, which a join or a split carries on, formatted as the transaction made it.
+ * When the edit ends in the Work's own block (`ownEnd`), that content keeps its layered marks, so
+ * an earlier turn's wording moves with it.
  */
 function finalAround(
   doc: Node,
@@ -350,16 +353,20 @@ function finalAround(
   to: number,
   view: View,
   aimed: Final["aimed"],
+  ownEnd: boolean,
 ): Final {
   const first = textblockAt(doc, from);
   const last = textblockAt(doc, to);
+  const offset = last ? to - last.pos - 1 : 0;
   return {
     first: first?.node ?? null,
     last: last?.node ?? null,
     aimed,
-    rest: last
-      ? visibleContent(last.node, to - last.pos - 1, last.node.content.size, view)
-      : Fragment.empty,
+    rest: !last
+      ? Fragment.empty
+      : ownEnd
+        ? last.node.slice(offset).content
+        : visibleContent(last.node, offset, last.node.content.size, view),
   };
 }
 
@@ -526,7 +533,7 @@ function setLayers(out: Transaction, pos: number, work: string, layers: AttrProp
 /** `doc` with the view's pending attribute changes applied to the blocks in `[from, to)`. */
 function withPending(doc: Node, from: number, to: number, view: View): Node {
   const work = view.work;
-  if (work === null || view.hidden.has(work)) return doc;
+  if (work === null) return doc;
   const shown = new Transform(doc);
   doc.nodesBetween(from, Math.max(to, from + 1), (node, pos) => {
     for (const [key, value] of Object.entries(layered(proposals(node)[work] ?? [])))
@@ -767,30 +774,52 @@ function suggestRemoval(
         attrs.work,
         addLayer(node, proposals(node)[attrs.work] ?? [], { ...attrs, attrs: {}, remove: true }),
       );
+  for (const { node, pos } of own)
+    if (layers(node.attrs.sug, attrs))
+      setLayers(
+        out,
+        pos,
+        attrs.work,
+        addLayer(node, proposals(node)[attrs.work] ?? [], { ...attrs, attrs: {}, remove: true }),
+      );
   const map = since(out);
   for (const piece of work.reverse()) {
     if (piece.kind === "live") out.addMark(piece.from, piece.to, del);
     else if (piece.kind === "own-ins") retract(out, piece.from, piece.to, del, attrs);
   }
   for (const block of own.reverse()) {
+    if (layers(block.node.attrs.sug, attrs)) continue;
     const a = map(block.pos, 1);
     out.delete(a, a + block.node.nodeSize);
   }
 }
 
 /**
- * Remove the view's own insertion in `[from, to)`. One the same turn wrote, or the writer's (no
- * turn), goes. An earlier turn's stays under this turn's deletion: rejecting this turn, as the
- * card's Undo does, brings it back. A block the Work added is one insertion, resolved whole:
- * text inside it just goes.
+ * Whether an edit by `attrs` over the view's own text that `written` wrote layers over it instead
+ * of replacing it: a model turn's edit over another turn's or the writer's text. Rejecting the
+ * later turn, as the card's Undo does, brings the earlier text back.
+ */
+function layers(written: SuggestionAttrs | null, attrs: SuggestionAttrs): boolean {
+  return attrs.turn !== null && written?.turn !== attrs.turn;
+}
+
+/** Content the view's Work writes into its own block `sug`: marked when it layers over the block. */
+function intoOwn(schema: Schema, content: Fragment, sug: SuggestionAttrs, attrs: SuggestionAttrs) {
+  return layers(sug, attrs) ? marked(schema, content, attrs) : content;
+}
+
+/**
+ * Remove the view's own insertion in `[from, to)`, inline or inside a block the Work added. Text
+ * the same turn wrote goes, as does anything the writer (no turn) removes. Another turn's stays
+ * under this turn's deletion (`layers`).
  */
 function retract(out: Transaction, from: number, to: number, del: Mark, attrs: SuggestionAttrs) {
   const ranges: Array<[number, number, boolean]> = [];
   out.doc.nodesBetween(from, to, (node, pos, parent) => {
     if (!node.isInline) return true;
     const ins = node.marks.find((mark) => mark.type.name === "suggest_ins");
-    const layered = attrs.turn !== null && !parent?.attrs.sug && ins?.attrs.turn !== attrs.turn;
-    ranges.push([Math.max(from, pos), Math.min(to, pos + node.nodeSize), layered]);
+    const written = (ins?.attrs ?? parent?.attrs.sug ?? null) as SuggestionAttrs | null;
+    ranges.push([Math.max(from, pos), Math.min(to, pos + node.nodeSize), layers(written, attrs)]);
     return false;
   });
   for (const [a, b, layered] of ranges.reverse()) {
@@ -884,7 +913,10 @@ function replaceInWork(
   let insertAt = joining ? blockEnd : pastOwnDeletion(out.doc, map(to, 1), view);
   const target = textblockAtOrThrow(out.doc, insertAt);
   const ownTarget = blockKind(target.node, view) === "own";
-  const inline = (content: Fragment) => (ownTarget ? content : marked(schema, content, attrs));
+  const inline = (content: Fragment) =>
+    ownTarget
+      ? intoOwn(schema, content, target.node.attrs.sug, attrs)
+      : marked(schema, content, attrs);
 
   const parts = sliceParts(slice);
   // A kept block the edit also starts in gets its first line as a block of its own, before it.
@@ -946,7 +978,7 @@ function replaceInWork(
     ...pasted(parts.middle, attrs),
     template.type.create(
       { ...template.attrs, id: null, sug: change, sugAttrs: null },
-      (parts.last?.content ?? Fragment.empty).append(final.rest),
+      intoOwn(schema, parts.last?.content ?? Fragment.empty, change, attrs).append(final.rest),
     ),
   ];
   out.insert(after, blocks);

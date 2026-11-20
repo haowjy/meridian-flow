@@ -434,12 +434,7 @@ function ActiveSessionEditorView({
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>
         {suggestionModeEnabled && suggestionOwner && editor ? (
-          <SuggestionBand
-            editor={editor}
-            doc={session.document}
-            ownerKey={suggestionOwner}
-            accountId={accountId}
-          />
+          <SuggestionBand editor={editor} ownerKey={suggestionOwner} accountId={accountId} />
         ) : null}
         <EditorCanvas
           editor={editor}

@@ -15,13 +15,13 @@ import {
 } from "@meridian/agent-edit/integration";
 import { type DraftOwner, draftOwnerKey, type LinkView, type ThreadId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { Author } from "@meridian/suggestions";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
 import { agentProject, type FileAccess, type FileGrant } from "../../file-policy/index.js";
 import type { LiveAgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
+import type { WorkViews } from "./agent-edit-runtime.js";
 import type { Branches } from "./branches.js";
 import type { DraftSnapshot } from "./draft-store.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
@@ -56,11 +56,9 @@ export type ModelEditWriteDeps = {
   liveRoomOf(documentId: DocumentId): Promise<string | null>;
   /** A draft seeded from an older cut is behind Live: runs once the command's transaction commits. */
   draftBehindLive(documentId: DocumentId): void;
-  /** Suggestion mode (prototype): a core over Live writing a Work's suggestions. */
-  suggestionCore?: SuggestionCore | null;
+  /** Suggestion mode (prototype): a drafted write goes into Live as the Work's suggestions. */
+  workView?: WorkViews | null;
 };
-
-export type SuggestionCore = (work: string, author: Author) => AgentEditCore;
 
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
   function threadCoreFor(given: WriteContext): AgentEditCore {
@@ -130,7 +128,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     given: GivenContext,
     documentId: DocumentId | null,
     owner: DraftOwner,
-    suggestionCore: SuggestionCore,
+    workView: WorkViews,
   ): Promise<WriteOutcome> {
     if (documentId) {
       await deps.enterLiveSeam(documentId);
@@ -139,22 +137,23 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     const work = draftOwnerKey(owner);
     const turn =
       given.turnId ?? (given.actor?.kind === "agent" ? given.actor.turnId : null) ?? null;
-    return suggestionCore(work, { chat: given.threadId ?? null, turn, by: "agent" }).write(
-      command,
-      { ...given, linkView: { kind: "live" }, documentVersion: "live" },
-    );
+    return workView(work, { chat: given.threadId ?? null, turn, by: "agent" }).core.write(command, {
+      ...given,
+      linkView: { kind: "live" },
+      documentVersion: "live",
+    });
   }
 
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
     const { grant, ...given } = routed;
     const documentId = documentIdFromCommand(command);
     const inverse = command.command === "undo" || command.command === "revert";
-    const suggestionCore = deps.suggestionCore;
-    if (suggestionCore && grant.destination.kind === "draft" && !inverse) {
+    const workView = deps.workView;
+    if (workView && grant.destination.kind === "draft" && !inverse) {
       const owner = grant.destination.owner;
       return runInLockedWrite(async () => {
         const confirmed = await runWithEditGrants(deps.fileAccess, [grant], () =>
-          suggest(command, given, documentId, owner, suggestionCore),
+          suggest(command, given, documentId, owner, workView),
         );
         if (!confirmed.ok) throw confirmed.refusal;
         return confirmed.value;

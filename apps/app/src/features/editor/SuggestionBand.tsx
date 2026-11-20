@@ -1,41 +1,25 @@
 /**
  * Suggestion mode's review (`VITE_FLOW_SUGGESTIONS=1`): one Live document, viewed as Live or as
  * the Work's draft (Live plus the Work's suggestions). Accept and reject are local edits, so
- * Ctrl+Z takes them back. Discard hides the Work's suggestions in this document; Restore shows them.
+ * Ctrl+Z takes them back. Discard rejects every one of the Work's suggestions in this document.
  */
 import { Trans } from "@lingui/react/macro";
-import {
-  type Change,
-  discard,
-  hiddenWorks,
-  list,
-  observeHidden,
-  restore,
-  type View,
-} from "@meridian/suggestions";
+import { type Change, list, type View } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo, useState } from "react";
-import type * as Y from "yjs";
 import { Button } from "@/components/ui/button";
 
 export function SuggestionBand({
   editor,
-  doc,
   ownerKey,
   accountId,
 }: {
   editor: Editor;
-  doc: Y.Doc;
   ownerKey: string;
   accountId: string;
 }) {
-  const [hidden, setHidden] = useState(() => hiddenWorks(doc));
-  useEffect(() => observeHidden(doc, setHidden), [doc]);
   const [showDraft, setShowDraft] = useState(false);
-  const view = useMemo<View>(
-    () => ({ work: showDraft ? ownerKey : null, hidden }),
-    [showDraft, ownerKey, hidden],
-  );
+  const view = useMemo<View>(() => ({ work: showDraft ? ownerKey : null }), [showDraft, ownerKey]);
   useEffect(() => {
     editor.commands.setSuggestionView(
       view,
@@ -45,7 +29,7 @@ export function SuggestionBand({
 
   const [changes, setChanges] = useState<Change[]>([]);
   useEffect(() => {
-    const draft: View = { work: ownerKey, hidden: new Set() };
+    const draft: View = { work: ownerKey };
     const update = () => setChanges(list(editor.state.doc, draft));
     update();
     editor.on("update", update);
@@ -53,7 +37,6 @@ export function SuggestionBand({
       editor.off("update", update);
     };
   }, [editor, ownerKey]);
-  const discarded = hidden.has(ownerKey);
 
   return (
     <div
@@ -78,11 +61,7 @@ export function SuggestionBand({
           <Trans>Draft ({changes.length})</Trans>
         </Button>
         <span className="flex-1" />
-        {discarded ? (
-          <Button type="button" size="xs" variant="ghost" onClick={() => restore(doc, ownerKey)}>
-            <Trans>Restore</Trans>
-          </Button>
-        ) : changes.length > 0 ? (
+        {changes.length > 0 ? (
           <>
             <Button
               type="button"
@@ -98,15 +77,12 @@ export function SuggestionBand({
               variant="ghost"
               onClick={() => editor.commands.rejectSuggestions({ work: ownerKey })}
             >
-              <Trans>Reject all</Trans>
-            </Button>
-            <Button type="button" size="xs" variant="ghost" onClick={() => discard(doc, ownerKey)}>
               <Trans>Discard</Trans>
             </Button>
           </>
         ) : null}
       </div>
-      {showDraft && !discarded
+      {showDraft
         ? changes.map((change) => (
             <div
               key={change.id}

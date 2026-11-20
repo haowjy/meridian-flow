@@ -25,8 +25,10 @@ export function scopeMarkdownEngine(
   return {
     serializeDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
-    serializeVersionedDocument: (documentId, doc, view) =>
-      scopes.within(by(documentId), () => engine.serializeVersionedDocument(documentId, doc, view)),
+    serializeVersionedDocument: (documentId, doc, view, model) =>
+      scopes.within(by(documentId), () =>
+        engine.serializeVersionedDocument(documentId, doc, view, model),
+      ),
     readFrozenMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readFrozenMarkdown(documentId)),
     readVersionedMarkdown: (documentId) =>

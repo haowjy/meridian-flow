@@ -8,9 +8,11 @@ import {
   kindOf,
   layered,
   proposals,
+  removedIn,
   type SuggestionAttrs,
   sameValue,
   type View,
+  viewBlock,
 } from "./view.js";
 
 /** The turns with suggestions still in `doc`: where a reject of `{ turn }` would change it. */
@@ -57,13 +59,14 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
   const set: Array<[number, string, unknown]> = [];
   state.doc.descendants((block, blockPos, parent, index) => {
     if (block.isInline) return false;
+    // A block inside it carries the same suggestion, and goes or stays with it. One that stays
+    // still holds what later turns layered on it: their deletions inside, a removal of it.
     const blockFate = fateOf(block.attrs.sug);
-    if (blockFate) {
-      // A block inside it carries the same suggestion, and goes or stays with it.
-      if (blockFate === "accept") set.push([blockPos, "sug", null]);
-      else remove.push([blockPos, blockPos + block.nodeSize]);
-      return blockFate === "accept";
+    if (blockFate === "reject") {
+      remove.push([blockPos, blockPos + block.nodeSize]);
+      return false;
     }
+    if (blockFate === "accept") set.push([blockPos, "sug", null]);
     const pending = Object.entries(proposals(block));
     if (pending.some(([, layers]) => layers.some((layer) => fateOf(layer)))) {
       const left: Array<[string, AttrProposal[]]> = [];
@@ -167,7 +170,7 @@ export type Change = SuggestionAttrs & {
 /** The view's own changes, in document order, for review: what `kindOf` shows as its own. */
 export function list(doc: Node, view: View): Change[] {
   const work = view.work;
-  if (work === null || view.hidden.has(work)) return [];
+  if (work === null) return [];
   const byId = new Map<string, Change>();
   const note = (attrs: SuggestionAttrs, from: number, to: number, add: Partial<Change>) => {
     const change = byId.get(attrs.id) ?? {
@@ -191,10 +194,14 @@ export function list(doc: Node, view: View): Change[] {
     if (owner === "hidden") return false;
     const end = blockPos + block.nodeSize;
     if (owner === "own") {
-      note(block.attrs.sug, blockPos, end, { inserted: `${block.textContent}\n` });
-      return false;
+      // A block the Work added and then removed shows nothing, and changes nothing once applied.
+      if (removedIn(block, view)) return false;
+      const shown = viewBlock(block, view)?.textContent ?? "";
+      note(block.attrs.sug, blockPos, end, { inserted: `${shown}\n` });
+      // Within a block the Work added, what is listed beyond it is a later turn's deletion.
+      if (!block.isTextblock) return false;
     }
-    const layers = proposals(block)[work] ?? [];
+    const layers = owner === "own" ? [] : (proposals(block)[work] ?? []);
     for (const id of new Set(layers.map((layer) => layer.id))) {
       const ofChange = layers.filter((layer) => layer.id === id);
       const attrs = shownChange(block, ofChange);
@@ -207,6 +214,8 @@ export function list(doc: Node, view: View): Change[] {
     block.forEach((child, offset) => {
       const kind = kindOf(child.marks, block, view);
       if (kind !== "own-ins" && kind !== "own-del") return;
+      // The block's own text is listed with the block, above.
+      if (owner === "own" && kind === "own-ins") return;
       const name = kind === "own-ins" ? "suggest_ins" : "suggest_del";
       const from = blockPos + 1 + offset;
       const side = kind === "own-ins" ? "inserted" : "deleted";
