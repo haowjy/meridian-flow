@@ -26,13 +26,8 @@ import {
 } from "@meridian/suggestions";
 import { Extension, Mark } from "@tiptap/core";
 import type { MarkSpec, Node as PMNode } from "@tiptap/pm/model";
-import {
-  type EditorState,
-  Plugin,
-  PluginKey,
-  TextSelection,
-  type Transaction,
-} from "@tiptap/pm/state";
+import { EditorState, Plugin, PluginKey, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { Transform } from "@tiptap/pm/transform";
 import type { DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import type * as Y from "yjs";
@@ -179,6 +174,34 @@ export function shownAttrs(tr: Transaction, node: PMNode): Record<string, unknow
   if (!("sug" in node.attrs)) return node.attrs;
   const view = viewOfDoc.get(tr.before) ?? liveView;
   return { ...viewAttrs(node, view), sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs };
+}
+
+const shownStates = new WeakMap<EditorState, EditorState>();
+
+/**
+ * `state` with every block the selection touches carrying the attributes the editor shows (a
+ * Work's pending heading, list, quote or alignment). Only attributes change, so positions and
+ * the selection are the same: a reader of what the selection is (the toolbar's lit controls)
+ * reads this instead of the stored state. It has no plugins.
+ */
+export function shownState(state: EditorState): EditorState {
+  const view = suggestionView(state);
+  if (view.work === null) return state;
+  let shown = shownStates.get(state);
+  if (shown) return shown;
+  const transform = new Transform(state.doc);
+  for (const { $from, $to } of state.selection.ranges)
+    state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
+      if (node.attrs.sugAttrs) transform.setNodeMarkup(pos, undefined, viewAttrs(node, view));
+    });
+  shown = transform.docChanged
+    ? EditorState.create({
+        doc: transform.doc,
+        selection: state.selection.map(transform.doc, transform.mapping),
+      })
+    : state;
+  shownStates.set(state, shown);
+  return shown;
 }
 
 /**

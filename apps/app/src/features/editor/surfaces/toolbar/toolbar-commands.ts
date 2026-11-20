@@ -2,7 +2,7 @@
 
 import type { YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import { HEADING_LEVELS, type HeadingLevel } from "@meridian/prosemirror-schema";
-import type { Editor } from "@tiptap/core";
+import { type Editor, isActive } from "@tiptap/core";
 import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
 
@@ -18,6 +18,7 @@ import {
   selectionIsQuoted,
   selectionListKind,
 } from "@/core/editor/extensions/nesting";
+import { shownState } from "@/core/editor/extensions/suggestion-mode";
 import { linkAttributesAtSelection } from "@/core/editor/links";
 
 import {
@@ -166,7 +167,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
     bold: blockedFirst(readOnly, textMarkState(editor, "strong")),
     italic: blockedFirst(readOnly, textMarkState(editor, "em")),
     codeBlock: {
-      active: editor.isActive("code_block"),
+      active: blockIsActive(editor, "code_block"),
       blockedBy: readOnly ?? codeBlockRefusal(editor),
     },
     bulletList: {
@@ -191,7 +192,7 @@ export function documentToolbarControls(context: ToolbarContext): ToolbarControl
 
 /** The alignment the dropdown should show for the blocks under the selection. */
 export function currentAlignmentValue(editor: Editor): ToolbarAlignmentValue {
-  const align = currentAlignableBlock(editor.state)?.node.attrs.align;
+  const align = currentAlignableBlock(shownState(editor.state))?.node.attrs.align;
   return align === "center" || align === "right" ? align : "default";
 }
 
@@ -224,7 +225,7 @@ export function blockTypeStates(editor: Editor): Record<BlockTypeId, BlockTypeSt
 export function textLevelStates(editor: Editor): { id: BlockTypeId; state: BlockTypeState }[] {
   const states = blockTypeStates(editor);
   // Undefined when the blocks share no level, so no row reads as current.
-  const level = editor.isActive("paragraph", { level: null })
+  const level = blockIsActive(editor, "paragraph", { level: null })
     ? null
     : (currentHeadingLevel(editor) ?? undefined);
   return TEXT_LEVEL_BLOCK_TYPE_IDS.map((id) => ({
@@ -235,19 +236,19 @@ export function textLevelStates(editor: Editor): { id: BlockTypeId; state: Block
 
 /** The block type the selection already is. */
 function activeBlockTypeId(editor: Editor): BlockTypeId | null {
-  if (editor.isActive("code_block")) return "codeBlock";
+  if (blockIsActive(editor, "code_block")) return "codeBlock";
   const listKind = activeListKind(editor);
   if (listKind === "bullet") return "bulletList";
   if (listKind === "ordered") return "orderedList";
-  if (selectionIsQuoted(selectedSequence(editor.state.selection))) return "quote";
+  if (selectionIsQuoted(selectedSequence(shownState(editor.state).selection))) return "quote";
   const level = currentHeadingLevel(editor);
   if (level !== null) return `heading${level}`;
-  return editor.isActive("paragraph", { level: null }) ? "paragraph" : null;
+  return blockIsActive(editor, "paragraph", { level: null }) ? "paragraph" : null;
 }
 
 /** The heading level every block under the selection has, or null when they share none. */
 export function currentHeadingLevel(editor: Editor): HeadingLevel | null {
-  return HEADING_LEVELS.find((level) => editor.isActive("paragraph", { level })) ?? null;
+  return HEADING_LEVELS.find((level) => blockIsActive(editor, "paragraph", { level })) ?? null;
 }
 
 /** Convert the blocks under the selection in place. */
@@ -396,9 +397,17 @@ function hasCollaborativeHistory(editor: Editor): boolean {
   return !editor.isDestroyed && typeof editor.commands.undo === "function";
 }
 
+/**
+ * Whether the selected blocks are `name` with `attrs` as the writer sees them: in a Work's view a
+ * block's pending heading or list is what is on.
+ */
+function blockIsActive(editor: Editor, name: string, attrs?: Record<string, unknown>): boolean {
+  return isActive(shownState(editor.state), name, attrs);
+}
+
 /** The kind of list every selected block sits in, or null when they are not all in one kind. */
 function activeListKind(editor: Editor): "bullet" | "ordered" | null {
-  return selectionListKind(selectedSequence(editor.state.selection));
+  return selectionListKind(selectedSequence(shownState(editor.state).selection));
 }
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {

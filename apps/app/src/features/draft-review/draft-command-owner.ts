@@ -8,7 +8,7 @@ import type { ApplyEntries } from "./apply-history";
 import { DiscardRestores } from "./discard-restores";
 import { type DiscardTook, DraftNotices } from "./draft-notices";
 
-export type DraftCommandState = {
+type DraftCommandState = {
   applying: boolean;
   /** A press has the item in flight: its rows and review leave until the press answers. */
   hidden: boolean;

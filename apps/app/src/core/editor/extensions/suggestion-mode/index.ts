@@ -1,6 +1,7 @@
 export {
   authorsIn,
   SuggestionModeExtension,
+  shownState,
   shownText,
   suggestionFocus,
   suggestionView,

@@ -3,7 +3,7 @@ import { notifyFailure } from "@/components/app/failure-toast";
 import type { DocumentApplyEntry, DocumentHistory } from "@/core/editor/editor-history";
 
 /** The histories this tab holds for the Apply's documents, read now: each one's live session. */
-export type Histories = () => readonly (DocumentHistory | null)[];
+type Histories = () => readonly (DocumentHistory | null)[];
 
 /**
  * What a press of Undo came to: `failed`, it never reached the server (`told`: the writer was

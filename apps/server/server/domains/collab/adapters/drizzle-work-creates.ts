@@ -4,13 +4,10 @@
  * admitted.
  */
 import { writeBlocks } from "@meridian/agent-edit/diff";
+import { fragmentOf } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import {
-  buildDocumentSchema,
-  PROSEMIRROR_FRAGMENT_NAME,
-  withBlockIds,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, withBlockIds } from "@meridian/prosemirror-schema";
 import { sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
@@ -43,12 +40,7 @@ export function createDrizzleWorkCreates(
         await deps.documents.changeLiveDocument({
           documentId,
           origin,
-          mutate: (doc) =>
-            writeBlocks(
-              doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME),
-              schema,
-              content.blocks.map(withBlockIds),
-            ),
+          mutate: (doc) => writeBlocks(fragmentOf(doc), schema, content.blocks.map(withBlockIds)),
         });
     },
   };

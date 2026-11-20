@@ -4,11 +4,6 @@ import type { Work } from "@meridian/contracts/works";
 import type { Editor } from "@tiptap/core";
 import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
 import { keepsRestoredPlace } from "@/core/editor/reading-position-navigation";
-import {
-  type CommandStart,
-  usePressCommands,
-  type WorkBranchCommands,
-} from "@/features/suggestion-review/usePressCommands";
 import type { CommandOutcome } from "./draft-command-owner";
 import {
   type DraftReviewSelection,
@@ -18,13 +13,14 @@ import {
   inlineReviewFromState,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-model";
+import { type CommandStart, usePressCommands, type WorkBranchCommands } from "./usePressCommands";
 
 export type { DraftReviewSelection, InlineDraftReview };
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
 export type ReviewChangeTarget = ReviewFocus;
 
-export type DraftReviewStateOwner = Readonly<{
+type DraftReviewStateOwner = Readonly<{
   state: typeof EMPTY_DRAFT_REVIEW_STATE;
   dispatch: Dispatch<Parameters<typeof draftReviewReducer>[1]>;
 }>;

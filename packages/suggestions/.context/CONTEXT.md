@@ -84,7 +84,7 @@ where Live text separates its pieces; `pending` the turns and the Works
   decorations and paints again only the top-level blocks whose content differs, read by
   diffing the documents, so the binding's whole-document redraw after Undo or a peer's edit
   repaints only what changed. Whether changes are marked is one attribute on the editor that
-  the CSS reads. The review (`apps/app/src/features/suggestion-review/`)
+  the CSS reads. The review (`apps/app/src/features/draft-review/`)
   reads `list` from the editor's document, so the Changes list, the band, the change card and
   the phone's sheet draw a Work's suggestions as they drew a draft's.
 - Model: agent-edit's `suggestingModel(base, view, author)` replays a planned write as a

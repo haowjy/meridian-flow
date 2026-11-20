@@ -13,10 +13,10 @@ import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import type { DocumentSession } from "@/core/editor/document-session";
 import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
+import { useHostEditor, useHostEditorStore } from "@/features/draft-review/host-editor";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
-import { useHostEditor, useHostEditorStore } from "@/features/suggestion-review/host-editor";
-import { usePublishChangeCounts } from "@/features/suggestion-review/usePublishChangeCounts";
-import { useSuggestionReviewFocus } from "@/features/suggestion-review/useSuggestionChanges";
+import { usePublishChangeCounts } from "@/features/draft-review/usePublishChangeCounts";
+import { useSuggestionReviewFocus } from "@/features/draft-review/useSuggestionChanges";
 import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./SessionEditor";
 
 export type EditorViewProps = Omit<EditorSurfaceOptions, "held"> & {

@@ -31,7 +31,7 @@ import {
   type DraftReviewContextValue,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
-import { HostEditor, HostEditorContext } from "@/features/suggestion-review/host-editor";
+import { HostEditor, HostEditorContext } from "@/features/draft-review/host-editor";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { useShellTreeVersion } from "./tree-version";
 import {

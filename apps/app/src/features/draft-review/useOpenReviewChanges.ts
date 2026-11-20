@@ -6,14 +6,14 @@
  */
 import { useContext, useSyncExternalStore } from "react";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
-import { type HostEditor, HostEditorContext } from "@/features/suggestion-review/host-editor";
-import { useSuggestionChanges } from "@/features/suggestion-review/useSuggestionChanges";
 import type { DraftChangesData } from "./draft-changes";
 import { useDraftCommandState } from "./draft-changes";
+import { type HostEditor, HostEditorContext } from "./host-editor";
 import type { DraftRef } from "./review-command-types";
 import { itemChange, type ReviewChange } from "./review-model";
 import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
+import { useSuggestionChanges } from "./useSuggestionChanges";
 
 type ReviewRead = {
   status: "idle" | "loading" | "ready";

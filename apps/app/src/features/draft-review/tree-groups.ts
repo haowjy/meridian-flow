@@ -65,7 +65,7 @@ export type WorkTreeChanges = {
 };
 
 /** One list's replays: live, the Work's view of it, and the Work's pending records in it. */
-export type ListChanges = {
+type ListChanges = {
   live: TreeProjection;
   work: TreeProjection;
   pending: readonly TreeRecord[];
