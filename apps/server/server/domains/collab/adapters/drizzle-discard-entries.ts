@@ -13,7 +13,7 @@ import type { Database } from "@meridian/database";
 import { branches, commands } from "@meridian/database/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { untakenPartsOf } from "./drizzle-command-edits.js";
+import { partsOf } from "./drizzle-command-edits.js";
 
 export function createDrizzleDiscardEntries(db: Database) {
   return {
@@ -67,7 +67,7 @@ export function createDrizzleDiscardEntries(db: Database) {
         ).map((row) => [row.id, row.workId]),
       );
       const drafts = (
-        await untakenPartsOf(
+        await partsOf(
           tx,
           ran.map((command) => command.id),
         )

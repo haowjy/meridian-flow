@@ -212,8 +212,8 @@ export type UndoDiscardResult = {
 export type UndoDiscardAnswer = UndoDiscardResult | { status: "conflict"; commandId: CommandId };
 
 /**
- * A Trash entry: one Discard of whole drafts, with the drafts it took text from that no Restore
- * has ended. The tree half is the tree's own answer for the same command id; an entry with no
+ * A Trash entry: one Discard of whole drafts no Restore has run for, with the drafts it took
+ * text from. The tree half is the tree's own answer for the same command id; an entry with no
  * member in either is not listed.
  */
 export type DiscardEntry = {

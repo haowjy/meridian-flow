@@ -16,7 +16,9 @@ stateDiagram-v2
   sent --> sent: a timeout, or the server says the first request is still running
   sent --> retrying: no usable answer
   retrying --> sent: after 1, 2, then 4 seconds, with the same body
-  retrying --> unsent: three retries used
+  retrying --> settled: three retries used, and its stored answer, read by command id
+  retrying --> unsent: three retries used, and nothing stored
+  retrying --> cancelled: three retries used, its draft closed, and nothing stored
   sent --> cancelled: the queue was closed and a lookup says the server never saw it
   settled --> [*]
   unsent --> [*]

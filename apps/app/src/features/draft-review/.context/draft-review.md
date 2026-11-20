@@ -221,7 +221,7 @@ holds the nodes its answer says landed, not the ones pressed.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds. Then a sent Apply or
 Un-Apply reads its stored answer by command id and settles on it; only a click with none settles
-`unsent` (`cancelled` when its draft closed) (its optimistic fold ends, so the change is pending again, and the commands behind
+`unsent`, or `cancelled` when its draft closed (its optimistic fold ends, so the change is pending again, and the commands behind
 it go), and the press shows one "Couldn't apply" pill per branch. A timeout is not one of those failures: the Apply and Un-Apply requests
 (`postCommand` in `branches-api.ts`) resend under the same id after a timeout and while the
 server answers `running`, so a large Apply stays `Applying` until its answer instead of

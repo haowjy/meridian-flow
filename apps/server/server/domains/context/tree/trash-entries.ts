@@ -16,7 +16,6 @@ export type DiscardedTree = {
   records: TreeRecord[];
   /** The nodes the Discard's records created, with where they stood. */
   created: Array<{ node: string; kind: NodeKind; name: string; path: string[] }>;
-  restored: boolean;
 };
 
 /**
@@ -59,7 +58,7 @@ export async function discardedTree(
           const node = made.get(id);
           return node ? [{ node: id, kind: node.kind, name: node.name, path: pathOf(id) }] : [];
         });
-        return { records: found.records, created, restored: found.restored };
+        return { records: found.records, created };
       });
     },
   });

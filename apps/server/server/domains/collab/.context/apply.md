@@ -217,7 +217,8 @@ draft. A Work purge deletes its drafts' rows (`disposeBranchLocked`), and their 
 commit.
 
 `POST .../branches/:branchId/undo-discard` (kind `undo_discard`) restores a Discard, from the notice
-right after it or from Trash; `discardCommandId` may also name an earlier restore. It is
+right after it or from Trash; `discardCommandId` names the Discard (any other command restores
+nothing). It is
 `undoCommandText` over the Discard's edits: each change still taken out of the draft's text comes
 back as one more appended `undo` edit, the rest are gone silently, and the entry leaves Trash: a
 change the writer has written over since is not offered again. The tree records come
@@ -229,7 +230,8 @@ chat in Trash) bounces: stored `done`, nothing changed, `restored: 0`,
 `settled: [{ rule: "returned", why: "work_archived" | "work_deleted" | "chat_frozen" }]`.
 The Work lock throws and `closedOwnerBounce` (`adapters/closed-owner-bounce.ts`) turns the throw into that
 result in the command's mapper; Discard bounces the same way. Apply and
-Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries: one per Discard of whole drafts (`whole`) with a `discard` part in force (`untakenPartsOf`).
+Un-Apply land on a closed *branch* owner, and it stays closed; they judge each item by its file's own owner (below). `listDiscards(projectId)` is the document half of Trash's Discard entries: one per Discard of whole drafts (`whole`) that no Restore has run for, with the drafts its
+`discard` parts name.
 Lock order: the Work, the owner's active branch, the lists' keys, then the keys of the documents
 the copies act on, then the draft rows.
 

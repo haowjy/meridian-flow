@@ -61,12 +61,17 @@ const partColumns = {
 const commandKinds = inArray(documentEdits.kind, ["apply", "discard", "undo"]);
 
 /** The parts the command's edits wrote, newest first. */
-async function partsOf(tx: Tx, commandId: string): Promise<CommandPart[]> {
+/** The parts the commands' own edits wrote, newest first. */
+export async function partsOf(
+  tx: Tx,
+  commandIds: readonly string[],
+): Promise<(CommandPart & { commandId: string })[]> {
+  if (commandIds.length === 0) return [];
   return tx
-    .select(partColumns)
+    .select({ ...partColumns, commandId: sql<string>`${documentEdits.commandId}` })
     .from(documentEditParts)
     .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
-    .where(and(eq(documentEdits.commandId, commandId as CommandId), commandKinds))
+    .where(and(inArray(documentEdits.commandId, [...commandIds] as CommandId[]), commandKinds))
     .orderBy(desc(documentEditParts.id));
 }
 
@@ -106,21 +111,6 @@ async function inForceAmong(tx: Tx, parts: readonly CommandPart[]): Promise<Set<
     return known;
   };
   return new Set(parts.map(partKey).filter(inForce));
-}
-
-/** The parts the commands wrote that are still in force, with each part's command. */
-export async function untakenPartsOf(
-  tx: Tx,
-  commandIds: readonly string[],
-): Promise<(CommandPart & { commandId: string })[]> {
-  if (commandIds.length === 0) return [];
-  const rows = await tx
-    .select({ ...partColumns, commandId: sql<string>`${documentEdits.commandId}` })
-    .from(documentEditParts)
-    .innerJoin(documentEdits, eq(documentEdits.id, documentEditParts.editId))
-    .where(and(inArray(documentEdits.commandId, [...commandIds] as CommandId[]), commandKinds));
-  const inForce = await inForceAmong(tx, rows);
-  return rows.filter((row) => inForce.has(partKey(row)));
 }
 
 /**
@@ -209,7 +199,7 @@ export async function undoCommandText(
   },
 ): Promise<UndoneText[]> {
   const tx = currentDrizzleDb(db);
-  const all = (await partsOf(tx, input.undoes)).filter(
+  const all = (await partsOf(tx, [input.undoes])).filter(
     (part) => !input.only || input.only.has(part.documentId),
   );
   const inForce = await inForceAmong(tx, all);
