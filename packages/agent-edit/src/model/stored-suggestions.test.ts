@@ -80,7 +80,7 @@ it("a press's Undo leaves text typed inside a resolved word where it was typed",
   expect(read(discarded, null)).toBe("The cat sat on the mXat.");
 });
 
-it("the same rewrite after a Discard plans as a new suggestion; after an Apply it changes nothing", () => {
+it("the same rewrite after a Discard plans as a new suggestion; after an Apply the view keeps it", () => {
   const discarded = suggested("The cat sat.", "The dog sat.");
   const shown = Y.snapshot(discarded);
   pressStored(discarded, schema, "reject", { work });
@@ -98,4 +98,13 @@ it("the same rewrite after a Discard plans as a new suggestion; after an Apply i
   pressStored(applied, schema, "accept", { work });
   const kept = createPlanningView(applied, seen, []);
   expect(kept && read(kept, work)).toBe("The dog sat.");
+
+  // An Apply whose new word the writer then deleted is still an Apply: the struck word stays gone.
+  const deleted = suggested("The cat sat.", "The dog sat.");
+  const before = Y.snapshot(deleted);
+  pressStored(deleted, schema, "accept", { work });
+  const text = (fragmentOf(deleted).get(0) as Y.XmlElement).get(0) as Y.XmlText;
+  text.delete("The ".length, "dog ".length);
+  const stale = createPlanningView(deleted, before, []);
+  expect(stale && read(stale, work)).toBe("The dog sat.");
 });
