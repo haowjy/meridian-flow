@@ -280,25 +280,37 @@ function marked(schema: Schema, content: Fragment, attrs: SuggestionAttrs): Frag
   return Fragment.from(nodes);
 }
 
+function sameAuthor(attrs: SuggestionAttrs, author: Omit<SuggestionAttrs, "id">): boolean {
+  return (
+    attrs.work === author.work &&
+    attrs.turn === author.turn &&
+    attrs.chat === author.chat &&
+    attrs.by === author.by
+  );
+}
+
 /** The id an edit at `pos` continues: the same author's neighbouring change of the same turn. */
 function continuedId(doc: Node, pos: number, author: Omit<SuggestionAttrs, "id">): string | null {
   const $pos = doc.resolve(pos);
-  for (const node of [$pos.nodeBefore, $pos.nodeAfter]) {
-    for (const mark of node?.marks ?? []) {
-      const attrs = mark.attrs as SuggestionAttrs;
-      if (
-        (mark.type.name === "suggest_ins" || mark.type.name === "suggest_del") &&
-        attrs.work === author.work &&
-        attrs.turn === author.turn &&
-        attrs.chat === author.chat &&
-        attrs.by === author.by
-      )
-        return attrs.id;
-    }
-  }
+  for (const node of [$pos.nodeBefore, $pos.nodeAfter])
+    for (const mark of node?.marks ?? [])
+      if (isSuggestionMark(mark) && sameAuthor(mark.attrs as SuggestionAttrs, author))
+        return mark.attrs.id as string;
   const block = $pos.depth >= 1 ? $pos.node(1) : null;
   const sug = block?.attrs.sug as SuggestionAttrs | null;
-  return sug && sug.work === author.work && sug.turn === author.turn ? sug.id : null;
+  return sug && sameAuthor(sug, author) ? sug.id : null;
+}
+
+/** The last change the same author and turn made in `block`: what a block added after it joins. */
+export function changeIn(block: Node, author: Omit<SuggestionAttrs, "id">): string | null {
+  const sug = block.attrs.sug as SuggestionAttrs | null;
+  let id = sug && sameAuthor(sug, author) ? sug.id : null;
+  block.descendants((node) => {
+    for (const mark of node.marks)
+      if (isSuggestionMark(mark) && sameAuthor(mark.attrs as SuggestionAttrs, author))
+        id = mark.attrs.id as string;
+  });
+  return id;
 }
 
 /**

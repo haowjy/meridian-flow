@@ -54,10 +54,12 @@ function annotationAttributes(mark: keyof typeof documentMarks) {
 }
 
 function annotationMark(name: keyof typeof documentMarks, className?: string) {
+  const spec = documentMarks[name] as MarkSpec;
   return Mark.create({
     name,
-    inclusive: false,
-    excludes: "",
+    // As the shared schema has them: the binding keys a mark by `excludes`, then by its JSON.
+    inclusive: spec.inclusive,
+    excludes: spec.excludes,
     addAttributes: annotationAttributes(name),
     parseHTML: () => [{ tag: `span[data-${name}]` }],
     renderHTML: ({ mark }) => [
@@ -150,7 +152,9 @@ export const SuggestionModeExtension = Extension.create({
   },
 
   addKeyboardShortcuts() {
-    return { "Mod-Alt-m": () => this.editor.commands.addComment() };
+    return {
+      "Mod-Alt-m": () => suggestionModeEnabled && this.editor.commands.addComment(),
+    };
   },
 
   dispatchTransaction({ transaction, next }) {

@@ -26,32 +26,37 @@ export function reject(state: EditorState, filter: Filter): Transaction {
 function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"): Transaction {
   const tr = state.tr.setMeta(RAW_META, true);
   const { suggest_ins: ins, suggest_del: del } = state.schema.marks;
+  const fateOf = fates(state.doc, filter, action);
   const unmark: Array<[number, number, Mark]> = [];
   const remove: Array<[number, number]> = [];
   const keepBlock: number[] = [];
   state.doc.forEach((block, blockPos) => {
-    if (matches(block.attrs.sug, filter)) {
-      if (action === "accept") keepBlock.push(blockPos);
+    const blockFate = fateOf(block.attrs.sug);
+    if (blockFate) {
+      if (blockFate === "accept") keepBlock.push(blockPos);
       else remove.push([blockPos, blockPos + block.nodeSize]);
       return;
     }
     if (!block.isTextblock) return;
-    // A Live block whose whole text this suggestion deletes goes with it when accepted.
+    // A Live block whose whole text an accepted change deletes goes with it, and with it any
+    // other suggestion's insertion inside, as a Live delete of the block would.
     let wholly = block.content.size > 0;
     block.forEach((child, offset) => {
       const from = blockPos + 1 + offset;
       const to = from + child.nodeSize;
-      const insMark = child.marks.find(
-        (m) => m.type === ins && matches(m.attrs as SuggestionAttrs, filter),
-      );
-      const delMark = child.marks.find(
-        (m) => m.type === del && matches(m.attrs as SuggestionAttrs, filter),
-      );
-      // Whole means all of its Live text: another suggestion's insertion goes with the block.
-      const otherIns = !insMark && child.marks.some((m) => m.type === ins);
-      if (insMark || (!delMark && !otherIns)) wholly = false;
-      if (insMark) action === "accept" ? unmark.push([from, to, insMark]) : remove.push([from, to]);
-      if (delMark) action === "accept" ? remove.push([from, to]) : unmark.push([from, to, delMark]);
+      let kept = false;
+      let deleted = false;
+      for (const mark of child.marks) {
+        if (mark.type !== ins && mark.type !== del) continue;
+        const fate = fateOf(mark.attrs as SuggestionAttrs);
+        if (!fate) continue;
+        if ((mark.type === ins) === (fate === "reject")) remove.push([from, to]);
+        else unmark.push([from, to, mark]);
+        if (fate === "accept" && mark.type === ins) kept = true;
+        if (fate === "accept" && mark.type === del) deleted = true;
+      }
+      const otherIns = !kept && child.marks.some((m) => m.type === ins);
+      if (kept || (!deleted && !otherIns)) wholly = false;
     });
     if (wholly && action === "accept" && state.doc.childCount > 1)
       remove.push([blockPos, blockPos + block.nodeSize]);
@@ -60,6 +65,41 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
   for (const pos of keepBlock) tr.setNodeAttribute(pos, "sug", null);
   for (const [from, to] of merge(remove).reverse()) tr.delete(from, to);
   return tr;
+}
+
+/**
+ * What happens to each change: the filter's take `action`. Accepting a deletion also rejects
+ * every other change that deletes the same text: two Works' rewrites of one passage, the first
+ * applied wins and the other goes whole.
+ */
+function fates(
+  doc: Node,
+  filter: Filter,
+  action: "accept" | "reject",
+): (attrs: SuggestionAttrs | null) => "accept" | "reject" | null {
+  const chosen = new Set<string>();
+  const superseded = new Set<string>();
+  if (action === "accept")
+    doc.descendants((node) => {
+      const marks = node.marks.filter(isSuggestion);
+      for (const mark of marks)
+        if (matches(mark.attrs as SuggestionAttrs, filter)) chosen.add(mark.attrs.id);
+      if (
+        marks.some(
+          (m) => m.type.name === "suggest_del" && matches(m.attrs as SuggestionAttrs, filter),
+        )
+      )
+        for (const mark of marks)
+          if (mark.type.name === "suggest_del" && !matches(mark.attrs as SuggestionAttrs, filter))
+            superseded.add(mark.attrs.id);
+    });
+  for (const id of chosen) superseded.delete(id);
+  return (attrs) =>
+    matches(attrs, filter) ? action : attrs && superseded.has(attrs.id) ? "reject" : null;
+}
+
+function isSuggestion(mark: Mark): boolean {
+  return mark.type.name === "suggest_ins" || mark.type.name === "suggest_del";
 }
 
 /** Sorted, with touching ranges joined, so each delete sees the positions it was planned on. */
@@ -82,7 +122,7 @@ export type Change = SuggestionAttrs & {
   to: number;
 };
 
-/** The view's own changes, in document order, for review. */
+/** The view's own changes, in document order, for review: what `kindOf` shows as its own. */
 export function list(doc: Node, view: View): Change[] {
   if (view.work === null) return [];
   const byId = new Map<string, Change>();
@@ -100,8 +140,9 @@ export function list(doc: Node, view: View): Change[] {
     byId.set(attrs.id, change);
   };
   doc.forEach((block, blockPos) => {
-    if (blockKind(block, view) === "hidden") return;
-    if (block.attrs.sug) {
+    const owner = blockKind(block, view);
+    if (owner === "hidden") return;
+    if (owner === "own") {
       note(
         block.attrs.sug,
         blockPos,
@@ -111,22 +152,16 @@ export function list(doc: Node, view: View): Change[] {
       );
       return;
     }
+    if (!block.isTextblock) return;
     block.forEach((child, offset) => {
+      const kind = kindOf(child.marks, block, view);
+      if (kind !== "own-ins" && kind !== "own-del") return;
+      const name = kind === "own-ins" ? "suggest_ins" : "suggest_del";
+      const mark = child.marks.find((m) => m.type.name === name && m.attrs.work === view.work);
+      if (!mark) return;
       const from = blockPos + 1 + offset;
-      // An insertion a later turn of this view removes again is in neither column.
-      if (
-        child.marks.some((m) => m.type.name === "suggest_ins") &&
-        kindOf(child.marks, block, view) === "own-del"
-      )
-        return;
-      for (const mark of child.marks) {
-        const attrs = mark.attrs as SuggestionAttrs;
-        if (attrs.work !== view.work || view.hidden.has(attrs.work)) continue;
-        if (mark.type.name === "suggest_ins")
-          note(attrs, from, from + child.nodeSize, child.textContent, "inserted");
-        if (mark.type.name === "suggest_del")
-          note(attrs, from, from + child.nodeSize, child.textContent, "deleted");
-      }
+      const side = kind === "own-ins" ? "inserted" : "deleted";
+      note(mark.attrs as SuggestionAttrs, from, from + child.nodeSize, child.textContent, side);
     });
   });
   return [...byId.values()].sort((a, b) => a.from - b.from);

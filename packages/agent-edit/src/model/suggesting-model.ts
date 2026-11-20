@@ -8,9 +8,11 @@
  * stored block, rewritten, and the result lowered back to operations on the element, so the table
  * that decides what a keystroke does decides what a model write does.
  */
+import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import {
   type Author,
   blockKind,
+  changeIn,
   newChangeId,
   type Run,
   rewrite,
@@ -87,15 +89,21 @@ export function suggestingModel(
         return refused(
           "a suggestion changes text in a paragraph; this prototype makes no other kind",
         );
-      if (ops.some((op) => op.kind === "text" && op.formats.length > 0))
+      if (view.work !== null && ops.some((op) => op.kind === "text" && op.formats.length > 0))
         return refused("formatting is not suggested in this prototype");
+      // Nothing in the block that the view hides or marks: view units are stored units.
+      if (view.work === null && viewBlock(before, view) === before) {
+        const applied = base.applyOps(doc, block, ops);
+        written(unwrapBlock(block));
+        return applied;
+      }
       const textOps = ops.filter(
         (op): op is Extract<EditOp, { kind: "text" }> => op.kind === "text" && op.path.length === 0,
       );
       const other = ops.filter((op) => !textOps.includes(op as Extract<EditOp, { kind: "text" }>));
       if (other.length > 0) {
         const applied = base.applyOps(doc, block, other);
-        written(unwrapBlock(block).doc as Y.Doc);
+        written(unwrapBlock(block));
         if (!applied.ok || textOps.length === 0) return applied;
       }
       if (textOps.length === 0) return { ok: true };
@@ -103,15 +111,18 @@ export function suggestingModel(
       const after = rewritten(current, textOps, view, author, schema);
       if (!after) return refused("the write does not fit the block");
       const applied = applyRawOps(unwrapBlock(block), lowerBlock(current, after));
-      written(unwrapBlock(block).doc as Y.Doc);
+      written(unwrapBlock(block), after);
       return applied;
     },
 
     insertBlocks(doc, after, parsed) {
       const view = viewOf(unwrapDoc(doc));
-      written(unwrapDoc(doc));
+      forget(unwrapDoc(doc));
       if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
-      const sug = { ...author, work: view.work, id: newChangeId() };
+      // A block a write adds after its own edit of the block before is part of that change.
+      const id =
+        (after && changeIn(stored(after), { ...author, work: view.work })) ?? newChangeId();
+      const sug = { ...author, work: view.work, id };
       return base.insertBlocks(doc, after, {
         ...parsed,
         blocks: parsed.blocks.map((node) =>
@@ -123,7 +134,7 @@ export function suggestingModel(
     deleteBlock(doc, block) {
       const view = viewAt(block);
       const node = stored(block);
-      written(unwrapDoc(doc));
+      forget(unwrapDoc(doc));
       if (view.work === null || !author || blockKind(node, view) === "own") {
         base.deleteBlock(doc, block);
         return;
@@ -150,6 +161,17 @@ function rewritten(
   const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
   const units = runs(node, view);
   const tr = state.tr;
+  // Formats are planned on the text before the splices and do not move positions: first.
+  for (const { from, to, mark, attrs } of ops.flatMap((op) => op.formats)) {
+    const a = 1 + rawUnit(units, from, "start");
+    const b = Math.max(a, 1 + rawUnit(units, to, "end"));
+    const type = schema.marks[mark.split("--")[0]];
+    if (attrs) tr.addMark(a, b, type.create(attrs));
+    else
+      tr.doc.nodesBetween(a, b, (child) => {
+        for (const held of child.marks) if (yjsMarkKey(held) === mark) tr.removeMark(a, b, held);
+      });
+  }
   const splices = ops.flatMap((op) => op.splices).sort((a, b) => b.from - a.from);
   for (const { from, to, content } of splices) {
     const a = 1 + rawUnit(units, from, from === to ? "end" : "start");
@@ -185,8 +207,18 @@ function rawUnit(units: readonly Run[], unit: number, side: "start" | "end"): nu
  */
 const projections = new WeakMap<Y.Doc, Map<Y.XmlElement, PMNode>>();
 
-/** A write inside the model's transaction, which `afterTransaction` has not seen yet. */
-function written(doc: Y.Doc): void {
+/**
+ * A write inside the model's transaction, which `afterTransaction` has not seen yet: the block's
+ * new stored node when the write knows it, else the next read projects the document again.
+ */
+function written(element: Y.XmlElement, node?: PMNode): void {
+  const nodes = projections.get(element.doc as Y.Doc);
+  if (node && nodes) nodes.set(element, node);
+  else projections.delete(element.doc as Y.Doc);
+}
+
+/** A write that adds or removes blocks. */
+function forget(doc: Y.Doc): void {
   projections.delete(doc);
 }
 

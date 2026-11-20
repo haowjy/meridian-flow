@@ -85,15 +85,10 @@ export function visible(kind: RunKind): boolean {
 }
 
 /**
- * The blocks a view means: Live with the view's own suggestions accepted, and no other Work's.
- * Every reader goes through it (the Markdown copy, the model's read); one that reads the stored
- * document shows pending text as real.
+ * One top-level block as a view means it, or null when the view does not contain it: Live with
+ * the view's own suggestions accepted, and no other Work's. Every reader goes through it (the
+ * model's port projects with it); one that reads the stored block shows pending text as real.
  */
-export function viewBlocks(blocks: readonly Node[], view: View): Node[] {
-  return blocks.flatMap((block) => viewBlock(block, view) ?? []);
-}
-
-/** One top-level block in a view, or null when the view does not contain it. */
 export function viewBlock(block: Node, view: View): Node | null {
   if (!carriesSuggestion(block)) return block;
   if (blockKind(block, view) === "hidden") return null;

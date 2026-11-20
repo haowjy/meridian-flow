@@ -15,6 +15,7 @@ import type { DocumentId, TurnId } from "@meridian/contracts/runtime";
 import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { type Author, hiddenWorks } from "@meridian/suggestions";
+import type * as Y from "yjs";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";
@@ -67,7 +68,22 @@ export function createAgentEditRuntime(input: {
   const suggestionMode = process.env.FLOW_SUGGESTIONS === "1";
   const viewModel = (work: string | null, author: Author | null) =>
     suggestingModel(storedModel, (doc) => ({ work, hidden: hiddenWorks(doc) }), author);
-  const model = suggestionMode ? viewModel(null, null) : storedModel;
+  // A drafted read's private copy of the room reads as its Work's view through `model` too, so
+  // every reader (Markdown, blocks, hashlines) shows the Work's draft without its own path.
+  const readers = new WeakMap<Y.Doc, string>();
+  const model = suggestionMode
+    ? suggestingModel(
+        storedModel,
+        (doc) => ({ work: readers.get(doc) ?? null, hidden: hiddenWorks(doc) }),
+        null,
+      )
+    : storedModel;
+  /** Mark a private read copy as `work`'s: never the room itself, which every reader shares. */
+  const readAs = suggestionMode
+    ? (doc: Y.Doc, work: string) => {
+        readers.set(doc, work);
+      }
+    : null;
   /** A code document's text is one code block, not Markdown: its codec reads and writes it so. */
   const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> => {
     const filetype = await codeFiletypeOf(input.resolveDocumentFiletype, documentId);
@@ -162,6 +178,7 @@ export function createAgentEditRuntime(input: {
     importBinder,
     liveUtilityCore,
     suggestionCore,
+    readAs,
     markdownDocuments,
     markupCodec,
     model,

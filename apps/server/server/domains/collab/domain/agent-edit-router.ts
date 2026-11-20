@@ -6,9 +6,10 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import { draftOwnerKey, type LinkView } from "@meridian/contracts";
+import { type DraftOwner, draftOwnerKey, type LinkView } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type * as Y from "yjs";
 import type { FileDestination } from "../../file-policy/index.js";
 import type { LiveAgentEditCore, RoutedReadContext } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
@@ -27,6 +28,8 @@ export type AgentEditRouter = {
     documentId: DocumentId;
     threadId?: ThreadId | null;
     live: boolean;
+    /** The Work whose view the read shows, in suggestion mode. */
+    owner?: DraftOwner;
   }): ReturnType<AgentEditCore["readRoom"]>;
 };
 
@@ -37,6 +40,8 @@ export function createAgentEditRouter(input: {
   threadCore(threadId: ThreadId): AgentEditCore;
   /** Suggestion mode (prototype): a drafted read is Live through the Work's view. */
   suggestionCore?: SuggestionCore | null;
+  /** Suggestion mode: mark a read copy of Live as a Work's, so it reads as that Work's view. */
+  readAs?: ((doc: Y.Doc, work: string) => void) | null;
 }): AgentEditRouter {
   /** The thread's Work draft of the document a draft read can show, if it has one. */
   async function workDraftFor(documentId: DocumentId, threadId: string): Promise<string | null> {
@@ -161,7 +166,12 @@ export function createAgentEditRouter(input: {
         : outcome;
     },
 
-    async readRoom({ documentId, threadId, live }) {
+    async readRoom({ documentId, threadId, live, owner }) {
+      if (input.readAs && owner) {
+        const room = await input.liveUtilityCore.readRoom(documentId, {});
+        input.readAs(room.doc, draftOwnerKey(owner));
+        return room;
+      }
       const { core, workDraftId } = await routeRead({
         documentId,
         threadId,
