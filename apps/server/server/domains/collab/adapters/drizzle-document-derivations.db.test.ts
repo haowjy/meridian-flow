@@ -36,8 +36,8 @@ import {
 import { createCheckpointService } from "../checkpoints.js";
 import {
   createDocumentDerivationService,
-  type DeriveBlocks,
   documentHash,
+  type ReadCut,
 } from "../domain/document-derivations.js";
 import {
   bindDocumentAuthority,
@@ -72,6 +72,7 @@ function outputsOf(text: string): DocumentDerivationOutputs {
   return {
     blocks,
     wordCount: 0,
+    pendingWorks: [],
     documentBytes: text.length,
     documentHash: documentHash(blocks, []),
     links: [],
@@ -96,14 +97,14 @@ describe("durable document derivations", () => {
     });
   }
   // The document's prose is one block: these cases are about cuts and certification, not blocks.
-  const proseBlocks: DeriveBlocks = async (_id, doc) => {
+  const proseBlocks: ReadCut = async (_id, doc) => {
     if (fail) throw new Error("deriver unavailable");
-    return [proseBlock(doc.getText("prose").toString())];
+    return { blocks: [proseBlock(doc.getText("prose").toString())], pendingWorks: [] };
   };
   const service = createDocumentDerivationService({
     deferred: () => {},
     store,
-    deriveBlocks: proseBlocks,
+    readCut: proseBlocks,
     outsideTransaction: (operation) => operation(),
     failed: () => {},
   });
@@ -915,7 +916,7 @@ describe("durable document derivations", () => {
     const aheadService = createDocumentDerivationService({
       deferred: () => {},
       store: aheadStore,
-      deriveBlocks: proseBlocks,
+      readCut: proseBlocks,
       outsideTransaction: (operation) => operation(),
       failed: () => {},
     });

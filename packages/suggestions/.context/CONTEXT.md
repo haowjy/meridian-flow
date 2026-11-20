@@ -68,6 +68,28 @@ have something to reject.
   (a model and an agent-edit core over Live). `model` is Live's view for every Live reader.
   Card Undo calls `resolveStored(doc, schema, "reject", { turn })`.
 
+## Readers
+
+Every reader of a document's text reads a view: `viewBlock`, `viewDoc` for a whole document,
+`visibleSlice` for a selection, `kindOf` where positions in the stored document matter. The
+Markdown codecs throw on a suggestion mark, so a reader that skips the view fails loudly. The
+server's one way to a view is the runtime's `model` (Live) or `workView.model(work)`; the
+browser's is `suggestionView(state)`, the view the editor shows.
+
+| Reader | View | Why |
+|---|---|---|
+| Export, the frozen and Markdown reads, derived blocks and word counts, `ls -v` | Live | What the project is until someone applies |
+| AI `read`, `grep`, copy from a Work | The chat's Work | The AI works on its own draft; `grep` skips stored text for a Work in `pending_works` |
+| Editor word count, search passage landing | The editor's | What the writer is looking at |
+| Trash preview | Live | A deleted document has no Work open on it |
+
+Read from the stored document on purpose, because none of them shows text as the document's:
+`document_links` (ahead-ref registration needs every Work's links), the view revision
+(a freshness token over the whole document, so another Work's suggestion marks a read stale),
+rescued typing and unsent edits (the writer's own items, by Yjs id), and the Live turn inverse
+(it captures and takes back stored blocks, marks included, so it is consistent with itself;
+a later Work suggestion inside the range makes the change stop standing, and Undo skips it).
+
 ## Known limits
 
 - One transaction that splits off a block, gives it attributes and joins it away loses those

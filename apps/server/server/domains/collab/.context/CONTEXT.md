@@ -619,7 +619,7 @@ projects the cut's own private doc with `projectBlocks`, with no copy. Recovery 
 stale rooms and retries failures without advancing certification.
 
 Storage is `document_block_rooms` (one row per document: `block_order`, word count,
-`document_hash`, and the `cut_*` and `extractor_version` watermark) and
+`pending_works`, `document_hash`, and the `cut_*` and `extractor_version` watermark) and
 `document_blocks` (one row per top-level block, keyed by its Yjs item id: `text`,
 `content_hash`). A block row never holds its position, so inserting a
 paragraph rewrites one array and no block row. Certify (`certifyDocumentDerivation`) is
@@ -637,6 +637,9 @@ Reads of the block rows go through one port, `BlockText` (`domain/ports/block-te
 reader trusts a room only when its `cut_*` match the head and location version and its
 `extractor_version` equals the code's (`staleForReaders`); anything else is unknown to the
 reader, which reads the document itself (grep) or shows nothing (`ls -v` word counts). The
+blocks hold Live's view (`packages/suggestions`); `pending_works` names the Works whose
+suggestions the cut holds, and `grepTexts` leaves a document out for a reader in one of those
+Works, which then reads its own view from the room copy. The
 sweep (`staleForSweep`, on the writer port's `stale`) differs on one point: it skips a room a
 newer extractor certified, because builds overlap in a deploy, the older build's certify
 refuses that room, and retrying it burns three attempts per room per sweep. A later read-side
@@ -695,7 +698,10 @@ There is no preflight or second recheck. Baseline containment compares struct cl
 and the delete set: equal state vectors alone do not establish equality, so delete-only
 writer edits are still attributed. Drafts have no generation or epoch reset.
 
-`document_links` is a hint from a certified cut, never link authority. Changing
+`document_links` is a hint from a certified cut, never link authority. Unlike the blocks it
+is read from the stored document, every Work's pending links included: its only reader is
+ahead-ref registration, and a link a Work suggested needs its ahead ref registered to settle.
+A reader that shows these rows to a person (backlinks) must filter them to a view first. Changing
 the extractor bumps its version, and no second post-write writer exists.
 
 ## Selective disposition and response retirement

@@ -143,6 +143,7 @@ export async function certifyDocumentDerivation(
   const blockOrder = outputs.blocks.map((block) => block.id);
   const roomValues = {
     wordCount: outputs.wordCount,
+    pendingWorks: outputs.pendingWorks,
     documentHash: outputs.documentHash,
     cutGeneration: w.generation,
     cutAdmissionSeq: w.admissionSequence,

@@ -5,6 +5,7 @@ import { countWords } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodecFactory,
   blockItemIdKey,
+  storedPendingWorks,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
@@ -28,11 +29,14 @@ import type {
  * What the derivation reads a cut with: the model that projects it, the codec that spells it.
  * Injected as a function because the runtime owning the model is built after this service.
  */
-export type DeriveBlocks = (documentId: DocumentId, doc: Y.Doc) => Promise<DerivedBlock[]>;
+export type ReadCut = (documentId: DocumentId, doc: Y.Doc) => Promise<CutRead>;
+
+/** A cut's blocks as Live reads them, and the Works whose views read it otherwise. */
+export type CutRead = { blocks: DerivedBlock[]; pendingWorks: string[] };
 
 export function createDocumentDerivationService(input: {
   store: DocumentDerivationStore;
-  deriveBlocks: DeriveBlocks;
+  readCut: ReadCut;
   outsideTransaction<T>(operation: () => T): T;
   deferred(documentId: DocumentId): void;
   failed(documentId: DocumentId, cause: unknown): void;
@@ -88,7 +92,7 @@ export function createDocumentDerivationService(input: {
 }
 
 export async function deriveDocument(
-  input: { store: DocumentDerivationStore; deriveBlocks: DeriveBlocks },
+  input: { store: DocumentDerivationStore; readCut: ReadCut },
   documentId: DocumentId,
   at = new Date(),
 ): Promise<DocumentDerivationResult> {
@@ -102,7 +106,7 @@ export async function deriveDocument(
       Y.applyUpdate(doc, cut.state);
       // Before projecting: a repair there edits the private doc, not the cut.
       const stateVector = Y.encodeStateVector(doc);
-      const outputs = await deriveDocumentOutputs(cut, doc, input.deriveBlocks);
+      const outputs = await deriveDocumentOutputs(cut, doc, input.readCut);
       if (await input.store.certify(cut, outputs, at)) {
         // Also when the cut was already certified: a failed earlier registration retries here.
         if (outputs.links.some((row) => row.aheadId)) await input.store.registerAheads(documentId);
@@ -119,9 +123,9 @@ export async function deriveDocument(
 export async function deriveDocumentOutputs(
   cut: DocumentDerivationCut,
   doc: Y.Doc,
-  deriveBlocks: DeriveBlocks,
+  readCut: ReadCut,
 ): Promise<DocumentDerivationOutputs> {
-  const blocks = await deriveBlocks(cut.documentId, doc);
+  const { blocks, pendingWorks } = await readCut(cut.documentId, doc);
   const links = !cut.holderUri
     ? []
     : deriveDocumentLinkRows({
@@ -131,6 +135,7 @@ export async function deriveDocumentOutputs(
   return {
     blocks,
     wordCount: blocks.reduce((sum, block) => sum + countWords(block.text), 0),
+    pendingWorks,
     documentBytes: blocks.reduce((sum, block) => sum + Buffer.byteLength(block.text, "utf8"), 0),
     documentHash: documentHash(blocks, links),
     links,
@@ -138,25 +143,27 @@ export async function deriveDocumentOutputs(
 }
 
 /**
- * The cut's blocks in document order, normalized and hashed here, before the certify
- * transaction: nothing downstream reads text back under the lock. The doc is the derivation's
- * own, so the projection runs on it with no copy.
+ * The cut's blocks in document order as Live reads them, normalized and hashed here, before the
+ * certify transaction: nothing downstream reads text back under the lock. The doc is the
+ * derivation's own, so the projection runs on it with no copy, and repairs it before the Works
+ * with suggestions in it are read from what it stores.
  */
-export function createBlockDeriver(deps: {
+export function createCutReader(deps: {
   /** A thunk: the runtime that owns the model is built after the derivation service. */
   runtime(): { model: YProsemirrorDocumentModel; codec: AgentEditCodecFactory };
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
-}): DeriveBlocks {
+}): ReadCut {
   return async (documentId, doc) => {
     const verbatim = await isCodeDocument(deps.resolveFiletype, documentId);
     const { model, codec } = deps.runtime();
-    return grepBlocksOf(doc, model, codec.markup, verbatim).map(
+    const blocks = grepBlocksOf(doc, model, codec.markup, verbatim).map(
       ({ block, destinationFree, text }) => ({
         id: blockItemIdKey(block.id),
         text,
         contentHash: sha256(destinationFree),
       }),
     );
+    return { blocks, pendingWorks: [...storedPendingWorks(doc, model.schema)].sort() };
   };
 }
 

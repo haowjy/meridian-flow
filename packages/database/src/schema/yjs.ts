@@ -292,6 +292,11 @@ export const documentBlockRooms = pgTable(
     /** Block ids ("<clientID>:<clock>" of the top-level element) in document order. */
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
+    /**
+     * Works (`draftOwnerKey`) with suggestions in the cut. The blocks hold Live's text, so a
+     * reader in one of these Works' views reads the document itself.
+     */
+    pendingWorks: text("pending_works").array().notNull().default(sql`'{}'::text[]`),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
     cutGeneration: bigint("cut_generation", { mode: "bigint" }).notNull(),

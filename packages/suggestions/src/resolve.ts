@@ -16,9 +16,19 @@ import {
 
 /** The turns with suggestions still in `doc`: where a reject of `{ turn }` would change it. */
 export function pendingTurns(doc: Node): Set<string> {
-  const turns = new Set<string>();
+  return pendingBy(doc, (attrs) => attrs.turn);
+}
+
+/** The Works with suggestions still in `doc`: the views that read it differently from Live. */
+export function pendingWorks(doc: Node): Set<string> {
+  return pendingBy(doc, (attrs) => attrs.work);
+}
+
+function pendingBy(doc: Node, key: (attrs: SuggestionAttrs) => string | null): Set<string> {
+  const found = new Set<string>();
   const note = (attrs: SuggestionAttrs | null) => {
-    if (attrs?.turn) turns.add(attrs.turn);
+    const value = attrs && key(attrs);
+    if (value) found.add(value);
   };
   doc.descendants((node) => {
     note(node.attrs.sug);
@@ -26,7 +36,7 @@ export function pendingTurns(doc: Node): Set<string> {
     for (const mark of node.marks) if (isSuggestionMark(mark)) note(mark.attrs as SuggestionAttrs);
     return true;
   });
-  return turns;
+  return found;
 }
 
 /** Which suggestions an accept or reject takes: one change, a Work's turn, or a whole Work's. */
