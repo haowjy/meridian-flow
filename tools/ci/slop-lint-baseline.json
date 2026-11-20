@@ -160,7 +160,7 @@
       {
         "path": "apps/app/src/features/draft-review/apply-click-queue.ts",
         "line": "} catch {",
-        "count": 3
+        "count": 2
       },
       {
         "path": "apps/app/src/features/editor/clipboard.ts",
