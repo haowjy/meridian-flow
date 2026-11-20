@@ -20,6 +20,8 @@ export interface SaveInput {
   links: CommandLinks;
   /** The Work draft a model edit saves to, as the host ensured it; live when absent. */
   workDraftId?: string;
+  /** The `base` of the room copy the entry was made on. */
+  base?: unknown;
   /**
    * A create without overwrite lands only in a document still empty when its append reads it
    * under the document's lock; otherwise this is the answer.
@@ -60,6 +62,7 @@ export function createDocumentSave(deps: {
         entries: [input.entry],
         ...(input.workDraftId ? { access: { workDraftId: input.workDraftId } } : {}),
         ...(ifOccupied ? { precondition: holdsNoBlocks } : {}),
+        ...(input.base === undefined ? {} : { base: input.base }),
       });
       const { write } = saved;
       let persisted = false;

@@ -8,6 +8,7 @@
  */
 
 import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import { documentNodes } from "@meridian/prosemirror-schema";
 import { type EditorOptions, type Extensions, Node } from "@tiptap/core";
 import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -239,11 +240,19 @@ const DOCUMENT_STARTER_KIT_OPTIONS = {
   listItem: false,
   orderedList: false,
   paragraph: false,
+  document: false,
 } as const;
+
+/** Its blocks may hold suggestion marks while `@meridian/suggestions` works on them. */
+const ProseDocument = Node.create({
+  name: "doc",
+  topNode: true,
+  content: "block+",
+  marks: documentNodes.doc.marks,
+});
 
 const CODE_STARTER_KIT_OPTIONS = {
   ...DOCUMENT_STARTER_KIT_OPTIONS,
-  document: false,
 } as const;
 
 const CodeDocument = Node.create({
@@ -413,6 +422,7 @@ export function createStandaloneEditorExtensions({
   }
   return [
     StarterKit.configure(DOCUMENT_STARTER_KIT_OPTIONS),
+    ProseDocument,
     MeridianStrong,
     MeridianEm,
     ...SuggestionMarks,

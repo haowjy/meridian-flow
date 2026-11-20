@@ -17,7 +17,6 @@ import {
   type SaveCut,
 } from "@meridian/agent-edit/integration";
 import {
-  allocateDocumentClient,
   buildDocumentSchema,
   createCollabYDoc,
   PROSEMIRROR_FRAGMENT_NAME,
@@ -35,13 +34,16 @@ import * as Y from "yjs";
 const schema = buildDocumentSchema();
 
 /**
- * The live state each view copy was read from, by the client that wrote the copy. A save finds
- * its base through the ids its update names, so it lands on the state the model planned on and
- * Yjs merges it with whatever landed since. Held in this process only: a save on another one
- * would find no base.
+ * What a view copy was read from: the live state, and the copy's own state, both moved forward by
+ * each save made on the copy. A save writes its suggestions against `live` and Yjs merges them
+ * with whatever landed since.
  */
-const bases = new Map<number, Uint8Array>();
-const MAX_BASES = 64;
+class ViewBase {
+  constructor(
+    public live: Uint8Array,
+    public view: Uint8Array,
+  ) {}
+}
 
 /**
  * `work` null is the Live view: reads skip every suggestion and a write lands in the text. A
@@ -58,31 +60,25 @@ export function createSuggestionCoordinator(
       // A document with no suggestions is its own Live view: the model reads the room itself.
       if (work === null && !hasSuggestions(rootOf(read.doc))) return read;
       try {
-        const client = allocateDocumentClient(read.doc);
-        bases.set(client, Y.encodeStateAsUpdate(read.doc));
-        for (const old of bases.keys()) {
-          if (bases.size <= MAX_BASES) break;
-          bases.delete(old);
-        }
+        const view = viewDoc(read.doc, work);
         return {
-          doc: viewDoc(read.doc, work, client),
+          doc: view,
           room: null,
           ...(read.position === undefined ? {} : { position: read.position }),
+          base: new ViewBase(Y.encodeStateAsUpdate(read.doc), Y.encodeStateAsUpdate(view)),
         } satisfies RoomRead;
       } finally {
         read.doc.destroy();
       }
     },
 
-    async prepareSave(input) {
+    async prepareSave({ base, ...input }) {
+      if (!(base instanceof ViewBase)) return live.prepareSave(input);
       const [entry] = input.entries;
       if (input.entries.length !== 1 || !entry) throw new Error("A view saves one entry");
-      const client = baseOf(entry.update);
-      const base = client === undefined ? undefined : bases.get(client);
-      if (client === undefined || !base) return live.prepareSave(input);
-      const baseDoc = docOf(base);
-      const viewBefore = viewDoc(baseDoc, work, client);
-      const viewAfter = docOf(Y.encodeStateAsUpdate(viewBefore));
+      const baseDoc = docOf(base.live);
+      const viewBefore = base.view;
+      const viewAfter = docOf(viewBefore);
       Y.applyUpdate(viewAfter, entry.update);
       const mutation = entry.mutation;
       const written = writeThroughView(
@@ -123,9 +119,11 @@ export function createSuggestionCoordinator(
             const savedLive = docOf(cut.afterState);
             writeBlocks(fragment(viewAfter), schema, children(viewOf(rootOf(savedLive), work).doc));
             savedLive.destroy();
+            base.live = cut.afterState;
+            base.view = Y.encodeStateAsUpdate(viewAfter);
             return {
-              beforeState: Y.encodeStateAsUpdate(viewBefore),
-              afterState: Y.encodeStateAsUpdate(viewAfter),
+              beforeState: viewBefore,
+              afterState: base.view,
               ...(cut.position === undefined ? {} : { position: cut.position }),
             };
           },
@@ -137,18 +135,6 @@ export function createSuggestionCoordinator(
 
     ...(report ? { concurrentUpdatesForReport: report } : {}),
   };
-}
-
-/** The view client an update was made on: one its insertions sit beside or its deletions name. */
-function baseOf(update: Uint8Array): number | undefined {
-  const { structs, ds } = Y.decodeUpdate(update);
-  for (const client of ds.clients.keys()) if (bases.has(client)) return client;
-  for (const struct of structs) {
-    if (!(struct instanceof Y.Item)) continue;
-    for (const id of [struct.origin, struct.rightOrigin, struct.parent])
-      if (id instanceof Y.ID && bases.has(id.client)) return id.client;
-  }
-  return undefined;
 }
 
 /**
@@ -180,13 +166,12 @@ export async function settleInLive(
 
 /** What readers (search, counts, links) read: the document without its suggestions. */
 export function liveView(doc: Y.Doc): Y.Doc {
-  return hasSuggestions(rootOf(doc)) ? viewDoc(doc, null, allocateDocumentClient(doc)) : doc;
+  return hasSuggestions(rootOf(doc)) ? viewDoc(doc, null) : doc;
 }
 
-/** A copy of the view written by `client`, each block bound to the live block it shows. */
-function viewDoc(liveDoc: Y.Doc, work: string | null, client: number): Y.Doc {
-  const view = new Y.Doc({ gc: false });
-  view.clientID = client;
+/** A copy of the view, each block bound to the live block it shows so its hash is the live one. */
+function viewDoc(liveDoc: Y.Doc, work: string | null): Y.Doc {
+  const view = createCollabYDoc({ gc: false });
   writeBlocks(fragment(view), schema, children(viewOf(rootOf(liveDoc), work).doc));
   const liveById = new Map(
     getTopLevelXmlBlocks(liveDoc).map((block) => [block.getAttribute("id"), getBlockItemId(block)]),

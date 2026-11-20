@@ -20,6 +20,8 @@ export interface RoomCopy {
   room: string | null;
   /** Journal high-water mark for the committed part of this copy. */
   position?: number;
+  /** The host's record of what this copy was read from (`RoomRead.base`). */
+  base?: unknown;
   dispose(): void;
 }
 
@@ -28,7 +30,7 @@ export async function openRoom(
   input: RoomCallInput,
 ): Promise<RoomCopy | InternalWriteResult> {
   try {
-    const { doc, room, position } = await coordinator.readRoom(
+    const { doc, room, position, base } = await coordinator.readRoom(
       input.docId,
       input.workDraftId ? { workDraftId: input.workDraftId } : undefined,
     );
@@ -36,6 +38,7 @@ export async function openRoom(
       doc,
       room,
       ...(position === undefined ? {} : { position }),
+      ...(base === undefined ? {} : { base }),
       dispose: () => doc.destroy(),
     };
   } catch (cause) {

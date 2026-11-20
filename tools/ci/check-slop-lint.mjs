@@ -65,6 +65,7 @@ function isExcluded(filePath) {
   return (
     path.includes("/node_modules/") ||
     path.startsWith("node_modules/") ||
+    path.includes("/vendor/") ||
     path.includes("/dist/") ||
     path.includes("/build/") ||
     /(^|\/)(test|tests|__tests__|test-support|__fixtures__|fixtures|__conformance__)(\/|$)/.test(

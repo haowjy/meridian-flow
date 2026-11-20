@@ -2,6 +2,8 @@
  * Suggestions inside the live document, on `prosemirror-suggest-changes`: what a view contains,
  * how an edit made to a view becomes suggestions, and accepting or rejecting them.
  */
+
+import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
 import {
   cleanupSemantic,
   DIFF_DELETE,
@@ -10,13 +12,9 @@ import {
   makeDiff,
 } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Slice } from "prosemirror-model";
-import { EditorState, type Transaction } from "prosemirror-state";
+import { EditorState, Selection, type Transaction } from "prosemirror-state";
 import { canJoin, type Mapping, Transform } from "prosemirror-transform";
-import {
-  applySuggestion,
-  revertSuggestion,
-  transformToSuggestionTransaction,
-} from "./vendor/prosemirror-suggest-changes/index.js";
+import { transformToSuggestionTransaction } from "./vendor/prosemirror-suggest-changes/index.js";
 
 /** Who suggests: the Work whose draft it is, the chat and turn that wrote it, and `agent` or `user:<id>`. */
 export type Suggester = { work: string; chat: string | null; turn: string | null; by: string };
@@ -28,10 +26,6 @@ const SUGGESTION_MARKS = ["insertion", "deletion", "modification", "blockBoundar
 
 export function newSuggestionId(): string {
   return crypto.randomUUID();
-}
-
-function suggestionMark(marks: readonly Mark[], name: "insertion" | "deletion"): Mark | undefined {
-  return marks.find((mark) => mark.type.name === name);
 }
 
 function isSuggestion(mark: Mark): boolean {
@@ -95,31 +89,48 @@ function marked(doc: PMNode): PMNode {
   return tr.doc;
 }
 
+/** The suggestions on a node: a text's suggestion marks, or what a block stores. */
+function marksOf(node: PMNode): readonly Mark[] {
+  return node.isInline ? node.marks.filter(isSuggestion) : storedMarks(node);
+}
+
+type Decision = "accept" | "reject" | "keep";
+
 /**
- * The document a view contains, and the map from the document's positions to the view's. Live
- * (`work` null) hides every insertion and reads every deletion as plain text. A Work's view is
- * Live with that Work's suggestions applied. A block's suggestions apply to the whole block: a
- * hidden new block goes, a hidden split joins, a hidden retype keeps the old attribute.
+ * Accepts or rejects each suggestion as `decide` says, in `tr`. Accepting an insertion or
+ * rejecting a deletion keeps the text; the other two remove it. A split, a join and a retype the
+ * library made are kept or undone the same way.
  */
-export function viewOf(doc: PMNode, work: string | null): { doc: PMNode; mapping: Mapping } {
-  const tr = new Transform(doc);
-  const edits: { pos: number; edit: (tr: Transform) => void }[] = [];
-  doc.descendants((node, pos) => {
-    const marks = node.isInline ? node.marks : storedMarks(node);
-    if (!node.isInline && marks.length)
-      edits.push({ pos, edit: (t) => t.setNodeAttribute(pos, "suggestion", null) });
+function resolve(tr: Transform, decide: (mark: Mark) => Decision): void {
+  const edits: { pos: number; edit: (t: Transform) => void }[] = [];
+  tr.doc.descendants((node, pos) => {
+    const marks = marksOf(node).filter((mark) => decide(mark) !== "keep");
+    if (!marks.length) return !node.isInline;
+    const end = pos + node.nodeSize;
+    if (!node.isInline) {
+      const kept = storedMarks(node).filter((mark) => decide(mark) === "keep");
+      edits.push({
+        pos,
+        edit: (t) =>
+          t.setNodeAttribute(pos, "suggestion", kept.length ? kept.map((m) => m.toJSON()) : null),
+      });
+    }
     for (const mark of marks) {
-      const own = mark.attrs.work === work;
-      const end = pos + node.nodeSize;
+      const accept = decide(mark) === "accept";
       const name = mark.type.name;
-      if ((name === "insertion" && !own) || (name === "deletion" && own))
+      if ((name === "insertion" && !accept) || (name === "deletion" && accept))
         edits.push({ pos, edit: (t) => t.delete(t.mapping.map(pos), t.mapping.map(end)) });
-      else if (name === "modification" && !own && mark.attrs.attrName)
+      else if (node.isInline)
+        edits.push({
+          pos,
+          edit: (t) => t.removeMark(t.mapping.map(pos), t.mapping.map(end), mark),
+        });
+      else if (name === "modification" && !accept && mark.attrs.attrName)
         edits.push({
           pos,
           edit: (t) => t.setNodeAttribute(pos, mark.attrs.attrName, mark.attrs.previousValue),
         });
-      else if (name === "blockBoundarySuggestion" && own === (mark.attrs.type === "deletion"))
+      else if (name === "blockBoundarySuggestion" && accept === (mark.attrs.type === "deletion"))
         edits.push({ pos, edit: (t) => joinAt(t, t.mapping.map(end)) });
     }
     return !node.isInline;
@@ -127,10 +138,15 @@ export function viewOf(doc: PMNode, work: string | null): { doc: PMNode; mapping
   // Later positions first, so an edit's start is still the document's (its end maps past what
   // ran inside it); at one position, in the order pushed.
   for (const { edit } of edits.sort((a, b) => b.pos - a.pos)) edit(tr);
-  for (const name of SUGGESTION_MARKS) {
-    const type = doc.type.schema.marks[name];
-    if (type) tr.removeMark(0, tr.doc.content.size, type);
-  }
+}
+
+/**
+ * The document a view contains, and the map from the document's positions to the view's. Live
+ * (`work` null) rejects every suggestion; a Work's view accepts that Work's and rejects the rest.
+ */
+export function viewOf(doc: PMNode, work: string | null): { doc: PMNode; mapping: Mapping } {
+  const tr = new Transform(doc);
+  resolve(tr, (mark) => (mark.attrs.work === work ? "accept" : "reject"));
   return { doc: tr.doc, mapping: tr.mapping };
 }
 
@@ -158,9 +174,7 @@ export function hasSuggestions(doc: PMNode): boolean {
   return found;
 }
 
-type Change =
-  | { kind: "replace"; from: number; to: number; slice: Slice }
-  | { kind: "attrs"; pos: number; attrs: PMNode["attrs"] };
+type Change = { from: number; to: number; slice: Slice };
 
 /**
  * An edit made to a view of `doc` (`after` is the view once edited), written into `doc`: as
@@ -181,10 +195,6 @@ export function writeThroughView(
   const state = EditorState.create({ doc: marked(doc) });
   const tr = state.tr;
   for (const change of changes.reverse()) {
-    if (change.kind === "attrs") {
-      tr.setNodeMarkup(back.map(change.pos, 1), undefined, change.attrs);
-      continue;
-    }
     const from = back.map(change.from, 1);
     const to = Math.max(from, back.map(change.to, -1));
     tr.replace(from, to, change.slice);
@@ -206,6 +216,30 @@ function suggest(tr: Transaction, state: EditorState, suggester: Suggester): Tra
   );
 }
 
+/**
+ * `suggest` for an editor, whose document stores block suggestions as attributes: the library
+ * reads the marks from the transaction's documents, so `tr` is replayed on the marked document
+ * and the result moved back between the steps that convert there and back.
+ */
+function suggestOnMarked(tr: Transaction, state: EditorState, suggester: Suggester): Transaction {
+  const markedState = EditorState.create({ doc: marked(state.doc) });
+  const replayed = markedState.tr;
+  for (const step of tr.steps) replayed.step(step);
+  if (tr.selectionSet)
+    replayed.setSelection(Selection.fromJSON(replayed.doc, tr.selection.toJSON()));
+  const suggested = suggest(replayed, markedState, suggester);
+  const out = state.tr;
+  markBlocks(out);
+  for (const step of suggested.steps) out.step(step);
+  storeBlocks(out, suggester);
+  out.setSelection(Selection.fromJSON(out.doc, suggested.selection.toJSON()));
+  if (tr.storedMarksSet) out.setStoredMarks(tr.storedMarks);
+  if (tr.scrolledIntoView) out.scrollIntoView();
+  // Transaction meta has no public copy; the library copies it the same way.
+  (out as unknown as { meta: unknown }).meta = (tr as unknown as { meta: unknown }).meta;
+  return out;
+}
+
 /** Marks a settle's transaction, so `rewrite` lets it through. */
 const SETTLE_META = "suggestions$settle";
 
@@ -222,11 +256,7 @@ export function rewrite(
 ): Transaction {
   const sync = tr.getMeta("y-sync$") as { isChangeOrigin?: boolean } | undefined;
   if (!tr.docChanged || sync?.isChangeOrigin || tr.getMeta(SETTLE_META)) return tr;
-  if (suggester) {
-    const suggested = suggest(tr, state, suggester);
-    storeBlocks(suggested, suggester);
-    return suggested;
-  }
+  if (suggester) return suggestOnMarked(tr, state, suggester);
   const marks = SUGGESTION_MARKS.map((name) => state.schema.marks[name]).filter(Boolean);
   const inserted: [number, number][] = [];
   // Live shows no insertion, so a deletion inside a paragraph that swept one up only meant the
@@ -240,7 +270,8 @@ export function rewrite(
       // A deletion across blocks takes their suggestions with them.
       if (!before || before.resolve(oldStart).parent !== before.resolve(oldEnd).parent) return;
       before.nodesBetween(oldStart, oldEnd, (node, pos) => {
-        if (!node.isInline || !suggestionMark(node.marks, "insertion")) return true;
+        if (!node.isInline || !node.marks.some((mark) => mark.type.name === "insertion"))
+          return true;
         const from = Math.max(pos, oldStart) - pos;
         const to = Math.min(pos + node.nodeSize, oldEnd) - pos;
         hidden.push({ at: later.map(map.map(oldStart, -1), -1), node: node.cut(from, to) });
@@ -274,7 +305,7 @@ function diffDocs(before: PMNode, after: PMNode): Change[] {
       const from = startOf(b);
       const to = startOf(pb);
       const inserted = after.slice(afterOffset(afterBlocks, a), afterOffset(afterBlocks, pa));
-      changes.push({ kind: "replace", from, to, slice: inserted });
+      changes.push({ from, to, slice: inserted });
     }
     if (pb < beforeBlocks.length && pa < afterBlocks.length)
       changes.push(...diffBlock(beforeBlocks[pb], afterBlocks[pa], offsets[pb]));
@@ -334,32 +365,36 @@ function matchById(before: PMNode[], after: PMNode[]): (readonly [number, number
 /** A paired block's changes: its attributes, then its inline content as text hunks. */
 function diffBlock(before: PMNode, after: PMNode, start: number): Change[] {
   if (before.eq(after)) return [];
-  if (before.type !== after.type || !before.isTextblock) {
-    return [{ kind: "replace", from: start, to: start + before.nodeSize, slice: sliceOf(after) }];
+  // A retyped block is the old one deleted and a new one inserted, as text is: both versions
+  // stay in the document, so a writer's edit to either is never mistaken for the other.
+  if (
+    before.type !== after.type ||
+    !before.isTextblock ||
+    JSON.stringify(before.attrs) !== JSON.stringify(after.attrs)
+  ) {
+    const fresh = withBlockIds(withoutBlockIds(after));
+    return [{ from: start, to: start + before.nodeSize, slice: sliceOf(fresh) }];
   }
   const changes: Change[] = [];
-  if (JSON.stringify(before.attrs) !== JSON.stringify(after.attrs))
-    changes.push({ kind: "attrs", pos: start, attrs: after.attrs });
-  const hunks = wordDiff(inlineText(before), inlineText(after));
   let bOff = 0;
   let aOff = 0;
+  const hunks = tokenDiff(tokens(before), tokens(after));
   for (let k = 0; k < hunks.length; ) {
-    const [op, text] = hunks[k];
+    const [op, size] = hunks[k];
     if (op === DIFF_EQUAL) {
-      bOff += text.length;
-      aOff += text.length;
+      bOff += size;
+      aOff += size;
       k++;
       continue;
     }
     let deleted = 0;
     let inserted = 0;
     while (k < hunks.length && hunks[k][0] !== DIFF_EQUAL) {
-      if (hunks[k][0] === DIFF_DELETE) deleted += hunks[k][1].length;
-      if (hunks[k][0] === DIFF_INSERT) inserted += hunks[k][1].length;
+      if (hunks[k][0] === DIFF_DELETE) deleted += hunks[k][1];
+      if (hunks[k][0] === DIFF_INSERT) inserted += hunks[k][1];
       k++;
     }
     changes.push({
-      kind: "replace",
       from: start + 1 + bOff,
       to: start + 1 + bOff + deleted,
       slice: after.slice(aOff, aOff + inserted),
@@ -370,42 +405,49 @@ function diffBlock(before: PMNode, after: PMNode, start: number): Change[] {
   return changes;
 }
 
-/** A character diff of two strings, aligned to words: each word, space run or mark is one unit. */
-function wordDiff(before: string, after: string): [number, string][] {
+/** A textblock's content as units to diff: each word, space run or sign with its marks, and each inline leaf. */
+function tokens(block: PMNode): { key: string; size: number }[] {
+  const out: { key: string; size: number }[] = [];
+  block.forEach((child) => {
+    const marks = JSON.stringify(child.marks.map((mark) => mark.toJSON()));
+    if (!child.isText) {
+      out.push({ key: JSON.stringify(child.toJSON()), size: child.nodeSize });
+      return;
+    }
+    for (const word of child.text?.match(/\w+|\s+|[^\w\s]/gu) ?? [])
+      out.push({ key: `${word}\u0000${marks}`, size: word.length });
+  });
+  return out;
+}
+
+/** The diff of two token runs, as `[op, size]` hunks: each token is one character to the differ. */
+function tokenDiff(
+  before: { key: string; size: number }[],
+  after: { key: string; size: number }[],
+): [number, number][] {
   const codes = new Map<string, string>();
-  const words: string[] = [];
-  const encode = (text: string) =>
-    (text.match(/\w+|\s+|[^\w\s]/gu) ?? [])
-      .map((word) => {
-        let code = codes.get(word);
+  const sizes: number[] = [];
+  const encode = (run: { key: string; size: number }[]) =>
+    run
+      .map(({ key, size }) => {
+        let code = codes.get(key);
         if (code === undefined) {
-          code = String.fromCharCode(0xe000 + words.length);
-          codes.set(word, code);
-          words.push(word);
+          code = String.fromCharCode(0xe000 + sizes.length);
+          codes.set(key, code);
+          sizes.push(size);
         }
         return code;
       })
       .join("");
-  const decode = (codesText: string) =>
-    [...codesText].map((code) => words[code.charCodeAt(0) - 0xe000]).join("");
   return cleanupSemantic(makeDiff(encode(before), encode(after))).map(([op, text]) => [
     op,
-    decode(text),
+    [...text].reduce((sum, code) => sum + sizes[code.charCodeAt(0) - 0xe000], 0),
   ]);
 }
 
 function sliceOf(block: PMNode): Slice {
   const doc = block.type.schema.topNodeType.create(null, block);
   return doc.slice(0, doc.content.size);
-}
-
-/** A textblock's content as one character per position: text as itself, an inline leaf as U+FFFC. */
-function inlineText(block: PMNode): string {
-  let out = "";
-  block.forEach((child) => {
-    out += child.isText ? (child.text ?? "") : "￼";
-  });
-  return out;
 }
 
 /** One suggestion of a Work: its id, turn, and what it adds and removes. */
@@ -423,9 +465,9 @@ export type SuggestionChange = {
 /** The suggestions in document order, one per id: a Work's, or every Work's when `work` is omitted. */
 export function listSuggestions(doc: PMNode, work?: string): SuggestionChange[] {
   const byId = new Map<string, SuggestionChange>();
-  marked(doc).descendants((node, pos) => {
-    for (const mark of node.marks) {
-      if (!isSuggestion(mark) || (work !== undefined && mark.attrs.work !== work)) continue;
+  doc.descendants((node, pos) => {
+    for (const mark of marksOf(node)) {
+      if (work !== undefined && mark.attrs.work !== work) continue;
       const id = String(mark.attrs.id);
       const change = byId.get(id) ?? {
         id,
@@ -457,24 +499,18 @@ export function settleSuggestions(
   filter: SuggestionFilter,
   how: "accept" | "reject",
 ): Transaction | null {
-  const ids = listSuggestions(state.doc, filter.work)
-    .filter((change) => filter.turn === undefined || change.turn === filter.turn)
-    .filter((change) => filter.id === undefined || change.id === filter.id)
-    .map((change) => change.id);
-  if (ids.length === 0) return null;
+  const ids = new Set(
+    listSuggestions(state.doc, filter.work)
+      .filter((change) => filter.turn === undefined || change.turn === filter.turn)
+      .filter((change) => filter.id === undefined || change.id === filter.id)
+      .map((change) => change.id),
+  );
+  if (ids.size === 0) return null;
   const tr = state.tr.setMeta(SETTLE_META, true);
-  markBlocks(tr);
-  let current = state.apply(tr);
-  for (const id of ids) {
-    const command = how === "accept" ? applySuggestion(id) : revertSuggestion(id);
-    command(current, (step) => {
-      for (const s of step.steps) tr.step(s);
-      current = current.apply(step);
-    });
-  }
-  storeBlocks(tr, null);
+  resolve(tr, (mark) => (ids.has(String(mark.attrs.id)) ? how : "keep"));
   return tr;
 }
+
 /** `settleSuggestions` for a caller that holds a document rather than an editor. */
 export function settleInDoc(
   doc: PMNode,

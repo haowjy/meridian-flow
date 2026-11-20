@@ -40,21 +40,16 @@ export const SuggestionMarks = (Object.keys(TAGS) as (keyof typeof TAGS)[]).map(
   });
 });
 
-/** The blocks that store their own suggestions, and the nodes whose children may hold them. */
+/** The blocks that store their own suggestions. */
 const SUGGESTING_BLOCKS = Object.entries(documentNodes)
   .filter(([, spec]) => "attrs" in spec && "suggestion" in spec.attrs)
   .map(([name]) => name);
-const markHolders = documentNodes as Record<string, { marks?: string }>;
 
 type StoredSuggestion = { type: string; attrs: { type?: string | null } };
 
 /** Every local transaction goes through `rewrite` for the view the editor shows. */
 export const SuggestionViewExtension = Extension.create({
   name: "suggestionView",
-  extendNodeSchema: (extension) => {
-    const marks = markHolders[extension.name]?.marks;
-    return marks ? { marks } : {};
-  },
   addGlobalAttributes: () => [
     {
       types: SUGGESTING_BLOCKS,
