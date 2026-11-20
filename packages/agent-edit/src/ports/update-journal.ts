@@ -1,6 +1,6 @@
 import type { SemanticEditIRV1 } from "../semantic-edit-ir.js";
 import type { SavePrecondition } from "./document-coordinator.js";
-import type { CompactionResult, JournalSnapshot, PersistedUpdate, UpdateMeta } from "./types.js";
+import type { JournalSnapshot, PersistedUpdate, UpdateMeta } from "./types.js";
 
 type JournalMutationBase = {
   /** Ordered parts of one atomic edit. Storage adapters choose their journal row expansion. */
@@ -75,7 +75,6 @@ export interface UpdateJournal {
   read(docId: string, opts?: JournalReadOptions): Promise<JournalSnapshot>;
   /** Origin-aware rows in the exclusive/inclusive interval, without reconstruction data. */
   readUpdates(docId: string, after: number, through: number): Promise<PersistedUpdate[]>;
-  compact(docId: string, before: Date): Promise<CompactionResult>;
 }
 
 /**

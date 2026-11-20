@@ -130,7 +130,7 @@ export const liveDuplicateFrame: Probe = {
     const tail = updateOf(() => text.insert(text.length, " tail"));
     const refused = await frame(tail).then(
       () => false,
-      (cause: unknown) => (cause as Error).message === "writer-frame-gap",
+      (cause: unknown) => (cause as Error).message.startsWith("writer-frame-gap:"),
     );
     const gapRows = (await rowsSince(start)).length;
     observe("gap", { refused, journalRows: gapRows });

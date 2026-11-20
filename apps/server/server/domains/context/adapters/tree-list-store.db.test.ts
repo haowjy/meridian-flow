@@ -634,23 +634,6 @@ describe("the tree list store (postgres)", () => {
     });
   });
 
-  it("reloads a copy that is behind a compaction instead of catching up from the rows left", async () => {
-    const [a, b] = [newStore(), newStore()];
-    const c = client();
-    const admit = (store: ReturnType<typeof newStore>, name: string) => {
-      c.writer.create(LIVE, actor, { kind: "folder", name, parent: sourceRoot(MANUSCRIPT) });
-      return store.admit({ list, accountId: ACCOUNT, update: c.send() });
-    };
-    await admit(a, "A");
-    await admit(b, "B");
-    await journal.compact(LIST, new Date(Date.now() + 60_000));
-    expect(await updateCount()).toBe(0);
-
-    await admit(a, "C");
-    expect((await storedRows()).live.map((row) => row.name).sort()).toEqual(["A", "B", "C"]);
-    await expectRowsEqualReplay();
-  });
-
   it("keeps the server's items under one reserved client id while two processes write in turn", async () => {
     const stores = [newStore(), newStore()];
     for (let at = 0; at < 6; at++) {
