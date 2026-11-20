@@ -4,7 +4,6 @@ import { draftOwnerKey, parseDraftItemKey } from "@meridian/contracts";
 import type { DraftOwnerKey } from "@meridian/contracts/branches";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import {
   useCallback,
@@ -295,7 +294,6 @@ export function ReadableProjectRoute({ project, entryHydration, user }: Readable
       boundDocumentId,
     ],
   );
-  const queryClient = useQueryClient();
   const listedDrafts = useOwnerDrafts(
     projectId,
     documentDestination
