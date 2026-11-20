@@ -25,8 +25,9 @@ reader's view depend on the document's map. Change ids are 12 base-36 characters
 
 `id` is one change, the unit of review: an insertion and the deletion it replaces share it.
 One edit is one change: every suggestion a rewritten transaction makes takes the first id it
-picks (the same author's change it touches, or a fresh one, which `rewrite` records in
-`Authors`). "Same author" and "same turn" are read from `Authors`; an id with no entry is no
+picks (the same author's change it touches, or a fresh one, which `rewrite` stages on its
+transaction under `STARTED_META`; the caller that applies the transaction records it in `Authors`
+with `recordStarted`, so a dropped or refused edit leaves no entry). "Same author" and "same turn" are read from `Authors`; an id with no entry is no
 one's, so an edit over it layers and never continues it. The model writes a block in one
 transaction, so a write that rewrites two sentences of a paragraph is one change; each block it
 writes is its own. An edit never takes another author's change (another turn or chat), even where
@@ -141,6 +142,8 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.
 - Text the writer types inside a paragraph the AI added goes with it on reject.
 - The editor repaints every decoration on each change.
+- An author entry is never removed: a change that is accepted, rejected or deleted keeps its
+  entry in `suggestion_authors` (about 60 bytes each).
 - Live's history keeps every suggestion for good. A 4,200-word chapter (24 KB of history)
   stores about 400 KB per whole-chapter AI rewrite (30% of words changed) and under 1 KB per
   discard; ten discarded rewrites come to 3.9 MB (A2, measured as B2 did; with the earlier

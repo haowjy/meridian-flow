@@ -1,6 +1,6 @@
 import type { Attrs, Mark, Node } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
-import type { Authors, SuggestionAttrs } from "./change.js";
+import { type Authors, changeAuthor, type SuggestionAttrs } from "./change.js";
 import { RAW_META } from "./rewrite.js";
 import {
   type AttrProposal,
@@ -185,12 +185,9 @@ export function list(doc: Node, view: View, authors: Authors): Change[] {
   const work = view.work;
   if (work === null) return [];
   const byId = new Map<string, Change>();
-  const unknown = { chat: null, turn: null, by: null };
   const note = (attrs: SuggestionAttrs, from: number, to: number, add: Partial<Change>) => {
     const change = byId.get(attrs.id) ?? {
-      id: attrs.id,
-      work: attrs.work,
-      ...(authors.get(attrs.id) ?? unknown),
+      ...(changeAuthor(attrs, authors) ?? { ...attrs, chat: null, turn: null, by: null }),
       inserted: "",
       deleted: "",
       attrs: null,

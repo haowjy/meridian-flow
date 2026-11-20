@@ -22,8 +22,9 @@ export type Author = {
 
 /**
  * The document's change authors, by change id: a `Map`, or the Yjs map agent-edit keeps beside
- * the document's fragment (`suggestionAuthors`). `rewrite` records each change it starts; an id
- * with no entry reads as no one's.
+ * the document's fragment (`suggestionAuthors`). `rewrite` only reads it and stages the changes
+ * it starts on its transaction; whoever applies the transaction records them (`recordStarted`), so
+ * an edit that never lands leaves no entry. An id with no entry reads as no one's.
  */
 export type Authors = {
   get(id: string): Author | undefined;

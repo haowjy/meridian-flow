@@ -10,7 +10,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { expect, it } from "vitest";
-import { type Author, reject, rewrite, type View, viewBlock } from "./index.js";
+import { type Author, recordStarted, reject, rewrite, type View, viewBlock } from "./index.js";
 
 const schema = buildDocumentSchema();
 const view: View = { work: "work-1" };
@@ -21,7 +21,9 @@ const paragraph = (text: string) => schema.nodes.paragraph.create(null, schema.t
 function suggest(state: EditorState, turn: string, edit: (tr: Transaction) => void) {
   const tr = state.tr;
   edit(tr);
-  return state.apply(rewrite(tr, state, view, reply(turn), authors));
+  const out = rewrite(tr, state, view, reply(turn), authors);
+  recordStarted(out, authors);
+  return state.apply(out);
 }
 
 function shown(doc: Node): string[] {
