@@ -5,6 +5,7 @@ import {
   AddMarkStep,
   Mapping,
   RemoveMarkStep,
+  ReplaceAroundStep,
   ReplaceStep,
   type Step,
   StepMap,
@@ -86,7 +87,8 @@ export function rewrite(
     null,
   ).changes;
   const work = view.work === null || !author ? null : { ...author, work: view.work };
-  for (const range of [...(work ? wholeBlockRanges(replaced, state.doc) : replaced)].reverse()) {
+  const ranges = work ? wholeBlockRanges(replaced, state.doc) : [...replaced];
+  for (const range of [...ranges].reverse()) {
     const slice = stripSlice(tr.doc.slice(range.fromB, range.toB));
     const a = shownEdge(out.doc, range.fromA, view, -1);
     const b = Math.max(a, shownEdge(out.doc, range.toA, view, 1));
@@ -95,24 +97,29 @@ export function rewrite(
     const changed = (c: SuggestionAttrs) => {
       change = c;
     };
-    // What follows the edit in its block, as the transaction leaves it: a join or a split
-    // carries it on, formatted as the transaction made it.
-    const end = range.toB + (b - range.toA);
-    const final = textblockAt(tr.doc, end);
-    const rest = final
-      ? visibleContent(final.node, end - final.pos - 1, final.node.content.size, view)
-      : Fragment.empty;
     const at = !work
       ? replaceLive(out, a, b, slice, view, forward)
       : textblockAt(out.doc, a) && textblockAt(out.doc, b)
-        ? replaceInWork(out, a, b, slice, rest, view, work, forward, changed)
+        ? replaceInWork(
+            out,
+            a,
+            b,
+            slice,
+            finalAround(tr.doc, range.fromB + (a - range.fromA), range.toB + (b - range.toA), view),
+            view,
+            work,
+            forward,
+            changed,
+          )
         : replaceBlocks(out, a, b, slice, view, work, changed);
     changes.push({ from: range.fromA, to: range.toA, change });
     if (at !== null && head >= range.fromB && head <= range.toB)
       caret = { pos: at, map: since(out) };
   }
-  // Formatting and block attributes reach what the transaction left in place, read in the start
-  // document: what it replaced or made already has its final form, from the final document.
+  // Formatting and block attributes: where the transaction's formatting steps reached content it
+  // left in place, the difference between the start and final documents there. What it replaced
+  // or made already has its final form, from the final document.
+  const reached: Reach[] = [];
   tr.steps.forEach((step, index) => {
     if (changesContent(step)) return;
     const back = new Mapping(
@@ -121,11 +128,16 @@ export function rewrite(
         .map((map) => map.invert())
         .reverse(),
     );
-    const start = step.map(back);
-    if (!start) return;
-    for (const part of leftInPlace(start, replaced))
-      rewriteFormat(out, part, out.mapping.slice(), view, author);
+    const mapped = step.map(back);
+    const range = mapped && stepRange(mapped);
+    if (range)
+      reached.push({
+        ...range,
+        node: !(mapped instanceof AddMarkStep || mapped instanceof RemoveMarkStep),
+      });
   });
+  for (const step of netFormatting(state.doc, tr.doc, ranges, reached, work !== null))
+    rewriteFormat(out, step, out.mapping.slice(), view, author);
   out.setMeta(CHANGE_META, changes);
   if (caret !== null)
     out.setSelection(
@@ -153,16 +165,17 @@ const wholeText: TokenEncoder<unknown> = {
 type Range = { fromA: number; toA: number; fromB: number; toB: number };
 
 /**
- * Ranges for a Work's view: one that ends between blocks covers the whole blocks it reaches
- * under the node holding both its ends, so a block comes or goes whole. Overlaps join.
+ * Ranges for a Work's view: one that ends between blocks, or joins textblocks of different
+ * containers (two table cells), covers the whole blocks it reaches under the node holding both
+ * its ends, so a block comes or goes whole. Overlaps join.
  */
 function wholeBlockRanges(ranges: readonly Range[], doc: Node): Range[] {
   const out: Range[] = [];
   for (const range of ranges) {
     let { fromA, toA, fromB, toB } = range;
-    if (!textblockAt(doc, fromA) || !textblockAt(doc, toA)) {
-      const $from = doc.resolve(fromA);
-      const $to = doc.resolve(toA);
+    const $from = doc.resolve(fromA);
+    const $to = doc.resolve(toA);
+    if (!$from.parent.isTextblock || !$to.parent.isTextblock || $from.node(-1) !== $to.node(-1)) {
       const depth = $from.sharedDepth(toA);
       const start = $from.depth > depth ? $from.before(depth + 1) : fromA;
       const stop = $to.depth > depth ? $to.after(depth + 1) : toA;
@@ -183,25 +196,118 @@ function wholeBlockRanges(ranges: readonly Range[], doc: Node): Range[] {
   return out;
 }
 
-/** A mark step cut around the ranges a transaction replaced; any other step as it is. */
-function leftInPlace(step: Step, replaced: readonly { fromA: number; toA: number }[]): Step[] {
-  if (!(step instanceof AddMarkStep || step instanceof RemoveMarkStep)) return [step];
-  const parts: Step[] = [];
-  let from = step.from;
-  for (const range of replaced) {
-    if (range.toA < from || range.fromA > step.to) continue;
-    if (range.fromA > from) parts.push(cut(step, from, range.fromA));
-    from = Math.max(from, range.toA);
-  }
-  if (from < step.to) parts.push(cut(step, from, step.to));
-  return parts;
+/** Where a formatting step reached, in the start document; `node` for a step on one node's markup. */
+type Reach = { from: number; to: number; node: boolean };
+
+/**
+ * The formatting a transaction gave content it left in place, within `reached`: mark steps for
+ * text whose marks differ (suggestion marks aside), then a markup step, with its final type and
+ * attributes, for each node a step aimed at (the rewrite compares them with what the view
+ * shows), all in the start document. In a Work's view a textblock an edit is inside is left to
+ * that edit, which settles the block from the final document.
+ */
+function netFormatting(
+  a: Node,
+  b: Node,
+  ranges: readonly Range[],
+  reached: readonly Reach[],
+  inWork: boolean,
+): Step[] {
+  const marks: Step[] = [];
+  const nodes: Step[] = [];
+  const toB = (pos: number) =>
+    ranges.reduce(
+      (at, range) =>
+        range.toA <= pos ? at + range.toB - range.fromB - (range.toA - range.fromA) : at,
+      pos,
+    );
+  const replacedAt = (pos: number) => ranges.some((r) => r.fromA <= pos && pos < r.toA);
+  const editedIn = (pos: number, size: number) =>
+    ranges.some(
+      (r) => (r.fromA > pos && r.fromA < pos + size) || (r.toA > pos && r.toA < pos + size),
+    );
+  const formats = (node: Node) => node.marks.filter((mark) => !isSuggestionMark(mark));
+  const seen = new Set<string>();
+  for (const { from, to, node: markup } of reached)
+    a.nodesBetween(from, Math.max(to, from + 1), (node, pos) => {
+      const key = node.isInline ? `${pos}` : `${pos}:${markup}`;
+      if (seen.has(key)) return !node.isInline;
+      seen.add(key);
+      if (node.isInline) {
+        const start = Math.max(from, pos);
+        const end = Math.min(to, pos + node.nodeSize);
+        for (let at = start; at < end; at++) {
+          if (replacedAt(at)) continue;
+          const other = b.resolve(toB(at)).nodeAfter;
+          if (!other) continue;
+          for (const mark of formats(other))
+            if (!mark.isInSet(node.marks)) marks.push(new AddMarkStep(at, at + 1, mark));
+          for (const mark of formats(node))
+            if (!mark.isInSet(other.marks)) marks.push(new RemoveMarkStep(at, at + 1, mark));
+        }
+        return false;
+      }
+      if (!markup || pos !== from || replacedAt(pos)) return true;
+      if (inWork && node.isTextblock && editedIn(pos, node.nodeSize)) return true;
+      const other = b.nodeAt(toB(pos));
+      if (!other || other.isInline) return true;
+      const attrs =
+        "sug" in node.attrs
+          ? { ...other.attrs, sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs }
+          : other.attrs;
+      nodes.push(
+        new ReplaceAroundStep(
+          pos,
+          pos + node.nodeSize,
+          pos + 1,
+          pos + node.nodeSize - 1,
+          new Slice(Fragment.from(other.type.create(attrs, null, node.marks)), 0, 0),
+          1,
+          true,
+        ),
+      );
+      return true;
+    });
+  return [...joinMarks(marks), ...nodes];
 }
 
-function cut(step: AddMarkStep | RemoveMarkStep, from: number, to: number): Step {
-  return step instanceof AddMarkStep
-    ? new AddMarkStep(from, to, step.mark)
-    : new RemoveMarkStep(from, to, step.mark);
+/** Per-character mark steps joined into runs. */
+function joinMarks(steps: Step[]): Step[] {
+  const out: Array<AddMarkStep | RemoveMarkStep> = [];
+  for (const step of steps as Array<AddMarkStep | RemoveMarkStep>) {
+    const last = out.at(-1);
+    if (
+      last &&
+      last.constructor === step.constructor &&
+      last.to === step.from &&
+      last.mark.eq(step.mark)
+    )
+      out[out.length - 1] =
+        step instanceof AddMarkStep
+          ? new AddMarkStep(last.from, step.to, step.mark)
+          : new RemoveMarkStep(last.from, step.to, step.mark);
+    else out.push(step);
+  }
+  return out;
 }
+
+/**
+ * Where an edit lands in the final document: the textblocks holding its two ends, and the content
+ * after its end there, which a join or a split carries on, formatted as the transaction made it.
+ */
+function finalAround(doc: Node, from: number, to: number, view: View): Final {
+  const first = textblockAt(doc, from);
+  const last = textblockAt(doc, to);
+  return {
+    first: first?.node ?? null,
+    last: last?.node ?? null,
+    rest: last
+      ? visibleContent(last.node, to - last.pos - 1, last.node.content.size, view)
+      : Fragment.empty,
+  };
+}
+
+type Final = { first: Node | null; last: Node | null; rest: Fragment };
 
 /** A step that replaces content, as opposed to one that changes marks or a block's attributes. */
 function changesContent(step: Step): boolean {
@@ -280,7 +386,7 @@ function rewriteFormat(
           piece.from,
           piece.to,
           new Slice(Fragment.from(formatted), 0, 0),
-          Fragment.empty,
+          { first: null, last: null, rest: Fragment.empty },
           view,
           { ...author, work: view.work },
           false,
@@ -319,6 +425,31 @@ function rewriteFormat(
     }
     proposeAttrs(out, pos, node.attrs, attrs, { ...author, work: view.work }, null);
   }
+}
+
+/**
+ * A textblock an edit is inside, given the attributes the transaction left it with (`final`):
+ * the Work's own block takes them, a Live block takes them as the Work's pending change. Only
+ * what the transaction changed counts; a Live block cannot change type.
+ */
+function settle(
+  out: Transaction,
+  block: { node: Node; pos: number },
+  final: Node | null,
+  view: View,
+  author: Omit<SuggestionAttrs, "id">,
+  id: string,
+): void {
+  const { node, pos } = block;
+  if (!final) return;
+  const attrs = { ...final.attrs, sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs };
+  if (final.type === node.type && sameValue(attrs, node.attrs)) return;
+  const kind = blockKind(node, view);
+  if (kind === "own" && final.type.validContent(node.content))
+    out.setNodeMarkup(pos, final.type, { ...attrs, sugAttrs: null });
+  else if (kind === "live" && final.type === node.type)
+    proposeAttrs(out, pos, viewAttrs(node, view), attrs, author, id);
+  else out.setMeta(DROPPED_META, true);
 }
 
 /**
@@ -668,7 +799,7 @@ function replaceInWork(
   from: number,
   to: number,
   slice: Slice,
-  rest: Fragment,
+  final: Final,
   view: View,
   author: Omit<SuggestionAttrs, "id">,
   forward: boolean,
@@ -700,7 +831,7 @@ function replaceInWork(
     (joining
       ? startOwn
       : visibleContent(startBlock.node, 0, from - startBlock.pos - 1, view).size === 0);
-  const tail = joining && !keepEnd ? rest : Fragment.empty;
+  const tail = joining && !keepEnd ? final.rest : Fragment.empty;
   const map = since(out);
   // A joined end block goes whole, its shown text carried on as the tail.
   suggestRemoval(
@@ -717,6 +848,18 @@ function replaceInWork(
   const inline = (content: Fragment) => (ownTarget ? content : marked(schema, content, attrs));
 
   const parts = sliceParts(slice);
+  // A kept block the edit also starts in gets its first line as a block of its own, before it.
+  const headFirst = parts.split && keepEnd && !joining;
+  // Otherwise the block the edit starts in keeps its place, with the attributes the edit gives it.
+  if (!headFirst)
+    settle(
+      out,
+      { node: startBlock.node, pos: map(startBlock.pos, 1) },
+      final.first,
+      view,
+      author,
+      attrs.id,
+    );
   if (!parts.split) {
     const head = parts.head.append(tail);
     if (head.size > 0) out.insert(insertAt, inline(head));
@@ -724,9 +867,7 @@ function replaceInWork(
     if (joining) return insertAt;
     return forward ? map(to, 1) : map(from, -1);
   }
-  // A split: the target keeps its text up to the cut; the rest is suggested as new blocks. A kept
-  // block the edit also starts in gets its first line as a block of its own, before it.
-  const headFirst = keepEnd && !joining;
+  // A split: the target keeps its text up to the cut; the rest is suggested as new blocks.
   if (parts.head.size > 0 && !headFirst) {
     out.insert(insertAt, inline(parts.head));
     insertAt += parts.head.size;
@@ -743,9 +884,7 @@ function replaceInWork(
     );
     const opening = parts.last?.content ?? Fragment.empty;
     if (opening.size > 0) out.insert(opensAt, marked(schema, opening, attrs));
-    // The block takes the attributes the edit leaves it with, as the Work's pending change.
-    if (parts.last)
-      proposeAttrs(out, endAt, viewAttrs(endBlock.node, view), parts.last.attrs, author, attrs.id);
+    settle(out, { node: endBlock.node, pos: endAt }, final.last, view, author, attrs.id);
     if (blocks.length > 0) out.insert(endAt, blocks);
     return opensAt + blocks.reduce((size, block) => size + block.nodeSize, 0) + opening.size;
   }
@@ -759,7 +898,7 @@ function replaceInWork(
     ...pasted(parts.middle, attrs),
     template.type.create(
       { ...template.attrs, id: null, sug: change, sugAttrs: null },
-      (parts.last?.content ?? Fragment.empty).append(rest),
+      (parts.last?.content ?? Fragment.empty).append(final.rest),
     ),
   ];
   out.insert(after, blocks);
