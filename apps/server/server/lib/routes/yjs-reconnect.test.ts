@@ -17,7 +17,6 @@ describe("Yjs reconnect writer admission", () => {
   it("syncs without journaling the provider's contained replay pair", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
-    const onLiveUpdatePersisted = vi.fn();
     let server: Server | undefined;
     let websocketProvider: HocuspocusProviderWebsocket | undefined;
     let provider: HocuspocusProvider | undefined;
@@ -26,7 +25,6 @@ describe("Yjs reconnect writer admission", () => {
       hocuspocus: () => server?.hocuspocus ?? null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,
-      onLiveUpdatePersisted,
     });
     const writerFrames: Array<{ syncType: number; update: Uint8Array; admitted: boolean }> = [];
 
@@ -100,7 +98,6 @@ describe("Yjs reconnect writer admission", () => {
       expect(handshakeDeleteSet.structs).toHaveLength(0);
       expect(handshakeDeleteSet.ds.clients.size).toBeGreaterThan(0);
       expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-      expect(onLiveUpdatePersisted).not.toHaveBeenCalled();
     } finally {
       provider?.destroy();
       websocketProvider?.destroy();

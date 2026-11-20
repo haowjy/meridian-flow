@@ -186,9 +186,16 @@ type CollabDomainDeps = {
 };
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
-  const persistence = createDrizzleCollabPersistence(deps.db, (documentId) =>
-    draftPulls.liveCommitted(documentId),
-  );
+  /**
+   * Live's text advanced and committed: through a room, a direct write, or a generation replacement.
+   * The one notice every consumer of Live's text hangs on; each coalesces it on its own cadence.
+   */
+  const liveAdvanced = (documentId: DocumentId) => {
+    draftPulls.liveCommitted(documentId);
+    derivations.schedule(documentId);
+    deps.liveTextHints?.hint(documentId);
+  };
+  const persistence = createDrizzleCollabPersistence(deps.db, liveAdvanced);
   const documentCreation = createDocumentCreationAggregate({
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     onArrivals: (ids) => deps.arrivals?.settle(ids) ?? Promise.resolve(0),
@@ -303,12 +310,8 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     projectionEffects,
     derivations.derive,
   );
-  const documentWriteHook: typeof projectionHook = async (event) => {
-    deps.liveTextHints?.hint(event.documentId);
-    await projectionHook(event);
-  };
   const runDocumentWriteHook = createDocumentWriteHookRunner({
-    hook: documentWriteHook,
+    hook: projectionHook,
     diagnostics: projectionDiagnostics,
   });
   const observability = createAgentEditObservabilityOptions({
@@ -433,10 +436,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     readAuthorityHeadGeneration: readAuthorityGeneration,
     emitAgentEditInvariantViolation: createAgentEditInvariantDiagnostic(deps.eventSink),
-    onLiveUpdatePersisted: (documentId) => {
-      derivations.schedule(documentId);
-      deps.liveTextHints?.hint(documentId);
-    },
     catchUpOpenedDraft: draftPulls.catchUpOpenedDraft,
     onDraftWriterUpdateAdmitted: (draftId) => draftAheads.schedule(draftId),
   });
@@ -608,10 +607,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     coordinator: liveCoordinator,
     checkpoints: persistence.store,
     disconnectGeneration: hocuspocusPersistence.disconnectLiveGeneration,
-    onReplaced: (documentId) => {
-      draftPulls.liveCommitted(documentId);
-      derivations.schedule(documentId);
-    },
+    onReplaced: liveAdvanced,
   });
   const checkpoints = createCheckpointService({
     coordinator: liveCoordinator,

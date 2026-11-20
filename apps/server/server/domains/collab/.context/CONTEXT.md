@@ -475,8 +475,16 @@ lock. Every Live write sends the notice from one place: the live journal's `appe
 `appendWriterUpdate` (when it stores a row) and `appendBatch` fire it after the writing
 transaction commits (`createDrizzleJournal`'s `appended` hook). Live sync, a model's live
 commit, `writeDocument`, a code merge, Apply, Un-Apply and a live Undo step all pass it. An
-authority replace or restore changes Live without an append, so it sends the notice itself. The
-notice debounces per document (2 s, 10 s maximum); when it fires it reads Live once for the
+authority replace or restore changes Live without an append, so it sends the notice itself.
+The composition's `liveAdvanced` is the one fan-out of that notice: draft pulls, document
+derivations and the Agents-level text hints each subscribe, and each debounces per document
+with the shared `createKeyedCoalescer` (`shared/keyed-coalescer.ts`: trailing debounce, maximum
+wait, one run per key and a rerun when it fired mid-run, stop joins). The projection job and
+draft ahead registration use the same coalescer on their own cadence. A new consumer of Live's
+text subscribes in `liveAdvanced`; it adds no hook at a write site. A direct write (a model edit,
+Apply) already derives inline, so the scheduled derive first asks the store whether the document
+is still stale and skips it when not. The pull debounces per document (2 s, 10 s maximum); when
+it fires it reads Live once for the
 up-to-date check all the open drafts share and catches up each draft room open then. It never waits, and a draft with no room is not touched, so
 background merge work grows with the drafts open on a screen, not with the drafts that exist.
 `openDraftRooms(documentId)` is an in-memory index in `hocuspocus-persistence.ts` (document →

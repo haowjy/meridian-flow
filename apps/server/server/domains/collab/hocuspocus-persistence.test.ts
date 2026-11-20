@@ -263,13 +263,11 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
   it("admits novel insertion and delete-only updates", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
-    const onLiveUpdatePersisted = vi.fn();
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,
-      onLiveUpdatePersisted,
     });
     const insertionClient = cloneDoc(liveDocument);
     const beforeInsertion = Y.encodeStateVector(insertionClient);
@@ -316,7 +314,6 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
       expect.anything(),
       { authorityId: DOCUMENT_ID, generation: 1n },
     );
-    expect(onLiveUpdatePersisted).toHaveBeenCalledTimes(2);
   });
 
   it("disconnects the retired live generation and rejects its replayed bytes", async () => {

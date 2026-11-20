@@ -43,7 +43,8 @@ export type DocumentDerivationStore = {
     outputs: DocumentDerivationOutputs,
     at: Date,
   ): Promise<boolean>;
-  stale(page?: { after?: DocumentId; limit: number }): Promise<DocumentId[]>;
+  /** Documents whose certified outputs trail their cut; `only` asks about one document. */
+  stale(page?: { after?: DocumentId; limit: number; only?: DocumentId }): Promise<DocumentId[]>;
   /**
    * Registers the client-minted ahead refs of this holder's certified rows (contract §11.3):
    * awaited outside a transaction, after commit inside one. Failures are logged, never thrown;

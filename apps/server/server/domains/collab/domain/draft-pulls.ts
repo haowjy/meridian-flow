@@ -15,6 +15,7 @@ import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 
 export type DraftPullService = {
@@ -58,11 +59,7 @@ export function createDraftPullService(input: {
   diagnostics?: DraftPullDiagnostics;
 }): DraftPullService {
   let stopped = false;
-  const debounceMs = input.debounceMs ?? 2000;
-  const maxDebounceMs = input.maxDebounceMs ?? 10000;
-  const scheduled = new Map<DocumentId, { debounce?: NodeJS.Timeout; max?: NodeJS.Timeout }>();
   const pulls = new Map<string, { running?: Promise<void>; queued?: Promise<void> }>();
-  const pushes = new Set<Promise<void>>();
 
   const schema = buildDocumentSchema();
 
@@ -163,64 +160,43 @@ export function createDraftPullService(input: {
     return entry.running;
   }
 
-  function push(documentId: DocumentId): void {
-    const entry = scheduled.get(documentId);
-    if (entry?.debounce) clearTimeout(entry.debounce);
-    if (entry?.max) clearTimeout(entry.max);
-    scheduled.delete(documentId);
+  /** Pushes Live to the draft rooms open now. */
+  async function push(documentId: DocumentId): Promise<void> {
+    const draftIds = await input.outsideTransaction(() => input.openDraftRooms(documentId));
+    if (!draftIds.length) return;
     const report = (cause: unknown) => input.diagnostics?.backgroundFailed({ documentId, cause });
-    track(
-      (async () => {
-        const draftIds = await input.outsideTransaction(() => input.openDraftRooms(documentId));
-        if (!draftIds.length) return;
-        const live = await input.outsideTransaction(() => committedLive(documentId));
-        try {
-          await Promise.all(draftIds.map((draftId) => catchUp(draftId, live).catch(report)));
-        } finally {
-          live.destroy();
-        }
-      })().catch(report),
-    );
+    const live = await input.outsideTransaction(() => committedLive(documentId));
+    try {
+      await Promise.all(draftIds.map((draftId) => catchUp(draftId, live).catch(report)));
+    } finally {
+      live.destroy();
+    }
   }
 
-  function track(work: Promise<void>): Promise<void> {
-    const tracked: Promise<void> = work.finally(() => pushes.delete(tracked));
-    pushes.add(tracked);
-    return tracked;
-  }
+  const pushes = createKeyedCoalescer<DocumentId>({
+    debounceMs: input.debounceMs ?? 2000,
+    maxMs: input.maxDebounceMs ?? 10000,
+    outsideTransaction: input.outsideTransaction,
+    run: push,
+    onError: (documentId, cause) => input.diagnostics?.backgroundFailed({ documentId, cause }),
+  });
 
   return {
-    liveCommitted(documentId) {
-      if (stopped) return;
-      const entry = scheduled.get(documentId) ?? {};
-      if (entry.debounce) clearTimeout(entry.debounce);
-      entry.debounce = setTimeout(() => push(documentId), debounceMs);
-      entry.max ??= setTimeout(() => push(documentId), maxDebounceMs);
-      scheduled.set(documentId, entry);
-    },
+    liveCommitted: pushes.schedule,
 
     catchUpDraft: (draftId) => catchUp(draftId),
 
     catchUpOpenedDraft: (draftId) =>
-      track(
-        catchUp(draftId).catch((cause) => input.diagnostics?.backgroundFailed({ draftId, cause })),
-      ),
+      catchUp(draftId).catch((cause) => input.diagnostics?.backgroundFailed({ draftId, cause })),
 
-    cancelScheduledPulls() {
-      for (const entry of scheduled.values()) {
-        if (entry.debounce) clearTimeout(entry.debounce);
-        if (entry.max) clearTimeout(entry.max);
-      }
-      scheduled.clear();
-    },
+    cancelScheduledPulls: pushes.cancel,
 
     async shutdown() {
       stopped = true;
-      this.cancelScheduledPulls();
       // A queued rerun observes stopped before touching the store. Failures are already
       // reported by the push that ran them; teardown must join every other pull as well.
       await Promise.allSettled([
-        ...pushes,
+        pushes.stop(),
         ...[...pulls.values()].flatMap((entry) => [entry.running, entry.queued].filter(Boolean)),
       ]);
     },

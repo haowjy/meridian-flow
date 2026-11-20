@@ -11,6 +11,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
 import { type DocumentLinkRow, deriveDocumentLinkRows } from "./document-link-rows.js";
 import { isCodeDocument } from "./document-schema-type.js";
 import { grepBlocksOf } from "./grep-blocks.js";
@@ -36,10 +37,6 @@ export function createDocumentDerivationService(input: {
   deferred(documentId: DocumentId): void;
   failed(documentId: DocumentId, cause: unknown): void;
 }): DocumentDerivationService {
-  const timers = new Map<DocumentId, { trailing?: NodeJS.Timeout; maximum?: NodeJS.Timeout }>();
-  const running = new Map<DocumentId, Promise<void>>();
-  const rerun = new Set<DocumentId>();
-  let stopped = false;
   let sweepCursor: DocumentId | undefined;
   let aheadCursor: string | undefined;
 
@@ -49,12 +46,17 @@ export function createDocumentDerivationService(input: {
     return result;
   };
 
-  function clear(documentId: DocumentId) {
-    const entry = timers.get(documentId);
-    if (entry?.trailing) clearTimeout(entry.trailing);
-    if (entry?.maximum) clearTimeout(entry.maximum);
-    timers.delete(documentId);
-  }
+  const scheduled = createKeyedCoalescer<DocumentId>({
+    debounceMs: 2000,
+    maxMs: 10000,
+    outsideTransaction: input.outsideTransaction,
+    // A direct write derives inline, so most notices find the document already certified.
+    run: async (documentId) => {
+      if ((await input.store.stale({ only: documentId, limit: 1 })).length)
+        await derive(documentId);
+    },
+    onError: input.failed,
+  });
 
   async function recover(ids: DocumentId[]): Promise<void> {
     for (const id of ids) {
@@ -68,39 +70,7 @@ export function createDocumentDerivationService(input: {
 
   return {
     derive,
-    schedule(documentId) {
-      if (stopped) return;
-      input.outsideTransaction(() => {
-        const entry = timers.get(documentId) ?? {};
-        const start = () => {
-          clear(documentId);
-          if (running.has(documentId)) {
-            rerun.add(documentId);
-            return;
-          }
-          const operation = (async () => {
-            do {
-              rerun.delete(documentId);
-              try {
-                await derive(documentId);
-              } catch (cause) {
-                input.failed(documentId, cause);
-              }
-            } while (!stopped && rerun.has(documentId));
-          })().finally(() => {
-            running.delete(documentId);
-            rerun.delete(documentId);
-          });
-          running.set(documentId, operation);
-        };
-        if (entry.trailing) clearTimeout(entry.trailing);
-        entry.trailing = setTimeout(start, 2000);
-        entry.maximum ??= setTimeout(start, 10000);
-        entry.trailing.unref();
-        entry.maximum.unref();
-        timers.set(documentId, entry);
-      });
-    },
+    schedule: scheduled.schedule,
     sweep() {
       return input.outsideTransaction(async () => {
         const ids = await input.store.stale({ after: sweepCursor, limit: 100 });
@@ -112,9 +82,7 @@ export function createDocumentDerivationService(input: {
       });
     },
     async stop() {
-      stopped = true;
-      for (const id of timers.keys()) clear(id);
-      await Promise.all(running.values());
+      await scheduled.stop();
     },
   };
 }
