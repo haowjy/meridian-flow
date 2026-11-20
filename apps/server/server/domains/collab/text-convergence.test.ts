@@ -27,7 +27,7 @@ type WriterUpdate = {
 };
 
 describe("live document text convergence", () => {
-  it("keeps every accepted edit across shuffled room and storage deliveries", async () => {
+  it("keeps every accepted edit across interleaved room and storage deliveries", async () => {
     const journal = createInMemoryJournal();
     const seed = createCollabYDoc({ gc: false });
     seed.getText("content").insert(0, "seed");
@@ -86,7 +86,7 @@ describe("live document text convergence", () => {
     const initialState = Y.encodeStateAsUpdate(firstRoom.document as never);
     const writerA = createWriter(initialState, ["A-one", "A-two"]);
     const writerB = createWriter(initialState, ["B-one", "B-two"]);
-    const updates = seededShuffle([...writerA.updates, ...writerB.updates], SHUFFLE_SEED);
+    const updates = seededInterleave([writerA.updates, writerB.updates], SHUFFLE_SEED);
     const acceptedMarkers: string[] = [];
     let connection = firstRoom;
 
@@ -172,15 +172,17 @@ function createWriter(state: Uint8Array, markers: string[]) {
   return { document, updates };
 }
 
-function seededShuffle<T>(items: T[], seed: number): T[] {
-  const shuffled = [...items];
+/** Each writer's updates in its own order, the writers interleaved: a frame ahead of its writer's earlier one is a gap the room closes the socket on. */
+function seededInterleave<T>(queues: T[][], seed: number): T[] {
+  const turns = queues.flatMap((queue, writer) => queue.map(() => writer));
   let state = seed >>> 0;
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+  for (let index = turns.length - 1; index > 0; index -= 1) {
     state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
     const other = state % (index + 1);
-    [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+    [turns[index], turns[other]] = [turns[other], turns[index]];
   }
-  return shuffled;
+  const next = queues.map(() => 0);
+  return turns.map((writer) => queues[writer][next[writer]++]);
 }
 
 function equalBytes(left: Uint8Array, right: Uint8Array): boolean {

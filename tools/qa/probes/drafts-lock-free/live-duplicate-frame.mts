@@ -1,14 +1,10 @@
 /**
  * One live keystroke delivered on two sockets of the same live room (a second tab relaying a
  * peer's update, issue #946), admitted through the production live admission port as
- * Hocuspocus's `beforeSync` does, then applied to the room. Six arms: the second copy after
- * the first is applied, both copies concurrent (the second arrives inside the first's admission
- * transaction), a delete-only update sent twice concurrently, and an update whose predecessor
- * has not arrived yet (Yjs holds it pending) sent twice, sequentially and concurrently, before
- * that predecessor, the last also with a 10,000-Item tail whose duplicate must be judged within a
-time bound (any client can send such a frame, and admission blocks the process). Whatever the interleaving, a
- * copy whose structs and deletes the stored document already holds writes no journal row, no
- * human edit and no admission sequence.
+ * Hocuspocus's `beforeSync` does, then applied to the room. A copy the room already holds writes
+ * no row. Two copies in flight together can both pass the room's judgement and store a redundant
+ * row (accepted: the room judges, the journal does not); the text stays single. A frame whose
+ * predecessor the room lacks is refused as a gap and stores nothing.
  */
 import assert from "node:assert/strict";
 import { readDocumentAuthorityHead } from "../../../../apps/server/server/domains/collab/adapters/drizzle-document-authority-head.ts";
@@ -21,17 +17,12 @@ import { type Harness, observe, type Probe, Y } from "./harness.mts";
 
 const KEYS = 20;
 const DELETES = 5;
-// A pending tail this large took ~0.8 s to judge when containment re-sorted the pending ranges
-// per incoming struct; the linear check takes a few milliseconds (up to ~85 ms on a loaded
-// two-core runner), so the bound sits between the two.
-const LARGE_PENDING_ITEMS = 10_000;
-const LARGE_PENDING_BOUND_MS = 400;
 
 export const liveDuplicateFrame: Probe = {
   name: "live-duplicate-frame",
-  decision: "#946 one novelty owner under the document lock",
+  decision: "#946 the room judges novelty; a concurrent duplicate may store a redundant row",
   expected:
-    "every arm: one admitted frame, one journal row and one human edit per update; admission sequences have no gaps; journal text equals the room's; a 10,000-Item pending duplicate is judged within 400 ms",
+    "sequential copies store one row each; concurrent copies store one or two and the journal text equals the room's; a frame ahead of its predecessor is refused and stores nothing; admission sequences have no gaps",
   async run(harness: Harness) {
     const { raw, ids, persistence } = harness;
     const { documentId, live: seed } = await harness.seedDocument("dup");
@@ -85,79 +76,69 @@ export const liveDuplicateFrame: Probe = {
         for (let i = 0; i < count; i += 1) admitted.push(...(await run(updateOf(edit))));
         return admitted;
       };
-    // A frame whose predecessor has not arrived: the stored document holds it as Yjs pending
-    // structs, which its state vector and snapshot leave out. The tail goes twice, then the prefix.
-    const missingPrefix =
+    let failed = false;
+    const rowsSince = async (start: number) =>
+      raw<{ h: string; seq: string }[]>`
+        select md5(update_data) h, admission_sequence::text seq from document_yjs_updates
+        where document_id=${documentId} and id>${start} and origin_type='human'`;
+    const startOf = async () =>
       (
-        run: (u: Uint8Array) => Promise<boolean[]>,
-        tailEdit = () => text.insert(text.length, " tail"),
-      ) =>
-      async () => {
-        const prefix = updateOf(() => text.insert(text.length, " prefix"));
-        const tail = updateOf(tailEdit);
-        return [...(await run(tail)), await frame(prefix)];
-      };
-    // Inserting at the start never extends the previous Item, so each character is its own struct.
-    let duplicateMs = 0;
-    const timedSequential = async (u: Uint8Array) => {
-      const first = await frame(u);
-      const start = performance.now();
-      const second = await frame(u);
-      duplicateMs = performance.now() - start;
-      return [first, second];
-    };
-
-    const arms: [string, number, () => Promise<boolean[]>][] = [
-      ["sequential", KEYS, repeated(KEYS, twice.sequential, () => text.insert(text.length, "s"))],
-      ["concurrent", KEYS, repeated(KEYS, twice.concurrent, () => text.insert(text.length, "c"))],
+        await raw<
+          { start: number }[]
+        >`select coalesce(max(id),0)::int start from document_yjs_updates where document_id=${documentId}`
+      )[0].start;
+    const arms: [string, number, number, () => Promise<boolean[]>][] = [
+      [
+        "sequential",
+        KEYS,
+        KEYS,
+        repeated(KEYS, twice.sequential, () => text.insert(text.length, "s")),
+      ],
+      [
+        "concurrent",
+        KEYS,
+        2 * KEYS,
+        repeated(KEYS, twice.concurrent, () => text.insert(text.length, "c")),
+      ],
       [
         "delete-only concurrent",
         DELETES,
+        2 * DELETES,
         repeated(DELETES, twice.concurrent, () => text.delete(0, 1)),
       ],
-      ["missing-prefix sequential", 2, missingPrefix(twice.sequential)],
-      ["missing-prefix concurrent", 2, missingPrefix(twice.concurrent)],
-      [
-        "large missing-prefix sequential",
-        2,
-        missingPrefix(timedSequential, () =>
-          tab.transact(() => {
-            for (let i = 0; i < LARGE_PENDING_ITEMS; i += 1) text.insert(0, "x");
-          }),
-        ),
-      ],
     ];
-    let failed = false;
-    for (const [arm, count, run] of arms) {
-      const [{ start }] = await raw<
-        { start: number }[]
-      >`select coalesce(max(id),0)::int start from document_yjs_updates where document_id=${documentId}`;
+    for (const [arm, count, most, run] of arms) {
+      const start = await startOf();
       const admitted = await run();
-      const rows = await raw<{ h: string; seq: string }[]>`
-        select md5(update_data) h, admission_sequence::text seq from document_yjs_updates
-        where document_id=${documentId} and id>${start} and origin_type='human'`;
+      const rows = await rowsSince(start);
       const sequences = rows.map((row) => BigInt(row.seq)).sort((a, b) => (a < b ? -1 : 1));
       const gaps = sequences.filter((seq, i) => i > 0 && seq !== (sequences[i - 1] ?? 0n) + 1n);
       const result = {
         updates: count,
         framesAdmitted: admitted.filter(Boolean).length,
         journalRows: rows.length,
-        distinctPayloads: new Set(rows.map((row) => row.h)).size,
         sequenceGaps: gaps.length,
       };
-      observe(arm, arm.startsWith("large") ? { ...result, duplicateMs } : result);
-      if (arm.startsWith("large") && duplicateMs > LARGE_PENDING_BOUND_MS) failed = true;
-      if (
-        result.framesAdmitted !== count ||
-        result.journalRows !== count ||
-        result.sequenceGaps !== 0
-      )
+      observe(arm, result);
+      if (result.journalRows < count || result.journalRows > most || result.sequenceGaps !== 0)
         failed = true;
+      if (arm === "sequential" && result.journalRows !== count) failed = true;
     }
+    // A frame whose predecessor the room lacks: refused, nothing stored.
+    const start = await startOf();
+    updateOf(() => text.insert(text.length, " prefix"));
+    const tail = updateOf(() => text.insert(text.length, " tail"));
+    const refused = await frame(tail).then(
+      () => false,
+      (cause: unknown) => (cause as Error).message === "writer-frame-gap",
+    );
+    const gapRows = (await rowsSince(start)).length;
+    observe("gap", { refused, journalRows: gapRows });
+    if (!refused || gapRows !== 0) failed = true;
     const roomText = room.getXmlFragment("prosemirror").toString();
     const journalText = await harness.liveText(documentId);
     observe("text", { room: roomText, journalMatchesRoom: journalText === roomText });
     assert.equal(journalText, roomText);
-    assert.equal(failed, false, "a duplicate copy was journaled or judged too slowly");
+    assert.equal(failed, false, "a duplicate or gap frame was stored wrongly");
   },
 };

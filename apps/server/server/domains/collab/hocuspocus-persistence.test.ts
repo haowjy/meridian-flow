@@ -16,7 +16,7 @@ import {
 } from "./domain/document-handle.js";
 import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
-import type { LiveWriterAppend, LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
+import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 import { MemoryDraftStore, memoryDraft, testDraftRow } from "./test-support/memory-draft-store.js";
 
@@ -468,11 +468,11 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
     const journal = fakeJournal();
     journal.appendWriterUpdate = vi.fn(
       () =>
-        new Promise<LiveWriterAppend>((resolve) => {
+        new Promise<{ seq: number }>((resolve) => {
           events.push("journal:start");
           commit = () => {
             events.push("journal:commit");
-            resolve({ status: "appended", seq: 1 });
+            resolve({ seq: 1 });
           };
         }),
     );
@@ -585,10 +585,7 @@ function draftSnapshot(doc: Y.Doc): { documentDraft: DraftSnapshot; state: Uint8
 
 function fakeJournal(): CheckpointJournal & LiveWriterJournal {
   return {
-    appendWriterUpdate: vi.fn(async () => ({
-      status: "appended" as const,
-      seq: 1,
-    })),
+    appendWriterUpdate: vi.fn(async () => ({ seq: 1 })),
     reserveWriteOrdinal: async () => {
       throw new Error("Transport does not allocate edit ordinals");
     },

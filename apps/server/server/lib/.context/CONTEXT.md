@@ -91,8 +91,9 @@ current slot can install a listener after that read.
 Journal sequence values become strings at the HTTP/WS boundary.
 
 The Yjs handler asks file-policy for `edit`, then `read` for room admission.
-Edit frames run under the admitted grant; refusal or Work access change closes
-with the typed transport code. Schema admission closes the physical transport
+A Live edit frame is judged in the room and stored with one insert, and takes no grant of its own;
+a draft's edit frames run under the admitted grant. A refusal, or an access change that reaches
+a key the socket is registered under, closes with the typed transport code. Schema admission closes the physical transport
 through `closeTransport` after emitting its correlated diagnostic; the hook
 throw only aborts processing and is not close delivery. Schema comparison and
 head semantics belong to [collab](../../domains/collab/.context/document-authority-and-schema.md).

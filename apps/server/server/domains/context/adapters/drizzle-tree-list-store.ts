@@ -19,6 +19,7 @@ import {
 import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import type { CollabJournal } from "../../collab/adapters/drizzle-journal.js";
+import type { FileAccessChanges } from "../../file-policy/index.js";
 import type {
   CommittedTreeUpdate,
   ListWriter,
@@ -129,6 +130,8 @@ export function createDrizzleTreeListStore(deps: {
   recountAfterCommit?: (owners: OwnerLocks) => void;
   /** Branches with rows on nodes live changed: their owners' lists are read again after commit. */
   liveChangedUnder?: (branchIds: readonly string[]) => void;
+  /** Open document sockets of a document that changed source close, to be admitted again. */
+  fileAccessChanges?: Pick<FileAccessChanges, "publish">;
 }): PgTreeListStore {
   const { db, journal } = deps;
   const copies = new Map<string, Copy>();
@@ -294,8 +297,10 @@ export function createDrizzleTreeListStore(deps: {
       created: made,
       changedBranches,
       liveChangedUnder,
+      reassigned,
     } = await syncRows(tx, list, listId, copy.doc, created);
     if (liveChangedUnder.length > 0) deps.liveChangedUnder?.(liveChangedUnder);
+    for (const documentId of reassigned) await deps.fileAccessChanges?.publish({ documentId });
     if (changedBranches.length > 0 && deps.recountAfterCommit) {
       const owners = await tx
         .select({ work: branches.originWorkId, root: branches.originRootThreadId })

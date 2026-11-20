@@ -14,8 +14,8 @@ warm Y.Doc or an operation-specific mutation policy.
 
 Every loaded handle, room, checkpoint, writer frame, Markdown replacement, and
 agent journal batch carries the authority identity and generation that loaded
-it. Persistence revalidates both under the document mutation lock and drops
-stale bytes instead of relabeling them. Restore retires warm handles and
+it. Persistence revalidates both under the document mutation lock (a writer frame, under the head row
+its counter bump holds) and drops stale bytes instead of relabeling them. Restore retires warm handles and
 rooms; late load and connection completion revalidate before use.
 
 ## Only explicit creation makes a head

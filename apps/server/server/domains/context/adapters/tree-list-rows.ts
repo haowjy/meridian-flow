@@ -338,7 +338,7 @@ async function writeLive(
   listId: string,
   next: Map<string, ProjectedRow>,
   trash: ReadonlyMap<string, { record: string; by: string | null }>,
-): Promise<string[]> {
+): Promise<{ changed: string[]; reassigned: string[] }> {
   const prev = await loadLive(tx, listId);
   await dropUnowned(tx, listId, prev, next);
   // The delete in force of each node the replay shows in Trash.
@@ -348,7 +348,8 @@ async function writeLive(
   const retrashed = [...next.keys()].filter(
     (id) => prev.has(id) && (prev.get(id)?.trashRecord ?? null) !== trashOf(id),
   );
-  if (upserts.length === 0 && gone.length === 0 && retrashed.length === 0) return [];
+  if (upserts.length === 0 && gone.length === 0 && retrashed.length === 0)
+    return { changed: [], reassigned: [] };
 
   const was = addresses(prev);
   const now = addresses(next);
@@ -431,7 +432,11 @@ async function writeLive(
   }
   if (vacated.length > 0 || claimed.length > 0)
     await recordLocationHistory(tx as unknown as Database, { vacated, claimed });
-  return [...changed.keys(), ...gone];
+  // A document that changed source may have changed Work, and so who may write it.
+  const reassigned = bumped.filter(
+    (id) => next.get(id)?.kind === "document" && was.get(id)?.source !== now.get(id)?.source,
+  );
+  return { changed: [...changed.keys(), ...gone], reassigned };
 }
 
 async function writeBranch(
@@ -551,7 +556,12 @@ export async function syncRows(
   listId: string,
   doc: Y.Doc,
   added: readonly TreeRecord[],
-): Promise<{ created: CreateRecord[]; changedBranches: string[]; liveChangedUnder: string[] }> {
+): Promise<{
+  created: CreateRecord[];
+  changedBranches: string[];
+  liveChangedUnder: string[];
+  reassigned: string[];
+}> {
   const tx = currentDrizzleDb(db as Database);
   const live = replayView(doc, LIVE);
   const liveRows = shownRows(live);
@@ -597,7 +607,7 @@ export async function syncRows(
         )
       : [];
   const actors = new Map(listRecords(doc).map((record) => [record.id, record.actor]));
-  const changed = await writeLive(tx, listId, liveRows, trashRecords(live, actors));
+  const { changed, reassigned } = await writeLive(tx, listId, liveRows, trashRecords(live, actors));
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadBranches(tx, listId);
@@ -627,5 +637,5 @@ export async function syncRows(
     changed.push(...written);
   }
   await markUnviewed(tx, changed);
-  return { created, changedBranches, liveChangedUnder };
+  return { created, changedBranches, liveChangedUnder, reassigned };
 }

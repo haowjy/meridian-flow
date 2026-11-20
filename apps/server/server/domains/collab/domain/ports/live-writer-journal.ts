@@ -1,22 +1,16 @@
 /** Collab's live-writer admission into the document journal. */
 import type { JournalAuthority, UpdateMeta } from "@meridian/agent-edit/integration";
 
-/**
- * `contained`: the stored document already holds every struct and delete of the update, so
- * nothing was appended. Mirrors the draft path's `{ status: "contained" }`.
- */
-export type LiveWriterAppend = { status: "contained" } | { status: "appended"; seq: number };
-
 export interface LiveWriterJournal {
   /**
-   * Judges a writer's update new against the stored document under the document lock (two
-   * sockets carrying one update serialize there), and appends it only if new. Admission
-   * records the new live authority head in the same transaction.
+   * Stores a frame the room judged new: one counter bump and one insert in one short transaction.
+   * Throws `RetiredDocumentHandleError` when the document's head is no longer `authority`'s, and
+   * stores nothing.
    */
   appendWriterUpdate(
     documentId: string,
     update: Uint8Array,
     meta: UpdateMeta,
-    authority?: JournalAuthority,
-  ): Promise<LiveWriterAppend>;
+    authority: JournalAuthority,
+  ): Promise<{ seq: number }>;
 }

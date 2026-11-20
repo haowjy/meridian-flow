@@ -40,7 +40,9 @@ export {
   type FileAccess,
 } from "./file-access.js";
 export {
+  documentAccessKey,
   type FileAccessChange,
   type FileAccessChanges,
   fileAccessChangeKey,
+  projectAccessKey,
 } from "./ports/file-access-changes.js";

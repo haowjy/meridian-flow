@@ -271,7 +271,12 @@ function openServer(harness: Harness, workId: string) {
   });
   const grant = (target: unknown) => ({
     level: "edit",
-    facts: { target, ownerWork: null, branchWork: { id: workId, isNoWork: false } },
+    facts: {
+      target,
+      owner: { kind: "project", projectId: "00000000-0000-4000-8000-000000000b01" },
+      ownerWork: null,
+      branchWork: { id: workId, isNoWork: false },
+    },
   });
   const gateway = createYjsGateway({
     liveDocuments: { findById: async () => ({ kind: "missing" }) },

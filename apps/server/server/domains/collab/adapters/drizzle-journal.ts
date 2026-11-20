@@ -41,7 +41,6 @@ import { testHook } from "../../../shared/test-hooks.js";
 import { lockSeamWorks } from "../../../shared/work-lifecycle-lock.js";
 import { requireLivingDocument } from "../../context/tree/living-document.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
-import { documentContainsUpdate } from "../domain/document-containment.js";
 import { RetiredDocumentHandleError } from "../domain/document-handle.js";
 import type {
   CheckpointAuthority,
@@ -366,17 +365,18 @@ async function validateAppendAuthority(
 type AppendedUpdate = { seq: number };
 
 /**
- * One update inserted under the document mutation lock the caller holds. A writer's frame leaves
- * no edit receipt: what the writer typed is read from the text, not from a record of the frame.
+ * One update inserted with the admission the caller just allocated, so the head row it holds
+ * orders this row against every other writer's. A writer's frame leaves no edit receipt: what the
+ * writer typed is read from the text, not from a record of the frame.
  */
 async function insertUpdate(
   db: JournalDb,
   documentId: string,
   update: Uint8Array,
   meta: UpdateMeta,
+  authorityHead: Awaited<ReturnType<typeof allocateAdmission>>,
 ): Promise<AppendedUpdate> {
   const origin = parseOrigin(meta);
-  const authorityHead = await allocateAdmission(db, documentId);
   const [row] = await db
     .insert(documentYjsUpdates)
     .values({
@@ -596,7 +596,13 @@ export function createDrizzleJournal(
         const txDb = await enterJournalSeam(db, [docId], agentAuthored(meta) ? [docId] : []);
         await validateAppendAuthority(txDb, docId, authority);
         // Agent and system appends carry their own fresh structs and are not judged.
-        const { seq } = await insertUpdate(txDb, docId, update, meta);
+        const { seq } = await insertUpdate(
+          txDb,
+          docId,
+          update,
+          meta,
+          await allocateAdmission(txDb, docId),
+        );
         afterCommit([docId]);
         return seq;
       });
@@ -604,20 +610,17 @@ export function createDrizzleJournal(
 
     async appendWriterUpdate(docId, update, meta, authority) {
       return runInDrizzleTransaction(db as Database, async () => {
-        // A live room binds its edit grant around each frame (file-access §7).
-        const txDb = await enterJournalSeam(db, [docId], []);
-        await validateAppendAuthority(txDb, docId, authority);
-        // Judged against what every earlier admission committed: a copy of an update another
-        // socket already stored appends no row, spends no admission sequence, records no edit.
-        const stored = storedDocument(await createDrizzleJournal(txDb).read(docId));
-        try {
-          if (documentContainsUpdate(stored, update)) return { status: "contained" } as const;
-          const row = await insertUpdate(txDb, docId, update, meta);
-          afterCommit([docId]);
-          return { status: "appended", ...row } as const;
-        } finally {
-          stored.destroy();
-        }
+        const txDb = currentDrizzleDb(db as Database) as JournalDb;
+        // The counter bump holds the head row to the commit: it is the whole lock a frame takes,
+        // and it keeps journal order equal to commit order. The head it returns is compared
+        // with the room's before anything is inserted, since the insert stamps what the bump
+        // returned.
+        const head = await allocateAdmission(txDb, docId);
+        if (head.authorityId !== authority.authorityId || head.generation !== authority.generation)
+          throw new RetiredDocumentHandleError();
+        const row = await insertUpdate(txDb, docId, update, meta, head);
+        afterCommit([docId]);
+        return row;
       });
     },
 

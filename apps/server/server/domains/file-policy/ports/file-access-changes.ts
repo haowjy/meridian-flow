@@ -17,13 +17,25 @@ export type FileAccessChange =
   | { workId: WorkId; closed?: ClosedOwnerWhy }
   | { rootThreadId: string; closed?: ClosedOwnerWhy }
   /** A project deleted: its tree list's connections end (a tree list's key is its room name). */
-  | { projectId: string };
+  | { projectId: string }
+  /** A document moved to another source, so possibly another Work: its connections end. */
+  | { documentId: string };
 
 /** The key a room registers under for this change: the owner's `draftOwnerKey`. */
 export function fileAccessChangeKey(change: FileAccessChange): string {
   if ("workId" in change) return draftOwnerKey({ kind: "work", workId: change.workId });
-  if ("projectId" in change) return treeRoomName({ kind: "project", projectId: change.projectId });
+  if ("projectId" in change) return projectAccessKey(change.projectId);
+  if ("documentId" in change) return documentAccessKey(change.documentId);
   return draftOwnerKey({ kind: "lineage", rootThreadId: change.rootThreadId });
+}
+
+/** A project's key: its tree list's room name, so a deleted project ends its tree and document sockets. */
+export function projectAccessKey(projectId: string): string {
+  return treeRoomName({ kind: "project", projectId });
+}
+
+export function documentAccessKey(documentId: string): string {
+  return `document:${documentId}`;
 }
 
 export interface FileAccessChanges {

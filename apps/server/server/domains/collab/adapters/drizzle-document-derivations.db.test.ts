@@ -467,17 +467,20 @@ describe("durable document derivations", () => {
     const ready = new Promise<void>((resolve) => {
       locked = resolve;
     });
+    // The head row is the lock a writer frame takes, and the restore queues on it first, so the
+    // frame bumps the counter only after the restore has changed the generation.
     const blocker = db.transaction(async (tx) => {
-      await lockDocumentMutation(tx, documentId);
+      await tx.execute(
+        sql`select 1 from document_yjs_heads where document_id = ${documentId}::uuid for update`,
+      );
       locked();
       await gate;
     });
     async function waitForQueued(count: number) {
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline) {
-        const rows = await db.execute(sql`select count(*)::int as n from pg_locks
-          where locktype = 'advisory' and not granted
-          and database = (select oid from pg_database where datname = current_database())`);
+        const rows = await db.execute(sql`select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and wait_event_type = 'Lock'`);
         if (Number(rows[0].n) >= count) return;
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
@@ -728,9 +731,8 @@ describe("durable document derivations", () => {
     async function waitForQueued(count: number) {
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline) {
-        const rows = await db.execute(sql`select count(*)::int as n from pg_locks
-          where locktype = 'advisory' and not granted
-          and database = (select oid from pg_database where datname = current_database())`);
+        const rows = await db.execute(sql`select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and wait_event_type = 'Lock'`);
         if (Number(rows[0]?.n) >= count) return;
         await new Promise((resolve) => setTimeout(resolve, 10));
       }

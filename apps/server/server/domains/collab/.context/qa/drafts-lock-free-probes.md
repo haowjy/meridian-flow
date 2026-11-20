@@ -27,7 +27,7 @@ The [collab contracts][collab-context] define each guard. Sources are under
 | Probe | Guard | Interleaving |
 |---|---|---|
 | `d12-create-during-archive` | A draft created while its Work archives is read as archived. | Archive pauses after its Work update; draft ensure starts and waits on the Work-row read. |
-| `live-duplicate-frame` | A duplicate live frame is journaled once. | Admit duplicate, concurrent, delete-only, and missing-predecessor updates, then repeat with a 10,000-item tail. |
+| `live-duplicate-frame` | A sequential duplicate live frame is stored once, a concurrent one at most twice with the text single, and a frame ahead of its predecessor is refused. | Admit duplicate, concurrent, delete-only, and missing-predecessor updates. |
 | `f1-inverse-grant` | Undo locks its grant's Work before its other locks. | Run Archive from the inverse confirmation and run inverse from the Archive boundary. |
 | `f1-inverse-deadlock` | Undo and a journal append do not deadlock. | Hold the document lock in Undo while a rival append starts for the same Work. |
 | `d22-concurrent-undo` | Two Undos of one edit land once; one answers `success`, the other `cant_undo_changed` (its commit took nothing). | Hold two independent Undo operations at `inverse.beforeCommitScope`, for live and Work destinations. |
