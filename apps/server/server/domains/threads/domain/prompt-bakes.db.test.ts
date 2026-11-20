@@ -200,7 +200,6 @@ else {
         .update(schema.threads)
         .set({ initialPromptBakeId: source.bake.id })
         .where(eq(schema.threads.id, fork.id));
-      await db.delete(schema.documentDrafts).where(eq(schema.documentDrafts.id, ids.draftId));
 
       expect(
         await db

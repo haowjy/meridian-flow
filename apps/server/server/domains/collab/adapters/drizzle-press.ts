@@ -1,5 +1,5 @@
 /**
- * Suggestion mode's press: Apply or Discard pressed on documents, folders or a whole Work, as one
+ * The press: Apply or Discard pressed on documents, folders or a whole Work, as one
  * recorded command over both halves, and its one Undo. The tree half is the Apply's
  * (`drizzle-apply-tree.ts`) or the Discard's (`discardTreeRecords`); the text half accepts or
  * rejects the Work's suggestions in each document as one Yjs transaction on Live, whose inserted
@@ -65,14 +65,14 @@ import type { DocumentArrivals } from "../../context/ports/document-arrivals.js"
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { TreeReader } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
-import { ApplyClickUnsynced, type TreeCut } from "../domain/apply-click.js";
 import type { Branches } from "../domain/branches.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
+import { PressUnsynced, type TreeCut } from "../domain/press.js";
 import { storedDocument } from "../domain/stored-document.js";
 import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { createApplyTreeOperations, type TreeItemFacts } from "./drizzle-apply-tree.js";
-import { discardTreeRecords } from "./drizzle-branch-discard.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
+import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
 
 const schema = buildDocumentSchema();
 
@@ -230,7 +230,7 @@ export function createDrizzlePress(
     const doc = storedDocument(snapshot);
     try {
       // The tab typed what the server has not stored yet: the press waits for it (503).
-      if (seen && !holds(Y.encodeStateVector(doc), seen)) throw new ApplyClickUnsynced();
+      if (seen && !holds(Y.encodeStateVector(doc), seen)) throw new PressUnsynced();
       const before = Y.encodeStateVector(doc);
       const record = pressStored(doc, schema, verdict === "apply" ? "accept" : "reject", { work });
       if (!record || !snapshot.authority) return false;

@@ -2,12 +2,12 @@
 import type { DocumentId, ProjectId } from "@meridian/contracts";
 import type { DocumentTrashEntry, TrashEntryFacts } from "@meridian/contracts/protocol";
 
-export type DocumentPurgeDraftDisposal = {
+export type DocumentPurgeDisposal = {
   /**
    * Inside the caller's transaction, which already holds the tree list's lock: takes the
-   * documents' keys, then every active draft row that can write them, and answers `pending` when
-   * a Work still has a reviewable change to one of them (the purge waits). Otherwise closes the
-   * drafts that remain, so nothing writes the documents once their content is released.
+   * documents' keys and answers `pending` when a Work still has a reviewable change to one of
+   * them (the purge waits). Otherwise their rooms close once the caller commits, so nothing
+   * writes the documents once their content is released.
    */
   settle(documentIds: readonly DocumentId[]): Promise<"pending" | "closed">;
 };

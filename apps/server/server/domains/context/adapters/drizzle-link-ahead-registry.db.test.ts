@@ -293,7 +293,7 @@ if (!RUN) {
         expect.soft(live, "a live create at the address makes its own document").not.toBe(kael);
       });
 
-      it("registers the writer's link typed in the draft's review room, best effort and globally (L-3)", async () => {
+      it("registers the writer's link typed in a Work's document, best effort and globally (L-3)", async () => {
         const { runtime, scenario, work } = await start();
         const chapter = await scenario.model(work).create("chapter-two", "The forge was cold.");
         // The client mints the ahead ref as the writer types; the server has never seen it.
@@ -306,10 +306,11 @@ if (!RUN) {
             paragraph.insert(0, [text]);
             doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
           };
-        const draftLinks = runtime.ports.documentSync.draftLinks;
+        // The document's derivation registers the links it finds, after the writer's update.
+        const derive = () => runtime.ports.documentSync.documentDerivations.derive(chapter);
         const typed = crypto.randomUUID();
-        await scenario.writer.editDraft(work, chapter, link(typed));
-        await draftLinks.flush();
+        await scenario.writer.editLive(chapter, link(typed));
+        await derive();
         expect
           .soft(await registryRow(typed), "after the debounce, registered and unbound")
           .toEqual({ registered: true, live: null });
@@ -317,11 +318,11 @@ if (!RUN) {
         // A ref that can never register (its Work doesn't exist) never keeps the valid one
         // beside it from registering.
         const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
-        await scenario.writer.editDraft(work, chapter, (doc) => {
+        await scenario.writer.editLive(chapter, (doc) => {
           link(beside)(doc);
           link(ghost, "scratch://@w98/notes")(doc);
         });
-        await draftLinks.flush();
+        await derive();
         expect.soft((await registryRow(beside)).registered, "the valid ref registers").toBe(true);
         expect
           .soft((await registryRow(ghost)).registered, "the refused one has no row")

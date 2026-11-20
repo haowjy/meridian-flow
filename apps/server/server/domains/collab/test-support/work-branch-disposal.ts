@@ -3,17 +3,16 @@ import type { Database } from "@meridian/database";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import type { WorkBranchDisposal } from "../../projects/index.js";
-import { createDrizzleWorkBranchDisposal } from "../adapters/drizzle-branch-discard.js";
 import {
   createDrizzleBranchStore,
   createDrizzleBranchWriteBoundary,
 } from "../adapters/drizzle-branches.js";
+import { createDrizzleWorkBranchDisposal } from "../adapters/drizzle-work-tree-discard.js";
 import { createBranches } from "../domain/branches.js";
 
 export function createPostgresWorkBranchDisposal(db: Database): WorkBranchDisposal {
-  const { draftClose, treeLists } = createTestRemovalDeps(db);
+  const { treeLists } = createTestRemovalDeps(db);
   return createDrizzleWorkBranchDisposal(db, {
-    close: draftClose,
     treeLists,
     branches: createBranches({
       store: createDrizzleBranchStore(db),

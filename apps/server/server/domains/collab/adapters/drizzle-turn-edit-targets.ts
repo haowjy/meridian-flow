@@ -1,11 +1,8 @@
 /**
  * Canonical immutable turn targets shared by authorization, lineage and inverse admission:
- * documents the turn edited the text of that some tree view still shows, plus draft-scoped
- * edits of a document live deleted or in no view, whose drafts may outlive it (the inverse
- * decides from the draft row). Each draft-scoped target names the Work whose branch held the
- * draft, as the part recorded it, where it is read and reversed: a draft purged from Trash
- * leaves its target, and the inverse reads it as discarded. Final address liveness stays
- * with the lineage reader. A tree change leaves no text target;
+ * documents the turn edited the text of that some tree view still shows. Every text edit is in
+ * Live (a Work's are suggestions there). Final address liveness stays with the lineage reader.
+ * A tree change leaves no text target;
  * `readTurnTreeTargets` lists the documents a reply only moved, created or deleted, for its card.
  */
 
@@ -38,30 +35,13 @@ export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
   query: TurnInverseQuery,
 ): Promise<TurnEditedDocumentId[]> {
-  const owner = branchOwnerSql(branches);
   const rows = await db
-    .selectDistinct({
-      documentId: documentEdits.documentId,
-      origin: documentEditParts.origin,
-      branchId: branches.id,
-      workId: owner.workId,
-      rootThreadId: owner.rootThreadId,
-      projectId: branches.projectId,
-      handle: owner.handle,
-    })
+    .selectDistinct({ documentId: documentEdits.documentId })
     .from(documentEdits)
-    .leftJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
-    // A pending edit's Work: the branch its part was drafted in, which outlives the draft row.
-    .leftJoin(branches, eq(branches.id, documentEditParts.draftBranchId))
+    .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
     .where(
       and(
-        isNotNull(documentEditParts.id),
-        // A draft-scoped edit keeps its history while the document's content is kept: a delete
-        // in live or a discarded creation leaves the draft's bytes to retention.
-        sql`(${livingDocumentSql(documentEdits.documentId)}
-          OR (${documentEditParts.origin}->>'kind' = 'pending'
-            AND exists (select 1 from documents d
-              where d.id = ${documentEdits.documentId} and d.content_purged_at is null)))`,
+        livingDocumentSql(documentEdits.documentId),
         eq(documentEdits.threadId, query.threadId),
         query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
         query.responseIdentity
@@ -74,35 +54,7 @@ export async function readTurnEditTargets(
       ),
     )
     .orderBy(documentEdits.documentId);
-  const targets = new Map<string, TurnEditedDocumentId>();
-  for (const row of rows) {
-    // A receipt's destination never changes when its draft text is applied or discarded.
-    const draft = row.origin?.kind === "pending";
-    if (!draft) {
-      targets.set(`${row.documentId}:live`, { documentId: row.documentId, scope: "live" });
-      continue;
-    }
-    if (!row.branchId || !row.projectId) continue;
-    const owner = ownerOfColumns({ ...row, projectId: row.projectId });
-    if (!owner) continue;
-    const ownerKey = draftOwnerKey(owner);
-    const key = `${row.documentId}:draft:${ownerKey}`;
-    const known = targets.get(key);
-    if (known?.scope === "draft") {
-      if (!known.branchIds.includes(row.branchId)) known.branchIds.push(row.branchId);
-      continue;
-    }
-    targets.set(key, {
-      documentId: row.documentId,
-      scope: "draft",
-      owner,
-      ownerHandle: row.handle,
-      branchIds: [row.branchId],
-    });
-  }
-  return [...targets.values()].sort(
-    (a, b) => a.documentId.localeCompare(b.documentId) || a.scope.localeCompare(b.scope),
-  );
+  return rows.map((row) => ({ documentId: row.documentId, scope: "live" as const }));
 }
 
 /**

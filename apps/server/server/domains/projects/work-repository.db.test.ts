@@ -626,14 +626,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
         .returning({ id: schema.branches.id });
       if (!branch) throw new Error("Expected the Work's branch");
-      await db.insert(schema.documentDrafts).values({
-        id: "work-delete-draft",
-        documentId: document.id,
-        kind: "work_draft",
-        branchId: branch.id,
-        state: Buffer.from([]),
-        stateVector: Buffer.from([]),
-      });
       const resultTurnId = "00000000-0000-4000-8000-000000000848";
       const resultId = "00000000-0000-4000-8000-000000000849";
       await db.insert(schema.threads).values({
@@ -809,13 +801,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { id: childThreadId, deletedByWorkId: work.id },
         ]),
       );
-      await expect(
-        db
-          .select()
-          .from(schema.documentDrafts)
-          .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-        "a cascade deletion leaves its documents' drafts open for the Work's Restore",
-      ).resolves.toMatchObject([{ id: "work-delete-draft" }]);
 
       await works.restore(work.id);
       await expect(
@@ -834,12 +819,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadRepos.threads.findById(separatelyDeletedThreadId as never),
       ).resolves.toBeNull();
       await expect(threadRepos.chatFeed.queryPage(feedInput)).resolves.toHaveLength(1);
-      await expect(
-        db
-          .select()
-          .from(schema.documentDrafts)
-          .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ id: "work-delete-draft" }]);
       expect(await shown()).toContain(document.id);
       await expect(
         db
@@ -1239,14 +1218,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
         .returning({ id: schema.branches.id });
       if (!branch) throw new Error("Expected the Work's branch");
-      await db.insert(schema.documentDrafts).values({
-        id: "purged-work-draft",
-        documentId: document.id,
-        kind: "work_draft",
-        branchId: branch.id,
-        state: Buffer.from([]),
-        stateVector: Buffer.from([]),
-      });
       await db.insert(schema.projectResults).values({
         id: "00000000-0000-4000-8000-000000000849",
         projectId: PROJECT_ID,
@@ -1340,12 +1311,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.projectResults)
           .where(eq(schema.projectResults.projectId, PROJECT_ID)),
-      ).resolves.toEqual([]);
-      await expect(
-        db
-          .select()
-          .from(schema.documentDrafts)
-          .where(eq(schema.documentDrafts.id, "purged-work-draft")),
       ).resolves.toEqual([]);
       await expect(
         db.select().from(schema.threads).where(inArray(schema.threads.id, derivedIds)),

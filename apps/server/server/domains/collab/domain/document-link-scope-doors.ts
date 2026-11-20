@@ -123,9 +123,9 @@ export function scopeModelEditWrite(
  * tree, so it is scoped like the text.
  */
 export function scopeDraftPeer(
-  access: Omit<DraftPeerShadowAccess, "draftCreatedDocuments">,
+  access: Omit<DraftPeerShadowAccess, "seedWorkCreates" | "writeWorkCreatedContent">,
   scopes: DocumentLinkScopes,
-  draftCreatedDocuments: DraftPeerShadowAccess["draftCreatedDocuments"],
+  created: Pick<DraftPeerShadowAccess, "seedWorkCreates" | "writeWorkCreatedContent">,
 ): DraftPeerShadowAccess {
   const by = (command: { documentId: string; threadId?: string | null }) => ({
     documentId: command.documentId,
@@ -135,7 +135,6 @@ export function scopeDraftPeer(
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
-    catchUpDraft: access.catchUpDraft,
     readStoredGrepTexts: access.readStoredGrepTexts,
     readStoredWordCounts: access.readStoredWordCounts,
     readOwnerMarkdown: (command) =>
@@ -144,8 +143,7 @@ export function scopeDraftPeer(
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     readEffectiveBlocks: (command) =>
       scopes.within(by(command), () => access.readEffectiveBlocks(command)),
-    draftCreatedDocuments,
-    writeCreatedDraftContent: access.writeCreatedDraftContent,
+    ...created,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

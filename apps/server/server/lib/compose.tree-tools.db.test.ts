@@ -37,10 +37,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
     const {
-      handleApplyClickRequest,
-      handleApplyItemsRequest,
-      handleDiscardBranchRequest,
       handleOwnerDraftListRequest,
+      handlePressRequest,
       selectBranchRouteServices,
     } = await import("./branch-review-route.js");
 
@@ -233,38 +231,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             owner: `work:${OTHER_WORK_ID}`,
           } as never)
         ).items.find((row) => row.documentId === documentId);
+      // The writer's press on one document: its tree change only, or (`ends: "item"`) its text too.
+      const press = (verdict: "apply" | "discard", documentId: string, ends: "tree" | "item") =>
+        handlePressRequest(routes, {
+          ...scope,
+          request: {
+            commandId: randomUUID(),
+            owner: `work:${OTHER_WORK_ID}`,
+            verdict,
+            items: [{ node: documentId, ...(ends === "tree" ? { half: "tree" } : {}) }],
+          },
+        } as never);
       return {
         item,
-        apply: async (documentId: string, extra: Record<string, unknown> = {}) =>
-          handleApplyClickRequest(routes, {
-            ...scope,
-            branchId: await branchOf(OTHER_WORK_ID),
-            documentId: documentId as never,
-            request: {
-              commandId: randomUUID(),
-              groupIds: [],
-              baseViewDelta: [],
-              tree: true,
-              ...extra,
-            },
-          } as never),
-        discard: async (documentId: string, ends: { ends: "tree" | "item" } = { ends: "tree" }) => {
-          const row = await item(documentId);
-          return handleDiscardBranchRequest(routes, {
-            ...scope,
-            branchId: row?.branchId,
-            request: {
-              commandId: randomUUID(),
-              items: [
-                {
-                  node: documentId,
-                  tree: true,
-                  ...(ends.ends === "item" ? { text: "all" } : {}),
-                },
-              ],
-            },
-          } as never);
-        },
+        apply: (documentId: string) => press("apply", documentId, "tree"),
+        discard: (documentId: string, ends: { ends: "tree" | "item" } = { ends: "tree" }) =>
+          press("discard", documentId, ends.ends),
       };
     }
     it("drafts a Scratch move into the manuscript and applies it", async () => {
@@ -289,7 +271,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextLocation: { scheme: "manuscript", path: "/sect-notes" },
       });
 
-      expect(await review(script).apply(SCRATCH_NOTE)).toMatchObject({ status: "applied" });
+      expect(await review(script).apply(SCRATCH_NOTE)).toMatchObject({ status: "pressed" });
       expect(await placement(SCRATCH_NOTE)).toMatchObject({
         name: "sect-notes",
         sourceId: SOURCE_ID,
@@ -307,22 +289,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const seen = await writer.item(CH1);
       expect(seen).toMatchObject({ hasDraft: true, tree: { movedFrom: { path: "/ch1" } } });
-      const textDrafts = () =>
-        db
-          .select({ id: schema.documentDrafts.id })
-          .from(schema.documentDrafts)
-          .where(
-            and(
-              eq(schema.documentDrafts.documentId, CH1),
-              eq(schema.documentDrafts.kind, "work_draft"),
-            ),
-          );
-
       expect(await writer.discard(CH1, { ends: "item" })).toMatchObject({
-        body: { status: "discarded", closed: [CH1] },
+        status: "pressed",
+        items: [{ node: CH1, tree: true, text: true }],
       });
       expect(await writer.item(CH1)).toBeUndefined();
-      expect(await textDrafts()).toHaveLength(1);
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
@@ -342,10 +313,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await edit("write", { command: "create", path: "ch1", content: "New." });
       });
       expect(await writer.apply(CH1)).toMatchObject({
-        status: "applied",
-        items: [
-          { node: CH1, tree: { landed: true, settled: [{ rule: "restored", documentId: CH1 }] } },
-        ],
+        status: "pressed",
+        items: [{ node: CH1, tree: true }],
       });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-moved", deletedAt: null });
 
@@ -362,13 +331,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({
-        body: { status: "discarded", closed: [] },
+        status: "pressed",
+        items: [{ node: CH1, tree: true }],
       });
       expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");
 
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-c" });
-      expect(await writer.apply(CH1)).toMatchObject({ status: "applied" });
+      expect(await writer.apply(CH1)).toMatchObject({ status: "pressed" });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-c", deletedAt: null });
     });
 
@@ -500,7 +470,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await drafting(script).reply(async (edit) => {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
         });
-        expect(await review(script).apply(CH1)).toMatchObject({ status: "applied" });
+        expect(await review(script).apply(CH1)).toMatchObject({ status: "pressed" });
         const { call } = await drafting(script).begin();
         const undone = await call("write", { command: "undo", path: "part1/ch1" });
         expect(text(undone), text(undone)).toContain("status: reversed");
@@ -538,17 +508,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...scope,
           owner,
         } as never);
-        const branchId = await branchOf(OTHER_WORK_ID);
-        const applyCommandId = randomUUID();
-        await handleApplyItemsRequest(routes, {
+        await handlePressRequest(routes, {
           ...scope,
-          branchId,
           request: {
-            commandId: applyCommandId,
-            items: left.map((item) => ({
-              node: item.documentId,
-              tree: true as const,
-            })),
+            commandId: randomUUID(),
+            owner,
+            verdict: "apply",
+            items: left.map((item) => ({ node: item.documentId, half: "tree" })),
           },
         } as never);
         const [part1] = await placementsNamed("part1");

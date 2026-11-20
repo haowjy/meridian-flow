@@ -10,15 +10,13 @@ import {
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
-  documentDrafts,
   documentEditParts,
   documentEdits,
   documentYjsUpdates,
-  draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import {
   getDrizzleTransactionLocal,
@@ -96,23 +94,9 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,
-      draftBranchId:
-        p.origin.kind === "pending"
-          ? sql`(select ${documentDrafts.branchId} from ${documentDrafts} where ${documentDrafts.id} = ${p.origin.draftId})`
-          : null,
     })),
   );
-  for (const [ordinal, p] of input.receipts.entries()) {
-    if (p.origin.kind !== "pending") continue;
-    await db
-      .update(draftWriteJournal)
-      .set({
-        updateMeta: sql`coalesce(${draftWriteJournal.updateMeta}, '{}'::jsonb) || ${JSON.stringify({ documentEdit: { editId: edit.id, ordinal } })}::jsonb`,
-      })
-      .where(eq(draftWriteJournal.id, p.origin.rowId));
-  }
-  const live = input.receipts.filter((p) => p.origin.kind === "live");
-  for (const seq of new Set(live.map((p) => (p.origin.kind === "live" ? p.origin.seq : 0)))) {
+  for (const seq of new Set(input.receipts.map((p) => p.origin.seq))) {
     await db
       .update(documentYjsUpdates)
       .set({ editId: edit.id })

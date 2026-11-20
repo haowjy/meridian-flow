@@ -131,8 +131,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await deleteDrizzleRows(db, [
         schema.pendingNotices,
         schema.agentEditWidCounters,
-        schema.draftWriteJournal,
-        schema.documentDrafts,
         schema.documentYjsCheckpoints,
         schema.documentYjsHeads,
         schema.documentYjsUpdates,

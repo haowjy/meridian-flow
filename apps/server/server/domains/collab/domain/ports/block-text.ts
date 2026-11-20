@@ -10,8 +10,8 @@ export type BlockText = {
   /**
    * Stored grep text of the documents whose derived outputs are current: the blocks' text
    * joined with `\n` in block order, in one statement with the freshness check. The text is
-   * Live's: a reader whose Work (`draftOwner`) holds an active draft of a document, or
-   * suggestions in it, sees its own view, so that document is left out.
+   * Live's: a reader whose Work (`draftOwner`) has suggestions in a document sees its own view,
+   * so that document is left out.
    */
   grepTexts(
     ids: DocumentId[],

@@ -10,7 +10,6 @@ import type { Database } from "@meridian/database";
 import {
   branchTreeNodes,
   contextSources,
-  documentDrafts,
   documents,
   treeNodeIds,
   treeNodes,
@@ -39,6 +38,7 @@ import { testHook } from "../../../shared/test-hooks.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { recordLocationHistory } from "../tree/node-locations.js";
+import { pendingText } from "../tree/pending-documents.js";
 import { ownerColumns, sourceOwnerProjectId } from "../tree/source-owner.js";
 import { keptBranches } from "./tree-list-facts.js";
 
@@ -168,23 +168,20 @@ async function loadBranches(
   return out;
 }
 
-/** Documents a Work holds a pending text draft of, which the list cannot see (rule 7). */
-async function pendingText(tx: DrizzleDb, drafts: readonly string[]) {
+/** Documents a Work has suggestions in, which the list cannot see (rule 7). */
+async function pendingTextOf(tx: DrizzleDb, drafts: readonly string[]) {
   const out = new Map<string, Set<string>>();
   if (drafts.length === 0) return out;
-  const rows = await tx
-    .select({ branchId: documentDrafts.branchId, documentId: documentDrafts.documentId })
-    .from(documentDrafts)
-    .where(
-      and(
-        inArray(documentDrafts.branchId, [...drafts]),
-        eq(documentDrafts.kind, "work_draft"),
-        // A draft an Apply emptied keeps nothing; one not judged since its last write may hold text.
-        sql`(${documentDrafts.hasEffect} OR ${documentDrafts.hasEffectRevision} < ${documentDrafts.revision})`,
+  const rows = await tx.execute<{ branch_id: string; document_id: string }>(
+    pendingText(
+      sql.join(
+        drafts.map((id) => sql`${id}::uuid`),
+        sql`, `,
       ),
-    );
+    ),
+  );
   for (const row of rows)
-    out.set(row.branchId, (out.get(row.branchId) ?? new Set<string>()).add(row.documentId));
+    out.set(row.branch_id, (out.get(row.branch_id) ?? new Set<string>()).add(row.document_id));
   return out;
 }
 
@@ -567,7 +564,7 @@ export async function syncRows(
   const liveRows = shownRows(live);
 
   const kept = [...(await keptBranches(tx, list))];
-  const text = await pendingText(tx, kept);
+  const text = await pendingTextOf(tx, kept);
   const works = new Map<
     string,
     { rows: Map<string, ProjectedRow>; faulted: Set<string>; pending: TreeRecord[] }

@@ -1,7 +1,7 @@
 /**
  * Retention over Postgres: nothing is released while anything can still bring the document
  * back. A Work's view is kept for every Work that can come back (open, archived, deleted and
- * restorable), so an archived Work's drafted create, an archived Work's text draft of a trashed
+ * restorable), so an archived Work's drafted create, an archived Work's suggestions in a trashed
  * document and a restorable deleted Work's drafted create all outlive the purge windows, and a
  * whole Discard ends the hold.
  */
@@ -13,7 +13,7 @@ import {
   branches,
   branchTreeNodes,
   contextSources,
-  documentDrafts,
+  documentBlockRooms,
   documents,
   projects,
   users,
@@ -24,17 +24,10 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { createTestRemovalDeps } from "../../../test-support/document-removal.js";
-import { createTestDraftCoordinator } from "../../../test-support/draft-coordinator.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
-import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
-import { createDrizzleBranchDiscard } from "../../collab/adapters/drizzle-branch-discard.js";
-import {
-  createDrizzleBranchStore,
-  createDrizzleBranchWriteBoundary,
-} from "../../collab/adapters/drizzle-branches.js";
 import { createDrizzleDocumentPurgeDisposal } from "../../collab/adapters/drizzle-document-purge-disposal.js";
-import { createBranches } from "../../collab/domain/branches.js";
+import { discardTreeRecords } from "../../collab/adapters/drizzle-work-tree-discard.js";
 import { createDrizzleDocumentTrash } from "./drizzle-document-trash.js";
 
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -49,13 +42,13 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
   const WORK = randomUUID();
   const AGENT = `agent:${randomUUID()}/${randomUUID()}`;
   let branchId: BranchId;
-  const { draftClose, treeLists } = createTestRemovalDeps(db);
+  const { treeLists } = createTestRemovalDeps(db);
   const seed = treeSeeder(db);
   const trash = createDrizzleDocumentTrash({
     db,
     objectStore: { delete: async () => ({ ok: true as const, value: undefined }) } as never,
     eventSink: { emit() {}, emitBatch() {}, async flush() {} },
-    drafts: createDrizzleDocumentPurgeDisposal(db, { close: draftClose }),
+    purges: createDrizzleDocumentPurgeDisposal(db, { closeRemovedRooms: async () => {} }),
     tree: treeLists,
   });
 
@@ -116,17 +109,19 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     expect(await branchRow(id)).toMatchObject({ existsOnlyInDraft: true });
   });
 
-  it("keeps a trashed document an archived Work still has a text draft of, and the draft", async () => {
+  it("keeps a trashed document an archived Work still has suggestions in", async () => {
     const id = (await seed.document(SOURCE, "live.md")) as DocumentId;
-    const draftId = randomUUID();
-    await db.insert(documentDrafts).values({
-      id: draftId,
+    // The document's derivation counted one change of the Work's.
+    await db.insert(documentBlockRooms).values({
       documentId: id,
-      kind: "work_draft",
-      branchId,
-      state: Buffer.alloc(0),
-      stateVector: Buffer.alloc(0),
-      hasEffect: true,
+      blockOrder: [],
+      wordCount: 0,
+      pendingChanges: { [`work:${WORK}`]: { changes: 1, chats: [], writer: true } },
+      documentHash: Buffer.alloc(32),
+      cutGeneration: -1n,
+      cutAdmissionSeq: -1n,
+      cutLocationVersion: -1n,
+      extractorVersion: 0,
     });
     await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
     await treeLists.submit({
@@ -142,8 +137,6 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     await backdate("tree_nodes", id);
     expect(await trash.purge()).toBe(0);
     expect((await document(id))?.contentPurgedAt).toBeNull();
-    const [draft] = await db.select().from(documentDrafts).where(eq(documentDrafts.id, draftId));
-    expect(draft).toBeDefined();
   });
 
   it("keeps a deleted Work's drafted create while the Work can be restored, and releases it after a whole Discard", async () => {
@@ -159,25 +152,8 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
 
     // The Work is purged for good: its branch is discarded whole, its view's rows go, and the
     // document is in no view until the window passes.
-    const workProjection = createTestWorkProjectionMutation(db);
-    const branchStore = createDrizzleBranchStore(db);
-    const discard = createDrizzleBranchDiscard(db, {
-      coordinator: createTestDraftCoordinator(db, {
-        close: draftClose,
-        treeLists,
-        workProjection,
-        branches: branchStore,
-      }),
-      close: draftClose,
-      branches: createBranches({
-        store: branchStore,
-        boundary: createDrizzleBranchWriteBoundary(db, workProjection),
-      }),
-      workProjection,
-      treeLists,
-    });
     await runInDrizzleTransaction(db, () =>
-      discard.kernel({ branchId, selection: { kind: "whole" }, userId: USER } as never),
+      discardTreeRecords(db, { treeLists }, { branchId, userId: USER, commandId: randomUUID() }),
     );
     expect(await branchRow(id)).toBeUndefined();
     await backdate("documents", id);

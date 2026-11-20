@@ -25,7 +25,6 @@ import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import {
   type AdmitLiveWriterUpdateResult,
-  DraftStaleUpdateError,
   isDocumentSchemaMajorMismatchError,
 } from "../domains/collab/index.js";
 import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
@@ -82,23 +81,17 @@ export type YjsGatewayServices = {
 };
 
 type TreeYjsRoom = Extract<NonNullable<ReturnType<typeof parseYjsRoomName>>, { kind: "tree" }>;
-/** A document's room, live or draft: what every hook below asks the file policy about. */
+/** A document's room: what every hook below asks the file policy about. */
 type ParsedYjsRoom = Exclude<NonNullable<ReturnType<typeof parseYjsRoomName>>, TreeYjsRoom>;
 type SchemaAdmissionRefusal =
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE;
 
-type YjsAdmissionTarget =
-  | {
-      kind: "live";
-      documentId: DocumentId;
-      liveGeneration: bigint;
-    }
-  | {
-      kind: "draft";
-      draftId: Extract<ParsedYjsRoom, { kind: "draft" }>["draftId"];
-      documentId: DocumentId;
-    };
+type YjsAdmissionTarget = {
+  kind: "live";
+  documentId: DocumentId;
+  liveGeneration: bigint;
+};
 
 /**
  * What the person may do in the room (file-access §7), decided when the socket opens; it ends
@@ -218,9 +211,7 @@ async function removedForReader(
   // the write was refused under its mutation lock, so nothing was journaled.
   const refused = cause instanceof RoomRefusal ? cause.cause : cause;
   if (isDocumentNotFoundError(refused) && refused.removal) return true;
-  const removed = await services.documentSync.roomRemoval(
-    room.kind === "live" ? { documentId: room.documentId } : { draftId: room.draftId },
-  );
+  const removed = await services.documentSync.roomRemoval(room.documentId);
   return (
     removed !== null &&
     (await services.fileAccess.historyAccess({ accountId: userId }, removed.documentId)) ===
@@ -308,7 +299,7 @@ function parseRoomOrDeny(documentName: string): ParsedYjsRoom {
  * Room admission asks the file policy (file-access §7): `edit`, `read`, or
  * refused with the terminal `permission-denied`.
  */
-async function roomAccess(
+async function _roomAccess(
   services: YjsGatewayServices,
   userId: UserId,
   target: FileTarget,
@@ -336,52 +327,32 @@ async function classifyYjsConnectionAdmission(input: {
   clientSchemaVersion: CollabSchemaVersion;
 }): Promise<YjsConnectionAdmission> {
   const { services, room, userId, clientSchemaVersion } = input;
-  let documentId: DocumentId;
-  let headSchemaVersion: CollabSchemaVersion | null;
-  let admitted: Awaited<ReturnType<typeof roomAccess>>;
-  let fileTarget: FileTarget;
-
-  if (room.kind === "live") {
-    documentId = room.documentId;
-    // A document in Trash still takes text until its node is purged, so the room reads
-    // through Trash like a restore; a purged or unplaced document has no facts and is refused.
-    fileTarget = { kind: "restore", documentId };
-    let found = await findRoomAccess(services, userId, fileTarget);
-    // Suggestion mode: a document only a Work holds is Live text that Work's view reads.
-    for (const owner of found ? [] : await services.documentSync.workOnlyOwners(documentId)) {
-      const target: FileTarget = { kind: "draft", documentId, owner };
-      found = await findRoomAccess(services, userId, target);
-      if (found) {
-        fileTarget = target;
-        break;
-      }
+  const { documentId } = room;
+  // A document in Trash still takes text until its node is purged, so the room reads
+  // through Trash like a restore; a purged or unplaced document has no facts and is refused.
+  let fileTarget: FileTarget = { kind: "restore", documentId };
+  let found = await findRoomAccess(services, userId, fileTarget);
+  // A document only a Work holds is Live text that Work's view reads.
+  for (const owner of found ? [] : await services.documentSync.workOnlyOwners(documentId)) {
+    const target: FileTarget = { kind: "draft", documentId, owner };
+    found = await findRoomAccess(services, userId, target);
+    if (found) {
+      fileTarget = target;
+      break;
     }
-    if (!found) {
-      // A browser connects as soon as it appends a document's `create`, which the server may not
-      // have admitted yet: it retries. A purged document is refused for good.
-      if (await services.documentSync.roomRemoval({ documentId }))
-        throw permissionDenied("permission-denied");
-      refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
-    }
-    admitted = found;
-    // The room's explicit touch: a living document missing its authority is seeded empty
-    // before the first generation read, which never creates one.
-    await services.documentSync.ensureDocumentAuthority(documentId);
-    headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
-  } else {
-    const documentDraft = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
-    if (!documentDraft) {
-      // A browser connects as soon as it appends a document's `create` in a Work, which names the
-      // draft the server may not have made yet: it retries. A draft that exists and cannot be
-      // joined is refused for good.
-      if (await services.documentSync.draftExists(room.draftId)) refuse(WS_CLOSE.DRAFT_PURGED);
-      refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
-    }
-    documentId = documentDraft.documentId;
-    headSchemaVersion = documentDraft.schemaVersion;
-    fileTarget = { kind: "draft", documentId, owner: documentDraft.owner };
-    admitted = await roomAccess(services, userId, fileTarget);
   }
+  if (!found) {
+    // A browser connects as soon as it appends a document's `create`, which the server may not
+    // have admitted yet: it retries. A purged document is refused for good.
+    if (await services.documentSync.roomRemoval(documentId))
+      throw permissionDenied("permission-denied");
+    refuse(WS_CLOSE.DOCUMENT_UNKNOWN);
+  }
+  const admitted = found;
+  // The room's explicit touch: a living document missing its authority is seeded empty
+  // before the first generation read, which never creates one.
+  await services.documentSync.ensureDocumentAuthority(documentId);
+  const headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   if (headSchemaVersion !== null && !serverServesHead(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
     return {
       kind: "refused",
@@ -403,30 +374,16 @@ async function classifyYjsConnectionAdmission(input: {
     };
   }
 
-  const access = {
+  return {
+    kind: "allowed",
+    target: {
+      kind: "live",
+      documentId,
+      liveGeneration: await services.documentSync.currentLiveGeneration(documentId),
+    },
     fileTarget,
     access: admitted.access,
     accessKeys: accessKeys(admitted.facts, documentId),
-  };
-  if (room.kind === "live") {
-    return {
-      kind: "allowed",
-      target: {
-        kind: "live",
-        documentId,
-        liveGeneration: await services.documentSync.currentLiveGeneration(documentId),
-      },
-      ...access,
-    };
-  }
-  return {
-    kind: "allowed",
-    ...access,
-    target: {
-      kind: "draft",
-      draftId: room.draftId,
-      documentId,
-    },
   };
 }
 
@@ -469,40 +426,16 @@ export async function admitWriterSync(input: {
   const { services, document } = input;
   if (!carriesUpdate(input.syncType, input.payload)) return;
   const origin = writerOrigin(input);
-  if (room.kind === "live") {
-    if (input.expectedGeneration === undefined) throw permissionDenied("permission-denied");
-    try {
-      return await services.documentSync.admitLiveWriterUpdate({
-        documentId: room.documentId,
-        document,
-        update: input.payload,
-        origin,
-        expectedGeneration: input.expectedGeneration,
-      });
-    } catch (cause) {
-      refuse(WRITER_ADMISSION_FAILED, cause);
-    }
-  }
+  if (input.expectedGeneration === undefined) throw permissionDenied("permission-denied");
   try {
-    await services.documentSync.admitDraftWriterUpdate({
-      draftId: room.draftId,
+    return await services.documentSync.admitLiveWriterUpdate({
+      documentId: room.documentId,
+      document,
       update: input.payload,
       origin,
-      document,
+      expectedGeneration: input.expectedGeneration,
     });
   } catch (cause) {
-    // The draft closed, or its owner stopped being active: an access change, not a failure.
-    if (cause instanceof DraftStaleUpdateError) {
-      const resolved = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
-      if (!resolved) refuse(WS_CLOSE.DRAFT_PURGED, cause);
-      const current = await findRoomAccess(services, input.userId, {
-        kind: "draft",
-        documentId: resolved.documentId,
-        owner: resolved.owner,
-      });
-      refuse(accessChangedClose(closedOwnerWhy(current?.facts)), cause);
-    }
-    // The client reconnects and its handshake carries what the journal lacks.
     refuse(WRITER_ADMISSION_FAILED, cause);
   }
 }
@@ -533,11 +466,7 @@ function admittedTargetForSync(
 ): YjsAdmissionTarget {
   const target = context.admissionTarget;
   const room = parseRoomOrDeny(documentName);
-  if (
-    !target ||
-    (room.kind === "live" && (target.kind !== "live" || target.documentId !== room.documentId)) ||
-    (room.kind === "draft" && (target.kind !== "draft" || target.draftId !== room.draftId))
-  ) {
+  if (!target || target.documentId !== room.documentId) {
     throw permissionDenied("permission-denied");
   }
   return target;
@@ -548,17 +477,6 @@ export function createHocuspocus(
   rooms: YjsRoomAccessIndex,
   treeRooms: TreeRooms = createTreeRooms(services),
 ): Hocuspocus<YjsConnectionContext> {
-  /** Brings Live's committed text into the draft's base and prose; a failure is logged, not thrown. */
-  const pullLiveIntoDraft = (target: Extract<YjsAdmissionTarget, { kind: "draft" }>) =>
-    services.documentSync.catchUpDraft(target.draftId).catch((cause: unknown) => {
-      emitEvent(services.eventSink, {
-        level: "warn",
-        source: "collab.hocuspocus",
-        name: "draft_review.live_pull_failed",
-        correlation: { documentId: target.documentId, draftId: target.draftId },
-        payload: unknownToEventPayload(cause),
-      });
-    });
   const hocuspocus = new Hocuspocus<YjsConnectionContext>({
     name: "meridian-yjs",
     yDocOptions: { gc: false, gcFilter: () => true },
@@ -615,20 +533,11 @@ export function createHocuspocus(
         });
       });
     },
-    // A draft room's `catch_up`: Live's committed text is pulled into the draft now, rather than
-    // after the push's debounce, and the answer follows the pull's update on this socket.
+    // `catch_up`: batched room updates go out first, so the answer never overtakes them.
     async onStateless({ document, connection, payload }) {
       const message = parseYjsClientStatelessMessage(payload);
       if (!message) return;
-      const { context } = connection;
-      return runWithEventCorrelation({ traceId: context.traceId }, async () => {
-        const target = context.admissionTarget;
-        if (target?.kind === "draft") {
-          await pullLiveIntoDraft(target);
-          // The pull's own catch-up is detached; the answer waits for the room to hold it.
-          await services.documentSync.catchUpDraftRoom(target.draftId);
-        }
-        // Batched room updates go out first, so the answer never overtakes the pull's.
+      return runWithEventCorrelation({ traceId: connection.context.traceId }, async () => {
         document.flush();
         connection.sendStateless(encodeCaughtUpWsMessage(message.id));
       });
@@ -674,7 +583,7 @@ export function createHocuspocus(
             syncType: type,
             payload,
             userId,
-            expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
+            expectedGeneration: target.liveGeneration,
           });
         });
       });
@@ -693,10 +602,7 @@ export function createHocuspocus(
         await withRemovalRefusal(services, room, context.userId, context, async () => {
           let state: Uint8Array | undefined;
           try {
-            state =
-              room.kind === "live"
-                ? await services.documentSync.loadHocuspocusDocument(room.documentId, document)
-                : (await services.documentSync.loadHocuspocusDraftState(room.draftId))?.state;
+            state = await services.documentSync.loadHocuspocusDocument(room.documentId, document);
           } catch (cause) {
             if (!isDocumentSchemaMajorMismatchError(cause)) throw cause;
             refuseSchemaAdmission({
@@ -709,9 +615,8 @@ export function createHocuspocus(
               serverSchemaVersion: cause.expectedVersion,
             });
           }
-          if (!state && room.kind === "draft") refuse(WS_CLOSE.DRAFT_PURGED);
           if (state) Y.applyUpdate(document, state);
-          if (room.kind === "live") services.documentSync.primeReservedNamespaceIndex(document);
+          services.documentSync.primeReservedNamespaceIndex(document);
         });
       });
     },
@@ -738,18 +643,6 @@ export function createHocuspocus(
         },
       };
       await withRemovalRefusal(services, room, context.userId, closing, async () => {
-        if (room.kind === "draft") {
-          // A close can commit between admission and registration; the ended draft
-          // must not take a late connection.
-          const resolved = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
-          if (!resolved) refuse(WS_CLOSE.DRAFT_PURGED);
-          services.documentSync.connectedHocuspocusDraftRoom({
-            draftId: room.draftId,
-            documentId: resolved.documentId,
-            document: connection.document,
-          });
-          return;
-        }
         try {
           // The room can finish loading after restore's disconnection. Validate
           // after connection creation too, so the late join is closed and retries.
@@ -764,8 +657,6 @@ export function createHocuspocus(
     },
     async afterUnloadDocument({ documentName }) {
       treeRooms.unloaded(documentName);
-      const room = parseYjsRoomName(documentName);
-      if (room?.kind === "draft") services.documentSync.unloadedHocuspocusDraftRoom(room.draftId);
     },
     async onStoreDocument({ documentName, document }) {
       const room = parseAnyRoomOrDeny(documentName);
@@ -775,13 +666,7 @@ export function createHocuspocus(
         {
           traceId: crypto.randomUUID(),
         },
-        async () => {
-          if (room.kind === "live") {
-            await services.documentSync.storeHocuspocusDocument(room.documentId, document);
-            return;
-          }
-          await services.documentSync.storeHocuspocusDraft(room.draftId, document);
-        },
+        () => services.documentSync.storeHocuspocusDocument(room.documentId, document),
       );
     },
   });

@@ -14,7 +14,7 @@ import type { BranchId } from "@meridian/contracts";
  * is written.
  */
 
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, UserId } from "@meridian/contracts";
 import { type ContextSiblingPosition, renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
@@ -110,7 +110,7 @@ export async function insertPlannedTrees(
   position?: ContextSiblingPosition,
   draft?: {
     branchId: BranchId;
-    documentSync: Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
+    documentSync: Pick<DraftPeerShadowAccess, "writeWorkCreatedContent">;
   },
 ): Promise<Result<CopyOutcome, AdapterFault>> {
   if (draft) {
@@ -127,18 +127,13 @@ export async function insertPlannedTrees(
         },
       );
       if (!inserted.ok) return inserted;
-      await draft.documentSync.writeCreatedDraftContent(
+      await draft.documentSync.writeWorkCreatedContent(
         [...tree.value.contents].flatMap(([documentId, content]) =>
           content.content
-            ? [
-                {
-                  documentId: documentId as DocumentId,
-                  branchId: branchId as BranchId,
-                  content: content.content,
-                },
-              ]
+            ? [{ documentId: documentId as DocumentId, content: content.content }]
             : [],
         ),
+        { type: "user", actorUserId: deps.actor.slice("user:".length) as UserId },
       );
       return Ok({
         kind: "copied",

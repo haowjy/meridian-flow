@@ -17,7 +17,7 @@ import { runDocumentCommand } from "./drizzle-document-commands.js";
 
 export function createDrizzleModelEdits(
   db: Database,
-  seams: Pick<ModelEdits, "write" | "read" | "catchUp">,
+  seams: Pick<ModelEdits, "write" | "read">,
   evidence: Pick<ModelEvidence, "resultStored">,
 ): ModelEdits {
   async function stored(key: ModelEditKey): Promise<ModelEditOutcome> {

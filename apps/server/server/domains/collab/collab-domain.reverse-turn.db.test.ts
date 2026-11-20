@@ -32,7 +32,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const { draftWriteJournal, documentBlockRooms, documentBlocks, documents, modelResponses } =
+    const { documentBlockRooms, documentBlocks, documentEdits, documents, modelResponses } =
       await import("@meridian/database/schema");
     const db = createDb(DATABASE_URL, { max: 4 });
     const { hocuspocus, createTestCollab, reset, dispose } = createWorkBranchFixture(db);
@@ -173,9 +173,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "success" });
 
       const rows = await db
-        .select({ id: draftWriteJournal.id })
-        .from(draftWriteJournal)
-        .orderBy(draftWriteJournal.id);
+        .select({ id: documentEdits.id })
+        .from(documentEdits)
+        .where(eq(documentEdits.documentId, DOC_ID as never));
       expect(rows).toHaveLength(2);
     });
   });

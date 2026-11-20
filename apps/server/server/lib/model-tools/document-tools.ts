@@ -672,15 +672,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    // A write to an existing document finds it before the command claims its id. A drafted write
-    // plans on a draft caught up with live, and the pull opens a connection of its own.
+    // A write to an existing document finds it before the command claims its id.
     let existing: ResolvedDocumentAddress | undefined;
     if (!isInverse && !creates) {
       const found = await resolveDocumentAddress(context, parsed.command, parsed.path);
       if (isToolError(found)) return found;
-      await deps.documentSync
-        .modelEdits()
-        .catchUp(found.documentId as DocumentId, ctx.threadId as ThreadId);
       existing = found;
     }
 

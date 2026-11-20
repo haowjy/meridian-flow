@@ -1,8 +1,8 @@
 /** Drizzle store for what is pending review in a Work: counts, the branches changing a document and evidence. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, documentDrafts, threads, works } from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { branches, threads, works } from "@meridian/database/schema";
+import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
@@ -10,10 +10,7 @@ import {
   pendingDocuments,
   pendingFolders,
 } from "../../context/tree/pending-documents.js";
-import { isPending, readDraftChanges } from "../domain/draft-changes.js";
-import { materializeDraftRead } from "../domain/draft-store.js";
 import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
-import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.js";
 
 /**
  * What is pending in a Work is the one reviewable-pending predicate
@@ -21,7 +18,6 @@ import { createDrizzleDraftDispositionStore } from "./drizzle-draft-disposition.
  * count by it, and the Works boundary reconciles each Work's stored count through it.
  */
 export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPendingStore {
-  const evidence = createDrizzleDraftDispositionStore(db);
   return {
     async countPendingByOwners({ workIds, rootThreadIds }) {
       if (workIds.length === 0 && rootThreadIds.length === 0) return [];
@@ -111,8 +107,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         originLabel: row.originWorkId ? (row.isNoWork ? null : row.workName) : row.rootTitle,
       }));
     },
-    async listBranchDraftMetadata(branchId, documentIds) {
-      const tx = currentDrizzleDb(db);
+    async listBranchTextChanges(branchId, documentIds) {
       const owner = ownerKeyOfBranch(sql`b`);
       const only = documentIds?.length
         ? sql`AND r.document_id IN (${sql.join(
@@ -122,7 +117,7 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         : documentIds
           ? sql`AND false`
           : sql``;
-      const suggested = await tx.execute<{
+      const rows = await currentDrizzleDb(db).execute<{
         document_id: string;
         updated_at: Date | string;
         pending: { changes: number; chats: string[]; writer: boolean };
@@ -132,61 +127,15 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         JOIN document_block_rooms r ON r.pending_changes ? ${owner}
         JOIN documents d ON d.id = r.document_id
         WHERE b.id = ${branchId}::uuid ${only}
+          AND (r.pending_changes -> ${owner} ->> 'changes')::int > 0
         ORDER BY r.document_id`);
-      const rows = await tx
-        .select({
-          draftId: documentDrafts.id,
-          documentId: documentDrafts.documentId,
-          updatedAt: documentDrafts.updatedAt,
-          hasEffect: documentDrafts.hasEffect,
-          textChanges: documentDrafts.textChanges,
-        })
-        .from(documentDrafts)
-        .where(
-          and(
-            eq(documentDrafts.branchId, branchId),
-            eq(documentDrafts.kind, "work_draft"),
-            documentIds ? inArray(documentDrafts.documentId, [...documentIds]) : undefined,
-          ),
-        )
-        .orderBy(asc(documentDrafts.id));
-
-      return [
-        ...rows.map((row) => ({ ...row, branchId })),
-        ...suggested.map((row) => ({
-          draftId: null,
-          documentId: row.document_id as DocumentId,
-          branchId,
-          updatedAt: new Date(row.updated_at),
-          hasEffect: row.pending.changes > 0,
-          textChanges: row.pending.changes,
-          writers: { threadIds: row.pending.chats, unattributed: row.pending.writer },
-        })),
-      ];
-    },
-    /** The chats with a change in a pending change of the draft, and whether some pending change is no chat's. */
-    async pendingWriters(draftId) {
-      const cut = await evidence.capture(draftId);
-      if (!cut?.draft.checkpoint) return { threadIds: [], unattributed: false };
-      const doc = materializeDraftRead(cut.draft);
-      try {
-        const { reading, parts } = readDraftChanges(doc, cut.parts);
-        const threadIds = new Set<string>();
-        const held = new Set<number>();
-        for (const part of cut.parts) {
-          for (const change of parts.get(part.id)?.changes ?? []) {
-            if (!isPending(change)) continue;
-            if (part.owner) threadIds.add(part.owner.threadId);
-            for (const group of change.sitsIn) held.add(group);
-          }
-        }
-        return {
-          threadIds: [...threadIds],
-          unattributed: reading.pending.groups.some((_, index) => !held.has(index)),
-        };
-      } finally {
-        doc.destroy();
-      }
+      return rows.map((row) => ({
+        documentId: row.document_id as DocumentId,
+        branchId,
+        updatedAt: new Date(row.updated_at),
+        textChanges: row.pending.changes,
+        writers: { threadIds: row.pending.chats, unattributed: row.pending.writer },
+      }));
     },
   };
 }

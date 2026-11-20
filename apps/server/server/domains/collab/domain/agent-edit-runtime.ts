@@ -61,12 +61,11 @@ export function createAgentEditRuntime(input: {
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodecFactory(markupCodec);
   const storedModel = yProsemirrorModel(schema);
-  // Suggestion mode (prototype): `model` is the Live view for every reader and writer of Live; it
-  // keeps every Work's suggestions where they are. A Work's view is `workView`, the one way the
-  // server reads a Work's draft or writes its suggestions. A whole replacement (restore) through
-  // `model` keeps Live's text and drops the document's pending suggestions.
-  const suggestionMode = process.env.FLOW_SUGGESTIONS === "1";
-  const model = suggestionMode ? suggestingModel(storedModel, liveView, null) : storedModel;
+  // `model` is the Live view for every reader and writer of Live; it keeps every Work's
+  // suggestions where they are. A Work's view is `workView`, the one way the server reads a Work's
+  // draft or writes its suggestions. A whole replacement (restore) through `model` keeps Live's
+  // text and drops the document's pending suggestions.
+  const model = suggestingModel(storedModel, liveView, null);
   /** A code document's text is one code block, not Markdown: its codec reads and writes it so. */
   const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> => {
     const filetype = await codeFiletypeOf(input.resolveDocumentFiletype, documentId);
@@ -90,12 +89,10 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     });
   const liveUtilityCore = asLiveAgentEditCore(liveCoreOver(model));
-  const workView: WorkViews | null = suggestionMode
-    ? {
-        model: (work) => suggestingModel(storedModel, { work }, null),
-        core: (work, author) => liveCoreOver(suggestingModel(storedModel, { work }, author)),
-      }
-    : null;
+  const workView: WorkViews = {
+    model: (work) => suggestingModel(storedModel, { work }, null),
+    core: (work, author) => liveCoreOver(suggestingModel(storedModel, { work }, author)),
+  };
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
       codec: markupCodec,
@@ -170,7 +167,7 @@ export function createAgentEditRuntime(input: {
 }
 
 /**
- * Suggestion mode: a Work's view of Live, Live plus that Work's suggestions. `model` only reads
+ * A Work's view of Live, Live plus that Work's suggestions. `model` only reads
  * it; `core` serves the model's tools, and its writes go into Live as the Work's suggestions by
  * `author`.
  */

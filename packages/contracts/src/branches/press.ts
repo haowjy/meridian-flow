@@ -3,8 +3,7 @@ import type { CommandId } from "../ids.js";
 import type { TreeSaw } from "./review.js";
 
 /**
- * Suggestion mode (`FLOW_SUGGESTIONS`): Apply or Discard pressed on documents, folders or a whole
- * Work. One recorded command over both halves: the Work's pending tree records and its
+ * Apply or Discard pressed on documents, folders or a whole Work. One recorded command over both halves: the Work's pending tree records and its
  * suggestions in each document's text. One Undo (`PressUndoRequest`) takes back both; pressing
  * again is the Redo.
  */

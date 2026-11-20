@@ -1,10 +1,5 @@
-/** The sole policy boundary for admitting content-bearing document mutations. */
-
-import { validateSemanticEditIRV1 } from "@meridian/agent-edit/integration";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { createDocumentContainment } from "./document-containment.js";
-import type { AppendDraftJournalInput } from "./draft-store.js";
 import { validateClientUpdateAdmission } from "./provenance.js";
 
 export type AuthorshipSource =
@@ -145,85 +140,6 @@ function validateFreshAuthorship(
     );
   }
   return admission;
-}
-
-/**
- * `source` replicated whole into `target` from a frozen copy: the identity replication every
- * thread-peer seed and pull uses. Persistence belongs to the draft store.
- */
-export function replicateFrozenSource(source: Y.Doc, target: Y.Doc): void {
-  const update = Y.encodeStateAsUpdate(source, Y.encodeStateVector(target));
-  assertNonEmptyUpdate(update);
-  Y.applyUpdate(target, update);
-}
-
-/**
- * A draft's journal rows applied to `doc`, validated per logical write: the rows of one
- * semantic edit against its IR (document and input revision) before any of them applies,
- * each other row on its own.
- */
-export function admitSegmentRows(
-  doc: Y.Doc,
-  documentId: string,
-  journals: readonly AppendDraftJournalInput[],
-): void {
-  for (let index = 0; index < journals.length; ) {
-    const first = journals[index];
-    const writeRows = [first];
-    index++;
-    while (
-      index < journals.length &&
-      first.semanticEditIr &&
-      journals[index].semanticEditIr === first.semanticEditIr
-    )
-      writeRows.push(journals[index++]);
-    if (first.semanticEditIr) {
-      validateSemanticEditIRV1(first.semanticEditIr, {
-        expectedDocumentId: documentId,
-        expectedInputRevision: first.semanticEditIr.inputRevision,
-      });
-      for (const row of writeRows) assertNonEmptyUpdate(row.updateData);
-    }
-    for (const row of writeRows) {
-      if (row.source === "agent") {
-        assertFreshAgentUpdate(doc, row.updateData);
-        validateClientUpdateAdmission(doc, row.updateData);
-      }
-      Y.applyUpdate(doc, row.updateData);
-    }
-  }
-}
-
-/**
- * The admitted rows hold everything `source` wrote: `source`'s difference from `admitted`,
- * applied to a copy of it, must change nothing and leave no unresolved structs or deletes (a
- * source includes the target's complete causal prefix, so a dependency it lacks is a residual
- * the rows never journaled). Throws on a residual; `admitted` itself is never touched.
- */
-export function assertSegmentRowsComplete(source: Y.Doc, admitted: Y.Doc): void {
-  const probe = createCollabYDoc({ gc: false });
-  let changed = false;
-  try {
-    Y.applyUpdate(probe, Y.encodeStateAsUpdate(admitted));
-    probe.on("update", () => {
-      changed = true;
-    });
-    Y.applyUpdate(probe, Y.encodeStateAsUpdate(source, Y.encodeStateVector(admitted)));
-    if (probe.store.pendingStructs || probe.store.pendingDs)
-      throw new Error("Draft sync delta has unresolved Yjs dependencies");
-    if (changed) throw new Error("Segment write left an unjournaled residual");
-  } finally {
-    probe.destroy();
-  }
-}
-
-/** Draft agent rows own fresh structs; deletes may refer to older clients. */
-export function assertFreshAgentUpdate(doc: Y.Doc, update: Uint8Array): void {
-  const clients = Y.decodeStateVector(Y.encodeStateVector(doc));
-  for (const struct of Y.decodeUpdate(update).structs) {
-    if (clients.has(struct.id.client))
-      throw new Error(`Agent segment reused client ${struct.id.client}`);
-  }
 }
 
 /** Replaces the durable authority generation from one complete checkpoint. */

@@ -1,7 +1,7 @@
-/** Tests for Hocuspocus room persistence: draft guards and deferred live checkpoints.
+/** Tests for Hocuspocus room persistence: generation guards, writer frames and deferred live checkpoints.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Draft admission queue and checkpoint coalescing (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#journal-first-then-live)
+ * - Checkpoint coalescing (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#journal-first-then-live)
  */
 
 import { Hocuspocus } from "@hocuspocus/server";
@@ -14,16 +14,13 @@ import {
   documentAuthority,
   RetiredDocumentHandleError,
 } from "./domain/document-handle.js";
-import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
-import { testDraftRow } from "./test-support/memory-draft-store.js";
 
-const DRAFT_ID = "draft-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
 
-describe("createHocuspocusPersistenceService draft room storage", () => {
+describe("createHocuspocusPersistenceService room loading", () => {
   it("refuses a room whose load hooks finish after a restore and opens the current generation", async () => {
     let generation = 1n;
     let finishLoad!: () => void;
@@ -76,43 +73,6 @@ describe("createHocuspocusPersistenceService draft room storage", () => {
     expect(hp.documents.get(DOCUMENT_ID)).toBe(current.document);
     expect(documentAuthority(current.document).generation).toBe(2n);
     await current.disconnect();
-  });
-
-  it("registers draft admission before validation so store and shutdown drains wait", async () => {
-    let releaseAdmission: (() => void) | undefined;
-    const admissionBlocked = new Promise<void>((resolve) => {
-      releaseAdmission = resolve;
-    });
-    const appendWriterFrame = vi.fn(async () => {
-      await admissionBlocked;
-    });
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      draftCoordinator: { appendWriterFrame } as never,
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    const admission = persistence.admitDraftWriterUpdate({
-      draftId: DRAFT_ID,
-      update: writerUpdate(),
-      origin: { type: "user", userId: "user-1" as never },
-      document: boundDoc({ gc: false }),
-    });
-    const store = persistence.storeHocuspocusDraft(DRAFT_ID, boundDoc({ gc: false }));
-    const shutdownDrain = persistence.drainHocuspocusPersistence();
-    let drained = false;
-    void Promise.all([store, shutdownDrain]).then(() => {
-      drained = true;
-    });
-    await Promise.resolve();
-    expect(drained).toBe(false);
-
-    releaseAdmission?.();
-    await expect(Promise.all([admission, store, shutdownDrain])).resolves.toBeDefined();
-    expect(appendWriterFrame).toHaveBeenCalledOnce();
-    expect(drained).toBe(true);
   });
 });
 
@@ -196,72 +156,7 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
   });
 });
 
-describe("createHocuspocusPersistenceService draft frames", () => {
-  it("stores what the room lacks of a writer's frame, and nothing it already holds", async () => {
-    const draftDoc = tombstoneBearingDoc();
-    const room = cloneDoc(draftDoc);
-    const typist = cloneDoc(draftDoc);
-    const before = Y.encodeStateVector(typist);
-    typist.getText("content").insert(typist.getText("content").length, "!");
-    const humanUpdate = Y.encodeStateAsUpdate(typist, before);
-    const appendWriterFrame = vi.fn(async () => undefined);
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      draftCoordinator: { appendWriterFrame } as never,
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    const frame = (document: Y.Doc) =>
-      persistence.admitDraftWriterUpdate({
-        draftId: DRAFT_ID,
-        update: humanUpdate,
-        origin: { type: "user", userId: "user-1" as never },
-        document,
-      });
-
-    await expect(frame(room)).resolves.toBeUndefined();
-    expect(appendWriterFrame).toHaveBeenCalledWith(
-      expect.objectContaining({
-        draftId: DRAFT_ID,
-        updateData: humanUpdate,
-        actorUserId: "user-1",
-      }),
-    );
-
-    // A reconnect resends it once the room holds it: acknowledged, stored nowhere.
-    Y.applyUpdate(room, humanUpdate);
-    await expect(frame(room)).resolves.toBeUndefined();
-    expect(appendWriterFrame).toHaveBeenCalledOnce();
-  });
-
-  it("refuses a draft frame that closes the draft's owner out", async () => {
-    const room = docWithText("seed");
-    const typist = cloneDoc(room);
-    const before = Y.encodeStateVector(typist);
-    typist.getText("content").insert(4, "!");
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      draftCoordinator: {
-        appendWriterFrame: vi.fn(async () => {
-          throw new DraftStaleUpdateError(`Draft ${DRAFT_ID}`);
-        }),
-      } as never,
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    await expect(
-      persistence.admitDraftWriterUpdate({
-        draftId: DRAFT_ID,
-        update: Y.encodeStateAsUpdate(typist, before),
-        origin: { type: "user", userId: "user-1" as never },
-        document: room,
-      }),
-    ).rejects.toThrow(DraftStaleUpdateError);
-  });
-
+describe("createHocuspocusPersistenceService writer frames", () => {
   it("admits novel insertion and delete-only updates", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();

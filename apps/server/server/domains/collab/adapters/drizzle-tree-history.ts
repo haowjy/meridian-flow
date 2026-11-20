@@ -13,9 +13,10 @@ import {
   treeEditReceiptNodes,
   treeEditReceipts,
 } from "@meridian/database";
-import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
+import { commands } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { pendingText } from "../../context/tree/pending-documents.js";
 import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
 import { boundCommandId } from "./drizzle-document-edits.js";
 
@@ -281,21 +282,12 @@ export function createDrizzleTreeHistory(
     },
 
     async survivingDraftWorks(documentId) {
-      const rows = await tx()
-        .selectDistinct({ name: works.name })
-        .from(documentDrafts)
-        .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
-        .innerJoin(works, eq(works.id, branches.originWorkId))
-        .where(
-          and(
-            eq(documentDrafts.documentId, documentId),
-            eq(documentDrafts.kind, "work_draft"),
-            eq(documentDrafts.hasEffect, true),
-            eq(branches.status, "active"),
-            // No Work's drafts are a chat's own, not a Work's.
-            isNotNull(works.handle),
-          ),
-        );
+      const rows = await tx().execute<{ name: string }>(sql`
+        SELECT DISTINCT w.name FROM (${pendingText(sql`SELECT id FROM branches WHERE status = 'active'`)}) text
+          JOIN branches b ON b.id = text.branch_id
+          JOIN works w ON w.id = b.origin_work_id
+          -- No Work's suggestions are a chat's own, not a Work's.
+          WHERE text.document_id = ${documentId}::uuid AND w.handle IS NOT NULL`);
       // By name, as the model repeats it to the writer, who never sees handles (#914).
       return rows.map((row) => `Work "${row.name}"`).sort();
     },

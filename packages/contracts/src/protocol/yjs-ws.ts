@@ -8,7 +8,6 @@ import { CLOSED_OWNER_WHYS, type ClosedOwnerWhy } from "../commands/index.js";
 import type { DocumentId } from "../runtime/index.js";
 
 export const YJS_WS_PATH_PREFIX = "/ws/yjs";
-export const YJS_DRAFT_ROOM_PREFIX = "draft:";
 
 export const YJS_TREE_ROOM_PREFIX = "tree:";
 
@@ -19,7 +18,6 @@ export type TreeListRef =
 
 export type YjsRoomName =
   | { kind: "live"; documentId: DocumentId }
-  | { kind: "draft"; draftId: string }
   | { kind: "tree"; list: TreeListRef };
 
 const yjsIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -219,10 +217,6 @@ export function yjsWsPath(): string {
   return YJS_WS_PATH_PREFIX;
 }
 
-export function draftRoomName(draftId: string): string {
-  return `${YJS_DRAFT_ROOM_PREFIX}${draftId}`;
-}
-
 /** `tree:project:<id>` or `tree:account:<id>`: never a document's id, which has no colon. */
 export function treeRoomName(list: TreeListRef): string {
   return list.kind === "project"
@@ -238,9 +232,7 @@ export function parseYjsRoomName(roomName: string): YjsRoomName | null {
     if (kind === "account") return { kind: "tree", list: { kind: "account", userId: id } };
     return null;
   }
-  if (roomName.startsWith(YJS_DRAFT_ROOM_PREFIX)) {
-    const draftId = roomName.slice(YJS_DRAFT_ROOM_PREFIX.length);
-    return draftId.length > 0 && !draftId.includes(":") ? { kind: "draft", draftId } : null;
-  }
-  return roomName.length > 0 ? { kind: "live", documentId: roomName as DocumentId } : null;
+  return roomName.length > 0 && !roomName.includes(":")
+    ? { kind: "live", documentId: roomName as DocumentId }
+    : null;
 }

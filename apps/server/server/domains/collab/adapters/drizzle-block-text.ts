@@ -3,16 +3,13 @@ import { draftOwnerKey } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  branches,
   documentBlockRooms,
   documentBlocks,
-  documentDrafts,
   documents,
   documentYjsHeads,
   treeNodes,
 } from "@meridian/database";
-import { and, eq, inArray, isNull, lte, ne, not, notExists, or, type SQL, sql } from "drizzle-orm";
-import { branchOwnedBy } from "../../../shared/draft-owner.js";
+import { and, eq, inArray, isNull, lte, ne, not, or, type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { BlockText } from "../domain/ports/block-text.js";
 import { DOCUMENT_EXTRACTOR_VERSION } from "../domain/ports/document-derivations.js";
@@ -87,23 +84,6 @@ export function createDrizzleBlockText(db: Database): BlockText {
             // A Work's reader sees its own suggestions, which the stored blocks leave out.
             draftOwner
               ? sql`not (${documentBlockRooms.pendingChanges} ? ${draftOwnerKey(draftOwner)})`
-              : undefined,
-            // A draft reader sees the draft, which the live room doesn't hold.
-            draftOwner
-              ? notExists(
-                  currentDrizzleDb(db)
-                    .select({ one: sql`1` })
-                    .from(documentDrafts)
-                    .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
-                    .where(
-                      and(
-                        eq(documentDrafts.documentId, documents.id),
-                        eq(documentDrafts.kind, "work_draft"),
-                        eq(branches.status, "active"),
-                        branchOwnedBy(draftOwner),
-                      ),
-                    ),
-                )
               : undefined,
           ),
         );

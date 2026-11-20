@@ -28,7 +28,7 @@ import {
   responseContext,
   stageDraft,
 } from "./test-support/document-edit-receipt-fixture.js";
-import { reviewDriver } from "./test-support/draft-review-requests.js";
+import { pressDriver } from "./test-support/press-requests.js";
 
 const NEW_ID = "00000000-0000-4000-8000-000000000830";
 const _INVERSE = "an inverse removed the text it edited";
@@ -63,7 +63,7 @@ describe("inverse integration (postgres)", () => {
   };
 
   it("6.4: model undo after the chat's Work moved lands in the edit's Work", async () => {
-    const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
+    const { fixture } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
     await seedSecondWork(fixture);
@@ -80,7 +80,7 @@ describe("inverse integration (postgres)", () => {
         .agentEdit()
         .write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, moved),
     ).toMatchObject({ status: "success" });
-    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
+    expect(await fixture.workMarkdown()).toBe("red\n\nblue\n\ngreen\n");
     expect(
       (await db.select().from(schema.branches)).filter(
         (branch) => branch.originWorkId === WORK_B_ID,
@@ -93,8 +93,8 @@ describe("inverse integration (postgres)", () => {
       ["red", "gold"],
       ["blue", "azure"],
     ]);
-    expect(await reviewDriver(fixture.collab.draftReview).discardAll()).toMatchObject({
-      status: "discarded",
+    expect(await pressDriver(fixture.collab.presses).discardAll()).toMatchObject({
+      status: "pressed",
     });
     const outcome = await fixture.collab.reverseTurn({
       threadId: THREAD_ID,
@@ -137,6 +137,6 @@ describe("inverse integration (postgres)", () => {
     expect(turnUndo).toMatchObject({ status: "reversed" });
     const kept = await item();
     expect(kept).toMatchObject({ listed: true, item: { origin: "created", wholeItem: true } });
-    expect((await fixture.draftMarkdown(kept?.draftId as string)).trim()).toBe("");
+    expect((await fixture.workMarkdown(NEW_ID)).trim()).toBe("");
   });
 });

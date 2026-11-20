@@ -15,7 +15,6 @@ import {
   branches,
   branchTreeNodes,
   contextSources,
-  documentDrafts,
   documents,
   documentYjsHeads,
   documentYjsUpdates,
@@ -349,7 +348,6 @@ describe("the tree list store (postgres)", () => {
       expect(
         await db.select().from(branchTreeNodes).where(eq(branchTreeNodes.id, raced.node)),
       ).toEqual([]);
-      expect(await db.select().from(documentDrafts)).toEqual([]);
       await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
       honest.writer.rename(LIVE, actor, folder.node, "Part Three");
       await store.admit({ list, accountId: ACCOUNT, update: honest.send() });

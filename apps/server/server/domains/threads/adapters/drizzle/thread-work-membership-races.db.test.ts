@@ -2,12 +2,11 @@
  * PostgreSQL coverage for thread Work membership and lifecycle serialization.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Work-first lifecycle locking across attachment, rebind, append, and deletion races (kb/wiki/product/work/model.md#rebinding-is-one-explicit-operation)
+ * - Work-first lifecycle locking across attachment, rebind, and deletion races (kb/wiki/product/work/model.md#rebinding-is-one-explicit-operation)
  */
 
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createTestRemovalDeps } from "../../../../test-support/document-removal.js";
 import { waitForPostgresLock } from "../../../../test-support/lock-interleave.js";
 import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../../../context/adapters/lineage-scratch-lifecycle.js";
@@ -24,7 +23,6 @@ const {
   threadId: THREAD_ID,
   workId: WORK_ID,
   targetWorkId: TARGET_WORK_ID,
-  draftId: DRAFT_ID,
 } = THREAD_WORK_RACE;
 const ADVISORY_KEY = 748_210_471;
 
@@ -41,13 +39,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleProjectWorkRepository, deleteWorkTransition } = await import(
       "../../../projects/index.js"
     );
-    const { createDrizzleDraftStore } = await import("../../../collab/adapters/drizzle-drafts.js");
-    const { createDrizzleBranchStore } = await import(
-      "../../../collab/adapters/drizzle-branches.js"
-    );
-    const { appendDraftRows, proseDraftUpdate } = await import(
-      "../../../collab/test-support/draft-store-seam.js"
-    );
     const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
@@ -59,13 +50,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       db,
       fileAccessChanges: createLocalFileAccessChanges(),
       projectionMutation: createTestWorkProjectionMutation(db),
-    });
-    const removalDeps = createTestRemovalDeps(db);
-    const drafts = createDrizzleDraftStore(db, {
-      close: removalDeps.draftClose,
-      treeLists: removalDeps.treeLists,
-      workProjection: createTestWorkProjectionMutation(db),
-      branches: createDrizzleBranchStore(db),
     });
 
     beforeEach(async () => {
@@ -186,48 +170,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await control.unsafe(`
           DROP TRIGGER IF EXISTS test_block_primary_demote ON thread_works;
           DROP FUNCTION IF EXISTS test_block_primary_demote();
-        `);
-      }
-    });
-
-    it("an append is not held behind a Work deletion, and the next one is refused after it", async () => {
-      await control.unsafe(`
-        CREATE FUNCTION test_block_work_delete() RETURNS trigger
-        LANGUAGE plpgsql AS $$
-        BEGIN
-          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
-          RETURN NEW;
-        END;
-        $$;
-        CREATE TRIGGER test_block_work_delete
-        BEFORE UPDATE ON works
-        FOR EACH ROW WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)
-        EXECUTE FUNCTION test_block_work_delete();
-      `);
-      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
-      let advisoryLockHeld = true;
-      try {
-        const deletion = works.softDelete(WORK_ID);
-        await waitForLock("advisory");
-        // An append locks no Work (phase 4): it is not held behind the deletion, and one that
-        // started before the deletion committed lands (the archive window, design §5).
-        await expect(
-          appendDraftRows(drafts, DRAFT_ID, [{ updateData: proseDraftUpdate(), source: "agent" }]),
-        ).resolves.toHaveLength(1);
-        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
-        advisoryLockHeld = false;
-        await deletion;
-        // Once the deletion committed, the append's Work-is-active predicate refuses the next.
-        await expect(
-          appendDraftRows(drafts, DRAFT_ID, [
-            { updateData: proseDraftUpdate("after"), source: "agent" },
-          ]),
-        ).rejects.toThrow(/append was refused/);
-      } finally {
-        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
-        await control.unsafe(`
-          DROP TRIGGER IF EXISTS test_block_work_delete ON works;
-          DROP FUNCTION IF EXISTS test_block_work_delete();
         `);
       }
     });
