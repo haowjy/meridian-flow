@@ -318,7 +318,8 @@ export function createWriteCommands(deps: {
           documentBlocksDetail(resolved.error.details),
         );
       }
-      if (resolved.edits.length === 0) return formatUnchangedSuccess();
+      if (resolved.edits.length === 0)
+        return withEvidence(links, room, address.documentId, context, formatUnchangedSuccess());
       overwrite = resolved;
     }
     // Copies and bound nodes carry what they name; written content into an empty document is
@@ -429,7 +430,8 @@ export function createWriteCommands(deps: {
             : failed;
         }
         validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
-        if (resolved.edits.length === 0) return formatUnchangedSuccess();
+        if (resolved.edits.length === 0)
+          return withEvidence(links, room, address.documentId, context, formatUnchangedSuccess());
         return finishPreparedEdit({
           command,
           session,
