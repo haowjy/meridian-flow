@@ -58,3 +58,25 @@
 .meridian-editor :is([data-view-level="5"], [data-view-level="6"]) {
   font-size: 1.0625em;
 }
+
+/* Changes not marked (`data-suggestion-marks="off"`): the view reads as if applied. Its additions
+   lose their tint, its deletions and the blocks it removes leave the page. One attribute, so
+   turning marks off and on redraws no decoration. */
+.meridian-editor .ProseMirror[data-suggestion-marks="off"] .meridian-review-added {
+  --review-tint: transparent;
+  --review-border: transparent;
+  --review-emphasis: transparent;
+  --review-ring: transparent;
+}
+.meridian-editor .ProseMirror[data-suggestion-marks="off"] :is(.sug-del, .sug-del-block) {
+  display: none;
+}
+.meridian-editor .ProseMirror[data-suggestion-marks="off"] .sug-attrs {
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  .meridian-editor .ProseMirror[data-suggestion-marks="off"] .meridian-review-added {
+    text-decoration: none;
+    outline: none;
+  }
+}

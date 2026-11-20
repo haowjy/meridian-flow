@@ -80,7 +80,6 @@ export function treeChange(
     chats: [],
     members: [],
     attributed: false,
-    anchor: 0,
     spans: [],
     frame: null,
     tree: line,

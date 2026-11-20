@@ -20,6 +20,7 @@ import { BAR_SLOT_ATTR, getInlineReviewPluginState } from "@/core/editor/extensi
 import { suggestionModeEnabled, suggestionView } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
+import type { ReviewChange } from "@/features/draft-review/review-model";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -57,14 +58,20 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
 
   if (!focusedItem || !placement) return null;
 
+  // The press is an edit in the document: the editor takes the keys back, so the writer's next
+  // key, Ctrl+Z among them, acts there, as after any other edit. Without scrolling to the caret.
+  const press = (run: (change: ReviewChange) => unknown) => () => {
+    void run(focusedItem.change);
+    if (!editor.isDestroyed) editor.view.focus();
+  };
   const bar = (
     <ReviewChangeBar
       change={focusedItem.change}
       disabled={view.locked}
       touch={touch}
       canApply
-      onApply={() => void view.apply(focusedItem.change)}
-      onDiscard={() => void view.discard(focusedItem.change)}
+      onApply={press(view.apply)}
+      onDiscard={press(view.discard)}
     />
   );
 

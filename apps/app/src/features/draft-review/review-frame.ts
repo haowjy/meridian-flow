@@ -79,11 +79,6 @@ export function readChosen(
   return { going, stayed: chosen.filter((id) => !going.some((pair) => pair.shown === id)) };
 }
 
-/** Draft position of a change's first mark, where the stepper scrolls to. */
-export function groupAnchor(group: ReviewGroup): number {
-  return Math.min(...group.hunks.map((hunk) => hunk.inserted?.from ?? hunk.anchor));
-}
-
 const bases = new WeakMap<
   Y.XmlFragment,
   { content: ReturnType<typeof retainFragment>; root: PMNode | null; blocks: PMNode[] }
