@@ -8,12 +8,9 @@
  * stored block, rewritten, and the result lowered back to operations on the element, so the table
  * that decides what a keystroke does decides what a model write does.
  */
-import { markNameOfYjsKey } from "@meridian/prosemirror-schema";
 import {
   type Author,
   blockKind,
-  kindOf,
-  type MarkLike,
   newChangeId,
   type Run,
   rewrite,
@@ -24,14 +21,18 @@ import {
 } from "@meridian/suggestions";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import type { BlockRef } from "../handles.js";
 import { unwrapBlock, unwrapDoc } from "../handles.js";
 import type { EditOp, EditOpsResult } from "../ports/model.js";
 import { lowerBlock } from "../resolver/lower-block.js";
 import { getTopLevelXmlBlocks } from "./block-hash.js";
 import { readRepairedRoot } from "./schema-repair.js";
-import { applyOps as applyRawOps, type YProsemirrorDocumentModel } from "./y-prosemirror.js";
+import {
+  applyOps as applyRawOps,
+  fragmentOf,
+  type YProsemirrorDocumentModel,
+} from "./y-prosemirror.js";
 
 /** `viewOf` reads the view from the document itself: which Works' drafts it has discarded. */
 export function suggestingModel(
@@ -41,19 +42,20 @@ export function suggestingModel(
 ): YProsemirrorDocumentModel {
   const schema = base.schema;
   const viewAt = (block: BlockRef) => viewOf(unwrapBlock(block).doc as Y.Doc);
-  const shown = (block: BlockRef) => yBlockShown(unwrapBlock(block), viewAt(block));
+  const stored = (block: BlockRef) => storedNode(unwrapBlock(block), schema);
+  const shown = (block: BlockRef) => viewBlock(stored(block), viewAt(block));
   return {
     ...base,
 
-    getBlocks: (doc) => base.getBlocks(doc).filter(shown),
+    getBlocks: (doc) => base.getBlocks(doc).filter((block) => shown(block) !== null),
 
     getDocumentBlockIds(doc) {
       const blocks = base.getBlocks(doc);
       const ids = base.getDocumentBlockIds(doc);
-      return ids.filter((_, index) => shown(blocks[index]));
+      return ids.filter((_, index) => shown(blocks[index]) !== null);
     },
 
-    getText: (block) => yVisibleText(unwrapBlock(block), viewAt(block)),
+    getText: (block) => shown(block)?.textContent ?? "",
 
     projectBlocks(doc) {
       const view = viewOf(unwrapDoc(doc));
@@ -65,8 +67,7 @@ export function suggestingModel(
 
     textblockLineage(block, path, from, to) {
       if (path.length > 0) return base.textblockLineage(block, path, from, to);
-      const node = storedNode(block, schema);
-      const units = runs(node, viewAt(block));
+      const units = runs(stored(block), viewAt(block));
       return base.textblockLineage(
         block,
         path,
@@ -77,7 +78,7 @@ export function suggestingModel(
 
     applyOps(doc, block, ops) {
       const view = viewAt(block);
-      const before = storedNode(block, schema);
+      const before = stored(block);
       if (
         view.work !== null &&
         blockKind(before, view) !== "own" &&
@@ -97,9 +98,10 @@ export function suggestingModel(
         if (!applied.ok || textOps.length === 0) return applied;
       }
       if (textOps.length === 0) return { ok: true };
-      const after = rewritten(storedNode(block, schema), textOps, view, author, schema);
+      const current = other.length > 0 ? stored(block) : before;
+      const after = rewritten(current, textOps, view, author, schema);
       if (!after) return refused("the write does not fit the block");
-      return applyRawOps(unwrapBlock(block), lowerBlock(storedNode(block, schema), after));
+      return applyRawOps(unwrapBlock(block), lowerBlock(current, after));
     },
 
     insertBlocks(doc, after, parsed) {
@@ -116,7 +118,7 @@ export function suggestingModel(
 
     deleteBlock(doc, block) {
       const view = viewAt(block);
-      const node = storedNode(block, schema);
+      const node = stored(block);
       if (view.work === null || !author || blockKind(node, view) === "own") {
         base.deleteBlock(doc, block);
         return;
@@ -172,62 +174,26 @@ function rawUnit(units: readonly Run[], unit: number, side: "start" | "end"): nu
   return lastEnd;
 }
 
-/** A top-level block as stored, suggestions and all. Reads the whole fragment: fine for a prototype. */
-function storedNode(block: BlockRef, schema: Schema): PMNode {
-  const element = unwrapBlock(block);
-  const fragment = element.parent as Y.XmlFragment;
-  const index = getTopLevelXmlBlocks(element.doc as Y.Doc).indexOf(element);
-  return readRepairedRoot("projectBlocks", fragment, schema).child(index);
-}
+/**
+ * Each document's stored blocks, suggestions and all, projected once per state: the model calls
+ * this per block, and a projection reads the whole fragment.
+ */
+const projections = new WeakMap<Y.Doc, Map<Y.XmlElement, PMNode>>();
 
-/** The table, read straight from Yjs: a text's attributes are its marks, keyed as stored. */
-function yMarks(attributes: Record<string, unknown> | undefined): MarkLike[] {
-  return Object.entries(attributes ?? {}).map(([key, attrs]) => ({
-    type: { name: markNameOfYjsKey(key) },
-    attrs: (attrs ?? {}) as Record<string, unknown>,
-  }));
-}
-
-function yBlock(element: Y.XmlElement) {
-  return { attrs: { sug: element.getAttribute("sug") ?? null } as Record<string, unknown> };
-}
-
-function yRuns(
-  element: Y.XmlElement,
-  view: View,
-  visit: (text: string, shown: boolean, kind: string) => void,
-): void {
-  const block = yBlock(element);
-  for (const child of element.toArray()) {
-    if (!(child instanceof Y.XmlText)) continue;
-    for (const part of child.toDelta() as Array<{
-      insert: unknown;
-      attributes?: Record<string, unknown>;
-    }>) {
-      if (typeof part.insert !== "string") continue;
-      const kind = kindOf(yMarks(part.attributes), block, view);
-      visit(part.insert, visible(kind), kind);
-    }
+function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
+  const doc = element.doc as Y.Doc;
+  let nodes = projections.get(doc);
+  if (!nodes) {
+    const root = readRepairedRoot("projectBlocks", fragmentOf(doc), schema);
+    const projected = new Map<Y.XmlElement, PMNode>();
+    getTopLevelXmlBlocks(doc).forEach((block, index) => {
+      projected.set(block, root.child(index));
+    });
+    nodes = projected;
+    projections.set(doc, nodes);
+    doc.once("afterTransaction", () => projections.delete(doc));
   }
-}
-
-function yVisibleText(element: Y.XmlElement, view: View): string {
-  if (blockKind(yBlock(element), view) === "hidden") return "";
-  let text = "";
-  yRuns(element, view, (part, shown) => {
-    if (shown) text += part;
-  });
-  return text;
-}
-
-/** Whether a view contains a top-level block: not another Work's, and not wholly removed by its own. */
-function yBlockShown(element: Y.XmlElement, view: View): boolean {
-  if (blockKind(yBlock(element), view) === "hidden") return false;
-  let removed = false;
-  let shown = false;
-  yRuns(element, view, (_, isShown, kind) => {
-    if (isShown) shown = true;
-    if (kind === "own-del") removed = true;
-  });
-  return shown || !removed;
+  const node = nodes.get(element);
+  if (!node) throw new Error("A block outside its document's projection");
+  return node;
 }

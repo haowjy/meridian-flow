@@ -4,16 +4,11 @@
  * Ctrl+Z takes them back. Discard hides the Work's suggestions in this document; Restore shows them.
  */
 import { Trans } from "@lingui/react/macro";
-import { type Change, list, type View } from "@meridian/suggestions";
+import { type Change, discard, HIDDEN_ROOT, list, restore, type View } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo, useState } from "react";
 import type * as Y from "yjs";
 import { Button } from "@/components/ui/button";
-
-export const suggestionModeEnabled = import.meta.env.VITE_FLOW_SUGGESTIONS === "1";
-
-/** "This Work's suggestions in this document are discarded", keyed by Work. */
-const HIDDEN_ROOT = "suggest_hidden";
 
 export function SuggestionBand({
   editor,
@@ -41,7 +36,7 @@ export function SuggestionBand({
   useEffect(() => {
     editor.commands.setSuggestionView(
       view,
-      view.work ? { work: view.work, chat: null, turn: null, by: `user:${accountId}` } : null,
+      view.work ? { chat: null, turn: null, by: `user:${accountId}` } : null,
     );
   }, [editor, view, accountId]);
 
@@ -81,12 +76,7 @@ export function SuggestionBand({
         </Button>
         <span className="flex-1" />
         {discarded ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            onClick={() => hiddenMap.delete(ownerKey)}
-          >
+          <Button type="button" size="xs" variant="ghost" onClick={() => restore(doc, ownerKey)}>
             <Trans>Restore</Trans>
           </Button>
         ) : changes.length > 0 ? (
@@ -107,12 +97,7 @@ export function SuggestionBand({
             >
               <Trans>Reject all</Trans>
             </Button>
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost"
-              onClick={() => hiddenMap.set(ownerKey, Date.now())}
-            >
+            <Button type="button" size="xs" variant="ghost" onClick={() => discard(doc, ownerKey)}>
               <Trans>Discard</Trans>
             </Button>
           </>

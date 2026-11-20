@@ -30,10 +30,6 @@ export type RunKind = "live" | "own-ins" | "own-del" | "hidden";
 /** A stretch of one textblock's inline content, in offsets inside the block. */
 export type Run = { from: number; to: number; kind: RunKind };
 
-/** What the table reads of a mark and a block: a ProseMirror one, or one read from Yjs. */
-export type MarkLike = { type: { name: string }; attrs: Record<string, unknown> };
-export type BlockLike = { attrs: Record<string, unknown> };
-
 export function isSuggestionMark(mark: Mark): boolean {
   return mark.type.name === "suggest_ins" || mark.type.name === "suggest_del";
 }
@@ -47,13 +43,13 @@ function mine(attrs: SuggestionAttrs | null, view: View): boolean {
 }
 
 /** A top-level block: Live, the view's own suggested block, or another Work's (not shown). */
-export function blockKind(block: BlockLike, view: View): "live" | "own" | "hidden" {
+export function blockKind(block: Node, view: View): "live" | "own" | "hidden" {
   const sug = (block.attrs.sug ?? null) as SuggestionAttrs | null;
   if (!sug) return "live";
   return mine(sug, view) ? "own" : "hidden";
 }
 
-export function kindOf(marks: readonly MarkLike[], block: BlockLike, view: View): RunKind {
+export function kindOf(marks: readonly Mark[], block: Node, view: View): RunKind {
   const owner = blockKind(block, view);
   if (owner === "hidden") return "hidden";
   if (owner === "own") return "own-ins";
@@ -87,38 +83,44 @@ export function visible(kind: RunKind): boolean {
 }
 
 /**
- * The document a view means: Live with the view's own suggestions accepted, and no other
- * Work's. Every reader goes through it (the Markdown copy, search, counts, the model's read);
- * one that reads the stored document shows pending text as real.
+ * The blocks a view means: Live with the view's own suggestions accepted, and no other Work's.
+ * Every reader goes through it (the Markdown copy, the model's read); one that reads the stored
+ * document shows pending text as real.
  */
-export function viewOf(doc: Node, view: View): Node {
-  const blocks: Node[] = [];
-  doc.forEach((block) => {
-    const kept = viewBlock(block, view);
-    if (kept) blocks.push(kept);
-  });
-  if (blocks.length === 0) {
-    const empty = doc.type.contentMatch.defaultType?.createAndFill();
-    if (empty) blocks.push(empty);
-  }
-  return doc.type.create(doc.attrs, blocks);
+export function viewBlocks(blocks: readonly Node[], view: View): Node[] {
+  return blocks.flatMap((block) => viewBlock(block, view) ?? []);
 }
 
 /** One top-level block in a view, or null when the view does not contain it. */
 export function viewBlock(block: Node, view: View): Node | null {
   if (blockKind(block, view) === "hidden") return null;
+  const content = viewContent(block, view);
+  // A block whose whole text the view proposes to remove is removed.
+  if (content === null) return null;
   const attrs = block.attrs.sug ? { ...block.attrs, sug: null } : block.attrs;
-  if (!block.isTextblock) return block.type.create(attrs, block.content, block.marks);
+  return block.type.create(attrs, content, block.marks);
+}
+
+/** A node's content in a view; null for a textblock whose whole text the view removes. */
+function viewContent(node: Node, view: View): Fragment | null {
   const children: Node[] = [];
+  if (!node.isTextblock) {
+    node.forEach((child) => {
+      children.push(
+        child.isLeaf
+          ? child
+          : child.type.create(child.attrs, viewContent(child, view) ?? Fragment.empty, child.marks),
+      );
+    });
+    return Fragment.from(children);
+  }
   let removed = false;
-  block.forEach((child) => {
-    const kind = kindOf(child.marks, block, view);
+  node.forEach((child) => {
+    const kind = kindOf(child.marks, node, view);
     if (kind === "own-del") removed = true;
     if (visible(kind)) children.push(child.mark(child.marks.filter((m) => !isSuggestionMark(m))));
   });
-  // A block whose whole text the view proposes to remove is removed.
-  if (removed && children.length === 0) return null;
-  return block.type.create(attrs, children, block.marks);
+  return removed && children.length === 0 ? null : Fragment.from(children);
 }
 
 /** Pasted or copied content loses every suggestion: what it is now is decided where it lands. */
@@ -155,12 +157,41 @@ export function stripSlice(slice: Slice): Slice {
   return new Slice(stripSuggestions(slice.content), slice.openStart, slice.openEnd);
 }
 
+/** A copy carries what the view shows, and no suggestion. `parent` holds the slice's open text. */
+export function visibleSlice(slice: Slice, parent: Node, view: View): Slice {
+  const keep = (fragment: Fragment, block: Node): Fragment => {
+    const nodes: Node[] = [];
+    fragment.forEach((node) => {
+      if (node.isInline) {
+        if (visible(kindOf(node.marks, block, view))) nodes.push(node);
+      } else if (blockKind(node, view) !== "hidden") {
+        nodes.push(node.copy(node.isTextblock ? keep(node.content, node) : node.content));
+      }
+    });
+    return Fragment.from(nodes);
+  };
+  return stripSlice(new Slice(keep(slice.content, parent), slice.openStart, slice.openEnd));
+}
+
 /** The document's root that lists, by Work, the drafts discarded in it. */
 export const HIDDEN_ROOT = "suggest_hidden";
 
+type HiddenMap = {
+  keys(): IterableIterator<string>;
+  set(work: string, at: number): unknown;
+  delete(work: string): void;
+};
+
 /** Works whose suggestions in this document are discarded: absent from every view. */
-export function hiddenWorks(doc: {
-  getMap(name: string): { keys(): IterableIterator<string> };
-}): Set<string> {
+export function hiddenWorks(doc: { getMap(name: string): HiddenMap }): Set<string> {
   return new Set(doc.getMap(HIDDEN_ROOT).keys());
+}
+
+/** Discard a Work's draft in this document: its suggestions stay stored, in no view. */
+export function discard(doc: { getMap(name: string): HiddenMap }, work: string): void {
+  doc.getMap(HIDDEN_ROOT).set(work, Date.now());
+}
+
+export function restore(doc: { getMap(name: string): HiddenMap }, work: string): void {
+  doc.getMap(HIDDEN_ROOT).delete(work);
 }

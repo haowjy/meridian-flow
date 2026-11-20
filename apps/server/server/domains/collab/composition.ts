@@ -633,6 +633,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         listTurnDocuments: lineageStore.listEditedDocumentIdsForTurn,
         resolveDocumentUri: documentUriResolver,
         changeLiveDocument: runtime.markdownDocuments.changeLiveDocument,
+        reverseLiveTurn: turnInverse.reverseTurn,
       })
     : null;
   const turnReversal = createTurnReversalService({

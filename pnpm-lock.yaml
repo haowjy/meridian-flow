@@ -1050,9 +1050,6 @@ importers:
 
   packages/suggestions:
     dependencies:
-      '@meridian/prosemirror-schema':
-        specifier: workspace:*
-        version: link:../prosemirror-schema
       prosemirror-model:
         specifier: ^1.25.13
         version: 1.25.13

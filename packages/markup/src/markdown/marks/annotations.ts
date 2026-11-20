@@ -1,16 +1,24 @@
 import type { MarkCodec } from "../../types.js";
 
+/** A comment anchor has no Markdown form: its text is written as itself, and nothing parses back into one. */
+const comment: MarkCodec = { name: "comment", serialize: (text) => text, parse: () => null };
+
 /**
- * Suggestions and comment anchors have no Markdown form: readers see a view with no suggestions
- * (`@meridian/suggestions` `viewOf`), and a comment's anchor is lost in Markdown. Their text is
- * written as itself and nothing parses back into one.
+ * Every reader serializes a view, which has no suggestion: one that reaches here skipped the view
+ * and would print pending text as Live, so it fails instead.
  */
-function annotation(name: string): MarkCodec {
-  return { name, serialize: (text) => text, parse: () => null };
+function suggestion(name: string): MarkCodec {
+  return {
+    name,
+    serialize: () => {
+      throw new Error(`pm->mdast: "${name}" reached Markdown; read through a view`);
+    },
+    parse: () => null,
+  };
 }
 
 export const annotationMarkCodecs: readonly MarkCodec[] = [
-  annotation("suggest_ins"),
-  annotation("suggest_del"),
-  annotation("comment"),
+  comment,
+  suggestion("suggest_ins"),
+  suggestion("suggest_del"),
 ];

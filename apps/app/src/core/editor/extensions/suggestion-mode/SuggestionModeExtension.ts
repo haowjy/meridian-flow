@@ -4,6 +4,7 @@
  * hidden text is `display: none`, the caret never rests inside it, a copy leaves it out, and every
  * local edit passes through `rewrite` before it lands.
  */
+import { documentMarks } from "@meridian/prosemirror-schema";
 import {
   type Author,
   accept,
@@ -14,31 +15,33 @@ import {
   RAW_META,
   reject,
   rewrite,
-  stripSlice,
   type View,
-  visible,
+  visibleSlice,
 } from "@meridian/suggestions";
 import { Extension, Mark } from "@tiptap/core";
-import { Fragment, type Node as PMNode, Slice } from "@tiptap/pm/model";
+import type { MarkSpec, Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import "./suggestion-mode.css";
 
+/** The marks always exist (the schema is shared); only the behaviour is behind the flag. */
+export const suggestionModeEnabled = import.meta.env.VITE_FLOW_SUGGESTIONS === "1";
+
 type ModeState = { view: View; author: Author | null; decorations: DecorationSet };
 
-export const suggestionModeKey = new PluginKey<ModeState>("suggestionMode");
+const suggestionModeKey = new PluginKey<ModeState>("suggestionMode");
 
 const unrendered = { default: null, rendered: false };
 
 /**
  * A mark's attributes ride its element as JSON, so the editor's re-read of a DOM change keeps
- * them. Attribute order is the shared schema's: the binding hashes a mark's JSON to key it.
+ * them. Their order must be the shared schema's: the binding hashes a mark's JSON to key it.
  */
-function annotationAttributes(names: readonly string[]) {
+function annotationAttributes(mark: keyof typeof documentMarks) {
   return () =>
     Object.fromEntries(
-      names.map((name) => [
+      Object.keys((documentMarks[mark] as MarkSpec).attrs ?? {}).map((name) => [
         name,
         {
           ...unrendered,
@@ -50,12 +53,12 @@ function annotationAttributes(names: readonly string[]) {
     );
 }
 
-function annotationMark(name: string, attributes: readonly string[], className?: string) {
+function annotationMark(name: keyof typeof documentMarks, className?: string) {
   return Mark.create({
     name,
     inclusive: false,
     excludes: "",
-    addAttributes: annotationAttributes(attributes),
+    addAttributes: annotationAttributes(name),
     parseHTML: () => [{ tag: `span[data-${name}]` }],
     renderHTML: ({ mark }) => [
       "span",
@@ -69,10 +72,9 @@ function annotationMark(name: string, attributes: readonly string[], className?:
   });
 }
 
-const SUGGESTION_ATTRIBUTES = ["id", "work", "chat", "turn", "by"] as const;
-export const SuggestIns = annotationMark("suggest_ins", SUGGESTION_ATTRIBUTES);
-export const SuggestDel = annotationMark("suggest_del", SUGGESTION_ATTRIBUTES);
-export const CommentMark = annotationMark("comment", ["id"], "meridian-comment");
+const SuggestIns = annotationMark("suggest_ins");
+const SuggestDel = annotationMark("suggest_del");
+const CommentMark = annotationMark("comment", "meridian-comment");
 
 const SUGGESTION_BLOCK_TYPES = [
   "paragraph",
@@ -97,7 +99,7 @@ declare module "@tiptap/core" {
   }
 }
 
-export function suggestionView(state: EditorState): View {
+function suggestionView(state: EditorState): View {
   return suggestionModeKey.getState(state)?.view ?? liveView;
 }
 
@@ -160,6 +162,7 @@ export const SuggestionModeExtension = Extension.create({
   },
 
   addProseMirrorPlugins() {
+    if (!suggestionModeEnabled) return [];
     return [
       new Plugin<ModeState>({
         key: suggestionModeKey,
@@ -180,7 +183,8 @@ export const SuggestionModeExtension = Extension.create({
         },
         props: {
           decorations: (state) => suggestionModeKey.getState(state)?.decorations,
-          transformCopied: (slice, view) => visibleSlice(slice, view.state),
+          transformCopied: (slice, view) =>
+            visibleSlice(slice, view.state.selection.$from.parent, suggestionView(view.state)),
         },
         // The caret never rests inside hidden text: it goes to the edge it was moving toward.
         appendTransaction(trs, oldState, newState) {
@@ -254,22 +258,4 @@ function outOfHidden(state: EditorState, pos: number, direction: -1 | 1): number
     while (at > 0 && at < size && inside(at)) at -= direction;
   }
   return TextSelection.near(state.doc.resolve(at), direction).head;
-}
-
-/** A copy carries what the view shows, and no suggestion. */
-function visibleSlice(slice: Slice, state: EditorState): Slice {
-  const view = suggestionView(state);
-  const parent = state.selection.$from.parent;
-  const keep = (fragment: Fragment, block: PMNode): Fragment => {
-    const nodes: PMNode[] = [];
-    fragment.forEach((node) => {
-      if (node.isInline) {
-        if (visible(kindOf(node.marks, block, view))) nodes.push(node);
-      } else if (blockKind(node, view) !== "hidden") {
-        nodes.push(node.copy(node.isTextblock ? keep(node.content, node) : node.content));
-      }
-    });
-    return Fragment.from(nodes);
-  };
-  return stripSlice(new Slice(keep(slice.content, parent), slice.openStart, slice.openEnd));
 }

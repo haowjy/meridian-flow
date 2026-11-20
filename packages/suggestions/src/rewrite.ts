@@ -22,8 +22,8 @@ import {
 /** A transaction already in stored form (accept, reject, a peer's or Undo's): never rewritten. */
 export const RAW_META = "suggestions:raw";
 
-/** Who is writing: everything but the change id, which the rewrite picks. */
-export type Author = Omit<SuggestionAttrs, "id">;
+/** Who is writing: everything but the change id, which the rewrite picks, and the Work, the view's. */
+export type Author = Omit<SuggestionAttrs, "id" | "work">;
 
 /** A fresh change id. Unique across Works and tabs without reading the document. */
 export function newChangeId(): string {

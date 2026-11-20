@@ -139,7 +139,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     const work = draftOwnerKey(owner);
     const turn =
       given.turnId ?? (given.actor?.kind === "agent" ? given.actor.turnId : null) ?? null;
-    return suggestionCore(work, { work, chat: given.threadId ?? null, turn, by: "agent" }).write(
+    return suggestionCore(work, { chat: given.threadId ?? null, turn, by: "agent" }).write(
       command,
       { ...given, linkView: { kind: "live" }, documentVersion: "live" },
     );
