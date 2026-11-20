@@ -1139,10 +1139,12 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 msgid "Apply"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply all"
 msgstr ""
@@ -1281,8 +1283,16 @@ msgstr ""
 msgid "Block alignment"
 msgstr ""
 
+#: src/features/editor/SuggestionBand.tsx
+msgid "Block format"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "blockquote"
+msgstr ""
+
+#: src/features/editor/SuggestionBand.tsx
+msgid "Body text"
 msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -2718,6 +2728,7 @@ msgid "Didn't run: {label}"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
@@ -2836,6 +2847,11 @@ msgstr ""
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
+msgstr ""
+
+#. placeholder {0}: changes.length
+#: src/features/editor/SuggestionBand.tsx
+msgid "Draft ({0})"
 msgstr ""
 
 #: src/features/project/work/ManageWorksDialog.tsx
@@ -3252,6 +3268,11 @@ msgstr ""
 msgid "Heading"
 msgstr ""
 
+#. placeholder {0}: String(attrs.level)
+#: src/features/editor/SuggestionBand.tsx
+msgid "Heading {0}"
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading {level}"
 msgstr ""
@@ -3578,6 +3599,7 @@ msgid "litrpg"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/SuggestionBand.tsx
 msgid "Live"
 msgstr ""
 
@@ -4900,6 +4922,14 @@ msgstr "刷新"
 #: src/features/chat/tool-failure.tsx
 msgid "Refused"
 msgstr ""
+
+#: src/features/editor/SuggestionBand.tsx
+msgid "Reject"
+msgstr ""
+
+#: src/features/editor/SuggestionBand.tsx
+#~ msgid "Reject all"
+#~ msgstr ""
 
 #: src/features/chat/ChatCards.tsx
 msgid "Reload"

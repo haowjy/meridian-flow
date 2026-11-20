@@ -40,6 +40,11 @@ one side and fail on the other, so this package follows the editor's structural 
   dev database. This deletes that database's data. There is no backfill, and the minor version
   does not stop the server from reading older stored documents.
 
+- Suggestion mode (3.2.0 and 3.3.0) adds the `suggest_ins`, `suggest_del` and `comment` marks and
+  the `sug` and `sugAttrs` block attributes; `@meridian/suggestions` owns what they mean. The
+  marks may overlap (`excludes: ""`), so the binding stores each under `yjsMarkKey`; a server
+  writer that keys a mark by its bare name overwrites another Work's mark on the same text.
+
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is the default,
   and a second spelling would be a ghost state the markup codec must reject. Markup carries it
   as a `Layout` wrapper, so an alignable node gains no markup until a writer aligns it.

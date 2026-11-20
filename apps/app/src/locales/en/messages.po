@@ -1139,10 +1139,12 @@ msgstr "Applied {what}"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 msgid "Apply"
 msgstr "Apply"
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply all"
 msgstr "Apply all"
@@ -1281,9 +1283,17 @@ msgstr "Billing"
 msgid "Block alignment"
 msgstr "Block alignment"
 
+#: src/features/editor/SuggestionBand.tsx
+msgid "Block format"
+msgstr "Block format"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "blockquote"
 msgstr "blockquote"
+
+#: src/features/editor/SuggestionBand.tsx
+msgid "Body text"
+msgstr "Body text"
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -2718,6 +2728,7 @@ msgid "Didn't run: {label}"
 msgstr "Didn't run: {label}"
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
@@ -2837,6 +2848,11 @@ msgstr "Downloaded"
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
 msgstr "Draft"
+
+#. placeholder {0}: changes.length
+#: src/features/editor/SuggestionBand.tsx
+msgid "Draft ({0})"
+msgstr "Draft ({0})"
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
@@ -3252,6 +3268,11 @@ msgstr "Header row"
 msgid "Heading"
 msgstr "Heading"
 
+#. placeholder {0}: String(attrs.level)
+#: src/features/editor/SuggestionBand.tsx
+msgid "Heading {0}"
+msgstr "Heading {0}"
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading {level}"
 msgstr "Heading {level}"
@@ -3578,6 +3599,7 @@ msgid "litrpg"
 msgstr "litrpg"
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/SuggestionBand.tsx
 msgid "Live"
 msgstr "Live"
 
@@ -4900,6 +4922,14 @@ msgstr "Refresh"
 #: src/features/chat/tool-failure.tsx
 msgid "Refused"
 msgstr "Refused"
+
+#: src/features/editor/SuggestionBand.tsx
+msgid "Reject"
+msgstr "Reject"
+
+#: src/features/editor/SuggestionBand.tsx
+#~ msgid "Reject all"
+#~ msgstr "Reject all"
 
 #: src/features/chat/ChatCards.tsx
 msgid "Reload"

@@ -1,5 +1,5 @@
 import type { ParsedContent } from "@meridian/markup";
-import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
+import { withBlockIds, withoutBlockIds, yjsMarkKey } from "@meridian/prosemirror-schema";
 import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import type { BlockRef } from "../handles.js";
@@ -515,6 +515,6 @@ function normalizeContent(node: PMNode): Array<PMNode | PMNode[]> {
 function marksToAttributes(marks: readonly Mark[]): Record<string, unknown> | undefined {
   if (marks.length === 0) return undefined;
   const attrs: Record<string, unknown> = {};
-  for (const mark of marks) attrs[mark.type.name] = mark.attrs;
+  for (const mark of marks) attrs[yjsMarkKey(mark)] = mark.attrs;
   return attrs;
 }

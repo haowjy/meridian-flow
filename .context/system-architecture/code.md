@@ -1,7 +1,7 @@
 # Code
 
 The apps, and the packages under them. An arrow means "calls code from". The page shows layers,
-not a path, so no arrow is numbered. No package imports an app, and `prosemirror-schema`, `yjs-inspect` and
+not a path, so no arrow is numbered. No package imports an app, and `prosemirror-schema`, `suggestions`, `yjs-inspect` and
 `design-tokens` import no workspace code. `gateway` is not in this repository: it is
 the `@meridian-flow/runtime/gateway` entry of [`@meridian-flow/runtime`](https://github.com/haowjy/meridian-runtime/tree/main/src/gateway) from npm. Where the code breaks its written rules is on
 [dependencies](dependencies.md). `./mf` lives in `tools/`, outside these layers: see
@@ -14,6 +14,7 @@ flowchart TB
   www["www<br/><small>the landing site</small>"]:::module
   thread-client["thread-client<br/><small>chat events into a view model</small>"]:::package
   agent-edit["agent-edit<br/><small>the model's document reads and writes</small>"]:::package
+  suggestions["suggestions<br/><small>a Work's draft as marks in Live</small>"]:::package
   project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
   command-driver["command-driver<br/><small>one delivery loop for commands</small>"]:::package
   tree-list-sync["tree-list-sync<br/><small>how a client keeps its copy of the list</small>"]:::package
@@ -26,6 +27,9 @@ flowchart TB
   yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
   app -->|"follows a chat with"| thread-client
   server -->|"applies the model's edits with"| agent-edit
+  agent-edit -->|"rewrites a Work's write with"| suggestions
+  app -->|"shows and rewrites a view with"| suggestions
+  server -->|"chooses Live's or a Work's view with"| suggestions
   server -->|"saves everything with"| database
   agent-edit -->|"reads and writes text with"| markup
   markup -->|"builds documents from"| prosemirror-schema
@@ -144,6 +148,16 @@ Plans, lowers and describes one model write on a document room, and builds the i
 - Kind: package
 - Paths: `packages/agent-edit/src`
 - Docs: [CONTEXT](../../packages/agent-edit/.context/CONTEXT.md), [AGENTS](../../packages/agent-edit/AGENTS.md)
+
+## suggestions
+
+A Work's draft stored as suggestion marks inside the Live document, behind `FLOW_SUGGESTIONS` / `VITE_FLOW_SUGGESTIONS` until the draft documents go.
+
+One decision table (`kindOf`) says what a view shows and what an edit there does; `rewrite` applies it to any ProseMirror transaction, so the editor's typing and the model's writes take the same path. Discard is `reject`. Imports no workspace code and no Yjs.
+
+- Kind: package
+- Paths: `packages/suggestions/src`
+- Docs: [CONTEXT](../../packages/suggestions/.context/CONTEXT.md), [AGENTS](../../packages/suggestions/AGENTS.md)
 
 ## project-tree
 

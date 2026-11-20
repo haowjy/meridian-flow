@@ -51,6 +51,7 @@ import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { PeerCarets } from "./extensions/peer-carets";
 import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
+import { SuggestionModeExtension } from "./extensions/suggestion-mode";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
@@ -418,6 +419,7 @@ export function createStandaloneEditorExtensions({
     MeridianLink,
     BlockIdExtension,
     NestingExtension,
+    SuggestionModeExtension,
     MeridianHardBreak,
     MeridianHorizontalRule,
     MeridianParagraph,

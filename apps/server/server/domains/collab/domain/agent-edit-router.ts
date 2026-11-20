@@ -6,11 +6,12 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import { draftOwnerKey, type LinkView } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { FileDestination } from "../../file-policy/index.js";
 import type { LiveAgentEditCore, RoutedReadContext } from "./agent-edit-cores.js";
+import type { WorkViews } from "./agent-edit-runtime.js";
 import type { Branches } from "./branches.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
@@ -34,6 +35,8 @@ export function createAgentEditRouter(input: {
   drafts: Pick<ApplicationDraftStore, "resolveWorkDraftForThread">;
   liveUtilityCore: LiveAgentEditCore;
   threadCore(threadId: ThreadId): AgentEditCore;
+  /** Suggestion mode (prototype): a drafted read is Live through the Work's view. */
+  workView?: WorkViews | null;
 }): AgentEditRouter {
   /** The thread's Work draft of the document a draft read can show, if it has one. */
   async function workDraftFor(documentId: DocumentId, threadId: string): Promise<string | null> {
@@ -77,6 +80,35 @@ export function createAgentEditRouter(input: {
     async read(command, routed) {
       const { grant, liveVersion, ...context } = routed;
       const version = liveVersion ? "live" : grant.destination.kind;
+      if (input.workView && version === "draft" && grant.destination.kind === "draft") {
+        const destination = grant.destination;
+        const outcome = await input.workView
+          .core(draftOwnerKey(destination.owner), {
+            chat: context.threadId ?? null,
+            turn: null,
+            by: "agent",
+          })
+          .read(command, {
+            ...context,
+            linkView: { kind: "live" },
+            documentVersion: "live",
+            ...(command.format === "edits" ? { frontiers: undefined } : {}),
+          });
+        const read = !outcome.isError ? outcome.result.read : undefined;
+        return read
+          ? {
+              ...outcome,
+              result: {
+                ...outcome.result,
+                read: {
+                  ...read,
+                  version: "draft" as const,
+                  draftWork: destination.ownerHandle ?? "/",
+                },
+              },
+            }
+          : outcome;
+      }
       const { core, workDraftId } = await routeRead({
         documentId: documentIdFromCommand(command),
         threadId: context.threadId,

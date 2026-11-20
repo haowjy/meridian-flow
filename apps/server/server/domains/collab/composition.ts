@@ -3,6 +3,7 @@
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
@@ -134,6 +135,7 @@ import { liveRoom } from "./domain/observation-rooms.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import { createReversalNoticePort } from "./domain/reversal-notices.js";
+import { createSuggestionTurnUndo } from "./domain/suggestion-turn-undo.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
   createTurnReversalService,
@@ -368,6 +370,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts,
     liveUtilityCore: runtime.liveUtilityCore,
     threadCore,
+    workView: runtime.workView,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -376,6 +379,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const modelEditWrite = createModelEditWriter({
     liveCore: runtime.liveUtilityCore,
     threadCore,
+    workView: runtime.workView,
     branches: workBranches,
     fileAccess: deps.fileAccess,
     enterLiveSeam: (documentId) => enterLiveWriteSeam(deps.db, documentId),
@@ -592,6 +596,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       agentEdit,
       documents: runtime.markdownDocuments,
       model: runtime.model,
+      workView: runtime.workView,
       codec: runtime.codec,
       links: deps.links,
       branches: workBranches,
@@ -616,14 +621,33 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     replaceAuthorityGeneration,
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
+  // Suggestion mode (prototype): a card's Undo rejects the turn's suggestions.
+  const suggestionTurnUndo = runtime.workView
+    ? createSuggestionTurnUndo({
+        schema: buildDocumentSchema(),
+        listTurnDocuments: lineageStore.listEditedDocumentIdsForTurn,
+        resolveDocumentUri: documentUriResolver,
+        changeLiveDocument: runtime.markdownDocuments.changeLiveDocument,
+        reverseLiveTurn: turnInverse.reverseTurn,
+        withLiveDocument: runtime.markdownDocuments.withLiveDocument,
+        liveTurnChip: turnInverse.getDocumentAndTreeChip,
+      })
+    : null;
+  const turnUndo = suggestionTurnUndo
+    ? {
+        ...turnInverse,
+        reverseTurn: suggestionTurnUndo.reverseTurn,
+        getDocumentAndTreeChip: suggestionTurnUndo.chip,
+      }
+    : turnInverse;
   const lineage = createTurnLiveLineageReadModel({
     store: lineageStore,
-    receiptStore: turnInverse,
+    receiptStore: turnUndo,
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
   });
   const turnReversal = createTurnReversalService({
-    turnInverse,
+    turnInverse: turnUndo,
     lockOwners: createDrizzleReversalLocks(deps.db),
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,

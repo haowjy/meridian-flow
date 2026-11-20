@@ -25,8 +25,10 @@ export function scopeMarkdownEngine(
   return {
     serializeDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
-    serializeVersionedDocument: (documentId, doc, view) =>
-      scopes.within(by(documentId), () => engine.serializeVersionedDocument(documentId, doc, view)),
+    serializeVersionedDocument: (documentId, doc, view, model) =>
+      scopes.within(by(documentId), () =>
+        engine.serializeVersionedDocument(documentId, doc, view, model),
+      ),
     readFrozenMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readFrozenMarkdown(documentId)),
     readVersionedMarkdown: (documentId) =>
@@ -42,6 +44,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    changeLiveDocument: (input) =>
+      scopes.within(by(input.documentId), () => engine.changeLiveDocument(input)),
     mergeCodeText: (input) =>
       scopes.within(by(input.documentId), () => engine.mergeCodeText(input)),
     // None spells a link: a seed is encoded from bound blocks, and authority repair seeds an
