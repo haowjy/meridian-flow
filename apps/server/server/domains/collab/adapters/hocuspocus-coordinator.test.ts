@@ -83,10 +83,6 @@ class MemoryJournal implements UpdateJournal {
     entry.checkpointUpToSeq = upToSeq;
   }
 
-  async compact() {
-    return { updatesFolded: 0 };
-  }
-
   private entry(docId: string) {
     const existing = this.entries.get(docId);
     if (existing) return existing;

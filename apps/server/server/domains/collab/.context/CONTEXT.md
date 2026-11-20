@@ -193,20 +193,20 @@ bounds never authorize retired-generation history.
 A checkpoint is a host-minted `CapturedCheckpointCut`, not a free state-vector
 and watermark pair and not warm-room bytes. It covers every journal row at or
 below its cut. Materialize outside the persistence lock, then revalidate
-identity, generation, and retention under lock. Retention is tracked by the
-head's generation-local retired-through sequence. A stale checkpoint returns
+identity and generation under lock. A stale checkpoint returns
 `stale_generation`; it does not manufacture a successful checkpoint ID.
-Compaction exists but has no production caller, so live journal rows are never
-deleted: the model's report of what changed since its last read attributes each
+Live journal rows are deleted only by a purge (a generation replacement keeps the old rows but
+never reads them again):
+the model's report of what changed since its last read attributes each
 change from the rows after its frontier, however old. A background checkpoint
 (`storeCheckpoint`, `background` set) deletes the document's other background
 checkpoints in its own transaction, before it updates the head row every keystroke
 frame waits on. A document holds its seed, its explicit checkpoints, one checkpoint
 per restore and one background checkpoint. A capture whose base a later store
 deleted replays from an older checkpoint and more rows. The manifest reads only the
-rows after the checkpoint it builds on. `compact()` retires rows through the latest
-checkpoint, which may be a background one the next store deletes: before it gets a
-caller, it must fold into a checkpoint that is kept.
+rows after the checkpoint it builds on. Retiring live rows into a checkpoint has no code: one
+that is built must fold into a checkpoint that is kept, not the background one the next store
+deletes, and cuts captured before it must stop validating.
 
 A document rebuilt from journal rows is integrable only after every row has applied with no
 pending structs and no pending delete set. State-vector equality, or a pending-struct check

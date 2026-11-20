@@ -127,6 +127,5 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
     readUpdates: vi.fn(async () => []),
     captureCheckpoint: vi.fn(async () => null),
     storeCheckpoint: vi.fn(async () => undefined),
-    compact: vi.fn(async () => ({ updatesFolded: 0 })),
   };
 }

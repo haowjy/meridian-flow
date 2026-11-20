@@ -37,10 +37,8 @@ are the other two:
 Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advisory lock
 (`lockDocumentMutation` on the list id), in this order:
 
-1. bring this process's copy to the journal's head: a copy that is the journal's, or behind it
-   with every row it lacks still in the journal, reads only the rows after it; a copy behind
-   the head's `retired_through_seq` (rows folded into a checkpoint) is reloaded from the
-   checkpoint;
+1. bring this process's copy to the journal's head: the journal keeps every row, so a copy
+   behind the head reads only the rows after it;
 2. for `admit`: read `Connection` (`tree-list-facts.ts`: the open branches and the list’s sources, including closed Works; a source with no row is gone) and run the package's `admit`: the guard, which throws `CopyFault` on a copy
    that does something an honest client's never does (nothing is stored, the copy reloads, the
    room closes the connection with `COPY_BROKEN`), then the update is applied to the copy and

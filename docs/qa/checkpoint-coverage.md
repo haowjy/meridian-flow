@@ -24,20 +24,14 @@ the [checkpoint capture rule][checkpoint-capture].
   captures do not roll back sibling work.
 - Capture a cut, append another row, and materialize. Its ceiling must remain
   fixed; cold load must still replay the later row.
-- Capture before compaction, both when compaction folds rows and when a routine
-  or explicit checkpoint already covers them. Verify deletion and
-  `retired_through_seq` commit atomically, including rollback. The old cut must
-  fail materialization and both persistence doors, even if already materialized
-  or waiting for the mutation lock. Recapture must preserve all text.
-- Replace the authority generation. Verify retirement resets, old cuts cannot
-  persist, and new cuts can. Document deletion must also invalidate old cuts.
+- Replace the authority generation. Verify old cuts fail materialization and both
+  persistence doors, even if already materialized or waiting for the mutation lock,
+  and new cuts persist. Document deletion must also invalidate old cuts.
 - Spread-copy a cut and substitute bytes. Both persistence doors must reject the
   unrecognized capability.
-- Invalidate a background room store through compaction. Observe
+- Invalidate a background room store through a generation replacement. Observe
   `checkpoint.failed`, then request another store and confirm fresh capture and
   persistence. No automatic same-request retry is promised.
-- Apply the generated retirement-column migration to populated heads in an
-  isolated transaction. Verify row retention and zero defaults, then roll back.
 
 Record the revision, exact commands, observed cold-loaded text, persisted
 coverage, failure events, and cleanup. Run `pnpm check` separately; runtime

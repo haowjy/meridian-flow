@@ -21,10 +21,19 @@ change. Terminal teardown rejects current and future barriers; ordinary disconne
 leave them pending. In-band closes carry code
 1000, so consumers use disposition rather than numeric code.
 
+## Held Updates
+
+No timeout releases held frames: a server that never sends SyncStep1 leaves them held
+and the room unacknowledged.
+
 ## Frames the server can't store
 
-A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), and the reconnect's handshake resends it; a frame that starts past the
-room's clock closes the same way, and the handshake repairs the gap. Three such closes in a row
+A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), and the
+reconnect's handshake resends it; a frame that starts past the room's clock closes the same way,
+and the handshake repairs the gap. Holding Updates until the socket's SyncStep2 keeps that from
+happening on a reconnect: after a server restart the frames sent to the old process are gone,
+and an Update sent ahead of the handshake would start past them on every reconnect until the
+room ends. Three such closes in a row
 with no acknowledgement between end the room `UPDATES_REFUSED`, whether or not the outbox holds
 anything (typing replayed from the copy goes out in each handshake without passing through it), because a frame
 the server can never store (one authored in the reserved client band) would otherwise resend

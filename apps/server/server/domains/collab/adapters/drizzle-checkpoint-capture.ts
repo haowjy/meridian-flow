@@ -31,23 +31,18 @@ export async function captureDrizzleCheckpoint(
     floor: Number(reference.floor_seq),
     ceiling: Number(reference.ceiling_seq),
   };
-  // The journal row the replay starts after: the captured floor, or an older checkpoint's when
-  // the captured base is gone.
-  let replayFloor = selected.floor;
   const validateInputs = async () => {
     const [head] = await currentDrizzleDb(db as Database)
       .select({
         authorityId: documentYjsHeads.authorityId,
         generation: documentYjsHeads.authorityGeneration,
-        retiredThroughSeq: documentYjsHeads.retiredThroughSeq,
       })
       .from(documentYjsHeads)
       .where(eq(documentYjsHeads.documentId, asDocumentId(docId)));
     if (
       !head ||
       head.authorityId !== authority.authorityId ||
-      head.generation !== authority.generation ||
-      (selected.ceiling > replayFloor && head.retiredThroughSeq > replayFloor)
+      head.generation !== authority.generation
     ) {
       throw new Error("Checkpoint inputs retired during materialization");
     }
@@ -73,7 +68,7 @@ export async function captureDrizzleCheckpoint(
           .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
           .limit(1)
       : [];
-    replayFloor = base?.upToSeq ?? 0;
+    const replayFloor = base?.upToSeq ?? 0;
     const rows = await readDb
       .select({ update: documentYjsUpdates.updateData })
       .from(documentYjsUpdates)
@@ -87,8 +82,8 @@ export async function captureDrizzleCheckpoint(
         ),
       )
       .orderBy(asc(documentYjsUpdates.id));
-    // Check after reading: a concurrent deletion either leaves a complete read
-    // or invalidates it. Persistence repeats this check under the mutation lock.
+    // Check after reading: a restore or removal since the capture invalidates the read.
+    // Persistence repeats this check under the mutation lock.
     await validateInputs();
     return materializeCheckpoint(
       base ? new Uint8Array(base.state) : null,
