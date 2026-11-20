@@ -76,7 +76,7 @@ export function SuggestionEditorView(props: EditorViewProps) {
               focusKey={props.focusKey}
               inMain={props.inMain}
               suggestion={{ view, marks: controller.marksVisible }}
-              onConstructed={(editor) => hostEditor?.set(editor)}
+              onConstructed={(editor, was) => hostEditor?.set(editor, was)}
             />
           </div>
         </PaintScope>

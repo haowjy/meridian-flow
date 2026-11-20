@@ -10,8 +10,9 @@ export class HostEditor {
   private editor: Editor | null = null;
   private readonly listeners = new Set<() => void>();
 
-  set(editor: Editor | null): void {
-    if (this.editor === editor) return;
+  /** `editor` is the host's now; null releases `was`, unless another editor already took over. */
+  set(editor: Editor | null, was?: Editor): void {
+    if (this.editor === editor || (editor === null && was && this.editor !== was)) return;
     this.editor = editor;
     for (const listener of this.listeners) listener();
   }

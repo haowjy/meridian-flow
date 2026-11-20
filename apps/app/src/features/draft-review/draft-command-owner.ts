@@ -57,6 +57,7 @@ import {
   halvesOf,
   itemOf,
 } from "./draft-notices";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { GroupApply } from "./group-apply";
 import type { DraftRef } from "./review-command-types";
 import {
@@ -479,6 +480,9 @@ export class DraftCommandOwner {
    * generation known when asked: a draft bound meanwhile is a newer one, and stays open.
    */
   askEnd(ref: DraftRef): Promise<void> {
+    // A suggestion item is its document's marks, not a room: it leaves the list when they go and
+    // comes back with the next, so nothing ends it and there is nothing to ask.
+    if (suggestionModeEnabled) return Promise.resolve();
     return this.resolveEnd(ref, this.generation(ref.itemKey));
   }
 

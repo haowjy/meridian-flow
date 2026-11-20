@@ -160,6 +160,8 @@ export function usePressCommands({
       const saw = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.ownerDrafts(projectId, ownerKey),
       )?.saw;
+      // A read already out answers from before the press: it must not bring the rows back.
+      await queryClient.cancelQueries({ queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey) });
       patchOwnerDrafts(queryClient, projectId, ownerKey, (items) =>
         items.filter((item) => !taken(item)),
       );
