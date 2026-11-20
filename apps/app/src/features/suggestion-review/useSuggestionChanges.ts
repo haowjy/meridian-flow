@@ -10,7 +10,7 @@ import type { Author } from "@meridian/agent-edit/diff";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type Change, list } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { authorsIn, SUGGESTION_CHANGE_ATTR } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { ChatRef, ReviewChange } from "@/features/draft-review/review-model";
@@ -37,13 +37,15 @@ export function useSuggestionChanges(
 ): { ready: boolean; changes: ReviewChange[] } {
   const doc = useEditorDoc(editor);
   const titles = item?.actorThreads;
+  // A pressed row is out of the list until its Undo's read lands: its chats keep their names.
+  const named = useRef(new Map<string, string>());
   return useMemo(() => {
     if (!doc || !editor || !work) return { ready: false, changes: [] };
-    const named = new Map((titles ?? []).map((chat) => [chat.threadId, chat.title ?? ""]));
+    for (const chat of titles ?? []) named.current.set(chat.threadId, chat.title ?? "");
     return {
       ready: true,
       changes: list(doc, { work }, authorsIn(editor.state)).map((change) =>
-        reviewChange(change, named),
+        reviewChange(change, named.current),
       ),
     };
   }, [doc, editor, work, titles]);
