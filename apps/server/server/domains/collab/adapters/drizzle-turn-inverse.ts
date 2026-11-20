@@ -135,7 +135,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     return new Set((await treePlanOf(query)).createdDocuments);
   }
   async function selectedDocuments(query: TurnInverseQuery): Promise<DocumentId[]> {
-    if (query.model) return [...new Set(query.documentIds ?? [])].sort();
+    if (query.model || query.documentIds) return [...new Set(query.documentIds ?? [])].sort();
     return [
       ...new Set((await readTurnEditTargets(db(), query)).map((target) => target.documentId)),
     ].sort();
