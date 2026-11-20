@@ -1283,9 +1283,17 @@ msgstr "Billing"
 msgid "Block alignment"
 msgstr "Block alignment"
 
+#: src/features/editor/SuggestionBand.tsx
+msgid "Block format"
+msgstr "Block format"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "blockquote"
 msgstr "blockquote"
+
+#: src/features/editor/SuggestionBand.tsx
+msgid "Body text"
+msgstr "Body text"
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
@@ -3259,6 +3267,11 @@ msgstr "Header row"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
 msgstr "Heading"
+
+#. placeholder {0}: String(attrs.level)
+#: src/features/editor/SuggestionBand.tsx
+msgid "Heading {0}"
+msgstr "Heading {0}"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading {level}"

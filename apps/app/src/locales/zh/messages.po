@@ -1283,8 +1283,16 @@ msgstr ""
 msgid "Block alignment"
 msgstr ""
 
+#: src/features/editor/SuggestionBand.tsx
+msgid "Block format"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "blockquote"
+msgstr ""
+
+#: src/features/editor/SuggestionBand.tsx
+msgid "Body text"
 msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -3258,6 +3266,11 @@ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading"
+msgstr ""
+
+#. placeholder {0}: String(attrs.level)
+#: src/features/editor/SuggestionBand.tsx
+msgid "Heading {0}"
 msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
