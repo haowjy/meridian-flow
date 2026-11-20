@@ -115,9 +115,11 @@ export function SuggestionBand({
             >
               <span className="min-w-0 flex-1 truncate">
                 {change.attrs ? <AttrsLabel attrs={change.attrs} /> : null}
-                {change.deleted ? <span className="sug-del">{change.deleted}</span> : null}
+                {change.deleted ? <span className="sug-del">{breaks(change.deleted)}</span> : null}
                 {change.deleted && change.inserted ? " " : null}
-                {change.inserted ? <span className="sug-ins">{change.inserted}</span> : null}
+                {change.inserted ? (
+                  <span className="sug-ins">{breaks(change.inserted)}</span>
+                ) : null}
               </span>
               <Button
                 type="button"
@@ -140,6 +142,11 @@ export function SuggestionBand({
         : null}
     </div>
   );
+}
+
+/** A paragraph break shows as ¶, so a change that only adds or removes one is not blank. */
+function breaks(text: string): string {
+  return text.replaceAll("\n", "¶");
 }
 
 function AttrsLabel({ attrs }: { attrs: Record<string, unknown> }) {
