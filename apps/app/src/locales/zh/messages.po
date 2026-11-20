@@ -3151,6 +3151,10 @@ msgstr ""
 msgid "flowchart"
 msgstr ""
 
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "Folder into itself"
+msgstr ""
+
 #: src/features/project/context/use-create-entry-form.ts
 msgid "Folder name"
 msgstr ""
@@ -4087,6 +4091,10 @@ msgstr ""
 
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "No"
+msgstr ""
+
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "No access"
 msgstr ""
 
 #: src/features/agents/findings.ts
@@ -5731,6 +5739,10 @@ msgstr ""
 msgid "Stopping the handoff brief"
 msgstr ""
 
+#: src/client/commands/submit.ts
+msgid "Storage full"
+msgstr ""
+
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Strikethrough"
 msgstr ""
@@ -6796,6 +6808,10 @@ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
 msgid "Work archived"
+msgstr ""
+
+#: src/features/project/context/entry-drag/entry-failure.ts
+msgid "Work closed"
 msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx

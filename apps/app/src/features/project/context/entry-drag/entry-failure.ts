@@ -5,6 +5,7 @@
  * can't land it.
  */
 import { t } from "@lingui/core/macro";
+import type { Settlement } from "@meridian/contracts/commands";
 import { descendantsOf, type TreeProjection } from "@meridian/project-tree";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -63,12 +64,21 @@ export function runMove(
   if (moved.length > 0) revealPlaced(move.to.parentId, moved, selection);
 }
 
-/** The route refused for good: the Work is closed, or the writer can't copy there. */
-function isFinalRefusal(error: unknown): boolean {
-  if (!isMeridianApiError(error)) return false;
-  return ["permission_denied", "work_archived", "work_deleted", "work_missing"].includes(
-    error.code,
-  );
+/** Why the route refused for good, where it did: the Work is closed, or the writer can't copy there. */
+function finalRefusalReason(error: unknown): string | undefined {
+  if (!isMeridianApiError(error)) return undefined;
+  if (error.code === "permission_denied") return t`No access`;
+  if (["work_archived", "work_deleted", "work_missing"].includes(error.code)) return t`Work closed`;
+  return undefined;
+}
+
+/** Why the server left a copy out, where sending it again would leave it out the same way. */
+function settledReason(undone: readonly Settlement[]): string | undefined {
+  if (undone.some((one) => one.rule === "returned" && one.why.startsWith("work_")))
+    return t`Work closed`;
+  if (undone.some((one) => one.rule === "left_out" && one.why === "would_loop"))
+    return t`Folder into itself`;
+  return undefined;
 }
 
 /** Toasts a refused Copy; Retry, offered unless the refusal is final, runs it again. */
@@ -77,11 +87,13 @@ function showCopyFailure(
   failure: CopyFailure,
   selection: EntrySelection | null,
 ): void {
+  const reason = finalRefusalReason(failure.error);
   notifyFailure({
     key: failure.key,
     title: t`Couldn't copy`,
+    reason,
     detail: failure.error,
-    action: isFinalRefusal(failure.error)
+    action: reason
       ? undefined
       : { label: t`Retry`, run: () => void runCopy(context, failure.copy, selection) },
   });
@@ -103,6 +115,7 @@ export async function runCopy(
       notifyFailure({
         key: entryToast(context.projectId, crypto.randomUUID()),
         title: t`Couldn't copy`,
+        reason: settledReason(undone),
         detail: undone,
       });
     }
