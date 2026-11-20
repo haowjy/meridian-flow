@@ -196,6 +196,7 @@ export function EditorView(props: EditorViewProps) {
               session={liveSession}
               focusKey={props.focusKey}
               inMain={props.inMain}
+              suggestionOwner={controller.ownerKey || null}
             />
           </div>
         </PaintScope>

@@ -77,6 +77,7 @@ export function createEffectiveDocumentReader(input: {
   async function readEffective<T>(
     command: EffectiveReadInput,
     read: (doc: DocHandle) => Promise<T>,
+    owner: DraftOwner | undefined = command.destination === "draft" ? command.owner : undefined,
   ): Promise<Result<T, SyncError>> {
     let room: Awaited<ReturnType<AgentEditRouter["readRoom"]>>;
     try {
@@ -84,6 +85,7 @@ export function createEffectiveDocumentReader(input: {
         documentId: command.documentId,
         threadId: command.threadId,
         live: command.destination === "live",
+        ...(owner ? { owner } : {}),
       });
     } catch (cause) {
       if (isDocumentNotFoundError(cause))
@@ -140,8 +142,13 @@ export function createEffectiveDocumentReader(input: {
     async readOwnerMarkdown({ documentId, owner }) {
       const draft = await input.drafts.findOwnerDraft(documentId, owner);
       if (!draft)
-        return readEffective({ documentId, destination: "live" }, async (doc) =>
-          input.documents.serializeVersionedDocument(documentId, unwrapDoc(doc), { kind: "live" }),
+        return readEffective(
+          { documentId, destination: "live" },
+          async (doc) =>
+            input.documents.serializeVersionedDocument(documentId, unwrapDoc(doc), {
+              kind: "live",
+            }),
+          owner,
         );
       await input.draftPulls.catchUpDraft(draft.draftId);
       const { doc } = await input.draftCoordinator.copyDraft(draft.draftId);
@@ -189,6 +196,7 @@ export function createEffectiveDocumentReader(input: {
       return readEffective(
         { documentId: command.documentId, destination: "live" },
         project("live"),
+        command.destination === "draft" ? command.owner : undefined,
       );
     },
     readEffectiveHashlines(command) {

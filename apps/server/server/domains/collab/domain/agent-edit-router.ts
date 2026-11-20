@@ -6,14 +6,16 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { LinkView } from "@meridian/contracts";
+import { type DraftOwner, draftOwnerKey, type LinkView } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
+import type * as Y from "yjs";
 import type { FileDestination } from "../../file-policy/index.js";
 import type { LiveAgentEditCore, RoutedReadContext } from "./agent-edit-cores.js";
 import type { Branches } from "./branches.js";
 import { DraftNotFoundError } from "./draft-resolver.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
+import type { SuggestionCore } from "./model-edit-write.js";
 import type { ApplicationDraftStore } from "./ports/application-draft-store.js";
 
 export type AgentEditRouter = {
@@ -26,6 +28,8 @@ export type AgentEditRouter = {
     documentId: DocumentId;
     threadId?: ThreadId | null;
     live: boolean;
+    /** The Work whose view the read shows, in suggestion mode. */
+    owner?: DraftOwner;
   }): ReturnType<AgentEditCore["readRoom"]>;
 };
 
@@ -34,6 +38,10 @@ export function createAgentEditRouter(input: {
   drafts: Pick<ApplicationDraftStore, "resolveWorkDraftForThread">;
   liveUtilityCore: LiveAgentEditCore;
   threadCore(threadId: ThreadId): AgentEditCore;
+  /** Suggestion mode (prototype): a drafted read is Live through the Work's view. */
+  suggestionCore?: SuggestionCore | null;
+  /** Suggestion mode: mark a read copy of Live as a Work's, so it reads as that Work's view. */
+  readAs?: ((doc: Y.Doc, work: string) => void) | null;
 }): AgentEditRouter {
   /** The thread's Work draft of the document a draft read can show, if it has one. */
   async function workDraftFor(documentId: DocumentId, threadId: string): Promise<string | null> {
@@ -77,6 +85,35 @@ export function createAgentEditRouter(input: {
     async read(command, routed) {
       const { grant, liveVersion, ...context } = routed;
       const version = liveVersion ? "live" : grant.destination.kind;
+      if (input.suggestionCore && version === "draft" && grant.destination.kind === "draft") {
+        const destination = grant.destination;
+        const outcome = await input
+          .suggestionCore(draftOwnerKey(destination.owner), {
+            chat: context.threadId ?? null,
+            turn: null,
+            by: "agent",
+          })
+          .read(command, {
+            ...context,
+            linkView: { kind: "live" },
+            documentVersion: "live",
+            ...(command.format === "edits" ? { frontiers: undefined } : {}),
+          });
+        const read = !outcome.isError ? outcome.result.read : undefined;
+        return read
+          ? {
+              ...outcome,
+              result: {
+                ...outcome.result,
+                read: {
+                  ...read,
+                  version: "draft" as const,
+                  draftWork: destination.ownerHandle ?? "/",
+                },
+              },
+            }
+          : outcome;
+      }
       const { core, workDraftId } = await routeRead({
         documentId: documentIdFromCommand(command),
         threadId: context.threadId,
@@ -129,7 +166,12 @@ export function createAgentEditRouter(input: {
         : outcome;
     },
 
-    async readRoom({ documentId, threadId, live }) {
+    async readRoom({ documentId, threadId, live, owner }) {
+      if (input.readAs && owner) {
+        const room = await input.liveUtilityCore.readRoom(documentId, {});
+        input.readAs(room.doc, draftOwnerKey(owner));
+        return room;
+      }
       const { core, workDraftId } = await routeRead({
         documentId,
         threadId,

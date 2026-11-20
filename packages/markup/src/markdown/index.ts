@@ -16,6 +16,7 @@ import {
 } from "./blocks/index.js";
 import { prepareGfmTableHardBreaks } from "./blocks/table.js";
 import {
+  annotationMarkCodecs,
   codeMarkCodec,
   emMarkCodec,
   linkMarkCodec,
@@ -38,6 +39,7 @@ export const markdownMarkCodecs: readonly MarkCodec[] = [
   codeMarkCodec,
   linkMarkCodec,
   strikeMarkCodec,
+  ...annotationMarkCodecs,
 ];
 
 export const markdownRequiredBlockNames: readonly string[] = Object.freeze(

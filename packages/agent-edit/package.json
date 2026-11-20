@@ -20,9 +20,11 @@
     "@meridian/contracts": "workspace:*",
     "@meridian/markup": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
+    "@meridian/suggestions": "workspace:*",
     "@sanity/diff-match-patch": "^3.2.1",
     "@tiptap/y-tiptap": "3.3.0",
     "prosemirror-model": "^1.25.13",
+    "prosemirror-state": "^1.4.4",
     "prosemirror-transform": "^1.12.5",
     "yjs": "13.6.33",
     "zod": "^4.6.7"
