@@ -382,14 +382,12 @@ export function createHocuspocusPersistenceService(
           closeRoom(hocuspocus, document, WS_CLOSE.DRAFT_PURGED);
           return;
         }
+        // The room may have unloaded, or been replaced, while the read above ran: its unload
+        // hook found nothing to remove, so listing it now would outlive it.
+        if (hocuspocus.documents.get(document.name) !== document) return;
         const documentId = base.snapshot.documentId as DocumentId;
         draftRoomsOf.set(documentId, (draftRoomsOf.get(documentId) ?? new Set()).add(draftId));
         documentOfDraftRoom.set(draftId, documentId);
-        // The room may have unloaded while it enrolled, after its unload hook ran.
-        if (hocuspocus.documents.get(document.name) !== document) {
-          unloadedDraftRoom(draftId);
-          return;
-        }
         // Listed, so a Live commit from here on pushes to this room, and this pull reads
         // whatever committed before it.
         await deps.catchUpOpenedDraft?.(draftId);
@@ -408,7 +406,8 @@ export function createHocuspocusPersistenceService(
     },
 
     connectedHocuspocusDraftRoom(draftId) {
-      void deps.catchUpOpenedDraft?.(draftId);
+      // A room still enrolling catches up when it finishes.
+      if (documentOfDraftRoom.has(draftId)) void deps.catchUpOpenedDraft?.(draftId);
     },
 
     unloadedHocuspocusDraftRoom: unloadedDraftRoom,

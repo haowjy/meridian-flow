@@ -476,8 +476,8 @@ lock. Every Live write sends the notice from one place: the live journal's `appe
 transaction commits (`createDrizzleJournal`'s `appended` hook). Live sync, a model's live
 commit, `writeDocument`, a code merge, Apply, Un-Apply and a live Undo step all pass it. An
 authority replace or restore changes Live without an append, so it sends the notice itself. The
-notice debounces per document (2 s, 10 s maximum); when it fires it reads Live once and catches up
-each draft room open then. It never waits, and a draft with no room is not touched, so
+notice debounces per document (2 s, 10 s maximum); when it fires it reads Live once for the
+up-to-date check all the open drafts share and catches up each draft room open then. It never waits, and a draft with no room is not touched, so
 background merge work grows with the drafts open on a screen, not with the drafts that exist.
 `openDraftRooms(documentId)` is an in-memory index in `hocuspocus-persistence.ts` (document →
 open draft rooms), added when a room enrolls and dropped at `afterUnloadDocument`; it makes no
