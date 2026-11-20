@@ -7,14 +7,14 @@
 import { useContext, useSyncExternalStore } from "react";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
-import { HostEditorContext, type HostEditor } from "@/features/suggestion-review/host-editor";
+import { type HostEditor, HostEditorContext } from "@/features/suggestion-review/host-editor";
 import { useSuggestionChanges } from "@/features/suggestion-review/useSuggestionChanges";
 import type { DraftChangesData } from "./draft-changes";
 import { useDraftCommandState } from "./draft-changes";
-import { treeChange, treeLineOf } from "./tree-line";
-import type { DraftReviewController } from "./useDraftReviewController";
 import type { DraftRef } from "./review-command-types";
 import { itemChange, type ReviewChange } from "./review-model";
+import { treeChange, treeLineOf } from "./tree-line";
+import type { DraftReviewController } from "./useDraftReviewController";
 import { useRoomReview } from "./useRoomReview";
 
 type ReviewRead = {

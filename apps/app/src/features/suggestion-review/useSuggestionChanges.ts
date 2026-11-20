@@ -11,10 +11,7 @@ import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type Change, list } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import {
-  authorsIn,
-  SUGGESTION_CHANGE_ATTR,
-} from "@/core/editor/extensions/suggestion-mode";
+import { authorsIn, SUGGESTION_CHANGE_ATTR } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import type { ChatRef, ReviewChange } from "@/features/draft-review/review-model";
 import { resolveFocusedChange } from "@/features/draft-review/review-model";

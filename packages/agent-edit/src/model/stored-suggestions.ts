@@ -9,8 +9,8 @@ import {
   type Authors,
   accept,
   type Filter,
-  pendingTurns,
   pendingChanges,
+  pendingTurns,
   reject,
   type WorkPending,
 } from "@meridian/suggestions";

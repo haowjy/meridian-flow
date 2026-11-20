@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
 import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
@@ -16,7 +17,6 @@ import {
 import { hasApply, hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useRoomReviews } from "@/features/draft-review/useRoomReview";
 import { useBoundWorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
@@ -104,14 +104,16 @@ export function useDraftDock({
   // draft rooms: every row is its whole document, pressed (`usePressCommands`).
   const roomed = useMemo(
     () =>
-      suggestionModeEnabled ? [] : targets.filter(
-        (target, index) =>
-          index < ROOM_ROWS ||
-          isSharedDraft(
-            candidates.find((row) => row.draft.itemKey === target.itemKey)?.draft,
-            threadId,
+      suggestionModeEnabled
+        ? []
+        : targets.filter(
+            (target, index) =>
+              index < ROOM_ROWS ||
+              isSharedDraft(
+                candidates.find((row) => row.draft.itemKey === target.itemKey)?.draft,
+                threadId,
+              ),
           ),
-      ),
     [targets, candidates, threadId],
   );
   const reads = useRoomReviews(roomed);

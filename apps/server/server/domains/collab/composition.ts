@@ -2,15 +2,11 @@
 
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import {
-  branchTreeNodes,
-  branches as branchRows,
-  documentDrafts,
-} from "@meridian/database/schema";
+import { branches as branchRows, branchTreeNodes, documentDrafts } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
-import { ownerOfColumns } from "../../shared/draft-owner.js";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
+import { ownerOfColumns } from "../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,

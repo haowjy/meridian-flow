@@ -122,6 +122,8 @@ stateDiagram-v2
 - **`ended` is final** and the page leaves for Live: the draft's rows are deleted.
 - Apply sets `hidden` while it is queued, which leaves the review at once whatever `ended` turns
   out to be.
+- Suggestion mode has no draft rooms to close: its items stay `open` (`askEnd` asks nothing). A
+  pressed row leaves the Work's list, and a list read brings it back if the press failed.
 
 ## Loads, not machines
 

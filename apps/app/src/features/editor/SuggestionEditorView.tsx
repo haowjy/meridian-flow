@@ -9,7 +9,7 @@ import { liveView, type View } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
-import { editorMountKey, type EditorMountIdentity } from "@/core/editor/mounted-editor";
+import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 import { useHostEditor, useHostEditorStore } from "@/features/suggestion-review/host-editor";

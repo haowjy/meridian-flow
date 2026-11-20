@@ -29,15 +29,15 @@ import {
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { notifyFailure } from "@/components/app/failure-toast";
-import { type ApplyPort, ApplyEntries } from "@/features/draft-review/apply-history";
+import { ApplyEntries, type ApplyPort } from "@/features/draft-review/apply-history";
 import type { CommandOutcome } from "@/features/draft-review/draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
 import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
 import type { ChangeTarget } from "@/features/draft-review/review-model";
 import type {
   CommandStart,
-  WorkBranchCommandsInput,
   WorkBranchCommands,
+  WorkBranchCommandsInput,
 } from "@/features/draft-review/useWorkBranchCommands";
 import {
   useDraftCommandOwner,
@@ -159,16 +159,16 @@ export function usePressCommands({
       const open = (nodes === "all" ? rows().map((item) => item.documentId) : nodes).flatMap(
         (documentId) => {
           const vector = registry.openStateVector(documentId as never);
-          return vector
-            ? [{ documentId, vector: btoa(String.fromCharCode(...vector)) }]
-            : [];
+          return vector ? [{ documentId, vector: btoa(String.fromCharCode(...vector)) }] : [];
         },
       );
       const saw = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.ownerDrafts(projectId, ownerKey),
       )?.saw;
       // A read already out answers from before the press: it must not bring the rows back.
-      await queryClient.cancelQueries({ queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey) });
+      await queryClient.cancelQueries({
+        queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
+      });
       patchOwnerDrafts(queryClient, projectId, ownerKey, (items) =>
         items.filter((item) => !taken(item)),
       );
@@ -216,7 +216,8 @@ export function usePressCommands({
       const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
       const named = (node: string) => names.get(node) ?? "";
       const outcome = press(verdict, nodes, driver).then((pressed) => {
-        const sent = nodes === "all" ? (pressed?.result.items.map((item) => item.node) ?? []) : nodes;
+        const sent =
+          nodes === "all" ? (pressed?.result.items.map((item) => item.node) ?? []) : nodes;
         const answer = outcomeOf(pressed, sent);
         if (!pressed || answer.kind !== "done") return answer;
         const changed = pressed.result.items.map((item) => item.node);

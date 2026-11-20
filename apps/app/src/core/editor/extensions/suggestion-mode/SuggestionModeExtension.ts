@@ -425,11 +425,15 @@ function paint(doc: PMNode, state: Omit<ModeState, "decorations" | "author">): D
       decorate(blockPos, end, { class: "sug-hidden" }, "node");
       return false;
     }
-    if (owner === "own" && marks)
-      decorate(blockPos, end, added(block.attrs.sug?.id, true), "node");
+    if (owner === "own" && marks) decorate(blockPos, end, added(block.attrs.sug?.id, true), "node");
     const own = view.work ? (proposals(block)[view.work] ?? []) : [];
     if (removedIn(block, view))
-      decorate(blockPos, end, removed(own.find((layer) => layer.remove)?.id, "sug-del-block"), "node");
+      decorate(
+        blockPos,
+        end,
+        removed(own.find((layer) => layer.remove)?.id, "sug-del-block"),
+        "node",
+      );
     // A pending change to the block's attributes shows them; the element is still Live's.
     const shown = viewAttrs(block, view);
     if (

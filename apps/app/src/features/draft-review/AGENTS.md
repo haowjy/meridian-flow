@@ -27,5 +27,12 @@ partitions the text.
   never a line in the row or bar the writer pressed; a click the queue gives up on settles
   `unsent` and the change is pending again. A file's status line shows progress only.
 
+- Suggestion mode (`VITE_FLOW_SUGGESTIONS`) keeps these surfaces and changes their source: a
+  review's changes are the Work's suggestions in the host's Live editor (`useSuggestionRead`,
+  `features/suggestion-review/`), not a draft room. Apply or Discard on one change is an editor
+  transaction (Ctrl+Z); on a document, folder or Work it is a press (`usePressCommands`), whose
+  Apply sits in each open editor's history (`ApplyEntries`). Its items never end
+  (`askEnd`): a pressed row leaves the list and comes back if the press fails.
+
 Read [the runtime reference](.context/draft-review.md) before changing ownership.
 Browser recipes: [draft review QA](.context/qa/draft-review.md).

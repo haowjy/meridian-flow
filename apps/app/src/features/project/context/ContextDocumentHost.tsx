@@ -9,7 +9,6 @@
  * `relative` parent.
  */
 
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { Trans } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -25,6 +24,7 @@ import type {
   DocumentSessionAccess,
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";

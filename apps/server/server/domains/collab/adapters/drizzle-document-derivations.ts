@@ -22,8 +22,8 @@ import {
 } from "../../../shared/drizzle-transaction.js";
 import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
-import type { WorkProjectionMutation } from "../../projects/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import { documentHash } from "../domain/document-derivations.js";
 import {
   DOCUMENT_EXTRACTOR_VERSION,

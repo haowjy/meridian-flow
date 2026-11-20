@@ -24,7 +24,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
-import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import {

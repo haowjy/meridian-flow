@@ -56,8 +56,10 @@ through `seen`.
 
 A document that exists only in a Work is the tree's drafted create; its text is plain in Live,
 not suggestions (`model-edit-write.ts`, `existsOnlyInWork`). Applying the create makes it
-visible; discarding it hides it. The browser still opens such a document through the old draft
-review route; moving that onto Live is the review UI's work.
+visible; discarding it hides it. The browser opens it in its Live room as plain text: the
+project's list does not have it, so the opener admits it as the Work's (`workOnly`) and the Yjs
+gateway admits the room through `documentSync.workOnlyOwners`. The tab follows the Work's row, so
+a Discard closes the room and its Undo opens it again.
 
 ## Not covered yet
 

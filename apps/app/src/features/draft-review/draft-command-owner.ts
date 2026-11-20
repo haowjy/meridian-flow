@@ -40,6 +40,7 @@ import {
   type DraftRoomRegistry,
   readDraftRoom,
 } from "@/core/editor/draft-room-read";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { readRoomOnce } from "@/core/editor/room-read-once";
 import {
   type ApplyClickOutcome,
@@ -57,7 +58,6 @@ import {
   halvesOf,
   itemOf,
 } from "./draft-notices";
-import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
 import { GroupApply } from "./group-apply";
 import type { DraftRef } from "./review-command-types";
 import {

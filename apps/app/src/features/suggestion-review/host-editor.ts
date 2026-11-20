@@ -32,11 +32,7 @@ const nothing = () => () => undefined;
 /** The host's editor, once it is built; null outside a document host. */
 export function useHostEditor(): Editor | null {
   const host = useContext(HostEditorContext);
-  return useSyncExternalStore(
-    host?.subscribe ?? nothing,
-    host?.get ?? (() => null),
-    () => null,
-  );
+  return useSyncExternalStore(host?.subscribe ?? nothing, host?.get ?? (() => null), () => null);
 }
 
 export function useHostEditorStore(): HostEditor | null {

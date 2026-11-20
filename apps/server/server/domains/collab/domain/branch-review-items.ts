@@ -117,17 +117,17 @@ export function createBranchReviewItems(deps: {
         resolved
           .filter(({ listed }) => listed)
           .map(async ({ item, writers: known }) => {
-          const writers =
-            known ??
-            (item.draftId
-              ? await deps.pendingWriters(item.draftId)
-              : { threadIds: [], unattributed: false });
-          return {
-            ...item,
-            actorThreadIds: [...new Set([...writers.threadIds, ...item.actorThreadIds])],
-            unattributed: writers.unattributed,
-          };
-        }),
+            const writers =
+              known ??
+              (item.draftId
+                ? await deps.pendingWriters(item.draftId)
+                : { threadIds: [], unattributed: false });
+            return {
+              ...item,
+              actorThreadIds: [...new Set([...writers.threadIds, ...item.actorThreadIds])],
+              unattributed: writers.unattributed,
+            };
+          }),
       );
     },
     async resolve(branchId, documentId) {

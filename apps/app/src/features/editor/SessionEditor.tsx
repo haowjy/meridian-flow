@@ -4,8 +4,8 @@ import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
 import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import type { Editor, EditorOptions } from "@tiptap/core";
 import type { View } from "@meridian/suggestions";
+import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
   type ReactNode,

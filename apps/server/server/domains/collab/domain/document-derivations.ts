@@ -9,10 +9,10 @@ import {
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { WorkPending } from "@meridian/suggestions";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks, type StoredLinkOccurrence } from "@meridian/markup/stored-links";
 import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import type { WorkPending } from "@meridian/suggestions";
 import * as Y from "yjs";
 import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
 import { type DocumentLinkRow, deriveDocumentLinkRows } from "./document-link-rows.js";
