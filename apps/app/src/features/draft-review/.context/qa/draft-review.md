@@ -157,7 +157,8 @@ server resolves on receipt.
   document text is not retained.
 - `4205 discarded` is terminal. Drop that room's cache and go to live; any
   unacknowledged text remains selectable for copying. `4409 access-changed` and
-  `4207 draft-prefix-missing` are nonterminal.
+  `4207 draft-prefix-missing` (no longer sent by the server; the app
+  drops its handler in step 4 of room authority) are nonterminal.
 
 ## Attribution and provenance
 

@@ -308,43 +308,6 @@ function cacheReservedNamespaceIndex(doc: Y.Doc, index: ReservedRangeIndex): voi
   });
 }
 
-/** Writer restoration records assert known id ranges, not retained tombstone content. */
-export function validateRestorationRanges(doc: Y.Doc, update: Uint8Array): void {
-  const root = doc.share.get(RESTORED_ROOT);
-  if (!root) return;
-  const known = (client: number, clock: number, length: number) =>
-    client >= 0 &&
-    client <= 0xffffffff &&
-    clock >= 0 &&
-    length > 0 &&
-    Number.isSafeInteger(clock + length) &&
-    Y.getState(doc.store, client) >= clock + length;
-  for (const struct of decodeAdmittedUpdate(update).structs) {
-    if (!(struct instanceof Y.Item)) continue;
-    const item = Y.getItem(doc.store, struct.id);
-    if (!(item instanceof Y.Item) || item.parent !== root) continue;
-    if (!(struct.content instanceof Y.ContentAny)) {
-      throw new ReservedNamespaceAdmissionError("Invalid restoration record");
-    }
-    for (const raw of struct.content.getContent()) {
-      if (
-        !Array.isArray(raw) ||
-        !raw.every(Number.isSafeInteger) ||
-        ![3, 4, 5].includes(raw.length) ||
-        !known(raw[0], raw[1], raw[2]) ||
-        (raw.length === 4 && raw[3] !== 0) ||
-        (raw.length === 5 &&
-          (!known(raw[3], raw[4], raw[2]) ||
-            (raw[0] === raw[3] && raw[1] < raw[4] + raw[2] && raw[4] < raw[1] + raw[2])))
-      ) {
-        throw new ReservedNamespaceAdmissionError(
-          "Restoration record names invalid or unknown ranges",
-        );
-      }
-    }
-  }
-}
-
 function reservedStructRanges(doc: Y.Doc): ReservedRangeIndex {
   const index = new ReservedRangeIndex();
   for (const name of RESERVED_TYPE_NAMES) {

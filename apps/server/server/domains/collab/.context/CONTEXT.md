@@ -383,8 +383,8 @@ callbacks move to its parent on release and are dropped on its rollback, so a
 rolled-back child installs nothing), installs only past the replica installed
 by then, and sends this process's rooms what separates the two: the rows the new
 replica was built from when they cover everything past the installed one (built
-on it or on an older replica of the same checkpoint: a frame with
-the rows that landed before its lock, a reply's rows, a read's tail catch-up),
+on it or on an older replica of the same checkpoint: a
+reply's rows, a read's tail catch-up),
 otherwise the document difference (a compaction that folded rows under the draft
 lock, or a checkpoint another process wrote), or nothing when the content is unchanged. A transition at or below
 the committed revision installs and sends nothing, so a read racing a local
@@ -409,7 +409,7 @@ commits also reach this process's rooms when its runtime reads the draft for a
 turn inverse's `deliverCommitted`. There is no periodic reconciliation: an idle
 room with no exchange catches up at the next rejoin or handshake.
 Every committed append (writer, agent or server) schedules a background tail fold at
-512 rows or 2 MiB (`compact`: no content, effect or `updatedAt` change).
+512 rows or 2 MiB (a writer's frame counts rows only; `compact`: no content, effect or `updatedAt` change).
 `domain/draft-runtime.ts` owns committed replicas, prefix materialization, prepared
 append/rewrite ownership, monotonic installation/delivery and maintenance. Its
 `compacting` set keeps one fold per draft in this process. A rewrite that wins

@@ -202,12 +202,12 @@ export async function finalizeAppend(
   }
 }
 
+const clockKey = ({ client, clock }: { client: number; clock: number }) => `${client}:${clock}`;
+
 /**
  * What the last apply left pending: the update depends on structs or deletes not yet held.
  * Yjs keeps `pendingDs` in the V2 encoding whatever the applied update used.
  */
-const clockKey = ({ client, clock }: { client: number; clock: number }) => `${client}:${clock}`;
-
 function pendingClocks(doc: Y.Doc): { client: number; clock: number }[] {
   const { pendingStructs, pendingDs } = doc.store;
   const clocks = pendingStructs
