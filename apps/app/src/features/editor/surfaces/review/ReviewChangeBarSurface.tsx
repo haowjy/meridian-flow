@@ -17,6 +17,10 @@ import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { BAR_SLOT_ATTR, getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
+import {
+  suggestionModeEnabled,
+  suggestionView,
+} from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
@@ -31,7 +35,7 @@ import { useManuscriptColumn } from "./useManuscriptColumn";
 
 export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   const { controller } = useDraftReview();
-  const reviewing = !editor.isDestroyed && getInlineReviewPluginState(editor.state) !== null;
+  const reviewing = !editor.isDestroyed && reviewsIn(editor);
   const view = useReviewChanges(controller, { enabled: reviewing });
   const focusedItem = view.items.find((item) => item.change.id === view.focused?.id);
   const anchor = useChangeElement(editor, reviewing ? (focusedItem?.change.id ?? null) : null);
@@ -79,6 +83,12 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
     overlay,
   );
 }
+
+/** The editor shows a review: a draft's, or in suggestion mode a Work's view of Live. */
+const reviewsIn = (editor: Editor) =>
+  suggestionModeEnabled
+    ? suggestionView(editor.state).work !== null
+    : getInlineReviewPluginState(editor.state) !== null;
 
 /**
  * Open the editor's bar block while `wanted`, and return its element. The block

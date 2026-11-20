@@ -4,15 +4,50 @@
  * its banner and single document row are the review. Focus and stepping walk the visible text
  * changes (`changes`) alone; a tree line has no place in the text.
  */
+import { useContext, useSyncExternalStore } from "react";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
+import { suggestionModeEnabled } from "@/core/editor/extensions/suggestion-mode";
+import { HostEditorContext, type HostEditor } from "@/features/suggestion-review/host-editor";
+import { useSuggestionChanges } from "@/features/suggestion-review/useSuggestionChanges";
 import type { DraftChangesData } from "./draft-changes";
 import { useDraftCommandState } from "./draft-changes";
 import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
+import type { DraftRef } from "./review-command-types";
+import type { ReviewChange } from "./review-model";
 import { useRoomReview } from "./useRoomReview";
+
+type ReviewRead = {
+  status: "idle" | "loading" | "error" | "ready" | "gone";
+  changes: readonly ReviewChange[];
+  retry?: () => void;
+};
+
+/**
+ * In suggestion mode the open review's changes are the Work's suggestions in the host's editor.
+ * `host` serves the one caller above the host's boundary (its address admission).
+ */
+function useSuggestionRead(draft: DraftRef | null, host: HostEditor | null): ReviewRead {
+  const fromBoundary = useContext(HostEditorContext);
+  const store = fromBoundary ?? host;
+  const editor = useSyncExternalStore(
+    store?.subscribe ?? noSubscription,
+    store?.get ?? noEditor,
+    noEditor,
+  );
+  const listed = useOwnerDraftList(draft?.projectId ?? "", draft?.ownerKey ?? "", Boolean(draft));
+  const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
+  const read = useSuggestionChanges(draft ? editor : null, draft?.ownerKey ?? "", item);
+  return { status: !draft ? "idle" : read.ready ? "ready" : "loading", changes: read.changes };
+}
+const noSubscription = () => () => undefined;
+const noEditor = () => null;
+
+const useReviewRead: (draft: DraftRef | null, host: HostEditor | null) => ReviewRead =
+  suggestionModeEnabled ? useSuggestionRead : useRoomReview;
 export function useOpenReviewChanges(
   controller: Pick<DraftReviewController, "projectId" | "ownerKey" | "inlineReview">,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; host?: HostEditor | null },
 ) {
   const inline = options?.enabled === false ? null : controller.inlineReview;
   const draft = inline
@@ -27,7 +62,7 @@ export function useOpenReviewChanges(
   const listed = useOwnerDraftList(controller.projectId, controller.ownerKey, Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
   const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
-  const read = useRoomReview(draft);
+  const read = useReviewRead(draft, options?.host ?? null);
   const line = item && !item.isNew ? treeLineOf(item) : null;
   const changes = line?.kind === "delete" ? [] : read.changes;
   const items = (item && line ? [treeChange(item, line), ...changes] : changes).map((change) => ({

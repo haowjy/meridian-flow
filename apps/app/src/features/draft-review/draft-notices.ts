@@ -138,15 +138,12 @@ export type DraftNotice =
       dismiss(): void;
     });
 
-/** An Apply's Undo, while it can be taken back: its editor history entries, or a press's Undo. */
-export type AppliedUndo = Pick<ApplyEntries, "undo"> | { undo(from: null): Promise<unknown> };
-
 /**
  * One fact an Apply brought, about one document: it was applied where it was (`applied`, which
  * only its row's Undo shows), or landed somewhere new (`uri`). `step`: the Apply's Undo, while it
  * can be taken back.
  */
-export type AppliedFact = { documentId: string; step?: AppliedUndo } & (
+export type AppliedFact = { documentId: string; step?: ApplyEntries } & (
   | { kind: "applied"; name: string }
   | { kind: "landed"; uri: string; name: string }
 );

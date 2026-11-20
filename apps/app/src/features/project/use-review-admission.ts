@@ -9,6 +9,7 @@ import { useEffect, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
+import type { HostEditor } from "@/features/suggestion-review/host-editor";
 import type { AiDraftLaunchTarget } from "./review-launch";
 
 /** The route's verdict on a review the address names, asked of the server by owner and item. */
@@ -36,12 +37,15 @@ export function useReviewAdmission({
   presented,
   admission,
   port,
+  editor,
 }: {
   review: DraftReviewContextValue;
   presented: ReviewedDocument | null;
   /** The route's verdict when the address names this review; "admitted" for every other review. */
   admission: ReviewAddressAdmission;
   port: ReviewAdmissionPort;
+  /** The host's editor, which holds the review in suggestion mode. */
+  editor: HostEditor;
 }) {
   /** The item an admission is in flight for. */
   const restoring = useRef<string | null>(null);
@@ -54,7 +58,7 @@ export function useReviewAdmission({
   const settled = useRef<{ focus?: string; pin?: string }>({});
   /** The first reconcile with the review painted and read: where a restored place gives way, once. */
   const reconciled = useRef(false);
-  const { changes, status } = useOpenReviewChanges(review.controller);
+  const { changes, status } = useOpenReviewChanges(review.controller, { host: editor });
   const requested = presented?.review ?? null;
 
   useEffect(() => {

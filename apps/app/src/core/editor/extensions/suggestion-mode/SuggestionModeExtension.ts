@@ -38,6 +38,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import type * as Y from "yjs";
 import { endUndoStep } from "../../editor-history";
+import { createBarSlotElement } from "../inline-review/removal-widget";
 import "./suggestion-mode.css";
 
 /** The marks always exist (the schema is shared); only the behaviour is behind the flag. */
@@ -52,9 +53,11 @@ type ModeState = {
   author: Author | null;
   focus: string | null;
   marks: boolean;
+  /** The block the focused change's bar opens after, when the margin has no room for it. */
+  slot: boolean;
   decorations: DecorationSet;
 };
-type Review = Pick<ModeState, "focus" | "marks">;
+type Review = Pick<ModeState, "focus" | "marks" | "slot">;
 
 const suggestionModeKey = new PluginKey<ModeState>("suggestionMode");
 
@@ -121,6 +124,10 @@ declare module "@tiptap/core" {
       setSuggestionView: (view: View, author: Author | null) => ReturnType;
       /** The review's paint: the change in focus, and whether changes are marked. */
       setSuggestionReview: (review: Partial<Review>) => ReturnType;
+      /** The review's focus commands, as the draft review's editor has them (`DraftReviewController`). */
+      setReviewActiveChange: (changeId: string | null) => ReturnType;
+      scrollReviewChangeIntoView: (changeId: string, options?: { instant?: boolean }) => ReturnType;
+      setReviewBarSlot: (open: boolean) => ReturnType;
       acceptSuggestions: (filter: Filter) => ReturnType;
       rejectSuggestions: (filter: Filter) => ReturnType;
       /** A comment anchor over the selection: a bare mark with an id. */
@@ -232,6 +239,28 @@ export const SuggestionModeExtension = Extension.create({
           dispatch?.(tr.setMeta(suggestionModeKey, review).setMeta(RAW_META, true));
           return true;
         },
+      setReviewActiveChange:
+        (focus) =>
+        ({ commands }) =>
+          commands.setSuggestionReview({ focus }),
+      setReviewBarSlot:
+        (slot) =>
+        ({ commands }) =>
+          commands.setSuggestionReview({ slot }),
+      scrollReviewChangeIntoView:
+        (changeId, options) =>
+        ({ view }) => {
+          const target = view.dom.querySelector(
+            `[${SUGGESTION_CHANGE_ATTR}="${CSS.escape(changeId)}"]`,
+          );
+          if (!target) return false;
+          const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          target.scrollIntoView({
+            block: "center",
+            behavior: reduceMotion || options?.instant ? "auto" : "smooth",
+          });
+          return true;
+        },
       acceptSuggestions:
         (filter) =>
         ({ state, tr, dispatch }) =>
@@ -275,7 +304,7 @@ export const SuggestionModeExtension = Extension.create({
         key: suggestionModeKey,
         state: {
           init: (_, state) => {
-            const init = { view: liveView, author: null, focus: null, marks: true };
+            const init = { view: liveView, author: null, focus: null, marks: true, slot: false };
             return { ...init, decorations: paint(state.doc, init) };
           },
           apply(tr, value, _old, state) {
@@ -354,8 +383,19 @@ function resolveHere(
  * change is emphasized. With marks off, the view reads as if applied: its deletions are hidden too.
  */
 function paint(doc: PMNode, state: Omit<ModeState, "decorations" | "author">): DecorationSet {
-  const { view, focus, marks } = state;
+  const { view, focus, marks, slot } = state;
   const decorations: Decoration[] = [];
+  /** Where the focused change ends, for its bar's slot. */
+  let focusEnd = -1;
+  const decorate = (
+    from: number,
+    to: number,
+    attrs: Record<string, string>,
+    node?: "node",
+  ): void => {
+    if (focus && attrs[SUGGESTION_CHANGE_ATTR] === focus) focusEnd = Math.max(focusEnd, to);
+    decorations.push(node ? Decoration.node(from, to, attrs) : Decoration.inline(from, to, attrs));
+  };
   const added = (id: string | undefined, block = false) => ({
     class: [
       "meridian-review-added",
@@ -378,20 +418,14 @@ function paint(doc: PMNode, state: Omit<ModeState, "decorations" | "author">): D
     const end = blockPos + block.nodeSize;
     const owner = "sug" in block.attrs ? blockKind(block, view) : "live";
     if (owner === "hidden") {
-      decorations.push(Decoration.node(blockPos, end, { class: "sug-hidden" }));
+      decorate(blockPos, end, { class: "sug-hidden" }, "node");
       return false;
     }
     if (owner === "own" && marks)
-      decorations.push(Decoration.node(blockPos, end, added(block.attrs.sug?.id, true)));
+      decorate(blockPos, end, added(block.attrs.sug?.id, true), "node");
     const own = view.work ? (proposals(block)[view.work] ?? []) : [];
     if (removedIn(block, view))
-      decorations.push(
-        Decoration.node(
-          blockPos,
-          end,
-          removed(own.find((layer) => layer.remove)?.id, "sug-del-block"),
-        ),
-      );
+      decorate(blockPos, end, removed(own.find((layer) => layer.remove)?.id, "sug-del-block"), "node");
     // A pending change to the block's attributes shows them; the element is still Live's.
     const shown = viewAttrs(block, view);
     if (
@@ -399,12 +433,15 @@ function paint(doc: PMNode, state: Omit<ModeState, "decorations" | "author">): D
       block.attrs.sugAttrs &&
       !sameValue(shown, { ...block.attrs, sug: null, sugAttrs: null })
     )
-      decorations.push(
-        Decoration.node(blockPos, end, {
+      decorate(
+        blockPos,
+        end,
+        {
           ...(marks ? { class: "sug-attrs" } : {}),
           ...(marks && own[0] ? { [SUGGESTION_CHANGE_ATTR]: own[own.length - 1]?.id } : {}),
           "data-view-level": String(shown.level ?? 0),
-        }),
+        },
+        "node",
       );
     if (!block.isTextblock) return true;
     block.forEach((child, offset) => {
@@ -421,10 +458,23 @@ function paint(doc: PMNode, state: Omit<ModeState, "decorations" | "author">): D
               ? added(id)
               : null
             : removed(id, "sug-del");
-      if (attrs) decorations.push(Decoration.inline(from, from + child.nodeSize, attrs));
+      if (attrs) decorate(from, from + child.nodeSize, attrs);
     });
     return false;
   });
+  if (slot && focusEnd >= 0) {
+    // After the block the change ends in; one keyed widget, so it keeps its DOM as focus moves.
+    const $end = doc.resolve(focusEnd);
+    const at = $end.depth > 0 ? $end.after(1) : focusEnd;
+    decorations.push(
+      Decoration.widget(at, (editorView) => createBarSlotElement(editorView.dom.ownerDocument), {
+        key: "bar-slot",
+        side: 1,
+        stopEvent: () => true,
+        ignoreSelection: true,
+      }),
+    );
+  }
   return DecorationSet.create(doc, decorations);
 }
 

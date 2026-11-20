@@ -10,7 +10,9 @@ import { useLayoutEffect, useMemo } from "react";
 import { PaintCapture, PaintScope } from "@/components/app/PaintHold";
 import { editorMountKey, type EditorMountIdentity } from "@/core/editor/mounted-editor";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { useHostEditorStore } from "@/features/suggestion-review/host-editor";
+import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
+import { useHostEditor, useHostEditorStore } from "@/features/suggestion-review/host-editor";
+import { useSuggestionReviewFocus } from "@/features/suggestion-review/useSuggestionChanges";
 import type { EditorViewProps } from "./EditorView";
 import { PendingEditorShell, SessionEditor } from "./SessionEditor";
 
@@ -45,6 +47,14 @@ export function SuggestionEditorView(props: EditorViewProps) {
     if (!review) return;
     setInlineReviewShown(props.documentId, review.itemKey, session !== null);
   }, [setInlineReviewShown, props.documentId, review?.itemKey, session]);
+  const editor = useHostEditor();
+  const { changes } = useOpenReviewChanges(controller, { enabled: owner !== "" });
+  useSuggestionReviewFocus({
+    editor: owner ? editor : null,
+    documentId: props.documentId,
+    itemKey: review?.itemKey ?? null,
+    changes,
+  });
   const surface = session ? `live:${editorMountKey(identity)}|${session.document.guid}` : "pending";
   return (
     <>

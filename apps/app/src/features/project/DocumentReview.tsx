@@ -167,8 +167,8 @@ export function useDocumentReview(
         : null,
     [tab, paint.draft, paint.view.version],
   );
-  useReviewAdmission({ review: value, presented, admission, port });
   const [editor] = useState(() => new HostEditor());
+  useReviewAdmission({ review: value, presented, admission, port, editor });
   return { value, paint, editor };
 }
 

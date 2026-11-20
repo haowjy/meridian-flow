@@ -29,6 +29,7 @@ import {
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { notifyFailure } from "@/components/app/failure-toast";
+import { type ApplyPort, ApplyEntries } from "@/features/draft-review/apply-history";
 import type { CommandOutcome } from "@/features/draft-review/draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
 import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
@@ -83,25 +84,57 @@ export function usePressCommands({
       outcome: Promise.resolve({ kind: "blocked" }),
     });
 
-    /** The press's Undo, once: the notice and every row that offers it send this. */
+    /** A press's Undo: the server takes back what that press did, and nothing else. */
+    const unpress = async (commandId: string): Promise<boolean> => {
+      if (!driver) return false;
+      const record = await submitPressUndo(driver, ownerKey, {
+        projectId,
+        pressCommandId: commandId,
+      });
+      const settled = record ? await driver.whenSettled(record.id) : null;
+      refresh();
+      return settled?.state === "done";
+    };
+
+    /** A Discard's Undo, once: the notice and every row that offers it send this. */
     const undoOf = (commandId: string) => {
       let sent: Promise<boolean> | null = null;
       return () => {
-        sent ??= (async () => {
-          if (!driver) return false;
-          const record = await submitPressUndo(driver, ownerKey, {
-            projectId,
-            pressCommandId: commandId,
-          });
-          const settled = record ? await driver.whenSettled(record.id) : null;
-          refresh();
-          if (settled?.state === "done") return true;
+        sent ??= unpress(commandId).then((done) => {
+          if (done) return true;
           notifyFailure({ key: `unpress:${commandId}`, title: t`Couldn't undo`, brief: true });
           sent = null;
           return false;
-        })();
+        });
         return sent;
       };
+    };
+
+    /**
+     * An Apply in the history of every editor open on its documents, as a draft's Apply is
+     * (`ApplyEntries`): Ctrl+Z there, or a row's Undo, takes back the press; Redo presses again.
+     */
+    const remember = (pressed: Pressed, nodes: readonly string[]): ApplyEntries => {
+      const port: ApplyPort = {
+        unapply: async (commandId) =>
+          (await unpress(commandId))
+            ? { kind: "answered", unapplyId: commandId, took: true }
+            : { kind: "failed" },
+        redo: async () => {
+          if (!driver) return "failed";
+          const again = await press("apply", nodes, driver);
+          return again ? { commandId: again.commandId } : "failed";
+        },
+      };
+      const entries: ApplyEntries = new ApplyEntries(
+        pressed.commandId,
+        port,
+        () => nodes.map((node) => registry.history(node)),
+        null,
+        () => owner.applied.delete(entries),
+      );
+      owner.applied.add(entries);
+      return entries;
     };
 
     /**
@@ -175,9 +208,9 @@ export function usePressCommands({
         const answer = outcomeOf(pressed, sent);
         if (!pressed || answer.kind !== "done") return answer;
         const changed = pressed.result.items.map((item) => item.node);
-        const undo = undoOf(pressed.commandId);
         const where = noticeSurface(input.documentId);
-        if (verdict === "apply")
+        if (verdict === "apply") {
+          const step = remember(pressed, changed);
           notices.showApplied({
             projectId,
             ownerKey,
@@ -186,10 +219,11 @@ export function usePressCommands({
               documentId,
               kind: "applied" as const,
               name: nameOf(documentId),
-              step: { undo: () => undo() },
+              step,
             })),
           });
-        else {
+        } else {
+          const undo = undoOf(pressed.commandId);
           const [first] = changed;
           const part: DiscardPart = {
             documentId: input.documentId ?? first ?? "",
