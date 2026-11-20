@@ -612,10 +612,14 @@ head's generation-local retired-through sequence. A stale checkpoint returns
 Compaction exists but has no production caller, so live journal rows are never
 deleted: the model's report of what changed since its last read attributes each
 change from the rows after its frontier, however old. A background checkpoint
-(`storeCheckpoint`) deletes the document's earlier background checkpoints in its
-own transaction, so a document holds its seed, its explicit checkpoints and one
-background checkpoint; its attribution manifest reads only the rows after the
-checkpoint it builds on.
+(`storeCheckpoint`, `background` set) deletes the document's other background
+checkpoints in its own transaction, before it updates the head row every keystroke
+frame waits on. A document holds its seed, its explicit checkpoints, one checkpoint
+per restore and one background checkpoint. A capture whose base a later store
+deleted replays from an older checkpoint and more rows. The manifest reads only the
+rows after the checkpoint it builds on. `compact()` retires rows through the latest
+checkpoint, which may be a background one the next store deletes: before it gets a
+caller, it must fold into a checkpoint that is kept.
 
 `domain/document-derivations.ts` is the sole pipeline from Yjs to stored text:
 block rows, the order and counts on the room row, `documents.size_bytes` and

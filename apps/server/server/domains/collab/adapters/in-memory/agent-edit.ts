@@ -71,6 +71,8 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   }
 
   private checkpoints: InMemoryCheckpointRecord[] = [];
+  /** Ids of the checkpoints `storeCheckpoint` wrote: the ones a later store replaces. */
+  private readonly background = new Set<string>();
   private nextCheckpointId = 1;
   async appendWriterUpdate(
     docId: string,
@@ -142,8 +144,9 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     const documentId = resolveCheckpointCut(cut).documentId;
     this.checkpoints = this.checkpoints.filter(
       (record) =>
-        record.id === stored || record.documentId !== documentId || record.reason !== "checkpoint",
+        record.documentId !== documentId || !this.background.has(record.id) || record.id === stored,
     );
+    this.background.add(stored);
   }
 
   override async compact(docId: string, before: Date) {

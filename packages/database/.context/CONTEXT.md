@@ -94,9 +94,10 @@ focused resets no delete order.
 claim, taken by one insert in the admitting transaction, and `tree_nodes` / `branch_tree_nodes`
 reference `(id, list_id)` in it, so a row cannot be written for another list's id. They are the
 project tree's rows, written only by the tree list store (domains/context). Compaction retires update prefixes through the generation-local
-`retired_through_seq`. A background checkpoint (reason `checkpoint`) deletes the
-document's earlier background checkpoints in its own transaction; seeds, explicit
-checkpoints and restore installs survive until document cascade. Lazy checkpoint cuts validate their captured suffix floor
+`retired_through_seq`. A checkpoint row with `background` set (a room store, or an empty
+seed's placeholder) deletes the document's other background rows in its own transaction;
+seeds with content, explicit checkpoints and restore installs survive until document
+cascade. Retention reads the column, never `reason`, which is free text. Lazy checkpoint cuts validate their captured suffix floor
 against `retired_through_seq` after fetching inputs and again under the
 persistence lock; generation replacement resets it. Schema versions are packed
 only inside Drizzle adapters and must use the shared packer (no second literal);

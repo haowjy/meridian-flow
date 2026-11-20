@@ -980,6 +980,7 @@ CREATE TABLE "document_yjs_checkpoints" (
 	"state_vector" "bytea" NOT NULL,
 	"up_to_seq" bigint NOT NULL,
 	"reason" text,
+	"background" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
