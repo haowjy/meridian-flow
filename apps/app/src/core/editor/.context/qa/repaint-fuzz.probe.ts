@@ -21,11 +21,14 @@ const seed = Number(process.env.FUZZ_SEED ?? Math.floor(Math.random() * 2 ** 31)
 const edits = Number(process.env.FUZZ_EDITS ?? 2000);
 const EDITS_PER_DOC = 40;
 
-let rng = seed;
-/** A deterministic integer in [0, n), so a seed replays the same run. */
+let rng = seed >>> 0;
+/** A deterministic integer in [0, n) (mulberry32, as the other probes), so a seed replays the run. */
 const rnd = (n: number) => {
-  rng = (rng * 1103515245 + 12345) & 0x7fffffff;
-  return rng % n;
+  rng = (rng + 0x6d2b79f5) >>> 0;
+  let t = rng;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4294967296) * n);
 };
 
 const schema = buildDocumentSchema();
@@ -175,12 +178,11 @@ it("an incremental repaint matches a full paint", () => {
         }
         const got = dump(view.set);
         const want = dump(paintAll(current.doc, view.paint));
-        const missing = want.filter((d) => !got.includes(d));
-        const extra = got.filter((d) => !want.includes(d));
+        // Whole sorted lists, so a decoration painted twice fails too.
         expect(
-          { missing, extra },
+          got,
           `seed ${seed}, edit ${i} (${name}) by ${by.work ?? "Live"}, painted in ${view.paint.view.work ?? "Live"}'s view with focus ${view.paint.focus} and slot ${view.paint.slot}; replay with FUZZ_SEED=${seed} FUZZ_EDITS=${i + 1}`,
-        ).toEqual({ missing: [], extra: [] });
+        ).toEqual(want);
         checks++;
       }
     }

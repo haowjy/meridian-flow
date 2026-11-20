@@ -7,6 +7,7 @@ export default mergeConfig(
   appConfig,
   defineConfig({
     root: fileURLToPath(new URL("../../../../..", import.meta.url)),
-    test: { include: ["src/core/editor/.context/qa/repaint-fuzz.probe.ts"] },
+    // A long FUZZ_EDITS run takes longer than the default 5 s.
+    test: { include: ["src/core/editor/.context/qa/repaint-fuzz.probe.ts"], testTimeout: 0 },
   }),
 );

@@ -28,13 +28,20 @@ FUZZ_EDITS=20000 pnpm exec vitest run --config src/core/editor/.context/qa/repai
 `FUZZ_EDITS` (default 2000) sets the edits per run; each edit is checked in three views. Each
 run picks a new random seed and prints it in one JSON line of totals. A run stops at the first
 mismatch, and its message names the seed, the edit, who made it, the view, the focus and the
-slot, and the `FUZZ_SEED=<seed> FUZZ_EDITS=<n>` that replays the run up to that edit. The
-decorations the full paint has and the incremental one lacks are under `missing`, the reverse
-under `extra`.
+slot, and the `FUZZ_SEED=<seed> FUZZ_EDITS=<n>` that replays the run up to that edit. Below it,
+vitest diffs the full paint's sorted decorations (expected) against the incremental ones
+(received), so a decoration painted twice fails too. A replay picks the same edits and the same
+focus, but `rewrite` makes fresh change ids, so match a replayed failure by edit number and
+position, not by the focused id.
+
+The seed goes through mulberry32, as in the other probes. A plain multiply-and-mask generator
+loses its low bits past 2^53 in JavaScript, and every seed falls into one short cycle.
 
 ## Last run: 2026-11-20, on `feat/suggestions` 6379239292
 
-- 2,000 edits, 5,892 repaints compared: 0 mismatches, about 1 s.
-- With either of two bugs put back by hand it fails within 600 edits on seed 1: the slot left
-  where it was after an edit (the bug review found in PR #1797), and `repaintRange` not reaching
-  one position past the edit, which misses a horizontal rule's focus.
+- Seeds 1 to 4, 20,000 edits each, about 58,500 repaints compared per seed: 0 mismatches, about
+  9 s a seed. The default 2,000 edits take about 1 s.
+- Bugs put back by hand fail fast. On seed 1: the slot left where it was after an edit (the bug
+  review found in PR #1797) at edit 17, and every repainted decoration painted twice at edit 1.
+  Dropping the overlap adjustment in `repaintEdit` (an edit that repeats the text beside it)
+  fails on each of seeds 4 and 8 to 12, at edits 288 to 3,968.
