@@ -1,5 +1,6 @@
 /** Production dependency graph for the server collab domain. */
 
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
@@ -134,6 +135,7 @@ import { liveRoom } from "./domain/observation-rooms.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import { createReversalNoticePort } from "./domain/reversal-notices.js";
+import { createSuggestionTurnUndo } from "./domain/suggestion-turn-undo.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
   createTurnReversalService,
@@ -368,6 +370,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts,
     liveUtilityCore: runtime.liveUtilityCore,
     threadCore,
+    suggestionCore: runtime.suggestionCore,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -376,6 +379,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const modelEditWrite = createModelEditWriter({
     liveCore: runtime.liveUtilityCore,
     threadCore,
+    suggestionCore: runtime.suggestionCore,
     branches: workBranches,
     fileAccess: deps.fileAccess,
     enterLiveSeam: (documentId) => enterLiveWriteSeam(deps.db, documentId),
@@ -622,8 +626,17 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
   });
+  // Suggestion mode (prototype): a card's Undo rejects the turn's suggestions.
+  const suggestionTurnUndo = runtime.suggestionCore
+    ? createSuggestionTurnUndo({
+        schema: buildDocumentSchema(),
+        listTurnDocuments: lineageStore.listEditedDocumentIdsForTurn,
+        resolveDocumentUri: documentUriResolver,
+        changeLiveDocument: runtime.markdownDocuments.changeLiveDocument,
+      })
+    : null;
   const turnReversal = createTurnReversalService({
-    turnInverse,
+    turnInverse: suggestionTurnUndo ? { ...turnInverse, reverseTurn: suggestionTurnUndo } : turnInverse,
     lockOwners: createDrizzleReversalLocks(deps.db),
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,

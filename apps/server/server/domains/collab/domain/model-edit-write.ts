@@ -13,7 +13,8 @@ import {
   type WriteContext,
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
-import type { DraftOwner, LinkView, ThreadId } from "@meridian/contracts";
+import { type DraftOwner, draftOwnerKey, type LinkView, type ThreadId } from "@meridian/contracts";
+import type { Author } from "@meridian/suggestions";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { testHook } from "../../../shared/test-hooks.js";
@@ -55,7 +56,11 @@ export type ModelEditWriteDeps = {
   liveRoomOf(documentId: DocumentId): Promise<string | null>;
   /** A draft seeded from an older cut is behind Live: runs once the command's transaction commits. */
   draftBehindLive(documentId: DocumentId): void;
+  /** Suggestion mode (prototype): a core over Live writing a Work's suggestions. */
+  suggestionCore?: SuggestionCore | null;
 };
+
+export type SuggestionCore = (work: string, author: Author | null) => AgentEditCore;
 
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
   function threadCoreFor(given: WriteContext): AgentEditCore {
@@ -119,10 +124,41 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     return outcome;
   }
 
+  /** A drafted write in suggestion mode: Live's door, as that Work's suggestions. */
+  async function suggest(
+    command: WriteCommand,
+    given: GivenContext,
+    documentId: DocumentId | null,
+    owner: DraftOwner,
+    suggestionCore: SuggestionCore,
+  ): Promise<WriteOutcome> {
+    if (documentId) {
+      await deps.enterLiveSeam(documentId);
+      await testHook("command.afterLock");
+    }
+    const work = draftOwnerKey(owner);
+    const turn = given.turnId ?? (given.actor?.kind === "agent" ? given.actor.turnId : null) ?? null;
+    return suggestionCore(work, { work, chat: given.threadId ?? null, turn, by: "agent" }).write(
+      command,
+      { ...given, linkView: { kind: "live" }, documentVersion: "live" },
+    );
+  }
+
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
     const { grant, ...given } = routed;
     const documentId = documentIdFromCommand(command);
     const inverse = command.command === "undo" || command.command === "revert";
+    const suggestionCore = deps.suggestionCore;
+    if (suggestionCore && grant.destination.kind === "draft" && !inverse) {
+      const owner = grant.destination.owner;
+      return runInLockedWrite(async () => {
+        const confirmed = await runWithEditGrants(deps.fileAccess, [grant], () =>
+          suggest(command, given, documentId, owner, suggestionCore),
+        );
+        if (!confirmed.ok) throw confirmed.refusal;
+        return confirmed.value;
+      });
+    }
     return runInLockedWrite(async () => {
       // An inverse takes its own locks in the turn-inverse service, as it always has.
       if (inverse) {

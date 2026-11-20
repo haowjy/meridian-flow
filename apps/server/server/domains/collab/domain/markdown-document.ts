@@ -200,6 +200,12 @@ export type MarkdownDocumentEngine = {
     documentId: string,
     operation: (held: HeldLiveDocument) => Promise<T>,
   ): Promise<T>;
+  /** A change made by code on the live document, under its lock, journaled like any write. */
+  changeLiveDocument(input: {
+    documentId: DocumentId;
+    origin: DocumentWriteOrigin;
+    mutate(doc: Y.Doc, yjsOrigin: TransactionOrigin): void;
+  }): Promise<void>;
   writeDocumentHeld(input: {
     held: HeldLiveDocument;
     content: BoundWrite;
@@ -704,6 +710,20 @@ export function createMarkdownDocumentEngine(
     },
 
     writeDocumentHeld,
+    async changeLiveDocument({ documentId, origin, mutate }) {
+      const format = await documentFormat(documentId);
+      if (!format.ok) throwSyncError(format.error);
+      const result = await changeDocument(
+        { documentId, origin },
+        (doc, yjsOrigin) => {
+          doc.transact(() => mutate(doc, yjsOrigin), yjsOrigin);
+          return Ok(undefined);
+        },
+        format.value,
+        true,
+      );
+      if (!result.ok) throwSyncError(result.error);
+    },
   };
   return engine;
 

@@ -1,5 +1,6 @@
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Mark } from "prosemirror-model";
+import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
@@ -406,11 +407,12 @@ function keptUnits(
 ): { formats: FormatRange[]; kept: LoweredText["kept"] } {
   const marksA = unitMarks(before);
   const marksB = unitMarks(after);
+  // Keyed as the binding stores them, so two marks of one type that may overlap stay two.
   const names = new Set<string>();
   for (const marks of [...marksA, ...marksB])
-    for (const mark of marks ?? []) names.add(mark.type.name);
-  const value = (marks: readonly Mark[], name: string) => {
-    const mark = marks.find((candidate) => candidate.type.name === name);
+    for (const mark of marks ?? []) names.add(yjsMarkKey(mark));
+  const value = (marks: readonly Mark[], key: string) => {
+    const mark = marks.find((candidate) => yjsMarkKey(candidate) === key);
     return mark ? JSON.stringify(mark.attrs) : null;
   };
   const formats: FormatRange[] = [];

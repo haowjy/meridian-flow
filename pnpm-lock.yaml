@@ -618,6 +618,9 @@ importers:
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../../packages/prosemirror-schema
+      '@meridian/suggestions':
+        specifier: workspace:*
+        version: link:../../packages/suggestions
       '@meridian/thread-client':
         specifier: workspace:*
         version: link:../../packages/thread-client
@@ -678,6 +681,9 @@ importers:
       prosemirror-model:
         specifier: ^1.25.13
         version: 1.25.13
+      prosemirror-state:
+        specifier: ^1.4.4
+        version: 1.4.4
       prosemirror-transform:
         specifier: ^1.12.5
         version: 1.12.5
@@ -830,6 +836,9 @@ importers:
       '@meridian/prosemirror-schema':
         specifier: workspace:*
         version: link:../prosemirror-schema
+      '@meridian/suggestions':
+        specifier: workspace:*
+        version: link:../suggestions
       '@sanity/diff-match-patch':
         specifier: ^3.2.1
         version: 3.2.1
@@ -839,6 +848,9 @@ importers:
       prosemirror-model:
         specifier: ^1.25.13
         version: 1.25.13
+      prosemirror-state:
+        specifier: ^1.4.4
+        version: 1.4.4
       prosemirror-transform:
         specifier: ^1.12.5
         version: 1.12.5

@@ -2,9 +2,12 @@ export { accept, type Change, type Filter, list, reject } from "./resolve.js";
 export { type Author, newChangeId, RAW_META, rewrite } from "./rewrite.js";
 export {
   blockKind,
+  HIDDEN_ROOT,
+  hiddenWorks,
   isSuggestionMark,
   kindOf,
   liveView,
+  type MarkLike,
   type Run,
   type RunKind,
   runs,

@@ -30,7 +30,9 @@ export type RunKind = "live" | "own-ins" | "own-del" | "hidden";
 /** A stretch of one textblock's inline content, in offsets inside the block. */
 export type Run = { from: number; to: number; kind: RunKind };
 
-export const SUGGESTION_MARKS = ["suggest_ins", "suggest_del"] as const;
+/** What the table reads of a mark and a block: a ProseMirror one, or one read from Yjs. */
+export type MarkLike = { type: { name: string }; attrs: Record<string, unknown> };
+export type BlockLike = { attrs: Record<string, unknown> };
 
 export function isSuggestionMark(mark: Mark): boolean {
   return mark.type.name === "suggest_ins" || mark.type.name === "suggest_del";
@@ -45,13 +47,13 @@ function mine(attrs: SuggestionAttrs | null, view: View): boolean {
 }
 
 /** A top-level block: Live, the view's own suggested block, or another Work's (not shown). */
-export function blockKind(block: Node, view: View): "live" | "own" | "hidden" {
-  const sug = block.attrs.sug as SuggestionAttrs | null;
+export function blockKind(block: BlockLike, view: View): "live" | "own" | "hidden" {
+  const sug = (block.attrs.sug ?? null) as SuggestionAttrs | null;
   if (!sug) return "live";
   return mine(sug, view) ? "own" : "hidden";
 }
 
-export function kindOf(marks: readonly Mark[], block: Node, view: View): RunKind {
+export function kindOf(marks: readonly MarkLike[], block: BlockLike, view: View): RunKind {
   const owner = blockKind(block, view);
   if (owner === "hidden") return "hidden";
   if (owner === "own") return "own-ins";
@@ -149,4 +151,12 @@ export function visibleContent(block: Node, from: number, to: number, view: View
 /** A slice with every suggestion removed. */
 export function stripSlice(slice: Slice): Slice {
   return new Slice(stripSuggestions(slice.content), slice.openStart, slice.openEnd);
+}
+
+/** The document's root that lists, by Work, the drafts discarded in it. */
+export const HIDDEN_ROOT = "suggest_hidden";
+
+/** Works whose suggestions in this document are discarded: absent from every view. */
+export function hiddenWorks(doc: { getMap(name: string): { keys(): IterableIterator<string> } }): Set<string> {
+  return new Set(doc.getMap(HIDDEN_ROOT).keys());
 }

@@ -4,12 +4,13 @@ import { RAW_META } from "./rewrite.js";
 import { blockKind, type SuggestionAttrs, type View } from "./view.js";
 
 /** Which suggestions an accept or reject takes: one change, a Work's turn, or a whole Work's. */
-export type Filter = { id: string } | { work: string; turn?: string };
+export type Filter = { id: string } | { work: string } | { turn: string };
 
 function matches(attrs: SuggestionAttrs | null, filter: Filter): boolean {
   if (!attrs) return false;
   if ("id" in filter) return attrs.id === filter.id;
-  return attrs.work === filter.work && (filter.turn === undefined || attrs.turn === filter.turn);
+  if ("turn" in filter) return attrs.turn === filter.turn;
+  return attrs.work === filter.work;
 }
 
 /** Accept: an insertion becomes Live text, a deletion removes its text. One local transaction. */
