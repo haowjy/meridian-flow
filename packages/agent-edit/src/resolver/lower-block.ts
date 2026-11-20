@@ -1,6 +1,7 @@
 import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Mark } from "prosemirror-model";
+import { type Mappable, Mapping, type Transform } from "prosemirror-transform";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
@@ -179,8 +180,104 @@ function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block 
   return atoms[ordinal] ?? null;
 }
 
-function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
-  const text = lowerText(before, after, walk.windows?.get(path.join("/")));
+/**
+ * A transaction that only deletes and unmarks (an accept or a reject), read once for
+ * `lowerResolved`: its mapping, its final document, and the ranges of its start document it
+ * deleted, sorted and joined.
+ */
+export type ResolvedEdit = {
+  mapping: Mappable;
+  doc: Block;
+  removed: ReadonlyArray<readonly [number, number]>;
+};
+
+export function resolvedEdit(tr: Transform): ResolvedEdit {
+  const ranges: Array<[number, number]> = [];
+  tr.mapping.maps.forEach((map, index) => {
+    // Back through the steps before it; built only for a step that deletes (an unmark maps nothing).
+    let back: Mapping | null = null;
+    map.forEach((from, to) => {
+      if (to <= from) return;
+      back ??= new Mapping(tr.mapping.maps.slice(0, index)).invert();
+      ranges.push([back.map(from, 1), back.map(to, -1)]);
+    });
+  });
+  ranges.sort((a, b) => a[0] - b[0]);
+  const removed: Array<[number, number]> = [];
+  for (const [from, to] of ranges) {
+    const last = removed.at(-1);
+    if (last && from <= last[1]) last[1] = Math.max(last[1], to);
+    else removed.push([from, to]);
+  }
+  return { mapping: tr.mapping, doc: tr.doc, removed };
+}
+
+/**
+ * The exact operations `edit` made of `before`, the stored block at `at` in its start document.
+ * Nothing is diffed, so every unit, run and node the edit kept keeps its Yjs item, and text typed
+ * inside a resolved word stays where it was typed. One pass over the block against the deleted
+ * ranges. Null when the result does not pair with `before` unit for unit, as when ProseMirror
+ * fills a container that a delete emptied: `lowerBlock` lowers that one.
+ */
+export function lowerResolved(before: Block, at: number, edit: ResolvedEdit): EditOp[] | null {
+  const { mapping, doc, removed } = edit;
+  const walk: Walk = { windows: null, ops: [] };
+  // The first deleted range that ends after `pos`; ranges are visited in document order.
+  let next = 0;
+  const gone = (from: number, to: number) => {
+    while (next < removed.length && removed[next][1] <= from) next += 1;
+    const range = removed[next];
+    return !!range && range[0] <= from && to <= range[1];
+  };
+  const visit = (node: Block, pos: number, path: readonly number[]): boolean => {
+    const after = doc.nodeAt(mapping.map(pos, 1));
+    if (!after || after.type !== node.type) return false;
+    if (node.eq(after)) return true;
+    const attrs = changedAttrs(node, after, undefined);
+    if (Object.keys(attrs).length > 0) walk.ops.push({ kind: "attrs", path, attrs });
+    if (node.isTextblock) {
+      const hunks: Hunk[] = [];
+      let left = 0;
+      for (let unit = 0; unit < node.content.size; unit += 1) {
+        const char = pos + 1 + unit;
+        if (!gone(char, char + 1)) {
+          left += 1;
+          continue;
+        }
+        const last = hunks.at(-1);
+        if (last && last.to === unit) last.to += 1;
+        else hunks.push({ from: unit, to: unit + 1, at: left, end: left });
+      }
+      if (left !== after.content.size) return false;
+      lowerTextblock(walk, node, after, path, hunks);
+      return true;
+    }
+    let children = 0;
+    let paired = true;
+    node.forEach((child, offset, index) => {
+      const start = pos + 1 + offset;
+      if (gone(start, start + child.nodeSize))
+        walk.ops.push({ kind: "delete", path: [...path, index] });
+      else {
+        children += 1;
+        paired &&= visit(child, start, [...path, index]);
+      }
+    });
+    return paired && children === after.childCount;
+  };
+  return visit(before, at, []) ? walk.ops : null;
+}
+
+function lowerTextblock(
+  walk: Walk,
+  before: Block,
+  after: Block,
+  path: readonly number[],
+  hunks?: Hunk[],
+): void {
+  const text = hunks
+    ? textOps(before, after, hunks)
+    : lowerText(before, after, walk.windows?.get(path.join("/")));
   if (text.splices.length + text.formats.length > 0)
     walk.ops.push({ kind: "text", path, splices: text.splices, formats: text.formats });
   // An atom the model kept is one the room may have changed: only the model's attributes go.
@@ -267,7 +364,11 @@ function lowerText(
 
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
   slideAtomInserts(hunks, a, b, isAtom);
+  return textOps(before, after, hunks);
+}
 
+/** The splices that make `after` from `before` at `hunks`, and the formatting between them. */
+function textOps(before: Block, after: Block, hunks: readonly Hunk[]): LoweredText {
   const splices: TextSplice[] = hunks.map((hunk) => ({
     from: hunk.from,
     to: hunk.to,

@@ -1,4 +1,11 @@
 export {
+  type Author,
+  type Authors,
+  changeAuthor,
+  newChangeId,
+  type SuggestionAttrs,
+} from "./change.js";
+export {
   accept,
   type Change,
   type Filter,
@@ -8,13 +15,13 @@ export {
   reject,
 } from "./resolve.js";
 export {
-  type Author,
   CHANGE_META,
   type ChangeAt,
   DROPPED_META,
-  newChangeId,
   RAW_META,
+  recordStarted,
   rewrite,
+  STARTED_META,
 } from "./rewrite.js";
 export {
   type AttrProposal,
@@ -26,7 +33,6 @@ export {
   type RunKind,
   removedIn,
   runs,
-  type SuggestionAttrs,
   sameValue,
   suggested,
   type View,

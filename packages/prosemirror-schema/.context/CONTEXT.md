@@ -44,6 +44,9 @@ one side and fail on the other, so this package follows the editor's structural 
   the `sug` and `sugAttrs` block attributes; `@meridian/suggestions` owns what they mean. The
   marks may overlap (`excludes: ""`), so the binding stores each under `yjsMarkKey`; a server
   writer that keys a mark by its bare name overwrites another Work's mark on the same text.
+  A mark holds only `{ id, work }`: each changed word carries it twice and history keeps it for
+  good. Who wrote a change lives once per change in the Y.Doc's `suggestion_authors` map
+  (agent-edit's `stored-suggestions.ts`), outside the schema.
 
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is the default,
   and a second spelling would be a ghost state the markup codec must reject. Markup carries it

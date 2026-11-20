@@ -1,16 +1,5 @@
 import { type Attrs, Fragment, type Mark, type Node, Slice } from "prosemirror-model";
-
-/** Who suggested a stretch: carried by `suggest_ins`, `suggest_del` and a block's `sug`. */
-export type SuggestionAttrs = {
-  /** One change: an insertion and the deletion it replaces share it. */
-  id: string;
-  /** The Work whose draft this is. */
-  work: string;
-  chat: string | null;
-  turn: string | null;
-  /** `user:<id>` or `agent`. */
-  by: string;
-};
+import type { SuggestionAttrs } from "./change.js";
 
 /**
  * One turn's layer of a Work's pending change to a block's attributes (a heading level, a list),

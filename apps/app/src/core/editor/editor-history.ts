@@ -88,15 +88,22 @@ export function liveAbsolutePosition(
 }
 
 /**
+ * The origin of a writer's edit written to the Y.Doc directly rather than through the binding (a
+ * suggestion's Apply or Reject in the text). Undo tracks it like typing. It is not the binding's
+ * origin: a binding write with no ProseMirror edit behind it reads as a schema repair.
+ */
+export const DIRECT_WRITE_ORIGIN = Symbol("direct writer edit");
+
+/**
  * The manager y-tiptap would build for an editor, built once per document. Only edits
- * written through an editor (`ySyncPluginKey`) are tracked: peer and model edits arrive
+ * written through an editor (`ySyncPluginKey`, `DIRECT_WRITE_ORIGIN`) are tracked: peer and model edits arrive
  * under other origins, so undo reverts the writer's own and nothing else. A block's `id` is its
  * identity, not content: undo never takes one away. A protected paragraph survives its creator's
  * undo, so without the filter a peer's text would be left in a paragraph with no id.
  */
 function createDocumentUndoManager(document: Y.Doc): Y.UndoManager {
   return new Y.UndoManager(document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), {
-    trackedOrigins: new Set([ySyncPluginKey]),
+    trackedOrigins: new Set([ySyncPluginKey, DIRECT_WRITE_ORIGIN]),
     deleteFilter: (item) =>
       item.parentSub !== "id" && defaultDeleteFilter(item, defaultProtectedNodes),
     // A binding write is the writer's only with the sync plugin's mark: its own repairs open a

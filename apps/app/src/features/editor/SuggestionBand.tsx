@@ -12,6 +12,7 @@ import * as Y from "yjs";
 import { useCommand, useCommandDriver } from "@/client/commands/driver-context";
 import { PRESS_KIND, submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { Button } from "@/components/ui/button";
+import { authorsIn } from "@/core/editor/extensions/suggestion-mode";
 
 export function SuggestionBand({
   editor,
@@ -67,7 +68,7 @@ export function SuggestionBand({
   const [changes, setChanges] = useState<Change[]>([]);
   useEffect(() => {
     const draft: View = { work: ownerKey };
-    const update = () => setChanges(list(editor.state.doc, draft));
+    const update = () => setChanges(list(editor.state.doc, draft, authorsIn(editor.state)));
     update();
     editor.on("update", update);
     return () => {
