@@ -18,6 +18,7 @@ import {
 } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
+import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import { DraftMissingError, type DraftStore, type StaleEffectCursor } from "./draft-store.js";
 
@@ -62,17 +63,6 @@ export type DraftProjectionDiagnostics = {
 
 type Outcome = "done" | "drop" | "moved" | "contended";
 
-type Entry = {
-  firstDirtyAt?: number;
-  timer?: NodeJS.Timeout;
-  running: boolean;
-  queued: boolean;
-  /** Marked while running: run again once it finishes. */
-  again: boolean;
-  /** Consecutive unwritten attempts, for the backoff. */
-  failures: number;
-};
-
 export function createDraftProjection(input: {
   coordinator: Pick<DraftCoordinator, "readDraft">;
   store: Pick<DraftStore, "writeEffect" | "staleEffectDrafts">;
@@ -81,111 +71,23 @@ export function createDraftProjection(input: {
   outsideTransaction<T>(operation: () => T): T;
   maxRuns?: number;
 }): DraftProjection {
-  const maxRuns = input.maxRuns ?? MAX_RUNS;
-  const entries = new Map<string, Entry>();
-  const queue: string[] = [];
-  const running = new Set<Promise<void>>();
   let sweep: Promise<number> | null = null;
   let disposed = false;
 
-  function entryOf(draftId: string): Entry {
-    let entry = entries.get(draftId);
-    if (!entry) {
-      entry = { running: false, queued: false, again: false, failures: 0 };
-      entries.set(draftId, entry);
-    }
-    return entry;
-  }
-
-  function arm(draftId: string, entry: Entry, delayMs: number): void {
-    if (disposed) return;
-    if (entry.timer) clearTimeout(entry.timer);
-    entry.timer = setTimeout(
-      () => {
-        entry.timer = undefined;
-        enqueue(draftId, entry);
-      },
-      Math.max(0, delayMs),
-    );
-    entry.timer.unref();
-  }
-
-  function markDirty(draftId: string): void {
-    if (disposed) return;
-    const entry = entryOf(draftId);
-    if (entry.running) {
-      entry.again = true;
-      return;
-    }
-    if (entry.queued) return;
-    const now = Date.now();
-    entry.firstDirtyAt ??= now;
-    arm(draftId, entry, Math.min(now + DEBOUNCE_MS, entry.firstDirtyAt + MAX_WAIT_MS) - now);
-  }
-
-  function enqueue(draftId: string, entry: Entry): void {
-    if (disposed || entry.running || entry.queued) return;
-    if (running.size < maxRuns) start(draftId, entry);
-    else {
-      entry.queued = true;
-      queue.push(draftId);
-    }
-  }
-
-  function start(draftId: string, entry: Entry): void {
-    entry.running = true;
-    entry.again = false;
-    entry.firstDirtyAt = undefined;
-    const task = input
-      .outsideTransaction(() => judge(draftId))
-      .catch((cause: unknown): "failed" => {
-        input.diagnostics?.projectionFailed({ draftId, cause });
-        return "failed";
-      })
-      .then((outcome) => settle(draftId, entry, outcome))
-      .finally(() => {
-        running.delete(task);
-        next();
-      });
-    running.add(task);
-  }
-
-  function next(): void {
-    while (running.size < maxRuns && queue.length) {
-      const draftId = queue.shift() as string;
-      const entry = entries.get(draftId);
-      if (!entry) continue;
-      entry.queued = false;
-      start(draftId, entry);
-    }
-  }
-
-  function settle(draftId: string, entry: Entry, outcome: Outcome | "failed"): void {
-    entry.running = false;
-    if (outcome === "drop") {
-      entries.delete(draftId);
-      return;
-    }
-    if (outcome === "done" || outcome === "moved") entry.failures = 0;
-    else entry.failures += 1;
-    // A key committed between the judgement and its guarded write: judge the new revision now.
-    if (outcome === "moved") {
-      entry.again = false;
-      enqueue(draftId, entry);
-      return;
-    }
-    // A mark that landed during the run is served whatever the run decided.
-    if (entry.again) {
-      entry.again = false;
-      markDirty(draftId);
-      return;
-    }
-    if (outcome === "done") {
-      entries.delete(draftId);
-      return;
-    }
-    arm(draftId, entry, Math.min(BACKOFF_MS * 2 ** (entry.failures - 1), MAX_BACKOFF_MS));
-  }
+  const judgements = createKeyedCoalescer<string>({
+    debounceMs: DEBOUNCE_MS,
+    maxMs: MAX_WAIT_MS,
+    maxConcurrent: input.maxRuns ?? MAX_RUNS,
+    backoff: { baseMs: BACKOFF_MS, maxMs: MAX_BACKOFF_MS },
+    outsideTransaction: input.outsideTransaction,
+    run: async (draftId) => {
+      const outcome = await input.outsideTransaction(() => judge(draftId));
+      // A key committed between the judgement and its guarded write: judge the new revision now.
+      if (outcome === "moved") return "again";
+      return outcome === "contended" ? "retry" : undefined;
+    },
+    onError: (draftId, cause) => input.diagnostics?.projectionFailed({ draftId, cause }),
+  });
 
   /** One judgement of the draft at its committed revision, and its write. */
   async function judge(draftId: string): Promise<Outcome> {
@@ -226,7 +128,7 @@ export function createDraftProjection(input: {
   }
 
   return {
-    markDirty,
+    markDirty: judgements.schedule,
 
     sweep() {
       if (disposed) return Promise.resolve(0);
@@ -242,8 +144,8 @@ export function createDraftProjection(input: {
             });
             for (const { draftId } of page) {
               // Already dirty, running, backing off or queued: left to its own entry.
-              if (entries.has(draftId)) continue;
-              markDirty(draftId);
+              if (judgements.has(draftId)) continue;
+              judgements.schedule(draftId);
               tracked += 1;
             }
             after = page.at(-1);
@@ -257,29 +159,11 @@ export function createDraftProjection(input: {
       return sweep;
     },
 
-    async flush() {
-      for (let round = 0; round < 1_000; round += 1) {
-        let pending = running.size > 0 || queue.length > 0;
-        for (const [draftId, entry] of entries) {
-          pending = true;
-          if (entry.timer) {
-            clearTimeout(entry.timer);
-            entry.timer = undefined;
-            enqueue(draftId, entry);
-          }
-        }
-        if (!pending || disposed) return;
-        await new Promise((done) => setTimeout(done, 2));
-      }
-      throw new Error("The draft effect projection did not settle");
-    },
+    flush: judgements.flush,
 
     async dispose() {
       disposed = true;
-      for (const entry of entries.values()) if (entry.timer) clearTimeout(entry.timer);
-      queue.length = 0;
-      await Promise.all([...running, ...(sweep ? [sweep] : [])]);
-      entries.clear();
+      await Promise.all([judgements.stop(), ...(sweep ? [sweep] : [])]);
     },
   };
 }

@@ -12,6 +12,7 @@ import { parseLinkRef, resolveDocumentHref } from "@meridian/contracts";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
+import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
 import type { Branches } from "./branches.js";
 import type { DraftCoordinator } from "./draft-coordinator.js";
 import type { DraftSnapshot } from "./draft-store.js";
@@ -40,14 +41,6 @@ export function createDraftAheadRegistration(input: {
   maxDebounceMs?: number;
   diagnostics?: DraftAheadDiagnostics;
 }): DraftAheadRegistration {
-  let stopped = false;
-  const debounceMs = input.debounceMs ?? 2000;
-  const maxDebounceMs = input.maxDebounceMs ?? 10000;
-  const timers = new Map<
-    string,
-    { debounce?: NodeJS.Timeout; max?: NodeJS.Timeout; running?: Promise<void>; again?: boolean }
-  >();
-
   /** One batch; if it fails, each ref alone, so one ref that can't register never blocks the rest. */
   async function register(
     branch: { projectId: string },
@@ -93,61 +86,18 @@ export function createDraftAheadRegistration(input: {
     }
   }
 
-  function run(draftId: string) {
-    if (stopped) return;
-    const entry = timers.get(draftId);
-    if (!entry) return;
-    if (entry.debounce) clearTimeout(entry.debounce);
-    if (entry.max) clearTimeout(entry.max);
-    entry.debounce = undefined;
-    entry.max = undefined;
-    if (entry.running) {
-      // An update admitted while one runs reads the draft again once it finishes.
-      entry.again = true;
-      return;
-    }
-    entry.running = registerDraftAheads(draftId)
-      .catch((cause: unknown) => input.diagnostics?.registrationFailed({ draftId, cause }))
-      .finally(() => {
-        entry.running = undefined;
-        if (entry.again) {
-          entry.again = false;
-          run(draftId);
-        } else if (!entry.debounce && !entry.max) {
-          timers.delete(draftId);
-        }
-      });
-  }
+  const registrations = createKeyedCoalescer<string>({
+    debounceMs: input.debounceMs ?? 2000,
+    maxMs: input.maxDebounceMs ?? 10000,
+    outsideTransaction: input.outsideTransaction,
+    run: registerDraftAheads,
+    onError: (draftId, cause) => input.diagnostics?.registrationFailed({ draftId, cause }),
+  });
 
   return {
-    schedule(draftId) {
-      if (stopped) return;
-      const entry = timers.get(draftId) ?? {};
-      if (entry.debounce) clearTimeout(entry.debounce);
-      entry.debounce = setTimeout(() => run(draftId), debounceMs);
-      entry.max ??= setTimeout(() => run(draftId), maxDebounceMs);
-      timers.set(draftId, entry);
-    },
-    async flush() {
-      while (timers.size > 0) {
-        const pending = [...timers];
-        for (const [draftId, entry] of pending) if (!entry.running) run(draftId);
-        await Promise.all(pending.map(([, entry]) => entry.running));
-      }
-    },
-    async shutdown() {
-      stopped = true;
-      for (const [draftId, entry] of timers) {
-        if (entry.debounce) clearTimeout(entry.debounce);
-        if (entry.max) clearTimeout(entry.max);
-        entry.debounce = undefined;
-        entry.max = undefined;
-        entry.again = false;
-        if (!entry.running) timers.delete(draftId);
-      }
-      await Promise.allSettled([...timers.values()].map((entry) => entry.running));
-      timers.clear();
-    },
+    schedule: registrations.schedule,
+    flush: registrations.flush,
+    shutdown: registrations.stop,
   };
 }
 

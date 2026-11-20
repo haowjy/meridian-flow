@@ -8,6 +8,7 @@ import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import type { DetachedWorkTracker } from "../../shared/detached-work.js";
+import { createKeyedCoalescer } from "../../shared/keyed-coalescer.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import type { ProjectWakeHub } from "./project-wake-hub.js";
 import { loadDocumentAddresses } from "./tree/tree-addresses.js";
@@ -33,8 +34,6 @@ export function createAgentFilesHints(deps: {
   wake: Pick<ProjectWakeHub, "publish" | "publishToUser">;
   eventSink?: EventSink;
 }): AgentFilesHints {
-  let stopped = false;
-  const timers = new Map<string, NodeJS.Timeout>();
   const places = new Map<string, { place: Place; at: number }>();
 
   async function placeOf(documentId: string): Promise<Place> {
@@ -67,31 +66,26 @@ export function createAgentFilesHints(deps: {
     }
   }
 
-  return {
-    hint(documentId) {
-      if (stopped) return;
-      clearTimeout(timers.get(documentId));
-      const timer = setTimeout(() => {
-        timers.delete(documentId);
-        // Lossy: a missed hint leaves a verdict stale until the next read.
-        void deps.backgroundTasks.track(wake(documentId), "agent-files-hint").catch((cause) => {
-          if (deps.eventSink)
-            emitEvent(deps.eventSink, {
-              level: "warn",
-              source: "context.agent-files-hint",
-              name: "AgentFilesHintFailed",
-              correlation: { documentId },
-              payload: unknownToEventPayload(cause),
-            });
+  const hints = createKeyedCoalescer<string>({
+    debounceMs: SETTLE_MS,
+    // Lossy: a missed hint leaves a verdict stale until the next read.
+    run: (documentId) => deps.backgroundTasks.track(wake(documentId), "agent-files-hint"),
+    onError: (documentId, cause) => {
+      if (deps.eventSink)
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "context.agent-files-hint",
+          name: "AgentFilesHintFailed",
+          correlation: { documentId },
+          payload: unknownToEventPayload(cause),
         });
-      }, SETTLE_MS);
-      timer.unref();
-      timers.set(documentId, timer);
     },
+  });
+
+  return {
+    hint: hints.schedule,
     stop() {
-      stopped = true;
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
+      void hints.stop();
     },
   };
 }

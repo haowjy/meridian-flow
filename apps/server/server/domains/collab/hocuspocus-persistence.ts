@@ -62,7 +62,6 @@ type HocuspocusPersistenceDeps = {
   afterCallerCommit?(callback: () => void): void;
   readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
   emitAgentEditInvariantViolation(payload: Record<string, unknown>): void;
-  onLiveUpdatePersisted?(documentId: DocumentId): void;
   /** Brings Live's committed text into a draft whose room just opened or took a connection. */
   catchUpOpenedDraft?(draftId: string): Promise<void>;
   /** A writer's update to a draft is durable (the draft's own links register, §10.7). */
@@ -454,7 +453,6 @@ export function createHocuspocusPersistenceService(
         // Refused before the lock, or under it: another copy of this update was stored first.
         if (!admission.admitted || admission.value.status === "contained")
           return { admitted: false };
-        deps.onLiveUpdatePersisted?.(input.documentId);
         return {
           admitted: true,
         };
