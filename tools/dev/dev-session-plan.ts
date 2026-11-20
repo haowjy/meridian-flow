@@ -56,13 +56,20 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+/** The origins every plan computes afresh for its checkout and mode, whatever the caller set. */
+export const STACK_ORIGIN_KEYS = [
+  "MERIDIAN_API_ORIGIN",
+  "MERIDIAN_APP_ORIGIN",
+  "MERIDIAN_WWW_ORIGIN",
+] as const;
+
 /** The keys this plan computes over the caller's environment. */
 function computedStackEnv(
   env: NodeJS.ProcessEnv,
   internalApiOrigin: string,
   mode: DevMode,
   worktreePrefix: string | undefined,
-): Record<string, string | undefined> {
+): Record<(typeof STACK_ORIGIN_KEYS)[number] | "APP_DEBUG", string | undefined> {
   const proxyPort = resolvePortlessProxyPort(env);
   return {
     MERIDIAN_API_ORIGIN: internalApiOrigin,

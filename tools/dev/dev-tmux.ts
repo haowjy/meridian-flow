@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { applyModeEnv, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
 import { waitForDevReadiness } from "./dev-readiness";
-import { createDevSessionPlan, type DevSessionPlan } from "./dev-session-plan";
+import { createDevSessionPlan, type DevSessionPlan, STACK_ORIGIN_KEYS } from "./dev-session-plan";
 import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-state";
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import {
@@ -231,6 +231,25 @@ async function verifyAndPublish({
   });
 }
 
+/**
+ * A restart keeps the environment the stack was started with: each variable the running
+ * stack has and this shell doesn't set comes back, so `MODEL_PROVIDER=mock pnpm dev`
+ * followed by a bare `pnpm dev:restart` stays on the mock. What this shell sets wins.
+ */
+function keepRunningStackEnv(store: TmuxSessionStore, sessionNames: string[]): void {
+  const running = sessionNames.map((name) => store.sessionEnv(name)).find((env) => env !== null);
+  if (!running) {
+    console.log("note: no running stack to keep the environment of; starting with this shell's");
+    return;
+  }
+  const recomputed = new Set<string>(STACK_ORIGIN_KEYS);
+  const kept = Object.keys(running).filter(
+    (key) => process.env[key] === undefined && !recomputed.has(key),
+  );
+  for (const key of kept) process.env[key] = running[key];
+  if (kept.length > 0) console.log(`kept from the running stack: ${kept.sort().join(", ")}`);
+}
+
 async function main(): Promise<void> {
   const store = new TmuxSessionStore(repoRoot);
   const tailscale = new TailscaleDevLifecycle();
@@ -248,6 +267,8 @@ async function main(): Promise<void> {
       `the active session uses the ${active.clientBuild} client; run ${restartCommand} to use the ${requestedClientBuild} client`,
     );
   }
+  const sessionNames = [identity.sessionName, ...(previous ? [previous.sessionName] : [])];
+  if (options.restart && !options.stop) keepRunningStackEnv(store, sessionNames);
   const mode =
     active?.mode ??
     (options.restart && options.preserveModeOnRestart && !options.explicitModeFlag && previous
@@ -278,7 +299,6 @@ async function main(): Promise<void> {
   if (options.print) return printDryRun(plan, active?.command ?? plan.command.line);
   if (!store.hasCommandOnPath("tmux"))
     throw new Error("tmux is required but was not found on PATH. Install tmux and retry.");
-  const sessionNames = [identity.sessionName, ...(previous ? [previous.sessionName] : [])];
   // TODO(remove): once no stack started before the private socket is running.
   for (const name of sessionNames) {
     if (store.legacyDefaultServerHasSession(name))
