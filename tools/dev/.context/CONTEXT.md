@@ -110,7 +110,7 @@ never holds loaded secrets. A restart reads the running session's environment
 (`sessionEnv`, `show-environment -s`, whose quoting survives newlines) and fills in
 each variable the restarting shell doesn't set, before the mode and `.env` are
 applied: the stack keeps what it was started with, the checks see the same values,
-and the plan's origins are computed afresh. The session is the only copy, since
+and the keys the plan computes (`COMPUTED_STACK_KEYS`) are derived afresh. The session is the only copy, since
 `.meridian/dev-session.json` holds no values; after the session dies there is
 nothing to keep. `legacyDefaultServerHasSession` refuses a start while
 an old default-server stack of this checkout runs (read-only `-L default`); remove

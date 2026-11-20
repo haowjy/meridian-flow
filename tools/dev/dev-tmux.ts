@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { applyModeEnv, parseDevCliOptions } from "./dev-mode";
 import { printFailure, printSessionInfo } from "./dev-output";
 import { waitForDevReadiness } from "./dev-readiness";
-import { createDevSessionPlan, type DevSessionPlan, STACK_ORIGIN_KEYS } from "./dev-session-plan";
+import { COMPUTED_STACK_KEYS, createDevSessionPlan, type DevSessionPlan } from "./dev-session-plan";
 import { readDevSessionState, writeDevSessionMetadata } from "./dev-session-state";
 import { applyDevEnvToProcess, resolveCheckoutSessionIdentity, runGit } from "./lib/dev-env";
 import {
@@ -242,7 +242,7 @@ function keepRunningStackEnv(store: TmuxSessionStore, sessionNames: string[]): v
     console.log("note: no running stack to keep the environment of; starting with this shell's");
     return;
   }
-  const recomputed = new Set<string>(STACK_ORIGIN_KEYS);
+  const recomputed = new Set<string>(COMPUTED_STACK_KEYS);
   const kept = Object.keys(running).filter(
     (key) => process.env[key] === undefined && !recomputed.has(key),
   );

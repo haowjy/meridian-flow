@@ -264,7 +264,7 @@ pnpm dev --funnel         # public internet via Tailscale Funnel
 pnpm dev --print          # dry-run: print the session plan (the command holds no secrets)
 pnpm dev --stop           # stop this worktree's tmux session + prune routes
 pnpm dev:stacks           # list every checkout's stack, its memory and idle time (idle stacks stop themselves after 60 min)
-pnpm dev:restart         # stop + restart, keeping the mode, client build and environment
+pnpm dev:restart          # stop + restart, keeping the mode, client build and environment
 pnpm dev --restart        # stop + restart in the mode its flags name; keeps the environment
 pnpm portless:list        # live localhost HTTPS URLs
 ```
