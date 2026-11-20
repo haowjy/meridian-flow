@@ -18,6 +18,8 @@ export interface ProjectedReview extends ReviewProjection {
   /** The editor document `inserted` and `anchor` positions address; a projection of another doc is stale. */
   doc: PMNode;
   snapshot: Y.Snapshot;
+  /** The room's review base at `snapshot`; `diff.base` is it with this tab's Applies in flight laid over. */
+  roomBase: readonly PMNode[];
 }
 
 const sameJson = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);

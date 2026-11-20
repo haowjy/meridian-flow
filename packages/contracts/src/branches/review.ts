@@ -20,12 +20,26 @@ import type { ReversalOutcome } from "../protocol/write-reversal.js";
 import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js";
 import type { DraftOwnerKey } from "./owner.js";
 
-/** JSON form of the kernel's SpanPatch; PM nodes cross the wire as node JSON. */
-export type ApplySpanPatch = {
-  base: { from: number; to: number };
-  draft: { from: number; to: number };
-  blocks: { type: string; [key: string]: unknown }[];
-};
+const SpanRangeSchema = z
+  .strictObject({
+    from: z.number().int().nonnegative().safe(),
+    to: z.number().int().nonnegative().safe(),
+  })
+  .refine((range) => range.to >= range.from);
+
+/**
+ * The review base a tab shows over its room's: the Applies it has sent that haven't reached the
+ * room yet, as span patches (the kernel's SpanPatch, PM nodes as node JSON). Apply and Discard
+ * send it beside the room's snapshot, so the server names changes in the review the writer saw.
+ */
+export const BaseViewDeltaSchema = z.array(
+  z.strictObject({
+    base: SpanRangeSchema,
+    draft: SpanRangeSchema,
+    blocks: z.array(z.object({ type: z.string() }).catchall(z.unknown())),
+  }),
+);
+export type ApplySpanPatch = z.infer<typeof BaseViewDeltaSchema>[number];
 
 /** One frozen click, sent in the draft's FIFO. No revision or generation fence. */
 export type ApplyClick = {
@@ -439,13 +453,16 @@ export const BranchDiscardRequestSchema = z.union([
             tree: z.literal(true).optional(),
             text: z.union([z.literal("all"), z.array(z.string().min(1)).min(1)]).optional(),
             /**
-             * Base64 of the Yjs snapshot of the draft the named ids were read at: the server
-             * resolves the same changes there and takes them out of the draft as it is now.
+             * Base64 of the Yjs snapshot of the draft the named ids were read at, with the tab's
+             * `baseViewDelta` then: the server resolves the same changes in that review, as an
+             * Apply's, and takes them out of the draft as it is now.
              */
             snapshot: z.string().min(1).optional(),
+            baseViewDelta: BaseViewDeltaSchema.optional(),
           })
           .refine((item) => item.tree || item.text)
-          .refine((item) => !item.snapshot || Array.isArray(item.text)),
+          .refine((item) => !item.snapshot || Array.isArray(item.text))
+          .refine((item) => !item.baseViewDelta || item.snapshot),
       )
       .min(1),
   }),

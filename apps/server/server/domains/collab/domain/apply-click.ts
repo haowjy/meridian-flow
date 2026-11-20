@@ -20,18 +20,19 @@ import {
 import type {
   ApplyClickAnswer,
   ApplyClickResult,
+  ApplySpanPatch,
   ApplyTextCut,
   UnapplyClickAnswer,
   UnapplyClickResult,
 } from "@meridian/contracts/branches";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import * as Y from "yjs";
 import { CommandExistsError, replay } from "../../../shared/commands/command-record.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
 import type { DocumentCommands } from "./document-commands.js";
-import { carriedBy, readChangesAt } from "./draft-changes.js";
+import { carriedBy, draftSchema, readChangesAt } from "./draft-changes.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
@@ -128,7 +129,7 @@ export interface ApplyCommandStore {
   ): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
-const schema = buildDocumentSchema();
+const schema = draftSchema;
 
 /** Undo of a Discard's `not_found`: B4 settles it, and this goes with it. */
 export class ApplyClickRefused extends Error {
@@ -170,6 +171,44 @@ function placeOf(projection: ReturnType<typeof projectReview>, group: ReviewGrou
   return `${group.id.replace(/~\d+$/, "")}@${block?.attrs.id}`;
 }
 
+/**
+ * The review a writer acted on: the base and text of `doc` at their room's snapshot (the replica
+ * as it is, for null), with their tab's Applies still in flight (`baseViewDelta`) laid over the
+ * base, as the review they saw showed it. Apply and Discard name changes in it, so an id means
+ * the same change to both. A snapshot the replica doesn't hold yet is `ApplyClickUnsynced`.
+ */
+export function readSeen(
+  doc: Y.Doc,
+  encoded: string | null,
+  baseViewDelta: readonly ApplySpanPatch[],
+): { base: readonly PMNode[]; text: readonly PMNode[] } {
+  const snapshot = encoded === null ? null : decodeClickedSnapshot(encoded);
+  if (snapshot && !containsSnapshot(Y.snapshot(doc), snapshot)) throw new ApplyClickUnsynced();
+  const cut =
+    snapshot && !Y.equalSnapshots(Y.snapshot(doc), snapshot)
+      ? Y.createDocFromSnapshot(doc, snapshot, new Y.Doc({ gc: false }))
+      : doc;
+  try {
+    const base = readBlocks(cut.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
+    let patches: SpanPatch[];
+    try {
+      patches = baseViewDelta.map((patch) => ({
+        ...patch,
+        blocks: patch.blocks.map((node) => schema.nodeFromJSON(node)),
+      }));
+      if (validateSpanPatches(schema, base, patches)) throw new Error("Invalid patches");
+    } catch {
+      throw new ApplyClickMalformed();
+    }
+    return {
+      base: applySpanPatches(base, patches, "base"),
+      text: readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema),
+    };
+  } finally {
+    if (cut !== doc) cut.destroy();
+  }
+}
+
 export function compileClick(
   doc: Y.Doc,
   request: ApplyTextCut & { commandId: string },
@@ -178,76 +217,56 @@ export function compileClick(
     delta: import("@meridian/agent-edit/content-merge").StoredDelta | null;
   }[],
 ): CompiledClick {
-  const current = Y.snapshot(doc);
-  // A whole cut is the replica as received: no click froze it, so nothing can be unsynced.
-  const snapshot = "whole" in request ? current : decodeClickedSnapshot(request.snapshot);
-  if (!containsSnapshot(current, snapshot)) throw new ApplyClickUnsynced();
-  const cut = Y.equalSnapshots(current, snapshot)
-    ? doc
-    : Y.createDocFromSnapshot(doc, snapshot, new Y.Doc({ gc: false }));
-  try {
-    const base = readBlocks(cut.getXmlFragment(REVIEW_BASE_FRAGMENT), schema);
-    let patches: SpanPatch[];
-    try {
-      patches = ("whole" in request ? [] : request.baseViewDelta).map((patch) => ({
-        ...patch,
-        blocks: patch.blocks.map((node) => schema.nodeFromJSON(node)),
-      }));
-      if (validateSpanPatches(schema, base, patches)) throw new Error("Invalid patches");
-    } catch {
-      throw new ApplyClickMalformed();
-    }
-    const optimistic = applySpanPatches(base, patches, "base");
-    const draftText = readBlocks(cut.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), schema);
-    const projection = projectReview(diffBlocks(optimistic, draftText));
-    const reading = readChangesAt(optimistic, draftText, parts);
-    let groupIds: readonly string[];
-    if ("whole" in request) {
-      const places = request.places && new Set(request.places);
-      const carried = request.carried && new Set(request.carried.map((key) => key.join(":")));
-      const named = places || carried;
-      // A group is re-applied by `carried` only while every AI change in it is one the Un-Apply took:
-      // a neighbour the writer never chose stays in Changes.
-      groupIds = projection.groups.flatMap((group, position) => {
-        const keys = carriedBy(reading, position);
-        if (!named || (!keys.length && places?.has(placeOf(projection, group)))) return [group.id];
-        return carried && keys.length > 0 && keys.every((key) => carried.has(key.join(":")))
-          ? [group.id]
-          : [];
-      });
-      if (groupIds.length === 0) return { schema, groups: [] };
-    } else groupIds = request.groupIds;
-    if (!groupIds.length || new Set(groupIds).size !== groupIds.length)
-      throw new ApplyClickMalformed();
-    const chosen: Hunk[] = [];
-    let before = optimistic;
-    const groups = groupIds.map((groupId): CompiledApplyGroup => {
-      const group = projection.groups.find((candidate) => candidate.id === groupId);
-      if (!group) throw new UnknownChangeError(`Unknown change ${groupId}`);
-      chosen.push(...group.hunks.map((hunk) => projection.diff.hunks[hunk.index]));
-      const patched = applySpanPatches(
-        optimistic,
-        composeHunks(schema, projection.diff, chosen, "apply"),
-        "base",
-      );
-      const step = {
-        groupId,
-        before,
-        patched,
-        record: { base: [], settled: [], commandId: request.commandId, groupId },
-        carried: carriedBy(
-          reading,
-          projection.groups.findIndex((candidate) => candidate.id === groupId),
-        ),
-        place: placeOf(projection, group),
-      };
-      before = patched;
-      return step;
+  const { base: optimistic, text: draftText } =
+    "whole" in request
+      ? readSeen(doc, null, [])
+      : readSeen(doc, request.snapshot, request.baseViewDelta);
+  const projection = projectReview(diffBlocks(optimistic, draftText));
+  const reading = readChangesAt(optimistic, draftText, parts);
+  let groupIds: readonly string[];
+  if ("whole" in request) {
+    const places = request.places && new Set(request.places);
+    const carried = request.carried && new Set(request.carried.map((key) => key.join(":")));
+    const named = places || carried;
+    // A group is re-applied by `carried` only while every AI change in it is one the Un-Apply took:
+    // a neighbour the writer never chose stays in Changes.
+    groupIds = projection.groups.flatMap((group, position) => {
+      const keys = carriedBy(reading, position);
+      if (!named || (!keys.length && places?.has(placeOf(projection, group)))) return [group.id];
+      return carried && keys.length > 0 && keys.every((key) => carried.has(key.join(":")))
+        ? [group.id]
+        : [];
     });
-    return { schema, groups };
-  } finally {
-    if (cut !== doc) cut.destroy();
-  }
+    if (groupIds.length === 0) return { schema, groups: [] };
+  } else groupIds = request.groupIds;
+  if (!groupIds.length || new Set(groupIds).size !== groupIds.length)
+    throw new ApplyClickMalformed();
+  const chosen: Hunk[] = [];
+  let before = optimistic;
+  const groups = groupIds.map((groupId): CompiledApplyGroup => {
+    const group = projection.groups.find((candidate) => candidate.id === groupId);
+    if (!group) throw new UnknownChangeError(`Unknown change ${groupId}`);
+    chosen.push(...group.hunks.map((hunk) => projection.diff.hunks[hunk.index]));
+    const patched = applySpanPatches(
+      optimistic,
+      composeHunks(schema, projection.diff, chosen, "apply"),
+      "base",
+    );
+    const step = {
+      groupId,
+      before,
+      patched,
+      record: { base: [], settled: [], commandId: request.commandId, groupId },
+      carried: carriedBy(
+        reading,
+        projection.groups.findIndex((candidate) => candidate.id === groupId),
+      ),
+      place: placeOf(projection, group),
+    };
+    before = patched;
+    return step;
+  });
+  return { schema, groups };
 }
 
 export function createApplyClickService(input: {
