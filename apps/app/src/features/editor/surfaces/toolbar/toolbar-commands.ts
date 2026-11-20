@@ -240,7 +240,7 @@ function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   const listKind = activeListKind(editor);
   if (listKind === "bullet") return "bulletList";
   if (listKind === "ordered") return "orderedList";
-  if (selectionIsQuoted(selectedSequence(shownState(editor.state).selection))) return "quote";
+  if (selectionIsQuoted(selectedSequence(editor.state.selection))) return "quote";
   const level = currentHeadingLevel(editor);
   if (level !== null) return `heading${level}`;
   return blockIsActive(editor, "paragraph", { level: null }) ? "paragraph" : null;
@@ -407,7 +407,7 @@ function blockIsActive(editor: Editor, name: string, attrs?: Record<string, unkn
 
 /** The kind of list every selected block sits in, or null when they are not all in one kind. */
 function activeListKind(editor: Editor): "bullet" | "ordered" | null {
-  return selectionListKind(selectedSequence(shownState(editor.state).selection));
+  return selectionListKind(selectedSequence(editor.state.selection));
 }
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {

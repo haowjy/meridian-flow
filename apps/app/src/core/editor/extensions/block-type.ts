@@ -16,7 +16,7 @@ function retypedAttrs(
   type: NodeType,
   attrs: Attrs = {},
 ): Attrs {
-  const shown = shownAttrs(tr, node);
+  const shown = shownAttrs(tr.before, node);
   const kept: Record<string, unknown> = {};
   for (const name of Object.keys(type.spec.attrs ?? {})) {
     if (name in shown) kept[name] = shown[name];
@@ -42,7 +42,7 @@ export function setBlockType(
     if (!node.isTextblock) return true;
     const next = retypedAttrs(tr, node, type, attrs);
     if (node.type !== type) retyped.push(pos);
-    else if (!sameValue(next, shownAttrs(tr, node))) tr.setNodeMarkup(pos, type, next);
+    else if (!sameValue(next, shownAttrs(tr.before, node))) tr.setNodeMarkup(pos, type, next);
     return false;
   });
   for (const pos of retyped) {

@@ -169,10 +169,12 @@ const viewOfDoc = new WeakMap<PMNode, View>();
  * change applied. A command that sets a block's attributes reads them here, so it builds on what
  * the writer sees; `rewrite` turns what it sets into the pending change. The stored suggestion
  * attributes are kept, so a command that copies the attributes writes them back unchanged.
+ * `doc` is the editor document `node` was read from (a transaction's `before`): a document a
+ * transaction's steps made is no editor's, and reads as Live.
  */
-export function shownAttrs(tr: Transaction, node: PMNode): Record<string, unknown> {
+export function shownAttrs(doc: PMNode, node: PMNode): Record<string, unknown> {
   if (!("sug" in node.attrs)) return node.attrs;
-  const view = viewOfDoc.get(tr.before) ?? liveView;
+  const view = viewOfDoc.get(doc) ?? liveView;
   return { ...viewAttrs(node, view), sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs };
 }
 

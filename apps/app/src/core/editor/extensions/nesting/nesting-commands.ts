@@ -16,6 +16,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { NodeSelection, type Transaction } from "@tiptap/pm/state";
+import { shownAttrs } from "../suggestion-mode/SuggestionModeExtension";
 
 export type ListKindName = "bullet" | "ordered";
 
@@ -36,7 +37,7 @@ type Sequence = {
   to: number;
 };
 
-/** The blocks the selection touches, as siblings under their nearest shared container. */
+/** The blocks the selection touches, as siblings under their nearest shared container, with the attributes the editor shows. */
 export function selectedSequence(selection: Transaction["selection"]): Sequence {
   const { $from, $to } = selection;
   const textDepth =
@@ -46,8 +47,13 @@ export function selectedSequence(selection: Transaction["selection"]): Sequence 
   const blocks: ProseMirrorNode[] = [];
   const positions: number[] = [];
   let at = $from.start(depth);
+  // As the editor shows them, so a Work's pending list or quote is what the commands build on.
   container.forEach((child) => {
-    blocks.push(child);
+    blocks.push(
+      child.attrs.sugAttrs
+        ? child.type.create(shownAttrs($from.doc, child), child.content, child.marks)
+        : child,
+    );
     positions.push(at);
     at += child.nodeSize;
   });

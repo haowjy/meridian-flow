@@ -149,11 +149,15 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   attributes. No editor command or model op does that.
 - `settle` (a block's attributes after an edit inside it) is called from `replaceInWork` as well
   as the driver: the one seam left.
-- Toolbar state reads Live attributes, not the Work's pending ones; Enter in a block with a
-  pending heading gives the new half the stored attributes.
+- Enter in a block with a pending heading gives the new half the stored attributes. (The toolbar
+  reads the view: `shownState` in the editor's suggestion mode.)
 - Typing into a block the Work removes is allowed and goes with the block on accept.
-- Joining an added paragraph to a Live one leaves two paragraphs: Live text never moves into a
-  block the Work added.
+- A Live paragraph does not join into a paragraph the Work added before it: Backspace at the
+  Live paragraph's start, or Delete at the added one's end, only moves the caret to the added
+  paragraph's end. Live text never moves into a block the Work added, or a reject would take it.
+  The other way works: Backspace at the start of an added paragraph joins it into the Live one
+  before it. A fix would move the added paragraph's text into the Live one as the same change,
+  which drops the added paragraph's own attributes (an added heading would join as body text).
 - A later turn's split of an earlier turn's block stays after the later turn is rejected (the
   wording comes back, in two paragraphs). Block edits inside a container the Work added (a
   table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.

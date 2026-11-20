@@ -243,7 +243,7 @@ export const MeridianParagraph = Paragraph.extend({
             level === null ||
             blocks.every((pos) => {
               const node = tr.doc.nodeAt(pos);
-              return !!node && shownAttrs(tr, node).level === level;
+              return !!node && shownAttrs(tr.before, node).level === level;
             });
           const start = tr.steps.length;
           let changed = false;
@@ -271,7 +271,7 @@ export const MeridianParagraph = Paragraph.extend({
         if (
           !empty ||
           block.type !== this.type ||
-          shownAttrs(tr, block).level === null ||
+          shownAttrs(tr.before, block).level === null ||
           block.textContent
         ) {
           return false;
