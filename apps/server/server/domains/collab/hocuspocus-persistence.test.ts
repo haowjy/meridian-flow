@@ -18,7 +18,7 @@ import { type DraftSnapshot, DraftStaleUpdateError } from "./domain/draft-store.
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
-import { MemoryDraftStore, memoryDraft, testDraftRow } from "./test-support/memory-draft-store.js";
+import { testDraftRow } from "./test-support/memory-draft-store.js";
 
 const DRAFT_ID = "draft-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
@@ -574,7 +574,7 @@ function cloneDoc(doc: Y.Doc, generation = 1n): Y.Doc {
   return clone;
 }
 
-function draftSnapshot(doc: Y.Doc): { documentDraft: DraftSnapshot; state: Uint8Array } {
+function _draftSnapshot(doc: Y.Doc): { documentDraft: DraftSnapshot; state: Uint8Array } {
   return {
     documentDraft: testDraftRow({
       draftId: DRAFT_ID,

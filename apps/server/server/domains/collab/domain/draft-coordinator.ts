@@ -18,7 +18,6 @@ import {
   type AppendDraftJournalInput,
   blockOriginsFromDraftSeed,
   type DraftSnapshot,
-  DraftStaleUpdateError,
 } from "./draft-store.js";
 
 export type DraftCoordinator = Pick<
