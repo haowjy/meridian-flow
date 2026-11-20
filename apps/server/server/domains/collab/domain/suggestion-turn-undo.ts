@@ -62,8 +62,7 @@ export function createSuggestionTurnUndo(deps: {
 
   async function chip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
     const live = await deps.liveTurnChip(threadId, turnId);
-    if (live?.control === "undo" || live?.undone) return live;
-    if (!(await holdsSuggestions(threadId, turnId))) return live;
+    if (live?.control === "undo" || !(await holdsSuggestions(threadId, turnId))) return live;
     return { drafts: live?.drafts, control: "undo" };
   }
 

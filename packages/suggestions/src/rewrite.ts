@@ -502,14 +502,13 @@ function replaceInWork(
   const targetNow = topBlockAt(out.doc, insertAt);
   if (keepEnd) {
     // The Live block kept after the cut is the split's second half: the paste's whole blocks go
-    // before it and its last line opens it, all the writer's.
-    const opensAt = map(to, 1);
-    const blocks = parts.middle.map((block) =>
-      block.type.create({ ...block.attrs, id: null, sug: attrs }, block.content, block.marks),
-    );
+    // right before it and its last line opens it, all the edit's change.
+    const endAt = map(endBlock.pos, 1);
+    const opensAt = pastOwnDeletion(out.doc, map(to, 1), view);
+    const blocks = pasted(parts.middle, attrs);
     const opening = parts.last?.content ?? Fragment.empty;
     if (opening.size > 0) out.insert(opensAt, marked(schema, opening, attrs));
-    if (blocks.length > 0) out.insert(targetNow.pos + targetNow.node.nodeSize, blocks);
+    if (blocks.length > 0) out.insert(endAt, blocks);
     return opensAt + blocks.reduce((size, block) => size + block.nodeSize, 0) + opening.size;
   }
   const targetEnd = targetNow.pos + targetNow.node.nodeSize - 1;
@@ -525,9 +524,7 @@ function replaceInWork(
   const after = cut(targetNow.pos + targetNow.node.nodeSize, 1);
   const template = parts.last ?? targetNow.node;
   const blocks = [
-    ...parts.middle.map((block) =>
-      block.type.create({ ...block.attrs, id: null, sug: change }, block.content, block.marks),
-    ),
+    ...pasted(parts.middle, attrs),
     template.type.create(
       { ...template.attrs, id: null, sug: change },
       (parts.last?.content ?? Fragment.empty).append(rest),
@@ -537,6 +534,13 @@ function replaceInWork(
   const lastStart =
     after + blocks.slice(0, -1).reduce((size, block) => size + block.nodeSize, 0) + 1;
   return lastStart + (parts.last?.content.size ?? 0);
+}
+
+/** Whole blocks an edit brings: that edit's change, wherever they land. */
+function pasted(blocks: readonly Node[], attrs: SuggestionAttrs): Node[] {
+  return blocks.map((block) =>
+    block.type.create({ ...block.attrs, id: null, sug: attrs }, block.content, block.marks),
+  );
 }
 
 /** A slice as inline content for the cut's block, whole blocks after it, and the block it ends in. */
