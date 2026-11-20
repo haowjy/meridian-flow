@@ -32,16 +32,15 @@
  * no acknowledgement between them, the room ends `UPDATES_REFUSED` instead of
  * resending forever, and the session's owner replaces it (`DocumentSession.holdsUndeliverableEdits`).
  *
- * A draft room's handshake upload goes first. The client's SyncStep2 is the
+ * Every room's handshake upload goes first. The client's SyncStep2 is the
  * whole Y.Doc diffed against the server's state vector, so it carries every
  * byte the server lacks, including edits replayed before this transport
- * existed. Updates offered on an open socket before its SyncStep2 (the offline
- * queue's flush, keys typed during the handshake) would reach the server ahead
- * of the bytes they depend on; the socket holds them and releases them, in
- * order, right after the SyncStep2. Only transmission waits, never typing.
- * Live rooms keep the provider's order: their server marks the SyncStep2 for
- * offline collision reconciliation, and moving queued bytes into it would
- * change what is reconciled.
+ * existed and frames lost with the previous socket (a server restart). Updates
+ * offered on an open socket before its SyncStep2 (the offline queue's flush,
+ * keys typed during the handshake) would reach the server ahead of the bytes
+ * they depend on, and the server refuses a frame that starts past its room's
+ * clock; the socket holds them and releases them, in order, right after the
+ * SyncStep2. Only transmission waits, never typing.
  */
 import {
   HocuspocusProvider,
@@ -107,10 +106,6 @@ const MAX_UPDATE_REFUSALS = 3;
 // Undo decides from what the room holds, as it does offline.
 const CATCH_UP_WAIT_MS = 3000;
 
-function isDraftRoom(roomName: string): boolean {
-  return roomName.startsWith("draft:");
-}
-
 class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private permanentlyDestroyed = false;
   private reconnectGeneration = 0;
@@ -119,7 +114,6 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
   private readonly difference: HandshakeDifferenceReader;
   private readonly serverHas: ServerHasTracker;
   private readonly onServerFrame: (frame: Uint8Array) => void;
-  private readonly handshakeUploadFirst: boolean;
   // Per socket: whether its SyncStep2 has been written, and the Updates held until then.
   private handshakeUploaded = false;
   private heldUpdates: Uint8Array[] = [];
@@ -130,14 +124,12 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
     difference: HandshakeDifferenceReader,
     serverHas: ServerHasTracker,
     onServerFrame: (frame: Uint8Array) => void,
-    handshakeUploadFirst: boolean,
   ) {
     super(configuration);
     this.acknowledgement = acknowledgement;
     this.difference = difference;
     this.serverHas = serverHas;
     this.onServerFrame = onServerFrame;
-    this.handshakeUploadFirst = handshakeUploadFirst;
   }
 
   // The provider emits "open" only after this listener (registered in the base
@@ -165,7 +157,7 @@ class RoomScopedHocuspocusWebsocket extends HocuspocusProviderWebsocket {
       if (this.acknowledgement.readOnly && readDocumentSyncType(message) === messageYjsUpdate)
         return;
       const open = this.webSocket?.readyState === SOCKET_OPEN;
-      if (open && this.handshakeUploadFirst && !this.handshakeUploaded) {
+      if (open && !this.handshakeUploaded) {
         const syncType = readDocumentSyncType(message);
         if (syncType === messageYjsUpdate) {
           this.heldUpdates.push(message);
@@ -358,7 +350,6 @@ export function createHocuspocusDocumentTransport({
     }),
     serverHas,
     handleServerFrame,
-    isDraftRoom(roomName),
   );
   let currentState = mapStatus(websocket.status);
   // Only the server names a scope; until it does, the session keeps its own.

@@ -188,15 +188,12 @@ describe("document transport server acknowledgement", () => {
     expect(harness.acknowledged).toBe(true);
   });
 
-  // A draft room's server sequences each Update on the bytes it already has,
-  // so the handshake upload (SyncStep2) goes first there; a live room keeps the
-  // provider's order, whose SyncStep2 its server marks for collision reconciliation.
-  it.each([
-    [ROOM, ["update", "update", "update", "step2"]],
-    ["draft:draft-1", ["step2", "update", "update", "update"]],
-  ] as const)(
+  // The server refuses an Update that starts past its room's clock, so the handshake upload
+  // (SyncStep2) goes first in every room: after a server restart the queued Updates start past
+  // what the new process holds.
+  it.each([ROOM, "draft:draft-1"])(
     "is not saved in %s until every offline-queued update is acknowledged",
-    async (roomName, order) => {
+    async (roomName) => {
       harness.destroy();
       harness = createHarness(roomName);
       const first = await harness.connect();
@@ -210,7 +207,7 @@ describe("document transport server acknowledgement", () => {
       await vi.advanceTimersByTimeAsync(1_000);
       const second = await harness.connect();
 
-      expect(sentSyncKinds(second)).toEqual(order);
+      expect(sentSyncKinds(second)).toEqual(["step2", "update", "update", "update"]);
       second.acknowledge(roomName);
       expect(harness.acknowledged).toBe(false);
       second.acknowledge(roomName);
@@ -246,8 +243,8 @@ describe("document transport server acknowledgement", () => {
     harness.drop(first);
     await vi.advanceTimersByTimeAsync(1_000);
     const second = await harness.connect();
-    // The queued update flushed on the new socket and needs its own acknowledgement.
-    expect(sentSyncKinds(second)).toEqual(["update", "step2"]);
+    // The queued update goes out after the new socket's SyncStep2 and needs its own acknowledgement.
+    expect(sentSyncKinds(second)).toEqual(["step2", "update"]);
     acknowledge(second);
     expect(harness.acknowledged).toBe(false);
     acknowledge(second);
