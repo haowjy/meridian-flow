@@ -48,32 +48,30 @@ export function notifyFailure({
   if (detail !== undefined) console.warn(`[failure] ${key}`, detail);
   dismissFailure(key);
   const owns = () => shown.get(key) === id;
-  const id = toast.error(
-    reason ? (
-      <>
-        {title} <span className={`ml-1 ${role.secondary}`}>{reason}</span>
-      </>
-    ) : (
-      title
-    ),
-    {
-      duration: brief ? BRIEF_MS : Number.POSITIVE_INFINITY,
-      description: body,
-      className: body ? "items-start! py-1.5!" : undefined,
-      onDismiss: () => {
-        if (owns()) shown.delete(key);
-      },
-      action: action
-        ? {
-            label: action.label,
-            onClick: () => {
-              if (owns()) shown.delete(key);
-              void action.run();
-            },
-          }
-        : undefined,
-    },
+  const label = reason ? (
+    <>
+      {title} <span className={role.secondary}>{reason}</span>
+    </>
+  ) : (
+    title
   );
+  const id = toast.error(label, {
+    duration: brief ? BRIEF_MS : Number.POSITIVE_INFINITY,
+    description: body,
+    className: body ? "items-start! py-1.5!" : undefined,
+    onDismiss: () => {
+      if (owns()) shown.delete(key);
+    },
+    action: action
+      ? {
+          label: action.label,
+          onClick: () => {
+            if (owns()) shown.delete(key);
+            void action.run();
+          },
+        }
+      : undefined,
+  });
   shown.set(key, id);
 }
 

@@ -59,8 +59,6 @@ export function refusalReason(error: unknown): string | undefined {
     case "path_too_long":
     case "path_too_deep":
       return t`Path too long`;
-    case "selection_mismatch":
-      return t`Selection changed`;
     case "destination_not_found":
     case "destination_invalid":
       return t`Folder not found`;

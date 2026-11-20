@@ -74,7 +74,11 @@ function finalRefusalReason(error: unknown): string | undefined {
 
 /** Why the server left a copy out, where sending it again would leave it out the same way. */
 function settledReason(undone: readonly Settlement[]): string | undefined {
-  if (undone.some((one) => one.rule === "returned" && one.why.startsWith("work_")))
+  if (
+    undone.some(
+      (one) => one.rule === "returned" && ["work_archived", "work_deleted"].includes(one.why),
+    )
+  )
     return t`Work closed`;
   if (undone.some((one) => one.rule === "left_out" && one.why === "would_loop"))
     return t`Folder into itself`;

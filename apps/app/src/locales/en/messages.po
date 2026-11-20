@@ -5415,10 +5415,6 @@ msgstr "Selected Agent unavailable"
 msgid "Selected Work unavailable"
 msgstr "Selected Work unavailable"
 
-#: src/features/import/reason-copy.ts
-msgid "Selection changed"
-msgstr "Selection changed"
-
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Send answer"
 msgstr "Send answer"

@@ -5415,10 +5415,6 @@ msgstr ""
 msgid "Selected Work unavailable"
 msgstr ""
 
-#: src/features/import/reason-copy.ts
-msgid "Selection changed"
-msgstr ""
-
 #: src/features/chat/ask/AskTakeover.tsx
 msgid "Send answer"
 msgstr "发送回答"
