@@ -73,6 +73,8 @@ export interface RegisteredProvider {
   /** Environment variable that must contain a real key for this provider to enable. */
   apiKeyEnv: string;
   baseUrl?: string;
+  /** Kept for `LIVE_TEST_MODEL` runs; its models are hidden from the writer-facing model list. */
+  testOnly?: true;
   offerings: readonly RegisteredOffering[];
 }
 
@@ -373,6 +375,7 @@ export function buildModelRegistry(snapshot: ModelsSnapshot): ModelRegistry {
       adapter: row.adapter,
       apiKeyEnv: row.apiKeyEnv,
       ...(row.baseUrl === undefined ? {} : { baseUrl: row.baseUrl }),
+      ...(row.testOnly ? { testOnly: true as const } : {}),
       offerings,
     };
   });

@@ -118,6 +118,7 @@
     "deepinfra": {
       "adapter": "anthropic",
       "apiKeyEnv": "FLOW_DEEPINFRA_API_KEY",
+      "testOnly": true,
       "baseUrl": "https://api.deepinfra.com/anthropic",
       "models": {
         "*": {
