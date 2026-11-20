@@ -605,7 +605,6 @@ export function createHocuspocus(
             });
           }
           if (state) Y.applyUpdate(document, state);
-          services.documentSync.primeReservedNamespaceIndex(document);
         });
       });
     },

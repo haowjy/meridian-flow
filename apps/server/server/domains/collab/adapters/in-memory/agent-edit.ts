@@ -9,7 +9,6 @@ import {
   type UpdateMeta,
 } from "@meridian/agent-edit/integration";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
 import type { CapturedCheckpointCut } from "../../domain/checkpoint-cut.js";
@@ -193,7 +192,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
   function ensureEmpty(docId: string): Y.Doc {
     const existing = docs.get(docId);
     if (existing) return existing;
-    const doc = createCollabYDoc({ gc: false });
+    const doc = new Y.Doc({ gc: false });
     bindDocumentAuthority(doc, { authorityId: docId as never, generation: 1n });
     docs.set(docId, doc);
     return doc;
@@ -213,7 +212,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
   }
 
   async function roomCopy(docId: string): Promise<{ doc: Y.Doc; room: string | null }> {
-    const copy = createCollabYDoc({ gc: false });
+    const copy = new Y.Doc({ gc: false });
     Y.applyUpdate(copy, Y.encodeStateAsUpdate(requireDoc(docId)));
     await applyPersisted(docId, copy);
     bindDocumentAuthority(copy, { authorityId: docId as never, generation: 1n });

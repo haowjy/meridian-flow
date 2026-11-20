@@ -11,7 +11,7 @@ import {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks, type StoredLinkOccurrence } from "@meridian/markup/stored-links";
-import { createCollabYDoc, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { WorkPending } from "@meridian/suggestions";
 import * as Y from "yjs";
 import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
@@ -107,7 +107,7 @@ export async function deriveDocument(
   for (let attempt = 0; attempt < 3; attempt++) {
     const cut = await input.store.capture(documentId);
     if (!cut) return { status: "missing" };
-    const doc = createCollabYDoc({ gc: false });
+    const doc = new Y.Doc({ gc: false });
     try {
       Y.applyUpdate(doc, cut.state);
       // Before projecting: a repair there edits the private doc, not the cut.

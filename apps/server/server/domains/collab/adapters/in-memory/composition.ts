@@ -23,7 +23,6 @@ import { createDocumentWriteHookRunner } from "../../domain/document-projection-
 import { readHashlines, versioned } from "../../domain/document-revision.js";
 import { isCodeDocument } from "../../domain/document-schema-type.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
-import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
@@ -95,7 +94,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     journal,
     hocuspocus: hocuspocusBinding.current,
     metaForOrigin,
-    emitAgentEditInvariantViolation() {},
   });
   const lineage = createTurnLiveLineageReadModel({
     store: createInMemoryTurnLiveLineageStore(journal),
@@ -114,7 +112,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     lifecycle: { dispose: async () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
-      primeReservedNamespaceIndex,
       headSchemaVersion: async () => null,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,

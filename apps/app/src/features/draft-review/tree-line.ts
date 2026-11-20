@@ -93,7 +93,6 @@ export function treeChange(
     chats: [],
     members: [],
     attributed: false,
-    spans: [],
     tree: line,
     whole: true,
   };

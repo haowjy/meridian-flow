@@ -6,7 +6,6 @@
  * owner's list.
  */
 import { t } from "@lingui/core/macro";
-import type { Author } from "@meridian/agent-edit/diff";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type Change, list, sameValue } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
@@ -14,7 +13,7 @@ import type { Node } from "@tiptap/pm/model";
 import { startTransition, useEffect, useMemo, useState } from "react";
 import { authorsIn, SUGGESTION_CHANGE_ATTR } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import type { ChatRef, ReviewChange } from "@/features/draft-review/review-model";
+import type { Author, ChatRef, ReviewChange } from "@/features/draft-review/review-model";
 import { resolveFocusedChange } from "@/features/draft-review/review-model";
 
 /**
@@ -149,7 +148,6 @@ function reviewChange(change: Change, titles: ReadonlyMap<string, string>): Revi
     chats,
     members: chats.map((chat) => chat.chatId),
     attributed: true,
-    spans: [],
   };
 }
 

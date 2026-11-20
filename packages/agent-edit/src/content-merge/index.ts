@@ -1,26 +1,12 @@
-/** `@meridian/agent-edit/content-merge`: the three-way merge of a draft's blocks with live's, and its rules. */
+/** `@meridian/agent-edit/content-merge`: the three-way block merge, and what an AI edit's change is in a text now. */
 
-export { applyBase } from "./apply-base.js";
-export { discardChanges, restoreChanges } from "./discard.js";
-export { type ContentMergeResult, contentMerge } from "./merge.js";
-export { addCounts, RULES, type RuleCounts, type RuleName, ruleCounter } from "./rules.js";
+export { contentMerge } from "./merge.js";
 export {
-  addsPendingChange,
-  type ChangeMemo,
-  type ChangeRead,
-  type ChangeState,
   captureDelta,
-  changeState,
   changeStateIn,
   type EditChange,
-  type EditDelta,
   editChanges,
-  type Reading,
-  readChange,
-  readChangeWhole,
   readDelta,
-  readDraft,
   type StoredDelta,
-  standsIn,
   takeOut,
 } from "./stands.js";

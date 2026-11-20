@@ -6,7 +6,6 @@
 
 import { MessageType } from "@hocuspocus/provider";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { ConnectionState } from "@meridian/thread-client";
 import * as encoding from "lib0/encoding";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -206,8 +205,8 @@ describe("Hocuspocus document transport adapter", () => {
 
 describe("Hocuspocus document transport isolation", () => {
   it("does not fan out or reconnect after one room's terminal schema refusal", async () => {
-    const firstDocument = createCollabYDoc();
-    const secondDocument = createCollabYDoc();
+    const firstDocument = new Y.Doc();
+    const secondDocument = new Y.Doc();
     const first = createHocuspocusDocumentTransport({
       roomName: "document-1",
       document: firstDocument,

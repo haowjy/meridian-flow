@@ -28,12 +28,6 @@
   text effects (`press_text_effects`) read beside the edit's parts.
 - A closed Work's dropped create of a Work-only document is no longer ended client-side by
   `watchBounces`, so its Live room can retry `DOCUMENT_UNKNOWN` until the tab closes it.
-- Dead after drafts, for one PR of its own: agent-edit's draft review model (`diff/apply-record`,
-  `restorations`, `draft-base`, `attribution` and `attribution-evidence` (`classifyChanges`),
-  `REVIEW_BASE_FRAGMENT`; `content-merge/discard` and `apply-base`) with their tests, and
-  `provenance.ts`'s reserved-namespace guard (`SERVER_OWNED_ROOTS`, `RESERVED_TYPE_NAMES`), which
-  protects roots nothing writes now; then rewrite `packages/agent-edit/.context/diff-review.md`
-  around what is left (block diff, review projection, composition).
 
 [#212]: https://github.com/haowjy/meridian-flow/issues/212
 [#931]: https://github.com/haowjy/meridian-flow/issues/931

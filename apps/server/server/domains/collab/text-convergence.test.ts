@@ -6,7 +6,6 @@
  * - A room reloads accepted updates that the warm room did not receive.
  */
 
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
 import { messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
@@ -29,7 +28,7 @@ type WriterUpdate = {
 describe("live document text convergence", () => {
   it("keeps every accepted edit across interleaved room and storage deliveries", async () => {
     const journal = createInMemoryJournal();
-    const seed = createCollabYDoc({ gc: false });
+    const seed = new Y.Doc({ gc: false });
     seed.getText("content").insert(0, "seed");
     await journal.seedInitialDocument(DOCUMENT_ID, Y.encodeStateAsUpdate(seed));
 
@@ -38,13 +37,11 @@ describe("live document text convergence", () => {
       journal,
       hocuspocus: () => hocuspocus,
       metaForOrigin: () => ({ origin: "human:test-user", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     const documentSync = {
       ...persistence,
       bindHocuspocus: () => undefined,
       currentLiveGeneration: async () => 1n,
-      primeReservedNamespaceIndex: () => undefined,
       roomRemoval: async () => null,
     };
     const services = {
@@ -161,7 +158,7 @@ describe("live document text convergence", () => {
 });
 
 function createWriter(state: Uint8Array, markers: string[]) {
-  const document = createCollabYDoc({ gc: false });
+  const document = new Y.Doc({ gc: false });
   Y.applyUpdate(document, state);
   const updates: WriterUpdate[] = [];
   for (const marker of markers) {
@@ -192,7 +189,7 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
 async function loadStoredDocument(
   persistence: ReturnType<typeof createHocuspocusPersistenceService>,
 ): Promise<Y.Doc> {
-  const document = createCollabYDoc({ gc: false });
+  const document = new Y.Doc({ gc: false });
   const state = await persistence.loadHocuspocusDocument(DOCUMENT_ID, document);
   if (state) Y.applyUpdate(document, state);
   return document;

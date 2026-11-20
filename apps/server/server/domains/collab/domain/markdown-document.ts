@@ -24,7 +24,7 @@ import type { LinkView } from "@meridian/contracts";
 import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import type { DocumentLinkScope, MarkupCodec, ParsedContent } from "@meridian/markup";
-import { COLLAB_SCHEMA_VERSION, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -285,7 +285,7 @@ export function createMarkdownDocumentEngine(
   ): T {
     const state = Y.encodeStateAsUpdate(doc);
     const nodeSpans = xmlNodeSpans(state);
-    const clone = createCollabYDoc({ gc: false });
+    const clone = new Y.Doc({ gc: false });
     Y.applyUpdate(clone, state);
     const repairUpdates: Uint8Array[] = [];
     const observeRepair = (update: Uint8Array) => repairUpdates.push(update);
@@ -376,7 +376,7 @@ export function createMarkdownDocumentEngine(
   ): Promise<Result<MarkdownSetResult, SyncError>> {
     // This copy stages the change so serialization and journal admission
     // both complete before the live document is mutated.
-    const draft = createCollabYDoc({ gc: false });
+    const draft = new Y.Doc({ gc: false });
     Y.applyUpdate(draft, Y.encodeStateAsUpdate(liveDoc));
     const beforeVector = Y.encodeStateVector(draft);
     const yjsOrigin = yjsTransactionOrigin(origin);
@@ -394,11 +394,6 @@ export function createMarkdownDocumentEngine(
     let seq = 0;
     await admitFreshAuthorship(
       {
-        readMutationTarget: () => ({
-          documentId,
-          generation: documentAuthority(liveDoc).generation,
-          doc: liveDoc,
-        }),
         admitImmediate: async ({ update: admittedUpdate }) => {
           seq = await deps.journal.append(
             documentId,
@@ -490,7 +485,7 @@ export function createMarkdownDocumentEngine(
    */
   async function ensureDocumentAuthority(documentId: DocumentId): Promise<void> {
     if (!(await deps.initialDocumentSeeds.lacksAuthority(documentId))) return;
-    const doc = createCollabYDoc({ gc: false });
+    const doc = new Y.Doc({ gc: false });
     try {
       const seeded = await deps.initialDocumentSeeds.seedInitialDocument(
         documentId,
@@ -506,7 +501,7 @@ export function createMarkdownDocumentEngine(
 
   /** What a document with no text starts from: no structs, the placeholder a first checkpoint replaces. */
   function emptySeedState(): Uint8Array {
-    const doc = createCollabYDoc({ gc: false });
+    const doc = new Y.Doc({ gc: false });
     try {
       return Y.encodeStateAsUpdate(doc);
     } finally {
@@ -516,7 +511,7 @@ export function createMarkdownDocumentEngine(
 
   /** A document holding fresh bound content as its first state, written with the seed's origin. */
   function seedDocOf(content: BoundWrite, origin: DocumentSeedOrigin): Y.Doc {
-    const doc = createCollabYDoc({ gc: false });
+    const doc = new Y.Doc({ gc: false });
     doc.transact(() => {
       deps.model.insertBlocks(toDocHandle(doc), null, { blocks: [...content.blocks] });
     }, yjsTransactionOrigin(origin));

@@ -25,7 +25,6 @@ import {
 import {
   COLLAB_SCHEMA_VERSION,
   type CollabSchemaVersion,
-  createCollabYDoc,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, asc, desc, eq, gt, gte, lte, ne, sql } from "drizzle-orm";
@@ -913,7 +912,7 @@ export function createDrizzleJournal(
 
         let compactedThroughSeq = checkpointSeq;
         if (foldRows.length > 0) {
-          const doc = createCollabYDoc({ gc: false });
+          const doc = new Y.Doc({ gc: false });
           if (checkpoint) Y.applyUpdate(doc, toBytes(checkpoint.state));
           for (const row of foldRows) Y.applyUpdate(doc, toBytes(row.updateData));
           compactedThroughSeq = foldRows.at(-1)?.id ?? checkpointSeq;
@@ -1166,7 +1165,7 @@ async function captureLiveEdits(
   rows: readonly { id: number }[],
 ): Promise<void> {
   for (const [docId, state] of states) {
-    const doc = createCollabYDoc({ gc: false }),
+    const doc = new Y.Doc({ gc: false }),
       groups = new Map<
         string,
         {

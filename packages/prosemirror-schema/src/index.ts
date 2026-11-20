@@ -6,7 +6,7 @@
 import { uint32 } from "lib0/random";
 import { type MarkSpec, type NodeSpec, Schema } from "prosemirror-model";
 import { marks as basicMarks, nodes as basicNodes } from "prosemirror-schema-basic";
-import { Doc, decodeStateVector, encodeStateVector } from "yjs";
+import { type Doc, decodeStateVector, encodeStateVector } from "yjs";
 
 export type { CollabSchemaVersion } from "./collab-schema-version.js";
 export {
@@ -60,9 +60,6 @@ const nestingAttrs = {
   start: { default: null },
   loose: { default: null },
 };
-
-/** The names of the nesting attributes: what moves a block's marker, indent and bar. */
-export const NESTING_ATTRS = Object.keys(nestingAttrs);
 
 /**
  * A block's permanent identity (`block-id.ts`): set once where the block is made, copied with
@@ -279,26 +276,6 @@ export * from "./mark-key.js";
 export * from "./nesting.js";
 export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
 
-/**
- * Reserved clientID band [0, RESERVED_CLIENT_ID_MAX] is owned by server-authored
- * Yjs writer streams. Human/agent docs must never draw a
- * clientID in this band, and inbound updates carrying structs from it are rejected at
- * ingest. This is a Meridian convention — Yjs has no native reserved-range concept; the
- * Yjs invariant we rely on is that one clientID is owned by exactly one live writer.
- */
-export const RESERVED_CLIENT_ID_MAX = 999;
-/** Whether a client belongs to the server-reserved ingest band. */
-export const isReservedClientId = (clientId: number): boolean => clientId <= RESERVED_CLIENT_ID_MAX;
-
-/** Construct a collab Y.Doc whose clientID is guaranteed outside the reserved band. */
-export function createCollabYDoc(options?: ConstructorParameters<typeof Doc>[0]): Doc {
-  const doc = new Doc(options);
-  while (isReservedClientId(doc.clientID)) {
-    doc.clientID = uint32();
-  }
-  return doc;
-}
-
 export const documentNodes = {
   ...basicNodeDefaults,
   ...basicNodeOverrides,
@@ -323,11 +300,6 @@ export function allocateDocumentClient(
   let client: number;
   do {
     client = uint32();
-  } while (
-    isReservedClientId(client) ||
-    client === doc.clientID ||
-    used.has(client) ||
-    excluded.has(client)
-  );
+  } while (client === doc.clientID || used.has(client) || excluded.has(client));
   return client;
 }
