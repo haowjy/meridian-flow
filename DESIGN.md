@@ -126,6 +126,10 @@ Core shell expectations:
 - rails/chrome are stable flex children, not ad-hoc overlays;
 - central writing/chat/context areas own their own scroll behavior;
 - pinned composers and toolbars reserve enough content clearance to avoid occluding the last line;
+- content that opens or closes—a menu, switcher, detail, disclosure or banner—opens over existing
+  space and never moves or resizes a neighbouring surface. Only an intentional resize, such as a
+  dragged split or an opened or hidden sidebar, may shrink another area. The writer loses their
+  place when what they are looking at moves or resizes because something else opened;
 - routes swap meaningful work surfaces rather than stacking hidden panels.
 
 ## Interaction
