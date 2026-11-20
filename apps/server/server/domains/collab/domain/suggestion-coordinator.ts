@@ -23,6 +23,7 @@ import {
 } from "@meridian/prosemirror-schema";
 import {
   hasSuggestions,
+  listSuggestions,
   type SuggestionFilter,
   settleInDoc,
   viewOf,
@@ -34,14 +35,14 @@ import * as Y from "yjs";
 const schema = buildDocumentSchema();
 
 /**
- * What a view copy was read from: the live state, and the copy's own state, both moved forward by
- * each save made on the copy. A save writes its suggestions against `live` and Yjs merges them
- * with whatever landed since.
+ * What a view copy was read from: the live state, and the copy's own state. A save writes its
+ * suggestions against `live` and Yjs merges them with whatever landed since. agent-edit saves a
+ * copy once.
  */
 class ViewBase {
   constructor(
-    public live: Uint8Array,
-    public view: Uint8Array,
+    readonly live: Uint8Array,
+    readonly view: Uint8Array,
   ) {}
 }
 
@@ -119,11 +120,9 @@ export function createSuggestionCoordinator(
             const savedLive = docOf(cut.afterState);
             writeBlocks(fragment(viewAfter), schema, children(viewOf(rootOf(savedLive), work).doc));
             savedLive.destroy();
-            base.live = cut.afterState;
-            base.view = Y.encodeStateAsUpdate(viewAfter);
             return {
               beforeState: viewBefore,
-              afterState: base.view,
+              afterState: Y.encodeStateAsUpdate(viewAfter),
               ...(cut.position === undefined ? {} : { position: cut.position }),
             };
           },
@@ -159,6 +158,20 @@ export async function settleInLive(
     await saved.write.persist();
     saved.write.transfer();
     return true;
+  } finally {
+    read.doc.destroy();
+  }
+}
+
+/** Whether a live document still holds suggestions a turn made: what its card's Undo would take back. */
+export async function holdsTurnSuggestions(
+  live: DocumentCoordinator,
+  docId: string,
+  turn: string,
+): Promise<boolean> {
+  const read = await live.readRoom(docId);
+  try {
+    return listSuggestions(rootOf(read.doc)).some((change) => change.turn === turn);
   } finally {
     read.doc.destroy();
   }

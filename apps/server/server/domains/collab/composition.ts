@@ -134,7 +134,7 @@ import { liveRoom } from "./domain/observation-rooms.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import { primeReservedNamespaceIndex } from "./domain/provenance.js";
 import { createReversalNoticePort } from "./domain/reversal-notices.js";
-import { settleInLive } from "./domain/suggestion-coordinator.js";
+import { holdsTurnSuggestions, settleInLive } from "./domain/suggestion-coordinator.js";
 import { createTurnLiveLineageReadModel } from "./domain/turn-live-lineage.js";
 import {
   createTurnReversalService,
@@ -623,7 +623,20 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const lineage = createTurnLiveLineageReadModel({
     store: lineageStore,
-    receiptStore: turnInverse,
+    // Suggestion mode: a card offers Undo while its turn still has suggestions pending.
+    receiptStore: runtime.suggestionCore
+      ? {
+          ...turnInverse,
+          async getDocumentAndTreeChip(threadId, turnId) {
+            const chip = await turnInverse.getDocumentAndTreeChip(threadId, turnId);
+            const targets = await lineageStore.listEditedDocumentIdsForTurn(threadId, turnId);
+            for (const { documentId } of targets)
+              if (await holdsTurnSuggestions(agentCoordinator, documentId, turnId))
+                return { ...chip, control: "undo" as const };
+            return chip;
+          },
+        }
+      : turnInverse,
     resolveDocumentUri: documentUriResolver,
     resolveLastDocumentUri,
   });

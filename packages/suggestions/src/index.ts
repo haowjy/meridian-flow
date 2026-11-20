@@ -3,7 +3,7 @@
  * how an edit made to a view becomes suggestions, and accepting or rejecting them.
  */
 
-import { withBlockIds, withoutBlockIds } from "@meridian/prosemirror-schema";
+import { newBlockId } from "@meridian/prosemirror-schema";
 import {
   cleanupSemantic,
   DIFF_DELETE,
@@ -42,8 +42,8 @@ function storedMarks(node: PMNode): Mark[] {
  * Turns each block's stored suggestions into the library's marks on the block. Positions don't
  * move, so a transaction built on the document stays valid on the result.
  */
-function markBlocks(tr: Transform): void {
-  tr.doc.descendants((node, pos) => {
+function markBlocks(tr: Transform, from = 0, to = tr.doc.content.size): void {
+  tr.doc.nodesBetween(from, to, (node, pos) => {
     if (node.isInline) return false;
     const marks = storedMarks(node);
     if (marks.length)
@@ -59,8 +59,13 @@ function markBlocks(tr: Transform): void {
  * The reverse of `markBlocks`: what Yjs keeps. Adds to what a block already stores. The library
  * writes a block's marks without the suggester, so a mark that names no Work becomes `suggester`'s.
  */
-function storeBlocks(tr: Transform, suggester: Suggester | null): void {
-  tr.doc.descendants((node, pos) => {
+function storeBlocks(
+  tr: Transform,
+  suggester: Suggester | null,
+  from = 0,
+  to = tr.doc.content.size,
+): void {
+  tr.doc.nodesBetween(from, to, (node, pos) => {
     if (node.isInline) return false;
     const marks = node.marks
       .filter(isSuggestion)
@@ -174,7 +179,17 @@ export function hasSuggestions(doc: PMNode): boolean {
   return found;
 }
 
-type Change = { from: number; to: number; slice: Slice };
+/** One change of a view, in its positions; changes in one `group` are settled as one. */
+type Change =
+  | { kind: "text"; from: number; to: number; slice: Slice; group: number }
+  | {
+      kind: "blocks";
+      from: number;
+      to: number;
+      blocks: PMNode[];
+      removed: PMNode[];
+      group: number;
+    };
 
 /**
  * An edit made to a view of `doc` (`after` is the view once edited), written into `doc`: as
@@ -192,24 +207,90 @@ export function writeThroughView(
   const changes = diffDocs(view.doc, after);
   if (changes.length === 0) return null;
   const back = view.mapping.invert();
-  const state = EditorState.create({ doc: marked(doc) });
-  const tr = state.tr;
+  const ids = new Map<number, string>();
+  const idOf = (group: number) => {
+    const id = ids.get(group) ?? newSuggestionId();
+    ids.set(group, id);
+    return id;
+  };
+  let state = EditorState.create({ doc: marked(doc) });
   for (const change of changes.reverse()) {
     const from = back.map(change.from, 1);
     const to = Math.max(from, back.map(change.to, -1));
+    const tr = state.tr;
+    if (change.kind === "blocks") {
+      replaceBlocks(
+        tr,
+        from,
+        to,
+        change.blocks,
+        work,
+        suggester && { ...suggester, id: idOf(change.group) },
+      );
+      state = state.apply(tr);
+      continue;
+    }
     tr.replace(from, to, change.slice);
+    state = state.apply(suggester ? suggest(tr, state, suggester, idOf(change.group)) : tr);
   }
-  const out = suggester ? suggest(tr, state, suggester) : tr;
+  const out = new Transform(state.doc);
   storeBlocks(out, suggester);
   return out.doc;
 }
 
-/** `tr` rewritten into `suggester`'s suggestions instead of edits. */
-function suggest(tr: Transaction, state: EditorState, suggester: Suggester): Transaction {
+/**
+ * Whole blocks replaced, written by the package rather than the library: the blocks the view
+ * shows in `from`..`to` are marked deleted, and `blocks` go in after them marked inserted, so
+ * both versions stay with their own text and marks. A block that keeps its id in `blocks` (a
+ * retype, a move) hands the id to the new version and the old one takes a fresh id.
+ */
+function replaceBlocks(
+  tr: Transform,
+  from: number,
+  to: number,
+  blocks: readonly PMNode[],
+  work: string | null,
+  suggestion: (Suggester & { id: string }) | null,
+): void {
+  const { insertion, deletion } = tr.doc.type.schema.marks;
+  const shown: { pos: number; node: PMNode }[] = [];
+  tr.doc.nodesBetween(from, to, (node, pos) => {
+    const hidden = node.marks.some(
+      (mark) =>
+        (mark.type === insertion && mark.attrs.work !== work) ||
+        (mark.type === deletion && mark.attrs.work === work),
+    );
+    if (pos >= from && pos + node.nodeSize <= to && !hidden) shown.push({ pos, node });
+    return false;
+  });
+  const kept = new Set(blocks.map((block) => block.attrs.id).filter(Boolean));
+  tr.insert(
+    to,
+    suggestion
+      ? blocks.map((block) => block.mark(insertion.create(suggestion).addToSet(block.marks)))
+      : blocks,
+  );
+  for (const { pos, node } of shown.reverse()) {
+    if (!suggestion) {
+      tr.delete(pos, pos + node.nodeSize);
+      continue;
+    }
+    if (kept.has(node.attrs.id)) tr.setNodeAttribute(pos, "id", newBlockId());
+    tr.addNodeMark(pos, deletion.create(suggestion));
+  }
+}
+
+/** `tr` rewritten into `suggester`'s suggestions instead of edits, under `id` or fresh ids. */
+function suggest(
+  tr: Transaction,
+  state: EditorState,
+  suggester: Suggester,
+  id?: string,
+): Transaction {
   return transformToSuggestionTransaction(
     tr,
     state,
-    newSuggestionId,
+    id ? () => id : newSuggestionId,
     () => ({ ...suggester }),
     // A turn's suggestions keep their own id, so Undo of a turn takes back only that turn.
     (existing, next) => existing.turn !== next.turn || existing.work !== next.work,
@@ -222,22 +303,45 @@ function suggest(tr: Transaction, state: EditorState, suggester: Suggester): Tra
  * and the result moved back between the steps that convert there and back.
  */
 function suggestOnMarked(tr: Transaction, state: EditorState, suggester: Suggester): Transaction {
-  const markedState = EditorState.create({ doc: marked(state.doc) });
+  const [from, to] = blocksAround(state.doc, tr);
+  const markedTr = new Transform(state.doc);
+  markBlocks(markedTr, from, to);
+  const markedState = EditorState.create({ doc: markedTr.doc });
   const replayed = markedState.tr;
   for (const step of tr.steps) replayed.step(step);
   if (tr.selectionSet)
     replayed.setSelection(Selection.fromJSON(replayed.doc, tr.selection.toJSON()));
   const suggested = suggest(replayed, markedState, suggester);
   const out = state.tr;
-  markBlocks(out);
+  markBlocks(out, from, to);
   for (const step of suggested.steps) out.step(step);
-  storeBlocks(out, suggester);
+  storeBlocks(out, suggester, suggested.mapping.map(from, -1), suggested.mapping.map(to, 1));
   out.setSelection(Selection.fromJSON(out.doc, suggested.selection.toJSON()));
   if (tr.storedMarksSet) out.setStoredMarks(tr.storedMarks);
   if (tr.scrolledIntoView) out.scrollIntoView();
   // Transaction meta has no public copy; the library copies it the same way.
   (out as unknown as { meta: unknown }).meta = (tr as unknown as { meta: unknown }).meta;
   return out;
+}
+
+/** The top-level blocks `tr` touches in `doc`, and one more on each side: what the library reads. */
+function blocksAround(doc: PMNode, tr: Transaction): [number, number] {
+  let lo = doc.content.size;
+  let hi = 0;
+  tr.steps.forEach((step, index) => {
+    const back = tr.mapping.slice(0, index).invert();
+    step.getMap().forEach((start, end) => {
+      lo = Math.min(lo, back.map(start, -1));
+      hi = Math.max(hi, back.map(end, 1));
+    });
+  });
+  if (lo > hi) return [0, doc.content.size];
+  const $lo = doc.resolve(Math.min(lo, doc.content.size));
+  const $hi = doc.resolve(Math.min(hi, doc.content.size));
+  return [
+    $lo.posAtIndex(Math.max(0, $lo.index(0) - 1), 0),
+    $hi.posAtIndex(Math.min(doc.childCount, $hi.index(0) + 2), 0),
+  ];
 }
 
 /** Marks a settle's transaction, so `rewrite` lets it through. */
@@ -291,6 +395,8 @@ function diffDocs(before: PMNode, after: PMNode): Change[] {
   const afterBlocks = children(after);
   const pairs = matchById(beforeBlocks, afterBlocks);
   const changes: Change[] = [];
+  let group = 0;
+  const next = () => group++;
   let b = 0;
   let a = 0;
   let pos = 0;
@@ -300,18 +406,54 @@ function diffDocs(before: PMNode, after: PMNode): Change[] {
     return start;
   });
   const startOf = (index: number) => (index < beforeBlocks.length ? offsets[index] : pos);
+  // A split or a join is a text change at a block's edge beside whole blocks added or removed:
+  // one change, settled together.
+  let tail: Change | null = null;
   for (const [pb, pa] of [...pairs, [beforeBlocks.length, afterBlocks.length] as const]) {
+    let gap: number | null = null;
     if (b < pb || a < pa) {
-      const from = startOf(b);
-      const to = startOf(pb);
-      const inserted = after.slice(afterOffset(afterBlocks, a), afterOffset(afterBlocks, pa));
-      changes.push({ from, to, slice: inserted });
+      gap = tail ? tail.group : next();
+      changes.push({
+        kind: "blocks",
+        from: startOf(b),
+        to: startOf(pb),
+        blocks: afterBlocks.slice(a, pa),
+        removed: beforeBlocks.slice(b, pb),
+        group: gap,
+      });
     }
-    if (pb < beforeBlocks.length && pa < afterBlocks.length)
-      changes.push(...diffBlock(beforeBlocks[pb], afterBlocks[pa], offsets[pb]));
+    tail = null;
+    if (pb < beforeBlocks.length && pa < afterBlocks.length) {
+      const start = offsets[pb];
+      const hunks = diffBlock(beforeBlocks[pb], afterBlocks[pa], start, next);
+      const first = hunks[0];
+      if (gap !== null && first?.kind === "text" && first.from === start + 1) first.group = gap;
+      const last = hunks.at(-1);
+      if (last?.kind === "text" && last.to === start + beforeBlocks[pb].nodeSize - 1) tail = last;
+      changes.push(...hunks);
+    }
     b = pb + 1;
     a = pa + 1;
   }
+  return joinMoves(changes);
+}
+
+/** A block that leaves in one place and arrives in another (same id) moved: one change. */
+function joinMoves(changes: Change[]): Change[] {
+  const arrived = new Map<unknown, number>();
+  for (const change of changes)
+    if (change.kind === "blocks")
+      for (const block of change.blocks)
+        if (block.attrs.id) arrived.set(block.attrs.id, change.group);
+  const renamed = new Map<number, number>();
+  for (const change of changes) {
+    if (change.kind !== "blocks") continue;
+    const to = change.removed
+      .map((block) => arrived.get(block.attrs.id))
+      .find((g) => g !== undefined);
+    if (to !== undefined && to !== change.group) renamed.set(change.group, to);
+  }
+  for (const change of changes) change.group = renamed.get(change.group) ?? change.group;
   return changes;
 }
 
@@ -321,12 +463,6 @@ function children(node: PMNode): PMNode[] {
     out.push(child);
   });
   return out;
-}
-
-function afterOffset(blocks: PMNode[], index: number): number {
-  let pos = 0;
-  for (let i = 0; i < index; i++) pos += blocks[i].nodeSize;
-  return pos;
 }
 
 /**
@@ -363,7 +499,7 @@ function matchById(before: PMNode[], after: PMNode[]): (readonly [number, number
 }
 
 /** A paired block's changes: its attributes, then its inline content as text hunks. */
-function diffBlock(before: PMNode, after: PMNode, start: number): Change[] {
+function diffBlock(before: PMNode, after: PMNode, start: number, next: () => number): Change[] {
   if (before.eq(after)) return [];
   // A retyped block is the old one deleted and a new one inserted, as text is: both versions
   // stay in the document, so a writer's edit to either is never mistaken for the other.
@@ -372,8 +508,16 @@ function diffBlock(before: PMNode, after: PMNode, start: number): Change[] {
     !before.isTextblock ||
     JSON.stringify(before.attrs) !== JSON.stringify(after.attrs)
   ) {
-    const fresh = withBlockIds(withoutBlockIds(after));
-    return [{ from: start, to: start + before.nodeSize, slice: sliceOf(fresh) }];
+    return [
+      {
+        kind: "blocks",
+        from: start,
+        to: start + before.nodeSize,
+        blocks: [after],
+        removed: [before],
+        group: next(),
+      },
+    ];
   }
   const changes: Change[] = [];
   let bOff = 0;
@@ -395,9 +539,11 @@ function diffBlock(before: PMNode, after: PMNode, start: number): Change[] {
       k++;
     }
     changes.push({
+      kind: "text",
       from: start + 1 + bOff,
       to: start + 1 + bOff + deleted,
       slice: after.slice(aOff, aOff + inserted),
+      group: next(),
     });
     bOff += deleted;
     aOff += inserted;
@@ -443,11 +589,6 @@ function tokenDiff(
     op,
     [...text].reduce((sum, code) => sum + sizes[code.charCodeAt(0) - 0xe000], 0),
   ]);
-}
-
-function sliceOf(block: PMNode): Slice {
-  const doc = block.type.schema.topNodeType.create(null, block);
-  return doc.slice(0, doc.content.size);
 }
 
 /** One suggestion of a Work: its id, turn, and what it adds and removes. */
