@@ -217,6 +217,10 @@ function paintNode(block: PMNode, blockPos: number, paint: Paint, out: Decoratio
         class: "sug-attrs",
         ...(own[0] ? { [SUGGESTION_CHANGE_ATTR]: own[own.length - 1]?.id } : {}),
         "data-view-level": String(shown.level ?? 0),
+        // After the element's own `text-align`, so the proposed alignment wins.
+        ...(block.isTextblock && "align" in shown
+          ? { style: `text-align: ${shown.align ?? "start"}` }
+          : {}),
       },
       "node",
     );

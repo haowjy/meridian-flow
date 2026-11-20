@@ -10,11 +10,15 @@ import {
   nestNodes,
   type StepFacts,
 } from "@meridian/prosemirror-schema";
-import { blockKind, type View, viewAttrs } from "@meridian/suggestions";
+import { blockKind, type View } from "@meridian/suggestions";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { suggestionView, suggestionViewAfter } from "../suggestion-mode/SuggestionModeExtension";
+import {
+  shownBlock,
+  suggestionView,
+  suggestionViewAfter,
+} from "../suggestion-mode/SuggestionModeExtension";
 
 /** The inline offset where `steps` end, in the step widths `editor.css` defines. */
 function offset(steps: readonly StepFacts[]): string {
@@ -64,9 +68,7 @@ function drawContainer(container: ProseMirrorNode, start: number, view: View, ou
   let at = start;
   container.forEach((child) => {
     if (!("sug" in child.attrs) || blockKind(child, view) !== "hidden") {
-      blocks.push(
-        child.attrs.sugAttrs ? child.type.create(viewAttrs(child, view), null, child.marks) : child,
-      );
+      blocks.push(shownBlock(view, child));
       positions.push(at);
       sizes.push(child.nodeSize);
     }

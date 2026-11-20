@@ -15,7 +15,7 @@ export type Undone =
   | { kind: "answered"; unapplyId: string; took: boolean };
 
 /** What a Redo landed: the new Apply's command id. */
-export type Redone = { commandId: string };
+type Redone = { commandId: string };
 
 /**
  * The two requests every Undo and Redo of an Apply makes, by command id: take back the Apply in

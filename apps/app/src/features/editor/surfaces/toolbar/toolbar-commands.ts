@@ -18,7 +18,7 @@ import {
   selectionIsQuoted,
   selectionListKind,
 } from "@/core/editor/extensions/nesting";
-import { shownState } from "@/core/editor/extensions/suggestion-mode";
+import { shownState, suggestionView } from "@/core/editor/extensions/suggestion-mode";
 import { linkAttributesAtSelection } from "@/core/editor/links";
 
 import {
@@ -240,7 +240,8 @@ function activeBlockTypeId(editor: Editor): BlockTypeId | null {
   const listKind = activeListKind(editor);
   if (listKind === "bullet") return "bulletList";
   if (listKind === "ordered") return "orderedList";
-  if (selectionIsQuoted(selectedSequence(editor.state.selection))) return "quote";
+  if (selectionIsQuoted(selectedSequence(editor.state.selection, suggestionView(editor.state))))
+    return "quote";
   const level = currentHeadingLevel(editor);
   if (level !== null) return `heading${level}`;
   return blockIsActive(editor, "paragraph", { level: null }) ? "paragraph" : null;
@@ -407,7 +408,7 @@ function blockIsActive(editor: Editor, name: string, attrs?: Record<string, unkn
 
 /** The kind of list every selected block sits in, or null when they are not all in one kind. */
 function activeListKind(editor: Editor): "bullet" | "ordered" | null {
-  return selectionListKind(selectedSequence(editor.state.selection));
+  return selectionListKind(selectedSequence(editor.state.selection, suggestionView(editor.state)));
 }
 
 function uploadBlocker(context: ToolbarContext): ToolbarBlockedReason | null {

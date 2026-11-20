@@ -157,7 +157,8 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   paragraph's end. Live text never moves into a block the Work added, or a reject would take it.
   The other way works: Backspace at the start of an added paragraph joins it into the Live one
   before it. A fix would move the added paragraph's text into the Live one as the same change,
-  which drops the added paragraph's own attributes (an added heading would join as body text).
+  with the added paragraph's attributes (an added heading's level) as a pending attribute
+  change on the Live one: two changes for one keystroke, which the review lists separately.
 - A later turn's split of an earlier turn's block stays after the later turn is rejected (the
   wording comes back, in two paragraphs). Block edits inside a container the Work added (a
   table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.

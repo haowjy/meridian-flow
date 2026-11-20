@@ -18,7 +18,7 @@ import { type CommandStart, usePressCommands, type WorkBranchCommands } from "./
 export type { DraftReviewSelection, InlineDraftReview };
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
-export type ReviewChangeTarget = ReviewFocus;
+type ReviewChangeTarget = ReviewFocus;
 
 type DraftReviewStateOwner = Readonly<{
   state: typeof EMPTY_DRAFT_REVIEW_STATE;
@@ -31,7 +31,7 @@ export function useDraftReviewStateOwner(): DraftReviewStateOwner {
 }
 
 /** The single review-runtime claim: the mounted editor a review card can scroll to, plus the selection it is showing. */
-export type InlineReviewRuntime = {
+type InlineReviewRuntime = {
   editor: Editor;
   documentId: string;
   itemKey: string;

@@ -2,6 +2,7 @@
 
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { type EditorState, NodeSelection, type Transaction } from "@tiptap/pm/state";
+import { shownAttrs, suggestionView } from "@/core/editor/extensions/suggestion-mode";
 
 export type BlockAlignment = null | "center" | "right";
 
@@ -45,11 +46,12 @@ export function alignSelectedBlocks(state: EditorState, align: BlockAlignment): 
   if (targets.length === 0) return null;
 
   const transaction = state.tr;
+  const view = suggestionView(state);
   for (const target of targets) {
     transaction.setNodeMarkup(
       target.pos,
       undefined,
-      { ...target.node.attrs, align },
+      { ...shownAttrs(view, target.node), align },
       target.node.marks,
     );
   }

@@ -22,7 +22,7 @@ export type NoticeSurface =
 /** The key a project's delete notice is held under, beside the draft owners'. */
 export const deleteNoticeKey = (projectId: string) => `delete:${projectId}`;
 
-export type NoticeSubject =
+type NoticeSubject =
   /** `folder`: a folder's changes and everything listed under it. `deleted`: the writer's delete. */
   | { kind: "draft" | "change" | "folder" | "deleted"; name: string }
   | { kind: "drafts"; count: number }
@@ -34,7 +34,7 @@ export type NoticeSubject =
  */
 export type DiscardTook = { untaken: readonly string[] };
 
-export type DiscardUndoAnswer = {
+type DiscardUndoAnswer = {
   answer: "ok" | "failed" | "gone";
   landed: Promise<void>;
 };

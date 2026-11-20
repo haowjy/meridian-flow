@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { ReviewChange } from "./review-model";
 
-export type ReviewChangeItem = {
+type ReviewChangeItem = {
   change: ReviewChange;
 };
 

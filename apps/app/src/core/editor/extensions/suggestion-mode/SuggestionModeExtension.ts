@@ -164,27 +164,37 @@ export function shownText(
 /** The view each editor document is shown in, for a command that holds only its transaction. */
 const viewOfDoc = new WeakMap<PMNode, View>();
 
+/** The view the editor showed when `tr` began. */
+export function transactionView(tr: Transaction): View {
+  return viewOfDoc.get(tr.before) ?? liveView;
+}
+
 /**
- * A block's attributes as the editor shows them: in a Work's view, Live's with the Work's pending
- * change applied. A command that sets a block's attributes reads them here, so it builds on what
- * the writer sees; `rewrite` turns what it sets into the pending change. The stored suggestion
- * attributes are kept, so a command that copies the attributes writes them back unchanged.
- * `doc` is the editor document `node` was read from (a transaction's `before`): a document a
- * transaction's steps made is no editor's, and reads as Live.
+ * A block's attributes as the editor shows them in `view`. In a Work's view: Live's with the
+ * Work's pending change applied, and no pending layers left on them, so a node a command already
+ * wrote reads the same again; `rewrite` turns what a command sets into the pending change and
+ * keeps every Work's layers itself. In the Live view: the stored attributes, layers kept, since a
+ * Live edit writes them as they are. Every command and reader in the editor reads a block's
+ * attributes here.
  */
-export function shownAttrs(doc: PMNode, node: PMNode): Record<string, unknown> {
-  if (!("sug" in node.attrs)) return node.attrs;
-  const view = viewOfDoc.get(doc) ?? liveView;
-  return { ...viewAttrs(node, view), sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs };
+export function shownAttrs(view: View, node: PMNode): Record<string, unknown> {
+  if (view.work === null || !node.attrs.sugAttrs) return node.attrs;
+  return { ...viewAttrs(node, view), sug: node.attrs.sug };
+}
+
+/** `node` with `shownAttrs`; the node itself when they are the stored ones. */
+export function shownBlock(view: View, node: PMNode): PMNode {
+  const attrs = shownAttrs(view, node);
+  return attrs === node.attrs ? node : node.type.create(attrs, node.content, node.marks);
 }
 
 const shownStates = new WeakMap<EditorState, EditorState>();
 
 /**
- * `state` with every block the selection touches carrying the attributes the editor shows (a
- * Work's pending heading, list, quote or alignment). Only attributes change, so positions and
- * the selection are the same: a reader of what the selection is (the toolbar's lit controls)
- * reads this instead of the stored state. It has no plugins.
+ * `state` with every block around the selection carrying `shownAttrs`. Only attributes change,
+ * so positions and the selection are the same: a reader of what the selection is (the toolbar's
+ * lit controls) reads this instead of the stored state. The range reaches one position past each
+ * end, so a gap cursor covers the blocks beside it. It has no plugins.
  */
 export function shownState(state: EditorState): EditorState {
   const view = suggestionView(state);
@@ -192,9 +202,11 @@ export function shownState(state: EditorState): EditorState {
   let shown = shownStates.get(state);
   if (shown) return shown;
   const transform = new Transform(state.doc);
+  const size = state.doc.content.size;
   for (const { $from, $to } of state.selection.ranges)
-    state.doc.nodesBetween($from.pos, $to.pos, (node, pos) => {
-      if (node.attrs.sugAttrs) transform.setNodeMarkup(pos, undefined, viewAttrs(node, view));
+    state.doc.nodesBetween(Math.max(0, $from.pos - 1), Math.min(size, $to.pos + 1), (node, pos) => {
+      const attrs = shownAttrs(view, node);
+      if (attrs !== node.attrs) transform.setNodeMarkup(pos, undefined, attrs);
     });
   shown = transform.docChanged
     ? EditorState.create({

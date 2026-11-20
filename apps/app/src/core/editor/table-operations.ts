@@ -13,6 +13,7 @@ import {
   TableMap,
   tableNodeTypes,
 } from "@tiptap/pm/tables";
+import { shownAttrs, suggestionView } from "./extensions/suggestion-mode/SuggestionModeExtension";
 
 export type TableSelection = {
   table: ProseMirrorNode;
@@ -299,10 +300,9 @@ export function setTablePlacement(align: "center" | "right" | null): Command {
   return (state, dispatch) => {
     const selection = tableSelection(state);
     if (!selection) return false;
-    if (selection.table.attrs.align === align) return true;
-    dispatch?.(
-      state.tr.setNodeMarkup(selection.tablePos, undefined, { ...selection.table.attrs, align }),
-    );
+    const attrs = shownAttrs(suggestionView(state), selection.table);
+    if (attrs.align === align) return true;
+    dispatch?.(state.tr.setNodeMarkup(selection.tablePos, undefined, { ...attrs, align }));
     return true;
   };
 }
