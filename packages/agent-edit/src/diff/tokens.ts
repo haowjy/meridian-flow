@@ -55,8 +55,33 @@ export function blockKey(node: PMNode): string {
   return key;
 }
 
-const segmenter = new Intl.Segmenter(undefined, { granularity: "word" });
-const SPACE = /^\s+$/u;
+const SPACELESS_SCRIPTS =
+  "\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}\\p{sc=Thai}\\p{sc=Lao}\\p{sc=Khmer}\\p{sc=Myanmar}";
+/** A character of a script written without spaces between words. */
+export const SPACELESS = new RegExp(`[${SPACELESS_SCRIPTS}]`, "u");
+const LETTER = `(?:(?![${SPACELESS_SCRIPTS}])[\\p{L}\\p{N}\\p{M}\\p{Pc}\\u200C\\u200D])`;
+/**
+ * Whitespace runs; words (a spaceless script's character with its marks, else letters, digits and
+ * marks, joined across an apostrophe); then one character each, an emoji with its modifiers and
+ * joined parts, a flag as its pair. Group ids hash these segments and the browser and the server
+ * must compute the same ones, so no `Intl.Segmenter`: its splits follow the engine's ICU (Node
+ * keeps `a.b` one word, Chrome splits it).
+ */
+const SEGMENT = new RegExp(
+  `(\\s+)|([${SPACELESS_SCRIPTS}]\\p{M}*|${LETTER}+(?:['\u2019]${LETTER}+)*)|\\p{RI}\\p{RI}|[^](?:[\\p{M}\\p{Emoji_Modifier}\\u{E0020}-\\u{E007F}]|\\u200D[^\\s])*`,
+  "gu",
+);
+
+/** `text` as whitespace, word and other segments, which concatenate back to it. */
+export function segmentText(
+  text: string,
+): Array<{ segment: string; space: boolean; word: boolean }> {
+  return Array.from(text.matchAll(SEGMENT), (m) => ({
+    segment: m[0],
+    space: m[1] !== undefined,
+    word: m[2] !== undefined,
+  }));
+}
 const marksKey = (marks: readonly Mark[]) =>
   marks.length ? stableJson(marks.map((m) => m.toJSON())) : "";
 const sameMarks = (a: readonly Mark[], b: readonly Mark[]) =>
@@ -97,8 +122,8 @@ export function tokenizeBlock(node: PMNode): Tok[] {
       }
       const marks = child.marks;
       const mk = marksKey(marks);
-      for (const { segment, isWordLike } of segmenter.segment(child.text ?? "")) {
-        if (SPACE.test(segment)) {
+      for (const { segment, space, word } of segmentText(child.text ?? "")) {
+        if (space) {
           if (carry && !sameMarks(carryMarks, marks)) flushCarry();
           if (!carry) carryMarks = marks;
           carry += segment;
@@ -109,7 +134,7 @@ export function tokenizeBlock(node: PMNode): Tok[] {
           key: `T${mk}\u0001${segment}`,
           ws: carry,
           core: segment,
-          word: isWordLike === true,
+          word,
           marks,
           ...(carry && !sameMarks(carryMarks, marks) ? { wsMarks: carryMarks } : {}),
         });
@@ -314,8 +339,7 @@ export function diffKeys(a: readonly string[], b: readonly string[]): Array<[num
 }
 
 /** A string as the word, space and punctuation segments the review tokenizer uses; they concatenate back to it. */
-export const splitWords = (text: string): string[] =>
-  Array.from(segmenter.segment(text), (s) => s.segment);
+export const splitWords = (text: string): string[] => segmentText(text).map((s) => s.segment);
 
 const wordKeys = new WeakMap<PMNode, string[]>();
 /** A block's words in order (a non-text block is one pseudo-word: its key). */

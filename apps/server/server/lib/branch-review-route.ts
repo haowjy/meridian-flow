@@ -6,6 +6,7 @@
  * outcome to HTTP. Nothing here decides an effect.
  */
 
+import { UnknownChangeError } from "@meridian/agent-edit/diff";
 import type { BranchId, CommandId, DraftOwner } from "@meridian/contracts";
 import {
   type DraftOwnerKey,
@@ -1094,6 +1095,9 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
     if (cause instanceof WorkLifecycleUnavailableError) throwWorkMutationHttpError(cause);
     if (cause instanceof ApplyClickMalformed)
       throw createError({ statusCode: 400, message: "Invalid Apply request" });
+    // The client named a change the server's projection of the same cut does not have.
+    if (cause instanceof UnknownChangeError)
+      throw createError({ statusCode: 400, message: "Unknown change" });
     // The click is ahead of what the server holds; nothing was stored and the client sends it again.
     if (cause instanceof ApplyClickUnsynced)
       throw createError({

@@ -137,7 +137,10 @@ export function projectReview(diff: BlockDiff): ReviewProjection {
 const firstDraftToken = (diff: BlockDiff, g: ReviewGroup) =>
   Math.min(...g.hunks.map((h) => diff.hunks[h.index].sfrom));
 
-/** The patches that apply or discard the groups with these ids; unknown ids are ignored. */
+/** An id that names no change of the projection: whoever sent it projected the draft differently. */
+export class UnknownChangeError extends Error {}
+
+/** The patches that apply or discard the groups with these ids. */
 export function composeGroups(
   schema: Schema,
   projection: ReviewProjection,
@@ -147,7 +150,8 @@ export function composeGroups(
   const want = new Set(ids);
   const selected: Hunk[] = [];
   for (const g of projection.groups)
-    if (want.has(g.id)) for (const h of g.hunks) selected.push(projection.diff.hunks[h.index]);
+    if (want.delete(g.id)) for (const h of g.hunks) selected.push(projection.diff.hunks[h.index]);
+  if (want.size) throw new UnknownChangeError(`Unknown change ${[...want].join(", ")}`);
   return composeHunks(schema, projection.diff, selected, mode);
 }
 

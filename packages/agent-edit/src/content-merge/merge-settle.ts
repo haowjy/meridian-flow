@@ -3,7 +3,7 @@
  * before each merged word. Both work on `MergedTok`s and know nothing about hunks or blocks.
  */
 import type { Mark } from "prosemirror-model";
-import { coreKey, isBlockTok, isWordTok, type Tok } from "../diff/tokens.js";
+import { coreKey, isBlockTok, isWordTok, SPACELESS, type Tok } from "../diff/tokens.js";
 import { equalOrderedMatches } from "../ordered-matching.js";
 import { BASE, DRAFT, isSubsequence, LIVE, type MergedTok, type Origin } from "./merge-hunks.js";
 import type { Fire } from "./rules.js";
@@ -107,9 +107,6 @@ export function unionInsertions(live: MergedTok[], draft: MergedTok[], fire: Fir
   return out;
 }
 
-// Scripts written without spaces between words: gluing two of their segments is normal.
-const SPACELESS =
-  /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Thai}\p{sc=Lao}\p{sc=Khmer}\p{sc=Myanmar}]/u;
 /**
  * Two tokens that no side had side by side need a space between them when the second is a word and
  * the first is a word or ends a clause or sentence, unless either is spaceless script. The second

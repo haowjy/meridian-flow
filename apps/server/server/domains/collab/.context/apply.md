@@ -47,7 +47,7 @@ Every Apply, Un-Apply, Discard and chat-card Undo (`reverse_turn`, `reversal.md`
 enters the Work boundary after it (`CONTEXT.md`, the lock order). An Apply or Un-Apply stores no refusal: each item comes back with each half landed or settled (below), and the row is `done`. A draft that closed under the append door can't happen mid-command: the Work's and the document's keys are held. A miss
 the server retries itself (`TreeScopeChangedError`, `DraftCasConflictError`,
 `BranchDiscardScopeChangedError`) rolls back past the claim and the attempt runs again. A request
-turned away before the transaction stores nothing: a malformed click (a bad snapshot, patches or group ids) is a 400, and one whose cut is ahead of what the server holds (`unsynced`: a room's unacknowledged changes, or a tree cut ahead of the server's list, `covers(list, saw)`; a cut the draft list issued is always covered) is a 503 the client sends again with the same id. `GET /api/commands/:id` returns the stored outcome to the
+turned away before the transaction stores nothing: a malformed click (a bad snapshot, patches or group ids, or an id the server's projection of the cut has no change for) is a 400, and one whose cut is ahead of what the server holds (`unsynced`: a room's unacknowledged changes, or a tree cut ahead of the server's list, `covers(list, saw)`; a cut the draft list issued is always covered) is a 503 the client sends again with the same id. `GET /api/commands/:id` returns the stored outcome to the
 account that sent it; `POST /api/commands/:id/resolve` (`lib/command-route.ts`) waits on a held key and
 answers the stored outcome, or stores `never` where there is no row (a late request under the id then
 answers `command_conflict` on an old-shape route).
@@ -197,7 +197,7 @@ owner is its only writer, which the branch's identity step proved.
 
 **Discard is one server command over change ids** (`adapters/drizzle-branch-discard.ts`,
 `POST .../branches/:branchId/discard`). Each item names a document and what it takes: `text` is
-`"all"` or the change ids to take out, `tree` the branch's move, delete or create. The text half
+`"all"` or the change ids to take out (an id the snapshot's projection has no change for is a 400, as on Apply), `tree` the branch's move, delete or create. The text half
 appends to the draft's own text the update that makes the draft read as the base for those
 changes (`discardChanges`, `content-merge/discard.ts`), exactly as a model's edit appends, so the
 draft stays open and its history, receipts and room are untouched; the writer's later typing is
