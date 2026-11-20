@@ -49,9 +49,10 @@ export function newChangeId(): string {
 }
 
 /**
- * The change one edit's suggestions take: the first it picks (`found`, an existing change it
- * continues, or a fresh one), for all of them. An edit is one change to review, however many
- * ranges it touches: a model write to a block that rewrites two sentences is one change.
+ * The change one edit's suggestions take: the first it picks (`found`, a change of the same
+ * author it continues, or a fresh one), for all of them. An edit is one change to review, however
+ * many ranges it touches: a model write to a block that rewrites two sentences is one change. An
+ * edit never takes another author's change, even where it rewrites that change's text.
  */
 type EditChange = (found: string | null) => string;
 
@@ -854,24 +855,6 @@ function retract(out: Transaction, from: number, to: number, del: Mark, attrs: S
   }
 }
 
-/**
- * The id of the view's own insertion an edit over `[from, to)` replaces, from an earlier turn: an
- * inline insertion's, or the block's when the Work added the whole block.
- */
-function replacedId(doc: Node, from: number, to: number, view: View): string | null {
-  let id: string | null = null;
-  doc.nodesBetween(from, to, (node, _pos, parent) => {
-    if (id || !node.isInline || !parent) return !id;
-    if (kindOf(node.marks, parent, view) !== "own-ins") return false;
-    id =
-      (node.marks.find((mark) => mark.type.name === "suggest_ins")?.attrs.id as string) ??
-      (parent.attrs.sug as SuggestionAttrs | null)?.id ??
-      null;
-    return false;
-  });
-  return id;
-}
-
 /** Inside a stretch of its own deletion, typing goes to the stretch's end. */
 function pastOwnDeletion(doc: Node, pos: number, view: View): number {
   let $pos = doc.resolve(pos);
@@ -904,11 +887,7 @@ function replaceInWork(
   const endBlock = textblockAtOrThrow(out.doc, to);
   const attrs: SuggestionAttrs = {
     ...author,
-    id: change(
-      continuedId(out.doc, from, author) ??
-        continuedId(out.doc, to, author) ??
-        (author.turn === null ? null : replacedId(out.doc, from, to, view)),
-    ),
+    id: change(continuedId(out.doc, from, author) ?? continuedId(out.doc, to, author)),
   };
   // Text cut from a block the Work added stays that block's insertion, whoever cuts it.
   const startOwn = blockKind(startBlock.node, view) === "own";

@@ -16,8 +16,10 @@ Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
 
 `id` is one change, the unit of review: an insertion and the deletion it replaces share it.
 One edit is one change: every suggestion a rewritten transaction makes takes the first id it
-picks (an id it continues, or a fresh one). The model writes a block in one transaction, so a
-write that rewrites two sentences of a paragraph is one change; each block it writes is its own.
+picks (the same author's change it touches, or a fresh one). The model writes a block in one
+transaction, so a write that rewrites two sentences of a paragraph is one change; each block it
+writes is its own. An edit never takes another author's change (another turn or chat), even where
+it rewrites that change's text: a later turn's rewrite is its own row in `list`.
 
 ## The view
 

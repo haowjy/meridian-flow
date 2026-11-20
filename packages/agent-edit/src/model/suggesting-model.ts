@@ -335,6 +335,8 @@ export function resolveStored(
   const tr = (verdict === "accept" ? accept : reject)(state, filter);
   if (!tr.docChanged) return false;
   const fragment = fragmentOf(doc);
+  // Read after `storedRoot`: converting the fragment deletes the elements it cannot convert, so
+  // the elements left pair with the root's children by index.
   const elements = getTopLevelXmlBlocks(doc);
   const starts: number[] = [];
   root.forEach((_, offset) => {

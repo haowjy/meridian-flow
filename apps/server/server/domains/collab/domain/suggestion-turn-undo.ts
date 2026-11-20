@@ -72,6 +72,7 @@ export function createSuggestionTurnUndo(deps: {
     for (const documentId of documentIds)
       if (await holds(documentId, turn)) pending.push(documentId);
     if (pending.length === 0) return deps.reverseLiveTurn(query);
+    pending.sort();
     // Rejecting edits Live: the presser needs the Live edit grant the Live inverse asks for,
     // confirmed under the seam's locks as every Live write's is.
     const principal =
@@ -89,6 +90,12 @@ export function createSuggestionTurnUndo(deps: {
       if (isFileAccessDenied(grant)) throw new FileEditRefusedError([grant]);
       grants.push(grant);
     }
+    // The rest goes to the Live inverse first: its commit takes the tree list keys and then every
+    // document key, these included, in one order, and the rejects below run under them.
+    const rest = documentIds.filter((documentId) => !pending.includes(documentId));
+    const live = rest.length
+      ? await deps.reverseLiveTurn({ ...query, documentIds: rest, alsoLock: pending })
+      : null;
     const origin: DocumentWriteOrigin =
       query.actor.type === "user"
         ? { type: "user", actorUserId: query.actor.userId as UserId }
@@ -118,14 +125,11 @@ export function createSuggestionTurnUndo(deps: {
         status: "reversed" as const,
       })),
     );
-    const rest = documentIds.filter((documentId) => !pending.includes(documentId));
-    if (rest.length === 0)
-      return { status: documents.length ? "reversed" : "nothing_to_undo", documents };
-    const live = await deps.reverseLiveTurn({ ...query, documentIds: rest });
+    if (!live) return { status: documents.length ? "reversed" : "nothing_to_undo", documents };
     return {
       ...live,
       status: documents.length ? "reversed" : live.status,
-      documents: [...documents, ...live.documents],
+      documents: [...live.documents, ...documents],
     };
   };
   return { reverseTurn, chip };

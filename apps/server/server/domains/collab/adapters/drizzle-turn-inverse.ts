@@ -584,7 +584,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           acquireMutationScope: async () => {
             // The lists' keys come before every document key (the order in collab's CONTEXT.md).
             if (tree.lists.length) await input.treeLists.lock(tree.lists);
-            for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);
+            const ids = new Set([...attempt.ids, ...(query.alsoLock ?? [])]);
+            for (const id of [...ids].sort()) await lockDocumentMutation(db(), id);
           },
           operation,
         });

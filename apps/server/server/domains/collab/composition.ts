@@ -618,7 +618,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     replaceAuthorityGeneration,
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
-  // Suggestion mode (prototype): a card's Undo rejects the turn's suggestions.
+  // Suggestion mode: a card's Undo rejects the turn's suggestions.
   const suggestionTurnUndo = runtime.workView
     ? createSuggestionTurnUndo({
         schema: buildDocumentSchema(),
