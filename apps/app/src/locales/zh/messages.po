@@ -1139,10 +1139,12 @@ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 msgid "Apply"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply all"
 msgstr ""
@@ -2718,6 +2720,7 @@ msgid "Didn't run: {label}"
 msgstr ""
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
@@ -2836,6 +2839,11 @@ msgstr ""
 #: src/components/app/work-composer-controls/WriteModeControl.tsx
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
+msgstr ""
+
+#. placeholder {0}: changes.length
+#: src/features/editor/SuggestionBand.tsx
+msgid "Draft ({0})"
 msgstr ""
 
 #: src/features/project/work/ManageWorksDialog.tsx
@@ -3578,6 +3586,7 @@ msgid "litrpg"
 msgstr ""
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/SuggestionBand.tsx
 msgid "Live"
 msgstr ""
 
@@ -4901,6 +4910,14 @@ msgstr "刷新"
 msgid "Refused"
 msgstr ""
 
+#: src/features/editor/SuggestionBand.tsx
+msgid "Reject"
+msgstr ""
+
+#: src/features/editor/SuggestionBand.tsx
+msgid "Reject all"
+msgstr ""
+
 #: src/features/chat/ChatCards.tsx
 msgid "Reload"
 msgstr ""
@@ -5052,6 +5069,7 @@ msgstr "回复完成"
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/editor/InTrashStatus.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/TrashedDocument.tsx
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx

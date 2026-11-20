@@ -1139,10 +1139,12 @@ msgstr "Applied {what}"
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 msgid "Apply"
 msgstr "Apply"
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 msgid "Apply all"
 msgstr "Apply all"
@@ -2718,6 +2720,7 @@ msgid "Didn't run: {label}"
 msgstr "Didn't run: {label}"
 
 #: src/features/draft-review/ReviewActions.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/ProjectCreationNotice.tsx
 #: src/features/project/work/WorkCreationDestination.tsx
 msgid "Discard"
@@ -2837,6 +2840,11 @@ msgstr "Downloaded"
 #: src/features/draft-review/DraftSwitcher.tsx
 msgid "Draft"
 msgstr "Draft"
+
+#. placeholder {0}: changes.length
+#: src/features/editor/SuggestionBand.tsx
+msgid "Draft ({0})"
+msgstr "Draft ({0})"
 
 #: src/features/project/work/ManageWorksDialog.tsx
 msgid "Draft chapters 12 to 15, the tournament arc, ending on Lin’s loss."
@@ -3578,6 +3586,7 @@ msgid "litrpg"
 msgstr "litrpg"
 
 #: src/features/draft-review/DraftSwitcher.tsx
+#: src/features/editor/SuggestionBand.tsx
 msgid "Live"
 msgstr "Live"
 
@@ -4901,6 +4910,14 @@ msgstr "Refresh"
 msgid "Refused"
 msgstr "Refused"
 
+#: src/features/editor/SuggestionBand.tsx
+msgid "Reject"
+msgstr "Reject"
+
+#: src/features/editor/SuggestionBand.tsx
+msgid "Reject all"
+msgstr "Reject all"
+
 #: src/features/chat/ChatCards.tsx
 msgid "Reload"
 msgstr "Reload"
@@ -5052,6 +5069,7 @@ msgstr "Response complete"
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/editor/InTrashStatus.tsx
+#: src/features/editor/SuggestionBand.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/TrashedDocument.tsx
 #: src/features/project/shell/sidebar/TrashDiscardRow.tsx
