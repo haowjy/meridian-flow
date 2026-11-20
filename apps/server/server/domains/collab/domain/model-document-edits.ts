@@ -7,8 +7,6 @@ import type { TurnInverseService } from "./turn-inverse-service.js";
 
 export function createModelDocumentEdits(input: { service(): TurnInverseService }): DocumentEdits {
   function query(request: DocumentEditRequest & { command: { file: string } }) {
-    if (!request.context.documentVersion)
-      throw new Error("Model edit history requires an explicitly routed version");
     return {
       model: true as const,
       documentIds: [request.documentId as DocumentId],

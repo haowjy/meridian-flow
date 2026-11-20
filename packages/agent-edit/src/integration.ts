@@ -14,16 +14,12 @@ export type {
   FrontierLookups,
   ObservationFrontier,
   ReplyMutations,
-  ResolvedObservationFrontier,
-  SeedAttributionBridge,
 } from "./frontier.js";
 export {
   createReplyMutations,
   decodeSnapshot,
-  docAtFrontier,
   frontierBlockId,
   frontierDelta,
-  projectSeedFrontier,
 } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
@@ -58,7 +54,6 @@ export type {
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type {
-  DocumentAccess,
   DocumentCoordinator,
   PreparedSave,
   PreparedWrite,

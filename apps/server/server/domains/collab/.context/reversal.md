@@ -138,14 +138,9 @@ card never targets the text of a document created by the turn, even after the cr
 the tree Undo takes the document back whole (`createdDocuments`).
 A reversal's result names a document in Trash by where it last stood.
 A turn's edit targets include its create transition even when the document is empty. A create
-that Undo removed stays addressable through that immutable target. A draft-scoped
-edit of a document deleted live stays one: each draft-scoped target names
-the Work of the branch its part was drafted in (`document_edit_parts.draft_branch_id`,
-recorded with the part, so a draft purged from Trash keeps its target),
-and the card's lineage and Undo
-authorize it at that Work's draft destination (`turnEditDestination`), where
-`survivingDraft` admits it while the draft exists. Its lineage address is the
-location it was deleted at. Live-scoped targets authorize live.
+that Undo removed stays addressable through that immutable target. Every part is Live's
+(`document_edit_parts.origin` is `live`): a drafted write's suggestions are Live text with marks,
+and their Undo is the rejection above. Text targets authorize live.
 
 Card authorization and change-viewer discovery share immutable edit and
 origin targets with inverse admission; mutation and draft transport

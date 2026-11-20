@@ -260,6 +260,38 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { accountId: USER_ID, projectId: PROJECT_ID },
         ),
       ).resolves.toMatchObject({ status: "success" });
+      // A write into a document only the Work has spells in the Work's tree, so its receipt is
+      // the Work's read.
+      const wrote = (await modelWrite(
+        modelEdits,
+        {
+          command: "insert",
+          file: "created",
+          documentId: CREATED_ID,
+          content: "See [hold](chapter).",
+        },
+        {
+          ...ctx,
+          grant: {
+            ...grant,
+            facts: {
+              ...grant.facts,
+              target: { kind: "document", documentId: CREATED_ID as never },
+            },
+          },
+          responseIdentity: identity(RESPONSE_ID),
+        },
+        { accountId: USER_ID, projectId: PROJECT_ID },
+      )) as { status: string; revision?: string };
+      const createdView = {
+        documentId: CREATED_ID as never,
+        threadId: THREAD_ID as never,
+        destination: "draft" as const,
+        owner: { kind: "work", workId: WORK_ID as never } as const,
+      };
+      const createdMd = await collab.readEffectiveMarkdown(createdView);
+      expect.soft(createdMd.ok && createdMd.value.revision, "Work-only write").toBe(wrote.revision);
+      expect.soft(createdMd.ok && createdMd.value.content).toContain("[hold](chapter)");
       const link = documentSchema.node("paragraph", null, [
         documentSchema.text("See created", [
           documentSchema.marks.link.create({

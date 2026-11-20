@@ -54,11 +54,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       await deps.enterLiveSeam(documentId);
       await testHook("command.afterLock");
     }
-    return deps.liveCore.write(command, {
-      ...given,
-      linkView: { kind: "live" },
-      documentVersion: "live",
-    });
+    return deps.liveCore.write(command, { ...given, linkView: { kind: "live" } });
   }
 
   /**
@@ -74,7 +70,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
   ): Promise<WriteOutcome> {
     await deps.enterDraftSeam();
     approveBranchWriteJoin();
-    await deps.branches.ensureActiveForWrite({
+    const branch = await deps.branches.ensureActiveForWrite({
       owner,
       // The thread's project, not the file's: a home document has none.
       projectId: agentProject(grant),
@@ -87,16 +83,12 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     }
     const turn =
       given.turnId ?? (given.actor?.kind === "agent" ? given.actor.turnId : null) ?? null;
+    const work = draftOwnerKey(owner);
     const core =
       documentId && (await deps.existsOnlyInWork(documentId, owner))
-        ? deps.liveCore
-        : deps.workView.core(draftOwnerKey(owner), {
-            chat: given.threadId ?? null,
-            turn,
-            by: "agent",
-          });
-    const linkView = await deps.branches.viewForOwner(owner);
-    return core.write(command, { ...given, linkView, documentVersion: "live" });
+        ? deps.workView.onlyIn(work)
+        : deps.workView.core(work, { chat: given.threadId ?? null, turn, by: "agent" });
+    return core.write(command, { ...given, linkView: { kind: "branch", branchId: branch.id } });
   }
 
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
@@ -118,11 +110,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
             })
           : deps.liveCore;
         return runWithInversePrincipal(grant.principal, () =>
-          core.write(command, {
-            ...given,
-            linkView,
-            documentVersion: grant.destination.kind,
-          }),
+          core.write(command, { ...given, linkView }),
         );
       }
       const confirmed = await runWithEditGrants(deps.fileAccess, [grant], () =>

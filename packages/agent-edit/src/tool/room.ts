@@ -10,8 +10,6 @@ import type { DocumentCommandName } from "./types.js";
 export interface RoomCallInput {
   docId: string;
   commandName: DocumentCommandName;
-  /** The Work draft a draft call reads, as the host routed it; live when absent. */
-  workDraftId?: string;
 }
 
 export interface RoomCopy {
@@ -28,10 +26,7 @@ export async function openRoom(
   input: RoomCallInput,
 ): Promise<RoomCopy | InternalWriteResult> {
   try {
-    const { doc, room, position } = await coordinator.readRoom(
-      input.docId,
-      input.workDraftId ? { workDraftId: input.workDraftId } : undefined,
-    );
+    const { doc, room, position } = await coordinator.readRoom(input.docId);
     return {
       doc,
       room,

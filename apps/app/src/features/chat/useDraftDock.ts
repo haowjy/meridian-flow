@@ -13,7 +13,7 @@ import {
   type ReviewChange,
   targetOfChanges,
 } from "@/features/draft-review/review-model";
-import { hasApply, hasTreeLine, reviewHasNoRoom } from "@/features/draft-review/tree-line";
+import { hasApply, hasTreeLine, opensAsDocument } from "@/features/draft-review/tree-line";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
@@ -119,11 +119,7 @@ export function useDraftDock({
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
       // A draft-only picture opens as a preview; a created document opens like any other.
-      if (
-        !file.row.draft.hasDraft &&
-        !(file.row.draft.isNew && !file.row.draft.binary) &&
-        !reviewHasNoRoom(file.row.draft)
-      ) {
+      if (!opensAsDocument(file.row.draft)) {
         if (file.row.draft.binary)
           setImagePreview({
             projectId,

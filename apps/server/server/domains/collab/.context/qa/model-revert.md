@@ -29,8 +29,8 @@ the first write result rather than assuming `e1`:
 ./mf thread send "$T" revert --mock "$REVERT" --json
 ```
 
-In Draft mode, a read and write in the same chat target the Work draft after it
-forks. A later read shows the version the chat writes to. Browser cases use real
+In Draft mode, a read and write in the same chat target the Work's view: its write lands as the
+Work's suggestions in Live, and a later read shows them (`version: draft`). Browser cases use real
 typing instead of a mocked writer edit.
 
 ## Cases
@@ -64,9 +64,9 @@ In direct mode, edit a live file and delete it in the same chat. `undo` with
 `count: 2` restores the file and reverses its earlier text edit atomically.
 
 To check destination routing, make a live edit, switch to Draft, and run Undo:
-the manuscript changes and the Work draft does not, with `version: live`. Make
-a Draft edit, switch to auto-apply, and run Undo: the Work draft changes and
-the manuscript does not. Move the chat to another Work; Undo still lands in the
+the manuscript changes and the Work's suggestions do not, with `version: live`. Make
+a Draft edit, switch to auto-apply, and run Undo: the Work's suggestions are taken back and
+the manuscript's own text does not change. Move the chat to another Work; Undo still lands in the
 Work that owns the edit. Archive that Work; its rebound chat offers no command
 and Undo returns `nothing_to_undo`.
 

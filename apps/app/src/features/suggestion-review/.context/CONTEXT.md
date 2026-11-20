@@ -15,7 +15,7 @@ count (`textChanges`). While the document is open, its rows follow this tab's ed
 the server counts by): the tab's own Apply, Discard, Undo and typing change the count at once,
 the last change applied drops the row, and an Undo lists it again from the row last seen. A pin's
 end check (`verifyPin`) reads the rows the same way, so the Live/Draft label follows too. Rows
-with more than suggestions (a draft room, a tree change, a whole item) stay the server's.
+with more than suggestions (a tree change, a whole item) stay the server's.
 
 ## Not covered yet
 

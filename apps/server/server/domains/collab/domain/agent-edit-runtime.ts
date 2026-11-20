@@ -96,6 +96,7 @@ export function createAgentEditRuntime(input: {
   const workView: WorkViews = {
     model: (work) => suggestingModel(storedModel, { work }, null),
     core: (work, author) => liveCoreOver(suggestingModel(storedModel, { work }, author), work),
+    onlyIn: (work) => liveCoreOver(model, work),
   };
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
@@ -178,6 +179,11 @@ export function createAgentEditRuntime(input: {
 export type WorkViews = {
   model(work: string): YProsemirrorDocumentModel;
   core(work: string, author: Author): AgentEditCore;
+  /**
+   * A document only this Work has (its create is pending there): its text is plain, so it writes
+   * as Live does, but its links spell in the Work's tree and its revision is the Work's.
+   */
+  onlyIn(work: string): AgentEditCore;
 };
 
 export function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {

@@ -140,7 +140,7 @@ export function createEffectiveDocumentReader(input: {
           const blocks = model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
           return {
             content: blocks,
-            version: "live",
+            version: work ? "draft" : "live",
             revision: viewRevision(documentRevision(doc, scope), work),
             holderUri: scope.holder.uri,
             stateVector: Y.encodeStateVector(doc),

@@ -72,9 +72,7 @@ export type PeerMarkerOptions = {
  * What a surface aimed at this lane reads from the editor: the projection, live,
  * and which mark the writer opened.
  *
- * Null on an editor that draws no marks. A draft-review room has an anchor
- * space of its own and mounts no projection at all, which is what lets the
- * surface stand down without asking whether it is in review.
+ * Null on an editor that draws no marks.
  */
 export type PeerMarkerStorage = {
   markers: SessionMarkerStore | null;

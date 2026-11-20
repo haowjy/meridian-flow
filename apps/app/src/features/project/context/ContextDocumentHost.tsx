@@ -25,7 +25,7 @@ import type {
   DocumentSessionSnapshot,
 } from "@/core/editor/document-session";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { reviewHasNoRoom } from "@/features/draft-review/tree-line";
+import { isTreeOnly } from "@/features/draft-review/tree-line";
 import { useActiveReviewBinding } from "@/features/draft-review/useActiveReviewBinding";
 import { EditorView } from "@/features/editor/EditorView";
 import { MainSurface } from "@/features/editor/MainSurface";
@@ -78,7 +78,7 @@ export function ContextDocumentHost({
       : null;
   const treeOnlyReview =
     selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
-    reviewHasNoRoom(selectedReviewFile.draft);
+    isTreeOnly(selectedReviewFile.draft);
   const reviewItemKey = treeOnlyReview ? selectedReviewItemKey : null;
   // The pinned draft's list could not be read: say so here rather than paint Live under the pin.
   const queryClient = useQueryClient();

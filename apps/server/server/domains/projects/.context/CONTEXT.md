@@ -29,8 +29,8 @@ neither.
 ## Lifecycle contracts
 
 Lifecycle writes lock the Work row and publish `{ workId }` through
-`FileAccessChanges` in the same transaction so Scratch, Uploads, and draft rooms
-reconnect at their new access level. Work context mutations use that same
+`FileAccessChanges` in the same transaction so Scratch, Uploads, and the documents only the Work
+has reconnect at their new access level. Work context mutations use that same
 lifecycle lock.
 
 Work deletion marks primary chats, result rows and the Work's context sources with

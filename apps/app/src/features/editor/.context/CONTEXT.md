@@ -81,15 +81,15 @@ Live, as the text does. On desktop the review's controls live in the identity
 bar (`DraftReviewBand`), with no separate header above it. The focused
 change's bar (`surfaces/review`) never covers manuscript text: it sits in the
 right margin beside the change when there is room, else in a block slot after
-the change's last paragraph. Draft room lifecycle, frozen commands and Discard history belong
-to [`draft-review`](../../draft-review/.context/draft-review.md).
+the change's last paragraph. Commands and Discard history belong to
+[`draft-review`](../../draft-review/.context/draft-review.md).
 
-`PaintHold` retains finished paint across lifecycle handoffs. Ordinary text
-Discard edits the same draft Y.Doc in place, without replacing the editor,
-selection or undo manager. An empty review stays in the same draft room.
+`PaintHold` retains finished paint across lifecycle handoffs. Apply and Discard
+resolve the Work's marks in the same Live Y.Doc, without replacing the editor,
+selection or undo manager.
 
-`useInlineReviewFocus` registers the mounted editor for controller-owned jumps
-and releases only its own claim on unmount. Same-entry URL replacements
+`useSuggestionReviewFocus` registers the mounted editor as the review's, so the
+review's focus commands reach it, and keeps its emphasized change the review's. Same-entry URL replacements
 disable router scroll restoration so editor anchor navigation owns scrolling. Side/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 

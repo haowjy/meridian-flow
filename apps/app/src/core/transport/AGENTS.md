@@ -12,9 +12,9 @@ thread socket client lives in `@meridian/thread-client`.
   deferred emission opens a timing gap between transport and session snapshots.
 - New network connections subscribe to the injected `ConnectivityHintsPort`; don't
   add private window connectivity or wake listeners.
-- A draft room's socket holds Updates until its SyncStep2 is written; live rooms keep
-  the provider's order byte for byte. Don't inject a frame around `send` or release on
-  a timer.
+- A room's socket keeps the provider's order byte for byte: its server marks the
+  SyncStep2 for offline collision reconciliation, and moving queued bytes changes what is
+  reconciled. Don't inject a frame around `send` or release on a timer.
 - Transport observers receive final frames and don't parse, retain or broaden them.
 
 Message, status and debug-observation contracts:

@@ -68,8 +68,8 @@ JSON-looking scalar strings into other values.
 
 Undo records an inverse as a new edit rather than rewriting history. Immutable
 `document_edits` and `document_edit_parts` retain the original edit, its author
-and the inverse needed to take it back. A drafted part keeps the branch its draft was in
-(`draft_branch_id`, no foreign key), so its turn's card still finds its owner after the draft row is gone.
+and the inverse needed to take it back. Every part is a Live edit (`origin` is `live`): a drafted
+write's suggestions are marks in the Live document.
 
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on

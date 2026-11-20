@@ -18,8 +18,6 @@ export interface SaveInput {
   docId: string;
   entry: JournalBatchAppendEntry;
   links: CommandLinks;
-  /** The Work draft a model edit saves to, as the host ensured it; live when absent. */
-  workDraftId?: string;
   /**
    * A create without overwrite lands only in a document still empty when its append reads it
    * under the document's lock; otherwise this is the answer.
@@ -58,7 +56,6 @@ export function createDocumentSave(deps: {
       const saved = await coordinator.prepareSave({
         docId: input.docId,
         entries: [input.entry],
-        ...(input.workDraftId ? { access: { workDraftId: input.workDraftId } } : {}),
         ...(ifOccupied ? { precondition: holdsNoBlocks } : {}),
       });
       const { write } = saved;

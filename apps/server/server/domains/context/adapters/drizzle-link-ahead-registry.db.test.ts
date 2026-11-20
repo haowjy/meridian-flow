@@ -1,5 +1,5 @@
 /**
- * PostgreSQL proof for ahead registration, settlement CAS, and refs written in a draft: registered globally and left unbound until a live document arrives (12a), the writer's own links registered from the review room (L-3).
+ * PostgreSQL proof for ahead registration, settlement CAS, and refs written in a draft: registered globally and left unbound until a live document arrives (12a), the writer's own links registered when the document's derivation runs (L-3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - global ahead registration, arrival settlement CAS, and draft-ref deferral (kb/wiki/architecture/documents/links.md#gone-missing-and-ahead)

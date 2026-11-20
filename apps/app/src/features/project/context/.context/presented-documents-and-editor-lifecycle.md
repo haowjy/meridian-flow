@@ -113,8 +113,7 @@ Two owners:
 - **The list's standing.** `ProjectStandings.standing(projectId, documentId)` reads the replay of
   the project's list (and the account's, for `user://`): `in-tree`, `in-trash`, `purged`,
   `not-in-list`, or `waiting` until the list has been read. Nothing is polled and nothing is
-  stamped. `useRemovalAnswer` is the React reader: `SessionEditor`, the review room owner and the
-  reopened review address.
+  stamped. `useRemovalAnswer` is the React reader: `SessionEditor` and the reopened review address.
 - **The observer.** `observeListRemovals` (`list-removal-observer.ts`, mounted per project by
   `ProjectContextRemovalController`) watches the documents the app holds (views, account recents,
   retained sessions) and applies what the list says as one batch through
@@ -142,8 +141,7 @@ document's edits removes nothing. Discard is a server command, not a record the 
 
 A document in Trash still takes text: the live room admits it until its node is purged and
 closes (`4208`) at the purge. Typing into a document someone else deleted is saved into it, and a
-restore brings it back. A host still open on a purged room says nothing (`SyncStatus`). Draft rooms carry
-no document identity in the registry, so their review owner closes and rebuilds them itself.
+restore brings it back. A host still open on a purged room says nothing (`SyncStatus`).
 
 Reopening a review address whose document was removed shows what the removal left: a Discard's
 notice with its Undo, or an uncreated document's words (item key parsed by

@@ -36,7 +36,6 @@ export function createAgentEditRouter(input: {
           .read(command, {
             ...context,
             linkView: await input.branches.viewForOwner(destination.owner),
-            documentVersion: "live",
             ...(command.format === "edits" ? { frontiers: undefined } : {}),
           });
         const read = !outcome.isError ? outcome.result.read : undefined;
@@ -65,11 +64,7 @@ export function createAgentEditRouter(input: {
       const label = draftedPath
         ? { version: "draft" as const, draftWork: grant.facts.ownerWork?.handle ?? "/" }
         : { version: "live" as const };
-      const routedContext = {
-        ...context,
-        linkView: { kind: "live" } as const,
-        documentVersion: "live" as const,
-      };
+      const routedContext = { ...context, linkView: { kind: "live" } as const };
       // An edits read shows history, not the document: it records no frontier.
       const readCore = () =>
         input.liveUtilityCore.read(
@@ -96,6 +91,6 @@ export function createAgentEditRouter(input: {
         : outcome;
     },
 
-    readRoom: ({ documentId }) => input.liveUtilityCore.readRoom(documentId, {}),
+    readRoom: ({ documentId }) => input.liveUtilityCore.readRoom(documentId),
   };
 }

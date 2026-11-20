@@ -184,9 +184,8 @@ export type CopyContextEntrySource = {
    */
   copyId?: string;
   /**
-   * A document the writer holds open sends its Yjs state vector (base64) with the view that
-   * room is: the live room for a live view, the draft room for a draft view. A folder has no
-   * room of its own, and a vector on one is a 400, as is one that does not decode. The server
+   * A document the writer holds open sends its Live room's Yjs state vector (base64), whichever
+   * view it copies: a Work's view is Live with its suggestions. A folder has no room of its own, and a vector on one is a 400, as is one that does not decode. The server
    * waits about two seconds for the room to hold those updates; if it still does not, the
    * answer is a 503 `io_error` (retryable, never recorded) with `details.reason` `source_behind`,
    * and the client sends the same operation ID again until the room has them.
