@@ -12,6 +12,7 @@ import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import {
   type Author,
   blockKind,
+  kindOf,
   newChangeId,
   type Run,
   rewrite,
@@ -43,7 +44,7 @@ export function suggestingModel(
   author: Author | null,
 ): YProsemirrorDocumentModel {
   const schema = base.schema;
-  /** Per block, the change id of a deletion this write made to the block's end. */
+  /** Per block, the change a write cut its end with: a block inserted right after joins it. */
   const tails = new Map<Y.XmlElement, string>();
   const viewAt = (block: BlockRef) => viewOf(unwrapBlock(block).doc as Y.Doc);
   const stored = (block: BlockRef) => storedNode(unwrapBlock(block), schema);
@@ -114,16 +115,16 @@ export function suggestingModel(
       if (!after) return refused("the write does not fit the block");
       const applied = applyRawOps(unwrapBlock(block), lowerBlock(current, after));
       written(unwrapBlock(block), after);
-      const tail = endingDeletion(current, after);
-      if (tail) tails.set(unwrapBlock(block), tail);
+      if (view.work !== null && deletesToEnd(textOps, runs(current, view))) {
+        const tail = endChange(after, view);
+        if (tail) tails.set(unwrapBlock(block), tail);
+      }
       return applied;
     },
 
     insertBlocks(doc, after, parsed) {
       const view = viewOf(unwrapDoc(doc));
       if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
-      // A block added right after this write's deletion to the end of the block before is the
-      // other half of a split: one change.
       const id = (after && tails.get(unwrapBlock(after))) ?? newChangeId();
       if (after) tails.delete(unwrapBlock(after));
       const sug = { ...author, work: view.work, id };
@@ -239,31 +240,41 @@ function written(element: Y.XmlElement, node?: PMNode): void {
   else nodes.delete(element);
 }
 
-/** The binding converts a fragment, so a lone block goes through this one. */
-const scratch = new Y.Doc().getXmlFragment("block");
-
 function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
   const nodes = projectionsOf(element.doc as Y.Doc, schema);
   let node = nodes.get(element);
   if (!node) {
-    // Only a block this write made or changed, from schema-valid nodes: no repair to run.
-    scratch.insert(0, [element.clone()]);
-    node = yXmlFragmentToProseMirrorRootNode(scratch, schema).child(0);
-    scratch.delete(0, scratch.length);
+    // Only a block this write made or changed, from schema-valid nodes: no repair to run. The
+    // binding converts a fragment; a reused one would keep every deleted item and slow each read.
+    const scratch = new Y.Doc();
+    const fragment = scratch.getXmlFragment("block");
+    fragment.insert(0, [element.clone()]);
+    node = yXmlFragmentToProseMirrorRootNode(fragment, schema).child(0);
+    scratch.destroy();
     nodes.set(element, node);
   }
   return node;
 }
 
-/** The id of a deletion `after` newly carries to its end: what a split leaves in the first block. */
-function endingDeletion(before: PMNode, after: PMNode): string | null {
-  const ids = (node: PMNode | null) =>
-    (node?.marks ?? [])
-      .filter((m) => m.type.name === "suggest_del")
-      .map((m) => m.attrs.id as string);
-  const old = new Set<string>();
-  before.forEach((child) => {
-    for (const id of ids(child)) old.add(id);
-  });
-  return ids(after.lastChild).find((id) => !old.has(id)) ?? null;
+/** Whether a write removes text up to the end of the block as the view shows it. */
+function deletesToEnd(ops: readonly Extract<EditOp, { kind: "text" }>[], units: readonly Run[]) {
+  const end = units.reduce((n, run) => n + (visible(run.kind) ? run.to - run.from : 0), 0);
+  return ops.some((op) => op.splices.some(({ from, to }) => to === end && from < to));
+}
+
+/**
+ * The change at the end of a block the view's write just cut short: the block's own insertion,
+ * or the deletion over its last text. A block inserted right after it is the split's other half.
+ */
+function endChange(block: PMNode, view: View): string | null {
+  if (blockKind(block, view) === "own") return (block.attrs.sug as { id: string }).id;
+  for (let index = block.childCount - 1; index >= 0; index--) {
+    const child = block.child(index);
+    if (kindOf(child.marks, block, view) !== "own-del") continue;
+    const del = child.marks.find(
+      (m) => m.type.name === "suggest_del" && m.attrs.work === view.work,
+    );
+    return (del?.attrs.id as string | undefined) ?? null;
+  }
+  return null;
 }

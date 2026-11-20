@@ -338,14 +338,15 @@ function suggestRemoval(
 /**
  * Remove the view's own insertion in `[from, to)`. One the same turn wrote, or the writer's (no
  * turn), goes. An earlier turn's stays under this turn's deletion: rejecting this turn, as the
- * card's Undo does, brings it back.
+ * card's Undo does, brings it back. A block the Work added is one insertion, resolved whole:
+ * text inside it just goes.
  */
 function retract(out: Transaction, from: number, to: number, del: Mark, attrs: SuggestionAttrs) {
   const ranges: Array<[number, number, boolean]> = [];
-  out.doc.nodesBetween(from, to, (node, pos) => {
+  out.doc.nodesBetween(from, to, (node, pos, parent) => {
     if (!node.isInline) return true;
     const ins = node.marks.find((mark) => mark.type.name === "suggest_ins");
-    const layered = attrs.turn !== null && ins?.attrs.turn !== attrs.turn;
+    const layered = attrs.turn !== null && !parent?.attrs.sug && ins?.attrs.turn !== attrs.turn;
     ranges.push([Math.max(from, pos), Math.min(to, pos + node.nodeSize), layered]);
     return false;
   });
