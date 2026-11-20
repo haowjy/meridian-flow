@@ -27,6 +27,7 @@ import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
+import { waitForPostgresLock } from "../../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import {
   createDocumentLastAddress,
@@ -303,14 +304,11 @@ describe("durable document derivations", () => {
         update: Y.encodeStateAsUpdate(typist),
         origin: { type: "user", userId: userId as never },
       });
-      const deadline = Date.now() + 5000;
-      for (;;) {
+      await waitForPostgresLock("the keystroke to queue behind the command", async () => {
         const [waiting] = await db.execute(sql`select count(*)::int as n from pg_stat_activity
           where datname = current_database() and wait_event_type = 'Lock'`);
-        if (Number(waiting.n) >= 1) break;
-        if (Date.now() > deadline) throw new Error("The keystroke did not wait on the command");
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
+        return Number(waiting.n) >= 1 ? true : undefined;
+      });
       finish();
       const commandSeq = await command;
       await keystroke;

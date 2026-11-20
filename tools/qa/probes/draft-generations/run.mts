@@ -79,7 +79,7 @@ try {
   offline.clientID = 900123;
   const u1 = appendToFirstParagraph(offline, "A");
   const u2 = appendToFirstParagraph(offline, "B");
-  const missing = await server.send(room, draft.draftId, u2);
+  const missing = await server.send(room, u2);
   assert.deepEqual(missing, {
     ok: false,
     closes: [{ code: 1013, reason: "writer-journal-admission-failed" }],
@@ -87,7 +87,7 @@ try {
   observe("prefix missing", missing);
   offline.destroy();
   // Process-local room state is disposable: the next server materializes the same journal.
-  await server.type(room, draft.draftId, " BEFORE RESTART");
+  await server.type(room, " BEFORE RESTART");
   const before = (await h.readDraft(draft.draftId)).text;
   await server.close();
   server = openGateway(h, h.store);
@@ -96,7 +96,7 @@ try {
   assert.equal(room.name, roomKey);
   assert.equal(room.getXmlFragment("prosemirror").toString(), before);
   observe("new server", { room: room.name, text: before });
-  const uploaded = await server.send(room, draft.draftId, Y.mergeUpdates([u1, u2]), 1);
+  const uploaded = await server.send(room, Y.mergeUpdates([u1, u2]), 1);
   assert.deepEqual(uploaded, { ok: true, closes: [] });
   assert.match((await h.readDraft(draft.draftId)).text, /AB/);
   observe("reconnect uploads missing prefix", uploaded);

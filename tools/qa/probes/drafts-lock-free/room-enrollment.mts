@@ -128,19 +128,19 @@ export function openGateway(
   }
 
   /** A tab's keystroke on `room`, admitted as the gateway admits a socket's frame. */
-  async function type(room: Document, draftId: string, token: string) {
+  async function type(room: Document, token: string) {
     const tab = new Y.Doc({ gc: false });
     Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
     const update = appendToFirstParagraph(tab, token);
     tab.destroy();
-    return send(room, draftId, update);
+    return send(room, update);
   }
 
   /**
    * `payload` as a socket's Update (`syncType` 2) or SyncStep2 (1) on `room`, through the
    * gateway's admission: the close a refusal carries, and the room applies it when admitted.
    */
-  async function send(room: Document, draftId: string, payload: Uint8Array, syncType = 2) {
+  async function send(room: Document, payload: Uint8Array, syncType = 2) {
     const result = await settled(
       admitWriterSync({
         services,
@@ -266,7 +266,7 @@ export const coldLoadCommit: Probe = {
       const registered = text(room);
       await gateway.enrolled(draftId);
       const enrolled = text(room);
-      const next = await gateway.type(room, draftId, " NEXT");
+      const next = await gateway.type(room, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
       observe("load", { registered, enrolled, durable });
       observe("next", next);
@@ -302,7 +302,7 @@ export const droppedDelivery: Probe = {
       appendToFirstParagraph(live, " LIVE");
       await rebaseLive(harness, gateway.coordinator, documentId, live, draftId);
       const behind = text(room);
-      const next = await gateway.type(room, draftId, " NEXT");
+      const next = await gateway.type(room, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
       observe("drop", { behind, durable });
       observe("next", { ...next, room: text(room) });
