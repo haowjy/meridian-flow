@@ -80,7 +80,11 @@ where Live text separates its pieces; `pending` the turns and the Works
 ## Who calls it
 
 - Editor: `apps/app/src/core/editor/extensions/suggestion-mode/` runs every local transaction
-  through `rewrite` and paints the view. The review (`apps/app/src/features/suggestion-review/`)
+  through `rewrite` and paints the view (`suggestion-paint.ts`): after an edit it maps the
+  decorations and paints again only the top-level blocks whose content differs, read by
+  diffing the documents, so the binding's whole-document redraw after Undo or a peer's edit
+  repaints only what changed. Whether changes are marked is one attribute on the editor that
+  the CSS reads. The review (`apps/app/src/features/suggestion-review/`)
   reads `list` from the editor's document, so the Changes list, the band, the change card and
   the phone's sheet draw a Work's suggestions as they drew a draft's.
 - Model: agent-edit's `suggestingModel(base, view, author)` replays a planned write as a
@@ -161,7 +165,6 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
   discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work
   the writer did not reject.
-- The editor repaints every decoration on each change.
 - An author entry is never removed: a change that is accepted, rejected or deleted keeps its
   entry in `suggestion_authors` (about 60 bytes each).
 - Live's history keeps every suggestion for good. A 4,200-word chapter (24 KB of history)

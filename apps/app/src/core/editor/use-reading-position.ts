@@ -15,7 +15,7 @@ import {
   mayRestoreReadingPosition,
   reportEditorMounted,
 } from "./reading-position-navigation";
-import { type ReadingPosition, ReadingPositionStore } from "./reading-position-store";
+import { ReadingPositionStore } from "./reading-position-store";
 
 export function useReadingPosition({
   editor,
@@ -63,24 +63,26 @@ export function useReadingPosition({
       unreport = reportEditorMounted(documentId, editor);
     };
     const track = (editor: Editor, scroller: HTMLDivElement) => {
-      let candidate: { place: ReadingPosition; at: number } | null = null;
+      /** When the place last moved, until it is measured and stored. */
+      let moved: number | null = null;
       let timer: ReturnType<typeof setTimeout> | null = null;
       let restoring = true;
       // The browser delivers restoration's scroll event asynchronously.
       const frame = requestAnimationFrame(() => {
         restoring = false;
       });
+      // Measured once the place settles, not per keystroke: measuring reads the layout.
       const flush = () => {
         if (timer) clearTimeout(timer);
         timer = null;
-        if (candidate && !signal.aborted) store.save(key, candidate.place, candidate.at);
-        candidate = null;
+        const place =
+          moved !== null && !signal.aborted ? captureReadingPosition(editor, scroller) : null;
+        if (place && moved !== null) store.save(key, place, moved);
+        moved = null;
       };
       const save = () => {
         if (restoring || !visible.current || signal.aborted || !scroller.clientHeight) return;
-        const place = captureReadingPosition(editor, scroller);
-        if (!place) return;
-        candidate = { place, at: performance.timeOrigin + performance.now() };
+        moved = performance.timeOrigin + performance.now();
         if (timer) clearTimeout(timer);
         timer = setTimeout(flush, 200);
       };

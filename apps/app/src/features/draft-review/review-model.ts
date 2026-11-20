@@ -22,7 +22,6 @@ export interface ReviewChange extends ChangeAttribution {
   arrival?: number;
   kind: ReviewGroup["kind"];
   excerpt: ReviewGroup["excerpt"];
-  anchor: number;
   spans: ReviewSpan[];
   /** Unknown membership must not be read as a known-empty chat. B3c supplies the overlay. */
   attributed: boolean;
@@ -44,7 +43,6 @@ export function itemChange(
     chats: [],
     members: [],
     attributed: false,
-    anchor: 0,
     spans: [],
     whole: true,
   };

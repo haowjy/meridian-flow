@@ -16,6 +16,7 @@ import { useCreatedDrafts } from "./created-drafts";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
+import { useTabChangeCounts, withTabChangeCounts } from "./tab-change-counts";
 import { useProjectTreeViews } from "./useProjectTree";
 import { projectWorkBranchFiles, type ReviewFileTarget } from "./work-branch-files";
 
@@ -106,7 +107,8 @@ export function useOwnerDraftsFrozen(projectId: string, owner: string): boolean 
 
 /**
  * The owner's draft list as this browser knows it: the server's rows, then the drafts its Work's
- * pending creates make that the server has not listed yet (`useCreatedDrafts`).
+ * pending creates make that the server has not listed yet (`useCreatedDrafts`), each open
+ * document's text changes counted from its editor (`withTabChangeCounts`).
  */
 export function useOwnerDraftList(projectId: string, owner: string, enabled: boolean) {
   const query = useQuery({
@@ -118,13 +120,16 @@ export function useOwnerDraftList(projectId: string, owner: string, enabled: boo
     enabled ? (query.data?.branchId ?? null) : null,
     query.data?.items,
   );
-  const data = useMemo(
-    () =>
-      query.data && created.length > 0
-        ? { ...query.data, items: [...query.data.items, ...created] }
-        : query.data,
-    [query.data, created],
-  );
+  const tab = useTabChangeCounts();
+  const data = useMemo(() => {
+    if (!query.data) return query.data;
+    const items = withTabChangeCounts(
+      created.length > 0 ? [...query.data.items, ...created] : query.data.items,
+      owner,
+      tab,
+    );
+    return items === query.data.items ? query.data : { ...query.data, items };
+  }, [query.data, created, owner, tab]);
   return { ...query, data, created };
 }
 

@@ -15,6 +15,7 @@ import { type EditorMountIdentity, editorMountKey } from "@/core/editor/mounted-
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
 import { useHostEditor, useHostEditorStore } from "@/features/suggestion-review/host-editor";
+import { usePublishChangeCounts } from "@/features/suggestion-review/usePublishChangeCounts";
 import { useSuggestionReviewFocus } from "@/features/suggestion-review/useSuggestionChanges";
 import { type EditorSurfaceOptions, PendingEditorShell, SessionEditor } from "./SessionEditor";
 
@@ -83,6 +84,7 @@ export function EditorView(props: EditorViewProps) {
     hostEditor.set(constructed);
     return () => hostEditor.set(null, constructed);
   }, [constructed, holds, hostEditor]);
+  usePublishChangeCounts(props.documentId, holds ? constructed : null);
   const editor = useHostEditor();
   const { changes } = useOpenReviewChanges(controller, { enabled: owner !== "" });
   useSuggestionReviewFocus({
