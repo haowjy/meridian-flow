@@ -31,8 +31,10 @@ partitions the text.
   review's changes are the Work's suggestions in the host's Live editor (`useSuggestionRead`,
   `features/suggestion-review/`), not a draft room. Apply or Discard on one change is an editor
   transaction (Ctrl+Z); on a document, folder or Work it is a press (`usePressCommands`), whose
-  Apply sits in each open editor's history (`ApplyEntries`). Its items never end
-  (`askEnd`): a pressed row leaves the list and comes back if the press fails.
+  Apply sits in each open editor's history (`ApplyEntries`), and its items are in flight
+  (`DraftCommandOwner.hold`) until the list is read again. A tree line's row presses its tree
+  change alone (`half: "tree"`). Items never end (`askEnd`): a pressed row leaves the list and
+  comes back if the press fails.
 
 Read [the runtime reference](.context/draft-review.md) before changing ownership.
 Browser recipes: [draft review QA](.context/qa/draft-review.md).
