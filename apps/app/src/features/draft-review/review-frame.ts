@@ -8,7 +8,7 @@ import {
   type ReviewGroup,
   type ReviewProjection,
 } from "@meridian/agent-edit/diff";
-import type { ApplySpanPatch } from "@meridian/contracts/branches";
+import type { ReviewCut } from "@meridian/contracts/branches";
 import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode, Schema } from "@tiptap/pm/model";
 import {
@@ -133,8 +133,7 @@ export function buildFrame(yDoc: Y.Doc, base: readonly PMNode[], draft: PMNode):
  * snapshot, and the Applies this tab had in flight then as `baseViewDelta`. Without the delta
  * the server reads the room's base, where an edit made twice is numbered differently.
  */
-export type FrameCut = { snapshot: string; baseViewDelta: ApplySpanPatch[] };
-export function frameCut(frame: ReviewFrame): FrameCut {
+export function frameCut(frame: ReviewFrame): ReviewCut {
   return {
     snapshot: base64(Y.encodeSnapshotV2(frame.snapshot)),
     baseViewDelta: baseViewDelta(frame.doc.type.schema, frame.roomBase, frame.diff.base.blocks).map(

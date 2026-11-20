@@ -2,7 +2,11 @@
 
 import { t } from "@lingui/core/macro";
 import { type BranchId, draftItemKey, parseDraftItemKey } from "@meridian/contracts";
-import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
+import type {
+  ReviewCut,
+  ThreadDraftListItem,
+  ThreadDraftListResponse,
+} from "@meridian/contracts/branches";
 import { draftRoomName } from "@meridian/contracts/protocol";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
@@ -47,7 +51,7 @@ import {
   type NoticeSurface,
 } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
-import { type FrameCut, frameCut } from "./review-frame";
+import { frameCut } from "./review-frame";
 import type { ApplyTarget, ChangeTarget } from "./review-model";
 
 export type BranchCommandOutcome = CommandOutcome;
@@ -535,7 +539,7 @@ export function useWorkBranchCommands({
           draft: DraftReviewSelection;
           tree: boolean;
           text: "all" | string[] | null;
-          seen?: FrameCut;
+          seen?: ReviewCut;
           hides: boolean;
         }
       >();

@@ -41,6 +41,12 @@ export const BaseViewDeltaSchema = z.array(
 );
 export type ApplySpanPatch = z.infer<typeof BaseViewDeltaSchema>[number];
 
+/**
+ * The review a writer acted on, as a text Apply or a Discard of named changes sends it: base64 of
+ * `Y.encodeSnapshotV2` of the room, and the tab's `baseViewDelta` then.
+ */
+export type ReviewCut = { snapshot: string; baseViewDelta: ApplySpanPatch[] };
+
 /** One frozen click, sent in the draft's FIFO. No revision or generation fence. */
 export type ApplyClick = {
   commandId: CommandId;
@@ -166,13 +172,7 @@ export type UnapplyClickAnswer = UnapplyClickResult | { status: "conflict"; comm
  * passes over the rest.
  */
 export type ApplyTextCut =
-  | {
-      draftId: string;
-      /** Base64 of Y.encodeSnapshotV2(room snapshot). */
-      snapshot: string;
-      baseViewDelta: ApplySpanPatch[];
-      groupIds: string[];
-    }
+  | (ReviewCut & { draftId: string; groupIds: string[] })
   | { draftId: string; whole: true; places?: string[]; carried?: [number, number][] };
 
 /**

@@ -18,7 +18,11 @@ export interface ProjectedReview extends ReviewProjection {
   /** The editor document `inserted` and `anchor` positions address; a projection of another doc is stale. */
   doc: PMNode;
   snapshot: Y.Snapshot;
-  /** The room's review base at `snapshot`; `diff.base` is it with this tab's Applies in flight laid over. */
+  /**
+   * The room's review base at `snapshot`; `diff.base` is it with this tab's Applies in flight laid
+   * over. Rides with the frame through the plugin, as `snapshot` does, because a click on a mark
+   * acts on the plugin's frame.
+   */
   roomBase: readonly PMNode[];
 }
 

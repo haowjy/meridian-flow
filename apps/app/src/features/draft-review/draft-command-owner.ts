@@ -20,6 +20,7 @@ import type {
   ApplyClick,
   ApplyClickAnswer,
   DiscardCommandResult,
+  ReviewCut,
   TreeSaw,
 } from "@meridian/contracts/branches";
 import { draftRoomName, parseYjsRoomName } from "@meridian/contracts/protocol";
@@ -60,7 +61,6 @@ import { GroupApply } from "./group-apply";
 import type { DraftRef } from "./review-command-types";
 import {
   buildFrame,
-  type FrameCut,
   frameCut,
   inSchema,
   type ReviewFrame,
@@ -1008,7 +1008,7 @@ export class DraftCommandOwner {
             /** The text changes taken: all of them, those named, or none. */
             text: "all" | readonly string[] | null;
             /** The review the named changes were read in (`frameCut`). */
-            seen?: FrameCut;
+            seen?: ReviewCut;
             /** Gone whole at once, as a created document or a folder is, rather than shown discarded. */
             hides: boolean;
           }[];

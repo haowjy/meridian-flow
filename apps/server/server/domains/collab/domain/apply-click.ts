@@ -32,7 +32,7 @@ import { CommandExistsError, replay } from "../../../shared/commands/command-rec
 import { testHook } from "../../../shared/test-hooks.js";
 import type { CollabBranches } from "../contracts.js";
 import type { DocumentCommands } from "./document-commands.js";
-import { carriedBy, draftSchema, readChangesAt } from "./draft-changes.js";
+import { carriedBy, readChangesAt, draftSchema as schema } from "./draft-changes.js";
 import type { DraftBase } from "./draft-runtime.js";
 import type { DraftDispositionStore } from "./ports/draft-disposition-store.js";
 
@@ -129,7 +129,6 @@ export interface ApplyCommandStore {
   ): Promise<UnapplyClickAnswer>;
   measured?(input: { commandId: string; compileClickMs: number }): void;
 }
-const schema = draftSchema;
 
 /** Undo of a Discard's `not_found`: B4 settles it, and this goes with it. */
 export class ApplyClickRefused extends Error {
