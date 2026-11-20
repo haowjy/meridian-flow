@@ -66,9 +66,9 @@ type KernelDeps = {
  * the records of those documents' items (and what stands on a node they create); without, all
  * of them. Returns the documents that had records, and the ones whose creation was discarded.
  */
-async function discardTreeRecords(
+export async function discardTreeRecords(
   db: Database,
-  deps: KernelDeps,
+  deps: Pick<KernelDeps, "treeLists">,
   input: {
     branchId: BranchId;
     userId?: UserId;

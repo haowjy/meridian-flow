@@ -18,7 +18,7 @@ import {
   DROPPED_META,
   type Filter,
   newChangeId,
-  pendingTurns,
+  pending,
   type Run,
   reject,
   rewrite,
@@ -340,18 +340,96 @@ export function resolveStored(
   return true;
 }
 
-/** The turns whose suggestions a stored document still holds; one read per document state. */
-export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
-  let turns = pendingByDoc.get(doc);
-  if (!turns) {
-    turns = pendingTurns(storedRoot(doc, schema));
-    pendingByDoc.set(doc, turns);
+/**
+ * What a stored document holds pending (`pending`): its turns, and each Work's change ids. One read
+ * per document state, from the blocks the model has already read when it has.
+ */
+export function storedPending(doc: Y.Doc, schema: Schema): ReturnType<typeof pending> {
+  let found = pendingByDoc.get(doc);
+  if (!found) {
+    found = pending(schema.topNodeType.create(null, [...projectionsOf(doc, schema).values()]));
+    pendingByDoc.set(doc, found);
     doc.once("afterTransaction", () => pendingByDoc.delete(doc));
   }
-  return turns;
+  return found;
 }
 
-const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
+const pendingByDoc = new WeakMap<Y.Doc, ReturnType<typeof pending>>();
+
+/** Yjs item ids by client, as `[clock, len]` runs in clock order. */
+export type IdRanges = Record<string, [number, number][]>;
+
+/** What a press's one transaction did to a stored document: all a Yjs undo of it needs. */
+export type PressRecord = { insertions: IdRanges; deletions: IdRanges };
+
+/**
+ * A press's text half: `resolveStored` as one transaction of its own, and the ids that transaction
+ * inserted and deleted. Null when nothing changed.
+ */
+export function pressStored(
+  doc: Y.Doc,
+  schema: Schema,
+  verdict: "accept" | "reject",
+  filter: Filter,
+): PressRecord | null {
+  const origin = Symbol("press");
+  const recorder = new Y.UndoManager(fragmentOf(doc), {
+    trackedOrigins: new Set([origin]),
+    captureTimeout: Number.POSITIVE_INFINITY,
+  });
+  try {
+    let changed = false;
+    doc.transact(() => {
+      changed = resolveStored(doc, schema, verdict, filter);
+    }, origin);
+    const item = recorder.undoStack[0];
+    return changed && item
+      ? { insertions: rangesOf(item.insertions), deletions: rangesOf(item.deletions) }
+      : null;
+  } finally {
+    recorder.destroy();
+  }
+}
+
+/**
+ * Takes a press back from its record: the Yjs undo the tab's own `UndoManager` would run. Text
+ * written since stays; a change whose text was removed since does not come back. The document must
+ * keep deleted items (`gc: false`) and be the authority generation the press ran on. Returns
+ * whether anything changed.
+ */
+export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
+  const undo = new Y.UndoManager(fragmentOf(doc), { trackedOrigins: new Set() });
+  try {
+    // Yjs 13 does not export its stack item; `undo` reads only these three fields.
+    undo.undoStack.push({
+      insertions: deleteSetOf(record.insertions),
+      deletions: deleteSetOf(record.deletions),
+      meta: new Map(),
+    } as unknown as (typeof undo.undoStack)[number]);
+    return undo.undo() !== null;
+  } finally {
+    undo.destroy();
+  }
+}
+
+type DeleteSet = ReturnType<typeof Y.createDeleteSet>;
+
+function rangesOf(set: DeleteSet): IdRanges {
+  const out: IdRanges = {};
+  for (const [client, items] of set.clients)
+    out[client] = items.map((item): [number, number] => [item.clock, item.len]);
+  return out;
+}
+
+function deleteSetOf(ranges: IdRanges): DeleteSet {
+  const set = Y.createDeleteSet();
+  for (const [client, runs] of Object.entries(ranges))
+    set.clients.set(
+      Number(client),
+      runs.map(([clock, len]) => ({ clock, len }) as never),
+    );
+  return set;
+}
 
 function storedRoot(doc: Y.Doc, schema: Schema): PMNode {
   return yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);

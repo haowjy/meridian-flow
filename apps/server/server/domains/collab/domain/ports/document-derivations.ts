@@ -35,6 +35,8 @@ export type DocumentDerivationOutputs = {
   /** Ordered block content hashes plus the link facts: the edit signal behind `updated_at`. */
   documentHash: Buffer;
   links: DocumentLinkRow[];
+  /** Suggestion mode: each Work's (draft owner key's) pending change count; empty for none. */
+  pendingChanges: Record<string, number>;
 };
 export type DocumentDerivationStore = {
   capture(documentId: DocumentId): Promise<DocumentDerivationCut | null>;

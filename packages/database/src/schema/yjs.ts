@@ -298,8 +298,21 @@ export const documentBlockRooms = pgTable(
     cutAdmissionSeq: bigint("cut_admission_seq", { mode: "bigint" }).notNull(),
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),
+    /**
+     * Suggestion mode: per Work (its draft owner key), the number of its pending changes in the
+     * cut. A cache of the document's suggestion marks; a press on a whole Work visits these.
+     */
+    pendingChanges: jsonb("pending_changes")
+      .$type<Record<string, number>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
   },
-  (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
+  (table) => [
+    uniqueIndex("document_block_rooms_document").on(table.documentId),
+    index("document_block_rooms_pending")
+      .on(table.documentId)
+      .where(sql`${table.pendingChanges} <> '{}'::jsonb`),
+  ],
 );
 
 /** One row per top-level block of a room, keyed by its Yjs item id. */
@@ -355,7 +368,7 @@ export const commands = pgTable(
       .where(sql`${table.kind} IN ('discard', 'undo_discard', 'unapply')`),
     check(
       "commands_kind_valid",
-      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides')`,
+      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress')`,
     ),
   ],
 );
@@ -414,6 +427,32 @@ export const discardCommandEffects = pgTable(
     delta: jsonb("delta").$type<EditDeltaJson>().notNull(),
     /** The Restore that ended this entry: it brought every change back, or none that could come. */
     endedBy: uuid("ended_by").$type<CommandId>(),
+  },
+  (table) => [primaryKey({ columns: [table.commandId, table.documentId] })],
+);
+
+/**
+ * The text half of a press (suggestion mode): what the press's one transaction in this document
+ * inserted and deleted, as Yjs id ranges by client (`[clock, len]`), and the authority generation
+ * it ran on. The press's Undo is a Yjs undo of these ranges; a restore since (another generation)
+ * ends it. Server documents keep deleted items (`gc: false`), which the undo needs.
+ */
+export const pressTextEffects = pgTable(
+  "press_text_effects",
+  {
+    commandId: uuid("command_id")
+      .$type<CommandId>()
+      .notNull()
+      .references(() => commands.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
+    insertions: jsonb("insertions").$type<Record<string, [number, number][]>>().notNull(),
+    deletions: jsonb("deletions").$type<Record<string, [number, number][]>>().notNull(),
+    /** The Undo that took it back: a press is taken back once. */
+    undoneBy: uuid("undone_by").$type<CommandId>(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.documentId] })],
 );

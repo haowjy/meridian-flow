@@ -5,7 +5,7 @@
  * left no suggestion (it wrote Live there) are undone the existing way. The card offers Undo while
  * any of the turn's documents still holds its suggestions, whatever the writer edited since.
  */
-import { resolveStored, storedPendingTurns } from "@meridian/agent-edit/integration";
+import { resolveStored, storedPending } from "@meridian/agent-edit/integration";
 import type { ReversalOutcome, TurnReceiptChip } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import type { Schema } from "prosemirror-model";
@@ -40,7 +40,7 @@ export function createSuggestionTurnUndo(deps: {
     for (const documentId of new Set(targets.map((target) => target.documentId)))
       if (
         await deps.withLiveDocument(documentId, async ({ doc }) =>
-          storedPendingTurns(doc, deps.schema).has(turn),
+          storedPending(doc, deps.schema).turns.has(turn),
         )
       )
         return true;

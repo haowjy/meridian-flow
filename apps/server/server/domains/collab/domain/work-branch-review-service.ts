@@ -37,7 +37,7 @@ export function createWorkBranchReviewService(input: {
   /** The cut the branch's rows are read at: call it before reading them. */
   treeCut(branchId: BranchId): Promise<TreeSaw>;
   pending: Pick<WorkBranchPendingStore, "listBranchesChangingDocument" | "countPendingInProject">;
-}): CollabBranches {
+}): Pick<CollabBranches, "draftReview"> {
   async function ownerItems(
     owner: DraftOwner,
   ): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }> {

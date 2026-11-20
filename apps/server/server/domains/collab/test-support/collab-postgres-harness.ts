@@ -416,6 +416,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
             await lockSeamWorks(db, []);
           },
           ensureWorkDraft,
+          existsOnlyInWork: async () => false,
           lockDraft: async (draftId) => {
             await currentDrizzleDb(db)
               .select({ id: schema.documentDrafts.id })

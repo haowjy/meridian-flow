@@ -912,7 +912,7 @@ CREATE TABLE "commands" (
 	"request_digest" text,
 	"outcome" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides'))
+	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress'))
 );
 --> statement-breakpoint
 CREATE TABLE "discard_command_effects" (
@@ -933,7 +933,8 @@ CREATE TABLE "document_block_rooms" (
 	"cut_generation" bigint NOT NULL,
 	"cut_admission_seq" bigint NOT NULL,
 	"cut_location_version" bigint NOT NULL,
-	"extractor_version" integer NOT NULL
+	"extractor_version" integer NOT NULL,
+	"pending_changes" jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "document_blocks" (
@@ -960,7 +961,7 @@ CREATE TABLE "document_drafts" (
 	"has_effect" boolean DEFAULT true NOT NULL,
 	"text_changes" integer DEFAULT 0 NOT NULL,
 	"has_effect_revision" bigint DEFAULT -1 NOT NULL,
-	"schema_version" integer DEFAULT 3001000 NOT NULL,
+	"schema_version" integer DEFAULT 3003000 NOT NULL,
 	"revision" bigint DEFAULT 0 NOT NULL,
 	"checkpoint_revision" bigint DEFAULT 0 NOT NULL,
 	"checkpoint_seq" bigint DEFAULT 0 NOT NULL,
@@ -992,7 +993,7 @@ CREATE TABLE "document_yjs_heads" (
 	"authority_generation" bigint DEFAULT 1 NOT NULL,
 	"next_admission_sequence" bigint DEFAULT 1 NOT NULL,
 	"fragment_name" text DEFAULT 'prosemirror' NOT NULL,
-	"schema_version" integer DEFAULT 3001000 NOT NULL,
+	"schema_version" integer DEFAULT 3003000 NOT NULL,
 	"retired_through_seq" bigint DEFAULT 0 NOT NULL,
 	"latest_update_seq" bigint DEFAULT 0 NOT NULL,
 	"latest_state_vector" "bytea",
@@ -1040,6 +1041,16 @@ CREATE TABLE "pending_notices" (
 	"message" text NOT NULL,
 	"data" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "press_text_effects" (
+	"command_id" uuid NOT NULL,
+	"document_id" uuid NOT NULL,
+	"authority_generation" bigint NOT NULL,
+	"insertions" jsonb NOT NULL,
+	"deletions" jsonb NOT NULL,
+	"undone_by" uuid,
+	CONSTRAINT "press_text_effects_command_id_document_id_pk" PRIMARY KEY("command_id","document_id")
 );
 --> statement-breakpoint
 ALTER TABLE "agent_definition_revisions" ADD CONSTRAINT "agent_definition_revisions_package_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("package_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -1174,6 +1185,8 @@ ALTER TABLE "draft_write_journal" ADD CONSTRAINT "draft_write_journal_thread_id_
 ALTER TABLE "draft_write_journal" ADD CONSTRAINT "draft_write_journal_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "draft_write_journal" ADD CONSTRAINT "draft_write_journal_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pending_notices" ADD CONSTRAINT "pending_notices_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_text_effects" ADD CONSTRAINT "press_text_effects_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_text_effects" ADD CONSTRAINT "press_text_effects_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_definition_revisions_package_slug_grammar" ON "agent_definition_revisions" USING btree ("package_revision_id","slug","grammar_version");--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_package_revisions_coordinate_digest" ON "agent_package_revisions" USING btree ("coordinate","content_digest");--> statement-breakpoint
 CREATE INDEX "agent_package_saves_user_folder_seq" ON "agent_package_saves" USING btree ("user_id","folder","seq" DESC NULLS LAST);--> statement-breakpoint
@@ -1291,6 +1304,7 @@ CREATE UNIQUE INDEX "apply_command_effects_group" ON "apply_command_effects" USI
 CREATE INDEX "commands_thread" ON "commands" USING btree ("thread_id");--> statement-breakpoint
 CREATE INDEX "commands_discard_project" ON "commands" USING btree ("project_id","created_at") WHERE "commands"."kind" IN ('discard', 'undo_discard', 'unapply');--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
+CREATE INDEX "document_block_rooms_pending" ON "document_block_rooms" USING btree ("document_id") WHERE "document_block_rooms"."pending_changes" <> '{}'::jsonb;--> statement-breakpoint
 CREATE UNIQUE INDEX "document_drafts_branch_document" ON "document_drafts" USING btree ("document_id","branch_id") WHERE "document_drafts"."kind" = 'work_draft';--> statement-breakpoint
 CREATE INDEX "document_drafts_work_draft_by_branch" ON "document_drafts" USING btree ("branch_id","id") WHERE "document_drafts"."kind" = 'work_draft';--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint

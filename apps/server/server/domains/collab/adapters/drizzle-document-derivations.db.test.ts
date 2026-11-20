@@ -75,6 +75,7 @@ function outputsOf(text: string): DocumentDerivationOutputs {
     documentBytes: text.length,
     documentHash: documentHash(blocks, []),
     links: [],
+    pendingChanges: {},
   };
 }
 

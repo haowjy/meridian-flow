@@ -25,6 +25,8 @@ import {
   type DocumentDraftHint,
   type DocumentDraftHintsResponse,
   type DraftMetadataResponse,
+  type PressResult,
+  type PressUndoResult,
   type ThreadDraftListItem,
   type ThreadDraftListResponse,
   type UnapplyClickAnswer,
@@ -77,7 +79,7 @@ type BranchRouteServices = {
     AppServices["fileAccess"],
     "authorize" | "authorizeAt" | "confirmEdit" | "listAccess"
   >;
-  documentSync: Pick<AppServices["documentSync"], "draftReview" | "roomRemoval">;
+  documentSync: Pick<AppServices["documentSync"], "draftReview" | "roomRemoval" | "presses">;
 };
 
 export function selectBranchRouteServices(app: AppServices): BranchRouteServices {
@@ -256,6 +258,28 @@ const ApplyItemsBody = z.strictObject({
 });
 /** An Apply as the route parsed it: the items, and the press's cut decoded. */
 type ParsedApply = Omit<ApplyItemsClick, "saw"> & { saw?: TreeCut };
+const PressBody = z.strictObject({
+  commandId: CommandIdSchema,
+  owner: z.string().min(1).max(128),
+  verdict: z.enum(["apply", "discard"]),
+  items: z.union([
+    z.literal("all"),
+    z
+      .array(z.strictObject({ node: z.string().uuid() }))
+      .min(1)
+      .max(2000)
+      .refine((items) => new Set(items.map((item) => item.node)).size === items.length),
+  ]),
+  saw: SawBody.optional(),
+  seen: z
+    .array(z.strictObject({ documentId: z.string().uuid(), vector: VectorBody }))
+    .max(64)
+    .optional(),
+});
+const PressUndoBody = z.strictObject({
+  commandId: CommandIdSchema,
+  pressCommandId: CommandIdSchema,
+});
 const UndoDiscardBody = z.strictObject({
   commandId: CommandIdSchema,
   discardCommandId: CommandIdSchema,
@@ -1105,3 +1129,65 @@ function throwReadFailure(code: string): never {
   if (code === "not_found") throw createError({ statusCode: 404, message: "Document not found" });
   throw createError({ statusCode: 500, message: "Document markdown is unavailable" });
 }
+
+/**
+ * Suggestion mode's press: Apply or Discard on documents, folders or the whole Work, one command
+ * (`drizzle-press.ts`). It addresses the Work, not a branch: a Work whose drafts are only text
+ * has none. It takes no per-document grant: the writer owns the project and the Work, and the
+ * press writes only that Work's suggestions. A 404 with the flag off.
+ */
+export async function handlePressRequest(
+  deps: BranchRouteServices,
+  input: { projectId: ProjectId; userId: UserId; request: unknown },
+): Promise<PressResult | CommandRunning | CommandConflict> {
+  const presses = deps.documentSync.presses;
+  if (!presses) throw createError({ statusCode: 404, message: "Not found" });
+  const request = parseBody(PressBody, input.request, "press");
+  const owner = await requireListedOwner(deps, { ...input, owner: request.owner });
+  const envelope = pressEnvelope(input, "press", request.commandId, input.request);
+  const first = await deps.documentSync.draftReview.awaitCommand(envelope);
+  if (first.kind === "running") return { status: "running", commandId: request.commandId };
+  const recorded = replay<PressResult>(first, request.commandId as CommandId);
+  if (recorded) return recorded;
+  return callDraftReview(presses.press({ envelope, owner, request }));
+}
+
+/** Take back one press, both halves: the press's own records say what it did. */
+export async function handlePressUndoRequest(
+  deps: BranchRouteServices,
+  input: { projectId: ProjectId; userId: UserId; request: unknown },
+): Promise<PressUndoResult | CommandRunning | CommandConflict> {
+  const presses = deps.documentSync.presses;
+  if (!presses) throw createError({ statusCode: 404, message: "Not found" });
+  await requireProjectOwned(deps, input);
+  const request = parseBody(PressUndoBody, input.request, "Undo");
+  const envelope = pressEnvelope(input, "unpress", request.commandId, request);
+  const first = await deps.documentSync.draftReview.awaitCommand(envelope);
+  if (first.kind === "running") return { status: "running", commandId: request.commandId };
+  const recorded = replay<PressUndoResult>(first, request.commandId as CommandId);
+  if (recorded) return recorded;
+  return callDraftReview(presses.undo({ envelope, pressCommandId: request.pressCommandId }));
+}
+
+function pressEnvelope(
+  scope: { projectId: ProjectId; userId: UserId },
+  kind: "press" | "unpress",
+  commandId: string,
+  body: unknown,
+): CommandEnvelope {
+  return {
+    commandId: commandId as CommandId,
+    accountId: scope.userId,
+    projectId: scope.projectId,
+    kind,
+    digest: commandDigest({
+      accountId: scope.userId,
+      projectId: scope.projectId,
+      kind,
+      selectors: {},
+      body,
+    }),
+  };
+}
+
+type CommandConflict = { status: "conflict"; commandId: CommandId };

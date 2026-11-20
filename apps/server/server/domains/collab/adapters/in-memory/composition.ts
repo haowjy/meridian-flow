@@ -305,6 +305,7 @@ function createInMemoryBranchStub(): CollabBranches {
     },
   });
   return {
+    presses: null,
     draftReview: {
       // No branches here: every item's records and drafts are as good as purged.
       async apply({ request }) {

@@ -1,4 +1,4 @@
-export { accept, type Change, type Filter, list, pendingTurns, reject } from "./resolve.js";
+export { accept, type Change, type Filter, list, pending, reject } from "./resolve.js";
 export {
   type Author,
   CHANGE_META,

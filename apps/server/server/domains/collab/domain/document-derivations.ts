@@ -30,9 +30,13 @@ import type {
  */
 export type DeriveBlocks = (documentId: DocumentId, doc: Y.Doc) => Promise<DerivedBlock[]>;
 
+/** Suggestion mode: each Work's pending change count in the cut. Without it, none. */
+export type DerivePending = (doc: Y.Doc) => Record<string, number>;
+
 export function createDocumentDerivationService(input: {
   store: DocumentDerivationStore;
   deriveBlocks: DeriveBlocks;
+  derivePending?: DerivePending;
   outsideTransaction<T>(operation: () => T): T;
   deferred(documentId: DocumentId): void;
   failed(documentId: DocumentId, cause: unknown): void;
@@ -88,7 +92,11 @@ export function createDocumentDerivationService(input: {
 }
 
 export async function deriveDocument(
-  input: { store: DocumentDerivationStore; deriveBlocks: DeriveBlocks },
+  input: {
+    store: DocumentDerivationStore;
+    deriveBlocks: DeriveBlocks;
+    derivePending?: DerivePending;
+  },
   documentId: DocumentId,
   at = new Date(),
 ): Promise<DocumentDerivationResult> {
@@ -102,7 +110,12 @@ export async function deriveDocument(
       Y.applyUpdate(doc, cut.state);
       // Before projecting: a repair there edits the private doc, not the cut.
       const stateVector = Y.encodeStateVector(doc);
-      const outputs = await deriveDocumentOutputs(cut, doc, input.deriveBlocks);
+      const outputs = await deriveDocumentOutputs(
+        cut,
+        doc,
+        input.deriveBlocks,
+        input.derivePending,
+      );
       if (await input.store.certify(cut, outputs, at)) {
         // Also when the cut was already certified: a failed earlier registration retries here.
         if (outputs.links.some((row) => row.aheadId)) await input.store.registerAheads(documentId);
@@ -120,8 +133,11 @@ export async function deriveDocumentOutputs(
   cut: DocumentDerivationCut,
   doc: Y.Doc,
   deriveBlocks: DeriveBlocks,
+  derivePending?: DerivePending,
 ): Promise<DocumentDerivationOutputs> {
   const blocks = await deriveBlocks(cut.documentId, doc);
+  // After the blocks: the model's read of them is what this counts from.
+  const pendingChanges = derivePending?.(doc) ?? {};
   const links = !cut.holderUri
     ? []
     : deriveDocumentLinkRows({
@@ -134,6 +150,7 @@ export async function deriveDocumentOutputs(
     documentBytes: blocks.reduce((sum, block) => sum + Buffer.byteLength(block.text, "utf8"), 0),
     documentHash: documentHash(blocks, links),
     links,
+    pendingChanges,
   };
 }
 
