@@ -30,6 +30,8 @@ export type InMemoryCheckpointRecord = {
   documentId: string;
   state: Uint8Array;
   reason: string;
+  /** Written by `storeCheckpoint`: the next store replaces it. */
+  background: boolean;
   createdAt: string;
 };
 
@@ -70,7 +72,7 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     };
   }
 
-  private readonly checkpoints: InMemoryCheckpointRecord[] = [];
+  private checkpoints: InMemoryCheckpointRecord[] = [];
   private nextCheckpointId = 1;
   async appendWriterUpdate(
     docId: string,
@@ -102,12 +104,19 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   }
 
   async createCheckpoint(cut: CapturedCheckpointCut, reason: string): Promise<string> {
+    return (await this.insertCheckpoint(cut, reason, false)).id;
+  }
+
+  private async insertCheckpoint(cut: CapturedCheckpointCut, reason: string, background: boolean) {
     const payload = resolveCheckpointCut(cut);
     const state = await payload.materializeState();
-    const record = this.checkpointRecord(payload.documentId, state, reason);
+    const record = this.checkpointRecord(payload.documentId, state, reason, background);
     await super.checkpoint(payload.documentId, state, payload.upToSeq);
+    this.checkpoints = this.checkpoints.filter(
+      (kept) => !(background && kept.background && kept.documentId === record.documentId),
+    );
     this.checkpoints.push(record);
-    return record.id;
+    return record;
   }
 
   async seedInitialDocument(docId: string, state: Uint8Array): Promise<boolean> {
@@ -138,7 +147,7 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   }
 
   async storeCheckpoint(cut: CapturedCheckpointCut): Promise<void> {
-    await this.createCheckpoint(cut, "checkpoint");
+    await this.insertCheckpoint(cut, "checkpoint", true);
   }
 
   override async compact(docId: string, before: Date) {
@@ -146,7 +155,7 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     if (result.updatesFolded > 0) {
       const snapshot = await super.read(docId);
       if (snapshot.checkpoint) {
-        this.checkpoints.push(this.checkpointRecord(docId, snapshot.checkpoint, "compact"));
+        this.checkpoints.push(this.checkpointRecord(docId, snapshot.checkpoint, "compact", false));
       }
     }
     return result;
@@ -156,12 +165,14 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     documentId: string,
     state: Uint8Array,
     reason: string,
+    background: boolean,
   ): InMemoryCheckpointRecord {
     return {
       id: String(this.nextCheckpointId++),
       documentId,
       state: new Uint8Array(state),
       reason,
+      background,
       createdAt: new Date().toISOString(),
     };
   }

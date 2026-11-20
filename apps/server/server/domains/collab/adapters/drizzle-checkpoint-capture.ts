@@ -2,7 +2,7 @@
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { documentYjsCheckpoints, documentYjsHeads, documentYjsUpdates } from "@meridian/database";
-import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lte, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
@@ -31,6 +31,9 @@ export async function captureDrizzleCheckpoint(
     floor: Number(reference.floor_seq),
     ceiling: Number(reference.ceiling_seq),
   };
+  // The journal row the replay starts after: the captured floor, or an older checkpoint's when
+  // the captured base is gone.
+  let replayFloor = selected.floor;
   const validateInputs = async () => {
     const [head] = await currentDrizzleDb(db as Database)
       .select({
@@ -44,7 +47,7 @@ export async function captureDrizzleCheckpoint(
       !head ||
       head.authorityId !== authority.authorityId ||
       head.generation !== authority.generation ||
-      (selected.ceiling > selected.floor && head.retiredThroughSeq > selected.floor)
+      (selected.ceiling > replayFloor && head.retiredThroughSeq > replayFloor)
     ) {
       throw new Error("Checkpoint inputs retired during materialization");
     }
@@ -52,15 +55,25 @@ export async function captureDrizzleCheckpoint(
   let state: Promise<Uint8Array> | undefined;
   const materialize = async () => {
     const readDb = currentDrizzleDb(db as Database) as JournalDb;
-    const base = selected.baseId
-      ? (
-          await readDb
-            .select()
-            .from(documentYjsCheckpoints)
-            .where(eq(documentYjsCheckpoints.id, selected.baseId))
-        )[0]
-      : null;
-    if (selected.baseId && !base) throw new Error("Checkpoint base retired during capture");
+    // A store since the capture may have deleted the base (a superseded background checkpoint);
+    // the journal keeps every row, so an older surviving checkpoint and more rows give the same
+    // state.
+    const [base] = selected.baseId
+      ? await readDb
+          .select({ state: documentYjsCheckpoints.state, upToSeq: documentYjsCheckpoints.upToSeq })
+          .from(documentYjsCheckpoints)
+          .where(
+            and(
+              eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
+              eq(documentYjsCheckpoints.authorityId, authority.authorityId),
+              eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
+              lte(documentYjsCheckpoints.upToSeq, selected.floor),
+            ),
+          )
+          .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
+          .limit(1)
+      : [];
+    replayFloor = base?.upToSeq ?? 0;
     const rows = await readDb
       .select({ update: documentYjsUpdates.updateData })
       .from(documentYjsUpdates)
@@ -69,7 +82,7 @@ export async function captureDrizzleCheckpoint(
           eq(documentYjsUpdates.documentId, asDocumentId(docId)),
           eq(documentYjsUpdates.authorityId, authority.authorityId),
           eq(documentYjsUpdates.authorityGeneration, authority.generation),
-          gt(documentYjsUpdates.id, selected.floor),
+          gt(documentYjsUpdates.id, replayFloor),
           lte(documentYjsUpdates.id, selected.ceiling),
         ),
       )
