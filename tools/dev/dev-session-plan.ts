@@ -56,13 +56,21 @@ function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
+/** The keys every plan computes afresh, so a restart derives them again instead of keeping them. */
+export const COMPUTED_STACK_KEYS = [
+  "MERIDIAN_API_ORIGIN",
+  "MERIDIAN_APP_ORIGIN",
+  "MERIDIAN_WWW_ORIGIN",
+  "APP_DEBUG",
+] as const;
+
 /** The keys this plan computes over the caller's environment. */
 function computedStackEnv(
   env: NodeJS.ProcessEnv,
   internalApiOrigin: string,
   mode: DevMode,
   worktreePrefix: string | undefined,
-): Record<string, string | undefined> {
+): Record<(typeof COMPUTED_STACK_KEYS)[number], string | undefined> {
   const proxyPort = resolvePortlessProxyPort(env);
   return {
     MERIDIAN_API_ORIGIN: internalApiOrigin,

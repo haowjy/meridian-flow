@@ -106,7 +106,13 @@ session metadata retains the prefix used by a running stack across Git changes.
 sweep and `dev:stacks` off the human's own server while still seeing every
 checkout's stack; cleanup readiness lists panes on both servers. The store passes
 tmux the environment from before the dev-env loader ran, so a server it starts
-never holds loaded secrets. `legacyDefaultServerHasSession` refuses a start while
+never holds loaded secrets. A restart reads the running session's environment
+(`sessionEnv`, `show-environment -s`, whose quoting survives newlines) and fills in
+each variable the restarting shell doesn't set, before the mode and `.env` are
+applied: the stack keeps what it was started with, the checks see the same values,
+and the keys the plan computes (`COMPUTED_STACK_KEYS`) are derived afresh. The session is the only copy, since
+`.meridian/dev-session.json` holds no values; after the session dies there is
+nothing to keep. `legacyDefaultServerHasSession` refuses a start while
 an old default-server stack of this checkout runs (read-only `-L default`); remove
 it with the TODO in `.context/TODO`.
 `dev-session-state.ts` validates the checkout-bound launch record and discovers
