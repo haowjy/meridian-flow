@@ -11,7 +11,7 @@ import {
 } from "@sanity/diff-match-patch";
 import type { Mark, Node as PMNode, Slice } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
-import { type Mapping, Transform } from "prosemirror-transform";
+import { canJoin, type Mapping, Transform } from "prosemirror-transform";
 import {
   applySuggestion,
   revertSuggestion,
@@ -34,29 +34,108 @@ function suggestionMark(marks: readonly Mark[], name: "insertion" | "deletion"):
   return marks.find((mark) => mark.type.name === name);
 }
 
+function isSuggestion(mark: Mark): boolean {
+  return SUGGESTION_MARKS.includes(mark.type.name);
+}
+
+/** The suggestion marks a block stores in its `suggestion` attribute. */
+function storedMarks(node: PMNode): Mark[] {
+  const stored = node.attrs.suggestion as unknown[] | null | undefined;
+  return stored ? stored.map((json) => node.type.schema.markFromJSON(json)) : [];
+}
+
+/**
+ * Turns each block's stored suggestions into the library's marks on the block. Positions don't
+ * move, so a transaction built on the document stays valid on the result.
+ */
+function markBlocks(tr: Transform): void {
+  tr.doc.descendants((node, pos) => {
+    if (node.isInline) return false;
+    const marks = storedMarks(node);
+    if (marks.length)
+      tr.setNodeMarkup(pos, undefined, { ...node.attrs, suggestion: null }, [
+        ...node.marks,
+        ...marks,
+      ]);
+    return true;
+  });
+}
+
+/**
+ * The reverse of `markBlocks`: what Yjs keeps. Adds to what a block already stores. The library
+ * writes a block's marks without the suggester, so a mark that names no Work becomes `suggester`'s.
+ */
+function storeBlocks(tr: Transform, suggester: Suggester | null): void {
+  tr.doc.descendants((node, pos) => {
+    if (node.isInline) return false;
+    const marks = node.marks
+      .filter(isSuggestion)
+      .map((mark) =>
+        suggester && mark.attrs.work === null
+          ? mark.type.create({ ...mark.attrs, ...suggester })
+          : mark,
+      );
+    if (marks.length)
+      tr.setNodeMarkup(
+        pos,
+        undefined,
+        {
+          ...node.attrs,
+          suggestion: [...storedMarks(node), ...marks].map((mark) => mark.toJSON()),
+        },
+        node.marks.filter((mark) => !isSuggestion(mark)),
+      );
+    return true;
+  });
+}
+
+function marked(doc: PMNode): PMNode {
+  const tr = new Transform(doc);
+  markBlocks(tr);
+  return tr.doc;
+}
+
 /**
  * The document a view contains, and the map from the document's positions to the view's. Live
  * (`work` null) hides every insertion and reads every deletion as plain text. A Work's view is
- * Live with that Work's suggestions applied. Blocks are never removed, so the view's block `i` is
- * the document's block `i`.
+ * Live with that Work's suggestions applied. A block's suggestions apply to the whole block: a
+ * hidden new block goes, a hidden split joins, a hidden retype keeps the old attribute.
  */
 export function viewOf(doc: PMNode, work: string | null): { doc: PMNode; mapping: Mapping } {
-  const hidden: { from: number; to: number }[] = [];
-  doc.descendants((node, pos) => {
-    if (!node.isInline) return true;
-    const insertion = suggestionMark(node.marks, "insertion");
-    const deletion = suggestionMark(node.marks, "deletion");
-    if ((insertion && insertion.attrs.work !== work) || (deletion && deletion.attrs.work === work))
-      hidden.push({ from: pos, to: pos + node.nodeSize });
-    return false;
-  });
   const tr = new Transform(doc);
-  for (const range of hidden.reverse()) tr.delete(range.from, range.to);
+  const edits: { pos: number; edit: (tr: Transform) => void }[] = [];
+  doc.descendants((node, pos) => {
+    const marks = node.isInline ? node.marks : storedMarks(node);
+    if (!node.isInline && marks.length)
+      edits.push({ pos, edit: (t) => t.setNodeAttribute(pos, "suggestion", null) });
+    for (const mark of marks) {
+      const own = mark.attrs.work === work;
+      const end = pos + node.nodeSize;
+      const name = mark.type.name;
+      if ((name === "insertion" && !own) || (name === "deletion" && own))
+        edits.push({ pos, edit: (t) => t.delete(t.mapping.map(pos), t.mapping.map(end)) });
+      else if (name === "modification" && !own && mark.attrs.attrName)
+        edits.push({
+          pos,
+          edit: (t) => t.setNodeAttribute(pos, mark.attrs.attrName, mark.attrs.previousValue),
+        });
+      else if (name === "blockBoundarySuggestion" && own === (mark.attrs.type === "deletion"))
+        edits.push({ pos, edit: (t) => joinAt(t, t.mapping.map(end)) });
+    }
+    return !node.isInline;
+  });
+  // Later positions first, so an edit's start is still the document's (its end maps past what
+  // ran inside it); at one position, in the order pushed.
+  for (const { edit } of edits.sort((a, b) => b.pos - a.pos)) edit(tr);
   for (const name of SUGGESTION_MARKS) {
     const type = doc.type.schema.marks[name];
     if (type) tr.removeMark(0, tr.doc.content.size, type);
   }
   return { doc: tr.doc, mapping: tr.mapping };
+}
+
+function joinAt(tr: Transform, pos: number): void {
+  if (canJoin(tr.doc, pos)) tr.join(pos);
 }
 
 /** Blocks as Live shows them, for readers that hold blocks rather than a document. */
@@ -65,11 +144,7 @@ export function liveBlocks(blocks: readonly PMNode[]): PMNode[] {
   if (!first) return [];
   const doc = first.type.schema.topNodeType.create(null, blocks);
   if (!hasSuggestions(doc)) return [...blocks];
-  const out: PMNode[] = [];
-  viewOf(doc, null).doc.forEach((block) => {
-    out.push(block);
-  });
-  return out;
+  return children(viewOf(doc, null).doc);
 }
 
 /** Whether the document holds any suggestion: a document with none is its own Live view. */
@@ -77,7 +152,7 @@ export function hasSuggestions(doc: PMNode): boolean {
   let found = false;
   doc.descendants((node) => {
     if (found) return false;
-    if (node.marks.some((mark) => SUGGESTION_MARKS.includes(mark.type.name))) found = true;
+    if (node.attrs.suggestion || node.marks.some(isSuggestion)) found = true;
     return !found;
   });
   return found;
@@ -103,7 +178,7 @@ export function writeThroughView(
   const changes = diffDocs(view.doc, after);
   if (changes.length === 0) return null;
   const back = view.mapping.invert();
-  const state = EditorState.create({ doc });
+  const state = EditorState.create({ doc: marked(doc) });
   const tr = state.tr;
   for (const change of changes.reverse()) {
     if (change.kind === "attrs") {
@@ -114,7 +189,9 @@ export function writeThroughView(
     const to = Math.max(from, back.map(change.to, -1));
     tr.replace(from, to, change.slice);
   }
-  return suggester ? suggest(tr, state, suggester).doc : tr.doc;
+  const out = suggester ? suggest(tr, state, suggester) : tr;
+  storeBlocks(out, suggester);
+  return out.doc;
 }
 
 /** `tr` rewritten into `suggester`'s suggestions instead of edits. */
@@ -145,7 +222,11 @@ export function rewrite(
 ): Transaction {
   const sync = tr.getMeta("y-sync$") as { isChangeOrigin?: boolean } | undefined;
   if (!tr.docChanged || sync?.isChangeOrigin || tr.getMeta(SETTLE_META)) return tr;
-  if (suggester) return suggest(tr, state, suggester);
+  if (suggester) {
+    const suggested = suggest(tr, state, suggester);
+    storeBlocks(suggested, suggester);
+    return suggested;
+  }
   const marks = SUGGESTION_MARKS.map((name) => state.schema.marks[name]).filter(Boolean);
   const inserted: [number, number][] = [];
   // Live shows no insertion, so a deletion inside a paragraph that swept one up only meant the
@@ -217,29 +298,37 @@ function afterOffset(blocks: PMNode[], index: number): number {
   return pos;
 }
 
-/** Blocks paired by `id`, in order: the longest common subsequence of the two id lists. */
+/**
+ * Blocks paired by `id`, in order: block ids are unique, so the pairs are the longest increasing
+ * run of `after` indices taken in `before` order.
+ */
 function matchById(before: PMNode[], after: PMNode[]): (readonly [number, number])[] {
-  const n = before.length;
-  const m = after.length;
-  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--)
-    for (let j = m - 1; j >= 0; j--)
-      lcs[i][j] =
-        before[i].attrs.id && before[i].attrs.id === after[j].attrs.id
-          ? lcs[i + 1][j + 1] + 1
-          : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  const afterIndex = new Map<unknown, number>();
+  after.forEach((block, j) => {
+    if (block.attrs.id) afterIndex.set(block.attrs.id, j);
+  });
+  const candidates: [number, number][] = [];
+  before.forEach((block, i) => {
+    const j = block.attrs.id ? afterIndex.get(block.attrs.id) : undefined;
+    if (j !== undefined) candidates.push([i, j]);
+  });
+  // Patience sorting: `tails[k]` ends the best run of length k+1 found so far.
+  const tails: number[] = [];
+  const previous = new Array<number>(candidates.length).fill(-1);
+  candidates.forEach(([, j], c) => {
+    let lo = 0;
+    let hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (candidates[tails[mid]][1] < j) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo > 0) previous[c] = tails[lo - 1];
+    tails[lo] = c;
+  });
   const pairs: [number, number][] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (before[i].attrs.id && before[i].attrs.id === after[j].attrs.id) {
-      pairs.push([i, j]);
-      i++;
-      j++;
-    } else if (lcs[i + 1][j] >= lcs[i][j + 1]) i++;
-    else j++;
-  }
-  return pairs;
+  for (let c = tails.at(-1) ?? -1; c >= 0; c = previous[c]) pairs.push(candidates[c]);
+  return pairs.reverse();
 }
 
 /** A paired block's changes: its attributes, then its inline content as text hunks. */
@@ -334,11 +423,9 @@ export type SuggestionChange = {
 /** The suggestions in document order, one per id: a Work's, or every Work's when `work` is omitted. */
 export function listSuggestions(doc: PMNode, work?: string): SuggestionChange[] {
   const byId = new Map<string, SuggestionChange>();
-  doc.descendants((node, pos) => {
-    // A whole block the library marks on the block node; text inside it carries no mark.
-    for (const name of ["insertion", "deletion"] as const) {
-      const mark = suggestionMark(node.marks, name);
-      if (!mark || (work !== undefined && mark.attrs.work !== work)) continue;
+  marked(doc).descendants((node, pos) => {
+    for (const mark of node.marks) {
+      if (!isSuggestion(mark) || (work !== undefined && mark.attrs.work !== work)) continue;
       const id = String(mark.attrs.id);
       const change = byId.get(id) ?? {
         id,
@@ -351,8 +438,8 @@ export function listSuggestions(doc: PMNode, work?: string): SuggestionChange[] 
         to: pos,
       };
       const text = node.isText ? (node.text ?? "") : node.isInline ? "\uFFFC" : node.textContent;
-      if (name === "insertion") change.inserted += text;
-      else change.deleted += text;
+      if (mark.type.name === "insertion") change.inserted += text;
+      if (mark.type.name === "deletion") change.deleted += text;
       change.to = pos + node.nodeSize;
       byId.set(id, change);
     }
@@ -376,7 +463,8 @@ export function settleSuggestions(
     .map((change) => change.id);
   if (ids.length === 0) return null;
   const tr = state.tr.setMeta(SETTLE_META, true);
-  let current = state;
+  markBlocks(tr);
+  let current = state.apply(tr);
   for (const id of ids) {
     const command = how === "accept" ? applySuggestion(id) : revertSuggestion(id);
     command(current, (step) => {
@@ -384,9 +472,9 @@ export function settleSuggestions(
       current = current.apply(step);
     });
   }
+  storeBlocks(tr, null);
   return tr;
 }
-
 /** `settleSuggestions` for a caller that holds a document rather than an editor. */
 export function settleInDoc(
   doc: PMNode,

@@ -9,15 +9,23 @@ import { showSuggestionView, suggestionViewOf } from "@/core/editor/extensions/s
 export const SUGGESTIONS_ENABLED = import.meta.env.VITE_FLOW_SUGGESTIONS === "1";
 
 type BarState = {
+  doc: Editor["state"]["doc"];
+  work: string;
   suggesting: boolean;
   changes: SuggestionChange[];
   atCaret: SuggestionChange | null;
 };
 
-function read(editor: Editor, work: string): BarState {
-  const changes = listSuggestions(editor.state.doc, work);
+function read(editor: Editor, work: string, last: BarState | null): BarState {
+  // Listing walks the whole document: only a changed document needs it again.
+  const changes =
+    last && editor.state.doc === last.doc && work === last.work
+      ? last.changes
+      : listSuggestions(editor.state.doc, work);
   const { from } = editor.state.selection;
   return {
+    doc: editor.state.doc,
+    work,
     suggesting: suggestionViewOf(editor).suggester !== null,
     changes,
     atCaret: changes.find((change) => change.from <= from && from <= change.to) ?? null,
@@ -34,9 +42,9 @@ export function SuggestionBar({
   work: string;
   accountId: string;
 }) {
-  const [state, setState] = useState(() => read(editor, work));
+  const [state, setState] = useState(() => read(editor, work, null));
   useEffect(() => {
-    const update = () => setState(read(editor, work));
+    const update = () => setState((last) => read(editor, work, last));
     update();
     editor.on("transaction", update);
     return () => {

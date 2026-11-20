@@ -1332,7 +1332,7 @@
       "minor": 2,
       "patch": 0
     },
-    "compatibilityNote": "Adds the suggestion marks `insertion`, `deletion`, `modification` and `blockBoundarySuggestion` (names and attributes from prosemirror-suggest-changes, plus `work`, `chat`, `turn` and `by`) for the direction-2 suggestion prototype. New marks only: stored content keeps its meaning. An older client deletes marks it does not know, and the minor fence already keeps it out.",
+    "compatibilityNote": "Adds the suggestion marks `insertion`, `deletion`, `modification` and `blockBoundarySuggestion` (names and attributes from prosemirror-suggest-changes, plus `work`, `chat`, `turn` and `by`) and a block attribute `suggestion` that stores a block's own suggestion marks, for the direction-2 suggestion prototype. Additions with defaults only: stored content keeps its meaning. An older client deletes marks it does not know and ignores the attribute, and the minor fence already keeps it out.",
     "surface": {
       "fragmentName": "prosemirror",
       "nodes": {
@@ -1363,6 +1363,10 @@
               "default": null
             },
             "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "suggestion": {
               "hasDefault": true,
               "default": null
             }
@@ -1419,6 +1423,10 @@
               "hasDefault": true,
               "default": null
             },
+            "suggestion": {
+              "hasDefault": true,
+              "default": null
+            },
             "uploadToken": {
               "hasDefault": true,
               "default": null
@@ -1453,6 +1461,10 @@
               "default": null
             },
             "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "suggestion": {
               "hasDefault": true,
               "default": null
             }
@@ -1520,6 +1532,10 @@
             "start": {
               "hasDefault": true,
               "default": null
+            },
+            "suggestion": {
+              "hasDefault": true,
+              "default": null
             }
           },
           "content": "block+"
@@ -1554,6 +1570,10 @@
               "default": {}
             },
             "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "suggestion": {
               "hasDefault": true,
               "default": null
             }
@@ -1593,6 +1613,10 @@
             "start": {
               "hasDefault": true,
               "default": null
+            },
+            "suggestion": {
+              "hasDefault": true,
+              "default": null
             }
           },
           "content": "inline*"
@@ -1624,6 +1648,10 @@
               "default": null
             },
             "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "suggestion": {
               "hasDefault": true,
               "default": null
             }

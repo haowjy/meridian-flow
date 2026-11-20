@@ -17,6 +17,7 @@ import {
   PROSEMIRROR_FRAGMENT_NAME,
   withBlockIds,
 } from "@meridian/prosemirror-schema";
+import { liveBlocks } from "@meridian/suggestions";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
@@ -172,7 +173,9 @@ export function createEffectiveDocumentReader(input: {
         async (handle: DocHandle): Promise<EffectiveBlocksRead> => {
           const doc = unwrapDoc(handle);
           const scope = await spelling(command, doc);
-          const blocks = input.model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
+          const blocks = liveBlocks(
+            input.model.projectBlocks(toDocHandle(doc)).map((block) => block.node),
+          );
           return {
             content: blocks,
             version,

@@ -3,6 +3,7 @@
  * every insertion and reads every deletion as plain text; a Work's view paints the Work's
  * suggestions, and typing there becomes them. One rule, `rewrite`, decides both.
  */
+import { documentMarks, documentNodes } from "@meridian/prosemirror-schema";
 import { rewrite, type Suggester } from "@meridian/suggestions";
 import { type Editor, Extension, Mark } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
@@ -12,22 +13,23 @@ export type SuggestionView = { suggester: Suggester | null };
 
 const viewKey = new PluginKey<SuggestionView>("suggestion-view");
 
-const suggester = {
-  work: { default: null },
-  chat: { default: null },
-  turn: { default: null },
-  by: { default: null },
+const TAGS = {
+  insertion: "ins",
+  deletion: "del",
+  modification: "span",
+  blockBoundarySuggestion: "span",
 };
 
-/** No parse rule: pasted `<ins>` and `<del>` arrive as plain text, never as a suggestion. */
-function suggestionMark(name: string, tag: "ins" | "del" | "span", excludes?: string) {
+/** The shared specs as TipTap marks. No parse rule: pasted `<ins>` and `<del>` arrive as plain text. */
+export const SuggestionMarks = (Object.keys(TAGS) as (keyof typeof TAGS)[]).map((name) => {
+  const { attrs, ...spec } = documentMarks[name];
   return Mark.create({
     name,
-    inclusive: false,
-    ...(excludes === undefined ? {} : { excludes }),
-    addAttributes: () => ({ id: {}, ...suggester }),
+    inclusive: spec.inclusive,
+    ...("excludes" in spec ? { excludes: spec.excludes } : {}),
+    addAttributes: () => attrs,
     renderHTML: ({ HTMLAttributes }) => [
-      tag,
+      TAGS[name],
       {
         "data-suggestion": name,
         "data-suggestion-id": String(HTMLAttributes.id),
@@ -36,34 +38,48 @@ function suggestionMark(name: string, tag: "ins" | "del" | "span", excludes?: st
       0,
     ],
   });
-}
+});
 
-export const SuggestionMarks = [
-  suggestionMark("insertion", "ins", "deletion modification insertion"),
-  suggestionMark("deletion", "del", "insertion modification deletion"),
-  suggestionMark("modification", "span", "deletion insertion").extend({
-    addAttributes: () => ({
-      id: {},
-      type: {},
-      attrName: { default: null },
-      previousValue: { default: null },
-      newValue: { default: null },
-      ...suggester,
-    }),
-  }),
-  suggestionMark("blockBoundarySuggestion", "span").extend({
-    addAttributes: () => ({ id: { default: null }, type: { default: null }, ...suggester }),
-  }),
-];
+/** The blocks that store their own suggestions, and the nodes whose children may hold them. */
+const SUGGESTING_BLOCKS = Object.entries(documentNodes)
+  .filter(([, spec]) => "attrs" in spec && "suggestion" in spec.attrs)
+  .map(([name]) => name);
+const markHolders = documentNodes as Record<string, { marks?: string }>;
+
+type StoredSuggestion = { type: string; attrs: { type?: string | null } };
 
 /** Every local transaction goes through `rewrite` for the view the editor shows. */
 export const SuggestionViewExtension = Extension.create({
   name: "suggestionView",
-  // The library marks a whole inserted or deleted block on the block node.
-  extendNodeSchema: (extension) =>
-    extension.name === "doc"
-      ? { marks: "insertion deletion modification blockBoundarySuggestion" }
-      : {},
+  extendNodeSchema: (extension) => {
+    const marks = markHolders[extension.name]?.marks;
+    return marks ? { marks } : {};
+  },
+  addGlobalAttributes: () => [
+    {
+      types: SUGGESTING_BLOCKS,
+      attributes: {
+        suggestion: {
+          default: null,
+          keepOnSplit: false,
+          parseHTML: () => null,
+          renderHTML: (attributes: Record<string, unknown>) => {
+            const stored = attributes.suggestion as StoredSuggestion[] | null;
+            if (!stored?.length) return {};
+            return {
+              "data-block-suggestion": stored
+                .map((mark) =>
+                  mark.type === "blockBoundarySuggestion"
+                    ? `boundary-${mark.attrs.type}`
+                    : mark.type,
+                )
+                .join(" "),
+            };
+          },
+        },
+      },
+    },
+  ],
   dispatchTransaction({ transaction, next }) {
     const state = this.editor.state;
     next(rewrite(transaction, state, viewKey.getState(state)?.suggester ?? null));
