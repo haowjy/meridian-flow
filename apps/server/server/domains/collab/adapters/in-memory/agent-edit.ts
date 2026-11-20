@@ -70,7 +70,7 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     };
   }
 
-  private readonly checkpoints: InMemoryCheckpointRecord[] = [];
+  private checkpoints: InMemoryCheckpointRecord[] = [];
   private nextCheckpointId = 1;
   async appendWriterUpdate(
     docId: string,
@@ -138,7 +138,12 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   }
 
   async storeCheckpoint(cut: CapturedCheckpointCut): Promise<void> {
-    await this.createCheckpoint(cut, "checkpoint");
+    const stored = await this.createCheckpoint(cut, "checkpoint");
+    const documentId = resolveCheckpointCut(cut).documentId;
+    this.checkpoints = this.checkpoints.filter(
+      (record) =>
+        record.id === stored || record.documentId !== documentId || record.reason !== "checkpoint",
+    );
   }
 
   override async compact(docId: string, before: Date) {

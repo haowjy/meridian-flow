@@ -28,7 +28,7 @@ import {
   createCollabYDoc,
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
-import { and, asc, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, lte, ne, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -437,6 +437,8 @@ async function checkpointAttributionManifest(
         eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
         eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
         eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
+        // The previous manifest already attributes every row through its checkpoint.
+        gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
         lte(documentYjsUpdates.id, upToSeq),
       ),
     )
@@ -845,12 +847,18 @@ export function createDrizzleJournal(
         await payload.validateInputs();
         const existing = await latestCheckpoint(txDb, docId, captured);
         if (existing && existing.upToSeq >= upToSeq) return;
-        await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
-        if (existing?.upToSeq === 0 && existing.reason === "checkpoint") {
-          await txDb
-            .delete(documentYjsCheckpoints)
-            .where(eq(documentYjsCheckpoints.id, existing.id));
-        }
+        const stored = await insertCheckpoint(txDb, docId, state, upToSeq, "checkpoint", captured);
+        // A background checkpoint only shortens a load's replay; the journal keeps every row, so
+        // the one it supersedes is nobody's. Seeds, explicit checkpoints and restores stay.
+        await txDb
+          .delete(documentYjsCheckpoints)
+          .where(
+            and(
+              eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
+              eq(documentYjsCheckpoints.reason, "checkpoint"),
+              ne(documentYjsCheckpoints.id, stored),
+            ),
+          );
       });
     },
 

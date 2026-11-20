@@ -610,7 +610,12 @@ identity, generation, and retention under lock. Retention is tracked by the
 head's generation-local retired-through sequence. A stale checkpoint returns
 `stale_generation`; it does not manufacture a successful checkpoint ID.
 Compaction exists but has no production caller, so live journal rows are never
-deleted.
+deleted: the model's report of what changed since its last read attributes each
+change from the rows after its frontier, however old. A background checkpoint
+(`storeCheckpoint`) deletes the document's earlier background checkpoints in its
+own transaction, so a document holds its seed, its explicit checkpoints and one
+background checkpoint; its attribution manifest reads only the rows after the
+checkpoint it builds on.
 
 `domain/document-derivations.ts` is the sole pipeline from Yjs to stored text:
 block rows, the order and counts on the room row, `documents.size_bytes` and
