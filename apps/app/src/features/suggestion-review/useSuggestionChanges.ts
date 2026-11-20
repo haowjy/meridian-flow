@@ -10,6 +10,7 @@ import type { Author } from "@meridian/agent-edit/diff";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type Change, list } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
+import type { Node } from "@tiptap/pm/model";
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { authorsIn, SUGGESTION_CHANGE_ATTR } from "@/core/editor/extensions/suggestion-mode";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
@@ -29,6 +30,20 @@ function useEditorDoc(editor: Editor | null) {
   );
 }
 
+/**
+ * `list` once per document and Work, for every surface reading it (the band, the bar, the list,
+ * the host): a review walks the document once per keystroke, not once per reader. A change's
+ * author is written in the same transaction as its marks, so the document node is enough of a key.
+ */
+const listed = new WeakMap<Node, Map<string, Change[]>>();
+function changesIn(editor: Editor, doc: Node, work: string): Change[] {
+  const byWork = listed.get(doc) ?? new Map<string, Change[]>();
+  listed.set(doc, byWork);
+  const changes = byWork.get(work) ?? list(doc, { work }, authorsIn(editor.state));
+  byWork.set(work, changes);
+  return changes;
+}
+
 /** `work`'s changes in the editor's document, in document order; empty while there is no editor. */
 export function useSuggestionChanges(
   editor: Editor | null,
@@ -44,9 +59,7 @@ export function useSuggestionChanges(
     for (const chat of titles ?? []) named.current.set(chat.threadId, chat.title ?? "");
     return {
       ready: true,
-      changes: list(doc, { work }, authorsIn(editor.state)).map((change) =>
-        reviewChange(change, named.current),
-      ),
+      changes: changesIn(editor, doc, work).map((change) => reviewChange(change, named.current)),
     };
   }, [doc, editor, work, titles]);
 }

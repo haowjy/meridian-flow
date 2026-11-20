@@ -139,15 +139,15 @@ export type CollabTransport = {
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
   /**
-   * The removed document a room serves, with its record (a draft room's by its retained draft,
-   * at any status, never reopened), or null while it lives. Unauthorized: the gateway reads it
-   * only where it is already refusing, and answers `4208` only to a reader of the document.
-   */
-  /**
    * Suggestion mode: the owners whose Work alone holds the document (its create is pending there):
    * its Live room serves their view of it. Unauthorized, like `roomRemoval`.
    */
   workOnlyOwners(documentId: DocumentId): Promise<DraftOwner[]>;
+  /**
+   * The removed document a room serves, with its record (a draft room's by its retained draft,
+   * at any status, never reopened), or null while it lives. Unauthorized: the gateway reads it
+   * only where it is already refusing, and answers `4208` only to a reader of the document.
+   */
   roomRemoval(
     room: { documentId: DocumentId } | { draftId: string },
   ): Promise<{ documentId: DocumentId; removal: DocumentRemovalRecord } | null>;

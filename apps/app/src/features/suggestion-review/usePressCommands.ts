@@ -30,7 +30,7 @@ import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { notifyFailure } from "@/components/app/failure-toast";
 import { ApplyEntries, type ApplyPort } from "@/features/draft-review/apply-history";
-import type { CommandOutcome } from "@/features/draft-review/draft-command-owner";
+import { type CommandOutcome, folderKey } from "@/features/draft-review/draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
 import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
 import type { ChangeTarget } from "@/features/draft-review/review-model";
@@ -46,6 +46,9 @@ import {
 
 type Verdict = "apply" | "discard";
 type Pressed = { commandId: string; result: PressResult };
+/** A node the press takes: whole, or only its tree change (a review's tree line). */
+type PressItem = { node: string; half?: "tree" };
+const whole = (nodes: readonly string[]): PressItem[] => nodes.map((node) => ({ node }));
 
 export function usePressCommands({
   projectId,
@@ -73,11 +76,13 @@ export function usePressCommands({
         : surface === "strip"
           ? { kind: "strip", threadId }
           : { kind: "changes" };
-    const refresh = () => {
+    /** Reads the list again; a row a press took or gave back shows once this lands. */
+    const refresh = async () => {
       refreshTurnCards(queryClient);
-      void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
-      });
+      await queryClient.refetchQueries(
+        { queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey) },
+        { cancelRefetch: false },
+      );
     };
     const blocked = (): CommandStart => ({
       sent: false,
@@ -92,7 +97,7 @@ export function usePressCommands({
         pressCommandId: commandId,
       });
       const settled = record ? await driver.whenSettled(record.id) : null;
-      refresh();
+      await refresh();
       return settled?.state === "done";
     };
 
@@ -114,7 +119,10 @@ export function usePressCommands({
      * An Apply in the history of every editor open on its documents, as a draft's Apply is
      * (`ApplyEntries`): Ctrl+Z there, or a row's Undo, takes back the press; Redo presses again.
      */
-    const remember = (pressed: Pressed, nodes: readonly string[]): ApplyEntries => {
+    const remember = (pressed: Pressed): ApplyEntries => {
+      const taken: PressItem[] = pressed.result.items.map((item) =>
+        item.text ? { node: item.node } : { node: item.node, half: "tree" },
+      );
       const port: ApplyPort = {
         unapply: async (commandId) =>
           (await unpress(commandId))
@@ -122,14 +130,14 @@ export function usePressCommands({
             : { kind: "failed" },
         redo: async () => {
           if (!driver) return "failed";
-          const again = await press("apply", nodes, driver);
+          const again = await press("apply", taken, driver);
           return again ? { commandId: again.commandId } : "failed";
         },
       };
       const entries: ApplyEntries = new ApplyEntries(
         pressed.commandId,
         port,
-        () => nodes.map((node) => registry.history(node)),
+        () => taken.map(({ node }) => registry.history(node)),
         {
           push: () => {},
           // Taken back: its rows' Undo goes with it.
@@ -145,52 +153,67 @@ export function usePressCommands({
     };
 
     /**
-     * One press. The rows it names leave the list at once (all of them for `"all"`), and come back
-     * on the next read if it fails. `documents`: the documents among `nodes`, whose open copies
-     * the server must hold before it runs.
+     * One press. Its rows and folders are in flight until the list is read again after it
+     * (`DraftCommandOwner.hold`): they leave the list and the review, and nothing else can be
+     * pressed on them. A row taken whole leaves the cached list too, so a read already out
+     * can't bring it back; a press that fails gives it back with that read.
      */
     const press = async (
       verdict: Verdict,
-      nodes: readonly string[] | "all",
+      items: readonly PressItem[] | "all",
       live: CommandDriver,
     ): Promise<Pressed | null> => {
-      const taken = (item: ThreadDraftListItem) =>
-        nodes === "all" || nodes.includes(item.documentId);
-      const open = (nodes === "all" ? rows().map((item) => item.documentId) : nodes).flatMap(
-        (documentId) => {
+      const listed = queryClient.getQueryData<ThreadDraftListResponse>(
+        projectQueryKeys.ownerDrafts(projectId, ownerKey),
+      );
+      const nodes =
+        items === "all" ? rows().map((item) => item.documentId) : items.map((item) => item.node);
+      const gone = (item: ThreadDraftListItem) =>
+        items === "all" ||
+        items.some(({ node, half }) => node === item.documentId && half !== "tree");
+      const rowKeys = rows().flatMap((item) =>
+        nodes.includes(item.documentId) ? [item.itemKey] : [],
+      );
+      const folders = listed?.branchId
+        ? nodes
+            .filter((node) => !rows().some((item) => item.documentId === node))
+            .map((node) => folderKey(listed.branchId as string, node))
+        : [];
+      const release = owner.hold([...rowKeys, ...folders], verdict === "apply");
+      try {
+        const open = nodes.flatMap((documentId) => {
           const vector = registry.openStateVector(documentId as never);
           return vector ? [{ documentId, vector: btoa(String.fromCharCode(...vector)) }] : [];
-        },
-      );
-      const saw = queryClient.getQueryData<ThreadDraftListResponse>(
-        projectQueryKeys.ownerDrafts(projectId, ownerKey),
-      )?.saw;
-      // A read already out answers from before the press: it must not bring the rows back.
-      await queryClient.cancelQueries({
-        queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
-      });
-      patchOwnerDrafts(queryClient, projectId, ownerKey, (items) =>
-        items.filter((item) => !taken(item)),
-      );
-      const record = await submitPress(live, {
-        projectId,
-        owner: ownerKey,
-        verdict,
-        items: nodes === "all" ? "all" : nodes.map((node) => ({ node })),
-        ...(saw ? { saw } : {}),
-        ...(open.length ? { seen: open } : {}),
-      });
-      const settled = record ? await live.whenSettled(record.id) : null;
-      refresh();
-      if (!record || settled?.state !== "done" || settled.outcome?.status !== "done") {
-        notifyFailure({
-          key: `press:${ownerKey}`,
-          title: verdict === "apply" ? t`Couldn't apply` : t`Couldn't discard`,
-          brief: true,
         });
-        return null;
+        // A read already out answers from before the press: it must not bring the rows back.
+        await queryClient.cancelQueries({
+          queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
+        });
+        patchOwnerDrafts(queryClient, projectId, ownerKey, (rowsNow) =>
+          rowsNow.filter((item) => !gone(item)),
+        );
+        const record = await submitPress(live, {
+          projectId,
+          owner: ownerKey,
+          verdict,
+          items: items === "all" ? "all" : [...items],
+          ...(listed?.saw ? { saw: listed.saw } : {}),
+          ...(open.length ? { seen: open } : {}),
+        });
+        const settled = record ? await live.whenSettled(record.id) : null;
+        await refresh();
+        if (!record || settled?.state !== "done" || settled.outcome?.status !== "done") {
+          notifyFailure({
+            key: `press:${ownerKey}`,
+            title: verdict === "apply" ? t`Couldn't apply` : t`Couldn't discard`,
+            brief: true,
+          });
+          return null;
+        }
+        return { commandId: record.sendId, result: settled.outcome.result as PressResult };
+      } finally {
+        release();
       }
-      return { commandId: record.sendId, result: settled.outcome.result as PressResult };
     };
 
     /** What the press says of the nodes it was sent: the ones it changed nothing in are untaken. */
@@ -207,7 +230,7 @@ export function usePressCommands({
 
     const run = (
       verdict: Verdict,
-      nodes: readonly string[] | "all",
+      items: readonly PressItem[] | "all",
       input: { documentId: string | null; name?: string | null; folder?: boolean },
     ): CommandStart => {
       if (locked || !driver) return blocked();
@@ -215,15 +238,17 @@ export function usePressCommands({
       // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
       const named = (node: string) => names.get(node) ?? "";
-      const outcome = press(verdict, nodes, driver).then((pressed) => {
+      const outcome = press(verdict, items, driver).then((pressed) => {
         const sent =
-          nodes === "all" ? (pressed?.result.items.map((item) => item.node) ?? []) : nodes;
+          items === "all"
+            ? (pressed?.result.items.map((item) => item.node) ?? [])
+            : items.map((item) => item.node);
         const answer = outcomeOf(pressed, sent);
         if (!pressed || answer.kind !== "done") return answer;
         const changed = pressed.result.items.map((item) => item.node);
         const where = noticeSurface(input.documentId);
         if (verdict === "apply") {
-          const step = remember(pressed, changed);
+          const step = remember(pressed);
           notices.showApplied({
             projectId,
             ownerKey,
@@ -259,15 +284,21 @@ export function usePressCommands({
       return { sent: true, outcome };
     };
 
-    const startDraft = (verdict: Verdict, draft: DraftReviewSelection) =>
-      run(verdict, [draft.documentId], { documentId: draft.documentId });
+    /** A target of a tree line alone takes the node's tree change and leaves its text pending. */
+    const itemOf = (documentId: string, target?: ChangeTarget): PressItem =>
+      target?.kind === "tree" ? { node: documentId, half: "tree" } : { node: documentId };
+    const startDraft = (verdict: Verdict, draft: DraftReviewSelection, target?: ChangeTarget) =>
+      run(verdict, [itemOf(draft.documentId, target)], { documentId: draft.documentId });
     const many = (
       verdict: Verdict,
-      items: readonly { draft: DraftReviewSelection }[],
+      items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
       folders: readonly string[] = [],
     ) => {
-      const nodes = [...folders, ...items.map(({ draft }) => draft.documentId)];
-      return run(verdict, nodes, { documentId: items[0]?.draft.documentId ?? null }).outcome.then(
+      const sent = [
+        ...whole(folders),
+        ...items.map(({ draft, target }) => itemOf(draft.documentId, target)),
+      ];
+      return run(verdict, sent, { documentId: items[0]?.draft.documentId ?? null }).outcome.then(
         (outcome) => items.map(() => outcome),
       );
     };
@@ -279,7 +310,9 @@ export function usePressCommands({
     }): Promise<CommandOutcome> =>
       run(
         "discard",
-        input.all ? "all" : [...input.folders, ...input.drafts.map((draft) => draft.documentId)],
+        input.all
+          ? "all"
+          : whole([...input.folders, ...input.drafts.map((draft) => draft.documentId)]),
         {
           documentId: input.drafts[0]?.documentId ?? null,
           name: input.name,
@@ -296,10 +329,13 @@ export function usePressCommands({
       changesLocked: locked || frozen,
       frozen,
       canApply: !frozen,
-      /** One change in the text is the editor's (`useSuggestionChanges`); a list's row is the document. */
-      commandChange: (verdict: Verdict, draft: DraftReviewSelection, _target: ChangeTarget) =>
-        startDraft(verdict, draft).outcome,
-      startDraft,
+      /**
+       * One change in the text is the editor's (`useSuggestionChanges`); a list's row is the
+       * document, and a tree line its tree change alone.
+       */
+      commandChange: (verdict: Verdict, draft: DraftReviewSelection, target: ChangeTarget) =>
+        startDraft(verdict, draft, target).outcome,
+      startDraft: (verdict: Verdict, draft: DraftReviewSelection) => startDraft(verdict, draft),
       apply: (documentId: string, itemKey: string) =>
         startDraft("apply", { documentId, itemKey }).outcome,
       discard: (documentId: string, itemKey: string) =>

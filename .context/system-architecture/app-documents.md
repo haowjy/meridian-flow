@@ -46,7 +46,7 @@ server (`suggestion-review`).
 
 - Kind: feature
 - Paths: `apps/app/src/features/draft-review`, `apps/app/src/features/suggestion-review`
-- Docs: [AGENTS](../../apps/app/src/features/draft-review/AGENTS.md)
+- Docs: [AGENTS](../../apps/app/src/features/draft-review/AGENTS.md), [suggestion review](../../apps/app/src/features/suggestion-review/.context/CONTEXT.md)
 - Machines: [draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md)
 
 ## links

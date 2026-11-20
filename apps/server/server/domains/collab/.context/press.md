@@ -13,7 +13,8 @@ has no branch row.
 
 - **Selection.** `items` expands folders to what is under them in the Work's view. The tree half
   takes the Work's pending records on those nodes; the text half takes every document among
-  them, since resolving a document with no suggestion changes nothing. `"all"` takes every
+  them, since resolving a document with no suggestion changes nothing, except an item sent with
+  `half: "tree"` (a review's tree line), whose text stays pending. `"all"` takes every
   pending record, and for text the documents the pending index lists for the Work plus the ones
   in `seen`.
 - **The branch is read under the owner's lock**, where it is made and closed: a branch read

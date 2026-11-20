@@ -27,7 +27,8 @@ export function SuggestionEditorView(props: EditorViewProps) {
       ? controller.inlineReview
       : null;
   const file = fileForDocument(props.documentId);
-  const workOnly = props.draftOnly === true || file?.draft.isNew === true;
+  // As the host opens its room (`ContextDocumentHost`): the Work's row says the Work made it.
+  const workOnly = file?.draft.isNew === true;
   const owner = requestedItemKey && !workOnly ? controller.ownerKey : "";
   // The phone reviews without typing; it types again once the review closes.
   const reviewReadOnly = props.reviewReadOnly === true && requestedItemKey !== null;
