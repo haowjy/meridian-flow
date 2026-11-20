@@ -84,7 +84,6 @@ export function treeChange(
 ): ReviewChange {
   return {
     id: `tree:${item.itemKey}`,
-    kind: "change",
     excerpt:
       line.kind === "delete"
         ? { removed: line.name, inserted: "" }

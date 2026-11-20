@@ -1,30 +1,16 @@
 import * as Y from "yjs";
 import { createDocumentContainment } from "./document-containment.js";
 
-export type AuthorshipSource =
-  | { kind: "writer" }
-  | { kind: "import" | "seed"; policy: "writer_protected" | "agent" };
-
 export type AuthorityHeadCheckpoint = {
   checkpointId: string;
   state: Uint8Array;
   attributionManifest: unknown;
 };
 
-type ImmediateAdmission = {
-  update: Uint8Array;
-  attribution: AuthorshipSource | { kind: "agent" };
-};
-
 export type MutationTarget = {
   documentId: string;
   generation: bigint;
   doc: Y.Doc;
-};
-
-export type FreshAuthorshipPort = {
-  /** Journals under the document mutation lock and records the new authority head. */
-  admitImmediate(input: ImmediateAdmission): Promise<{ sequence: bigint }>;
 };
 
 export type AuthorityGenerationReplacementPort = {
@@ -79,20 +65,6 @@ export function novelToRoom(room: Y.Doc, update: Uint8Array): Uint8Array | null 
   return overlaps ? Y.diffUpdate(update, stateVector) : update;
 }
 
-/** Validates and admits one fresh writer, import, or seed update. */
-export async function admitFreshAuthorship(
-  port: FreshAuthorshipPort,
-  mutation: { source: AuthorshipSource; update: Uint8Array },
-): Promise<{ sequence: bigint }> {
-  assertFreshSource(mutation.source);
-  assertNonEmptyUpdate(mutation.update);
-  const admitted = await port.admitImmediate({
-    update: mutation.update,
-    attribution: mutation.source,
-  });
-  return { sequence: admitted.sequence };
-}
-
 /** Replaces the durable authority generation from one complete checkpoint. */
 export async function replaceAuthorityGeneration(
   port: AuthorityGenerationReplacementPort,
@@ -111,22 +83,6 @@ export async function replaceAuthorityGeneration(
   const generation = await port.replaceGeneration(checkpoint, current.generation);
   await port.disconnectGeneration(current.generation);
   return { generation };
-}
-
-function assertFreshSource(source: AuthorshipSource): void {
-  if (source.kind === "writer") return;
-  if (
-    (source.kind !== "import" && source.kind !== "seed") ||
-    (source.policy !== "writer_protected" && source.policy !== "agent")
-  ) {
-    invalid("Import and seed authorship require an explicit safety policy");
-  }
-}
-
-function assertNonEmptyUpdate(update: Uint8Array): void {
-  if (!(update instanceof Uint8Array) || update.byteLength === 0) {
-    invalid("Mutation update is empty");
-  }
 }
 
 function invalid(message: string): never {

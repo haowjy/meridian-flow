@@ -4,7 +4,7 @@ import { type TreeLine, treeChange, treeLineOf } from "./tree-line";
 
 export type ReviewFocus = { id: string };
 /** Who wrote a change: the writer, or a chat's turn. */
-export type Author =
+export type BylineEntry =
   | { kind: "user"; userId: string }
   | { kind: "thread"; threadId: string; turnId: string; toolCallId?: string };
 export type ChatRef = {
@@ -14,7 +14,7 @@ export type ChatRef = {
   reveal?: { threadId: string; turnId: string; toolCallId?: string; subagentThreadId?: string };
 };
 export type ChangeAttribution = {
-  byline: Author[];
+  byline: BylineEntry[];
   chats: ChatRef[];
   members: string[];
 };
@@ -23,7 +23,6 @@ export interface ReviewChange extends ChangeAttribution {
   id: string;
   /** Remote text arrivals only; local edits never pulse. */
   arrival?: number;
-  kind: "change";
   excerpt: { removed: string; inserted: string };
   /** Unknown membership must not be read as a known-empty chat. B3c supplies the overlay. */
   attributed: boolean;
@@ -39,7 +38,6 @@ export function itemChange(
 ): ReviewChange {
   return {
     id: `item:${item.itemKey}`,
-    kind: "change",
     excerpt: { removed: "", inserted: item.documentName ?? "" },
     byline: [],
     chats: [],

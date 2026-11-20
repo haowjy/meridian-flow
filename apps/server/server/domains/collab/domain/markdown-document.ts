@@ -40,7 +40,6 @@ import type {
 } from "../contracts.js";
 import { mergeCodeText } from "./code-merge.js";
 import { documentAuthority } from "./document-handle.js";
-import { type AuthorshipSource, admitFreshAuthorship } from "./document-mutation-policy.js";
 import { versioned } from "./document-revision.js";
 import type { BoundWrite } from "./link-binding.js";
 import {
@@ -391,31 +390,17 @@ export function createMarkdownDocumentEngine(
     // while the journal and live document are still untouched.
     const markdown = serializeForSchema(documentId, draft, schemaType, links);
     const meta = deps.metaForOrigin(origin);
-    let seq = 0;
-    await admitFreshAuthorship(
-      {
-        admitImmediate: async ({ update: admittedUpdate }) => {
-          seq = await deps.journal.append(
-            documentId,
-            admittedUpdate,
-            meta,
-            documentAuthority(liveDoc),
-          );
-          // Inside a transaction `liveDoc` takes the row only once the root commits, never
-          // before (LOCK-WS): a door acquired in the transaction handed out a private copy, and
-          // one acquired before it (a held write) handed out the open room itself, whose
-          // holder keeps the mutex through the commit so `deliver` couldn't run here.
-          const apply = async () => {
-            Y.applyUpdate(liveDoc, admittedUpdate, yjsOrigin);
-            if (hook.kind === "after-commit")
-              await deps.afterWrite?.({ documentId, threadId: hook.threadId });
-          };
-          if (!deps.deferUntilCommit?.(apply)) await apply();
-          return { sequence: BigInt(seq) };
-        },
-      },
-      { source: authorshipSource(origin), update },
-    );
+    const seq = await deps.journal.append(documentId, update, meta, documentAuthority(liveDoc));
+    // Inside a transaction `liveDoc` takes the row only once the root commits, never
+    // before (LOCK-WS): a door acquired in the transaction handed out a private copy, and
+    // one acquired before it (a held write) handed out the open room itself, whose
+    // holder keeps the mutex through the commit so `deliver` couldn't run here.
+    const apply = async () => {
+      Y.applyUpdate(liveDoc, update, yjsOrigin);
+      if (hook.kind === "after-commit")
+        await deps.afterWrite?.({ documentId, threadId: hook.threadId });
+    };
+    if (!deps.deferUntilCommit?.(apply)) await apply();
     return Ok({
       documentId,
       markdown,
@@ -886,12 +871,6 @@ function mergeClockRanges(ranges: ClockRange[]): ClockRange[] {
     }
   }
   return merged;
-}
-
-function authorshipSource(origin: RuntimeOrigin): AuthorshipSource {
-  if (origin.type === "user") return { kind: "writer" };
-  if (origin.type === "import") return { kind: "import", policy: "writer_protected" };
-  return { kind: "seed", policy: origin.type === "agent" ? "agent" : "writer_protected" };
 }
 
 /**
