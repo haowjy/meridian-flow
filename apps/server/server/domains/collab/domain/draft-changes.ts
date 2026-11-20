@@ -126,10 +126,10 @@ export function carriedBy(
 
 /**
  * An Undo of what parts wrote into one text: each change of `parts` that still stands in `text` is
- * taken out of it, in the order given, and the parts that had one come back. A draft's text is
- * judged against its review `base` too, so a change stands only while it sits in a pending change;
- * the manuscript and a review base have no base of their own. The one rule every Undo applies, to
- * committed text under its hold and, as the model's plan, to a copy of it.
+ * taken out of it, in the order given, and the parts that had one come back. Pass the review `base`
+ * for an AI write's part in a draft: it stands only while it sits in a pending change. Live, a review
+ * base and a writer's command part (a Discard's, say) are judged on the text alone. The one rule
+ * every Undo applies, to committed text under its hold and, as the model's plan, to a copy of it.
  */
 export function takeBack<P extends { delta: StoredDelta | null }>(
   text: readonly PMNode[],

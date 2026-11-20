@@ -447,7 +447,7 @@ live-only inverse such as a named Work's Scratch reaches its Work only as a
 grant Work).
 Then its documents' mutation locks in id order and its drafts' rows. The capture only
 chooses the steps: each step reads the committed text under those locks and takes out what
-stands there (a draft's step re-runs `takeOutStanding` under the draft's hold; the manuscript
+stands there (a draft's step re-runs `takeBack` against its review base under the draft's hold; the manuscript
 step reads Live again under the document key and re-runs `takeBack`). A write that landed after
 the capture changes what a step takes, never whether the inverse runs, so it never answers
 "changed while reversing". The locks, not a check of their own, order two inverses of the

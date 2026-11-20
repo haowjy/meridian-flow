@@ -418,7 +418,7 @@ export class ApplyClickQueue {
     }
     if (head?.kind === "apply" && head.sent && closing.includes(head)) {
       if (head.answer?.status === "applied") this.settle(head, head.answer);
-      else if (!this.request) void this.lookupClosed(head);
+      else void this.dispatch(head);
     }
     this.moveOn();
   }
@@ -517,12 +517,8 @@ export class ApplyClickQueue {
       this.settle(command, { status: "unsent", commandId: answer.commandId });
       return;
     }
-    if (command.closed && answer?.status === "none") {
-      this.settle(command, { status: "cancelled" });
-      return;
-    }
-    if (command.closed && !answer) {
-      void this.lookupClosed(command);
+    if (answer?.status === "none") {
+      this.settleStored(command, answer);
       return;
     }
     this.scheduleRetry(command);
@@ -570,24 +566,6 @@ export class ApplyClickQueue {
     this.settle(command, answer);
   }
 
-  private async lookupClosed(command: ApplyCommand): Promise<void> {
-    try {
-      const result = await this.port.lookup(command.body.commandId);
-      if (this.commands[0] !== command || result.commandId !== command.body.commandId) return;
-      if (result.status === "applied") {
-        this.settle(command, result);
-        return;
-      }
-      if (result.status === "none") {
-        this.settle(command, { status: "cancelled" });
-        return;
-      }
-    } catch {
-      // Remains unknown.
-    }
-    this.scheduleRetry(command);
-  }
-
   /**
    * Out of retries. A sent command the server stored is settled on its stored answer, so a press
    * whose every answer was lost still lands, with its Undo or Redo; otherwise it is given up as not
@@ -599,18 +577,25 @@ export class ApplyClickQueue {
       const stored = await this.port.lookup(command.body.commandId).catch(() => null);
       if (this.commands[0] !== command) return;
       if (stored?.commandId === command.body.commandId) {
-        if (command.kind === "apply" && stored.status === "applied") {
-          this.settle(command, stored);
-          return;
-        }
-        if (command.kind === "unapply" && stored.status === "unapplied") {
-          this.unapplied(command, stored);
-          return;
-        }
+        this.settleStored(command, stored);
+        return;
       }
     }
     if (this.commands[0] === command)
       this.settle(command, { status: "unsent", commandId: command.body.commandId });
+  }
+
+  /**
+   * Settles a command on what the server stored under its id. None stored: a closed draft's
+   * click is cancelled, any other is given up as not sent.
+   */
+  private settleStored(command: Command, stored: ClickObservation): void {
+    if (command.kind === "apply" && stored.status === "applied") this.settle(command, stored);
+    else if (command.kind === "unapply" && stored.status === "unapplied")
+      this.unapplied(command, stored);
+    else if (command.kind === "apply" && command.closed)
+      this.settle(command, { status: "cancelled" });
+    else this.settle(command, { status: "unsent", commandId: command.body.commandId });
   }
 
   private scheduleRetry(command: Command): void {

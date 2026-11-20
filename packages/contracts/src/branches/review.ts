@@ -119,9 +119,9 @@ export type ApplyClickResult = {
 export type ApplyClickAnswer = ApplyClickResult | { status: "conflict"; commandId: CommandId };
 
 /**
- * Take back one Apply command: the surviving text groups of every document it applied, and
+ * Take back one Apply command: its changes that still stand in every document it applied, and
  * everything it settled in the tree (a restore it made included), in one command, fact by fact.
- * What something changed since, a group whose words hold later writing, a closed owner's notes and
+ * What something changed since, a change whose words hold later writing, a closed owner's notes and
  * a purged Work's stay as they stand; each press judges the text as it is. It took something back
  * when `textUndone` or `treeUndone` is not empty.
  */

@@ -517,7 +517,7 @@ export function createDrizzleApplyClick(
                 });
                 const textUndone = undone.map((one) => ({
                   node: one.documentId,
-                  ...(one.drafts[0] ? { at: one.drafts[0].at } : {}),
+                  ...(one.at ? { at: one.at } : {}),
                 }));
                 return {
                   status: "unapplied",
@@ -708,7 +708,7 @@ export function createDrizzleApplyClick(
                     }))
                       texts.set(one.documentId, {
                         landed: true,
-                        ...(one.drafts[0] ? { at: one.drafts[0].at } : {}),
+                        ...(one.at ? { at: one.at } : {}),
                       });
                   const results = items.map((item): ApplyItemResult => {
                     const one = fact(item.node);

@@ -894,7 +894,7 @@ async function documentGrant(
 const unseen = (grant: FileGrant<"edit" | "command"> | FileAccessDenied) =>
   isFileAccessDenied(grant) && grant.reason === "not_found" && grant.facts === null;
 
-/** Take back one Apply command: its text groups and everything it settled in the tree. */
+/** Take back one Apply command: its text and everything it settled in the tree. */
 export function handleUnapplyClickRequest(
   deps: BranchRouteServices,
   input: CommandScope & { request: unknown },

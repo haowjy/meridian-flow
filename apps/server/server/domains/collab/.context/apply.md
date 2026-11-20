@@ -73,9 +73,9 @@ across the click's groups, and the base's change with `carried`, the changes of 
 (`[partId, index]`) that sat in the applied groups, read on the draft as the click found it
 (`compileClick`, `draft-changes.ts` `carriedBy`). The base part is there even when Live already
 held the text, so its Un-Apply still makes the change pending. A Discard writes a `pending` part.
-An Un-Apply, a Restore and a Redo are each an `undo` edit with one part per text it was asked to
-take back, whose `targets` name every part it judged, whether or not a change still stood there:
-"taken" means an Undo judged it, which keeps a Trash entry from sticking when nothing stood. A part
+An Un-Apply, a Restore and a Redo are each an `undo` edit with one part per text it changed in a
+document, whose `targets` name every part of that document it was asked to take. A document where
+nothing stood gets no part, so its parts stay in force. A part
 is in force while no `undo` part in force targets it (`inForceAmong`), so a Redo, the undo of an
 Un-Apply, puts the Apply back in force. "Applied" is `carried` on an Apply's base part in force
 (`appliesInForce`): the card reads it whatever the text does later. Nothing is written into the
@@ -178,8 +178,9 @@ an earlier press or another command took back is in neither, and so is what stay
 took nothing is still `unapplied` with both empty. Nothing records a skip: each press judges the
 text as it stands. The Live half is a merge: the parts come out latest first, each change when it
 still stands in Live (`takeBack`, the rule a card's Undo uses), so a word the writer typed over an
-applied change is never removed. The `undo` edit has a part only for a text it changed, so a part
-nothing came out of stays in force: the change still reads Applied. When every change stays and
+applied change is never removed. The `undo` edit has a part only for a text it changed, and each names
+every part of the document: a document nothing came out of stays in force and still reads
+Applied, and one where only Live changed (the writer since rewrote the base) no longer does. When every change stays and
 the tree half comes back, the answer is still `unapplied`, with no reversed text. Lock order:
 the lists' keys, then the keys of the documents the Apply wrote text in or created.
 
@@ -205,9 +206,9 @@ changes (`discardChanges`, `content-merge/discard.ts`), exactly as a model's edi
 draft stays open and its history, receipts and room are untouched; the writer's later typing is
 never rewritten. One `discard` edit per document records the appended update and its delta, and is
 what Restore reads; the tree half settles the Work's pending
-records `discarded` with the command's id, as before. A change the writer has since written over
-is not taken back by Restore, and nothing says so. A Restore that brings no text back records nothing, so the Discard stays in force and its
-Trash entry stays until the purge. `closed` in the answer names the items that
+records `discarded` with the command's id. A change the writer has since written over
+is not taken back by Restore, and nothing says so. A Restore that brings no text back still ends the Trash entry: Trash lists a whole Discard
+no Restore has run for (`drizzle-discard-entries.ts`). `closed` in the answer names the items that
 left Changes whole (`text: "all"`, or a tree-only item with no text held); the draft row is never
 closed. `whole` is true when the Discard took whole drafts (`text: "all"` on every item) or all
 of them; only such a Discard is listed in Trash, and a Discard of single changes is final but for

@@ -40,7 +40,7 @@ export type ApplyPort = {
 /** Where an Apply's step is on the sidebar's Undo stack while it can be taken back. */
 export type Seat = { push(): void; drop(): void };
 
-/** A press took something back: its answer has a text group or a tree fact in it. */
+/** A press took something back: its answer names a document's text or a tree fact. */
 export const tookSomething = (answer: {
   textUndone: readonly unknown[];
   treeUndone: readonly unknown[];

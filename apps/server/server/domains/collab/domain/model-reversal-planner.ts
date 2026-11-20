@@ -81,12 +81,11 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
   /** The review base a place's text is judged against: none for Live. */
   const baseIn = (place: string) => {
     if (place === "live") return undefined;
-    const draftId = place;
-    let base = bases.get(draftId);
+    let base = bases.get(place);
     if (!base) {
-      const doc = document.drafts.get(draftId)?.doc;
+      const doc = document.drafts.get(place)?.doc;
       base = doc ? readBlocks(doc.getXmlFragment(REVIEW_BASE_FRAGMENT), draftSchema) : [];
-      bases.set(draftId, base);
+      bases.set(place, base);
     }
     return base;
   };

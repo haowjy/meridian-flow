@@ -178,12 +178,8 @@ export async function documentsOfCommand(
   return [...out].map(([documentId, drafts]) => ({ documentId, draftIds: [...drafts] }));
 }
 
-/** What an Undo took back in one document: whether Live changed, and each draft it wrote with its server clock after. */
-export type UndoneText = {
-  documentId: DocumentId;
-  live: boolean;
-  drafts: { draftId: string; at: number }[];
-};
+/** A document an Undo took text back in, and the server clock of the draft it wrote, if any. */
+export type UndoneText = { documentId: DocumentId; at?: number };
 
 export type UndoTextDeps = {
   live: UpdateJournal;
@@ -197,9 +193,10 @@ export type UndoTextDeps = {
  * Takes back what `undoes` wrote, in the documents `only` names (all when absent): each change of
  * each part in force that still stands in the text the part wrote (Live, a draft's text, a draft's
  * review base), newest first. Records one `undo` edit per document it changed, with one part per
- * text it changed, naming every part of that text it was asked to take: a part partly taken is
- * taken. A text where nothing stood keeps its parts in force. The caller holds the command's claim
- * and the documents' keys; writes are delivered after commit.
+ * text it changed, each naming every part of the document it was asked to take: a part partly
+ * taken, or not taken at all beside one that was, is taken. A document where nothing stood keeps
+ * its parts in force. The caller holds the command's claim and the documents' keys; writes are
+ * delivered after commit.
  */
 export async function undoCommandText(
   db: Database,
@@ -222,7 +219,10 @@ export async function undoCommandText(
   const out: UndoneText[] = [];
   for (const documentId of [...new Set(open.map((part) => part.documentId))].sort()) {
     const own = open.filter((part) => part.documentId === documentId);
-    const result: UndoneText = { documentId, live: false, drafts: [] };
+    // The command's effect on a document is one: a press that changed any of its texts takes all
+    // of its parts, so a base the writer has since rewritten no longer reads the change Applied.
+    const taken = targets(own);
+    const result: UndoneText = { documentId };
     const receipts: Parameters<typeof recordDocumentEdit>[1]["receipts"] = [];
     const liveParts = own.filter((part) => part.origin.kind === "live");
     if (liveParts.length) {
@@ -251,9 +251,8 @@ export async function undoCommandText(
             effect: { inserted: [], deleted: [] },
             origin: { kind: "live", seq },
             delta: captureDelta(before, after),
-            targets: targets(liveParts),
+            targets: taken,
           });
-          result.live = true;
           deferUntilDrizzleCommit(async () => {
             await deps.liveCoordinator.deliver(documentId);
             await deps.onCommitted(documentId);
@@ -314,7 +313,7 @@ export async function undoCommandText(
           effect: { inserted: [], deleted: [] },
           origin: { kind: "pending", draftId },
           delta: text.delta,
-          targets: targets(textParts),
+          targets: taken,
         });
       if (base.rows.length)
         receipts.push({
@@ -322,10 +321,10 @@ export async function undoCommandText(
           effect: { inserted: [], deleted: [] },
           origin: { kind: "base", draftId },
           delta: base.delta,
-          targets: targets(baseParts),
+          targets: taken,
         });
       if (!at) continue;
-      result.drafts.push({ draftId, at });
+      result.at = at;
       // The draft holds a change again; the projection judges its count.
       await writeTextAnswer(db, deps.treeLists, {
         draftId,

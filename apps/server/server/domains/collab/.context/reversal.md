@@ -289,7 +289,7 @@ the bound grants' Works in id order, the grants confirmed: a seam boundary),
 then its documents' mutation locks in id order, then its drafts' rows; the
 inverse takes no lock of its own, since those locks order two inverses
 of one edit. Under them each step plans again on the committed text: a draft's step
-re-runs `takeOutStanding` under the draft's hold, the manuscript step re-reads Live and re-runs
+re-runs `takeBack` against its review base under the draft's hold, the manuscript step re-reads Live and re-runs
 `takeBack`. A write that landed after the capture changes what a step takes, never whether the
 inverse runs: the card and the model's Undo and Revert are never told to read and try again.
 Delivery runs after the commit, outside the scope.

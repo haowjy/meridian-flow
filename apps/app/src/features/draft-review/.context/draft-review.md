@@ -221,7 +221,7 @@ holds the nodes its answer says landed, not the ones pressed.
 
 `ApplyClickQueue` holds one head, with same-body retries at 1/2/4 seconds. Then a sent Apply or
 Un-Apply reads its stored answer by command id and settles on it; only a click with none settles
-`unsent` (its optimistic fold ends, so the change is pending again, and the commands behind
+`unsent` (`cancelled` when its draft closed) (its optimistic fold ends, so the change is pending again, and the commands behind
 it go), and the press shows one "Couldn't apply" pill per branch. A timeout is not one of those failures: the Apply and Un-Apply requests
 (`postCommand` in `branches-api.ts`) resend under the same id after a timeout and while the
 server answers `running`, so a large Apply stays `Applying` until its answer instead of
@@ -233,8 +233,9 @@ independent duties:
   on its stored answer. The queue knows its item's node and reads its own entry: a landed text
   half moves to `held` until the room's server clock reaches the answer's `at`.
 - *Completion* (the caller's outcome) comes from the full answer, which alone carries
-  `restored`. When the answer is missing or lost, the queue reads the stored result back
-  under the same command id, never a resend, at 0/1/2/4 seconds.
+  `restored`. When every answer was lost, it is the stored answer the queue read back by
+  command id after its last retry (`settleStored`); a closed draft's head reads it instead of
+  resending.
 
 A closed owner (an archived or deleted Work, or a chat in Trash) locks nothing: Apply and Un-Apply land and
 leave the Work closed. A Discard, Discard all, a folder's ×, a change's Discard and an Undo of a Discard come
