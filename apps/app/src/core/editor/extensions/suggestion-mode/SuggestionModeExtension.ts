@@ -12,11 +12,12 @@ import {
   type Filter,
   kindOf,
   liveView,
-  proposals,
   RAW_META,
   reject,
+  removedIn,
   rewrite,
   type View,
+  viewAttrs,
   visibleSlice,
 } from "@meridian/suggestions";
 import { Extension, Mark } from "@tiptap/core";
@@ -113,6 +114,21 @@ export function suggestionView(state: EditorState): View {
   return suggestionModeKey.getState(state)?.view ?? liveView;
 }
 
+/** The view each editor document is shown in, for a command that holds only its transaction. */
+const viewOfDoc = new WeakMap<PMNode, View>();
+
+/**
+ * A block's attributes as the editor shows them: in a Work's view, Live's with the Work's pending
+ * change applied. A command that sets a block's attributes reads them here, so it builds on what
+ * the writer sees; `rewrite` turns what it sets into the pending change. The stored suggestion
+ * attributes are kept, so a command that copies the attributes writes them back unchanged.
+ */
+export function shownAttrs(tr: Transaction, node: PMNode): Record<string, unknown> {
+  if (!("sug" in node.attrs)) return node.attrs;
+  const view = viewOfDoc.get(tr.before) ?? liveView;
+  return { ...viewAttrs(node, view), sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs };
+}
+
 /**
  * The view the editor shows after `tr`, read from the state before it: a plugin's state may be
  * computed before this one's.
@@ -203,8 +219,12 @@ export const SuggestionModeExtension = Extension.create({
             const set = tr.getMeta(suggestionModeKey) as
               | Pick<ModeState, "view" | "author">
               | undefined;
-            if (set) return { ...set, decorations: paint(state.doc, set.view) };
+            if (set) {
+              viewOfDoc.set(state.doc, set.view);
+              return { ...set, decorations: paint(state.doc, set.view) };
+            }
             if (!tr.docChanged) return value;
+            viewOfDoc.set(state.doc, value.view);
             return { ...value, decorations: paint(state.doc, value.view) };
           },
         },
@@ -248,17 +268,17 @@ function paint(doc: PMNode, view: View): DecorationSet {
       );
       return false;
     }
+    if (removedIn(block, view))
+      decorations.push(Decoration.node(blockPos, end, { class: "sug-del-block" }));
     // A pending change to the block's attributes shows them; the element is still Live's.
-    const proposal = view.work === null ? undefined : proposals(block)[view.work];
-    if (proposal && !view.hidden.has(proposal.work)) {
-      const level = proposal.attrs.level;
+    const shown = viewAttrs(block, view);
+    if (block.attrs.sugAttrs && !sameAttrs(shown, { ...block.attrs, sug: null, sugAttrs: null }))
       decorations.push(
         Decoration.node(blockPos, end, {
           class: "sug-attrs",
-          ...(level !== undefined ? { "data-view-level": String(level ?? 0) } : {}),
+          "data-view-level": String(shown.level ?? 0),
         }),
       );
-    }
     if (!block.isTextblock) return true;
     block.forEach((child, offset) => {
       const kind = kindOf(child.marks, block, view);
@@ -297,4 +317,8 @@ function outOfHidden(state: EditorState, pos: number, direction: -1 | 1): number
     while (at > 0 && at < size && inside(at)) at -= direction;
   }
   return TextSelection.near(state.doc.resolve(at), direction).head;
+}
+
+function sameAttrs(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }

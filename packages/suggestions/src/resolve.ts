@@ -1,7 +1,15 @@
 import type { Attrs, Mark, Node } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
 import { RAW_META } from "./rewrite.js";
-import { blockKind, kindOf, proposals, type SuggestionAttrs, type View } from "./view.js";
+import {
+  type AttrProposal,
+  blockKind,
+  kindOf,
+  layered,
+  proposals,
+  type SuggestionAttrs,
+  type View,
+} from "./view.js";
 
 /** The turns with suggestions still in `doc`: where a reject of `{ turn }` would change it. */
 export function pendingTurns(doc: Node): Set<string> {
@@ -11,7 +19,7 @@ export function pendingTurns(doc: Node): Set<string> {
   };
   doc.descendants((node) => {
     note(node.attrs.sug);
-    for (const proposal of Object.values(proposals(node))) note(proposal);
+    for (const proposal of Object.values(proposals(node)).flat()) note(proposal);
     for (const mark of node.marks) if (isSuggestion(mark)) note(mark.attrs as SuggestionAttrs);
     return true;
   });
@@ -55,38 +63,32 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
       return blockFate === "accept";
     }
     const pending = Object.entries(proposals(block));
-    const settled = pending.filter(([, proposal]) => fateOf(proposal));
-    if (settled.length > 0) {
-      for (const [, proposal] of settled)
-        if (fateOf(proposal) === "accept")
-          for (const [key, value] of Object.entries(proposal.attrs))
-            set.push([blockPos, key, value]);
-      const left = pending.filter(([, proposal]) => !fateOf(proposal));
+    if (pending.some(([, layers]) => layers.some((layer) => fateOf(layer)))) {
+      const left: Array<[string, AttrProposal[]]> = [];
+      for (const [work, layers] of pending) {
+        const accepted = layers.filter((layer) => fateOf(layer) === "accept");
+        // A block its container cannot do without (a cell's only block) stays, emptied.
+        if (accepted.some((layer) => layer.remove) && parent && parent.childCount > 1)
+          remove.push([blockPos, blockPos + block.nodeSize]);
+        for (const [key, value] of Object.entries(layered(accepted)))
+          set.push([blockPos, key, value]);
+        const kept = layers.filter((layer) => !fateOf(layer));
+        if (kept.length > 0) left.push([work, kept]);
+      }
       set.push([blockPos, "sugAttrs", left.length > 0 ? Object.fromEntries(left) : null]);
     }
     if (!block.isTextblock) return true;
-    // A Live block whose whole text an accepted change deletes goes with it, and with it any
-    // other suggestion's insertion inside, as a Live delete of the block would.
-    let wholly = block.content.size > 0;
     block.forEach((child, offset) => {
       const from = blockPos + 1 + offset;
       const to = from + child.nodeSize;
-      let kept = false;
-      let deleted = false;
       for (const mark of child.marks) {
         if (mark.type !== ins && mark.type !== del) continue;
         const fate = fateOf(mark.attrs as SuggestionAttrs);
         if (!fate) continue;
         if ((mark.type === ins) === (fate === "reject")) remove.push([from, to]);
         else unmark.push([from, to, mark]);
-        if (fate === "accept" && mark.type === ins) kept = true;
-        if (fate === "accept" && mark.type === del) deleted = true;
       }
-      const otherIns = !kept && child.marks.some((m) => m.type === ins);
-      if (kept || (!deleted && !otherIns)) wholly = false;
     });
-    if (wholly && action === "accept" && parent && parent.childCount > 1)
-      remove.push([blockPos, blockPos + block.nodeSize]);
     return false;
   });
   for (const [from, to, mark] of unmark) tr.removeMark(from, to, mark);
@@ -109,7 +111,7 @@ function fates(
   const superseded = new Set<string>();
   if (action === "accept")
     doc.descendants((node) => {
-      for (const proposal of [node.attrs.sug, ...Object.values(proposals(node))])
+      for (const proposal of [node.attrs.sug, ...Object.values(proposals(node)).flat()])
         if (matches(proposal, filter)) chosen.add(proposal.id);
       const marks = node.marks.filter(isSuggestion);
       for (const mark of marks)
@@ -186,8 +188,12 @@ export function list(doc: Node, view: View): Change[] {
       note(block.attrs.sug, blockPos, end, { inserted: `${block.textContent}\n` });
       return false;
     }
-    const proposal = proposals(block)[work];
-    if (proposal) note(proposal, blockPos, end, { attrs: proposal.attrs });
+    const layers = proposals(block)[work] ?? [];
+    const attrs = shownChange(block, layers);
+    if (attrs) note(layers[0], blockPos, end, { attrs });
+    // A removed block: its text, if any, is listed struck below; the break is what it removes.
+    const removal = layers.find((layer) => layer.remove);
+    if (removal) note(removal, blockPos, end, { deleted: "\n" });
     if (!block.isTextblock) return true;
     block.forEach((child, offset) => {
       const kind = kindOf(child.marks, block, view);
@@ -205,4 +211,13 @@ export function list(doc: Node, view: View): Change[] {
     return false;
   });
   return [...byId.values()].sort((a, b) => a.from - b.from);
+}
+
+/** What a Work's layers change on a block, compared with Live; null when they change nothing. */
+function shownChange(block: Node, layers: readonly AttrProposal[]): Attrs | null {
+  const attrs: Record<string, unknown> = { ...layered(layers) };
+  for (const key of Object.keys(attrs))
+    if (JSON.stringify(attrs[key] ?? null) === JSON.stringify(block.attrs[key] ?? null))
+      delete attrs[key];
+  return Object.keys(attrs).length > 0 ? attrs : null;
 }

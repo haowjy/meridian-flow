@@ -14,6 +14,11 @@
   text-decoration: line-through;
 }
 
+/* A Live block the view removes: its text is struck; the bar marks the break that goes too. */
+.meridian-editor .sug-del-block {
+  box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--color-destructive) 50%, transparent);
+}
+
 .meridian-editor .meridian-comment {
   box-shadow: inset 0 -2px 0 0 color-mix(in oklab, var(--color-warning) 60%, transparent);
 }

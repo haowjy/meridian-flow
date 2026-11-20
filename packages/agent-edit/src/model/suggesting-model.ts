@@ -13,6 +13,8 @@ import {
   type Author,
   blockKind,
   CHANGE_META,
+  type ChangeAt,
+  DROPPED_META,
   newChangeId,
   type Run,
   rewrite,
@@ -122,8 +124,13 @@ export function suggestingModel(
         base.deleteBlock(doc, block);
         return;
       }
-      const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
-      const out = rewrite(state.tr.delete(1, 1 + node.content.size), state, view, author);
+      // A block after it lets the delete take the whole block, which then stays as its removal.
+      const rest = schema.nodes.paragraph.create();
+      const state = EditorState.create({
+        schema,
+        doc: schema.topNodeType.create(null, [node, rest]),
+      });
+      const out = rewrite(state.tr.delete(0, node.nodeSize), state, view, author);
       const after = out.doc.firstChild as PMNode;
       applyRawOps(unwrapBlock(block), lowerBlock(node, after));
       written(unwrapBlock(block), after);
@@ -152,25 +159,19 @@ function rewritten(
   const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
   const tr = state.tr;
   const map = (pos: number, assoc = 1) => tr.mapping.map(pos, assoc);
-  const live = view.work !== null && blockKind(node, view) !== "own";
-  let endStep: number | null = null;
+  let endAt: number | null = null;
   for (const op of ops) {
     const target = locate(state.doc, op.path, view);
     if (!target) return "the write does not fit the block";
     if (op.kind === "delete") {
-      if (live && !("sug" in target.node.attrs))
-        return "a table's rows and columns are not suggested";
       tr.delete(map(target.pos, 1), map(target.pos + target.node.nodeSize, -1));
     } else if (op.kind === "insert") {
-      if (live && op.nodes.some((inserted) => !("sug" in inserted.attrs)))
-        return "a table's rows and columns are not suggested";
       tr.insert(map(childEnd(target, op.after, view), -1), [...op.nodes]);
     } else if (op.kind === "attrs") {
-      let at = target.pos;
-      if (op.unit !== undefined) {
-        if (live) return "a picture's attributes are not suggested";
-        at = target.pos + 1 + rawUnit(runs(target.node, view), op.unit, "start");
-      }
+      const at =
+        op.unit === undefined
+          ? target.pos
+          : target.pos + 1 + rawUnit(runs(target.node, view), op.unit, "start");
       for (const [key, value] of Object.entries(op.attrs)) tr.setNodeAttribute(map(at), key, value);
     } else {
       const units = runs(target.node, view);
@@ -191,20 +192,20 @@ function rewritten(
       for (const { from, to, content } of [...op.splices].sort((x, y) => y.from - x.from)) {
         const a = map(start + rawUnit(units, from, from === to ? "end" : "start"));
         const b = from === to ? a : Math.max(a, map(start + rawUnit(units, to, "end"), -1));
-        const step = tr.steps.length;
         if (content.size > 0) tr.replaceWith(a, b, content);
         else if (b > a) tr.delete(a, b);
-        if (op.path.length === 0 && from < to && to === end && tr.steps.length > step)
-          endStep = step;
+        if (op.path.length === 0 && from < to && to === end)
+          endAt = start + rawUnit(units, to, "end");
       }
     }
   }
   const out = rewrite(tr, state, view, author);
+  if (out.getMeta(DROPPED_META)) return "part of the write cannot be suggested here";
   if (out.doc.childCount !== 1) return "the write does not fit the block";
-  const changes = (out.getMeta(CHANGE_META) as Array<SuggestionAttrs | null> | undefined) ?? [];
+  const changes = (out.getMeta(CHANGE_META) as ChangeAt[] | undefined) ?? [];
   return {
     node: out.doc.child(0),
-    endChange: endStep === null ? null : (changes[endStep] ?? null),
+    endChange: changes.find((at) => at.from < at.to && at.to === endAt)?.change ?? null,
   };
 }
 

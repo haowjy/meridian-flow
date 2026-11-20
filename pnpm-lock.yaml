@@ -1050,6 +1050,9 @@ importers:
 
   packages/suggestions:
     dependencies:
+      prosemirror-changeset:
+        specifier: ^2.4.6
+        version: 2.4.6
       prosemirror-model:
         specifier: ^1.25.13
         version: 1.25.13

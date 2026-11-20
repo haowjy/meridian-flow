@@ -13,15 +13,28 @@ export type SuggestionAttrs = {
 };
 
 /**
- * One Work's pending change to a block's attributes (a heading level, a list), kept in the
- * block's `sugAttrs` by Work. The block and its text stay Live: accept sets `attrs`, reject drops
- * the entry, and nothing anchored in the block moves.
+ * One turn's layer of a Work's pending change to a block's attributes (a heading level, a list),
+ * kept in the block's `sugAttrs` by Work, oldest first, all under one change id. The block and
+ * its text stay Live: accept sets the layers' attributes, reject drops layers, and nothing
+ * anchored in the block moves. Rejecting a later turn leaves the earlier turn's layer, as a later
+ * turn's deletion layered over an earlier insertion does for text.
  */
-export type AttrProposal = SuggestionAttrs & { attrs: Attrs };
+export type AttrProposal = SuggestionAttrs & { attrs: Attrs; remove?: boolean };
 
-/** A block's pending attribute changes, by Work. */
-export function proposals(node: Node): Record<string, AttrProposal> {
-  return (node.attrs.sugAttrs ?? {}) as Record<string, AttrProposal>;
+/** A block's pending attribute changes: by Work, its layers. */
+export function proposals(node: Node): Record<string, AttrProposal[]> {
+  return (node.attrs.sugAttrs ?? {}) as Record<string, AttrProposal[]>;
+}
+
+/** Whether a view removes a block: one of its own layers on it proposes so. */
+export function removedIn(node: Node, view: View): boolean {
+  if (view.work === null || view.hidden.has(view.work)) return false;
+  return (proposals(node)[view.work] ?? []).some((layer) => layer.remove);
+}
+
+/** What a Work's layers set, the later over the earlier. */
+export function layered(layers: readonly AttrProposal[]): Attrs {
+  return Object.assign({}, ...layers.map((layer) => layer.attrs));
 }
 
 /** Attributes that say who suggested what: never themselves suggested, accepted or shown. */
@@ -68,6 +81,23 @@ export function blockKind(block: Node, view: View): "live" | "own" | "hidden" {
   return mine(sug, view) ? "own" : "hidden";
 }
 
+/**
+ * Who owns the node at `pos` in a view: the nearest of it and its ancestors that carries `sug`,
+ * else Live. A table's rows and cells carry no `sug`, so they belong to their table.
+ */
+export function ownerOf(
+  doc: Node,
+  pos: number,
+  view: View,
+): { kind: "live" | "own" | "hidden"; sug: SuggestionAttrs | null } {
+  const $pos = doc.resolve(pos);
+  const nodes = [$pos.nodeAfter];
+  for (let depth = $pos.depth; depth >= 1; depth--) nodes.push($pos.node(depth));
+  for (const node of nodes)
+    if (node?.attrs.sug) return { kind: blockKind(node, view), sug: node.attrs.sug };
+  return { kind: "live", sug: null };
+}
+
 export function kindOf(marks: readonly Mark[], block: Node, view: View): RunKind {
   const owner = blockKind(block, view);
   if (owner === "hidden") return "hidden";
@@ -110,18 +140,15 @@ export function visible(kind: RunKind): boolean {
  */
 export function viewBlock(block: Node, view: View): Node | null {
   if (!carriesSuggestion(block)) return block;
-  if (blockKind(block, view) === "hidden") return null;
-  const content = viewContent(block, view);
-  // A block whose whole text the view proposes to remove is removed.
-  if (content === null) return null;
-  return block.type.create(viewAttrs(block, view), content, block.marks);
+  if (blockKind(block, view) === "hidden" || removedIn(block, view)) return null;
+  return block.type.create(viewAttrs(block, view), viewContent(block, view), block.marks);
 }
 
 /** A block's attributes in a view: Live's, with the view's own pending change applied. */
 export function viewAttrs(node: Node, view: View): Attrs {
   if (!("sug" in node.attrs)) return node.attrs;
   const own = view.work !== null && !view.hidden.has(view.work) ? proposals(node)[view.work] : null;
-  return { ...node.attrs, ...own?.attrs, sug: null, sugAttrs: null };
+  return { ...node.attrs, ...layered(own ?? []), sug: null, sugAttrs: null };
 }
 
 function carries(node: Node): boolean {
@@ -138,33 +165,20 @@ function carriesSuggestion(block: Node): boolean {
   return found;
 }
 
-/**
- * A node's content in a view; null for a textblock whose whole text the view removes. A block
- * inside another stays, emptied, since its container may need it (a table cell).
- */
-function viewContent(node: Node, view: View): Fragment | null {
+/** A node's content in a view. */
+function viewContent(node: Node, view: View): Fragment {
   const children: Node[] = [];
-  if (!node.isTextblock) {
-    node.forEach((child) => {
-      if (child.isLeaf) children.push(child);
-      else if (blockKind(child, view) !== "hidden")
-        children.push(
-          child.type.create(
-            viewAttrs(child, view),
-            viewContent(child, view) ?? Fragment.empty,
-            child.marks,
-          ),
-        );
-    });
-    return Fragment.from(children);
-  }
-  let removed = false;
   node.forEach((child) => {
-    const kind = kindOf(child.marks, node, view);
-    if (kind === "own-del") removed = true;
-    if (visible(kind)) children.push(child.mark(child.marks.filter((m) => !isSuggestionMark(m))));
+    if (child.isInline) {
+      const kind = kindOf(child.marks, node, view);
+      if (visible(kind)) children.push(child.mark(child.marks.filter((m) => !isSuggestionMark(m))));
+    } else if (child.isLeaf) children.push(child);
+    else if (blockKind(child, view) !== "hidden" && !removedIn(child, view))
+      children.push(
+        child.type.create(viewAttrs(child, view), viewContent(child, view), child.marks),
+      );
   });
-  return removed && children.length === 0 ? null : Fragment.from(children);
+  return Fragment.from(children);
 }
 
 /** Pasted or copied content loses every suggestion: what it is now is decided where it lands. */

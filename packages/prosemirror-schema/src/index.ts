@@ -72,8 +72,9 @@ const idAttr = { default: null };
 
 /**
  * Suggestion mode (`@meridian/suggestions`): `sug` marks a block that exists only as one Work's
- * suggestion (`{ id, work, chat, turn, by }`); `sugAttrs` holds, by Work, a pending change to a
- * Live block's attributes (`{ id, work, chat, turn, by, attrs }`). The binding drops marks on
+ * suggestion (`{ id, work, chat, turn, by }`); `sugAttrs` holds, by Work, one layer per turn of a
+ * pending change to a Live block: its attributes, or its removal
+ * (`{ id, work, chat, turn, by, attrs, remove? }`). The binding drops marks on
  * blocks, so they are attributes.
  */
 const suggestionBlockAttrs = { sug: { default: null }, sugAttrs: { default: null } };

@@ -1,16 +1,27 @@
 export { accept, type Change, type Filter, list, pendingTurns, reject } from "./resolve.js";
-export { type Author, CHANGE_META, newChangeId, RAW_META, rewrite } from "./rewrite.js";
+export {
+  type Author,
+  CHANGE_META,
+  type ChangeAt,
+  DROPPED_META,
+  newChangeId,
+  RAW_META,
+  rewrite,
+} from "./rewrite.js";
 export {
   type AttrProposal,
   blockKind,
   discard,
   hiddenWorks,
   kindOf,
+  layered,
   liveView,
   observeHidden,
+  ownerOf,
   proposals,
   type Run,
   type RunKind,
+  removedIn,
   restore,
   runs,
   type SuggestionAttrs,
