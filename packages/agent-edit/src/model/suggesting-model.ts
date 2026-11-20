@@ -12,7 +12,6 @@ import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import {
   type Author,
   blockKind,
-  changeIn,
   newChangeId,
   type Run,
   rewrite,
@@ -29,7 +28,13 @@ import type { BlockRef } from "../handles.js";
 import { unwrapBlock, unwrapDoc } from "../handles.js";
 import type { EditOp, EditOpsResult } from "../ports/model.js";
 import { lowerBlock } from "../resolver/lower-block.js";
-import { applyOps as applyRawOps, type YProsemirrorDocumentModel } from "./y-prosemirror.js";
+import { getTopLevelXmlBlocks } from "./block-hash.js";
+import { readRepairedRoot } from "./schema-repair.js";
+import {
+  applyOps as applyRawOps,
+  fragmentOf,
+  type YProsemirrorDocumentModel,
+} from "./y-prosemirror.js";
 
 /** `viewOf` reads the view from the document itself: which Works' drafts it has discarded. */
 export function suggestingModel(
@@ -38,6 +43,8 @@ export function suggestingModel(
   author: Author | null,
 ): YProsemirrorDocumentModel {
   const schema = base.schema;
+  /** Per block, the change id of a deletion this write made to the block's end. */
+  const tails = new Map<Y.XmlElement, string>();
   const viewAt = (block: BlockRef) => viewOf(unwrapBlock(block).doc as Y.Doc);
   const stored = (block: BlockRef) => storedNode(unwrapBlock(block), schema);
   const shown = (block: BlockRef) => viewBlock(stored(block), viewAt(block));
@@ -107,15 +114,18 @@ export function suggestingModel(
       if (!after) return refused("the write does not fit the block");
       const applied = applyRawOps(unwrapBlock(block), lowerBlock(current, after));
       written(unwrapBlock(block), after);
+      const tail = endingDeletion(current, after);
+      if (tail) tails.set(unwrapBlock(block), tail);
       return applied;
     },
 
     insertBlocks(doc, after, parsed) {
       const view = viewOf(unwrapDoc(doc));
       if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
-      // A block a write adds after its own edit of the block before is part of that change.
-      const id =
-        (after && changeIn(stored(after), { ...author, work: view.work })) ?? newChangeId();
+      // A block added right after this write's deletion to the end of the block before is the
+      // other half of a split: one change.
+      const id = (after && tails.get(unwrapBlock(after))) ?? newChangeId();
+      if (after) tails.delete(unwrapBlock(after));
       const sug = { ...author, work: view.work, id };
       return base.insertBlocks(doc, after, {
         ...parsed,
@@ -197,15 +207,21 @@ function rawUnit(units: readonly Run[], unit: number, side: "start" | "end"): nu
 }
 
 /**
- * Stored blocks, suggestions and all, projected one block at a time and kept for the document's
- * current state: the model reads them per block, many times per write.
+ * Each document's stored blocks, suggestions and all, for its current state: the model reads them
+ * per block, many times per write. Filled by one repaired read of the fragment; a block a write
+ * changed or added is converted alone.
  */
 const projections = new WeakMap<Y.Doc, Map<Y.XmlElement, PMNode>>();
 
-function projectionsOf(doc: Y.Doc): Map<Y.XmlElement, PMNode> {
+function projectionsOf(doc: Y.Doc, schema: Schema): Map<Y.XmlElement, PMNode> {
   let nodes = projections.get(doc);
   if (!nodes) {
-    nodes = new Map();
+    const root = readRepairedRoot("projectBlocks", fragmentOf(doc), schema);
+    const projected = new Map<Y.XmlElement, PMNode>();
+    getTopLevelXmlBlocks(doc).forEach((block, index) => {
+      projected.set(block, root.child(index));
+    });
+    nodes = projected;
     projections.set(doc, nodes);
     doc.once("afterTransaction", () => projections.delete(doc));
   }
@@ -214,25 +230,40 @@ function projectionsOf(doc: Y.Doc): Map<Y.XmlElement, PMNode> {
 
 /**
  * A write inside the model's transaction, which `afterTransaction` has not seen yet: the block's
- * new stored node when the write knows it, else the next read projects that block again.
+ * new stored node when the write knows it, else the next read converts that block alone.
  */
 function written(element: Y.XmlElement, node?: PMNode): void {
-  const nodes = projectionsOf(element.doc as Y.Doc);
+  const nodes = projections.get(element.doc as Y.Doc);
+  if (!nodes) return;
   if (node) nodes.set(element, node);
   else nodes.delete(element);
 }
 
+/** The binding converts a fragment, so a lone block goes through this one. */
+const scratch = new Y.Doc().getXmlFragment("block");
+
 function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
-  const nodes = projectionsOf(element.doc as Y.Doc);
+  const nodes = projectionsOf(element.doc as Y.Doc, schema);
   let node = nodes.get(element);
   if (!node) {
-    // The binding converts a fragment, so the block goes through one of its own.
-    const scratch = new Y.Doc();
-    const fragment = scratch.getXmlFragment("block");
-    fragment.insert(0, [element.clone()]);
-    node = yXmlFragmentToProseMirrorRootNode(fragment, schema).child(0);
-    scratch.destroy();
+    // Only a block this write made or changed, from schema-valid nodes: no repair to run.
+    scratch.insert(0, [element.clone()]);
+    node = yXmlFragmentToProseMirrorRootNode(scratch, schema).child(0);
+    scratch.delete(0, scratch.length);
     nodes.set(element, node);
   }
   return node;
+}
+
+/** The id of a deletion `after` newly carries to its end: what a split leaves in the first block. */
+function endingDeletion(before: PMNode, after: PMNode): string | null {
+  const ids = (node: PMNode | null) =>
+    (node?.marks ?? [])
+      .filter((m) => m.type.name === "suggest_del")
+      .map((m) => m.attrs.id as string);
+  const old = new Set<string>();
+  before.forEach((child) => {
+    for (const id of ids(child)) old.add(id);
+  });
+  return ids(after.lastChild).find((id) => !old.has(id)) ?? null;
 }

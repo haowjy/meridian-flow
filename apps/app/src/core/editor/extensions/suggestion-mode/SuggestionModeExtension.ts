@@ -143,9 +143,8 @@ export const SuggestionModeExtension = Extension.create({
         ({ state, tr, dispatch }) => {
           if (state.selection.empty) return false;
           const mark = state.schema.marks.comment.create({ id: globalThis.crypto.randomUUID() });
-          dispatch?.(
-            tr.addMark(state.selection.from, state.selection.to, mark).setMeta(RAW_META, true),
-          );
+          // Through `rewrite`, like any edit: the anchor lands only on text the view shows.
+          dispatch?.(tr.addMark(state.selection.from, state.selection.to, mark));
           return true;
         },
     };

@@ -309,20 +309,6 @@ function continuedId(doc: Node, pos: number, author: Omit<SuggestionAttrs, "id">
 }
 
 /**
- * The change a block added after `block` belongs to: the same author's change of the same turn
- * that runs to `block`'s end, which is what a split leaves. Anything else is a change of its own.
- */
-export function changeIn(block: Node, author: Omit<SuggestionAttrs, "id">): string | null {
-  const sug = block.attrs.sug as SuggestionAttrs | null;
-  if (sug && sameAuthor(sug, author)) return sug.id;
-  const last = block.lastChild;
-  for (const mark of last?.marks ?? [])
-    if (isSuggestionMark(mark) && sameAuthor(mark.attrs as SuggestionAttrs, author))
-      return mark.attrs.id as string;
-  return null;
-}
-
-/**
  * Remove `[from, to)` as the view sees it: Live text gets this Work's deletion mark, its own
  * insertions go, and own deletions and hidden text stay. Applied right to left.
  */
