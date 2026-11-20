@@ -75,7 +75,11 @@ const blockAttrs = { id: idAttr, ...nestingAttrs };
 
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
-  doc: specOnly(basicNodes.doc),
+  // The suggestion library marks a whole inserted or deleted block on the block itself.
+  doc: {
+    ...specOnly(basicNodes.doc),
+    marks: "insertion deletion modification blockBoundarySuggestion",
+  },
   text: specOnly(basicNodes.text),
   hard_break: specOnly(basicNodes.hard_break),
 } satisfies Record<string, NodeSpec>;
@@ -242,6 +246,44 @@ const customMarks = {
   strike: {},
 } satisfies Record<string, MarkSpec>;
 
+// A Work's suggestion inside the live document. Names and the `id`, `type`, `attrName`,
+// `previousValue` and `newValue` attributes are `prosemirror-suggest-changes`'s, which finds
+// the marks by name; `work`, `chat`, `turn` and `by` say whose suggestion it is.
+const suggester = {
+  work: { default: null },
+  chat: { default: null },
+  turn: { default: null },
+  by: { default: null },
+};
+const suggestionMarks = {
+  insertion: {
+    attrs: { id: {}, ...suggester },
+    inclusive: false,
+    excludes: "deletion modification insertion",
+  },
+  deletion: {
+    attrs: { id: {}, ...suggester },
+    inclusive: false,
+    excludes: "insertion modification deletion",
+  },
+  modification: {
+    attrs: {
+      id: {},
+      type: {},
+      attrName: { default: null },
+      previousValue: { default: null },
+      newValue: { default: null },
+      ...suggester,
+    },
+    inclusive: false,
+    excludes: "deletion insertion",
+  },
+  blockBoundarySuggestion: {
+    attrs: { id: { default: null }, type: { default: null }, ...suggester },
+    inclusive: false,
+  },
+} satisfies Record<string, MarkSpec>;
+
 // ─── Exports ────────────────────────────────────────────────────────
 
 export * from "./block-id.js";
@@ -278,6 +320,7 @@ export const documentNodes = {
 export const documentMarks = {
   ...basicMarkDefaults,
   ...customMarks,
+  ...suggestionMarks,
 } satisfies Record<string, MarkSpec>;
 
 export function buildDocumentSchema(): Schema {

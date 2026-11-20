@@ -1,0 +1,25 @@
+{
+  "name": "@meridian/suggestions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@meridian/prosemirror-schema": "workspace:*",
+    "@sanity/diff-match-patch": "^3.2.1",
+    "prosemirror-model": "^1.25.13",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-transform": "^1.12.5",
+    "prosemirror-view": "^1.42.9"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

@@ -23,6 +23,7 @@ import type {
   DocumentDerivationService,
   DocumentDerivationStore,
 } from "./ports/document-derivations.js";
+import { liveView } from "./suggestion-coordinator.js";
 
 /**
  * What the derivation reads a cut with: the model that projects it, the codec that spells it.
@@ -102,7 +103,9 @@ export async function deriveDocument(
       Y.applyUpdate(doc, cut.state);
       // Before projecting: a repair there edits the private doc, not the cut.
       const stateVector = Y.encodeStateVector(doc);
-      const outputs = await deriveDocumentOutputs(cut, doc, input.deriveBlocks);
+      const view = liveView(doc);
+      const outputs = await deriveDocumentOutputs(cut, view, input.deriveBlocks);
+      if (view !== doc) view.destroy();
       if (await input.store.certify(cut, outputs, at)) {
         // Also when the cut was already certified: a failed earlier registration retries here.
         if (outputs.links.some((row) => row.aheadId)) await input.store.registerAheads(documentId);

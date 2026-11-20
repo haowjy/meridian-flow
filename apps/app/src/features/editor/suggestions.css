@@ -1,0 +1,22 @@
+/* Suggestions inside Live. Live hides what a Work proposes to add and reads what it proposes to
+   remove as plain text; a Work's view paints both with the review's green and struck red. */
+.meridian-editor .ProseMirror[data-suggestion-view="live"] ins[data-suggestion] {
+  display: none;
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="live"] del[data-suggestion] {
+  text-decoration: none;
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="work"] ins[data-suggestion] {
+  text-decoration: none;
+  background: color-mix(in oklab, var(--color-primary) 12%, transparent);
+  box-shadow: inset 0 -1px 0 0 color-mix(in oklab, var(--color-primary) 40%, transparent);
+}
+
+.meridian-editor .ProseMirror[data-suggestion-view="work"] del[data-suggestion] {
+  color: var(--color-destructive);
+  background: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}

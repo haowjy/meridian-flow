@@ -344,6 +344,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     aheadRefs: deps.aheadRefs,
     inTransaction: isInDrizzleTransaction,
     observeSerializationAnomaly: createMarkdownSerializationAnomalyObserver(deps.eventSink),
+    suggestions: process.env.FLOW_SUGGESTIONS === "1",
   });
   const projectionRefresher = { refresh: runDocumentWriteHook };
 
@@ -368,6 +369,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     drafts,
     liveUtilityCore: runtime.liveUtilityCore,
     threadCore,
+    suggestionCore: runtime.suggestionCore,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -395,6 +397,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       liveRoom(documentId, await readAuthorityGeneration(documentId)),
     draftBehindLive: (documentId) =>
       deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
+    suggestionCore: runtime.suggestionCore,
   });
   const modelEdits = createDrizzleModelEdits(
     deps.db,

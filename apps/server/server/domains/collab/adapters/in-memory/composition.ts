@@ -101,6 +101,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     liveUtilityCore: runtime.liveUtilityCore,
     threadCore: () => runtime.liveUtilityCore,
+    suggestionCore: null,
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({

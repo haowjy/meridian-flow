@@ -18,6 +18,7 @@
       "!**/.meridian-work",
       "!**/.codex-local",
       "!**/routeTree.gen.ts",
+      "!packages/suggestions/src/vendor",
       "!apps/**/src/styles",
       "!packages/design-tokens/src/*.css",
       "!apps/app/.auth",

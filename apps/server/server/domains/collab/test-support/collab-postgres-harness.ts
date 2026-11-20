@@ -391,6 +391,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     drafts: draftStore,
     liveUtilityCore: runtime.liveUtilityCore,
     threadCore,
+    suggestionCore: null,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -427,6 +428,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
             liveRoom(documentId, await readAuthorityGeneration(documentId)),
           draftBehindLive: (documentId) =>
             deferUntilDrizzleCommit(() => draftPulls.liveCommitted(documentId)),
+          suggestionCore: null,
         }),
         links,
       ),
