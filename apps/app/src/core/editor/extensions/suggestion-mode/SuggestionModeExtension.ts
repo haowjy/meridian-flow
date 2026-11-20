@@ -37,7 +37,7 @@ import {
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 import type * as Y from "yjs";
-import { endUndoStep } from "../../editor-history";
+import { DIRECT_WRITE_ORIGIN, endUndoStep } from "../../editor-history";
 import { createBarSlotElement } from "../inline-review/removal-widget";
 import "./suggestion-mode.css";
 
@@ -368,11 +368,7 @@ function resolveHere(
   if (!run) return true;
   tr.setMeta("preventDispatch", true);
   endUndoStep(state);
-  doc.transact((transaction) => {
-    // What the binding sets on a writer's edit: history and unsent typing count it as one.
-    transaction.meta.set("addToHistory", true);
-    resolveStored(doc, state.schema, verdict, filter);
-  }, ySyncPluginKey);
+  doc.transact(() => resolveStored(doc, state.schema, verdict, filter), DIRECT_WRITE_ORIGIN);
   endUndoStep(state);
   return true;
 }

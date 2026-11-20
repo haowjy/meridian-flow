@@ -35,8 +35,9 @@ has no branch row.
 `unpress` takes a press back once, in the press's own project. The tree half is `undoApply`
 (Apply) or `restoreDiscard` (Discard). The text half is a `Y.UndoManager` undo built from the
 stored ranges: it restores what the press removed and removes what it made Live, and keeps
-anything typed since. Text typed inside words the press resolved ends up after them: `accept`
-and `reject` rewrite the touched text rather than only removing marks. An effect whose
+anything typed since where it was typed: the press writes only the text it deletes and the marks
+it removes (`resolveStored`), so text typed inside a resolved word sits in items the press kept.
+The tab's Apply and Reject inside the text are the same resolve, undone by Ctrl+Z. An effect whose
 document's authority generation changed (a version restore), or whose notes are closed, is
 marked taken back without changing its text. A document the press created stays in Live on
 Undo of Apply. There is no Redo command: pressing again is the Redo. Press and unpress rows are
