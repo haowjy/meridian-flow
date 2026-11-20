@@ -35,7 +35,6 @@ import { browserStorage, type RecordStorage } from "@/client/storage/browser-rec
 import { type CrossContextLockManager, deferred, nativeLocks } from "../cross-context-locks";
 import { treeListCopyPrefix } from "../tree-list/copy-names";
 import type { Ranges } from "./item-ranges";
-import { documentText, readCopy } from "./rescued-text";
 import { beyondMark, SERVER_MARK_KEY } from "./server-mark";
 
 const LIVE_PREFIX = `meridian:document:${collabSchemaKeyTag()}:live/`;
