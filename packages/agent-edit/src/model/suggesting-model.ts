@@ -17,6 +17,7 @@ import {
   type Run,
   rewrite,
   runs,
+  type SuggestionAttrs,
   type View,
   viewBlock,
   visible,
@@ -45,7 +46,7 @@ export function suggestingModel(
 ): YProsemirrorDocumentModel {
   const schema = base.schema;
   /** Per block, the change a write cut its end with: a block inserted right after joins it. */
-  const tails = new Map<Y.XmlElement, string>();
+  const tails = new Map<Y.XmlElement, SuggestionAttrs>();
   const viewAt = (block: BlockRef) => viewOf(unwrapBlock(block).doc as Y.Doc);
   const stored = (block: BlockRef) => storedNode(unwrapBlock(block), schema);
   const shown = (block: BlockRef) => viewBlock(stored(block), viewAt(block));
@@ -122,9 +123,12 @@ export function suggestingModel(
     insertBlocks(doc, after, parsed) {
       const view = viewOf(unwrapDoc(doc));
       if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
-      const id = (after && tails.get(unwrapBlock(after))) ?? newChangeId();
+      const sug = (after && tails.get(unwrapBlock(after))) ?? {
+        ...author,
+        work: view.work,
+        id: newChangeId(),
+      };
       if (after) tails.delete(unwrapBlock(after));
-      const sug = { ...author, work: view.work, id };
       return base.insertBlocks(doc, after, {
         ...parsed,
         blocks: parsed.blocks.map((node) =>
@@ -164,7 +168,7 @@ function rewritten(
   view: View,
   author: Author | null,
   schema: Schema,
-): { node: PMNode; endChange: string | null } | null {
+): { node: PMNode; endChange: SuggestionAttrs | null } | null {
   const state = EditorState.create({ schema, doc: schema.topNodeType.create(null, node) });
   const units = runs(node, view);
   const end = units.reduce((n, run) => n + (visible(run.kind) ? run.to - run.from : 0), 0);
@@ -192,7 +196,7 @@ function rewritten(
   }
   const out = rewrite(tr, state, view, author);
   if (out.doc.childCount !== 1) return null;
-  const changes = (out.getMeta(CHANGE_META) as Array<string | null> | undefined) ?? [];
+  const changes = (out.getMeta(CHANGE_META) as Array<SuggestionAttrs | null> | undefined) ?? [];
   return {
     node: out.doc.child(0),
     endChange: endStep === null ? null : (changes[endStep] ?? null),
