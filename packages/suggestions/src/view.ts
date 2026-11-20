@@ -146,6 +146,16 @@ export function viewBlock(block: Node, view: View): Node | null {
   return block.type.create(viewAttrs(block, view), viewContent(block, view), block.marks);
 }
 
+/** A whole document as a view means it: each top-level block through `viewBlock`. */
+export function viewDoc(doc: Node, view: View): Node {
+  const blocks: Node[] = [];
+  doc.forEach((block) => {
+    const shown = viewBlock(block, view);
+    if (shown) blocks.push(shown);
+  });
+  return doc.copy(Fragment.from(blocks));
+}
+
 /** A block's attributes in a view: Live's, with the view's own pending change applied. */
 export function viewAttrs(node: Node, view: View): Attrs {
   if (!("sug" in node.attrs)) return node.attrs;
@@ -243,7 +253,7 @@ export function visibleSlice(slice: Slice, parent: Node, view: View): Slice {
     fragment.forEach((node) => {
       if (node.isInline) {
         if (visible(kindOf(node.marks, parent, view))) nodes.push(node);
-      } else if (blockKind(node, view) !== "hidden") {
+      } else if (blockKind(node, view) !== "hidden" && !removedIn(node, view)) {
         nodes.push(node.copy(keep(node.content, node)));
       }
     });

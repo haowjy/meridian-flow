@@ -1,4 +1,5 @@
 /** Reads of the stored block rows, and the freshness rules that decide who may trust them. */
+import { draftOwnerKey } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -83,6 +84,10 @@ export function createDrizzleBlockText(db: Database): BlockText {
         .where(
           and(
             current(ids),
+            // A Work's reader sees its own suggestions, which the stored blocks leave out.
+            draftOwner
+              ? sql`not (${draftOwnerKey(draftOwner)} = any(${documentBlockRooms.pendingWorks}))`
+              : undefined,
             // A draft reader sees the draft, which the live room doesn't hold.
             draftOwner
               ? notExists(
