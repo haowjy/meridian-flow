@@ -733,7 +733,8 @@ from the wire alone, with nothing stored between handshakes.
   not a draft reset protocol. Schema fences, authorization loss and explicit
   session rebuild retain their own meanings; local text Discard does not retire
   the room, selection or UndoManager.
-- A draft update refusal (`1008`) is bounded: after three consecutive refusals
+- The server no longer sends `1008` or `4207` for a draft (a failed frame closes `1013`); the
+  client keeps handling them until that code is removed. A draft update refusal (`1008`) is bounded: after three consecutive refusals
   without acknowledgement, the transport ends `DRAFT_UPDATES_REFUSED`
   (`updatesRefused`). A retained room stays open read-only with the unsent text on
   screen: `readDraftRoom` keeps it as `fenced`, and the status says "Couldn't save

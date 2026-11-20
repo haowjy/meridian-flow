@@ -7,17 +7,18 @@
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { novelToRoom } from "../../../../apps/server/server/domains/collab/domain/document-mutation-policy.ts";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import {
   createDraftProjection,
   type DraftProjectionDiagnostics,
 } from "../../../../apps/server/server/domains/collab/domain/draft-projection.ts";
 import { createDraftPullService } from "../../../../apps/server/server/domains/collab/domain/draft-pulls.ts";
+import type { DraftDiagnostics } from "../../../../apps/server/server/domains/collab/domain/draft-runtime.ts";
 import {
   type DraftStore,
   materializeDraftRead,
 } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
-import type { WriterFrameDiagnostics } from "../../../../apps/server/server/domains/collab/domain/draft-writer-frames.ts";
 import { runOutsideWrite } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
 import {
   setTestHook,
@@ -44,7 +45,7 @@ export function phase4Coordinator(
     store?: DraftStore;
     onAppendCommitted?: (draftId: string) => void;
     onDraftUpdate?: (input: { draftId: string; update: Uint8Array }) => void;
-    diagnostics?: Partial<WriterFrameDiagnostics>;
+    diagnostics?: Partial<DraftDiagnostics>;
   } = {},
 ) {
   return createDraftCoordinator({
@@ -56,7 +57,6 @@ export function phase4Coordinator(
       compactionFailed: noop,
       roomReconciled: noop,
       appendPrefixMissing: noop,
-      lateTypingRecovered: noop,
       ...input.diagnostics,
     },
   });
@@ -272,9 +272,21 @@ export async function rebaseLive(
   }
 }
 
-type Frames = {
-  commitWriterUpdate: ReturnType<typeof createDraftCoordinator>["commitWriterUpdate"];
-};
+type Frames = Pick<ReturnType<typeof createDraftCoordinator>, "appendWriterFrame">;
+
+/**
+ * A writer frame as the gateway sends it: judged against `roomDocument` (the room before the
+ * frame is applied), then stored with one insert.
+ */
+export async function commitWriterUpdate(
+  coordinator: Frames,
+  frame: { draftId: string; updateData: Uint8Array; roomDocument: Y.Doc; actorUserId?: string },
+): Promise<{ admitted: boolean }> {
+  const novel = novelToRoom(frame.roomDocument, frame.updateData);
+  if (!novel) return { admitted: false };
+  await coordinator.appendWriterFrame({ ...frame, updateData: novel });
+  return { admitted: true };
+}
 
 /**
  * One tab's room in one process: frames go through `coordinator` as the gateway sends them,
@@ -286,7 +298,7 @@ export async function openRoom(harness: Harness, coordinator: Frames, draft: { d
     room,
     async send(update: Uint8Array): Promise<FrameOutcome> {
       const outcome = await frameOutcome(
-        coordinator.commitWriterUpdate({
+        commitWriterUpdate(coordinator, {
           draftId: draft.draftId,
           updateData: update,
           roomDocument: room,

@@ -71,10 +71,9 @@ export const d23ArchivedDraftRebases: Probe = {
         const before = Y.encodeStateVector(room);
         appendToFirstParagraph(room, " WRITER");
         const frame = await settled(
-          harness.coordinator.commitWriterUpdate({
+          harness.coordinator.appendWriterFrame({
             draftId: documentDraft.draftId,
             updateData: Y.encodeStateAsUpdate(room, before),
-            roomDocument: room,
           }),
         );
         observe("writer frame", frame);

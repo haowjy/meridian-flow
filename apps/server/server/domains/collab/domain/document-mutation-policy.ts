@@ -3,6 +3,7 @@
 import { validateSemanticEditIRV1 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { createDocumentContainment } from "./document-containment.js";
 import type { AppendDraftJournalInput } from "./draft-store.js";
 import { validateClientUpdateAdmission } from "./provenance.js";
 
@@ -65,27 +66,40 @@ export type AuthorityGenerationReplacement = (
   checkpointId: string,
 ) => Promise<{ generation: bigint }>;
 
-/** Shared target validation → containment → authorship → append sequence for writer frames. */
-export async function admitWriterUpdate<T>(input: {
-  targetDocument: Y.Doc;
-  update: Uint8Array;
-  validateTarget(): void | Promise<void>;
-  isContained(): boolean;
-  append(): Promise<T>;
-}): Promise<{ admitted: false } | { admitted: true; value: T }> {
-  const validation = input.validateTarget();
-  if (validation) await validation;
-  if (input.isContained()) return { admitted: false };
-  assertWriterAuthorship(input.targetDocument, input.update);
-  return { admitted: true, value: await input.append() };
+export class WriterFrameGapError extends Error {
+  constructor() {
+    super("writer-frame-gap");
+    this.name = "WriterFrameGapError";
+  }
+}
+
+const roomContainment = createDocumentContainment();
+
+/**
+ * What of a writer's frame the room lacks, or null when it holds all of it (a reconnect's
+ * replay). Throws on reserved authorship, and on a frame that starts past the room's clock for
+ * one of its clients: no later read could integrate it, so the socket closes and the
+ * reconnect's handshake carries the prefix.
+ */
+export function novelToRoom(room: Y.Doc, update: Uint8Array): Uint8Array | null {
+  if (roomContainment.contains(room, update)) return null;
+  assertWriterAuthorship(room, update);
+  const stateVector = Y.encodeStateVector(room);
+  const clocks = Y.decodeStateVector(stateVector);
+  let overlaps = false;
+  for (const [client, from] of Y.parseUpdateMeta(update).from) {
+    const held = clocks.get(client) ?? 0;
+    if (from > held) throw new WriterFrameGapError();
+    if (from < held) overlaps = true;
+  }
+  return overlaps ? Y.diffUpdate(update, stateVector) : update;
 }
 
 /**
  * A writer update's authorship against `targetDocument`'s reserved namespace: a reserved
- * client id or a reserved delete target throws. A frame's early rejection judges its base
- * replica; finalization judges the committed prefix again when that moved (design §2.2).
+ * client id or a reserved delete target throws.
  */
-export function assertWriterAuthorship(targetDocument: Y.Doc, update: Uint8Array): void {
+function assertWriterAuthorship(targetDocument: Y.Doc, update: Uint8Array): void {
   // Reconnect snapshots include server-owned structs the prefix already holds. They
   // author nothing twice; only novel structs and the incoming delete set need admission.
   const novel = Y.diffUpdate(update, Y.encodeStateVector(targetDocument));

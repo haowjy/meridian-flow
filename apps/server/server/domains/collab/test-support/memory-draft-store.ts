@@ -2,17 +2,18 @@
 import type { UserId } from "@meridian/contracts/runtime";
 import { COLLAB_SCHEMA_VERSION } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
-import type {
-  AppendDraftJournalInput,
-  AppendRowsInput,
-  AppendRowsOutcome,
-  CommitRewriteInput,
-  DraftRead,
-  DraftReadSince,
-  DraftSnapshot,
-  DraftStore,
-  RewriteOutcome,
-  StaleEffectCursor,
+import {
+  type AppendDraftJournalInput,
+  type AppendRowsInput,
+  type AppendRowsOutcome,
+  type CommitRewriteInput,
+  type DraftRead,
+  type DraftReadSince,
+  type DraftSnapshot,
+  DraftStaleUpdateError,
+  type DraftStore,
+  type RewriteOutcome,
+  type StaleEffectCursor,
 } from "../domain/draft-store.js";
 
 /** A draft row, defaulting every field the test does not name. */
@@ -116,11 +117,25 @@ export class MemoryDraftStore implements DraftStore {
     };
   }
 
-  async writerText(
-    _draftId: string,
-    _ids: readonly { client: number; clock: number }[],
-  ): Promise<ReadonlySet<string>> {
-    return new Set();
+  async appendWriterRow(input: {
+    draftId: string;
+    updateData: Uint8Array;
+    actorUserId?: string;
+  }): Promise<{ revision: number; checkpointRevision: number }> {
+    const documentDraft = this.drafts.get(input.draftId);
+    if (!documentDraft || documentDraft.lifecycle !== "active")
+      throw new DraftStaleUpdateError(`Draft ${input.draftId}`);
+    this.append(documentDraft, {
+      draftId: input.draftId,
+      updateData: input.updateData,
+      source: "writer",
+      actorUserId: input.actorUserId,
+    });
+    documentDraft.revision += 1;
+    return {
+      revision: documentDraft.revision,
+      checkpointRevision: documentDraft.checkpointRevision,
+    };
   }
 
   async appendRows(input: AppendRowsInput): Promise<AppendRowsOutcome> {

@@ -10,7 +10,7 @@ import type { DocumentProjectionDiagnostics } from "../domain/document-projectio
 import type { DraftAheadDiagnostics } from "../domain/draft-ahead-registration.js";
 import type { DraftProjectionDiagnostics } from "../domain/draft-projection.js";
 import type { DraftPullDiagnostics } from "../domain/draft-pulls.js";
-import type { WriterFrameDiagnostics } from "../domain/draft-writer-frames.js";
+import type { DraftDiagnostics } from "../domain/draft-runtime.js";
 import type { MarkdownSerializationAnomalyObserver } from "../domain/markdown-document.js";
 import type { ReversalNoticeDiagnostics } from "../domain/reversal-notices.js";
 import type { AppendCommitted, RewriteCommitted } from "./drizzle-drafts.js";
@@ -92,7 +92,7 @@ export function createRoomDeliveryDiagnostics(eventSink?: EventSink): RoomDelive
  * The draft coordinator's events: a background fold that failed, a room found behind its
  * draft and reconciled, and an update that arrived before its prefix.
  */
-export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrameDiagnostics {
+export function createDraftDiagnostics(eventSink?: EventSink): DraftDiagnostics {
   return {
     appendPrefixMissing({ draftId, clocks }) {
       if (!eventSink) return;
@@ -104,22 +104,11 @@ export function createWriterFrameDiagnostics(eventSink?: EventSink): WriterFrame
         payload: { clocks: clocks.slice(0, 16) },
       });
     },
-    lateTypingRecovered({ draftId, ...payload }) {
-      if (!eventSink) return;
-      emitEvent(eventSink, {
-        level: "info",
-        source: "collab.draft",
-        name: "late_typing.recovered",
-        correlation: { draftId },
-        payload,
-      });
-    },
     roomReconciled({ draftId, trigger, ...payload }) {
       if (!eventSink) return;
-      // A frame finding its room behind is a missed delivery: a symptom worth seeing. A room
-      // registering behind a commit that landed during its load is the expected race.
+      // A room registering behind a commit that landed during its load is the expected race.
       emitEvent(eventSink, {
-        level: trigger === "frame" ? "warn" : "info",
+        level: "info",
         source: "collab.draft",
         name: "room_reconciled",
         correlation: { draftId },

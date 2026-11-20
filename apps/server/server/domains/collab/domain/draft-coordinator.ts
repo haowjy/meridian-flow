@@ -22,9 +22,11 @@ import {
   type DraftSnapshot,
   DraftStaleUpdateError,
 } from "./draft-store.js";
-import { createWriterFrames, type WriterFrameInput } from "./draft-writer-frames.js";
 
-export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> & {
+export type DraftCoordinator = Pick<
+  DraftRuntime,
+  "loadBase" | "prepareAppend" | "appendWriterFrame"
+> & {
   readDraft<T>(
     draftId: string,
     fn: (doc: Y.Doc, snapshot: DraftSnapshot) => Promise<T>,
@@ -47,8 +49,6 @@ export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> 
     commit: boolean,
     precondition?: SavePrecondition,
   ): Promise<{ result: T; write: PreparedDraftAppend | null }>;
-  /** A writer frame (`draft-writer-frames.ts`). */
-  commitWriterUpdate(input: WriterFrameInput): Promise<{ admitted: boolean }>;
   /** Brings this process's rooms up to what is committed now: a read, installed as any other. */
   deliverCommitted(draftId: string): Promise<void>;
   /**
@@ -61,7 +61,7 @@ export type DraftCoordinator = Pick<DraftRuntime, "loadBase" | "prepareAppend"> 
   reconcileRegisteredRoom(input: {
     draftId: string;
     room: Y.Doc;
-    trigger: Exclude<RoomReconcileTrigger, "frame">;
+    trigger: RoomReconcileTrigger;
   }): Promise<DraftBase | null>;
 };
 
@@ -151,11 +151,10 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     }
   }
 
-  const frames = createWriterFrames(runtime);
-
   return {
     loadBase,
     prepareAppend,
+    appendWriterFrame: runtime.appendWriterFrame,
     readDraft: readCommitted,
     copyDraft,
     prepareStagedRows,
@@ -164,7 +163,5 @@ export function createDraftCoordinator(input: DraftRuntimeInput): DraftCoordinat
     },
 
     reconcileRegisteredRoom,
-
-    commitWriterUpdate: frames.commitWriterUpdate,
   };
 }

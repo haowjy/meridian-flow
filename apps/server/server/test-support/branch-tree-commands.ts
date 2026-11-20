@@ -338,14 +338,16 @@ export function branchTreeCommands(
     async editDraft(work, documentId, edit) {
       const sync = ports().documentSync;
       const room = await documentDraft(work, documentId);
+      // The room holds the draft as it is; the writer's tab edits its own copy and sends the difference.
       const document = new Y.Doc({ gc: false });
       const loaded = await sync.loadHocuspocusDraftState(room.draftId);
       if (loaded) Y.applyUpdate(document, loaded.state);
-      const before = Y.encodeStateVector(document);
-      edit(document);
+      const tab = new Y.Doc({ gc: false });
+      Y.applyUpdate(tab, Y.encodeStateAsUpdate(document));
+      edit(tab);
       await sync.admitDraftWriterUpdate({
         draftId: room.draftId,
-        update: Y.encodeStateAsUpdate(document, before),
+        update: Y.encodeStateAsUpdate(tab, Y.encodeStateVector(document)),
         origin: { type: "user", userId },
         document,
       });

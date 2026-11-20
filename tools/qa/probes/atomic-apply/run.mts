@@ -222,24 +222,26 @@ async function fixture(
       room.on("update", capture);
       room.transact(() => writeBlocks(room.getXmlFragment("prosemirror"), schema, blocks(texts)));
       room.off("update", capture);
-      if (update) {
+      if (update && !agent) {
+        await h.coordinator.appendWriterFrame({
+          draftId: snapshot.draftId,
+          updateData: update,
+          actorUserId: h.ids.user,
+        });
+      } else if (update) {
         const base = await h.coordinator.loadBase(snapshot.draftId);
         const write = h.coordinator.prepareAppend(base, [
           {
             draftId: snapshot.draftId,
-            source: agent ? "agent" : "writer",
+            source: "agent",
             updateData: update,
-            ...(agent
-              ? {
-                  wId: await h.persistence.journal.reserveWriteOrdinal(
-                    document.documentId,
-                    owner.threadId,
-                  ),
-                  threadId: owner.threadId,
-                  turnId: owner.turnId,
-                  toolCallId: randomUUID(),
-                }
-              : { actorUserId: h.ids.user }),
+            wId: await h.persistence.journal.reserveWriteOrdinal(
+              document.documentId,
+              owner.threadId,
+            ),
+            threadId: owner.threadId,
+            turnId: owner.turnId,
+            toolCallId: randomUUID(),
           },
         ]);
         try {
@@ -761,21 +763,11 @@ try {
       0,
     );
     assert.ok(update);
-    const base = await h.coordinator.loadBase(f.draftId);
-    const write = h.coordinator.prepareAppend(base, [
-      {
-        draftId: f.draftId,
-        source: "writer",
-        updateData: update,
-        actorUserId: h.ids.user,
-      },
-    ]);
-    try {
-      await write.persist();
-      write.transfer();
-    } finally {
-      write.dispose();
-    }
+    await h.coordinator.appendWriterFrame({
+      draftId: f.draftId,
+      updateData: update,
+      actorUserId: h.ids.user,
+    });
     await applied(f, c);
     f.close();
   });

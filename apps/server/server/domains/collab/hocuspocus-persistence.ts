@@ -10,7 +10,6 @@ import { ownerOfColumns } from "../../shared/draft-owner.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
 import { loadDocumentState } from "./adapters/document-loader.js";
 import type { CollabPersistenceMetrics, CollabTransport, UpdateOrigin } from "./contracts.js";
-import { createDocumentContainment } from "./domain/document-containment.js";
 import {
   documentAuthority,
   isDocumentHandleRetired,
@@ -18,8 +17,9 @@ import {
   retireDocumentHandle,
 } from "./domain/document-handle.js";
 import {
-  assertWriterAuthorship,
+  novelToRoom,
   ReservedWriterClientIdError,
+  WriterFrameGapError,
 } from "./domain/document-mutation-policy.js";
 import type { DraftCoordinator } from "./domain/draft-coordinator.js";
 import type { DraftStore } from "./domain/draft-store.js";
@@ -28,7 +28,6 @@ import type {
   CheckpointJournal,
 } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
-import { ReservedNamespaceAdmissionError } from "./domain/provenance.js";
 import { closeDraftRooms, closeRoom, whenRoomRegistered } from "./hocuspocus-rooms.js";
 
 type PendingAppend = {
@@ -115,7 +114,6 @@ export function createHocuspocusPersistenceService(
   const retiredStateVectors = new Map<string, Uint8Array>();
   const checkpointSlots = new Map<string, CheckpointSlot>();
   const afterCallerCommit = deps.afterCallerCommit ?? ((callback: () => void) => callback());
-  const documentContainment = createDocumentContainment();
   let nextPendingId = 1;
 
   async function drainPending(documentId?: string): Promise<void> {
@@ -297,6 +295,39 @@ export function createHocuspocusPersistenceService(
     }
   }
 
+  /**
+   * What of a writer's frame the room lacks, or null when it holds all of it. A reserved
+   * authorship refusal or a frame that starts past the room's clock throws: the socket closes
+   * and the reconnect's handshake carries what is missing.
+   */
+  function judgeWriterFrame(input: {
+    room: Y.Doc;
+    update: Uint8Array;
+    /** What the persistence queue counts the frame's refusals under. */
+    queueKey: string;
+    origin: UpdateOrigin;
+    subject: { documentId: DocumentId } | { draftId: string };
+  }): Uint8Array | null {
+    try {
+      return novelToRoom(input.room, input.update);
+    } catch (cause) {
+      if (cause instanceof WriterFrameGapError) {
+        recordDroppedConnectionUpdate(input.queueKey);
+      } else if (cause instanceof ReservedWriterClientIdError) {
+        recordDroppedConnectionUpdate(input.queueKey);
+        deps.emitAgentEditInvariantViolation({
+          message: `Rejected connection update for ${Object.values(input.subject)[0]}: Yjs clientID ${cause.clientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
+          ...input.subject,
+          originType: input.origin.type,
+          reservedClientId: cause.clientId,
+          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
+        });
+        throw new Error("reserved-writer-client-id");
+      }
+      throw cause;
+    }
+  }
+
   return {
     validateHocuspocusDocument,
     async currentLiveGeneration(documentId) {
@@ -408,29 +439,15 @@ export function createHocuspocusPersistenceService(
         recordDroppedConnectionUpdate(input.documentId);
         throw new Error("retired-durable-authority-generation");
       }
+      const novel = judgeWriterFrame({
+        room,
+        update: input.update,
+        queueKey: input.documentId,
+        origin: input.origin,
+        subject: { documentId: input.documentId },
+      });
       // Reconnects replay state the room already holds: acknowledged, nothing stored.
-      if (documentContainment.contains(room, input.update)) return { admitted: false };
-      try {
-        assertWriterAuthorship(room, input.update);
-      } catch (cause) {
-        if (!(cause instanceof ReservedWriterClientIdError)) throw cause;
-        recordDroppedConnectionUpdate(input.documentId);
-        deps.emitAgentEditInvariantViolation({
-          message: `Rejected connection update for document ${input.documentId}: Yjs clientID ${cause.clientId} is in the reserved server-authored band [0, ${RESERVED_CLIENT_ID_MAX}].`,
-          documentId: input.documentId,
-          originType: input.origin.type,
-          reservedClientId: cause.clientId,
-          reservedClientIdMax: RESERVED_CLIENT_ID_MAX,
-        });
-        throw new Error("reserved-writer-client-id");
-      }
-      let novel: Uint8Array;
-      try {
-        novel = newToRoom(room, input.update);
-      } catch (cause) {
-        if (cause instanceof WriterFrameGapError) recordDroppedConnectionUpdate(input.documentId);
-        throw cause;
-      }
+      if (!novel) return { admitted: false };
       const append = deps.journal.appendWriterUpdate(
         input.documentId,
         novel,
@@ -451,27 +468,20 @@ export function createHocuspocusPersistenceService(
     admitDraftWriterUpdate(input) {
       const queueKey = draftRoomName(input.draftId);
       const admission = (async () => {
-        try {
-          const { admitted } = await requireDraftCoordinator().commitWriterUpdate({
-            draftId: input.draftId,
-            updateData: input.update,
-            actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
-            roomDocument: input.document,
-          });
-          if (admitted) deps.onDraftWriterUpdateAdmitted?.(input.draftId);
-        } catch (cause) {
-          if (
-            cause instanceof ReservedNamespaceAdmissionError ||
-            cause instanceof ReservedWriterClientIdError
-          ) {
-            deps.emitAgentEditInvariantViolation({
-              message: `Rejected client-authored provenance update for draft ${input.draftId}.`,
-              draftId: input.draftId,
-              originType: input.origin.type,
-            });
-          }
-          throw cause;
-        }
+        const novel = judgeWriterFrame({
+          room: input.document,
+          update: input.update,
+          queueKey,
+          origin: input.origin,
+          subject: { draftId: input.draftId },
+        });
+        if (!novel) return;
+        await requireDraftCoordinator().appendWriterFrame({
+          draftId: input.draftId,
+          updateData: novel,
+          actorUserId: input.origin.type === "user" ? input.origin.userId : undefined,
+        });
+        deps.onDraftWriterUpdateAdmitted?.(input.draftId);
       })();
       // Register before validation's first await so shutdown cannot miss an
       // admission that Hocuspocus is already processing.
@@ -552,29 +562,6 @@ export function createHocuspocusPersistenceService(
       return latestMetrics();
     },
   };
-}
-
-class WriterFrameGapError extends Error {
-  constructor() {
-    super("writer-frame-gap");
-  }
-}
-
-/**
- * What of `update` the room lacks. A frame that starts past the room's clock for one of its
- * clients is not storable: no later read could integrate it, so the socket closes and the
- * reconnect's handshake carries the prefix.
- */
-function newToRoom(room: Y.Doc, update: Uint8Array): Uint8Array {
-  const stateVector = Y.encodeStateVector(room);
-  const clocks = Y.decodeStateVector(stateVector);
-  let overlaps = false;
-  for (const [client, from] of Y.parseUpdateMeta(update).from) {
-    const held = clocks.get(client) ?? 0;
-    if (from > held) throw new WriterFrameGapError();
-    if (from < held) overlaps = true;
-  }
-  return overlaps ? Y.diffUpdate(update, stateVector) : update;
 }
 
 function replaysRetiredGeneration(

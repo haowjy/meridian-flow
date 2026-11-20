@@ -23,6 +23,7 @@ import {
   Y,
 } from "./harness.mts";
 import {
+  commitWriterUpdate,
   draftRow,
   durableDoc,
   frameOutcome,
@@ -51,7 +52,7 @@ export const appendTailOrder: Probe = {
         const b = await openProcess(other, draft);
         // A first key, so the held one flips no review membership on today's code.
         const warm = keystroke(a.room, " warm", 930_000);
-        await a.coordinator.commitWriterUpdate({
+        await commitWriterUpdate(a.coordinator, {
           draftId: draft.draftId,
           updateData: warm,
           roomDocument: a.room,
@@ -61,7 +62,7 @@ export const appendTailOrder: Probe = {
         try {
           const frame = independently(() =>
             frameOutcome(
-              a.coordinator.commitWriterUpdate({
+              commitWriterUpdate(a.coordinator, {
                 draftId: draft.draftId,
                 updateData: keystroke(a.room, " HELD", 930_001),
                 roomDocument: a.room,

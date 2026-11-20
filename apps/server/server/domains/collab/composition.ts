@@ -34,13 +34,13 @@ import {
   createAppendCommittedEvent,
   createDocumentProjectionDiagnostics,
   createDraftAheadDiagnostics,
+  createDraftDiagnostics,
   createDraftProjectionDiagnostics,
   createDraftPullDiagnostics,
   createMarkdownSerializationAnomalyObserver,
   createReversalNoticeDiagnostics,
   createRewriteCommittedEvent,
   createRoomDeliveryDiagnostics,
-  createWriterFrameDiagnostics,
 } from "./adapters/agent-edit-observability.js";
 import {
   SILENT_TURN_INVERSE_NOTICES,
@@ -233,14 +233,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         }
       : {}),
   });
-  const writerFrameDiagnostics = createWriterFrameDiagnostics(deps.eventSink);
+  const draftDiagnostics = createDraftDiagnostics(deps.eventSink);
   const replayJournal = createDrizzleDraftReplayJournalReads(deps.db);
   const draftCoordinator = createDraftCoordinator({
     store: drafts,
     attemptScope,
     onDraftUpdate: hocuspocusBinding.deliverDraftUpdate,
     applyToRoom: hocuspocusBinding.applyToRoom,
-    diagnostics: writerFrameDiagnostics,
+    diagnostics: draftDiagnostics,
     // The projection is composed below, over the coordinator; a mark only fires after a commit.
     onAppendCommitted: (draftId) => draftEffects.markDirty(draftId),
   });

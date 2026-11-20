@@ -288,6 +288,34 @@ export async function appendRowsWithinTx(
   };
 }
 
+/**
+ * A writer's frame: the revision bump that is the row lock, and the one journal row. The bump
+ * carries the Work-is-active predicate; zero rows is a closed draft or an inactive Work.
+ */
+export async function appendWriterRowWithinTx(
+  db: DrizzleDb,
+  input: { draftId: string; row: AppendDraftJournalInput },
+): Promise<{ revision: number; checkpointRevision: number } | null> {
+  const [locked] = await db
+    .update(documentDrafts)
+    .set({
+      revision: sql`${documentDrafts.revision} + 1`,
+      schemaVersion: monotonicSchemaStamp(),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(documentDrafts.id, input.draftId), draftOwnerActive))
+    .returning({
+      revision: documentDrafts.revision,
+      checkpointRevision: documentDrafts.checkpointRevision,
+    });
+  if (!locked) return null;
+  await insertJournalRows(db, [input.row]);
+  return {
+    revision: Number(locked.revision),
+    checkpointRevision: Number(locked.checkpointRevision),
+  };
+}
+
 export type RewriteCommit = {
   draftId: string;
   policy: RewritePolicy;

@@ -34,7 +34,7 @@ import {
   currentDrizzleDb,
   runInDrizzleTransaction,
 } from "../../../../apps/server/server/shared/drizzle-transaction.ts";
-import { independently, observe, openHarness, type Probe } from "./harness.mts";
+import { independently, observe, openHarness, type Probe, Y } from "./harness.mts";
 import {
   captureUpdate,
   countingEffects,
@@ -127,20 +127,22 @@ export const effectProjection: Probe = {
             );
             const touches =
               (await workBadge(harness, draft.workId)).entityRevision - before.entityRevision;
-            const text = firstText(tab.room);
-            const typedChars = text.length - "Base".length;
-            const erase = captureUpdate(tab.room, () => text.delete("Base".length, typedChars));
+            const typedChars = firstText(tab.room).length - "Base".length;
+            // The tab's own copy makes the edit; the room it is sent to has not seen it yet.
+            const typist = new Y.Doc({ gc: false });
+            Y.applyUpdate(typist, Y.encodeStateAsUpdate(tab.room));
+            const erase = captureUpdate(typist, () =>
+              firstText(typist).delete("Base".length, typedChars),
+            );
+            typist.destroy();
             const erased = await tab.send(erase);
             const cleared = await within(
               1_000,
               () => workBadge(harness, draft.workId),
               (b) => b.pending === 0,
             );
-            const appends = harness.appends.filter((append) => append.draftId === draft.draftId);
             observe("arm 2", {
               keys: percentiles(keyMs),
-              waitMs: percentiles(appends.map((append) => append.waitMs)),
-              holdMs: percentiles(appends.map((append) => append.holdMs)),
               writeEffect: effects.outcomes,
               firstPendingMs,
               pendingAfterPauseMs: paused.elapsedMs,

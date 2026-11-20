@@ -25,7 +25,6 @@ import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-pr
 import * as Y from "yjs";
 import {
   type AdmitLiveWriterUpdateResult,
-  DraftPrefixMissingError,
   DraftStaleUpdateError,
   isDocumentSchemaMajorMismatchError,
 } from "../domains/collab/index.js";
@@ -33,15 +32,12 @@ import type { TreeListStore } from "../domains/context/ports/tree-list-store.js"
 import {
   documentAccessKey,
   type FileAccessChanges,
-  FileEditRefusedError,
   type FileFacts,
-  type FileGrant,
   type FileTarget,
   fileAccessChangeKey,
   grantOwnerLocks,
   isFileAccessDenied,
   projectAccessKey,
-  runWithEditGrants,
 } from "../domains/file-policy/index.js";
 import {
   emitEvent,
@@ -61,7 +57,6 @@ import {
   TreeRoomRefusal,
   type TreeRooms,
 } from "./yjs-tree-room.js";
-export type DraftHandshakeState = "pending" | "passed" | "rejected";
 
 type HocuspocusConnection = ReturnType<Hocuspocus["handleConnection"]>;
 
@@ -75,12 +70,11 @@ export type YjsGatewayPeer = {
 
 export type YjsGatewayConnection = {
   hocuspocus: HocuspocusConnection;
-  draftSyncState: Map<string, DraftHandshakeState>;
   registration: YjsRoomRegistration;
 };
 
 export type YjsGatewayServices = {
-  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "confirmEdit" | "historyAccess">;
+  fileAccess: Pick<AppServices["fileAccess"], "authorize" | "historyAccess">;
   fileAccessChanges: Pick<FileAccessChanges, "subscribe">;
   documentSync: AppServices["documentSync"];
   eventSink: AppServices["eventSink"];
@@ -107,12 +101,10 @@ type YjsAdmissionTarget =
     };
 
 /**
- * What the person may do in the room (file-access §7). An `edit` connection
- * holds its grant for the session and every frame confirms it.
+ * What the person may do in the room (file-access §7), decided when the socket opens; it ends
+ * when `rooms` closes the socket.
  */
-type YjsRoomAccess =
-  | { level: "read"; why?: ClosedOwnerWhy }
-  | { level: "edit"; grant: FileGrant<"edit"> };
+type YjsRoomAccess = { level: "read"; why?: ClosedOwnerWhy } | { level: "edit" };
 
 type YjsConnectionAdmission =
   | {
@@ -139,7 +131,6 @@ type YjsConnectionContext = {
   clientSchemaVersion: CollabSchemaVersion;
   /** On a tree list's room: the list id the client's stored copy was made of (`?list=`). */
   storedListId: string | null;
-  draftSyncState: Map<string, DraftHandshakeState>;
   admissionTarget?: YjsAdmissionTarget;
   access?: YjsRoomAccess;
   /** Set on a tree list's room: its access and rate limit (`yjs-tree-room.ts`). */
@@ -333,8 +324,7 @@ async function findRoomAccess(
   target: FileTarget,
 ): Promise<{ access: YjsRoomAccess; facts: FileFacts } | null> {
   const edit = await services.fileAccess.authorize({ accountId: userId }, target, "edit");
-  if (!isFileAccessDenied(edit))
-    return { access: { level: "edit", grant: edit }, facts: edit.facts };
+  if (!isFileAccessDenied(edit)) return { access: { level: "edit" }, facts: edit.facts };
   if (edit.level !== "read" || !edit.facts) return null;
   return { access: { level: "read", why: closedOwnerWhy(edit.facts) }, facts: edit.facts };
 }
@@ -457,35 +447,17 @@ function accessKeys(facts: FileFacts, documentId: DocumentId): string[] {
   ];
 }
 
-async function enforceDraftHandshake(input: {
-  services: YjsGatewayServices;
-  document: Y.Doc;
-  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "draft" }>;
-  syncType: number;
-  payload: Uint8Array;
-  context?: { draftSyncState?: Map<string, DraftHandshakeState> };
-}): Promise<void> {
-  const key = input.room.draftId;
-  if (input.syncType === messageYjsSyncStep1) {
-    const active = await input.services.documentSync.reconcileHocuspocusDraftRoom({
-      draftId: input.room.draftId,
-      room: input.document,
-    });
-    if (input.context?.draftSyncState?.get(key) === "rejected") {
-      refuse(WS_CLOSE.DRAFT_PREFIX_MISSING);
-    }
-    if (!active) {
-      input.context?.draftSyncState?.set(key, "rejected");
-      refuse(WS_CLOSE.DRAFT_PURGED);
-    }
-    input.context?.draftSyncState?.set(key, "passed");
-    return;
-  }
-  if (input.syncType !== messageYjsSyncStep2 && input.syncType !== messageYjsUpdate) return;
-  const state = input.context?.draftSyncState?.get(key) ?? "pending";
-  if (state === "passed") return;
-  input.context?.draftSyncState?.set(key, "rejected");
-  refuse(WS_CLOSE.DRAFT_PREFIX_MISSING);
+/** A tab's SyncStep1 on a draft room: the room is brought up to the committed draft first. */
+async function reconcileDraftHandshake(
+  services: YjsGatewayServices,
+  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "draft" }>,
+  document: Y.Doc,
+): Promise<void> {
+  const active = await services.documentSync.reconcileHocuspocusDraftRoom({
+    draftId: room.draftId,
+    room: document,
+  });
+  if (!active) refuse(WS_CLOSE.DRAFT_PURGED);
 }
 
 export async function admitWriterSync(input: {
@@ -496,18 +468,59 @@ export async function admitWriterSync(input: {
   payload: Uint8Array;
   userId: UserId;
   expectedGeneration?: bigint;
-  context?: {
-    draftSyncState?: Map<string, DraftHandshakeState>;
-  };
 }): Promise<AdmitLiveWriterUpdateResult | undefined> {
   const room = parseRoomOrDeny(input.documentName);
-  if (room.kind === "draft") {
-    return admitDraftSync(input, room);
+  const { services, document } = input;
+  if (room.kind === "draft" && input.syncType === messageYjsSyncStep1) {
+    await reconcileDraftHandshake(services, room, document);
+    return;
   }
-  return admitLiveSync(input, room);
+  if (!carriesUpdate(input.syncType, input.payload)) return;
+  const origin = writerOrigin(input);
+  if (room.kind === "live") {
+    if (input.expectedGeneration === undefined) throw permissionDenied("permission-denied");
+    try {
+      return await services.documentSync.admitLiveWriterUpdate({
+        documentId: room.documentId,
+        document,
+        update: input.payload,
+        origin,
+        expectedGeneration: input.expectedGeneration,
+      });
+    } catch (cause) {
+      refuse(WRITER_ADMISSION_FAILED, cause);
+    }
+  }
+  try {
+    await services.documentSync.admitDraftWriterUpdate({
+      draftId: room.draftId,
+      update: input.payload,
+      origin,
+      document,
+    });
+  } catch (cause) {
+    // The draft closed, or its owner stopped being active: an access change, not a failure.
+    if (cause instanceof DraftStaleUpdateError) {
+      const resolved = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
+      if (!resolved) refuse(WS_CLOSE.DRAFT_PURGED, cause);
+      const current = await findRoomAccess(services, input.userId, {
+        kind: "draft",
+        documentId: resolved.documentId,
+        owner: resolved.owner,
+      });
+      refuse(accessChangedClose(closedOwnerWhy(current?.facts)), cause);
+    }
+    // The client reconnects and its handshake carries what the journal lacks.
+    refuse(WRITER_ADMISSION_FAILED, cause);
+  }
 }
 
-type WriterSyncInput = Parameters<typeof admitWriterSync>[0];
+const WRITER_ADMISSION_FAILED = { code: 1013, reason: "writer-journal-admission-failed" } as const;
+
+type WriterSyncInput = Pick<
+  Parameters<typeof admitWriterSync>[0],
+  "document" | "payload" | "userId"
+>;
 
 const documentSchema = buildDocumentSchema();
 
@@ -520,71 +533,6 @@ function writerOrigin(input: WriterSyncInput) {
 
 function carriesUpdate(syncType: number, payload: Uint8Array): boolean {
   return (syncType === messageYjsSyncStep2 || syncType === messageYjsUpdate) && payload.length > 0;
-}
-
-async function admitDraftSync(
-  input: WriterSyncInput,
-  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "draft" }>,
-): Promise<undefined> {
-  await enforceDraftHandshake({
-    services: input.services,
-    document: input.document,
-    room,
-    syncType: input.syncType,
-    payload: input.payload,
-    context: input.context,
-  });
-  if (!carriesUpdate(input.syncType, input.payload)) return;
-  // A draft room is a collaborative room like any other: the writer is
-  // one more peer in it. Client frames run the same durable admission the
-  // agent's own draft writes do.
-  try {
-    await input.services.documentSync.admitDraftWriterUpdate({
-      draftId: room.draftId,
-      update: input.payload,
-      origin: writerOrigin(input),
-      document: input.document,
-    });
-    return;
-  } catch (cause) {
-    // The bound edit grant was refused under the seam's locks; `beforeSync` answers it.
-    if (cause instanceof FileEditRefusedError) throw cause;
-    // Not a refusal: the client reconnects and its handshake carries the missing prefix.
-    if (cause instanceof DraftPrefixMissingError) refuse(WS_CLOSE.DRAFT_PREFIX_MISSING, cause);
-    if (cause instanceof DraftStaleUpdateError) {
-      const resolved = await input.services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
-      if (!resolved) refuse(WS_CLOSE.DRAFT_PURGED, cause);
-      const current = await findRoomAccess(input.services, input.userId, {
-        kind: "draft",
-        documentId: resolved.documentId,
-        owner: resolved.owner,
-      });
-      refuse(accessChangedClose(closedOwnerWhy(current?.facts)), cause);
-    }
-    refuse({ code: 1008, reason: "draft-update-admission-failed" }, cause);
-  }
-}
-
-async function admitLiveSync(
-  input: WriterSyncInput,
-  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "live" }>,
-): Promise<AdmitLiveWriterUpdateResult | undefined> {
-  if (!carriesUpdate(input.syncType, input.payload)) return;
-  if (input.expectedGeneration === undefined) {
-    throw permissionDenied("permission-denied");
-  }
-  try {
-    const admission = await input.services.documentSync.admitLiveWriterUpdate({
-      documentId: room.documentId,
-      document: input.document,
-      update: input.payload,
-      origin: writerOrigin(input),
-      expectedGeneration: input.expectedGeneration,
-    });
-    return admission;
-  } catch (cause) {
-    refuse({ code: 1013, reason: "writer-journal-admission-failed" }, cause);
-  }
 }
 
 function admittedTargetForSync(
@@ -721,28 +669,17 @@ export function createHocuspocus(
           ) {
             return;
           }
-          const admit = () =>
-            admitWriterSync({
-              services,
-              documentName,
-              document,
-              syncType: type,
-              payload,
-              userId,
-              expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
-              context,
-            });
-          // A Live frame is judged in the room and stored with one insert; its access was
-          // decided when the socket opened and ends when `rooms` closes the socket.
-          if (access.level === "read" || target.kind === "live") {
-            await admit();
-            return;
-          }
-          const admitted = await runWithEditGrants(services.fileAccess, [access.grant], admit);
-          if (!admitted.ok) {
-            const facts = admitted.refusal.refused.find((denial) => denial.facts)?.facts;
-            refuse(accessChangedClose(closedOwnerWhy(facts)));
-          }
+          // A frame is judged in the room and stored with one insert; the connection's access
+          // was decided when the socket opened and ends when `rooms` closes the socket.
+          await admitWriterSync({
+            services,
+            documentName,
+            document,
+            syncType: type,
+            payload,
+            userId,
+            expectedGeneration: target.kind === "live" ? target.liveGeneration : undefined,
+          });
         });
       });
     },
@@ -876,7 +813,6 @@ export function createYjsGateway(services: YjsGatewayServices) {
     rooms.unregister(connection.registration);
     // Hocuspocus unloads the room once its last connection is gone.
     connection.hocuspocus.handleClose(event);
-    connection.draftSyncState.clear();
   }
 
   return {
@@ -889,16 +825,13 @@ export function createYjsGateway(services: YjsGatewayServices) {
       }
 
       const registration: YjsRoomRegistration = { revoke: () => undefined };
-      const draftSyncState = new Map<string, DraftHandshakeState>();
       const connection: YjsGatewayConnection = {
-        draftSyncState,
         registration,
         hocuspocus: hocuspocus.handleConnection(peer.socket, peer.request, {
           userId: peer.userId,
           traceId: peer.traceId,
           clientSchemaVersion: clientSchemaVersionFromRequest(peer.request),
           storedListId: new URL(peer.request.url, "http://gateway").searchParams.get("list"),
-          draftSyncState,
           registration,
           closeTransport: ({ code, reason }: { code: number; reason: string }) =>
             peer.close(code, reason),

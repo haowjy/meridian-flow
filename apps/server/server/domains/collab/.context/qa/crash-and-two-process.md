@@ -76,9 +76,9 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
    - The arm file is gone.
    - `draft-readback` shows exactly one new tail row for the word, not two:
      the crashed attempt left no row.
-   - The receipt count grew by exactly one: the crashed attempt left no receipt.
+   - The journal gained exactly one row for the word: the crashed attempt left none.
    - Its `text` matches the editor, and the reload check of step 3 holds.
-   - No `1008` or `4207` close in the tab's `/ws/yjs` frames.
+   - No close in the tab's `/ws/yjs` frames.
 5. Repeat with `HOOK_CRASH_AT=draft.rewrite.beforeCommit`. Arm the file,
    then drive a live-to-draft pull. A live write from a No Work thread followed
    by a read from the draft thread pulls.
@@ -113,12 +113,12 @@ draft with a scripted mock `write` (`./mf thread send <thread> ... --mock`).
    the second server's process stopped (`kill -STOP`), its tab's upgrade hangs
    while the other tab's succeeds.
 3. Each tab types 40 unique tokens (`A01` to `A40`, `B01` to `B40`) on a 200 ms
-   cadence. Log each key's send time, its ack or `1008` close, and reconnects.
+   cadence. Log each key's send time, its ack or close, and reconnects.
 4. PASS:
    - All 80 tokens are in `draft-readback`'s text, in each tab's order.
    - All 80 tokens are in both editors after a reload.
-   - Every key is acked, with no `1008` close and no reconnect: each process's
-     room takes the other's committed rows before it judges a frame.
+   - Every key is acked, with no close and no reconnect: a frame is judged in
+     its own process's room, which holds only what that process stored.
    - No frame is judged twice: neither process emits a `DraftCasConflictError`.
    - A live edit pulled by both processes lands once; the loser sees `moved`.
    - Equal hashes after the reload are not enough on their own.

@@ -1,7 +1,7 @@
 /**
  * Phase 4 (design §2.7, R1/G1–G3): a draft tab's reconnect never produces a causal gap the
  * server must refuse. The connection's own SyncStep2 carries every byte the server lacks, held
- * keystrokes follow it, and a prefix-missing close (`4207`) is a plain reconnect.
+ * keystrokes follow it, and a gap close (`1013`) is a plain reconnect.
  *
  * End to end, in one Node process: the production client transport (bundled from
  * `apps/app`, `client-resync.client.mjs`) over an in-memory socket pair to the production
@@ -16,12 +16,13 @@
  * (h) a server restart mid-burst, typing on through it;
  * (i) a reload while offline: the unsent keys are gone (W42, no draft cache before PR B), the
  *     reloaded tab syncs and types;
- * (k) a raw y-protocols client sending a dependent Update before its SyncStep2: one `4207`,
+ * (k) a raw y-protocols client sending a dependent Update before its SyncStep2: one `1013`,
  *     then its next connection's SyncStep2 lands.
- * Across (f)–(i): no `1008`, no `4207`, no terminal state, every key durable once and in order,
- * no clock journaled twice (released echoes write nothing), a receipt for every row, the outbox
- * empty after the last acknowledgement, and on every draft connection `step1, step2` before
- * any update. First-acknowledgement latency after each open is reported.
+ * Across (f)–(i): no `1008`, no `4207`, no terminal state, every key durable once and in order
+ * in the document (a resend that races the held frame's insert may journal a clock twice; Yjs
+ * ignores the copy), the outbox empty after the last acknowledgement, and on every draft
+ * connection `step1, step2` before any update. First-acknowledgement latency after each open
+ * is reported.
  *
  * The transport layer's own cases (four `4207` closes keep the outbox, wire order, a socket
  * closed before its SyncStep2) are lane 1c's tests in `hocuspocus-document-transport*.test.ts`.
@@ -51,7 +52,6 @@ import {
   pauseAt,
   percentiles,
   phase4Coordinator,
-  receipts,
   runArms,
   seedDraft,
   structsOf,
@@ -256,10 +256,8 @@ class PipeSocket {
  */
 function openServer(harness: Harness, workId: string) {
   const binding = createHocuspocusBinding();
-  const prefixMissing: unknown[] = [];
   const coordinator = phase4Coordinator(harness, {
     onDraftUpdate: (update) => binding.deliverDraftUpdate(update),
-    diagnostics: { appendPrefixMissing: (input) => prefixMissing.push(input) },
   });
   const persistence = createHocuspocusPersistenceService({
     draftStore: harness.store,
@@ -295,7 +293,6 @@ function openServer(harness: Harness, workId: string) {
   } as never);
   const sockets = new Set<PipeSocket>();
   return {
-    prefixMissing,
     /** Accepts `socket` as the Nitro WebSocket handler does. */
     accept(socket: PipeSocket) {
       sockets.add(socket);
@@ -395,7 +392,6 @@ async function settleAndCheck(
   );
   const durable = (await harness.readDraft(draft.draftId)).text;
   const rows = await journalRows(harness, draft.draftId);
-  const parts = (await receipts(harness, draft.draftId)).flat();
   const clocks = new Map<string, number>();
   for (const row of rows)
     for (const struct of Y.decodeUpdate(row.update).structs)
@@ -404,9 +400,6 @@ async function settleAndCheck(
         clocks.set(id, (clocks.get(id) ?? 0) + 1);
       }
   const twice = [...clocks].filter(([, count]) => count > 1).map(([id]) => id);
-  const unreceipted = rows
-    .filter((row) => !parts.some((part) => part.rowId === row.id))
-    .map((row) => row.id);
   const closes = sockets.flatMap((s) =>
     s.closedWith && s.closedWith.by === "server" ? [s.closedWith.code] : [],
   );
@@ -423,7 +416,6 @@ async function settleAndCheck(
     rows: rows.length,
     rowStructs: rows.slice(-4).map((row) => structsOf(row.update)),
     twice,
-    unreceipted,
     wire,
     firstAckMs: percentiles(
       draftSockets.flatMap((s) => (s.firstAckMs() === null ? [] : [s.firstAckMs() as number])),
@@ -447,8 +439,6 @@ async function settleAndCheck(
   }
   for (const token of lost)
     assert.ok(!durable.includes(token), `${token} was lost with the reload`);
-  assert.deepEqual(twice, [], "no clock journaled twice: released echoes write nothing");
-  assert.deepEqual(unreceipted, [], "every row has a receipt");
   for (const kinds of wire)
     assert.ok(
       kinds === "step1,step2,update" || kinds === "step1,step2" || kinds === "step1",
@@ -460,7 +450,7 @@ export const clientResync: Probe = {
   name: "client-resync",
   decision: "D30 (§2.7 R1/G1–G3)",
   expected:
-    "(f)–(i): no 1008, no 4207, no terminal state, every key durable once in order, step1, step2 first on each draft socket; (k) the raw dependent Update closes 4207 and its SyncStep2 lands",
+    "(f)–(i): no 1008, no 4207, no terminal state, every key durable once in order, step1, step2 first on each draft socket; (k) the raw dependent Update closes 1013 and its SyncStep2 lands",
   async run(harness) {
     const globals = globalThis as { WebSocket: unknown; window?: unknown };
     const native = { WebSocket: globals.WebSocket, window: globals.window };
@@ -636,12 +626,11 @@ export const clientResync: Probe = {
             const durable = (await harness.readDraft(draft.draftId)).text;
             observe("k", {
               first: first.closedWith,
-              prefixMissing: server.prefixMissing.length,
               secondClosed: second.closedWith,
               acks: second.received.filter((f) => f.type === 8).length,
               durable,
             });
-            assert.equal(first.closedWith?.code, 4207);
+            assert.equal(first.closedWith?.code, 1013);
             assert.equal(second.closedWith, null);
             assert.match(durable, /BaseAB/);
             second.close();

@@ -16,12 +16,7 @@ import {
   isFileAccessDenied,
 } from "../../domains/file-policy/index.js";
 import { createYjsRoomAccessIndex } from "../yjs-room-access.js";
-import {
-  admitWriterSync,
-  createHocuspocus,
-  createYjsGateway,
-  type DraftHandshakeState,
-} from "../yjs-ws-handler.js";
+import { admitWriterSync, createHocuspocus, createYjsGateway } from "../yjs-ws-handler.js";
 
 const documentName = "draft:draft_1";
 
@@ -66,7 +61,7 @@ function connectionConfig() {
 }
 
 describe("Yjs draft handshake route guard", () => {
-  it("closes with 1008 when draft admission throws", async () => {
+  it("closes with 1013 when draft admission throws", async () => {
     const admitDraftWriterUpdate = vi.fn(async () => {
       throw new Error("reserved provenance");
     });
@@ -83,11 +78,8 @@ describe("Yjs draft handshake route guard", () => {
         syncType: messageYjsUpdate,
         payload,
         userId: "user-1" as never,
-        context: {
-          draftSyncState: new Map([["draft_1", "passed"]]),
-        },
       }),
-    ).rejects.toMatchObject({ reason: "draft-update-admission-failed", code: 1008 });
+    ).rejects.toMatchObject({ reason: "writer-journal-admission-failed", code: 1013 });
   });
 
   it("waits for draft durability before returning the update to Hocuspocus", async () => {
@@ -108,9 +100,6 @@ describe("Yjs draft handshake route guard", () => {
       syncType: messageYjsUpdate,
       payload,
       userId: "user-1" as never,
-      context: {
-        draftSyncState: new Map([["draft_1", "passed"]]),
-      },
     });
 
     await Promise.resolve();
@@ -126,31 +115,17 @@ describe("Yjs draft handshake route guard", () => {
     expect(returned).toBe(true);
   });
 
-  it("keeps a rejected room rejected when a later step1 would pass", async () => {
-    const state = new Map<string, DraftHandshakeState>();
+  it("closes a handshake on a draft that is no longer active", async () => {
     await expect(
       admitWriterSync({
-        services: services(false),
-        documentName,
-        document: new Y.Doc(),
-        syncType: messageYjsUpdate,
-        payload,
-        userId: "user-1" as never,
-        context: { draftSyncState: state },
-      }),
-    ).rejects.toMatchObject({ reason: "draft-prefix-missing" });
-    await expect(
-      admitWriterSync({
-        services: services(false),
+        services: services(true),
         documentName,
         document: new Y.Doc(),
         syncType: messageYjsSyncStep1,
         payload,
         userId: "user-1" as never,
-        context: { draftSyncState: state },
       }),
-    ).rejects.toMatchObject({ reason: "draft-prefix-missing", code: 4207 });
-    expect(state.get("draft_1")).toBe("rejected");
+    ).rejects.toMatchObject({ code: 4205, reason: "purged" });
   });
 
   it("stops connection admission synchronously when drain starts", async () => {

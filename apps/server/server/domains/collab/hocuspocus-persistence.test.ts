@@ -83,13 +83,12 @@ describe("createHocuspocusPersistenceService draft room storage", () => {
     const admissionBlocked = new Promise<void>((resolve) => {
       releaseAdmission = resolve;
     });
-    const commitWriterUpdate = vi.fn(async () => {
+    const appendWriterFrame = vi.fn(async () => {
       await admissionBlocked;
-      return { admitted: true };
     });
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      draftCoordinator: { commitWriterUpdate } as never,
+      draftCoordinator: { appendWriterFrame } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,
@@ -112,7 +111,7 @@ describe("createHocuspocusPersistenceService draft room storage", () => {
 
     releaseAdmission?.();
     await expect(Promise.all([admission, store, shutdownDrain])).resolves.toBeDefined();
-    expect(commitWriterUpdate).toHaveBeenCalledOnce();
+    expect(appendWriterFrame).toHaveBeenCalledOnce();
     expect(drained).toBe(true);
   });
 });
@@ -197,51 +196,54 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
   });
 });
 
-describe("createHocuspocusPersistenceService draft stale gate", () => {
-  it("accepts a first writer update when the draft state carries tombstones already present in the room doc", async () => {
+describe("createHocuspocusPersistenceService draft frames", () => {
+  it("stores what the room lacks of a writer's frame, and nothing it already holds", async () => {
     const draftDoc = tombstoneBearingDoc();
-    const snapshot = draftSnapshot(draftDoc);
-    const roomDoc = cloneDoc(draftDoc);
-    const before = Y.encodeStateVector(roomDoc);
-    roomDoc.getText("content").insert(roomDoc.getText("content").length, "!");
-    const humanUpdate = Y.encodeStateAsUpdate(roomDoc, before);
-    const commitWriterUpdate = vi.fn(async () => ({ admitted: true }));
+    const room = cloneDoc(draftDoc);
+    const typist = cloneDoc(draftDoc);
+    const before = Y.encodeStateVector(typist);
+    typist.getText("content").insert(typist.getText("content").length, "!");
+    const humanUpdate = Y.encodeStateAsUpdate(typist, before);
+    const appendWriterFrame = vi.fn(async () => undefined);
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      draftStore: new MemoryDraftStore([memoryDraft(snapshot.documentDraft, snapshot.state)]),
-      draftCoordinator: {
-        commitWriterUpdate,
-      } as never,
+      draftCoordinator: { appendWriterFrame } as never,
       hocuspocus: () => null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
       emitAgentEditInvariantViolation: () => undefined,
     });
-
-    await expect(
+    const frame = (document: Y.Doc) =>
       persistence.admitDraftWriterUpdate({
         draftId: DRAFT_ID,
         update: humanUpdate,
         origin: { type: "user", userId: "user-1" as never },
-        document: roomDoc,
-      }),
-    ).resolves.toBeUndefined();
+        document,
+      });
 
-    expect(commitWriterUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ draftId: DRAFT_ID, updateData: humanUpdate }),
+    await expect(frame(room)).resolves.toBeUndefined();
+    expect(appendWriterFrame).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draftId: DRAFT_ID,
+        updateData: humanUpdate,
+        actorUserId: "user-1",
+      }),
     );
+
+    // A reconnect resends it once the room holds it: acknowledged, stored nowhere.
+    Y.applyUpdate(room, humanUpdate);
+    await expect(frame(room)).resolves.toBeUndefined();
+    expect(appendWriterFrame).toHaveBeenCalledOnce();
   });
 
-  it("rejects a stale room doc that lacks the draft tombstone delete set", async () => {
-    const snapshot = draftSnapshot(tombstoneBearingDoc());
-    const staleRoomDoc = docWithText("seed");
-    const before = Y.encodeStateVector(staleRoomDoc);
-    staleRoomDoc.getText("content").insert(4, "!");
-    const staleUpdate = Y.encodeStateAsUpdate(staleRoomDoc, before);
+  it("refuses a draft frame that closes the draft's owner out", async () => {
+    const room = docWithText("seed");
+    const typist = cloneDoc(room);
+    const before = Y.encodeStateVector(typist);
+    typist.getText("content").insert(4, "!");
     const persistence = createHocuspocusPersistenceService({
       journal: fakeJournal(),
-      draftStore: new MemoryDraftStore([memoryDraft(snapshot.documentDraft, snapshot.state)]),
       draftCoordinator: {
-        commitWriterUpdate: vi.fn(async () => {
+        appendWriterFrame: vi.fn(async () => {
           throw new DraftStaleUpdateError(`Draft ${DRAFT_ID}`);
         }),
       } as never,
@@ -253,9 +255,9 @@ describe("createHocuspocusPersistenceService draft stale gate", () => {
     await expect(
       persistence.admitDraftWriterUpdate({
         draftId: DRAFT_ID,
-        update: staleUpdate,
+        update: Y.encodeStateAsUpdate(typist, before),
         origin: { type: "user", userId: "user-1" as never },
-        document: staleRoomDoc,
+        document: room,
       }),
     ).rejects.toThrow(DraftStaleUpdateError);
   });

@@ -205,21 +205,6 @@ keeps the Yjs element whose block has the same id and edits it in place; a block
 id now names another type of element, is deleted where it was and inserted where it is, still with
 its one id.
 
-## Late peers
-
-Detection finds typing under a deleted item and typing a delete removes without listing it; whose text it is comes from the journal (collab `writerText`), not from the memory.
-
-The rules are in the [late-peer recovery rule][late-peer]. Detection indexes the incoming
-structs once by client and clock in the shared pinned Yjs adapter; parent and origin lookups
-must not scan the whole update per item, because a whole-draft Discard or Undo can carry tens
-of thousands of structs. Noncanonical updates with repeated, out-of-order client blocks keep
-first-match lookup rather than changing admission.
-
-`retainLateTypingDeletions` preserves separator-deletion observations when a deferred observer
-runs after another append: it keeps the append's new spans and drops stale backspaces against
-remembered typing.
-
 [review]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#what-review-shows
 [authors]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#who-wrote-a-change
 [cost]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-review.md#what-review-shows
-[late-peer]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/collaboration/draft-store-concurrency.md#a-late-peer-keeps-only-its-surviving-typing

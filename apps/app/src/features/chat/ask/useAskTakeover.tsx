@@ -241,7 +241,7 @@ function seedDraft(ask: ThreadAsk): QuestionDraft {
   });
   // Resume at the first question still open.
   const open = entries.findIndex((entry) => entry.choice === null);
-  return { step: open < 0 ? 0 : open, entries };
+  return { step: Math.max(open, 0), entries };
 }
 
 /** Each question's typed words that its outcome doesn't hold, one per line; empty when none. */

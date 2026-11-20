@@ -38,7 +38,6 @@ have it:
 | Document content | Whether a document is shown, in Trash, in no view, or its content released | [context](../../apps/server/server/domains/context/.context/state-machines.md) |
 | Draft, branch | Whether a draft or branch still accepts writes | [collab](../../apps/server/server/domains/collab/.context/state-machines.md) |
 | Thread subscription, server half | One subscription on one WebSocket peer | [lib](../../apps/server/server/lib/.context/state-machines.md) |
-| Draft room handshake | Whether a connection may send edits to a draft room | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 | Tree list room connection | Whether a connection may send records to a project's list, and what a refusal does | [lib](../../apps/server/server/lib/.context/state-machines.md) |
 
 ## Packages

@@ -43,8 +43,8 @@ describe("writer frames racing rewrites (postgres)", () => {
   afterAll(() => closeDatabase(db));
 
   /**
-   * A frame from a room holding the draft as it is now: `edit` runs on the room's copy and
-   * the frame carries exactly the update it made.
+   * A frame from a tab holding the draft as it is now: `edit` runs on the tab's copy and the
+   * frame carries exactly the update it made, as the room judged it new.
    */
   async function writerFrame(draftId: string, edit: (fragment: Y.XmlFragment) => void) {
     const room = new Y.Doc({ gc: false });
@@ -53,11 +53,10 @@ describe("writer frames racing rewrites (postgres)", () => {
     const updates = captureMutationUpdates(room, () => edit(room.getXmlFragment("prosemirror")));
     return {
       send: () =>
-        fixture.view.draftCoordinator.commitWriterUpdate({
+        fixture.view.draftCoordinator.appendWriterFrame({
           draftId,
           updateData: Y.mergeUpdates(updates),
           actorUserId: USER_ID as never,
-          roomDocument: room,
         }),
       destroy: () => room.destroy(),
     };
@@ -186,7 +185,7 @@ describe("writer frames racing rewrites (postgres)", () => {
       const raced = await interleave(db, writer.send, "draft.append.beforeCommit", () =>
         runtime.commitOnce(third, {}),
       );
-      expect(raced.a).toEqual({ ok: true, value: { admitted: true } });
+      expect(raced.a).toEqual({ ok: true, value: undefined });
       expect(raced.b).toEqual({ ok: true, value: true });
       expect(raced.bWaited).toBe(true);
       expect(sawWriter).toBe(true);
@@ -228,11 +227,11 @@ describe("writer frames racing rewrites (postgres)", () => {
     expect(dirty).toHaveLength(3);
   });
 
-  it("keeps model and writer authorship on their own durable draft receipts", async () => {
+  it("keeps a writer's authorship on its journal row and writes it no edit receipt", async () => {
     const draftId = await draftWithChange();
     const writer = await writerFrame(draftId, appendParagraph("Writer first."));
     try {
-      await expect(writer.send()).resolves.toEqual({ admitted: true });
+      await writer.send();
     } finally {
       writer.destroy();
     }
@@ -260,43 +259,11 @@ describe("writer frames racing rewrites (postgres)", () => {
       toolCallId: null,
     });
 
-    const edits = await db
-      .select({
-        actor: schema.documentEdits.actor,
-        actorUserId: schema.documentEdits.actorUserId,
-        threadId: schema.documentEdits.threadId,
-        turnId: schema.documentEdits.turnId,
-        responseId: schema.documentEdits.responseId,
-        origin: schema.documentEditParts.origin,
-      })
+    const receipted = await db
+      .select({ rowId: sql<number>`(${schema.documentEditParts.origin}->>'rowId')::int` })
       .from(schema.documentEditParts)
-      .innerJoin(
-        schema.documentEdits,
-        eq(schema.documentEditParts.editId, schema.documentEdits.id),
-      );
-    const editByRowId = new Map(
-      edits.map((edit) => [(edit.origin as { kind: string; rowId?: number }).rowId, edit]),
-    );
-    expect(editByRowId.get(modelRow.id)).toEqual(
-      expect.objectContaining({
-        actor: "agent",
-        actorUserId: null,
-        threadId: THREAD_ID,
-        turnId: TURN_ID,
-        responseId: fixture.responseId,
-        origin: { kind: "pending", draftId, rowId: modelRow.id },
-      }),
-    );
-    expect(editByRowId.get(writerRow.id)).toEqual(
-      expect.objectContaining({
-        actor: "human",
-        actorUserId: USER_ID,
-        threadId: null,
-        turnId: null,
-        responseId: null,
-        origin: { kind: "pending", draftId, rowId: writerRow.id },
-      }),
-    );
+      .where(sql`${schema.documentEditParts.origin}->>'draftId' = ${draftId}`);
+    expect(receipted.map((part) => part.rowId)).toEqual([modelRow.id]);
   });
 
   it.each(["pull", "frame"] as const)(
@@ -311,10 +278,10 @@ describe("writer frames racing rewrites (postgres)", () => {
             ? // The rebase holds the draft row between its append and COMMIT.
               await interleave(db, pull, "draft.append.beforeCommit", frame.send)
             : await interleave(db, frame.send, "draft.append.afterCommit", pull);
-        const sent = (first === "pull" ? run.b : run.a) as Settled<{ admitted: boolean }>;
-        expect(sent).toEqual({ ok: true, value: { admitted: true } });
+        const sent = (first === "pull" ? run.b : run.a) as Settled<void>;
+        expect(sent).toEqual({ ok: true, value: undefined });
         expect(first === "pull" ? run.a : run.b).toMatchObject({ ok: true });
-        // The frame's append waited on the rebase's row lock, then judged against the result.
+        // The frame's insert waited on the rebase's row lock.
         if (first === "pull") expect(run.bWaited).toBe(true);
       } finally {
         frame.destroy();
@@ -338,7 +305,7 @@ describe("writer frames racing rewrites (postgres)", () => {
     return setTestHook("inverse.beforeCommitScope", async () => {
       const frame = await writerFrame(draftId, frameEdit);
       try {
-        expect(await frame.send()).toEqual({ admitted: true });
+        await frame.send();
       } finally {
         frame.destroy();
       }

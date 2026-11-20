@@ -1,4 +1,4 @@
-/** R acceptance: content rebases and late frames through production services and PostgreSQL. */
+/** R acceptance: content rebases and writer frames through production services and PostgreSQL. */
 
 import assert from "node:assert/strict";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -32,7 +32,7 @@ const paragraph = (text: string) =>
 // A quote is the same block with a `>` step: wrapping keeps its element and its id.
 const quote = (text: string) =>
   schema.nodes.paragraph.create({ id: "p", path: ">" }, text ? schema.text(text) : null);
-// Retyping to a code block replaces the element, so late frames on the paragraph need recovery.
+// Retyping to a code block replaces the element, so typing on the old paragraph goes with it.
 const rebuilt = (text: string) =>
   schema.nodes.code_block.create({ id: "c" }, text ? schema.text(text) : null);
 const scratch = await createScratchDatabase();
@@ -97,11 +97,10 @@ async function seed(label: string, content = [paragraph("Base words.")]) {
 }
 type Seed = Awaited<ReturnType<typeof seed>>;
 async function writer(s: Seed, update: Uint8Array) {
-  return coordinator.commitWriterUpdate({
+  return coordinator.appendWriterFrame({
     draftId: s.draftId,
     updateData: update,
     actorUserId: h.ids.user,
-    roomDocument: s.room,
   });
 }
 async function agent(s: Seed, update: Uint8Array, peer: Y.Doc) {
@@ -200,8 +199,11 @@ try {
       release();
     }
     const result = await read(s);
-    once(result, "writerAlpha");
-    once(result, "writerBeta");
+    // Typing into a paragraph the live edit replaced follows plain Yjs and goes with it.
+    const text = result.map((b) => b.textContent).join("\n");
+    assert.equal(text.split("writerAlpha").length - 1, 0);
+    assert.equal(text.split("writerBeta").length - 1, 0);
+    once(result, "A completely unrelated live replacement.");
     console.log(JSON.stringify({ words: 50_000, lastAppends: h.appends.slice(-3) }));
   });
   await row("pending-writer-agent-on-wrapped-block-once", async () => {
@@ -225,239 +227,6 @@ try {
     assert.equal(result[0]?.attrs.path, ">");
     once(result, "writerPending");
     once(result, "agentPending");
-  });
-  await row("late-typing-extends-one-paragraph-and-reconnect-is-contained", async () => {
-    const s = await seed("r-late");
-    const stale = clone(s.room);
-    const first = captured(stale, () => textAt(stale).insert(4, "lateA"));
-    await live(s, [quote("Base words.")]);
-    await pulls.catchUpDraft(s.draftId);
-    assert.equal((await writer(s, first)).admitted, true);
-    const second = captured(stale, () => textAt(stale).insert(9, "B"));
-    await writer(s, second);
-    const result = await read(s);
-    // The quote kept the paragraph's element, so the late typing lands in the quoted block.
-    assert.equal(result.length, 1);
-    once(result, "lateAB");
-    assert.equal(result[0]?.attrs.path, ">");
-    assert.equal((await writer(s, Y.encodeStateAsUpdate(stale))).admitted, false);
-  });
-  await row("deletion-only-late-frame-advances-span-memory", async () => {
-    const s = await seed("r-deletion-memory", [paragraph("ab")]);
-    const stale = clone(s.room);
-    const first = captured(stale, () => {
-      textAt(stale).insert(1, "X");
-      textAt(stale).insert(3, "Y");
-    });
-    await live(s, [rebuilt("ab")]);
-    await pulls.catchUpDraft(s.draftId);
-    await writer(s, first);
-    assert.equal((await read(s)).length, 3);
-    await writer(
-      s,
-      captured(stale, () => textAt(stale).delete(2, 1)),
-    );
-    await writer(
-      s,
-      captured(stale, () => textAt(stale).insert(2, "Z")),
-    );
-    // The typist joined X and Y by deleting what stood between: the published paragraphs stay as they
-    // are, and the new word joins the one before it in place.
-    const result = await read(s);
-    assert.equal(result.length, 3);
-    once(result, "XZ");
-    once(result, "Y");
-  });
-  await row("deferred-contained-observer-keeps-newer-recovery-spans", async () => {
-    const s = await seed("r-memory-deferred", [paragraph("ab")]);
-    const stale = clone(s.room);
-    const first = captured(stale, () => {
-      textAt(stale).insert(1, "X");
-      textAt(stale).insert(3, "Y");
-    });
-    await live(s, [rebuilt("ab")]);
-    await pulls.catchUpDraft(s.draftId);
-    await writer(s, first);
-    const deletion = captured(stale, () => textAt(stale).delete(2, 1));
-    let resume!: () => void, signal!: () => void;
-    const observed = new Promise<void>((done) => {
-      signal = done;
-    });
-    const released = new Promise<void>((done) => {
-      resume = done;
-    });
-    const outer = runInRootDrizzleTransaction(h.db, async () => {
-      await writer(s, deletion);
-      signal();
-      await released;
-    });
-    try {
-      await reached(observed);
-      await writer(
-        s,
-        captured(stale, () => textAt(stale).insert(2, "Z")),
-      );
-      resume();
-      await outer;
-      await writer(
-        s,
-        captured(stale, () => textAt(stale).insert(3, "W")),
-      );
-      const result = await read(s);
-      assert.equal(result.length, 3);
-      // Z was typed before the deletion of the separator reached memory, so it joined Y's paragraph, and W
-      // extends that paragraph in place.
-      once(result, "ZWY");
-      once(result, "X");
-    } finally {
-      resume();
-      await outer;
-    }
-  });
-  await row("typing-the-deleter-never-saw-is-recovered-in-either-order", async () => {
-    // The delete arrives first: the typing lands under a deleted block.
-    const first = await seed("r-writer-delete");
-    const stale = clone(first.room),
-      other = clone(first.room);
-    const typing = captured(stale, () => textAt(stale).insert(4, "recoveredLate"));
-    await writer(
-      first,
-      captured(other, () => fragment(other).delete(0, 1)),
-    );
-    await writer(first, typing);
-    once(await read(first), "recoveredLate");
-    // The typing arrives first: the delete removes it without listing it.
-    const second = await seed("r-writer-delete-after");
-    const typist = clone(second.room),
-      deleter = clone(second.room);
-    await writer(
-      second,
-      captured(typist, () => textAt(typist).insert(4, "recoveredFirst")),
-    );
-    await writer(
-      second,
-      captured(deleter, () => fragment(deleter).delete(0, 1)),
-    );
-    once(await read(second), "recoveredFirst");
-    // A deleter that saw the typing deletes it for good.
-    const third = await seed("r-writer-delete-seen");
-    const seen = clone(third.room);
-    await writer(
-      third,
-      captured(seen, () => textAt(seen).insert(4, "seenThenDeleted")),
-    );
-    await writer(
-      third,
-      captured(seen, () => fragment(seen).delete(0, 1)),
-    );
-    assert.ok(!(await read(third)).some((b) => b.textContent.includes("seenThenDeleted")));
-    // Two insertions the deleter never saw stay two paragraphs, never one fused word.
-    const fourth = await seed("r-writer-delete-two");
-    const two = clone(fourth.room),
-      peer = clone(fourth.room);
-    await writer(
-      fourth,
-      captured(two, () => {
-        textAt(two).insert(0, "Foo ");
-        textAt(two).insert(textAt(two).length, " Bar");
-      }),
-    );
-    await writer(
-      fourth,
-      captured(peer, () => fragment(peer).delete(0, 1)),
-    );
-    assert.deepEqual(
-      (await read(fourth)).map((b) => b.textContent),
-      ["Foo", "Bar"],
-    );
-    // A typist's whole state carries the deleted block again, apparently alive.
-    const fifth = await seed("r-writer-delete-full-state");
-    const full = clone(fifth.room),
-      fullDeleter = clone(fifth.room);
-    textAt(full).insert(4, "fullState");
-    await writer(
-      fifth,
-      captured(fullDeleter, () => fragment(fullDeleter).delete(0, 1)),
-    );
-    await writer(fifth, Y.encodeStateAsUpdate(full));
-    once(await read(fifth), "fullState");
-    // A keystroke that extends a recovered paragraph leaves the characters a peer saw in place, so
-    // that peer's delete of the paragraph removes them and recovers only what it never saw.
-    const sixth = await seed("r-writer-delete-extend");
-    const lateTypist = clone(sixth.room),
-      remover = clone(sixth.room);
-    await writer(
-      sixth,
-      captured(remover, () => fragment(remover).delete(0, 1)),
-    );
-    await writer(
-      sixth,
-      captured(lateTypist, () => textAt(lateTypist).insert(4, "XYZ")),
-    );
-    const sees = await coordinator.readDraft(sixth.draftId, async (doc) => clone(doc));
-    await writer(
-      sixth,
-      captured(lateTypist, () => textAt(lateTypist).insert(7, "W")),
-    );
-    await writer(
-      sixth,
-      captured(sees, () => fragment(sees).delete(0, 1)),
-    );
-    const extended = (await read(sixth)).map((b) => b.textContent);
-    assert.deepEqual(extended, ["W"]);
-    // Typing a client's undo history retains still travels in its whole state after it received the deletion.
-    const seventh = await seed("r-writer-delete-undo");
-    const undoer = new Y.Doc();
-    docs.push(undoer);
-    Y.applyUpdate(undoer, Y.encodeStateAsUpdate(seventh.room));
-    const history = new Y.UndoManager(fragment(undoer), { captureTimeout: 0 });
-    textAt(undoer).insert(4, "FIRST");
-    textAt(undoer).delete(4, 5);
-    history.undo();
-    const gone = clone(seventh.room);
-    const removal = captured(gone, () => fragment(gone).delete(0, 1));
-    await writer(seventh, removal);
-    Y.applyUpdate(undoer, removal);
-    await writer(seventh, Y.encodeStateAsUpdate(undoer));
-    // The deleted original and its undo copy both survive the block's deletion: the word may show twice.
-    assert.ok((await read(seventh)).some((b) => b.textContent.includes("FIRST")));
-    // A peer that saw two recovered paragraphs deletes both after the typist joins them: only what it
-    // never saw (the joining words) comes back, because neither paragraph was copied.
-    const eighth = await seed("r-writer-delete-join");
-    const joiner = clone(eighth.room),
-      cutter = clone(eighth.room);
-    await writer(
-      eighth,
-      captured(cutter, () => fragment(cutter).delete(0, 1)),
-    );
-    await writer(
-      eighth,
-      captured(joiner, () => textAt(joiner).insert(0, "FIRST")),
-    );
-    await writer(
-      eighth,
-      captured(joiner, () => textAt(joiner).insert(textAt(joiner).length, "SECOND")),
-    );
-    const both = await coordinator.readDraft(eighth.draftId, async (doc) => clone(doc));
-    assert.deepEqual(
-      blocks(both).map((b) => b.textContent),
-      ["FIRST", "SECOND"],
-    );
-    await writer(
-      eighth,
-      captured(joiner, () => {
-        textAt(joiner).delete(5, 11);
-        textAt(joiner).insert(5, "NEW");
-      }),
-    );
-    await writer(
-      eighth,
-      captured(both, () => fragment(both).delete(0, 2)),
-    );
-    assert.deepEqual(
-      (await read(eighth)).map((b) => b.textContent),
-      ["NEW"],
-    );
   });
   await row("effect-drops-after-live-matches-no-key", async () => {
     const s = await seed("r-effect");
@@ -483,7 +252,7 @@ try {
     });
     const text = (fragment(old).get(0) as Y.XmlElement).get(0) as Y.XmlText;
     text.insert(text.length, " unsentReconnect");
-    assert.equal((await writer(s, Y.encodeStateAsUpdate(old))).admitted, true);
+    await writer(s, Y.encodeStateAsUpdate(old));
     once(await read(s), "unsentReconnect");
   });
   await row("turn-inverse-fresh-seed-no-live-duplication", async () => {
@@ -528,7 +297,7 @@ try {
       ["Base words."],
     );
   });
-  console.log(`${passed.length}/9 acceptance rows passed`);
+  console.log(`${passed.length}/${passed.length} acceptance rows passed`);
 } finally {
   effect.dispose();
   pulls.cancelScheduledPulls();

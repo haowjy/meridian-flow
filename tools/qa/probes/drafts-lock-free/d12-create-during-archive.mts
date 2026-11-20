@@ -69,9 +69,8 @@ export const d12CreateDuringArchive: Probe = {
       room.clientID = 777_001;
       const update = appendToFirstParagraph(room, " AFTER ARCHIVE");
       const frame = await settled(
-        harness.coordinator.commitWriterUpdate({
+        harness.coordinator.appendWriterFrame({
           draftId: documentDraft.draftId,
-          roomDocument: room,
           updateData: update,
         }),
       );
@@ -81,12 +80,12 @@ export const d12CreateDuringArchive: Probe = {
       observe("ensure held off", waiting);
       observe("after archive", {
         lifecycle: documentDraft.lifecycle,
-        frame: frame.ok ? frame.value : { refused: frame.name },
+        frame: frame.ok ? "stored" : { refused: frame.name },
         durable: after,
       });
       assert.equal(archivedBefore, false);
       assert.equal(documentDraft.lifecycle, "archived");
-      assert.ok(!frame.ok || !frame.value.admitted, "the frame must be refused");
+      assert.ok(!frame.ok, "the frame must be refused");
       assert.equal(after.revision, 0);
       assert.doesNotMatch(after.text, /AFTER ARCHIVE/);
       assert.ok(Y.encodeStateVector(live).length > 0);

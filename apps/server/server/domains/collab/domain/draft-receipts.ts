@@ -6,15 +6,7 @@
  */
 
 import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
-import {
-  DRAFT_SERVER_CLIENT_ID,
-  findLostEdits,
-  type LateTyping,
-  type LostEdit,
-  NO_LATE_TYPING,
-  readBlocks,
-  recoverLatePeerEdits,
-} from "@meridian/agent-edit/diff";
+import { DRAFT_SERVER_CLIENT_ID, readBlocks } from "@meridian/agent-edit/diff";
 import {
   captureEditParts,
   heldDeletes,
@@ -38,16 +30,10 @@ import {
   materializeDraftRead,
 } from "./draft-store.js";
 import { DraftSaveCut } from "./immutable-draft-state.js";
-import { validateClientUpdateAdmission, validateRestorationRanges } from "./provenance.js";
+import { validateClientUpdateAdmission } from "./provenance.js";
 
-/** Marks a recovery row in the journal: the text it inserts stays a writer's own (`DraftStore.writerText`). */
-export const LATE_TYPING_META = { lateTyping: true } as const;
-const isWriterRow = (row: AppendDraftJournalInput) =>
-  row.source === "writer" ||
-  (row.updateMeta as { lateTyping?: boolean } | null | undefined)?.lateTyping === true;
-
-// LateTyping retains PM nodes between frames; their schema identity must remain stable.
-const recoverySchema = buildDocumentSchema();
+// An AI write's receipt reads the text on each side of it; the schema's identity must stay stable.
+const deltaSchema = buildDocumentSchema();
 
 /** Runs under the row hold, after incoming rows. Capture each server transaction
  * as an update and return it in order. The runtime owns and destroys this private prefix copy. */
@@ -62,11 +48,6 @@ export type FinalizeAppendInput = {
   authorServerRows?: AuthorServerRows;
   /** What the rows `authorServerRows` writes carry: who made them and, for an Undo, what they took back. */
   serverRow?: () => Partial<Omit<AppendDraftJournalInput, "draftId" | "source" | "updateData">>;
-  recovery?: {
-    memory(): LateTyping;
-    /** Which of these ids a writer or an earlier recovery inserted, among the committed rows. */
-    writerText(ids: readonly Y.ID[]): Promise<ReadonlySet<string>>;
-  };
   /**
    * A private clone of the caller's base replica, made off the lock. When the checkpoint held
    * it becomes the committed prefix; when a rewrite moved it, it is destroyed.
@@ -76,11 +57,6 @@ export type FinalizeAppendInput = {
   candidateState: Uint8Array;
   rows: readonly AppendDraftJournalInput[];
   containment: ReturnType<typeof createDocumentContainment>;
-  /**
-   * A writer row's authorship on the committed prefix, even when preflight judged the same
-   * base. Every incoming writer row crosses this boundary under the row hold.
-   */
-  validateWriter(prefix: Y.Doc, update: Uint8Array): void;
 };
 
 /** A finalized append: what the store inserts, and the document it commits into. */
@@ -91,14 +67,11 @@ export type FinalizedAppend = Extract<AppendFinalization, { status: "appended" }
   prefixHeld: boolean;
   prefixRows: readonly DraftTailRow[];
   checkpointSeq: number;
-  lateTyping?: LateTyping;
-  /** The paragraphs late-peer recovery wrote or rewrote in this append. */
-  recovered?: readonly string[];
 };
 
 /**
  * Builds the committed prefix from `read`, judges each row on its before-view (containment,
- * the novel trim, held deletes, restoration ranges, and client admission on the committed prefix),
+ * the novel trim, held deletes and client admission on the committed prefix),
  * applies them requiring complete integration, and captures one receipt per logical write on
  * the final document. Any outcome but `appended` leaves `doc` unusable: the caller destroys it.
  * An appended or contained outcome carries its cut: the prefix as found under the lock, and
@@ -134,19 +107,19 @@ export async function finalizeAppend(
     if (input.precondition && !input.precondition(before))
       return done({ status: "preconditionFailed" });
 
-    let lateTyping = input.recovery?.memory() ?? NO_LATE_TYPING;
-    const recovered: string[] = [];
     const kept: {
       row: AppendDraftJournalInput;
       held: Set<string>;
       delta: StoredDelta | null;
     }[] = [];
+    // A writer's row can wait on another tab's edit that has not reached the journal yet. That
+    // wait is the writer row's, not this append's: only what these rows leave pending refuses.
+    const waiting = new Set(pendingClocks(doc).map(clockKey));
     function admit(row: AppendDraftJournalInput): AppendFinalization | undefined {
       if (input.containment.contains(doc, row.updateData)) return;
       const stateVector = Y.encodeStateVector(doc);
       const novel = Y.diffUpdate(row.updateData, stateVector);
       const held = heldDeletes(doc, novel, Y.decodeStateVector(stateVector));
-      if (row.source === "writer") input.validateWriter(doc, novel);
       if (row.source === "agent") {
         assertFreshAgentUpdate(doc, novel);
         validateClientUpdateAdmission(doc, novel);
@@ -154,94 +127,19 @@ export async function finalizeAppend(
       // What an AI write did to the text, read once on each side of it: the card and the model's
       // Undo read the edit from this, not from Yjs ids.
       const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-      const textBefore = row.source === "agent" ? readBlocks(fragment, recoverySchema) : null;
+      const textBefore = row.source === "agent" ? readBlocks(fragment, deltaSchema) : null;
       Y.applyUpdate(doc, novel);
-      const missing = pendingClocks(doc);
+      const missing = pendingClocks(doc).filter((clock) => !waiting.has(clockKey(clock)));
       if (missing.length) return { status: "prefixMissing", clocks: missing };
-      if (row.source !== "server") validateRestorationRanges(doc, novel);
       kept.push({
         row: { ...row, updateData: novel },
         held,
-        delta: textBefore ? captureDelta(textBefore, readBlocks(fragment, recoverySchema)) : null,
+        delta: textBefore ? captureDelta(textBefore, readBlocks(fragment, deltaSchema)) : null,
       });
     }
-    /** Typing a frame's deletion removed unseen counts only when a writer or an earlier recovery wrote it. */
-    async function writerTyped(edits: LostEdit[]): Promise<LostEdit[]> {
-      const removed = edits.filter((edit) => edit.removed);
-      if (!removed.length || !input.recovery) return edits;
-      const ids: Y.ID[] = removed.flatMap((edit) =>
-        Array.from({ length: edit.text.length }, (_, i) =>
-          Y.createID(edit.id.client, edit.id.clock + i),
-        ),
-      );
-      const own = new Set<string>();
-      // This append's own rows are not journaled yet.
-      for (const { row } of kept)
-        if (isWriterRow(row))
-          for (const struct of Y.decodeUpdate(row.updateData).structs)
-            for (const id of ids)
-              if (
-                id.client === struct.id.client &&
-                id.clock >= struct.id.clock &&
-                id.clock < struct.id.clock + struct.length
-              )
-                own.add(`${id.client}:${id.clock}`);
-      const rest = ids.filter((id) => !own.has(`${id.client}:${id.clock}`));
-      if (rest.length) for (const key of await input.recovery.writerText(rest)) own.add(key);
-      const out = edits.filter((edit) => !edit.removed);
-      for (const edit of removed) {
-        let run: LostEdit | null = null;
-        for (let i = 0; i < edit.text.length; i++) {
-          if (!own.has(`${edit.id.client}:${edit.id.clock + i}`)) {
-            run = null;
-            continue;
-          }
-          if (!run) {
-            run = { id: Y.createID(edit.id.client, edit.id.clock + i), text: "", removed: true };
-            out.push(run);
-          }
-          run.text += edit.text[i];
-        }
-      }
-      return out;
-    }
     for (const row of input.rows) {
-      const found =
-        row.source === "server" || !input.recovery
-          ? { typed: [], deleted: [], invisible: new Set<string>() }
-          : findLostEdits(doc, row.updateData, row.source === "writer");
       const refused = admit(row);
       if (refused) return done(refused);
-      const lost = { ...found, typed: await writerTyped(found.typed) };
-      if (input.recovery && (lost.typed.length || lost.deleted.length)) {
-        // Without typing the helper only advances deletion memory; no clone or server row.
-        const authoring = lost.typed.length ? createCollabYDoc({ gc: false }) : doc;
-        try {
-          if (authoring !== doc) Y.applyUpdate(authoring, Y.encodeStateAsUpdate(doc));
-          const recovery = recoverLatePeerEdits({
-            doc: authoring,
-            update: row.updateData,
-            lost,
-            memory: lateTyping,
-            schema: recoverySchema,
-            fragmentName: PROSEMIRROR_FRAGMENT_NAME,
-            clientId: DRAFT_SERVER_CLIENT_ID,
-          });
-          lateTyping = recovery.memory;
-          recovered.push(...recovery.written);
-          if (recovery.update) {
-            const refused = admit({
-              draftId: row.draftId,
-              source: "server",
-              updateData: recovery.update,
-              updateMeta: LATE_TYPING_META,
-            });
-            if (refused) return done(refused);
-          }
-        } finally {
-          if (authoring !== doc) authoring.destroy();
-        }
-      }
     }
     if (input.authorServerRows) {
       // Authoring must not mutate the receipt before-view. This copy is made only for server
@@ -295,8 +193,6 @@ export async function finalizeAppend(
         prefixHeld,
         prefixRows: read.tail,
         checkpointSeq: read.documentDraft.checkpointSeq,
-        lateTyping,
-        recovered,
       },
     };
   } catch (cause) {
@@ -305,6 +201,8 @@ export async function finalizeAppend(
     throw cause;
   }
 }
+
+const clockKey = ({ client, clock }: { client: number; clock: number }) => `${client}:${clock}`;
 
 /**
  * What the last apply left pending: the update depends on structs or deletes not yet held.

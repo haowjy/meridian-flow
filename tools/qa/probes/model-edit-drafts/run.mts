@@ -290,14 +290,13 @@ const cases: ModelEditCase[] = [
       await child.arm("command.afterLock", "hold");
       await send(child, h, thread, "again");
       await child.at("command.afterLock");
-      const typed = h.coordinator.commitWriterUpdate({
+      const typed = h.coordinator.appendWriterFrame({
         draftId: draft.id,
         updateData: appendToFirstParagraph(room, " typed"),
-        roomDocument: room,
       });
       await sleep(1000);
       await child.release("command.afterLock");
-      assert.deepEqual(await typed, { admitted: true });
+      await typed;
       await waitForAssistantTurn(h, thread, { count: 2 });
       const [found] = await drafts(h, documentId);
       assert.deepEqual(found?.doc, ["Live seed. typed", "Added.", "Then."]);

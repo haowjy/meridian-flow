@@ -1,13 +1,12 @@
 /**
  * A draft room as a delivery recipient, over the real gateway hooks and the
  * real Hocuspocus room lifecycle: each room loads through `createDocument`, the call a socket
- * connection makes, and each frame goes through the gateway's `admitWriterSync`, which asks for
- * the `1008` close a refused frame gets.
+ * connection makes, and each frame goes through the gateway's `admitWriterSync`.
  *
  * - `cold-load-commit`: a pull commits while the room's load read is paused, so the room
  *   registers holding the older snapshot; its enrollment brings the commit in.
- * - `dropped-delivery`: the delivery of a pull is dropped on purpose; the next frame finds its
- *   room behind, reconciles it, and is admitted with no `1008`.
+ * - `dropped-delivery`: the delivery of a pull is dropped on purpose; the next frame is judged in
+ *   the room, stored and admitted, and the room stays behind until a tab's handshake.
  * - `read-only-handshake`: the same dropped delivery, then a tab that may only read joins; its
  *   SyncStep1, run through Hocuspocus's own sync receiver, reconciles the room first, so
  *   the tab receives the committed text with no keystroke anywhere.
@@ -17,8 +16,8 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createHocuspocusBinding } from "../../../../apps/server/server/domains/collab/adapters/hocuspocus-binding.ts";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
+import type { DraftDiagnostics } from "../../../../apps/server/server/domains/collab/domain/draft-runtime.ts";
 import type { DraftStore } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
-import type { WriterFrameDiagnostics } from "../../../../apps/server/server/domains/collab/domain/draft-writer-frames.ts";
 import { createHocuspocusPersistenceService } from "../../../../apps/server/server/domains/collab/hocuspocus-persistence.ts";
 import {
   admitWriterSync,
@@ -49,7 +48,7 @@ const decoding = serverRequire("lib0/decoding");
 /** A Hocuspocus room, as `createDocument` resolves it. */
 type Document = Awaited<ReturnType<ReturnType<typeof createHocuspocus>["createDocument"]>>;
 
-type Reconciled = Parameters<WriterFrameDiagnostics["roomReconciled"]>[0];
+type Reconciled = Parameters<DraftDiagnostics["roomReconciled"]>[0];
 
 /** `store` whose first `readDraftAt` holds its result until `release`, once it has `entered`. */
 function pausedRead(store: DraftStore) {
@@ -98,7 +97,6 @@ export function openGateway(
     diagnostics: {
       compactionFailed() {},
       appendPrefixMissing() {},
-      lateTypingRecovered() {},
       roomReconciled: (input) => reconciled.push(input),
     },
   });
@@ -130,19 +128,19 @@ export function openGateway(
   }
 
   /** A tab's keystroke on `room`, admitted as the gateway admits a socket's frame. */
-  async function type(room: Document, draftId: string, token: string) {
+  async function type(room: Document, token: string) {
     const tab = new Y.Doc({ gc: false });
     Y.applyUpdate(tab, Y.encodeStateAsUpdate(room));
     const update = appendToFirstParagraph(tab, token);
     tab.destroy();
-    return send(room, draftId, update);
+    return send(room, update);
   }
 
   /**
    * `payload` as a socket's Update (`syncType` 2) or SyncStep2 (1) on `room`, through the
    * gateway's admission: the close a refusal carries, and the room applies it when admitted.
    */
-  async function send(room: Document, draftId: string, payload: Uint8Array, syncType = 2) {
+  async function send(room: Document, payload: Uint8Array, syncType = 2) {
     const result = await settled(
       admitWriterSync({
         services,
@@ -151,7 +149,6 @@ export function openGateway(
         syncType,
         payload,
         userId: harness.ids.user as never,
-        context: { draftSyncState: new Map([[draftId, "passed"]]) },
       }),
     );
     // Hocuspocus applies an admitted frame to the room.
@@ -174,7 +171,6 @@ export function openGateway(
     const context = {
       traceId: "read-only-handshake",
       userId: harness.ids.user,
-      draftSyncState: new Map(),
       admissionTarget: { kind: "draft", draftId, documentId: room.name },
       access: { level: "read" },
     };
@@ -270,7 +266,7 @@ export const coldLoadCommit: Probe = {
       const registered = text(room);
       await gateway.enrolled(draftId);
       const enrolled = text(room);
-      const next = await gateway.type(room, draftId, " NEXT");
+      const next = await gateway.type(room, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
       observe("load", { registered, enrolled, durable });
       observe("next", next);
@@ -296,7 +292,7 @@ export const coldLoadCommit: Probe = {
 export const droppedDelivery: Probe = {
   name: "dropped-delivery",
   decision: "D26",
-  expected: `room lacks LIVE after the dropped delivery; next: {"ok":true,"closes":[]}; one frame repair`,
+  expected: `room lacks LIVE after the dropped delivery; next: {"ok":true,"closes":[]}, stored with LIVE in the journal; no repair`,
   async run(harness) {
     const { draftId, documentId, live } = await seedDraft(harness, "dropped-delivery");
     const gateway = openGateway(harness, harness.store, { dropDelivery: true });
@@ -306,7 +302,7 @@ export const droppedDelivery: Probe = {
       appendToFirstParagraph(live, " LIVE");
       await rebaseLive(harness, gateway.coordinator, documentId, live, draftId);
       const behind = text(room);
-      const next = await gateway.type(room, draftId, " NEXT");
+      const next = await gateway.type(room, " NEXT");
       const durable = (await harness.readDraft(draftId)).text;
       observe("drop", { behind, durable });
       observe("next", { ...next, room: text(room) });
@@ -316,11 +312,8 @@ export const droppedDelivery: Probe = {
       // The tab typed NEXT without seeing LIVE: both land, in Yjs's order for concurrent inserts.
       assert.match(durable, /LIVE/);
       assert.match(durable, /NEXT/);
-      assert.equal(text(room), durable);
-      assert.deepEqual(
-        gateway.reconciled.map(({ trigger }) => trigger),
-        ["frame"],
-      );
+      assert.doesNotMatch(text(room), /LIVE/, "the room heals at a handshake, not at a frame");
+      assert.deepEqual(gateway.reconciled, []);
     } finally {
       live.destroy();
       await gateway.close();

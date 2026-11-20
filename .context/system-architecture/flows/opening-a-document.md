@@ -38,6 +38,6 @@ sequenceDiagram
 8. **Load.** `onLoadDocument` calls `loadHocuspocusDocument` on [collab](../server-documents.md#collab) for a live room, or `loadHocuspocusDraftState` for a draft room.
 9. **Read.** Collab rebuilds the room from the document's checkpoint and journal tail in [postgres](../system.md#postgres).
 10. **Sync.** The state goes to the tab and the editor shows the live text.
-11. **Edit.** The writer's keystrokes go up the same socket as Yjs updates; collab judges each of the writer's frames against the room and journals it with one insert before the room accepts it (a draft's frames still go through `finalizeAppend`).
+11. **Edit.** The writer's keystrokes go up the same socket as Yjs updates; collab judges each of the writer's frames against the room and journals it with one insert before the room accepts it, in a Live room or a draft's.
 
 State machines on this path: [editor core](../../../apps/app/src/core/editor/.context/state-machines.md), [editor](../../../apps/app/src/features/editor/.context/state-machines.md), [collab](../../../apps/server/server/domains/collab/.context/state-machines.md), [lib](../../../apps/server/server/lib/.context/state-machines.md).
