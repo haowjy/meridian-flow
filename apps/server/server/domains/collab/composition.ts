@@ -1,9 +1,9 @@
 /** Production dependency graph for the server collab domain. */
 
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { BranchId, DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documentDrafts } from "@meridian/database/schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
 import {
@@ -636,7 +636,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       })
     : null;
   const turnReversal = createTurnReversalService({
-    turnInverse: suggestionTurnUndo ? { ...turnInverse, reverseTurn: suggestionTurnUndo } : turnInverse,
+    turnInverse: suggestionTurnUndo
+      ? { ...turnInverse, reverseTurn: suggestionTurnUndo }
+      : turnInverse,
     lockOwners: createDrizzleReversalLocks(deps.db),
     resolveDocumentUri: documentUriResolver,
     listTurnTargets: lineageStore.listEditedDocumentIdsForTurn,

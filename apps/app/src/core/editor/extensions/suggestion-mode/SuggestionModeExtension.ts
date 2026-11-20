@@ -5,8 +5,8 @@
  * local edit passes through `rewrite` before it lands.
  */
 import {
-  accept,
   type Author,
+  accept,
   blockKind,
   type Filter,
   kindOf,
@@ -43,7 +43,8 @@ function annotationAttributes(names: readonly string[]) {
         {
           ...unrendered,
           parseHTML: (element: HTMLElement) =>
-            (JSON.parse(element.dataset.annotation ?? "{}") as Record<string, unknown>)[name] ?? null,
+            (JSON.parse(element.dataset.annotation ?? "{}") as Record<string, unknown>)[name] ??
+            null,
         },
       ]),
     );
@@ -58,7 +59,11 @@ function annotationMark(name: string, attributes: readonly string[], className?:
     parseHTML: () => [{ tag: `span[data-${name}]` }],
     renderHTML: ({ mark }) => [
       "span",
-      { [`data-${name}`]: "", "data-annotation": JSON.stringify(mark.attrs), ...(className ? { class: className } : {}) },
+      {
+        [`data-${name}`]: "",
+        "data-annotation": JSON.stringify(mark.attrs),
+        ...(className ? { class: className } : {}),
+      },
       0,
     ],
   });
@@ -104,7 +109,9 @@ export const SuggestionModeExtension = Extension.create({
   },
 
   addGlobalAttributes() {
-    return [{ types: SUGGESTION_BLOCK_TYPES, attributes: { sug: { ...unrendered, keepOnSplit: false } } }];
+    return [
+      { types: SUGGESTION_BLOCK_TYPES, attributes: { sug: { ...unrendered, keepOnSplit: false } } },
+    ];
   },
 
   addCommands() {
@@ -132,7 +139,9 @@ export const SuggestionModeExtension = Extension.create({
         ({ state, tr, dispatch }) => {
           if (state.selection.empty) return false;
           const mark = state.schema.marks.comment.create({ id: globalThis.crypto.randomUUID() });
-          dispatch?.(tr.addMark(state.selection.from, state.selection.to, mark).setMeta(RAW_META, true));
+          dispatch?.(
+            tr.addMark(state.selection.from, state.selection.to, mark).setMeta(RAW_META, true),
+          );
           return true;
         },
     };
@@ -155,9 +164,15 @@ export const SuggestionModeExtension = Extension.create({
       new Plugin<ModeState>({
         key: suggestionModeKey,
         state: {
-          init: (_, state) => ({ view: liveView, author: null, decorations: paint(state.doc, liveView) }),
+          init: (_, state) => ({
+            view: liveView,
+            author: null,
+            decorations: paint(state.doc, liveView),
+          }),
           apply(tr, value, _old, state) {
-            const set = tr.getMeta(suggestionModeKey) as Pick<ModeState, "view" | "author"> | undefined;
+            const set = tr.getMeta(suggestionModeKey) as
+              | Pick<ModeState, "view" | "author">
+              | undefined;
             if (set) return { ...set, decorations: paint(state.doc, set.view) };
             if (!tr.docChanged) return value;
             return { ...value, decorations: paint(state.doc, value.view) };
@@ -172,8 +187,16 @@ export const SuggestionModeExtension = Extension.create({
           if (!trs.some((tr) => tr.selectionSet || tr.docChanged)) return null;
           const { selection } = newState;
           if (!selection.empty) return null;
-          const target = outOfHidden(newState, selection.head, selection.head >= oldState.selection.head ? 1 : -1);
-          return target === null ? null : newState.tr.setSelection(TextSelection.create(newState.doc, target)).setMeta(RAW_META, true);
+          const target = outOfHidden(
+            newState,
+            selection.head,
+            selection.head >= oldState.selection.head ? 1 : -1,
+          );
+          return target === null
+            ? null
+            : newState.tr
+                .setSelection(TextSelection.create(newState.doc, target))
+                .setMeta(RAW_META, true);
         },
       }),
     ];
@@ -185,11 +208,15 @@ function paint(doc: PMNode, view: View): DecorationSet {
   doc.forEach((block, blockPos) => {
     const owner = blockKind(block, view);
     if (owner === "hidden") {
-      decorations.push(Decoration.node(blockPos, blockPos + block.nodeSize, { class: "sug-hidden" }));
+      decorations.push(
+        Decoration.node(blockPos, blockPos + block.nodeSize, { class: "sug-hidden" }),
+      );
       return;
     }
     if (owner === "own") {
-      decorations.push(Decoration.node(blockPos, blockPos + block.nodeSize, { class: "sug-ins-block" }));
+      decorations.push(
+        Decoration.node(blockPos, blockPos + block.nodeSize, { class: "sug-ins-block" }),
+      );
       return;
     }
     if (!block.isTextblock) return;
@@ -211,7 +238,9 @@ function hiddenAt(state: EditorState, pos: number, side: -1 | 1): boolean {
   const $pos = state.doc.resolve(pos);
   if ($pos.depth >= 1 && blockKind($pos.node(1), suggestionView(state)) === "hidden") return true;
   const node = side < 0 ? $pos.nodeBefore : $pos.nodeAfter;
-  return !!node && node.isInline && kindOf(node.marks, $pos.parent, suggestionView(state)) === "hidden";
+  return (
+    !!node && node.isInline && kindOf(node.marks, $pos.parent, suggestionView(state)) === "hidden"
+  );
 }
 
 function outOfHidden(state: EditorState, pos: number, direction: -1 | 1): number | null {

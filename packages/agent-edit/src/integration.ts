@@ -50,9 +50,9 @@ export {
   getBlockItemId,
   getTopLevelXmlBlocks,
 } from "./model/block-hash.js";
+export { suggestingModel } from "./model/suggesting-model.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
-export { suggestingModel } from "./model/suggesting-model.js";
 export type {
   ActorSession,
   ActorSessionStore,

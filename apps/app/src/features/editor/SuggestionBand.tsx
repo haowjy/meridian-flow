@@ -34,7 +34,10 @@ export function SuggestionBand({
     return () => hiddenMap.unobserve(update);
   }, [hiddenMap]);
   const [showDraft, setShowDraft] = useState(false);
-  const view = useMemo<View>(() => ({ work: showDraft ? ownerKey : null, hidden }), [showDraft, ownerKey, hidden]);
+  const view = useMemo<View>(
+    () => ({ work: showDraft ? ownerKey : null, hidden }),
+    [showDraft, ownerKey, hidden],
+  );
   useEffect(() => {
     editor.commands.setSuggestionView(
       view,
@@ -55,28 +58,61 @@ export function SuggestionBand({
   const discarded = hidden.has(ownerKey);
 
   return (
-    <div className="flex flex-col gap-1 border-border-subtle border-b px-3 py-1.5 text-xs" data-suggestion-band>
+    <div
+      className="flex flex-col gap-1 border-border-subtle border-b px-3 py-1.5 text-xs"
+      data-suggestion-band
+    >
       <div className="flex items-center gap-1.5">
-        <Button type="button" size="xs" variant={showDraft ? "ghost" : "secondary"} onClick={() => setShowDraft(false)}>
+        <Button
+          type="button"
+          size="xs"
+          variant={showDraft ? "ghost" : "secondary"}
+          onClick={() => setShowDraft(false)}
+        >
           <Trans>Live</Trans>
         </Button>
-        <Button type="button" size="xs" variant={showDraft ? "secondary" : "ghost"} onClick={() => setShowDraft(true)}>
+        <Button
+          type="button"
+          size="xs"
+          variant={showDraft ? "secondary" : "ghost"}
+          onClick={() => setShowDraft(true)}
+        >
           <Trans>Draft · {changes.length}</Trans>
         </Button>
         <span className="flex-1" />
         {discarded ? (
-          <Button type="button" size="xs" variant="ghost" onClick={() => hiddenMap.delete(ownerKey)}>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={() => hiddenMap.delete(ownerKey)}
+          >
             <Trans>Restore</Trans>
           </Button>
         ) : changes.length > 0 ? (
           <>
-            <Button type="button" size="xs" variant="ghost" onClick={() => editor.commands.acceptSuggestions({ work: ownerKey })}>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => editor.commands.acceptSuggestions({ work: ownerKey })}
+            >
               <Trans>Apply all</Trans>
             </Button>
-            <Button type="button" size="xs" variant="ghost" onClick={() => editor.commands.rejectSuggestions({ work: ownerKey })}>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => editor.commands.rejectSuggestions({ work: ownerKey })}
+            >
               <Trans>Reject all</Trans>
             </Button>
-            <Button type="button" size="xs" variant="ghost" onClick={() => hiddenMap.set(ownerKey, Date.now())}>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={() => hiddenMap.set(ownerKey, Date.now())}
+            >
               <Trans>Discard</Trans>
             </Button>
           </>
@@ -84,16 +120,30 @@ export function SuggestionBand({
       </div>
       {showDraft && !discarded
         ? changes.map((change) => (
-            <div key={change.id} className="flex items-center gap-1.5" data-suggestion-change={change.id}>
+            <div
+              key={change.id}
+              className="flex items-center gap-1.5"
+              data-suggestion-change={change.id}
+            >
               <span className="min-w-0 flex-1 truncate">
                 {change.deleted ? <span className="sug-del">{change.deleted}</span> : null}
                 {change.deleted && change.inserted ? " " : null}
                 {change.inserted ? <span className="sug-ins">{change.inserted}</span> : null}
               </span>
-              <Button type="button" size="xs" variant="ghost" onClick={() => editor.commands.acceptSuggestions({ id: change.id })}>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={() => editor.commands.acceptSuggestions({ id: change.id })}
+              >
                 <Trans>Apply</Trans>
               </Button>
-              <Button type="button" size="xs" variant="ghost" onClick={() => editor.commands.rejectSuggestions({ id: change.id })}>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={() => editor.commands.rejectSuggestions({ id: change.id })}
+              >
                 <Trans>Reject</Trans>
               </Button>
             </div>

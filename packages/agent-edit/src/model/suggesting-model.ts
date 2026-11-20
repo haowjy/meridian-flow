@@ -27,11 +27,11 @@ import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
 import type { BlockRef } from "../handles.js";
 import { unwrapBlock, unwrapDoc } from "../handles.js";
-import { getTopLevelXmlBlocks } from "./block-hash.js";
-import { readRepairedRoot } from "./schema-repair.js";
 import type { EditOp, EditOpsResult } from "../ports/model.js";
 import { lowerBlock } from "../resolver/lower-block.js";
-import { type YProsemirrorDocumentModel, applyOps as applyRawOps } from "./y-prosemirror.js";
+import { getTopLevelXmlBlocks } from "./block-hash.js";
+import { readRepairedRoot } from "./schema-repair.js";
+import { applyOps as applyRawOps, type YProsemirrorDocumentModel } from "./y-prosemirror.js";
 
 /** `viewOf` reads the view from the document itself: which Works' drafts it has discarded. */
 export function suggestingModel(
@@ -67,17 +67,30 @@ export function suggestingModel(
       if (path.length > 0) return base.textblockLineage(block, path, from, to);
       const node = storedNode(block, schema);
       const units = runs(node, viewAt(block));
-      return base.textblockLineage(block, path, rawUnit(units, from, "start"), rawUnit(units, to, "end"));
+      return base.textblockLineage(
+        block,
+        path,
+        rawUnit(units, from, "start"),
+        rawUnit(units, to, "end"),
+      );
     },
 
     applyOps(doc, block, ops) {
       const view = viewAt(block);
       const before = storedNode(block, schema);
-      if (view.work !== null && blockKind(before, view) !== "own" && ops.some((op) => op.kind !== "text" || op.path.length > 0))
-        return refused("a suggestion changes text in a paragraph; this prototype makes no other kind");
+      if (
+        view.work !== null &&
+        blockKind(before, view) !== "own" &&
+        ops.some((op) => op.kind !== "text" || op.path.length > 0)
+      )
+        return refused(
+          "a suggestion changes text in a paragraph; this prototype makes no other kind",
+        );
       if (ops.some((op) => op.kind === "text" && op.formats.length > 0))
         return refused("formatting is not suggested in this prototype");
-      const textOps = ops.filter((op): op is Extract<EditOp, { kind: "text" }> => op.kind === "text" && op.path.length === 0);
+      const textOps = ops.filter(
+        (op): op is Extract<EditOp, { kind: "text" }> => op.kind === "text" && op.path.length === 0,
+      );
       const other = ops.filter((op) => !textOps.includes(op as Extract<EditOp, { kind: "text" }>));
       if (other.length > 0) {
         const applied = base.applyOps(doc, block, other);
@@ -95,7 +108,9 @@ export function suggestingModel(
       const sug = { ...author, work: view.work, id: newChangeId() };
       return base.insertBlocks(doc, after, {
         ...parsed,
-        blocks: parsed.blocks.map((node) => node.type.create({ ...node.attrs, sug }, node.content, node.marks)),
+        blocks: parsed.blocks.map((node) =>
+          node.type.create({ ...node.attrs, sug }, node.content, node.marks),
+        ),
       });
     },
 
@@ -149,7 +164,8 @@ function rawUnit(units: readonly Run[], unit: number, side: "start" | "end"): nu
   for (const run of units) {
     if (!visible(run.kind)) continue;
     const length = run.to - run.from;
-    if (unit < seen + length || (unit === seen + length && side === "end")) return run.from + (unit - seen);
+    if (unit < seen + length || (unit === seen + length && side === "end"))
+      return run.from + (unit - seen);
     seen += length;
     lastEnd = run.to;
   }
@@ -176,11 +192,18 @@ function yBlock(element: Y.XmlElement) {
   return { attrs: { sug: element.getAttribute("sug") ?? null } as Record<string, unknown> };
 }
 
-function yRuns(element: Y.XmlElement, view: View, visit: (text: string, shown: boolean, kind: string) => void): void {
+function yRuns(
+  element: Y.XmlElement,
+  view: View,
+  visit: (text: string, shown: boolean, kind: string) => void,
+): void {
   const block = yBlock(element);
   for (const child of element.toArray()) {
     if (!(child instanceof Y.XmlText)) continue;
-    for (const part of child.toDelta() as Array<{ insert: unknown; attributes?: Record<string, unknown> }>) {
+    for (const part of child.toDelta() as Array<{
+      insert: unknown;
+      attributes?: Record<string, unknown>;
+    }>) {
       if (typeof part.insert !== "string") continue;
       const kind = kindOf(yMarks(part.attributes), block, view);
       visit(part.insert, visible(kind), kind);

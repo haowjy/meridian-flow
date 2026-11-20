@@ -1,6 +1,12 @@
 import { Fragment, type Mark, type Node, type Schema, type Slice } from "prosemirror-model";
 import { type EditorState, TextSelection, type Transaction } from "prosemirror-state";
-import { AddMarkStep, Mapping, RemoveMarkStep, ReplaceStep, type Step } from "prosemirror-transform";
+import {
+  AddMarkStep,
+  Mapping,
+  RemoveMarkStep,
+  ReplaceStep,
+  type Step,
+} from "prosemirror-transform";
 import {
   blockKind,
   isSuggestionMark,
@@ -32,12 +38,22 @@ export function newChangeId(): string {
  * and nothing typed or pasted carries a suggestion. Returns the original transaction when it
  * needs no rewrite.
  */
-export function rewrite(tr: Transaction, state: EditorState, view: View, author: Author | null): Transaction {
+export function rewrite(
+  tr: Transaction,
+  state: EditorState,
+  view: View,
+  author: Author | null,
+): Transaction {
   if (!tr.docChanged || tr.getMeta(RAW_META)) return tr;
-  if (view.work === null && !tr.steps.some((step, index) => touchesSuggestions(step, tr.docs[index], view)))
+  if (
+    view.work === null &&
+    !tr.steps.some((step, index) => touchesSuggestions(step, tr.docs[index], view))
+  )
     return tr;
   const out = state.tr;
-  for (const [key, value] of Object.entries((tr as unknown as { meta: Record<string, unknown> }).meta))
+  for (const [key, value] of Object.entries(
+    (tr as unknown as { meta: Record<string, unknown> }).meta,
+  ))
     out.setMeta(key, value);
   if (tr.storedMarksSet) out.setStoredMarks(tr.storedMarks);
   let caret: number | null = null;
@@ -45,9 +61,18 @@ export function rewrite(tr: Transaction, state: EditorState, view: View, author:
     // `Mapping.slice(...).invert()` inverts every map, not the slice's: build it from the maps.
     const back = new Mapping(tr.mapping.maps.slice(0, index)).invert();
     const at = (pos: number, assoc = 1) => out.mapping.map(back.map(pos, assoc), assoc);
-    caret = rewriteStep(out, step, at, view, author, state.selection.empty ? state.selection.head : null) ?? caret;
+    caret =
+      rewriteStep(
+        out,
+        step,
+        at,
+        view,
+        author,
+        state.selection.empty ? state.selection.head : null,
+      ) ?? caret;
   });
-  if (caret !== null) out.setSelection(TextSelection.near(out.doc.resolve(Math.min(caret, out.doc.content.size))));
+  if (caret !== null)
+    out.setSelection(TextSelection.near(out.doc.resolve(Math.min(caret, out.doc.content.size))));
   if (tr.scrolledIntoView) out.scrollIntoView();
   return out;
 }
@@ -76,7 +101,14 @@ function touchesSuggestions(step: Step, doc: Node, view: View): boolean {
   );
 }
 
-function rewriteStep(out: Transaction, step: Step, at: At, view: View, author: Author | null, caretBefore: number | null): number | null {
+function rewriteStep(
+  out: Transaction,
+  step: Step,
+  at: At,
+  view: View,
+  author: Author | null,
+  caretBefore: number | null,
+): number | null {
   if (step instanceof ReplaceStep) {
     const { from, to, slice } = step as unknown as { from: number; to: number; slice: Slice };
     // An edit that reaches into a block the view hides reaches the nearest block it shows.
@@ -98,7 +130,8 @@ function rewriteStep(out: Transaction, step: Step, at: At, view: View, author: A
       return null;
     }
     for (const piece of pieces(out.doc, a, b, view))
-      if (piece.kind === "own-ins") add ? out.addMark(piece.from, piece.to, mark) : out.removeMark(piece.from, piece.to, mark);
+      if (piece.kind === "own-ins")
+        add ? out.addMark(piece.from, piece.to, mark) : out.removeMark(piece.from, piece.to, mark);
     return null;
   }
   // Attribute and wrapping steps: Live takes them; a Work's view only on its own blocks.
@@ -109,7 +142,13 @@ function rewriteStep(out: Transaction, step: Step, at: At, view: View, author: A
     if (!range) return null;
     let own = true;
     out.doc.nodesBetween(range.from, Math.max(range.to, range.from + 1), (node, pos) => {
-      if (pos >= 0 && node.isBlock && out.doc.resolve(pos).depth === 0 && blockKind(node, view) !== "own") own = false;
+      if (
+        pos >= 0 &&
+        node.isBlock &&
+        out.doc.resolve(pos).depth === 0 &&
+        blockKind(node, view) !== "own"
+      )
+        own = false;
       return false;
     });
     if (!own) return null;
@@ -120,7 +159,8 @@ function rewriteStep(out: Transaction, step: Step, at: At, view: View, author: A
 
 function stepRange(step: Step): { from: number; to: number } | null {
   const range = step as unknown as { from?: number; to?: number; pos?: number };
-  if (typeof range.from === "number" && typeof range.to === "number") return { from: range.from, to: range.to };
+  if (typeof range.from === "number" && typeof range.to === "number")
+    return { from: range.from, to: range.to };
   if (typeof range.pos === "number") return { from: range.pos, to: range.pos + 1 };
   return null;
 }
@@ -139,7 +179,8 @@ function pieces(doc: Node, from: number, to: number, view: View): Piece[] {
     const blockPos = doc.resolve(pos).before();
     const kind = kindOf(node.marks, parent, view);
     const last = out[out.length - 1];
-    if (last && last.kind === kind && last.to === start && last.blockPos === blockPos) last.to = end;
+    if (last && last.kind === kind && last.to === start && last.blockPos === blockPos)
+      last.to = end;
     else out.push({ from: start, to: end, kind, block: parent, blockPos });
     return false;
   });
@@ -168,6 +209,13 @@ function shownEdge(doc: Node, pos: number, view: View, direction: -1 | 1): numbe
   return edge;
 }
 
+/** The top-level block a position inside a block lies in. */
+function topBlockAt(doc: Node, pos: number): { node: Node; pos: number } {
+  const block = topBlock(doc, pos);
+  if (!block) throw new Error(`Position ${pos} is not inside a block`);
+  return block;
+}
+
 function topBlock(doc: Node, pos: number): { node: Node; pos: number } | null {
   const $pos = doc.resolve(pos);
   if ($pos.depth < 1) return null;
@@ -176,7 +224,14 @@ function topBlock(doc: Node, pos: number): { node: Node; pos: number } | null {
 
 // ─── The Live view ──────────────────────────────────────────────────
 
-function replaceLive(out: Transaction, from: number, to: number, slice: Slice, view: View, forward: boolean): number | null {
+function replaceLive(
+  out: Transaction,
+  from: number,
+  to: number,
+  slice: Slice,
+  view: View,
+  forward: boolean,
+): number | null {
   const doc = out.doc;
   const hiddenInside =
     pieces(doc, from, to, view).some((piece) => piece.kind === "hidden") ||
@@ -189,10 +244,12 @@ function replaceLive(out: Transaction, from: number, to: number, slice: Slice, v
   const startBlock = topBlock(doc, from);
   const endBlock = topBlock(doc, to);
   const removed: Array<[number, number]> = [];
-  for (const piece of pieces(doc, from, to, view)) if (piece.kind !== "hidden") removed.push([piece.from, piece.to]);
+  for (const piece of pieces(doc, from, to, view))
+    if (piece.kind !== "hidden") removed.push([piece.from, piece.to]);
   for (const { node, pos } of wholeBlocks(doc, from, to))
     if (blockKind(node, view) !== "hidden") removed.push([pos, pos + node.nodeSize]);
-  for (const [a, b] of removed.sort((x, y) => y[0] - x[0])) out.delete(out.mapping.map(a, 1), out.mapping.map(b, -1));
+  for (const [a, b] of removed.sort((x, y) => y[0] - x[0]))
+    out.delete(out.mapping.map(a, 1), out.mapping.map(b, -1));
   // A join across hidden blocks moves the last block's text to the end of the first; the hidden
   // blocks stay between, where they were.
   if (startBlock && endBlock && startBlock.pos !== endBlock.pos) {
@@ -217,7 +274,9 @@ function replaceLive(out: Transaction, from: number, to: number, slice: Slice, v
 function marked(schema: Schema, content: Fragment, attrs: SuggestionAttrs): Fragment {
   const mark = schema.marks.suggest_ins.create(attrs);
   const nodes: Node[] = [];
-  content.forEach((node) => nodes.push(node.isInline ? node.mark(mark.addToSet(node.marks)) : node));
+  content.forEach((node) => {
+    nodes.push(node.isInline ? node.mark(mark.addToSet(node.marks)) : node);
+  });
   return Fragment.from(nodes);
 }
 
@@ -246,11 +305,18 @@ function continuedId(doc: Node, pos: number, author: Omit<SuggestionAttrs, "id">
  * Remove `[from, to)` as the view sees it: Live text gets this Work's deletion mark, its own
  * insertions go, and own deletions and hidden text stay. Applied right to left.
  */
-function suggestRemoval(out: Transaction, from: number, to: number, view: View, attrs: SuggestionAttrs): void {
+function suggestRemoval(
+  out: Transaction,
+  from: number,
+  to: number,
+  view: View,
+  attrs: SuggestionAttrs,
+): void {
   const schema = out.doc.type.schema;
   const del = schema.marks.suggest_del.create(attrs);
   const own = wholeBlocks(out.doc, from, to).filter(({ node }) => blockKind(node, view) === "own");
-  const inOwn = (pos: number) => own.some((block) => pos >= block.pos && pos < block.pos + block.node.nodeSize);
+  const inOwn = (pos: number) =>
+    own.some((block) => pos >= block.pos && pos < block.pos + block.node.nodeSize);
   const work = pieces(out.doc, from, to, view).filter((piece) => !inOwn(piece.from));
   for (const piece of work.reverse()) {
     if (piece.kind === "live") out.addMark(piece.from, piece.to, del);
@@ -267,8 +333,12 @@ function pastOwnDeletion(doc: Node, pos: number, view: View): number {
   let $pos = doc.resolve(pos);
   const isOwnDel = (node: Node | null | undefined) =>
     !!node && node.isInline && kindOf(node.marks, $pos.parent, view) === "own-del";
-  while (isOwnDel($pos.nodeBefore) && isOwnDel($pos.nodeAfter)) {
-    pos += $pos.nodeAfter!.nodeSize;
+  for (
+    let after = $pos.nodeAfter;
+    after && isOwnDel($pos.nodeBefore) && isOwnDel(after);
+    after = $pos.nodeAfter
+  ) {
+    pos += after.nodeSize;
     $pos = doc.resolve(pos);
   }
   return pos;
@@ -290,7 +360,9 @@ function replaceInWork(
     if (from !== to || slice.openStart !== 0 || slice.size === 0) return null;
     const attrs = { ...author, id: newChangeId() };
     const blocks: Node[] = [];
-    slice.content.forEach((block) => blocks.push(block.type.create({ ...block.attrs, sug: attrs }, block.content, block.marks)));
+    slice.content.forEach((block) => {
+      blocks.push(block.type.create({ ...block.attrs, sug: attrs }, block.content, block.marks));
+    });
     out.insert(from, blocks);
     return null;
   }
@@ -302,17 +374,20 @@ function replaceInWork(
   const joining = startBlock.pos !== endBlock.pos;
   // What follows the cut in the last block moves to where the cut closes: kept as a copy, since
   // Live text never moves in a Work's view.
-  const tail = joining ? visibleContent(endBlock.node, to - endBlock.pos - 1, endBlock.node.content.size, view) : Fragment.empty;
+  const tail = joining
+    ? visibleContent(endBlock.node, to - endBlock.pos - 1, endBlock.node.content.size, view)
+    : Fragment.empty;
   const endOwn = blockKind(endBlock.node, view) === "own";
   suggestRemoval(out, from, joining ? endBlock.pos + endBlock.node.nodeSize - 1 : to, view, attrs);
   if (joining && endOwn) {
     // An own block goes whole; its text is already copied as the tail.
     const a = out.mapping.map(endBlock.pos, 1);
-    if (out.doc.nodeAt(a)?.attrs.sug) out.delete(a, a + out.doc.nodeAt(a)!.nodeSize);
+    const own = out.doc.nodeAt(a);
+    if (own?.attrs.sug) out.delete(a, a + own.nodeSize);
   }
   const blockEnd = out.mapping.map(startBlock.pos + startBlock.node.nodeSize - 1, -1);
   let insertAt = joining ? blockEnd : pastOwnDeletion(out.doc, out.mapping.map(to, 1), view);
-  const target = topBlock(out.doc, insertAt)!;
+  const target = topBlockAt(out.doc, insertAt);
   const ownTarget = blockKind(target.node, view) === "own";
   const inline = (content: Fragment) => (ownTarget ? content : marked(schema, content, attrs));
 
@@ -329,32 +404,50 @@ function replaceInWork(
     out.insert(insertAt, inline(parts.head));
     insertAt += parts.head.size;
   }
-  const targetNow = topBlock(out.doc, insertAt)!;
+  const targetNow = topBlockAt(out.doc, insertAt);
   const targetEnd = targetNow.pos + targetNow.node.nodeSize - 1;
-  const rest = visibleContent(targetNow.node, insertAt - targetNow.pos - 1, targetNow.node.content.size, view).append(tail);
+  const rest = visibleContent(
+    targetNow.node,
+    insertAt - targetNow.pos - 1,
+    targetNow.node.content.size,
+    view,
+  ).append(tail);
   if (ownTarget) out.delete(insertAt, targetEnd);
   else suggestRemoval(out, insertAt, targetEnd, view, attrs);
   const after = out.mapping.map(targetNow.pos + targetNow.node.nodeSize, 1);
   const template = parts.last ?? targetNow.node;
   const blocks = [
-    ...parts.middle.map((block) => block.type.create({ ...block.attrs, id: null, sug: attrs }, block.content, block.marks)),
-    template.type.create({ ...template.attrs, id: null, sug: attrs }, (parts.last?.content ?? Fragment.empty).append(rest)),
+    ...parts.middle.map((block) =>
+      block.type.create({ ...block.attrs, id: null, sug: attrs }, block.content, block.marks),
+    ),
+    template.type.create(
+      { ...template.attrs, id: null, sug: attrs },
+      (parts.last?.content ?? Fragment.empty).append(rest),
+    ),
   ];
   out.insert(after, blocks);
-  const lastStart = after + blocks.slice(0, -1).reduce((size, block) => size + block.nodeSize, 0) + 1;
+  const lastStart =
+    after + blocks.slice(0, -1).reduce((size, block) => size + block.nodeSize, 0) + 1;
   return lastStart + (parts.last?.content.size ?? 0);
 }
 
 /** A slice as inline content for the cut's block, whole blocks after it, and the block it ends in. */
-function sliceParts(slice: Slice): { head: Fragment; middle: Node[]; last: Node | null; split: boolean } {
+function sliceParts(slice: Slice): {
+  head: Fragment;
+  middle: Node[];
+  last: Node | null;
+  split: boolean;
+} {
   const content = stripSuggestions(slice.content);
-  if (content.childCount === 0 || content.firstChild!.isInline)
+  if (content.childCount === 0 || content.child(0).isInline)
     return { head: content, middle: [], last: null, split: false };
   const children: Node[] = [];
-  content.forEach((child) => children.push(child));
+  content.forEach((child) => {
+    children.push(child);
+  });
   if (children.length === 1 && slice.openStart > 0 && slice.openEnd > 0)
     return { head: children[0].content, middle: [], last: null, split: false };
-  const head = slice.openStart > 0 ? children.shift()!.content : Fragment.empty;
-  const last = slice.openEnd > 0 && children.length > 0 ? children.pop()! : null;
+  const head = slice.openStart > 0 ? (children.shift()?.content ?? Fragment.empty) : Fragment.empty;
+  const last = slice.openEnd > 0 ? (children.pop() ?? null) : null;
   return { head, middle: children, last, split: true };
 }

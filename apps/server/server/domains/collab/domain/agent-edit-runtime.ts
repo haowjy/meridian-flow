@@ -5,16 +5,16 @@ import {
   createAgentEditCore,
   type DocumentCoordinator,
   type DocumentEdits,
+  suggestingModel,
   type UpdateJournal,
   type UpdateMeta,
-  suggestingModel,
   type YProsemirrorDocumentModel,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { type Author, hiddenWorks } from "@meridian/suggestions";
 import type { DocumentId, TurnId } from "@meridian/contracts/runtime";
 import { mdxCodec, verbatimCodec } from "@meridian/markup";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { type Author, hiddenWorks } from "@meridian/suggestions";
 import { asLiveAgentEditCore } from "./agent-edit-cores.js";
 import { scopeMarkdownEngine } from "./document-link-scope-doors.js";
 import { createScopedDocumentLinks, liveViewFor } from "./document-links-port.js";

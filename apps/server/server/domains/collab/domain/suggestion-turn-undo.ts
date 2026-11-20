@@ -17,7 +17,10 @@ import type { TurnInverseQuery } from "./turn-inverse-service.js";
 
 export function createSuggestionTurnUndo(deps: {
   schema: Schema;
-  listTurnDocuments(threadId: ThreadId, turnId: TurnId): Promise<readonly { documentId: DocumentId }[]>;
+  listTurnDocuments(
+    threadId: ThreadId,
+    turnId: TurnId,
+  ): Promise<readonly { documentId: DocumentId }[]>;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   changeLiveDocument(input: {
     documentId: DocumentId;
@@ -41,16 +44,18 @@ export function createSuggestionTurnUndo(deps: {
             ? { type: "user", actorUserId: query.actor.userId as UserId }
             : { type: "agent", actorTurnId: turn },
         mutate: (doc) => {
-        const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-        const state = EditorState.create({
-          schema: deps.schema,
-          doc: yXmlFragmentToProseMirrorRootNode(fragment, deps.schema),
-        });
-        const tr = reject(state, { turn });
-        if (!tr.docChanged) return;
-        const blocks: PMNode[] = [];
-        tr.doc.forEach((block) => blocks.push(block));
-        writeBlocks(fragment, deps.schema, blocks);
+          const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+          const state = EditorState.create({
+            schema: deps.schema,
+            doc: yXmlFragmentToProseMirrorRootNode(fragment, deps.schema),
+          });
+          const tr = reject(state, { turn });
+          if (!tr.docChanged) return;
+          const blocks: PMNode[] = [];
+          tr.doc.forEach((block) => {
+            blocks.push(block);
+          });
+          writeBlocks(fragment, deps.schema, blocks);
         },
       });
       documents.push({

@@ -41,8 +41,12 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
     block.forEach((child, offset) => {
       const from = blockPos + 1 + offset;
       const to = from + child.nodeSize;
-      const insMark = child.marks.find((m) => m.type === ins && matches(m.attrs as SuggestionAttrs, filter));
-      const delMark = child.marks.find((m) => m.type === del && matches(m.attrs as SuggestionAttrs, filter));
+      const insMark = child.marks.find(
+        (m) => m.type === ins && matches(m.attrs as SuggestionAttrs, filter),
+      );
+      const delMark = child.marks.find(
+        (m) => m.type === del && matches(m.attrs as SuggestionAttrs, filter),
+      );
       if (!delMark) wholly = false;
       if (insMark) action === "accept" ? unmark.push([from, to, insMark]) : remove.push([from, to]);
       if (delMark) action === "accept" ? remove.push([from, to]) : unmark.push([from, to, delMark]);
@@ -69,13 +73,24 @@ function merge(ranges: Array<[number, number]>): Array<[number, number]> {
 }
 
 /** One change as a view shows it: what it adds and removes, where it starts. */
-export type Change = SuggestionAttrs & { inserted: string; deleted: string; from: number; to: number };
+export type Change = SuggestionAttrs & {
+  inserted: string;
+  deleted: string;
+  from: number;
+  to: number;
+};
 
 /** The view's own changes, in document order, for review. */
 export function list(doc: Node, view: View): Change[] {
   if (view.work === null) return [];
   const byId = new Map<string, Change>();
-  const note = (attrs: SuggestionAttrs, from: number, to: number, text: string, side: "inserted" | "deleted") => {
+  const note = (
+    attrs: SuggestionAttrs,
+    from: number,
+    to: number,
+    text: string,
+    side: "inserted" | "deleted",
+  ) => {
     const change = byId.get(attrs.id) ?? { ...attrs, inserted: "", deleted: "", from, to };
     change[side] += text;
     change.from = Math.min(change.from, from);
@@ -85,7 +100,13 @@ export function list(doc: Node, view: View): Change[] {
   doc.forEach((block, blockPos) => {
     if (blockKind(block, view) === "hidden") return;
     if (block.attrs.sug) {
-      note(block.attrs.sug, blockPos, blockPos + block.nodeSize, `${block.textContent}\n`, "inserted");
+      note(
+        block.attrs.sug,
+        blockPos,
+        blockPos + block.nodeSize,
+        `${block.textContent}\n`,
+        "inserted",
+      );
       return;
     }
     block.forEach((child, offset) => {
@@ -93,8 +114,10 @@ export function list(doc: Node, view: View): Change[] {
       for (const mark of child.marks) {
         const attrs = mark.attrs as SuggestionAttrs;
         if (attrs.work !== view.work || view.hidden.has(attrs.work)) continue;
-        if (mark.type.name === "suggest_ins") note(attrs, from, from + child.nodeSize, child.textContent, "inserted");
-        if (mark.type.name === "suggest_del") note(attrs, from, from + child.nodeSize, child.textContent, "deleted");
+        if (mark.type.name === "suggest_ins")
+          note(attrs, from, from + child.nodeSize, child.textContent, "inserted");
+        if (mark.type.name === "suggest_del")
+          note(attrs, from, from + child.nodeSize, child.textContent, "deleted");
       }
     });
   });

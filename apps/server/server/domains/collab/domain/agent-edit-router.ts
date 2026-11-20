@@ -96,7 +96,11 @@ export function createAgentEditRouter(input: {
               ...outcome,
               result: {
                 ...outcome.result,
-                read: { ...read, version: "draft" as const, draftWork: destination.ownerHandle ?? "/" },
+                read: {
+                  ...read,
+                  version: "draft" as const,
+                  draftWork: destination.ownerHandle ?? "/",
+                },
               },
             }
           : outcome;

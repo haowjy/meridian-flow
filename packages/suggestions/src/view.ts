@@ -142,7 +142,9 @@ export function visibleContent(block: Node, from: number, to: number, view: View
     const end = offset + child.nodeSize;
     if (end <= from || offset >= to) return;
     if (!visible(kindOf(child.marks, block, view))) return;
-    const piece = child.isText ? child.cut(Math.max(0, from - offset), Math.min(child.nodeSize, to - offset)) : child;
+    const piece = child.isText
+      ? child.cut(Math.max(0, from - offset), Math.min(child.nodeSize, to - offset))
+      : child;
     nodes.push(piece.mark(piece.marks.filter((mark) => !isSuggestionMark(mark))));
   });
   return Fragment.from(nodes);
@@ -157,6 +159,8 @@ export function stripSlice(slice: Slice): Slice {
 export const HIDDEN_ROOT = "suggest_hidden";
 
 /** Works whose suggestions in this document are discarded: absent from every view. */
-export function hiddenWorks(doc: { getMap(name: string): { keys(): IterableIterator<string> } }): Set<string> {
+export function hiddenWorks(doc: {
+  getMap(name: string): { keys(): IterableIterator<string> };
+}): Set<string> {
   return new Set(doc.getMap(HIDDEN_ROOT).keys());
 }

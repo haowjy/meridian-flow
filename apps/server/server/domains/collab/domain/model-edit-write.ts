@@ -14,8 +14,8 @@ import {
   type WriteOutcome,
 } from "@meridian/agent-edit/integration";
 import { type DraftOwner, draftOwnerKey, type LinkView, type ThreadId } from "@meridian/contracts";
-import type { Author } from "@meridian/suggestions";
 import type { DocumentId } from "@meridian/contracts/runtime";
+import type { Author } from "@meridian/suggestions";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
@@ -137,7 +137,8 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       await testHook("command.afterLock");
     }
     const work = draftOwnerKey(owner);
-    const turn = given.turnId ?? (given.actor?.kind === "agent" ? given.actor.turnId : null) ?? null;
+    const turn =
+      given.turnId ?? (given.actor?.kind === "agent" ? given.actor.turnId : null) ?? null;
     return suggestionCore(work, { work, chat: given.threadId ?? null, turn, by: "agent" }).write(
       command,
       { ...given, linkView: { kind: "live" }, documentVersion: "live" },
