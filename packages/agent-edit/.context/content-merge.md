@@ -256,13 +256,8 @@ channel (`/api/diagnostics/failures`), logged as `rescue.handed_back` with `resc
 (`schema-removed-text`), `chars` and `passages`; never the words.
 
 Not a rescue: typing a room never delivered (a draft closed or removed, a document removed, the
-room admitted read-only) is dropped with one "Couldn't save" pill and nothing stored (the editor's
+room admitted read-only, its updates refused three times in a row) is dropped with one "Couldn't save" pill and nothing stored (the editor's
 [CONTEXT](../../../apps/app/src/core/editor/.context/CONTEXT.md), "Unsent typing dropped").
-
-Not a rescue, because the text never leaves: a draft room whose updates the server refused three
-times in a row stays on screen read-only with the words, under "Couldn't save your latest changes"
-with Try again, which reopens the room from IndexedDB and resends them. That is delivery that
-failed visibly.
 
 ## Other writes that are not merges
 

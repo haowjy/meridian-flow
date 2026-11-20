@@ -5,10 +5,10 @@
  * - `usable`: a live session. Commands and editors may read and write it.
  * - `rebuilding`: the previous session is still being torn down, or a retry asked again. The read joins
  *   the pool's one rebuild and becomes `usable` again.
- * - `fenced`: a schema reset, a room whose updates the server kept refusing (`updatesRefused`), or a
- *   draft the server purged with its Work (`draftClosed`). Its terminal session is kept so an
- *   editor can paint it read-only with its notice, and it is never a target for a command.
- *   `retry()` rebuilds a refused one, which resends its edits from IndexedDB.
+ * - `fenced`: a schema reset, a draft the server purged with its Work (`draftClosed`), or a room
+ *   whose updates the server kept refusing (`updatesRefused`) until its replacement arrives. Its
+ *   terminal session is kept so an editor can paint it read-only with its notice, and it is never
+ *   a target for a command.
  * - `unavailable`: the room was superseded, or the session ended. Ask what the draft is now.
  * - `error`: opening or rebuilding the room failed. `retry()` asks again.
  *
@@ -162,12 +162,7 @@ export function readDraftRoom(registry: DraftRoomRegistry, ref: DraftRoomRef): D
     },
     retry() {
       if (disposed) return;
-      if (
-        state.kind === "error" ||
-        state.kind === "unavailable" ||
-        (state.kind === "fenced" && updatesRefused(state.session.getSnapshot().connectionState))
-      )
-        rebuild();
+      if (state.kind === "error" || state.kind === "unavailable") rebuild();
     },
     dispose() {
       if (disposed) return;

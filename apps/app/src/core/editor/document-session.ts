@@ -115,8 +115,9 @@ export type DocumentSessionSnapshot = {
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
   /**
-   * The room was admitted read-only and its last handshake found the writer's edits in the
-   * document that the server lacks: it can never deliver them.
+   * The room holds the writer's edits that the server lacks and can never deliver them: it was
+   * admitted read-only and its last handshake found them, or the server kept refusing its updates
+   * (`updatesRefused`).
    */
   holdsUndeliverableEdits: boolean;
 };
@@ -164,14 +165,13 @@ export type DocumentSessionConnectionState =
     };
 
 /**
- * Client-side terminal reason: the server refused this draft room's updates on
- * several reconnects in a row. The session stays open and read-only so its owner
- * can show the unsent text and reopen the draft; nothing retries it.
+ * Client-side terminal reason: the server could not store this room's updates on several
+ * reconnects in a row. Its edits are undeliverable, and its owner replaces the room.
  */
-export const DRAFT_UPDATES_REFUSED = "draft-updates-refused";
+export const UPDATES_REFUSED = "updates-refused";
 
 export function updatesRefused(state: DocumentSessionConnectionState | null | undefined): boolean {
-  return state?.kind === "terminal" && state.reason === DRAFT_UPDATES_REFUSED;
+  return state?.kind === "terminal" && state.reason === UPDATES_REFUSED;
 }
 
 /**
@@ -458,6 +458,7 @@ export class DocumentSession {
       this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
         if (state.kind !== "connected") this.forgetDifference();
+        if (updatesRefused(state)) this.holdsUndeliverable = true;
         if ((state.kind === "unauthorized" && !isSignInLapse(state)) || state.kind === "reset")
           this.localPeers?.stop();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
@@ -650,8 +651,10 @@ export class DocumentSession {
    * Reads the local copy (words another tab stored that this tab never received) and takes one
    * more handshake, so the verdict is the whole browser's. Resolves whether the room still holds
    * edits the server will not take; false when the connection ended or turned editable meanwhile.
+   * A room whose updates were refused has no connection left to ask, and holds them.
    */
   async decideAgain(): Promise<boolean> {
+    if (updatesRefused(this.transportState)) return true;
     await this.localPeers?.catchUp().catch((error) => reportError(error));
     const provider = this.transportProvider;
     if (!provider || this.access !== "read") return false;

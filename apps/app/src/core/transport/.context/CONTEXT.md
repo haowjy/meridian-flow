@@ -24,9 +24,19 @@ leave them pending. `4205` is terminal `closed`, not rebuild. In-band closes car
 ## Draft rooms
 
 No timeout releases held frames: a server that never sends SyncStep1 leaves them held
-and the room unacknowledged. The server no longer sends `4207` (a frame that starts past
-the room's clock closes `1013`, and the next SyncStep2 repairs it); the client keeps treating
-`4207` as an ordinary reconnect until its handling is removed.
+and the room unacknowledged.
+
+## Frames the server can't store
+
+A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), in Live
+and draft rooms alike, and the reconnect's handshake resends it; a frame that starts past the
+room's clock closes the same way, and the handshake repairs the gap. Three such closes in a row
+with unsent edits and no acknowledgement between end the room `UPDATES_REFUSED`, because a frame
+the server can never store (one authored in the reserved client band) would otherwise resend
+forever. The session then holds undeliverable edits, and the registry replaces the room as it
+does a read admission's (editor context, "Undeliverable edits"): the typing is dropped with one
+"Couldn't save" pill and the editor shows the server's text. Any `1013` counts, whatever its
+reason.
 
 ## Access scope and 4409
 

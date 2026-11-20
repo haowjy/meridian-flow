@@ -80,8 +80,6 @@ type SessionEditorProps = {
   focusKey?: string;
   /** Main's document: the caret main gives (`joinMain`) goes here, never to a side or a sheet. */
   inMain?: boolean;
-  /** Reopens the room after the server refused its updates (draft review only). */
-  onReopen?: () => void;
 };
 
 /** The Work an owner key names; a lineage names none. */
@@ -147,7 +145,6 @@ function ActiveSessionEditorView({
   onConstructed,
   focusKey,
   inMain = false,
-  onReopen,
   holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
@@ -427,7 +424,7 @@ function ActiveSessionEditorView({
           {projectId && documentInTrash ? (
             <InTrashStatus documentId={documentId} />
           ) : (
-            <SyncStatus session={session} onReopen={onReopen} />
+            <SyncStatus session={session} />
           )}
           {!evidenceDegraded && editor ? <WordCount editor={editor} /> : null}
         </div>

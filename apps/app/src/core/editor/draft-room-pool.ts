@@ -10,10 +10,10 @@
  * and keeps the copy. A reader that comes to it meanwhile reads the session an owner
  * still shows, if one does.
  *
- * A room whose updates the server kept refusing (`updatesRefused`), or whose draft the server
- * closed (`draftClosed`), is not retired on that close: it stays open, read-only, so its owner can
- * show its text, until the owner rebuilds it or the last owner leaves, when it retires without the
- * grace.
+ * A room whose draft the server closed (`draftClosed`) is not retired on that close: it stays
+ * open, read-only, so its owner can show its text, until the owner rebuilds it or the last owner
+ * leaves, when it retires without the grace. A room whose updates the server kept refusing
+ * (`updatesRefused`) is kept the same way until the registry replaces it (`replace`).
  */
 
 import { parseYjsRoomName } from "@meridian/contracts/protocol";

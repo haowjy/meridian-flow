@@ -651,11 +651,15 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
 - What it cannot reach: a read admission has no such loss (see the next section). A document no
   tab has open keeps its typing in its copy until its next open or its purge.
 
-### Undeliverable edits (a room admitted read-only)
+### Undeliverable edits (a room admitted read-only, or refused)
 
 **A room the server admits read-only holds none of the writer's edits that the server lacks.**
 It is checked at every handshake of a read admission (`core/transport/handshake-difference.ts`),
-from the wire alone, with nothing stored between handshakes.
+from the wire alone, with nothing stored between handshakes. A room whose updates the server
+kept refusing (`updatesRefused`, the transport context's "Frames the server can't store") holds
+them by definition: it skips the handshake (`decideAgain` answers yes at once, with no difference
+to read) and is replaced the same way, Live or draft. Its typing is dropped by the older-copy
+read, never by the replacement.
 
 - The session (`unsent-edits.ts`) decides what counts: everything the server lacks, whoever wrote it,
   except *display writes*, what the editor binding writes while drawing (it deletes a node the
@@ -733,12 +737,6 @@ from the wire alone, with nothing stored between handshakes.
   not a draft reset protocol. Schema fences, authorization loss and explicit
   session rebuild retain their own meanings; local text Discard does not retire
   the room, selection or UndoManager.
-- The server no longer sends `1008` or `4207` for a draft (a failed frame closes `1013`); the
-  client keeps handling them until that code is removed. A draft update refusal (`1008`) is bounded: after three consecutive refusals
-  without acknowledgement, the transport ends `DRAFT_UPDATES_REFUSED`
-  (`updatesRefused`). A retained room stays open read-only with the unsent text on
-  screen: `readDraftRoom` keeps it as `fenced`, and the status says "Couldn't save
-  your latest changes" with Try again, which rebuilds the room from IndexedDB and
-  resends the edits. It never retries on its own. A `4207
-  draft-prefix-missing` close is an ordinary reconnect, not a refusal. The next
-  handshake's SyncStep2 supplies missing bytes before held keystrokes.
+- A draft room whose updates the server kept refusing (`updatesRefused`) is kept by the pool
+  (`readDraftRoom` holds it `fenced`) only until the registry replaces it ("Undeliverable
+  edits"). A drop's next handshake SyncStep2 supplies missing bytes before held keystrokes.
