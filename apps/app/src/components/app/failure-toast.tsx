@@ -121,7 +121,7 @@ export function FailureToaster() {
           content: "min-w-0 flex-1",
           title: "truncate",
           description: "mt-1.5 mb-0.5 w-full select-text",
-          actionButton: "text-button shrink-0 coarse:min-h-11",
+          actionButton: "text-button shrink-0 coarse:min-h-11 coarse:min-w-11",
           closeButton: `order-last ${buttonVariants({ variant: "quiet", size: "icon-xs" })}`,
         },
       }}
