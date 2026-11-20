@@ -73,11 +73,17 @@ export type TurnInverseQuery = {
   toolCallId?: string;
   model?: boolean;
   draftId?: string | null;
+  /** The documents to reverse; the turn's every document when absent (a model's undo names its own). */
   documentIds?: DocumentId[];
   /** The path the model named, for a document no visible path holds (a deleted one). */
   path?: string;
   /** Caller identity for destination admission; the incoming content grant never routes it. */
   principal?: Principal;
+  /**
+   * Documents the caller writes after the inverse, in the same transaction: a commit takes their
+   * keys with its own, in one ID order after the list keys.
+   */
+  alsoLock?: readonly DocumentId[];
   /**
    * The owners the caller already locked (`ownersOf`): a commit that would lock any other
    * throws `TreeOwnersMoved` before taking a lock.

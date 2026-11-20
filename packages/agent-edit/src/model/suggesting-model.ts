@@ -34,7 +34,6 @@ import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
-import { writeBlocks } from "../diff/writer.js";
 import type { BlockRef } from "../handles.js";
 import { unwrapBlock } from "../handles.js";
 import type { EditOp, EditOpsResult } from "../ports/model.js";
@@ -320,9 +319,10 @@ function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
 }
 
 /**
- * Accept or reject a stored document's suggestions, as a client of the document would: the
- * blocks that change are written back. Call inside one transaction; returns whether anything
- * changed.
+ * Accept or reject a stored document's suggestions, as a client of the document would. Neither
+ * adds a block: each one is kept, changed in place or removed, and a changed one is lowered
+ * alone, so only the words and marks the verdict settles are written. Call inside one
+ * transaction; returns whether anything changed.
  */
 export function resolveStored(
   doc: Y.Doc,
@@ -330,14 +330,31 @@ export function resolveStored(
   verdict: "accept" | "reject",
   filter: Filter,
 ): boolean {
-  const state = EditorState.create({ schema, doc: storedRoot(doc, schema) });
+  const root = storedRoot(doc, schema);
+  const state = EditorState.create({ schema, doc: root });
   const tr = (verdict === "accept" ? accept : reject)(state, filter);
   if (!tr.docChanged) return false;
-  const blocks: PMNode[] = [];
-  tr.doc.forEach((block) => {
-    blocks.push(block);
+  const fragment = fragmentOf(doc);
+  // Read after `storedRoot`: converting the fragment deletes the elements it cannot convert, so
+  // the elements left pair with the root's children by index.
+  const elements = getTopLevelXmlBlocks(doc);
+  const starts: number[] = [];
+  root.forEach((_, offset) => {
+    starts.push(offset);
   });
-  writeBlocks(fragmentOf(doc), schema, blocks);
+  for (let index = elements.length - 1; index >= 0; index--) {
+    const before = root.child(index);
+    // A removed block maps to one point; a kept one to the block it became.
+    const from = tr.mapping.map(starts[index], 1);
+    const to = tr.mapping.map(starts[index] + before.nodeSize, -1);
+    if (to <= from) fragment.delete(fragment.toArray().indexOf(elements[index]), 1);
+    else {
+      const after = tr.doc.nodeAt(from) as PMNode;
+      if (after.eq(before)) continue;
+      const applied = applyRawOps(elements[index], lowerBlock(before, after));
+      if (!applied.ok) throw new Error(applied.message);
+    }
+  }
   return true;
 }
 

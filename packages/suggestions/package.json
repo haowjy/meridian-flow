@@ -17,6 +17,7 @@
     "prosemirror-transform": "^1.12.5"
   },
   "devDependencies": {
+    "@meridian/prosemirror-schema": "workspace:*",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

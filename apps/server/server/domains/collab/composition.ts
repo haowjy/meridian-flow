@@ -634,7 +634,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     replaceAuthorityGeneration,
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
-  // Suggestion mode (prototype): a card's Undo rejects the turn's suggestions.
+  // Suggestion mode: a card's Undo rejects the turn's suggestions.
   const suggestionTurnUndo = runtime.workView
     ? createSuggestionTurnUndo({
         schema: buildDocumentSchema(),
@@ -642,6 +642,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         resolveDocumentUri: documentUriResolver,
         changeLiveDocument: runtime.markdownDocuments.changeLiveDocument,
         reverseLiveTurn: turnInverse.reverseTurn,
+        fileAccess: deps.fileAccess,
+        enterLiveSeam: (documentId) => enterLiveWriteSeam(deps.db, documentId),
+        confirmGrants: async () => {
+          await lockSeamWorks(deps.db, []);
+        },
         withLiveDocument: runtime.markdownDocuments.withLiveDocument,
         liveTurnChip: turnInverse.getDocumentAndTreeChip,
       })

@@ -135,7 +135,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     return new Set((await treePlanOf(query)).createdDocuments);
   }
   async function selectedDocuments(query: TurnInverseQuery): Promise<DocumentId[]> {
-    if (query.model) return [...new Set(query.documentIds ?? [])].sort();
+    if (query.model || query.documentIds) return [...new Set(query.documentIds ?? [])].sort();
     return [
       ...new Set((await readTurnEditTargets(db(), query)).map((target) => target.documentId)),
     ].sort();
@@ -584,7 +584,8 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           acquireMutationScope: async () => {
             // The lists' keys come before every document key (the order in collab's CONTEXT.md).
             if (tree.lists.length) await input.treeLists.lock(tree.lists);
-            for (const id of [...attempt.ids].sort()) await lockDocumentMutation(db(), id);
+            const ids = new Set([...attempt.ids, ...(query.alsoLock ?? [])]);
+            for (const id of [...ids].sort()) await lockDocumentMutation(db(), id);
           },
           operation,
         });

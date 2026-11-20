@@ -49,6 +49,22 @@ export function newChangeId(): string {
 }
 
 /**
+ * The change one edit's suggestions take: the first it picks (`found`, a change of the same
+ * author it continues, or a fresh one), for all of them. An edit is one change to review, however
+ * many ranges it touches: a model write to a block that rewrites two sentences is one change. An
+ * edit never takes another author's change, even where it rewrites that change's text.
+ */
+type EditChange = (found: string | null) => string;
+
+function editChange(): EditChange {
+  let id: string | null = null;
+  return (found) => {
+    id ??= found ?? newChangeId();
+    return id;
+  };
+}
+
+/**
  * Turns a local transaction into what the view allows, on `state` (the transaction's start).
  * In a Work's view, typing becomes that Work's insertion, deleting Live text becomes its
  * deletion, deleting its own insertion is a real delete, and another Work's text is never
@@ -105,15 +121,16 @@ export function rewrite(
       });
   });
   const work = view.work === null || !author ? null : { ...author, work: view.work };
+  const change = editChange();
   const ranges = work ? wholeBlockRanges(replaced, state.doc) : [...replaced];
   for (const range of [...ranges].reverse()) {
     const slice = stripSlice(tr.doc.slice(range.fromB, range.toB));
     const a = shownEdge(out.doc, range.fromA, view, -1);
     const b = Math.max(a, shownEdge(out.doc, range.toA, view, 1));
     const forward = state.selection.empty && state.selection.head === a && slice.size === 0;
-    let change: SuggestionAttrs | null = null;
+    let took: SuggestionAttrs | null = null;
     const changed = (c: SuggestionAttrs) => {
-      change = c;
+      took = c;
     };
     const at = !work
       ? replaceLive(out, a, b, slice, view, forward)
@@ -136,11 +153,12 @@ export function rewrite(
             ),
             view,
             work,
+            change,
             forward,
             changed,
           )
-        : replaceBlocks(out, a, b, slice, view, work, changed);
-    changes.push({ from: range.fromA, to: range.toA, change });
+        : replaceBlocks(out, a, b, slice, view, work, change, changed);
+    changes.push({ from: range.fromA, to: range.toA, change: took });
     if (at !== null && head >= range.fromB && head <= range.toB)
       caret = { pos: at, map: since(out) };
   }
@@ -148,8 +166,9 @@ export function rewrite(
   // place: the difference between the start and final documents there. What it replaced or made
   // already has its final form, from the final document.
   const formatting = netFormatting(state.doc, tr.doc, ranges, reached, work !== null);
-  for (const run of formatting.runs) restyle(out, run, out.mapping.slice(), view, author);
-  for (const step of formatting.nodes) rewriteMarkup(out, step, out.mapping.slice(), view, author);
+  for (const run of formatting.runs) restyle(out, run, out.mapping.slice(), view, author, change);
+  for (const step of formatting.nodes)
+    rewriteMarkup(out, step, out.mapping.slice(), view, author, change);
   out.setMeta(CHANGE_META, changes);
   if (caret !== null)
     out.setSelection(
@@ -216,7 +235,14 @@ type Restyle = { from: number; to: number; marks: readonly Mark[] };
  * of it. In a Work's view, formatting Live text is suggested as that text struck and inserted
  * again, formatted; a comment on it is added in place.
  */
-function restyle(out: Transaction, run: Restyle, map: Mapping, view: View, author: Author | null) {
+function restyle(
+  out: Transaction,
+  run: Restyle,
+  map: Mapping,
+  view: View,
+  author: Author | null,
+  change: EditChange,
+) {
   const styled = (node: Node) => {
     let marks: readonly Mark[] = node.marks.filter(isSuggestionMark);
     for (const mark of run.marks) marks = mark.addToSet(marks);
@@ -250,6 +276,7 @@ function restyle(out: Transaction, run: Restyle, map: Mapping, view: View, autho
         { first: null, last: null, rest: Fragment.empty, aimed: { first: false, last: false } },
         view,
         { ...author, work: view.work },
+        change,
         false,
         () => {},
       );
@@ -435,6 +462,7 @@ function rewriteMarkup(
   map: Mapping,
   view: View,
   author: Author | null,
+  change: EditChange,
 ): void {
   // Attribute and structure steps. Live takes them; a Work's view takes them on its own blocks.
   const mapped = step.map(map);
@@ -462,7 +490,7 @@ function rewriteMarkup(
       if (owner !== "own") out.setMeta(DROPPED_META, true);
       continue;
     }
-    proposeAttrs(out, pos, node.attrs, attrs, { ...author, work: view.work }, null);
+    proposeAttrs(out, pos, node.attrs, attrs, { ...author, work: view.work }, change);
   }
 }
 
@@ -477,7 +505,7 @@ function settle(
   final: Node | null,
   view: View,
   author: Omit<SuggestionAttrs, "id">,
-  id: string,
+  change: EditChange,
   aimed: boolean,
 ): void {
   const { node, pos } = block;
@@ -493,15 +521,14 @@ function settle(
   if (kind === "own" && final.type.validContent(node.content))
     out.setNodeMarkup(pos, final.type, attrs);
   else if (kind === "live" && final.type === node.type)
-    proposeAttrs(out, pos, viewAttrs(node, view), attrs, author, id);
+    proposeAttrs(out, pos, viewAttrs(node, view), attrs, author, change);
   else out.setMeta(DROPPED_META, true);
 }
 
 /**
  * The Work's pending change to the Live block at `pos`, from attributes `shown` (as the Work sees
- * them) to `attrs`: part of the block's attribute change so far, or else of change `id` (null: a
- * new one). Who suggests
- * and a block's identity are never themselves proposed.
+ * them) to `attrs`: part of the edit's change, which continues this author's attribute change.
+ * Who suggests and a block's identity are never themselves proposed.
  */
 function proposeAttrs(
   out: Transaction,
@@ -509,7 +536,7 @@ function proposeAttrs(
   shown: Attrs,
   attrs: Attrs,
   author: Omit<SuggestionAttrs, "id">,
-  id: string | null,
+  change: EditChange,
 ): void {
   const set: Record<string, unknown> = {};
   for (const key of Object.keys(attrs))
@@ -518,8 +545,8 @@ function proposeAttrs(
   if (Object.keys(set).length === 0) return;
   const stored = out.doc.nodeAt(pos) as Node;
   const layers = proposals(stored)[author.work] ?? [];
-  const change = layers.find((layer) => !layer.remove)?.id ?? id ?? newChangeId();
-  setLayers(out, pos, author.work, addLayer(stored, layers, { ...author, id: change, attrs: set }));
+  const id = change(layers.find((layer) => !layer.remove && sameAuthor(layer, author))?.id ?? null);
+  setLayers(out, pos, author.work, addLayer(stored, layers, { ...author, id, attrs: set }));
 }
 
 /** Store a Work's layers on the block at `pos`; none drops its entry. */
@@ -828,24 +855,6 @@ function retract(out: Transaction, from: number, to: number, del: Mark, attrs: S
   }
 }
 
-/**
- * The id of the view's own insertion an edit over `[from, to)` replaces, from an earlier turn: an
- * inline insertion's, or the block's when the Work added the whole block.
- */
-function replacedId(doc: Node, from: number, to: number, view: View): string | null {
-  let id: string | null = null;
-  doc.nodesBetween(from, to, (node, _pos, parent) => {
-    if (id || !node.isInline || !parent) return !id;
-    if (kindOf(node.marks, parent, view) !== "own-ins") return false;
-    id =
-      (node.marks.find((mark) => mark.type.name === "suggest_ins")?.attrs.id as string) ??
-      (parent.attrs.sug as SuggestionAttrs | null)?.id ??
-      null;
-    return false;
-  });
-  return id;
-}
-
 /** Inside a stretch of its own deletion, typing goes to the stretch's end. */
 function pastOwnDeletion(doc: Node, pos: number, view: View): number {
   let $pos = doc.resolve(pos);
@@ -870,6 +879,7 @@ function replaceInWork(
   final: Final,
   view: View,
   author: Omit<SuggestionAttrs, "id">,
+  change: EditChange,
   forward: boolean,
   changed: (change: SuggestionAttrs) => void,
 ): number | null {
@@ -877,16 +887,12 @@ function replaceInWork(
   const endBlock = textblockAtOrThrow(out.doc, to);
   const attrs: SuggestionAttrs = {
     ...author,
-    id:
-      continuedId(out.doc, from, author) ??
-      continuedId(out.doc, to, author) ??
-      (author.turn === null ? null : replacedId(out.doc, from, to, view)) ??
-      newChangeId(),
+    id: change(continuedId(out.doc, from, author) ?? continuedId(out.doc, to, author)),
   };
   // Text cut from a block the Work added stays that block's insertion, whoever cuts it.
   const startOwn = blockKind(startBlock.node, view) === "own";
-  const change = startOwn ? (startBlock.node.attrs.sug as SuggestionAttrs) : attrs;
-  changed(change);
+  const cutChange = startOwn ? (startBlock.node.attrs.sug as SuggestionAttrs) : attrs;
+  changed(cutChange);
   const schema = out.doc.type.schema;
   const joining = startBlock.pos !== endBlock.pos;
   const endOwn = blockKind(endBlock.node, view) === "own";
@@ -929,7 +935,7 @@ function replaceInWork(
       final.first,
       view,
       author,
-      attrs.id,
+      change,
       final.aimed.first,
     );
   if (!parts.split) {
@@ -962,7 +968,7 @@ function replaceInWork(
       final.last,
       view,
       author,
-      attrs.id,
+      change,
       final.aimed.last,
     );
     if (blocks.length > 0) out.insert(endAt, blocks);
@@ -977,8 +983,8 @@ function replaceInWork(
   const blocks = [
     ...pasted(parts.middle, attrs),
     template.type.create(
-      { ...template.attrs, id: null, sug: change, sugAttrs: null },
-      intoOwn(schema, parts.last?.content ?? Fragment.empty, change, attrs).append(final.rest),
+      { ...template.attrs, id: null, sug: cutChange, sugAttrs: null },
+      intoOwn(schema, parts.last?.content ?? Fragment.empty, cutChange, attrs).append(final.rest),
     ),
   ];
   out.insert(after, blocks);
@@ -1000,6 +1006,7 @@ function replaceBlocks(
   slice: Slice,
   view: View,
   author: Omit<SuggestionAttrs, "id">,
+  change: EditChange,
   changed: (change: SuggestionAttrs) => void,
 ): null {
   // Whoever owns the node holding both ends owns the edit: inside the Work's own block it is that
@@ -1031,7 +1038,7 @@ function replaceBlocks(
     out.setMeta(DROPPED_META, true);
     return null;
   }
-  const attrs = { ...author, id: newChangeId() };
+  const attrs = { ...author, id: change(null) };
   changed(attrs);
   const map = since(out);
   if (from < to) suggestRemoval(out, from, to, view, attrs);
