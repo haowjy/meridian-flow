@@ -21,11 +21,11 @@ import { patchAccountRecentsFromDocuments } from "@/client/recents";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
-import { ImportProvider } from "@/features/import/ImportProvider";
 import {
   usePressCommands,
   type WorkBranchCommands,
-} from "@/features/suggestion-review/usePressCommands";
+} from "@/features/draft-review/usePressCommands";
+import { ImportProvider } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import {
   useAccountId,

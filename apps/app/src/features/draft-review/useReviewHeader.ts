@@ -15,7 +15,7 @@ import { useDraftReview } from "./DraftReviewProvider";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";
 
-export type ReviewHeaderOptions = {
+type ReviewHeaderOptions = {
   documentId: string;
   /** Empty while a stable chrome wrapper has no shown review. */
   itemKey: string;

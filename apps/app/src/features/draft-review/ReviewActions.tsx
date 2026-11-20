@@ -23,8 +23,8 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-export type ReviewScope = "change" | "document" | "all";
-export type ReviewDensity = "full" | "icon";
+type ReviewScope = "change" | "document" | "all";
+type ReviewDensity = "full" | "icon";
 
 /** The scope's name, and its word beside a name: the bare verb, except for "all", whose scope is the word. */
 function reviewActionNames(
@@ -41,7 +41,7 @@ function reviewActionNames(
   return { word: scope === "all" ? name : t`Discard`, name };
 }
 
-export type ReviewActionsProps = {
+type ReviewActionsProps = {
   scope: ReviewScope;
   /** Names, where the scope's name doesn't say all the buttons act on. */
   labels?: { apply: string; discard: string };

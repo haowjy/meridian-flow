@@ -27,7 +27,6 @@ import {
   viewBlock,
   visible,
 } from "@meridian/suggestions";
-import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import * as Y from "yjs";
@@ -314,12 +313,12 @@ function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
   const nodes = projectionsOf(element.doc as Y.Doc, schema);
   let node = nodes.get(element);
   if (!node) {
-    // Only a block this write made or changed, from schema-valid nodes: no repair to run. The
-    // binding converts a fragment; a reused one would keep every deleted item and slow each read.
+    // A block this write made or changed. The binding converts a fragment; a reused one would
+    // keep every deleted item and slow each read.
     const scratch = new Y.Doc();
     const fragment = scratch.getXmlFragment("block");
     fragment.insert(0, [element.clone()]);
-    node = yXmlFragmentToProseMirrorRootNode(fragment, schema).child(0);
+    node = readRepairedRoot("projectBlocks", fragment, schema).child(0);
     scratch.destroy();
     nodes.set(element, node);
   }

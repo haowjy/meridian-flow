@@ -1999,7 +1999,7 @@ msgstr "Copying from {source} into"
 msgid "Couldn't add the connection."
 msgstr "Couldn't add the connection."
 
-#: src/features/suggestion-review/usePressCommands.ts
+#: src/features/draft-review/usePressCommands.ts
 msgid "Couldn't apply"
 msgstr "Couldn't apply"
 
@@ -2076,7 +2076,7 @@ msgstr "Couldn't delete {title}"
 msgid "Couldn't delete that Work"
 msgstr "Couldn't delete that Work"
 
-#: src/features/suggestion-review/usePressCommands.ts
+#: src/features/draft-review/usePressCommands.ts
 msgid "Couldn't discard"
 msgstr "Couldn't discard"
 
@@ -2433,8 +2433,8 @@ msgstr "Couldn't switch Work"
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/draft-review/apply-history.ts
 #: src/features/draft-review/CommandNotice.tsx
+#: src/features/draft-review/usePressCommands.ts
 #: src/features/project/shell/sidebar/TrashSource.tsx
-#: src/features/suggestion-review/usePressCommands.ts
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
 
@@ -3189,7 +3189,7 @@ msgstr "For now the AI can use only tools that read."
 msgid "Fork from here"
 msgstr "Fork from here"
 
-#: src/features/suggestion-review/useSuggestionChanges.ts
+#: src/features/draft-review/useSuggestionChanges.ts
 msgid "Formatting"
 msgstr "Formatting"
 

@@ -1,7 +1,7 @@
 # features/draft-review — review of a Work's suggestions
 
 A Work's draft is its suggestion marks in the Live document (`packages/suggestions`). Review reads
-them from the host's Live editor (`features/suggestion-review/`); there are no draft rooms.
+them from the host's Live editor (`host-editor.ts`, `useSuggestionChanges`); there are no draft rooms.
 
 - One change's Apply or Discard is an editor transaction (`acceptSuggestion` /
   `rejectSuggestion`), one Ctrl+Z entry. A document's, folder's, selection's or Work's is a press

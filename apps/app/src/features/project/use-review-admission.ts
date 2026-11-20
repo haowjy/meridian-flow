@@ -8,8 +8,8 @@
 import { useEffect, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
+import type { HostEditor } from "@/features/draft-review/host-editor";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
-import type { HostEditor } from "@/features/suggestion-review/host-editor";
 import type { AiDraftLaunchTarget } from "./review-launch";
 
 /** The route's verdict on a review the address names, asked of the server by owner and item. */

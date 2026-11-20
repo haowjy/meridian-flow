@@ -12,9 +12,9 @@ import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
 import { startTransition, useEffect, useMemo, useState } from "react";
 import { authorsIn, SUGGESTION_CHANGE_ATTR } from "@/core/editor/extensions/suggestion-mode";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import type { BylineEntry, ChatRef, ReviewChange } from "@/features/draft-review/review-model";
-import { resolveFocusedChange } from "@/features/draft-review/review-model";
+import { useDraftReview } from "./DraftReviewProvider";
+import type { BylineEntry, ChatRef, ReviewChange } from "./review-model";
+import { resolveFocusedChange } from "./review-model";
 
 /**
  * The editor's document, read again after each transaction as a transition: the review redraws

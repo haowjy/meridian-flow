@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils";
 import { DraftChipFace, draftChipHitClass } from "./DraftChip";
 
 /** One owner's draft of the document, as the menu lists it. */
-export type DraftVersion = {
+type DraftVersion = {
   key: string;
   /** The owner's name: its Work's, or the chat's for a draft with no Work. */
   name: ReactNode;

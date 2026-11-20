@@ -3,7 +3,7 @@ import { notifyFailure } from "@/components/app/failure-toast";
 import type { DocumentApplyEntry, DocumentHistory } from "@/core/editor/editor-history";
 
 /** The histories this tab holds for the Apply's documents, read now: each one's live session. */
-export type Histories = () => readonly (DocumentHistory | null)[];
+type Histories = () => readonly (DocumentHistory | null)[];
 
 /**
  * What a press of Undo came to: `failed`, it never reached the server (`told`: the writer was
@@ -15,7 +15,7 @@ export type Undone =
   | { kind: "answered"; unapplyId: string; took: boolean };
 
 /** What a Redo landed: the new Apply's command id. */
-export type Redone = { commandId: string };
+type Redone = { commandId: string };
 
 /**
  * The two requests every Undo and Redo of an Apply makes, by command id: take back the Apply in

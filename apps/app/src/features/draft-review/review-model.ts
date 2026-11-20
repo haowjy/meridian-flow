@@ -13,7 +13,7 @@ export type ChatRef = {
   subagentTitle?: string;
   reveal?: { threadId: string; turnId: string; toolCallId?: string; subagentThreadId?: string };
 };
-export type ChangeAttribution = {
+type ChangeAttribution = {
   byline: BylineEntry[];
   chats: ChatRef[];
   members: string[];

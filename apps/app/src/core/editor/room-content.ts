@@ -2,7 +2,8 @@
  * A room's text as a ProseMirror document, kept current as the room changes: one retained copy
  * per Y.Doc, so every reader shares its nodes instead of converting again.
  */
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { fragmentOf } from "@meridian/agent-edit/integration";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Schema } from "@tiptap/pm/model";
 import { initProseMirrorDoc, refreshProseMirrorDoc } from "@tiptap/y-tiptap";
 import type * as Y from "yjs";
@@ -14,7 +15,7 @@ const roomContents = new WeakMap<Y.Doc, ReturnType<typeof initProseMirrorDoc>>()
 export function roomContent(doc: Y.Doc) {
   let content = roomContents.get(doc);
   if (!content) {
-    const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+    const fragment = fragmentOf(doc);
     const retained = retainFragment(fragment, roomSchema());
     roomContents.set(doc, retained);
     doc.once("destroy", () => roomContents.delete(doc));

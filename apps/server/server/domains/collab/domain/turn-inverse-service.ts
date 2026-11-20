@@ -8,6 +8,7 @@ import {
   type EditKind,
   type EditTarget,
   editHandle,
+  fragmentOf,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type {
@@ -17,7 +18,6 @@ import type {
   TurnDraftState,
   TurnReceiptChip,
 } from "@meridian/contracts/protocol";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { Node as PMNode } from "prosemirror-model";
 import type * as Y from "yjs";
 import type { OwnerLocks } from "../../../shared/draft-owner.js";
@@ -189,7 +189,7 @@ async function prepare(
     const steps: InverseStep[] = [];
     // The text each step is judged on is what the steps before it leave, as its commit will find it.
     let manuscript: readonly PMNode[] = originals.length
-      ? readBlocks(document.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), inverseSchema)
+      ? readBlocks(fragmentOf(document.live), inverseSchema)
       : [];
     for (const { at, parts } of originals) {
       const entry = {

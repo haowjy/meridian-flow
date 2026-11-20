@@ -20,6 +20,10 @@ the headless seams here.
 - Only `local-presence.ts` may call `setLocalState*`; don't expose raw Awareness to
   an extension. Awareness cursor colors are design tokens, resolved to concrete RGB hex before
   publication (y-prosemirror accepts concrete colors only).
+- In a Work's view the stored block attributes are Live's and the Work's pending ones sit in
+  `sugAttrs`. Any code that reads a block's attributes to decide or to write them back reads
+  `shownAttrs(view, node)` (`shownBlock`, `shownState`, `selectedSequence`), with the view from
+  `suggestionView(state)` or `transactionView(tr)`, never `node.attrs` directly.
 - Peer marks are projections: never persisted, draft-projected, or locally authored.
 - Reading memory persists only account-stamped Yjs anchors and dimensionless
   viewport offsets. Only a new mount restores, without taking focus; an explicit

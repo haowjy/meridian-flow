@@ -5,13 +5,13 @@ import { countWords } from "@meridian/agent-edit/diff";
 import {
   type AgentEditCodecFactory,
   blockItemIdKey,
+  fragmentOf,
   storedPendingChanges,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks, type StoredLinkOccurrence } from "@meridian/markup/stored-links";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import type { WorkPending } from "@meridian/suggestions";
 import * as Y from "yjs";
 import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
@@ -136,7 +136,7 @@ export async function deriveDocumentOutputs(
   const rows = (occurrences: readonly StoredLinkOccurrence[]) =>
     cut.holderUri ? deriveDocumentLinkRows({ occurrences, holderUri: cut.holderUri }) : [];
   // Every Work's links, for ahead registration; only Live's say whether the document was edited.
-  const links = rows(extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)));
+  const links = rows(extractStoredLinks(fragmentOf(doc)));
   return {
     blocks,
     wordCount: blocks.reduce((sum, block) => sum + countWords(block.text), 0),

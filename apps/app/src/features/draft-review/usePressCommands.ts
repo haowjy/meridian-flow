@@ -39,16 +39,16 @@ import {
 } from "@/core/project-tree/tree-undo";
 import { draftTreeVersion } from "@/core/project-tree/tree-version";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
-import { ApplyEntries, type ApplyPort, type Seat } from "@/features/draft-review/apply-history";
-import { type CommandOutcome, folderKey } from "@/features/draft-review/draft-command-owner";
-import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
-import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
-import type { ChangeTarget } from "@/features/draft-review/review-model";
 import {
   useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
+import { ApplyEntries, type ApplyPort, type Seat } from "./apply-history";
+import { type CommandOutcome, folderKey } from "./draft-command-owner";
+import type { DiscardPart, NoticeSurface } from "./draft-notices";
+import type { DraftReviewSelection } from "./draft-review-session";
+import type { ChangeTarget } from "./review-model";
 
 type Verdict = "apply" | "discard";
 /**

@@ -11,9 +11,8 @@
  * only the open review's focus, stepping and command behavior.
  */
 import { useCallback, useMemo } from "react";
-import { useHostEditor } from "@/features/suggestion-review/host-editor";
-
 import type { DraftChangesView } from "./draft-changes";
+import { useHostEditor } from "./host-editor";
 import { type ReviewChange, resolveFocusedChange, targetOfChanges } from "./review-model";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";

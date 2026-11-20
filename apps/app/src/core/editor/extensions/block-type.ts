@@ -2,7 +2,7 @@ import { sameValue } from "@meridian/suggestions";
 import { InputRule } from "@tiptap/core";
 import type { Attrs, NodeType, Node as ProseMirrorNode } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
-import { shownAttrs } from "./suggestion-mode/SuggestionModeExtension";
+import { shownAttrs, transactionView } from "./suggestion-mode/SuggestionModeExtension";
 
 /**
  * What `node` keeps when it becomes `type`, with `attrs` on top: its id, its place in quotes and
@@ -16,7 +16,7 @@ function retypedAttrs(
   type: NodeType,
   attrs: Attrs = {},
 ): Attrs {
-  const shown = shownAttrs(tr, node);
+  const shown = shownAttrs(transactionView(tr), node);
   const kept: Record<string, unknown> = {};
   for (const name of Object.keys(type.spec.attrs ?? {})) {
     if (name in shown) kept[name] = shown[name];
@@ -42,7 +42,8 @@ export function setBlockType(
     if (!node.isTextblock) return true;
     const next = retypedAttrs(tr, node, type, attrs);
     if (node.type !== type) retyped.push(pos);
-    else if (!sameValue(next, shownAttrs(tr, node))) tr.setNodeMarkup(pos, type, next);
+    else if (!sameValue(next, shownAttrs(transactionView(tr), node)))
+      tr.setNodeMarkup(pos, type, next);
     return false;
   });
   for (const pos of retyped) {

@@ -6,10 +6,10 @@ export type InlineDraftReview = DraftReviewSelection & {
   focus?: ReviewFocus | null;
   shown?: boolean;
 };
-export type DraftReviewState = {
+type DraftReviewState = {
   surface: { kind: "none" } | InlineDraftReview;
 };
-export type DraftReviewAction =
+type DraftReviewAction =
   | (DraftReviewSelection & { type: "enterInline" })
   | (DraftReviewSelection & { type: "inlineShown"; shown: boolean })
   | (DraftReviewSelection & { type: "changeFocused"; focus: ReviewFocus | null })

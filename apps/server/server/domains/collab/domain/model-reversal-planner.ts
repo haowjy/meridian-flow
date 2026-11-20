@@ -1,7 +1,7 @@
 /** Captured destination, stack, and eligibility facts shared by model reversal commands and history. */
 
 import { readBlocks } from "@meridian/agent-edit/diff";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { fragmentOf } from "@meridian/agent-edit/integration";
 import type { Node as PMNode } from "prosemirror-model";
 import { partKey as key } from "./inverse-actions.js";
 import { inverseSchema, takeBack } from "./inverse-text.js";
@@ -34,7 +34,7 @@ export function createCapturedReversalPlanner(document: InverseDocument, query: 
    */
   let text: readonly PMNode[] | null = null;
   const textNow = () => {
-    text ??= readBlocks(document.live.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), inverseSchema);
+    text ??= readBlocks(fragmentOf(document.live), inverseSchema);
     return text;
   };
   /** Whether a change of the part still stands in Live. */

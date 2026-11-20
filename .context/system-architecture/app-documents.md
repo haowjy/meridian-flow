@@ -41,12 +41,12 @@ Binds the document session, chooses live or review presentation and mounts the t
 Review of a Work's draft: Changes, Apply, Discard, Undo.
 
 A change is a run of the Work's suggestion marks in the Live document, read from the host's
-editor (`suggestion-review`). Apply or Discard of one change is an editor transaction; of a
+editor's session. Apply or Discard of one change is an editor transaction; of a
 document, folder or Work it is a press on the server.
 
 - Kind: feature
-- Paths: `apps/app/src/features/draft-review`, `apps/app/src/features/suggestion-review`
-- Docs: [AGENTS](../../apps/app/src/features/draft-review/AGENTS.md), [suggestion review](../../apps/app/src/features/suggestion-review/.context/CONTEXT.md)
+- Paths: `apps/app/src/features/draft-review`
+- Docs: [AGENTS](../../apps/app/src/features/draft-review/AGENTS.md), [runtime](../../apps/app/src/features/draft-review/.context/draft-review.md)
 - Machines: [draft-review](../../apps/app/src/features/draft-review/.context/state-machines.md)
 
 ## links

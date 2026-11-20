@@ -30,7 +30,8 @@
 }
 
 /* A pending change to a block's attributes: the element is Live's, so its proposed heading level
-   is drawn here, from `data-view-level` (0 is body text). */
+   is drawn here, from `data-view-level` (0 is body text); its proposed alignment is the
+   decoration's inline style. */
 .meridian-editor .sug-attrs {
   box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--color-primary) 40%, transparent);
 }

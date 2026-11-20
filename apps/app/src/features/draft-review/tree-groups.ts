@@ -15,7 +15,7 @@ import {
 } from "@meridian/project-tree";
 
 /** What the Work does to a folder it changes. */
-export type FolderChange =
+type FolderChange =
   | { kind: "new" }
   | { kind: "deleted" }
   /** `was`: the name before a rename. `moved`: into a folder by name, or `top` of its source. */
@@ -65,7 +65,7 @@ export type WorkTreeChanges = {
 };
 
 /** One list's replays: live, the Work's view of it, and the Work's pending records in it. */
-export type ListChanges = {
+type ListChanges = {
   live: TreeProjection;
   work: TreeProjection;
   pending: readonly TreeRecord[];

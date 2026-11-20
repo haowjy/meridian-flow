@@ -216,7 +216,7 @@ function useNoticeUndo() {
   };
 }
 
-export type DraftNoticeWords = {
+type DraftNoticeWords = {
   /** The row (a document's or folder's id) is one the notice speaks for. */
   held: (id: string) => boolean;
   /** The word that row shows, or null. */
@@ -332,7 +332,7 @@ export const noticeAction = (container: HTMLElement) =>
   container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
 
 /** A document named in a sentence, with the source it is (or was) in. */
-export type InArea = { name: string; scheme: ProjectContextTreeScheme | null | undefined };
+type InArea = { name: string; scheme: ProjectContextTreeScheme | null | undefined };
 
 /** The names joined per area, in the order each area first appears. */
 function byArea(documents: readonly InArea[]): { area: string | null; names: string }[] {
