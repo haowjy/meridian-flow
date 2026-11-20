@@ -328,10 +328,12 @@
 }
 
 /* A cell spanning rows can hold that corner from an earlier row, where no selector finds it,
-   and the last row's last cell is then an inner one: keep the corner square instead. */
+   and the last row's last cell is then an inner one: keep the corner square instead. The cell is
+   named (`:is(td, th)`): a bare `:last-child` under a `:has()` makes Chrome restyle the whole
+   document for any node added anywhere in it, 35 ms a keystroke in a long chapter. */
 .document-prose table:has([rowspan]:not([rowspan="1"])) {
   border-bottom-right-radius: 0;
-  & :is(tbody, tfoot):last-child > tr:last-child > :last-child {
+  & :is(tbody, tfoot):last-child > tr:last-child > :is(td, th):last-child {
     border-bottom-right-radius: 0;
   }
 }

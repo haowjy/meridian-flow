@@ -1,9 +1,9 @@
 export {
   authorsIn,
-  SUGGESTION_CHANGE_ATTR,
   SuggestionModeExtension,
   shownText,
   suggestionFocus,
   suggestionModeEnabled,
   suggestionView,
 } from "./SuggestionModeExtension";
+export { SUGGESTION_CHANGE_ATTR } from "./suggestion-paint";

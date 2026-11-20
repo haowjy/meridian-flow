@@ -1,7 +1,7 @@
 /** Browser-computed groups shared by rows, editor focus, counts and commands. Attribution only overlays them. */
 import type { Author, ReviewGroup, ReviewSpan } from "@meridian/agent-edit/diff";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import { groupAnchor, type ReviewFrame } from "./review-frame";
+import type { ReviewFrame } from "./review-frame";
 import { type TreeLine, treeChange, treeLineOf } from "./tree-line";
 
 export type ReviewFocus = { id: string; frame: ReviewFrame | null };
@@ -23,7 +23,6 @@ export interface ReviewChange extends ChangeAttribution {
   arrival?: number;
   kind: ReviewGroup["kind"];
   excerpt: ReviewGroup["excerpt"];
-  anchor: number;
   spans: ReviewSpan[];
   frame: ReviewFrame | null;
   /** Unknown membership must not be read as a known-empty chat. B3c supplies the overlay. */
@@ -46,7 +45,6 @@ export function reviewChanges(
     chats: attribution.get(group.id)?.chats ?? [],
     members: attribution.get(group.id)?.members ?? [],
     attributed: attribution.has(group.id),
-    anchor: groupAnchor(group),
     spans: group.spans,
     frame,
   }));
@@ -64,7 +62,6 @@ export function itemChange(
     chats: [],
     members: [],
     attributed: false,
-    anchor: 0,
     spans: [],
     frame: null,
     whole: true,
