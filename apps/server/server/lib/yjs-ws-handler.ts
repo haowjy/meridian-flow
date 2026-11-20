@@ -21,7 +21,7 @@ import {
   headAdmitsClient,
   serverServesHead,
 } from "@meridian/prosemirror-schema";
-import { messageYjsSyncStep1, messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
+import { messageYjsSyncStep2, messageYjsUpdate } from "y-protocols/sync";
 import * as Y from "yjs";
 import {
   type AdmitLiveWriterUpdateResult,
@@ -447,19 +447,6 @@ function accessKeys(facts: FileFacts, documentId: DocumentId): string[] {
   ];
 }
 
-/** A tab's SyncStep1 on a draft room: the room is brought up to the committed draft first. */
-async function reconcileDraftHandshake(
-  services: YjsGatewayServices,
-  room: Extract<ReturnType<typeof parseRoomOrDeny>, { kind: "draft" }>,
-  document: Y.Doc,
-): Promise<void> {
-  const active = await services.documentSync.reconcileHocuspocusDraftRoom({
-    draftId: room.draftId,
-    room: document,
-  });
-  if (!active) refuse(WS_CLOSE.DRAFT_PURGED);
-}
-
 export async function admitWriterSync(input: {
   services: YjsGatewayServices;
   documentName: string;
@@ -471,10 +458,6 @@ export async function admitWriterSync(input: {
 }): Promise<AdmitLiveWriterUpdateResult | undefined> {
   const room = parseRoomOrDeny(input.documentName);
   const { services, document } = input;
-  if (room.kind === "draft" && input.syncType === messageYjsSyncStep1) {
-    await reconcileDraftHandshake(services, room, document);
-    return;
-  }
   if (!carriesUpdate(input.syncType, input.payload)) return;
   const origin = writerOrigin(input);
   if (room.kind === "live") {
@@ -631,7 +614,11 @@ export function createHocuspocus(
       const { context } = connection;
       return runWithEventCorrelation({ traceId: context.traceId }, async () => {
         const target = context.admissionTarget;
-        if (target?.kind === "draft") await pullLiveIntoDraft(target);
+        if (target?.kind === "draft") {
+          await pullLiveIntoDraft(target);
+          // The pull's own catch-up is detached; the answer waits for the room to hold it.
+          await services.documentSync.catchUpDraftRoom(target.draftId);
+        }
         // Batched room updates go out first, so the answer never overtakes the pull's.
         document.flush();
         connection.sendStateless(encodeCaughtUpWsMessage(message.id));
@@ -721,16 +708,8 @@ export function createHocuspocus(
     },
     async afterLoadDocument({ documentName, document }) {
       const room = parseAnyRoomOrDeny(documentName);
-      if (room.kind === "tree") return;
-      if (room.kind === "live") {
+      if (room.kind === "live")
         await services.documentSync.validateHocuspocusDocument(room.documentId, document);
-        return;
-      }
-      // Not awaited: Hocuspocus registers the room only after this hook returns.
-      services.documentSync.enrollHocuspocusDraftRoom({
-        draftId: room.draftId,
-        document,
-      });
     },
     async connected({ documentName, connection, context }) {
       const room = parseAnyRoomOrDeny(documentName);
@@ -753,9 +732,13 @@ export function createHocuspocus(
         if (room.kind === "draft") {
           // A close can commit between admission and registration; the ended draft
           // must not take a late connection.
-          if (!(await services.documentSync.resolveDraftHocuspocusRoom(room.draftId)))
-            refuse(WS_CLOSE.DRAFT_PURGED);
-          services.documentSync.connectedHocuspocusDraftRoom(room.draftId);
+          const resolved = await services.documentSync.resolveDraftHocuspocusRoom(room.draftId);
+          if (!resolved) refuse(WS_CLOSE.DRAFT_PURGED);
+          services.documentSync.connectedHocuspocusDraftRoom({
+            draftId: room.draftId,
+            documentId: resolved.documentId,
+            document: connection.document,
+          });
           return;
         }
         try {

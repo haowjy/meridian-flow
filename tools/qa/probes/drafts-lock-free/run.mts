@@ -21,7 +21,7 @@ import { f1InverseDeadlock } from "./f1-inverse-deadlock.mts";
 import { f1InverseGrant } from "./f1-inverse-grant.mts";
 import { createScratchDatabase, openHarness, type Probe } from "./harness.mts";
 import { liveDuplicateFrame } from "./live-duplicate-frame.mts";
-import { coldLoadCommit, droppedDelivery, readOnlyHandshake } from "./room-enrollment.mts";
+import { coldLoadCommit, missedCatchUp, readOnlyConnect } from "./room-catch-up.mts";
 import {
   twoProcessCompaction,
   twoProcessCompactionMoved,
@@ -40,8 +40,8 @@ const PROBES: readonly Probe[] = [
   twoProcessCompaction,
   twoProcessCompactionMoved,
   coldLoadCommit,
-  droppedDelivery,
-  readOnlyHandshake,
+  missedCatchUp,
+  readOnlyConnect,
   // Phase 4: CRDT-native appends (design phase4-crdt-appends §9).
   appendTailOrder,
   archiveInFlightAppend,

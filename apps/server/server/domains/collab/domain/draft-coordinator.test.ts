@@ -4,7 +4,6 @@
  * - Ordered draft segments install atomically
  */
 
-import { APPLY_RECORD_ROOT } from "@meridian/agent-edit/diff";
 import type { DocumentId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import { allocateDocumentClient } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
@@ -26,14 +25,6 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000503" as ThreadId;
 function docWithText(value: string): Y.Doc {
   const doc = new Y.Doc({ gc: false });
   doc.getText("content").insert(0, value);
-  return doc;
-}
-
-function documentWithReservedFacts(): Y.Doc {
-  const doc = docWithText("seed");
-  const nested = new Y.Array<unknown>();
-  doc.getMap(APPLY_RECORD_ROOT).set("nested", nested);
-  nested.push(["authority fact"]);
   return doc;
 }
 
@@ -157,7 +148,7 @@ it("installs ordered segment rows once and rejects reused clients and unjournale
   const coordinator = createDraftCoordinator({
     onAppendCommitted: () => {},
     store,
-    onDraftUpdate: () => broadcasts++,
+    deliver: async () => void broadcasts++,
   });
   await expect(
     commitDraftRows(coordinator, {

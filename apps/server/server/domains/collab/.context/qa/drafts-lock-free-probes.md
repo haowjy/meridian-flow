@@ -33,12 +33,12 @@ The [collab contracts][collab-context] define each guard. Sources are under
 | `d22-concurrent-undo` | Two Undos of one edit land once; one answers `success`, the other `cant_undo_changed` (its commit took nothing). | Hold two independent Undo operations at `inverse.beforeCommitScope`, for live and Work destinations. |
 | `d23-archived-draft-rebases` | An archived Work draft opened read-only shows current text and gets pushes while open; an unopened one is left alone; its writer stays frozen. | Archive, commit a live edit, push with no room open (draft unchanged), open it (catch-up lands), commit another edit and push, write to the draft, then unarchive. |
 | `two-process-frames` | Two coordinators store one insert per frame. | Two stores and rooms commit frames over one database, then read each draft as a tab handshake does. |
-| `two-process-fold` | A content rebase delivers another process's committed row. | Pause A before append, commit `FOREIGN` from B, let A incorporate it, then type. |
-| `two-process-compaction` | Background compaction delivers the row it folds. | Pause A's 512-row rewrite while B commits `FOREIGN`, then complete compaction and type. B's own compaction is stopped, so A's fold is the only one. |
-| `two-process-compaction-moved` | A fold that lost the row to another process's fold pushes nothing; the tab's next handshake brings the text in. | Same, but B's fold commits first. A's is dropped, room A lacks `FOREIGN` after A's next keystroke, and has it after a handshake. |
-| `cold-load-commit` | A room loading across a commit enrolls the committed row. | Pause the load after its PostgreSQL read, commit `COMMITTED`, resume, and type. |
-| `dropped-delivery` | A frame typed into a room behind its draft is stored; the room heals at the next handshake, not at a frame. | Drop the first delivery, commit `LIVE` during the pull, then type. |
-| `read-only-handshake` | A read-only handshake reconciles an older room. | Join a stale read connection after a dropped delivery and run SyncStep1/2. |
+| `two-process-fold` | A content rebase's catch-up delivers another process's committed row. | Pause A before append, commit `FOREIGN` from B, let A incorporate it, then type. |
+| `two-process-compaction` | Background compaction's catch-up delivers the row it folds. | Pause A's 512-row rewrite while B commits `FOREIGN`, then complete compaction and type. B's own compaction is stopped, so A's fold is the only one. |
+| `two-process-compaction-moved` | A fold that lost the row to another process's fold pushes nothing; the next connection's catch-up brings the text in. | Same, but B's fold commits first. A's is dropped, room A lacks `FOREIGN` after A's next keystroke, and has it after a catch-up. |
+| `cold-load-commit` | A room loading across a commit is caught up by its first connection. | Pause the load after its PostgreSQL read, commit `COMMITTED`, resume, connect, and type. |
+| `missed-catch-up` | A frame typed into a room behind its draft is stored; the room heals at the next connection, not at a frame. | Drop the first catch-up, commit `LIVE` during the pull, type, then connect. |
+| `read-only-connect` | A read-only tab's connection catches an older room up, and the room's broadcast reaches the tab. | Drop a catch-up, join a stale read connection, run SyncStep1/2, then its `connected` hook. |
 | `append-tail-order` | A fold's `checkpoint_seq` is a complete prefix. | Hold A's append while B rebases, then fold; also insert a low id while a higher row commits. |
 | `archive-in-flight-append` | Only a key whose `UPDATE` started before Archive can land. | Hold a frame while Archive runs, queue a second frame (it lands), then send a post-Archive frame (refused). |
 | `effect-projection` | The pending badge follows appends through the projection job. | Type, delete all, type from two processes during one debounce, and write under `lockWorks` alone, as agent-edit's `lockOwners` does. The old "key after Apply staging" arm is gone: it set a journal row status and column that frozen Apply removed. |
@@ -56,9 +56,9 @@ These run in CI on two cores, so a probe never reads once after a fixed sleep. A
 delivery that a post-commit step, a timer or another process makes (a compaction's
 update to the other process's room, the projection's badge) is waited for: on the
 room's own update event where there is one (`roomHolds`), else by polling to a
-deadline that fails naming what it waited for (`within`, `deadline`). A foreground
-`await` of a commit is enough, because after-commit hooks run before it returns
-(`two-process-fold`). Wall-clock numbers are reported, not asserted, unless they
+deadline that fails naming what it waited for (`within`, `deadline`). A room's catch-up
+after a commit runs after the commit's `await` returns (`two-process-fold` waits on the room).
+Wall-clock numbers are reported, not asserted, unless they
 are the requirement itself (the projection's 1 s max wait, a lock timeout); those
 bounds keep slack for a loaded runner.
 

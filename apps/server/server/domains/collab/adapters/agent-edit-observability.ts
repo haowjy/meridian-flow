@@ -89,8 +89,8 @@ export function createRoomDeliveryDiagnostics(eventSink?: EventSink): RoomDelive
 }
 
 /**
- * The draft coordinator's events: a background fold that failed, a room found behind its
- * draft and reconciled, and an update that arrived before its prefix.
+ * The draft coordinator's events: a background fold that failed and an update that arrived
+ * before its prefix.
  */
 export function createDraftDiagnostics(eventSink?: EventSink): DraftDiagnostics {
   return {
@@ -102,17 +102,6 @@ export function createDraftDiagnostics(eventSink?: EventSink): DraftDiagnostics 
         name: "append_prefix_missing",
         correlation: { draftId },
         payload: { clocks: clocks.slice(0, 16) },
-      });
-    },
-    roomReconciled({ draftId, trigger, ...payload }) {
-      if (!eventSink) return;
-      // A room registering behind a commit that landed during its load is the expected race.
-      emitEvent(eventSink, {
-        level: "info",
-        source: "collab.draft",
-        name: "room_reconciled",
-        correlation: { draftId },
-        payload: { trigger, ...payload },
       });
     },
     compactionFailed({ draftId, cause }) {

@@ -17,7 +17,7 @@ import {
   openHarness,
   Y,
 } from "../drafts-lock-free/harness.mts";
-import { openGateway } from "../drafts-lock-free/room-enrollment.mts";
+import { openGateway } from "../drafts-lock-free/room-catch-up.mts";
 
 const scratch = await createScratchDatabase();
 const h = await openHarness(scratch.url);
@@ -34,7 +34,7 @@ try {
   live.destroy();
   const roomKey = draftRoomName(draft.draftId);
   let room = await server.load(draft.draftId);
-  await server.enrolled(draft.draftId);
+  await server.connect(room, draft.draftId);
   // A version restore replaces live's authority, never the Work draft's identity.
   const head = await readDocumentAuthorityHead(h.db, documentId);
   await h.raw.unsafe(
@@ -92,7 +92,7 @@ try {
   await server.close();
   server = openGateway(h, h.store);
   room = await server.load(draft.draftId);
-  await server.enrolled(draft.draftId);
+  await server.connect(room, draft.draftId);
   assert.equal(room.name, roomKey);
   assert.equal(room.getXmlFragment("prosemirror").toString(), before);
   observe("new server", { room: room.name, text: before });

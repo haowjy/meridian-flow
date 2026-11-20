@@ -122,12 +122,12 @@ describe("writer frames racing rewrites (postgres)", () => {
 
   it("authors server rows on the locked prefix without client-1 clock collisions, installing only after root commit", async () => {
     const draftId = await draftWithChange();
-    const delivered: Uint8Array[] = [];
+    const delivered: string[] = [];
     const dirty: string[] = [];
     const runtime = createDraftRuntime({
       store: fixture.view.draftStore,
       onAppendCommitted: (id) => dirty.push(id),
-      onDraftUpdate: ({ update }) => delivered.push(update),
+      deliver: async (id) => void delivered.push(id),
     });
     const base = await runtime.loadBase(draftId);
     const serverAppend = (text: string) =>

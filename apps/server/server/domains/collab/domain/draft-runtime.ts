@@ -6,6 +6,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { processDetachedWork } from "../../../shared/detached-work.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { createDocumentContainment } from "./document-containment.js";
 import { type AttemptScope, NO_ATTEMPT_SCOPE, runBoundedAttempts } from "./draft-attempts.js";
@@ -44,16 +45,6 @@ export type CommittedReplica = {
   readonly tail: TailSize;
 };
 
-/**
- * A replica on its way to installation: `next`, and when it was built by applying `rows` to
- * `from`, those two, so delivery can send the rows instead of diffing whole documents.
- */
-type Transition = {
-  readonly next: CommittedReplica;
-  readonly from?: CommittedReplica;
-  readonly rows?: readonly Uint8Array[];
-};
-
 const COMPACT_TAIL_ROWS = 512;
 const COMPACT_TAIL_BYTES = 2 * 1024 * 1024;
 
@@ -86,16 +77,6 @@ export type DraftRuntime = {
   cloneReplica(replica: CommittedReplica): Y.Doc;
   encodedOf(replica: CommittedReplica): Uint8Array;
   containment: ReturnType<typeof createDocumentContainment>;
-  /**
-   * Brings `room` up to `replica` when it lacks any of the replica's content, reported as a
-   * repair: a room misses committed content only through a delivery gap.
-   */
-  reconcileRoom(input: {
-    draftId: string;
-    room: Y.Doc;
-    replica: CommittedReplica;
-    trigger: RoomReconcileTrigger;
-  }): void;
   /**
    * `journals` as an append from `base`, finalized under the row lock against what is
    * committed (design §2.2). `admitted`, when given, is the caller's pre-lock document holding
@@ -130,19 +111,9 @@ export type DraftRuntime = {
   ): Promise<boolean>;
 };
 
-/** What found a room behind its draft: its enrollment once registered, or a tab's SyncStep1 handshake. */
-export type RoomReconcileTrigger = "enrollment" | "handshake";
-
 export type DraftDiagnostics = {
   /** The background tail fold failed; the tail stays until the next append crosses the bound. */
   compactionFailed(input: { draftId: string; cause: unknown }): void;
-  /** A room lacked committed content and was brought up to the replica. */
-  roomReconciled(input: {
-    draftId: string;
-    revision: number;
-    trigger: RoomReconcileTrigger;
-    bytes: number;
-  }): void;
   /** An append's rows depend on rows the journal lacks: nothing was written. */
   appendPrefixMissing(input: {
     draftId: string;
@@ -176,9 +147,11 @@ export type DraftRuntimeInput = {
   store: DraftStore;
   /** Each attempt's rollback boundary: a root transaction, or a savepoint in an ambient one. */
   attemptScope?: AttemptScope;
-  onDraftUpdate?: (input: { draftId: string; update: Uint8Array }) => void;
-  /** Applies a reconciling update to one room; defaults to a plain apply. */
-  applyToRoom?: (room: Y.Doc, update: Uint8Array) => void;
+  /**
+   * A write committed: brings the draft's room (if this process has one open) up to the
+   * journal. Called after the commit, outside every transaction; the runtime only joins it.
+   */
+  deliver?: (draftId: string) => Promise<void>;
   diagnostics?: DraftDiagnostics;
   /**
    * A work draft's append committed rows: its derived state (`has_effect`, the Work's badge) is
@@ -217,9 +190,8 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
 
   /**
    * The draft as committed now, from the committed replica when its revision still holds,
-   * caught up from the tail when only appends landed since, otherwise materialized. What the
-   * catch-up adds reaches this process's rooms too: another process's commits arrive nowhere
-   * else, and a room missing them would fence every frame typed into it.
+   * caught up from the tail when only appends landed since, otherwise materialized. It
+   * delivers nothing: a room reads the draft in its own `catchUp`.
    */
   async function loadBase(draftId: string): Promise<DraftBase> {
     const current = committed.get(draftId);
@@ -249,7 +221,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           doc,
           tail: grownTail(current.tail, rows),
         };
-        install(documentDraft.draftId, { next, from: current, rows });
+        install(documentDraft.draftId, next);
         return next;
       }
       const next: CommittedReplica = {
@@ -259,7 +231,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
         doc: materializeDraftRead(read),
         tail: grownTail(EMPTY_TAIL, rows),
       };
-      install(documentDraft.draftId, { next });
+      install(documentDraft.draftId, next);
       return next;
     } catch (cause) {
       throw new DraftCorruptError({
@@ -271,73 +243,22 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   }
 
   /**
-   * The one way a replica becomes the draft's committed replica, and so the one way content
-   * reaches this process's registered rooms; a room that registers, or misses a
-   * delivery, behind it is brought up by `reconcileRoom`. It runs when the transaction the replica was
-   * read or written in commits (a savepoint's rows only once its root commits too), installs
-   * only past the replica installed by then, and hands the rooms what separates the two. A
-   * lower or equal revision installs nothing and sends nothing: the committed replica already
-   * holds its content, and so do the rooms. A candidate whose transaction rolls back is
-   * destroyed instead.
+   * The one way a replica becomes the draft's committed replica. It runs when the transaction
+   * the replica was read or written in commits (a savepoint's rows only once its root commits
+   * too) and installs only past the replica installed by then; a candidate whose transaction
+   * rolls back is destroyed instead. A replica a write produced (`written`) also tells the
+   * draft's room to catch up, whether or not it won the install: the room reads the journal,
+   * not this replica.
    */
-  function install(draftId: string, transition: Transition, owned = false): void {
+  function install(draftId: string, next: CommittedReplica, options?: { written: true }): void {
     const install = () => {
       const previous = committed.get(draftId);
-      if (previous && previous.revision >= transition.next.revision) return;
-      committed.set(draftId, transition.next);
-      if (!previous) return;
-      const update = deliveryFrom(previous, transition);
-      if (update) input.onDraftUpdate?.({ draftId, update });
+      if (!previous || previous.revision < next.revision) committed.set(draftId, next);
+      if (options?.written && input.deliver)
+        void processDetachedWork.track(input.deliver(draftId), "draft room catch-up");
     };
-    const abort = owned ? () => transition.next.doc.destroy() : undefined;
+    const abort = options?.written ? () => next.doc.destroy() : undefined;
     if (!input.store.deferUntilCommit(install, abort)) install();
-  }
-
-  /**
-   * What `transition` adds to `previous` within one draft, which a rewrite only merges
-   * into: its own rows when they cover everything past `previous` (design §2.4), otherwise the
-   * difference of the two documents (a fold or checkpoint, whose rows this process never saw
-   * one by one), or nothing when the rewrite changed no content. Rows built on `from` cover
-   * `(from.seq, next.seq]`; with the checkpoint unmoved and `from` no newer than `previous`
-   * that is a superset of `(previous.seq, next.seq]`, because commit order is id order within a
-   * draft. Yjs applies a repeat as a no-op, so a room that already holds part of it is
-   * unharmed.
-   */
-  function deliveryFrom(previous: CommittedReplica, transition: Transition): Uint8Array | null {
-    const { from, rows, next } = transition;
-    if (
-      rows &&
-      from &&
-      next.checkpointRevision === previous.checkpointRevision &&
-      from.revision <= previous.revision
-    )
-      return rows.length ? Y.mergeUpdates([...rows]) : null;
-    if (transition.next.doc === previous.doc) return null;
-    if (Y.equalSnapshots(Y.snapshot(previous.doc), Y.snapshot(transition.next.doc))) return null;
-    return Y.encodeStateAsUpdate(transition.next.doc, Y.encodeStateVector(previous.doc));
-  }
-
-  /**
-   * The other half of delivery: `install` sends each transition to the rooms
-   * registered when it installs, and this repairs a room that joined, or missed a delivery,
-   * behind `replica`. The room gets the replica's structs past its state vector and the
-   * replica's delete set, so a delete-only gap is covered too.
-   */
-  function reconcileRoom({
-    draftId,
-    room,
-    replica,
-    trigger,
-  }: Parameters<DraftRuntime["reconcileRoom"]>[0]): void {
-    if (documentContainment.contains(room, encodedOf(replica))) return;
-    const update = Y.encodeStateAsUpdate(replica.doc, Y.encodeStateVector(room));
-    (input.applyToRoom ?? Y.applyUpdate)(room, update);
-    input.diagnostics?.roomReconciled({
-      draftId,
-      revision: replica.revision,
-      trigger,
-      bytes: update.byteLength,
-    });
   }
 
   function encodedOf(replica: CommittedReplica): Uint8Array {
@@ -362,14 +283,14 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   function preparedWrite(write: {
     draftId: string;
     candidate: Y.Doc;
-    persist(): Promise<Transition | { contained: true }>;
+    persist(): Promise<CommittedReplica | { contained: true }>;
     /** Every document the write owns besides the candidate (an append's committed prefix). */
     owned?(): readonly Y.Doc[];
     /** The append's rows committed: told once its attempt completed. */
     appended?(): void;
   }): PreparedDraftWrite {
     let state: "prepared" | "persisted" | "transferred" | "disposed" = "prepared";
-    let committed: Transition | { contained: true } | undefined;
+    let committed: CommittedReplica | { contained: true } | undefined;
     const destroyOwned = (keep?: Y.Doc) => {
       for (const doc of new Set([write.candidate, ...(write.owned?.() ?? [])]))
         if (doc !== keep) doc.destroy();
@@ -391,8 +312,8 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           destroyOwned();
           return;
         }
-        destroyOwned(committed.next.doc);
-        install(write.draftId, committed, true);
+        destroyOwned(committed.doc);
+        install(write.draftId, committed, { written: true });
         write.appended?.();
       },
       dispose() {
@@ -487,27 +408,13 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
           ...finalized.rows.map((row) => row.updateData),
         ];
         const seq = Math.max(...prefixRows.map((row) => row.id), ...outcome.rowIds);
-        if (!prefixHeld)
-          // A rewrite moved the checkpoint: delivery diffs documents, as after a fold.
-          return {
-            next: {
-              revision: outcome.revision,
-              checkpointRevision: outcome.checkpointRevision,
-              seq: Math.max(checkpointSeq, seq),
-              doc,
-              tail: grownTail(EMPTY_TAIL, rows),
-            },
-          };
+        // A rewrite that moved the checkpoint leaves a tail of only these rows.
         return {
-          next: {
-            revision: outcome.revision,
-            checkpointRevision: replica.checkpointRevision,
-            seq: Math.max(replica.seq, seq),
-            doc,
-            tail: grownTail(replica.tail, rows),
-          },
-          from: replica,
-          rows,
+          revision: outcome.revision,
+          checkpointRevision: prefixHeld ? replica.checkpointRevision : outcome.checkpointRevision,
+          seq: Math.max(prefixHeld ? replica.seq : checkpointSeq, seq),
+          doc,
+          tail: grownTail(prefixHeld ? replica.tail : EMPTY_TAIL, rows),
         };
       },
     });
@@ -532,9 +439,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       async persist() {
         const outcome = await input.store.commitRewrite({ draftId, doc: candidate, ...rewrite });
         if (outcome.status !== "committed") throw new DraftCasConflictError(draftId);
-        // The fold may have applied rows this process never installed: delivery diffs the
-        // documents rather than trusting anything computed before the lock.
-        return { next: { ...outcome, doc: candidate, tail: EMPTY_TAIL } };
+        return { ...outcome, doc: candidate, tail: EMPTY_TAIL };
       },
     });
   }
@@ -587,7 +492,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
     cloneReplica,
     encodedOf,
     containment: documentContainment,
-    reconcileRoom,
     prepareAppend,
     prepareRewrite,
     foldPolicy,

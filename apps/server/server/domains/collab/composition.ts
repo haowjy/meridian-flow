@@ -200,7 +200,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     atomic: (operation) => runInDrizzleTransaction(deps.db, operation),
     onArrivals: (ids) => deps.arrivals?.settle(ids) ?? Promise.resolve(0),
   });
-  const hocuspocusBinding = createHocuspocusBinding(deps.eventSink);
+  const hocuspocusBinding = createHocuspocusBinding();
   const liveCoordinator = createHocuspocusCoordinator({
     hocuspocus: hocuspocusBinding.require,
     journal: persistence.journal,
@@ -238,8 +238,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const draftCoordinator = createDraftCoordinator({
     store: drafts,
     attemptScope,
-    onDraftUpdate: hocuspocusBinding.deliverDraftUpdate,
-    applyToRoom: hocuspocusBinding.applyToRoom,
+    deliver: (draftId) => hocuspocusPersistence.catchUpDraftRoom(draftId),
     diagnostics: draftDiagnostics,
     // The projection is composed below, over the coordinator; a mark only fires after a commit.
     onAppendCommitted: (draftId) => draftEffects.markDirty(draftId),
@@ -669,8 +668,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
       drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
       closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
-      reconcileHocuspocusDraftRoom: hocuspocusPersistence.reconcileHocuspocusDraftRoom,
-      enrollHocuspocusDraftRoom: hocuspocusPersistence.enrollHocuspocusDraftRoom,
+      catchUpDraftRoom: hocuspocusPersistence.catchUpDraftRoom,
       connectedHocuspocusDraftRoom: hocuspocusPersistence.connectedHocuspocusDraftRoom,
       unloadedHocuspocusDraftRoom: hocuspocusPersistence.unloadedHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,

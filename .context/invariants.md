@@ -14,7 +14,7 @@ receives and the history keeps.
 
 **How.** An edit is appended to the document's journal before it is applied, broadcast
 or acknowledged, under a per-document lock and admission sequence
-(`apps/server/server/domains/collab/hocuspocus-persistence.ts`, `adapters/drizzle-journal.ts`).
+(`apps/server/server/domains/collab/live-room.ts`, `draft-room.ts`, `adapters/drizzle-journal.ts`).
 A cold load replays the journal above the last checkpoint, and checkpoints come only
 from the journal. Server documents keep Yjs history (`gc: false`). Mechanism and reasons:
 the KB's `wiki/architecture/collaboration/durability-and-honest-outcomes.md`; contracts:
