@@ -11,6 +11,7 @@ import {
   StepMap,
   Transform,
 } from "prosemirror-transform";
+import { type Author, type Authors, newChangeId, type SuggestionAttrs } from "./change.js";
 import {
   type AttrProposal,
   blockKind,
@@ -21,7 +22,6 @@ import {
   proposals,
   type RunKind,
   SUGGESTION_ATTRS,
-  type SuggestionAttrs,
   sameValue,
   stripSlice,
   stripSuggestions,
@@ -40,13 +40,11 @@ export const CHANGE_META = "suggestions:change";
 /** On a rewritten transaction: part of the original could not be suggested and was left out. */
 export const DROPPED_META = "suggestions:dropped";
 
-/** Who is writing: everything but the change id, which the rewrite picks, and the Work, the view's. */
-export type Author = Omit<SuggestionAttrs, "id" | "work">;
-
-/** A fresh change id. Unique across Works and tabs without reading the document. */
-export function newChangeId(): string {
-  return globalThis.crypto.randomUUID();
-}
+/**
+ * A Work's edit: whose draft it writes into, who writes it, and the document's authors, which say
+ * who wrote each change the edit meets.
+ */
+type Writer = { work: string; author: Author; authors: Authors };
 
 /**
  * The change one edit's suggestions take: the first it picks (`found`, a change of the same
@@ -56,10 +54,14 @@ export function newChangeId(): string {
  */
 type EditChange = (found: string | null) => string;
 
-function editChange(): EditChange {
+/** A change the edit starts is recorded in the document's authors as `writer`'s. */
+function editChange(writer: Writer | null): EditChange {
   let id: string | null = null;
   return (found) => {
-    id ??= found ?? newChangeId();
+    if (id === null) {
+      id = found ?? newChangeId();
+      if (found === null) writer?.authors.set(id, writer.author);
+    }
     return id;
   };
 }
@@ -70,13 +72,14 @@ function editChange(): EditChange {
  * deletion, deleting its own insertion is a real delete, and another Work's text is never
  * touched. In the Live view (`view.work === null`) edits land, but hidden suggestions are kept
  * and nothing typed or pasted carries a suggestion. Returns the original transaction when it
- * needs no rewrite.
+ * needs no rewrite. A change the edit starts is recorded in `authors` as `author`'s.
  */
 export function rewrite(
   tr: Transaction,
   state: EditorState,
   view: View,
   author: Author | null,
+  authors: Authors,
 ): Transaction {
   if (!tr.docChanged || tr.getMeta(RAW_META)) return tr;
   if (
@@ -120,8 +123,9 @@ export function rewrite(
         node: !(mapped instanceof AddMarkStep || mapped instanceof RemoveMarkStep),
       });
   });
-  const work = view.work === null || !author ? null : { ...author, work: view.work };
-  const change = editChange();
+  const work: Writer | null =
+    view.work === null || !author ? null : { work: view.work, author, authors };
+  const change = editChange(work);
   const ranges = work ? wholeBlockRanges(replaced, state.doc) : [...replaced];
   for (const range of [...ranges].reverse()) {
     const slice = stripSlice(tr.doc.slice(range.fromB, range.toB));
@@ -166,9 +170,9 @@ export function rewrite(
   // place: the difference between the start and final documents there. What it replaced or made
   // already has its final form, from the final document.
   const formatting = netFormatting(state.doc, tr.doc, ranges, reached, work !== null);
-  for (const run of formatting.runs) restyle(out, run, out.mapping.slice(), view, author, change);
+  for (const run of formatting.runs) restyle(out, run, out.mapping.slice(), view, work, change);
   for (const step of formatting.nodes)
-    rewriteMarkup(out, step, out.mapping.slice(), view, author, change);
+    rewriteMarkup(out, step, out.mapping.slice(), view, work, change);
   out.setMeta(CHANGE_META, changes);
   if (caret !== null)
     out.setSelection(
@@ -240,7 +244,7 @@ function restyle(
   run: Restyle,
   map: Mapping,
   view: View,
-  author: Author | null,
+  writer: Writer | null,
   change: EditChange,
 ) {
   const styled = (node: Node) => {
@@ -263,7 +267,7 @@ function restyle(
       comments &&= commentsOnly(node);
     });
     if (piece.kind === "hidden" || (piece.kind === "own-del" && !comments)) continue;
-    if (view.work !== null && author && piece.kind === "live" && !comments) {
+    if (writer && piece.kind === "live" && !comments) {
       const formatted: Node[] = [];
       content.forEach((node) => {
         formatted.push(styled(node));
@@ -275,7 +279,7 @@ function restyle(
         new Slice(Fragment.from(formatted), 0, 0),
         { first: null, last: null, rest: Fragment.empty, aimed: { first: false, last: false } },
         view,
-        { ...author, work: view.work },
+        writer,
         change,
         false,
         () => {},
@@ -461,14 +465,14 @@ function rewriteMarkup(
   step: Step,
   map: Mapping,
   view: View,
-  author: Author | null,
+  writer: Writer | null,
   change: EditChange,
 ): void {
   // Attribute and structure steps. Live takes them; a Work's view takes them on its own blocks.
   const mapped = step.map(map);
   if (!mapped) return;
   const range = stepRange(mapped);
-  if (view.work === null || !author || !range) {
+  if (!writer || !range) {
     if (view.work === null) out.maybeStep(mapped);
     return;
   }
@@ -490,7 +494,7 @@ function rewriteMarkup(
       if (owner !== "own") out.setMeta(DROPPED_META, true);
       continue;
     }
-    proposeAttrs(out, pos, node.attrs, attrs, { ...author, work: view.work }, change);
+    proposeAttrs(out, pos, node.attrs, attrs, writer, change);
   }
 }
 
@@ -504,7 +508,7 @@ function settle(
   block: { node: Node; pos: number },
   final: Node | null,
   view: View,
-  author: Omit<SuggestionAttrs, "id">,
+  writer: Writer,
   change: EditChange,
   aimed: boolean,
 ): void {
@@ -521,7 +525,7 @@ function settle(
   if (kind === "own" && final.type.validContent(node.content))
     out.setNodeMarkup(pos, final.type, attrs);
   else if (kind === "live" && final.type === node.type)
-    proposeAttrs(out, pos, viewAttrs(node, view), attrs, author, change);
+    proposeAttrs(out, pos, viewAttrs(node, view), attrs, writer, change);
   else out.setMeta(DROPPED_META, true);
 }
 
@@ -535,7 +539,7 @@ function proposeAttrs(
   pos: number,
   shown: Attrs,
   attrs: Attrs,
-  author: Omit<SuggestionAttrs, "id">,
+  writer: Writer,
   change: EditChange,
 ): void {
   const set: Record<string, unknown> = {};
@@ -544,9 +548,9 @@ function proposeAttrs(
       set[key] = attrs[key];
   if (Object.keys(set).length === 0) return;
   const stored = out.doc.nodeAt(pos) as Node;
-  const layers = proposals(stored)[author.work] ?? [];
-  const id = change(layers.find((layer) => !layer.remove && sameAuthor(layer, author))?.id ?? null);
-  setLayers(out, pos, author.work, addLayer(stored, layers, { ...author, id, attrs: set }));
+  const layers = proposals(stored)[writer.work] ?? [];
+  const id = change(layers.find((layer) => !layer.remove && sameAuthor(layer, writer))?.id ?? null);
+  setLayers(out, pos, writer.work, addLayer(stored, layers, { id, work: writer.work, attrs: set }));
 }
 
 /** Store a Work's layers on the block at `pos`; none drops its entry. */
@@ -581,7 +585,7 @@ function addLayer(
 ): AttrProposal[] {
   const next = [...layers];
   const last = next.at(-1);
-  if (last && last.id === layer.id && sameAuthor(last, layer))
+  if (last && last.id === layer.id)
     next[next.length - 1] = {
       ...last,
       attrs: { ...last.attrs, ...layer.attrs },
@@ -755,25 +759,28 @@ function marked(schema: Schema, content: Fragment, attrs: SuggestionAttrs): Frag
   return Fragment.from(nodes);
 }
 
-function sameAuthor(attrs: SuggestionAttrs, author: Omit<SuggestionAttrs, "id">): boolean {
+/** Whether `writer` wrote the change `attrs` belongs to: same Work, chat, turn and author. */
+function sameAuthor(attrs: SuggestionAttrs, writer: Writer): boolean {
+  const wrote = writer.authors.get(attrs.id);
   return (
-    attrs.work === author.work &&
-    attrs.turn === author.turn &&
-    attrs.chat === author.chat &&
-    attrs.by === author.by
+    attrs.work === writer.work &&
+    !!wrote &&
+    wrote.turn === writer.author.turn &&
+    wrote.chat === writer.author.chat &&
+    wrote.by === writer.author.by
   );
 }
 
 /** The id an edit at `pos` continues: the same author's neighbouring change of the same turn. */
-function continuedId(doc: Node, pos: number, author: Omit<SuggestionAttrs, "id">): string | null {
+function continuedId(doc: Node, pos: number, writer: Writer): string | null {
   const $pos = doc.resolve(pos);
   for (const node of [$pos.nodeBefore, $pos.nodeAfter])
     for (const mark of node?.marks ?? [])
-      if (isSuggestionMark(mark) && sameAuthor(mark.attrs as SuggestionAttrs, author))
+      if (isSuggestionMark(mark) && sameAuthor(mark.attrs as SuggestionAttrs, writer))
         return mark.attrs.id as string;
   const block = $pos.depth >= 1 ? $pos.node(1) : null;
   const sug = block?.attrs.sug as SuggestionAttrs | null;
-  return sug && sameAuthor(sug, author) ? sug.id : null;
+  return sug && sameAuthor(sug, writer) ? sug.id : null;
 }
 
 /**
@@ -786,13 +793,14 @@ function suggestRemoval(
   to: number,
   view: View,
   attrs: SuggestionAttrs,
+  writer: Writer,
 ): void {
   const schema = out.doc.type.schema;
   const del = schema.marks.suggest_del.create(attrs);
   // The Work's own block goes outright, unless the edit layers over it (`layers`): then it stays,
   // as a removed Live block does, with a removal layer and its text struck.
   const gone = wholeBlocks(out.doc, from, to).filter(
-    ({ node }) => blockKind(node, view) === "own" && !layers(node.attrs.sug, attrs),
+    ({ node }) => blockKind(node, view) === "own" && !layers(node.attrs.sug, writer),
   );
   const inGone = (pos: number) =>
     gone.some((block) => pos >= block.pos && pos < block.pos + block.node.nodeSize);
@@ -801,7 +809,7 @@ function suggestRemoval(
     const kind = blockKind(node, view);
     if (
       (kind === "live" && "sug" in node.attrs) ||
-      (kind === "own" && layers(node.attrs.sug, attrs))
+      (kind === "own" && layers(node.attrs.sug, writer))
     )
       setLayers(
         out,
@@ -813,7 +821,7 @@ function suggestRemoval(
   const map = since(out);
   for (const piece of work.reverse()) {
     if (piece.kind === "live") out.addMark(piece.from, piece.to, del);
-    else if (piece.kind === "own-ins") retract(out, piece.from, piece.to, del, attrs);
+    else if (piece.kind === "own-ins") retract(out, piece.from, piece.to, del, writer);
   }
   for (const block of gone.reverse()) {
     const a = map(block.pos, 1);
@@ -822,17 +830,24 @@ function suggestRemoval(
 }
 
 /**
- * Whether an edit by `attrs` over the view's own text that `written` wrote layers over it instead
+ * Whether `writer`'s edit over the view's own text of the change `written` layers over it instead
  * of replacing it: a model turn's edit over another turn's or the writer's text. Rejecting the
  * later turn, as the card's Undo does, brings the earlier text back.
  */
-function layers(written: SuggestionAttrs | null, attrs: SuggestionAttrs): boolean {
-  return attrs.turn !== null && written?.turn !== attrs.turn;
+function layers(written: SuggestionAttrs | null, writer: Writer): boolean {
+  const turn = writer.author.turn;
+  return turn !== null && (written ? writer.authors.get(written.id)?.turn : null) !== turn;
 }
 
 /** Content the view's Work writes into its own block `sug`: marked when it layers over the block. */
-function intoOwn(schema: Schema, content: Fragment, sug: SuggestionAttrs, attrs: SuggestionAttrs) {
-  return layers(sug, attrs) ? marked(schema, content, attrs) : content;
+function intoOwn(
+  schema: Schema,
+  content: Fragment,
+  sug: SuggestionAttrs,
+  attrs: SuggestionAttrs,
+  writer: Writer,
+) {
+  return layers(sug, writer) ? marked(schema, content, attrs) : content;
 }
 
 /**
@@ -840,13 +855,13 @@ function intoOwn(schema: Schema, content: Fragment, sug: SuggestionAttrs, attrs:
  * the same turn wrote goes, as does anything the writer (no turn) removes. Another turn's stays
  * under this turn's deletion (`layers`).
  */
-function retract(out: Transaction, from: number, to: number, del: Mark, attrs: SuggestionAttrs) {
+function retract(out: Transaction, from: number, to: number, del: Mark, writer: Writer) {
   const ranges: Array<[number, number, boolean]> = [];
   out.doc.nodesBetween(from, to, (node, pos, parent) => {
     if (!node.isInline) return true;
     const ins = node.marks.find((mark) => mark.type.name === "suggest_ins");
     const written = (ins?.attrs ?? parent?.attrs.sug ?? null) as SuggestionAttrs | null;
-    ranges.push([Math.max(from, pos), Math.min(to, pos + node.nodeSize), layers(written, attrs)]);
+    ranges.push([Math.max(from, pos), Math.min(to, pos + node.nodeSize), layers(written, writer)]);
     return false;
   });
   for (const [a, b, layered] of ranges.reverse()) {
@@ -878,7 +893,7 @@ function replaceInWork(
   slice: Slice,
   final: Final,
   view: View,
-  author: Omit<SuggestionAttrs, "id">,
+  writer: Writer,
   change: EditChange,
   forward: boolean,
   changed: (change: SuggestionAttrs) => void,
@@ -886,8 +901,8 @@ function replaceInWork(
   const startBlock = textblockAtOrThrow(out.doc, from);
   const endBlock = textblockAtOrThrow(out.doc, to);
   const attrs: SuggestionAttrs = {
-    ...author,
-    id: change(continuedId(out.doc, from, author) ?? continuedId(out.doc, to, author)),
+    id: change(continuedId(out.doc, from, writer) ?? continuedId(out.doc, to, writer)),
+    work: writer.work,
   };
   // Text cut from a block the Work added stays that block's insertion, whoever cuts it.
   const startOwn = blockKind(startBlock.node, view) === "own";
@@ -914,6 +929,7 @@ function replaceInWork(
     joining && !keepEnd ? endBlock.pos + endBlock.node.nodeSize : to,
     view,
     attrs,
+    writer,
   );
   const blockEnd = map(startBlock.pos + startBlock.node.nodeSize - 1, -1);
   let insertAt = joining ? blockEnd : pastOwnDeletion(out.doc, map(to, 1), view);
@@ -921,7 +937,7 @@ function replaceInWork(
   const ownTarget = blockKind(target.node, view) === "own";
   const inline = (content: Fragment) =>
     ownTarget
-      ? intoOwn(schema, content, target.node.attrs.sug, attrs)
+      ? intoOwn(schema, content, target.node.attrs.sug, attrs, writer)
       : marked(schema, content, attrs);
 
   const parts = sliceParts(slice);
@@ -934,7 +950,7 @@ function replaceInWork(
       { node: startBlock.node, pos: map(startBlock.pos, 1) },
       final.first,
       view,
-      author,
+      writer,
       change,
       final.aimed.first,
     );
@@ -967,7 +983,7 @@ function replaceInWork(
       { node: endBlock.node, pos: endAt },
       final.last,
       view,
-      author,
+      writer,
       change,
       final.aimed.last,
     );
@@ -977,14 +993,16 @@ function replaceInWork(
   const targetEnd = targetNow.pos + targetNow.node.nodeSize - 1;
   const cut = since(out);
   if (ownTarget) out.delete(insertAt, targetEnd);
-  else suggestRemoval(out, insertAt, targetEnd, view, attrs);
+  else suggestRemoval(out, insertAt, targetEnd, view, attrs, writer);
   const after = cut(targetNow.pos + targetNow.node.nodeSize, 1);
   const template = parts.last ?? targetNow.node;
   const blocks = [
     ...pasted(parts.middle, attrs),
     template.type.create(
       { ...template.attrs, id: null, sug: cutChange, sugAttrs: null },
-      intoOwn(schema, parts.last?.content ?? Fragment.empty, cutChange, attrs).append(final.rest),
+      intoOwn(schema, parts.last?.content ?? Fragment.empty, cutChange, attrs, writer).append(
+        final.rest,
+      ),
     ),
   ];
   out.insert(after, blocks);
@@ -1005,7 +1023,7 @@ function replaceBlocks(
   to: number,
   slice: Slice,
   view: View,
-  author: Omit<SuggestionAttrs, "id">,
+  writer: Writer,
   change: EditChange,
   changed: (change: SuggestionAttrs) => void,
 ): null {
@@ -1038,10 +1056,10 @@ function replaceBlocks(
     out.setMeta(DROPPED_META, true);
     return null;
   }
-  const attrs = { ...author, id: change(null) };
+  const attrs: SuggestionAttrs = { id: change(null), work: writer.work };
   changed(attrs);
   const map = since(out);
-  if (from < to) suggestRemoval(out, from, to, view, attrs);
+  if (from < to) suggestRemoval(out, from, to, view, attrs, writer);
   if (blocks.length > 0) out.insert(map(from, -1), pasted(blocks, attrs));
   return null;
 }

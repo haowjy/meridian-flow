@@ -1,5 +1,6 @@
 import type { Attrs, Mark, Node } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
+import type { Authors, SuggestionAttrs } from "./change.js";
 import { RAW_META } from "./rewrite.js";
 import {
   type AttrProposal,
@@ -8,15 +9,14 @@ import {
   kindOf,
   layered,
   proposals,
-  type SuggestionAttrs,
   sameValue,
   type View,
   viewBlock,
 } from "./view.js";
 
 /** The turns with suggestions still in `doc`: where a reject of `{ turn }` would change it. */
-export function pendingTurns(doc: Node): Set<string> {
-  return pendingBy(doc, (attrs) => attrs.turn);
+export function pendingTurns(doc: Node, authors: Authors): Set<string> {
+  return pendingBy(doc, (attrs) => authors.get(attrs.id)?.turn ?? null);
 }
 
 /** What one Work has pending in a document: its changes, the chats that wrote them, and whether
@@ -27,10 +27,10 @@ export type WorkPending = { changes: number; chats: string[]; writer: boolean };
  * The Works with suggestions still in `doc`, each with what it has pending: the views that read it
  * differently from Live, counted as their review lists them (`list`).
  */
-export function pendingChanges(doc: Node): Record<string, WorkPending> {
+export function pendingChanges(doc: Node, authors: Authors): Record<string, WorkPending> {
   const out: Record<string, WorkPending> = {};
   for (const work of [...pendingBy(doc, (attrs) => attrs.work)].sort()) {
-    const changes = list(doc, { work });
+    const changes = list(doc, { work }, authors);
     const chats = new Set(changes.flatMap((change) => (change.chat ? [change.chat] : [])));
     out[work] = {
       changes: changes.length,
@@ -59,27 +59,32 @@ function pendingBy(doc: Node, key: (attrs: SuggestionAttrs) => string | null): S
 /** Which suggestions an accept or reject takes: one change, a Work's turn, or a whole Work's. */
 export type Filter = { id: string } | { work: string } | { turn: string };
 
-function matches(attrs: SuggestionAttrs | null, filter: Filter): boolean {
-  if (!attrs) return false;
-  if ("id" in filter) return attrs.id === filter.id;
-  if ("turn" in filter) return attrs.turn === filter.turn;
-  return attrs.work === filter.work;
+type Match = (attrs: SuggestionAttrs | null) => boolean;
+
+/** Which suggestions `filter` takes; a turn's are the changes `authors` gives that turn. */
+function matcher(filter: Filter, authors: Authors): Match {
+  if ("id" in filter) return (attrs) => attrs?.id === filter.id;
+  if ("work" in filter) return (attrs) => attrs?.work === filter.work;
+  return (attrs) => !!attrs && authors.get(attrs.id)?.turn === filter.turn;
 }
 
-/** Accept: an insertion becomes Live text, a deletion removes its text. One local transaction. */
-export function accept(state: EditorState, filter: Filter): Transaction {
-  return resolve(state, filter, "accept");
+/**
+ * Accept: an insertion becomes Live text, a deletion removes its text. One local transaction, which
+ * only deletes text and blocks and removes marks and attributes: everything else stays as it is.
+ */
+export function accept(state: EditorState, filter: Filter, authors: Authors): Transaction {
+  return resolve(state, matcher(filter, authors), "accept");
 }
 
-/** Reject: an insertion goes, a deletion's text stays Live. One local transaction. */
-export function reject(state: EditorState, filter: Filter): Transaction {
-  return resolve(state, filter, "reject");
+/** Reject: an insertion goes, a deletion's text stays Live. Writes as `accept` does. */
+export function reject(state: EditorState, filter: Filter, authors: Authors): Transaction {
+  return resolve(state, matcher(filter, authors), "reject");
 }
 
-function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"): Transaction {
+function resolve(state: EditorState, matches: Match, action: "accept" | "reject"): Transaction {
   const tr = state.tr.setMeta(RAW_META, true);
   const { suggest_ins: ins, suggest_del: del } = state.schema.marks;
-  const fateOf = fates(state.doc, filter, action);
+  const fateOf = fates(state.doc, matches, action);
   const unmark: Array<[number, number, Mark]> = [];
   const remove: Array<[number, number]> = [];
   const set: Array<[number, string, unknown]> = [];
@@ -143,7 +148,7 @@ function resolve(state: EditorState, filter: Filter, action: "accept" | "reject"
  */
 function fates(
   doc: Node,
-  filter: Filter,
+  matches: Match,
   action: "accept" | "reject",
 ): (attrs: SuggestionAttrs | null) => "accept" | "reject" | null {
   const chosen = new Set<string>();
@@ -151,22 +156,17 @@ function fates(
   if (action === "accept")
     doc.descendants((node) => {
       for (const proposal of [node.attrs.sug, ...Object.values(proposals(node)).flat()])
-        if (matches(proposal, filter)) chosen.add(proposal.id);
+        if (matches(proposal)) chosen.add(proposal.id);
       const marks = node.marks.filter(isSuggestionMark);
       for (const mark of marks)
-        if (matches(mark.attrs as SuggestionAttrs, filter)) chosen.add(mark.attrs.id);
-      if (
-        marks.some(
-          (m) => m.type.name === "suggest_del" && matches(m.attrs as SuggestionAttrs, filter),
-        )
-      )
+        if (matches(mark.attrs as SuggestionAttrs)) chosen.add(mark.attrs.id);
+      if (marks.some((m) => m.type.name === "suggest_del" && matches(m.attrs as SuggestionAttrs)))
         for (const mark of marks)
-          if (mark.type.name === "suggest_del" && !matches(mark.attrs as SuggestionAttrs, filter))
+          if (mark.type.name === "suggest_del" && !matches(mark.attrs as SuggestionAttrs))
             superseded.add(mark.attrs.id);
     });
   for (const id of chosen) superseded.delete(id);
-  return (attrs) =>
-    matches(attrs, filter) ? action : attrs && superseded.has(attrs.id) ? "reject" : null;
+  return (attrs) => (matches(attrs) ? action : attrs && superseded.has(attrs.id) ? "reject" : null);
 }
 
 /** Sorted, with touching ranges joined, so each delete sees the positions it was planned on. */
@@ -182,10 +182,14 @@ function merge(ranges: Array<[number, number]>): Array<[number, number]> {
 }
 
 /**
- * One change as a view shows it: what it adds and removes, where it starts, and for a pending
- * change to a block's attributes, the attributes it sets.
+ * One change as a view shows it: who wrote it (null fields when the document has no author for
+ * it), what it adds and removes, where it starts, and for a pending change to a block's
+ * attributes, the attributes it sets.
  */
 export type Change = SuggestionAttrs & {
+  chat: string | null;
+  turn: string | null;
+  by: string | null;
   inserted: string;
   deleted: string;
   attrs: Attrs | null;
@@ -194,13 +198,16 @@ export type Change = SuggestionAttrs & {
 };
 
 /** The view's own changes, in document order, for review: what `kindOf` shows as its own. */
-export function list(doc: Node, view: View): Change[] {
+export function list(doc: Node, view: View, authors: Authors): Change[] {
   const work = view.work;
   if (work === null) return [];
   const byId = new Map<string, Change>();
+  const unknown = { chat: null, turn: null, by: null };
   const note = (attrs: SuggestionAttrs, from: number, to: number, add: Partial<Change>) => {
     const change = byId.get(attrs.id) ?? {
-      ...attrs,
+      id: attrs.id,
+      work: attrs.work,
+      ...(authors.get(attrs.id) ?? unknown),
       inserted: "",
       deleted: "",
       attrs: null,

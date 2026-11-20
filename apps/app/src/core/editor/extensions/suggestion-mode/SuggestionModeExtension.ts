@@ -2,12 +2,14 @@
  * Suggestion mode: a Work's draft is that Work's suggestion marks inside the Live document.
  * The editor always holds the whole document and shows one view of it (`@meridian/suggestions`):
  * hidden text is `display: none`, the caret never rests inside it, a copy leaves it out, and every
- * local edit passes through `rewrite` before it lands.
+ * local edit passes through `rewrite` before it lands. Apply and Reject run on the editor's Y.Doc
+ * through the server's own resolve.
  */
+import { resolveStored, suggestionAuthors } from "@meridian/agent-edit";
 import { documentMarks } from "@meridian/prosemirror-schema";
 import {
   type Author,
-  accept,
+  type Authors,
   blockKind,
   DROPPED_META,
   type Filter,
@@ -15,7 +17,6 @@ import {
   liveView,
   proposals,
   RAW_META,
-  reject,
   removedIn,
   rewrite,
   sameValue,
@@ -35,6 +36,8 @@ import {
 } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
+import type * as Y from "yjs";
+import { endUndoStep } from "../../editor-history";
 import "./suggestion-mode.css";
 
 /** The marks always exist (the schema is shared); only the behaviour is behind the flag. */
@@ -231,16 +234,12 @@ export const SuggestionModeExtension = Extension.create({
         },
       acceptSuggestions:
         (filter) =>
-        ({ state, dispatch }) => {
-          dispatch?.(accept(state, filter));
-          return true;
-        },
+        ({ state, tr, dispatch }) =>
+          resolveHere(state, tr, "accept", filter, !!dispatch),
       rejectSuggestions:
         (filter) =>
-        ({ state, dispatch }) => {
-          dispatch?.(reject(state, filter));
-          return true;
-        },
+        ({ state, tr, dispatch }) =>
+          resolveHere(state, tr, "reject", filter, !!dispatch),
       addComment:
         () =>
         ({ state, tr, dispatch }) => {
@@ -264,7 +263,7 @@ export const SuggestionModeExtension = Extension.create({
     const mode = suggestionModeKey.getState(state);
     // A peer's change, Undo and Redo come through the binding already in stored form.
     if (!mode || transaction.getMeta(ySyncPluginKey)?.isChangeOrigin) return next(transaction);
-    const out = rewrite(transaction, state, mode.view, mode.author);
+    const out = rewrite(transaction, state, mode.view, mode.author, authorsIn(state));
     // An edit the view cannot suggest in full does not happen at all, as for the model.
     if (!out.getMeta(DROPPED_META)) next(out);
   },
@@ -312,6 +311,42 @@ export const SuggestionModeExtension = Extension.create({
     ];
   },
 });
+
+function editorDoc(state: EditorState): Y.Doc | null {
+  return (ySyncPluginKey.getState(state)?.doc as Y.Doc | undefined) ?? null;
+}
+
+/** Who wrote each change in the editor's document; an editor with no Y.Doc keeps none. */
+export function authorsIn(state: EditorState): Authors {
+  const doc = editorDoc(state);
+  return doc ? suggestionAuthors(doc) : new Map();
+}
+
+/**
+ * Apply or Reject in the tab: the server's resolve, run on this tab's Y.Doc as one writer edit of
+ * its own, so it syncs as typing does and Ctrl+Z takes back only it. The binding then redraws the
+ * editor from the Y.Doc, so the command's own transaction is not dispatched.
+ */
+function resolveHere(
+  state: EditorState,
+  tr: Transaction,
+  verdict: "accept" | "reject",
+  filter: Filter,
+  run: boolean,
+): boolean {
+  const doc = editorDoc(state);
+  if (!doc) return false;
+  if (!run) return true;
+  tr.setMeta("preventDispatch", true);
+  endUndoStep(state);
+  doc.transact((transaction) => {
+    // What the binding sets on a writer's edit: history and unsent typing count it as one.
+    transaction.meta.set("addToHistory", true);
+    resolveStored(doc, state.schema, verdict, filter);
+  }, ySyncPluginKey);
+  endUndoStep(state);
+  return true;
+}
 
 /**
  * The view's decorations. Text another Work added is hidden. With marks on, the view's own

@@ -1,6 +1,7 @@
 import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Mark } from "prosemirror-model";
+import type { Mappable } from "prosemirror-transform";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
@@ -179,8 +180,71 @@ function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block 
   return atoms[ordinal] ?? null;
 }
 
-function lowerTextblock(walk: Walk, before: Block, after: Block, path: readonly number[]): void {
-  const text = lowerText(before, after, walk.windows?.get(path.join("/")));
+/**
+ * The exact operations a transaction that only deletes and unmarks (an accept or a reject) made of
+ * `before`, the stored block at `at` in its start document: `mapping` is the transaction's and
+ * `doc` its final document. Nothing is diffed, so every unit, run and node the transaction kept
+ * keeps its Yjs item, and text typed inside a resolved word stays where it was typed. Null when the
+ * result does not pair with `before` unit for unit, as when ProseMirror fills a container that a
+ * delete emptied: `lowerBlock` lowers that one.
+ */
+export function lowerResolved(
+  before: Block,
+  at: number,
+  mapping: Mappable,
+  doc: Block,
+): EditOp[] | null {
+  const walk: Walk = { windows: null, ops: [] };
+  const kept = (from: number, to: number) => mapping.map(to, -1) > mapping.map(from, 1);
+  const visit = (node: Block, pos: number, path: readonly number[]): boolean => {
+    const after = doc.nodeAt(mapping.map(pos, 1));
+    if (!after || after.type !== node.type) return false;
+    if (node.eq(after)) return true;
+    const attrs = changedAttrs(node, after, undefined);
+    if (Object.keys(attrs).length > 0) walk.ops.push({ kind: "attrs", path, attrs });
+    if (node.isTextblock) {
+      const hunks: Hunk[] = [];
+      let left = 0;
+      for (let unit = 0; unit < node.content.size; unit += 1) {
+        const char = pos + 1 + unit;
+        if (kept(char, char + 1)) {
+          left += 1;
+          continue;
+        }
+        const last = hunks.at(-1);
+        if (last && last.to === unit) last.to += 1;
+        else hunks.push({ from: unit, to: unit + 1, at: left, end: left });
+      }
+      if (left !== after.content.size) return false;
+      lowerTextblock(walk, node, after, path, hunks);
+      return true;
+    }
+    let children = 0;
+    let paired = true;
+    node.forEach((child, offset, index) => {
+      const start = pos + 1 + offset;
+      if (!kept(start, start + child.nodeSize))
+        walk.ops.push({ kind: "delete", path: [...path, index] });
+      else {
+        children += 1;
+        paired &&= visit(child, start, [...path, index]);
+      }
+    });
+    return paired && children === after.childCount;
+  };
+  return visit(before, at, []) ? walk.ops : null;
+}
+
+function lowerTextblock(
+  walk: Walk,
+  before: Block,
+  after: Block,
+  path: readonly number[],
+  hunks?: Hunk[],
+): void {
+  const text = hunks
+    ? textOps(before, after, hunks)
+    : lowerText(before, after, walk.windows?.get(path.join("/")));
   if (text.splices.length + text.formats.length > 0)
     walk.ops.push({ kind: "text", path, splices: text.splices, formats: text.formats });
   // An atom the model kept is one the room may have changed: only the model's attributes go.
@@ -267,7 +331,11 @@ function lowerText(
 
   hunks = hunks.filter((hunk) => hunk.from < hunk.to || hunk.at < hunk.end);
   slideAtomInserts(hunks, a, b, isAtom);
+  return textOps(before, after, hunks);
+}
 
+/** The splices that make `after` from `before` at `hunks`, and the formatting between them. */
+function textOps(before: Block, after: Block, hunks: readonly Hunk[]): LoweredText {
   const splices: TextSplice[] = hunks.map((hunk) => ({
     from: hunk.from,
     to: hunk.to,

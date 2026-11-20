@@ -72,9 +72,9 @@ const idAttr = { default: null };
 
 /**
  * Suggestion mode (`@meridian/suggestions`): `sug` marks a block that exists only as one Work's
- * suggestion (`{ id, work, chat, turn, by }`); `sugAttrs` holds, by Work, one layer per turn of a
- * pending change to a Live block: its attributes, or its removal
- * (`{ id, work, chat, turn, by, attrs, remove? }`). The binding drops marks on
+ * suggestion (`{ id, work }`); `sugAttrs` holds, by Work, one layer per turn of a pending change
+ * to a Live block: its attributes, or its removal (`{ id, work, attrs, remove? }`). Who wrote each
+ * change is kept once per change beside the fragment, not here. The binding drops marks on
  * blocks, so they are attributes.
  */
 const suggestionBlockAttrs = { sug: { default: null }, sugAttrs: { default: null } };
@@ -259,14 +259,12 @@ const customMarks = {
   comment: { attrs: { id: { default: null } }, inclusive: false, excludes: "", markdown: false },
 } satisfies Record<string, MarkSpec>;
 
+// Only what a view reads per run: each changed word carries it, kept in history for good.
 function suggestionMark(): MarkSpec {
   return {
     attrs: {
       id: { default: null },
       work: { default: null },
-      chat: { default: null },
-      turn: { default: null },
-      by: { default: null },
     },
     inclusive: false,
     excludes: "",
