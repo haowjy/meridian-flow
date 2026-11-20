@@ -219,9 +219,10 @@ export function ContextDocumentHost({
     <OpenDocumentSessionBoundary
       projectId={projectId}
       documentId={document.documentId}
-      // Suggestion mode: a document only a Work has is plain text in its Live room.
+      // Suggestion mode: a document only a Work has is plain text in its Live room, open while the
+      // Work has it: a Discard closes the room, and its Undo opens it again.
       liveRoom={liveness === "live" || suggestionModeEnabled}
-      workOnly={suggestionModeEnabled && draftOnly}
+      workOnly={suggestionModeEnabled && fileForDocument(document.documentId)?.draft.isNew === true}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
