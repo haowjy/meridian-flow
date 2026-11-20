@@ -1,8 +1,13 @@
 // Per-document model stacks over immutable edits, with all-or-nothing action planning.
 
 import { randomUUID } from "node:crypto";
-import type { DocumentEditResult, ModelInverseCommand } from "@meridian/agent-edit/integration";
+import {
+  type DocumentEditResult,
+  type ModelInverseCommand,
+  storedPendingTurns,
+} from "@meridian/agent-edit/integration";
 import type { BranchId, DocumentId } from "@meridian/contracts";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { FileEditRefusedError } from "../../file-policy/index.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseDestination } from "./inverse-draft-destination.js";
@@ -16,6 +21,8 @@ import type {
   StoredInversePart,
   TurnInverseStore,
 } from "./turn-inverse-service.js";
+
+const schema = buildDocumentSchema();
 
 export function createModelInversePolicy(store: TurnInverseStore) {
   type ModelPlanPreview = { status: "planned" };
@@ -296,6 +303,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             )
           : null;
         const index = policy.actions.actions;
+        // Suggestion mode: a write whose turn still has suggestions here is pending, not Live.
+        const pending = storedPendingTurns(document.live, schema);
+        const suggesting = (turnId: string | null | undefined) => !!turnId && pending.has(turnId);
         const lines = await Promise.all(
           page.map(async (entry) => {
             const undos = index.actions.filter((action) =>
@@ -323,7 +333,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                   ? "discarded"
                   : entry.parts.some((part) => policy.changed(part))
                     ? "changed"
-                    : entry.parts.some((part) => part.origin.kind === "pending")
+                    : entry.parts.some(
+                          (part) => part.origin.kind === "pending" || suggesting(part.turnId),
+                        )
                       ? "pending"
                       : "live";
             let command = "none";
@@ -352,12 +364,15 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         const shownDestination = topEntry?.parts[0]
           ? document.destinationOf(topEntry.parts[0].origin)
           : policy.queryDestination;
+        const shownVersion = suggesting(topEntry?.parts[0]?.turnId)
+          ? "draft"
+          : policy.version(shownDestination);
         return {
           status: "success",
           actionId: randomUUID(),
           room: null,
           message: [
-            `your edits to ${document.uri}, newest first (version: ${policy.version(shownDestination)})`,
+            `your edits to ${document.uri}, newest first (version: ${shownVersion})`,
             ...lines,
             ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
           ].join("\n"),
