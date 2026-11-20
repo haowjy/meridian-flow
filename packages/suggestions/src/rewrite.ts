@@ -86,6 +86,24 @@ export function rewrite(
     tr.steps.map((step, index) => (changesContent(step) ? tr.mapping.maps[index] : StepMap.empty)),
     null,
   ).changes;
+  // Where the transaction's formatting steps reached, in the start document.
+  const reached: Reach[] = [];
+  tr.steps.forEach((step, index) => {
+    if (changesContent(step)) return;
+    const back = new Mapping(
+      tr.mapping.maps
+        .slice(0, index)
+        .map((map) => map.invert())
+        .reverse(),
+    );
+    const mapped = step.map(back);
+    const range = mapped && stepRange(mapped);
+    if (range)
+      reached.push({
+        ...range,
+        node: !(mapped instanceof AddMarkStep || mapped instanceof RemoveMarkStep),
+      });
+  });
   const work = view.work === null || !author ? null : { ...author, work: view.work };
   const ranges = work ? wholeBlockRanges(replaced, state.doc) : [...replaced];
   for (const range of [...ranges].reverse()) {
@@ -105,7 +123,16 @@ export function rewrite(
             a,
             b,
             slice,
-            finalAround(tr.doc, range.fromB + (a - range.fromA), range.toB + (b - range.toA), view),
+            finalAround(
+              tr.doc,
+              range.fromB + (a - range.fromA),
+              range.toB + (b - range.toA),
+              view,
+              {
+                first: aimedAt(reached, textblockAtOrThrow(out.doc, a).pos),
+                last: aimedAt(reached, textblockAtOrThrow(out.doc, b).pos),
+              },
+            ),
             view,
             work,
             forward,
@@ -116,26 +143,9 @@ export function rewrite(
     if (at !== null && head >= range.fromB && head <= range.toB)
       caret = { pos: at, map: since(out) };
   }
-  // Formatting and block attributes: where the transaction's formatting steps reached content it
-  // left in place, the difference between the start and final documents there. What it replaced
-  // or made already has its final form, from the final document.
-  const reached: Reach[] = [];
-  tr.steps.forEach((step, index) => {
-    if (changesContent(step)) return;
-    const back = new Mapping(
-      tr.mapping.maps
-        .slice(0, index)
-        .map((map) => map.invert())
-        .reverse(),
-    );
-    const mapped = step.map(back);
-    const range = mapped && stepRange(mapped);
-    if (range)
-      reached.push({
-        ...range,
-        node: !(mapped instanceof AddMarkStep || mapped instanceof RemoveMarkStep),
-      });
-  });
+  // Formatting and block attributes where those steps reached content the transaction left in
+  // place: the difference between the start and final documents there. What it replaced or made
+  // already has its final form, from the final document.
   for (const step of netFormatting(state.doc, tr.doc, ranges, reached, work !== null))
     rewriteFormat(out, step, out.mapping.slice(), view, author);
   out.setMeta(CHANGE_META, changes);
@@ -230,14 +240,12 @@ function netFormatting(
   const seen = new Set<string>();
   for (const { from, to, node: markup } of reached)
     a.nodesBetween(from, Math.max(to, from + 1), (node, pos) => {
-      const key = node.isInline ? `${pos}` : `${pos}:${markup}`;
-      if (seen.has(key)) return !node.isInline;
-      seen.add(key);
       if (node.isInline) {
         const start = Math.max(from, pos);
         const end = Math.min(to, pos + node.nodeSize);
         for (let at = start; at < end; at++) {
-          if (replacedAt(at)) continue;
+          if (replacedAt(at) || seen.has(`${at}`)) continue;
+          seen.add(`${at}`);
           const other = b.resolve(toB(at)).nodeAfter;
           if (!other) continue;
           for (const mark of formats(other))
@@ -247,7 +255,8 @@ function netFormatting(
         }
         return false;
       }
-      if (!markup || pos !== from || replacedAt(pos)) return true;
+      if (!markup || pos !== from || replacedAt(pos) || seen.has(`${pos}:node`)) return true;
+      seen.add(`${pos}:node`);
       if (inWork && node.isTextblock && editedIn(pos, node.nodeSize)) return true;
       const other = b.nodeAt(toB(pos));
       if (!other || other.isInline) return true;
@@ -295,19 +304,36 @@ function joinMarks(steps: Step[]): Step[] {
  * Where an edit lands in the final document: the textblocks holding its two ends, and the content
  * after its end there, which a join or a split carries on, formatted as the transaction made it.
  */
-function finalAround(doc: Node, from: number, to: number, view: View): Final {
+function finalAround(
+  doc: Node,
+  from: number,
+  to: number,
+  view: View,
+  aimed: Final["aimed"],
+): Final {
   const first = textblockAt(doc, from);
   const last = textblockAt(doc, to);
   return {
     first: first?.node ?? null,
     last: last?.node ?? null,
+    aimed,
     rest: last
       ? visibleContent(last.node, to - last.pos - 1, last.node.content.size, view)
       : Fragment.empty,
   };
 }
 
-type Final = { first: Node | null; last: Node | null; rest: Fragment };
+/** `aimed`: whether a markup step aimed at the edit's first and last textblock. */
+type Final = {
+  first: Node | null;
+  last: Node | null;
+  rest: Fragment;
+  aimed: { first: boolean; last: boolean };
+};
+
+function aimedAt(reached: readonly Reach[], pos: number): boolean {
+  return reached.some((reach) => reach.node && reach.from === pos);
+}
 
 /** A step that replaces content, as opposed to one that changes marks or a block's attributes. */
 function changesContent(step: Step): boolean {
@@ -386,7 +412,7 @@ function rewriteFormat(
           piece.from,
           piece.to,
           new Slice(Fragment.from(formatted), 0, 0),
-          { first: null, last: null, rest: Fragment.empty },
+          { first: null, last: null, rest: Fragment.empty, aimed: { first: false, last: false } },
           view,
           { ...author, work: view.work },
           false,
@@ -439,11 +465,17 @@ function settle(
   view: View,
   author: Omit<SuggestionAttrs, "id">,
   id: string,
+  aimed: boolean,
 ): void {
   const { node, pos } = block;
   if (!final) return;
   const attrs = { ...final.attrs, sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs };
-  if (final.type === node.type && sameValue(attrs, node.attrs)) return;
+  // A step aimed at the block sets what the Work sees; otherwise only what differs from the
+  // stored block is the transaction's (Enter and typing copy the stored attributes).
+  const before = aimed
+    ? { ...viewAttrs(node, view), sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs }
+    : node.attrs;
+  if (final.type === node.type && sameValue(attrs, before)) return;
   const kind = blockKind(node, view);
   if (kind === "own" && final.type.validContent(node.content))
     out.setNodeMarkup(pos, final.type, { ...attrs, sugAttrs: null });
@@ -454,7 +486,8 @@ function settle(
 
 /**
  * The Work's pending change to the Live block at `pos`, from attributes `shown` (as the Work sees
- * them) to `attrs`, as change `id`, or (null) as the block's attribute change so far. Who suggests
+ * them) to `attrs`: part of the block's attribute change so far, or else of change `id` (null: a
+ * new one). Who suggests
  * and a block's identity are never themselves proposed.
  */
 function proposeAttrs(
@@ -472,7 +505,7 @@ function proposeAttrs(
   if (Object.keys(set).length === 0) return;
   const stored = out.doc.nodeAt(pos) as Node;
   const layers = proposals(stored)[author.work] ?? [];
-  const change = id ?? layers.find((layer) => !layer.remove)?.id ?? newChangeId();
+  const change = layers.find((layer) => !layer.remove)?.id ?? id ?? newChangeId();
   setLayers(out, pos, author.work, addLayer(stored, layers, { ...author, id: change, attrs: set }));
 }
 
@@ -859,6 +892,7 @@ function replaceInWork(
       view,
       author,
       attrs.id,
+      final.aimed.first,
     );
   if (!parts.split) {
     const head = parts.head.append(tail);
@@ -884,7 +918,15 @@ function replaceInWork(
     );
     const opening = parts.last?.content ?? Fragment.empty;
     if (opening.size > 0) out.insert(opensAt, marked(schema, opening, attrs));
-    settle(out, { node: endBlock.node, pos: endAt }, final.last, view, author, attrs.id);
+    settle(
+      out,
+      { node: endBlock.node, pos: endAt },
+      final.last,
+      view,
+      author,
+      attrs.id,
+      final.aimed.last,
+    );
     if (blocks.length > 0) out.insert(endAt, blocks);
     return opensAt + blocks.reduce((size, block) => size + block.nodeSize, 0) + opening.size;
   }
