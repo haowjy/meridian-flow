@@ -299,6 +299,7 @@ export function createDrizzleDocumentDerivationStore(
           and(
             livingDocumentSql(documents.id),
             staleForSweep,
+            page?.only ? eq(documents.id, page.only) : undefined,
             page?.after ? gt(documents.id, page.after) : undefined,
           ),
         )

@@ -1,7 +1,8 @@
 /**
  * Per-key trailing debounce with a maximum wait: many `schedule(key)` calls become one `run(key)`,
  * never two at once for a key. A schedule that fires while its key runs makes one more run
- * right after. Timers are hints: callers keep a sweep for what a restart or a stop dropped.
+ * right after. Timers are hints: what a restart or a stop drops is recovered by the caller's sweep or
+ * its next read, or is lossy by design.
  */
 
 /** What a run asks for next: `again` runs at once, `retry` runs after a backoff (see `backoff`). */
@@ -31,6 +32,7 @@ export function createKeyedCoalescer<K>(options: {
   /** Timers inherit the caller's async context, so a schedule made inside a transaction escapes it here. */
   outsideTransaction?<T>(operation: () => T): T;
   run(key: K): Promise<CoalescedRun>;
+  /** Reports a throw from `run`. Must not throw: it runs before the key's slot is released. */
   onError(key: K, cause: unknown): void;
 }): KeyedCoalescer<K> {
   type Entry = {
@@ -87,7 +89,7 @@ export function createKeyedCoalescer<K>(options: {
     active += 1;
     entry.running = (async () => {
       try {
-        return await options.run(key);
+        return await outside(() => options.run(key));
       } catch (cause) {
         options.onError(key, cause);
         return options.backoff ? ("retry" as const) : undefined;

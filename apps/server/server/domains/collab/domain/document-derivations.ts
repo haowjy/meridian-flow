@@ -50,8 +50,10 @@ export function createDocumentDerivationService(input: {
     debounceMs: 2000,
     maxMs: 10000,
     outsideTransaction: input.outsideTransaction,
+    // A direct write derives inline, so most notices find the document already certified.
     run: async (documentId) => {
-      await derive(documentId);
+      if ((await input.store.stale({ only: documentId, limit: 1 })).length)
+        await derive(documentId);
     },
     onError: input.failed,
   });

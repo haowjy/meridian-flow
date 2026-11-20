@@ -81,7 +81,7 @@ export function createDraftProjection(input: {
     backoff: { baseMs: BACKOFF_MS, maxMs: MAX_BACKOFF_MS },
     outsideTransaction: input.outsideTransaction,
     run: async (draftId) => {
-      const outcome = await input.outsideTransaction(() => judge(draftId));
+      const outcome = await judge(draftId);
       // A key committed between the judgement and its guarded write: judge the new revision now.
       if (outcome === "moved") return "again";
       return outcome === "contended" ? "retry" : undefined;
