@@ -340,11 +340,10 @@ it("model undo of an edit the writer typed inside is refused and leaves the draf
       doc.clientID = allocateDocumentClient(doc);
       const text = (doc.getXmlFragment("prosemirror").get(0) as Y.XmlElement).get(0) as Y.XmlText;
       const updates = captureMutationUpdates(doc, () => text.insert(8, "!"));
-      await view.draftCoordinator.commitWriterUpdate({
+      await view.draftCoordinator.appendWriterFrame({
         draftId: documentDraft.id,
         updateData: Y.mergeUpdates(updates),
         actorUserId: USER_ID,
-        roomDocument: doc,
       });
     } finally {
       doc.destroy();

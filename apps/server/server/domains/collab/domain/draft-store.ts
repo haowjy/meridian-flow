@@ -213,13 +213,15 @@ export type DraftStore = {
   openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
   readDraftAt(draftId: string, since?: DraftReadSince): Promise<DraftRead | null>;
   /**
-   * Which of these text ids a writer's journal row or a late-typing recovery row inserted
-   * (`client:clock`): the text that stays a writer's own however later rows moved it.
+   * A writer's frame: the revision bump (with the Work-is-active predicate) and one journal row,
+   * nothing else. Throws `DraftStaleUpdateError` when the draft is closed or its Work is no
+   * longer active.
    */
-  writerText(
-    draftId: string,
-    ids: readonly { client: number; clock: number }[],
-  ): Promise<ReadonlySet<string>>;
+  appendWriterRow(input: {
+    draftId: string;
+    updateData: Uint8Array;
+    actorUserId?: string;
+  }): Promise<{ revision: number; checkpointRevision: number }>;
   /**
    * The append, in its own savepoint: a `contained`, `prefixMissing` or `refused` outcome
    * rolled back the revision bump and everything registered inside it before it returns.
@@ -266,10 +268,7 @@ export class DraftCasConflictError extends Error {
   }
 }
 
-/**
- * A writer update that depends on something the draft's journal does not hold yet (design
- * §2.7): nothing was written, and the socket resyncs (`WS_CLOSE.DRAFT_PREFIX_MISSING`).
- */
+/** An append's rows depend on something the draft's journal does not hold: nothing was written. */
 export class DraftPrefixMissingError extends Error {
   constructor(
     readonly draftId: string,

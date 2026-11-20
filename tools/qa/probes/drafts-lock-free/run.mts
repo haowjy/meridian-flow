@@ -9,9 +9,6 @@
  * probes, decisions and expected output is `apps/server/server/domains/collab/.context/qa/drafts-lock-free-probes.md`.
  */
 
-import { appendBetweenRows } from "./append-between-rows.mts";
-import { appendNovelty } from "./append-novelty.mts";
-import { appendRollbackScope } from "./append-rollback-scope.mts";
 import { appendTailOrder } from "./append-tail-order.mts";
 import { archiveInFlightAppend } from "./archive-in-flight-append.mts";
 import { clientResync } from "./client-resync.mts";
@@ -47,9 +44,6 @@ const PROBES: readonly Probe[] = [
   readOnlyHandshake,
   // Phase 4: CRDT-native appends (design phase4-crdt-appends §9).
   appendTailOrder,
-  appendBetweenRows,
-  appendNovelty,
-  appendRollbackScope,
   archiveInFlightAppend,
   effectProjection,
   effectWatermarkSweep,

@@ -1,25 +1,13 @@
 /** Committed draft replicas, prepared append/rewrite lifetime, delivery and maintenance. */
 import {
-  DRAFT_SERVER_CLIENT_ID,
-  findLostEdits,
-  type LateTyping,
-  NO_LATE_TYPING,
-  recoverLatePeerEdits,
-  retainLateTypingDeletions,
-} from "@meridian/agent-edit/diff";
-import {
   type SaveCut,
   type SavePrecondition,
   SavePreconditionRefused,
 } from "@meridian/agent-edit/integration";
-import {
-  buildDocumentSchema,
-  createCollabYDoc,
-  PROSEMIRROR_FRAGMENT_NAME,
-} from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
+import { testHook } from "../../../shared/test-hooks.js";
 import { createDocumentContainment } from "./document-containment.js";
-import { assertWriterAuthorship } from "./document-mutation-policy.js";
 import { type AttemptScope, NO_ATTEMPT_SCOPE, runBoundedAttempts } from "./draft-attempts.js";
 import {
   type AuthorServerRows,
@@ -42,7 +30,6 @@ import {
   materializeDraftRead,
   type RewritePolicy,
 } from "./draft-store.js";
-import type { WriterFrameDiagnostics } from "./draft-writer-frames.js";
 import { encodeImmutableDraft } from "./immutable-draft-state.js";
 /**
  * The draft as committed at `revision`: replaced, never mutated. `seq` is the highest journal
@@ -80,6 +67,8 @@ function grownTail(tail: TailSize, updates: readonly Uint8Array[]): TailSize {
   };
 }
 
+export type WriterFrame = { draftId: string; updateData: Uint8Array; actorUserId?: string };
+
 /** What a draft operation works from: the row as read and the committed replica at it. */
 export type DraftBase = {
   snapshot: DraftSnapshot;
@@ -87,8 +76,8 @@ export type DraftBase = {
 };
 
 /**
- * The runtime surface the coordinator's operations and `draft-writer-frames.ts` build on:
- * committed replicas, private candidates of them, prepared writes and their attempts.
+ * The runtime surface the coordinator's operations build on: committed replicas, private
+ * candidates of them, prepared writes and their attempts.
  */
 export type DraftRuntime = {
   loadBase(draftId: string): Promise<DraftBase>;
@@ -97,8 +86,6 @@ export type DraftRuntime = {
   cloneReplica(replica: CommittedReplica): Y.Doc;
   encodedOf(replica: CommittedReplica): Uint8Array;
   containment: ReturnType<typeof createDocumentContainment>;
-  /** A durable echo can still carry the late peer's view of deleted separators. */
-  acknowledgeContainedFrame(draftId: string, doc: Y.Doc, update: Uint8Array): boolean;
   /**
    * Brings `room` up to `replica` when it lacks any of the replica's content, reported as a
    * repair: a room misses committed content only through a delivery gap.
@@ -131,6 +118,11 @@ export type DraftRuntime = {
     rewrite: Omit<CommitRewriteInput, "draftId" | "doc">,
   ): PreparedDraftWrite;
   foldPolicy(replica: CommittedReplica): RewritePolicy;
+  /**
+   * A writer's frame, already judged in the room: stored with one insert. The committed
+   * replica is not touched; the next command's read catches it up from the tail.
+   */
+  appendWriterFrame(frame: WriterFrame): Promise<void>;
   /** `write` as one whole attempt: true when it wrote, false when it was contained. */
   commitOnce(
     write: PreparedDraftWrite,
@@ -138,11 +130,25 @@ export type DraftRuntime = {
   ): Promise<boolean>;
 };
 
-/**
- * What found a room behind its draft: a frame, its enrollment once registered, or a tab's
- * SyncStep1 handshake.
- */
-export type RoomReconcileTrigger = "frame" | "enrollment" | "handshake";
+/** What found a room behind its draft: its enrollment once registered, or a tab's SyncStep1 handshake. */
+export type RoomReconcileTrigger = "enrollment" | "handshake";
+
+export type DraftDiagnostics = {
+  /** The background tail fold failed; the tail stays until the next append crosses the bound. */
+  compactionFailed(input: { draftId: string; cause: unknown }): void;
+  /** A room lacked committed content and was brought up to the replica. */
+  roomReconciled(input: {
+    draftId: string;
+    revision: number;
+    trigger: RoomReconcileTrigger;
+    bytes: number;
+  }): void;
+  /** An append's rows depend on rows the journal lacks: nothing was written. */
+  appendPrefixMissing(input: {
+    draftId: string;
+    clocks: readonly { client: number; clock: number }[];
+  }): void;
+};
 
 /**
  * A draft write prepared on a private candidate, an `AttemptCandidate` of the attempt that
@@ -173,7 +179,7 @@ export type DraftRuntimeInput = {
   onDraftUpdate?: (input: { draftId: string; update: Uint8Array }) => void;
   /** Applies a reconciling update to one room; defaults to a plain apply. */
   applyToRoom?: (room: Y.Doc, update: Uint8Array) => void;
-  diagnostics?: WriterFrameDiagnostics;
+  diagnostics?: DraftDiagnostics;
   /**
    * A work draft's append committed rows: its derived state (`has_effect`, the Work's badge) is
    * stale until the projection job judges it (design §3.1). Required, so an omission fails to
@@ -187,39 +193,6 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
   const documentContainment = createDocumentContainment();
   const committed = new Map<string, CommittedReplica>();
   const compacting = new Set<string>();
-  const lateTyping = new Map<string, LateTyping>();
-
-  function rememberLateTyping(draftId: string, memory: LateTyping): void {
-    if (memory === NO_LATE_TYPING) lateTyping.delete(draftId);
-    else lateTyping.set(draftId, memory);
-  }
-
-  function acknowledgeContainedFrame(draftId: string, doc: Y.Doc, update: Uint8Array): boolean {
-    if (!documentContainment.contains(doc, update)) return false;
-    if (!lateTyping.has(draftId)) return true;
-    const lost = findLostEdits(doc, update, false);
-    if (!lost.deleted.length) return true;
-    const remember = () => {
-      // An outer transaction can outlive another committed frame. Advance the latest
-      // memory here, never replace it with a snapshot taken before that frame.
-      const memory = lateTyping.get(draftId);
-      if (!memory) return;
-      rememberLateTyping(
-        draftId,
-        recoverLatePeerEdits({
-          doc,
-          update,
-          lost: { ...lost, typed: [] },
-          memory,
-          schema: buildDocumentSchema(),
-          fragmentName: PROSEMIRROR_FRAGMENT_NAME,
-          clientId: DRAFT_SERVER_CLIENT_ID,
-        }).memory,
-      );
-    };
-    if (!input.store.deferUntilCommit(remember)) remember();
-    return true;
-  }
 
   /** One write as a whole attempt inside `scope`. */
   function commitOnce(
@@ -465,26 +438,7 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       owned: () => [prefix, ...(committedDoc ? [committedDoc] : [])],
       appended: () => {
         const complete = () => {
-          if (snapshot.kind === "work_draft") {
-            if (finalized?.lateTyping) {
-              rememberLateTyping(
-                snapshot.draftId,
-                finalized.lateTyping === NO_LATE_TYPING
-                  ? NO_LATE_TYPING
-                  : retainLateTypingDeletions(
-                      finalized.lateTyping,
-                      lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
-                    ),
-              );
-            }
-            if (finalized?.recovered?.length)
-              input.diagnostics?.lateTypingRecovered({
-                draftId: snapshot.draftId,
-                paragraphs: finalized.recovered.length,
-                chars: finalized.recovered.reduce((n, text) => n + text.length, 0),
-              });
-            input.onAppendCommitted(snapshot.draftId);
-          }
+          input.onAppendCommitted(snapshot.draftId);
           compactIfLong(snapshot.draftId);
         };
         if (!input.store.deferUntilCommit(complete)) complete();
@@ -502,19 +456,9 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
               work,
               rows: journals,
               containment: documentContainment,
-              validateWriter: assertWriterAuthorship,
               authorServerRows,
               serverRow,
               precondition,
-              ...(snapshot.kind === "work_draft"
-                ? {
-                    recovery: {
-                      memory: () => lateTyping.get(snapshot.draftId) ?? NO_LATE_TYPING,
-                      writerText: (ids: readonly Y.ID[]) =>
-                        input.store.writerText(snapshot.draftId, ids),
-                    },
-                  }
-                : {}),
             });
             committedDoc = judged.doc;
             finalized = judged.result;
@@ -601,13 +545,15 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
    * a frame or inverse that lands meanwhile is folded in, and a rewrite that commits first
    * makes it miss (the next append past the bound tries again). Called after an append
    * commits, outside every transaction; a failure is reported and leaves the tail for the
-   * next append.
+   * next append. A writer's frame leaves the replica as it was, so it passes `appends`, the
+   * revisions since the checkpoint, which counts the tail's rows without reading them.
    */
-  function compactIfLong(draftId: string): void {
+  function compactIfLong(draftId: string, appends = 0): void {
     const long = ({ tail }: CommittedReplica) =>
       tail.rows >= COMPACT_TAIL_ROWS || tail.bytes >= COMPACT_TAIL_BYTES;
     const replica = committed.get(draftId);
-    if (!replica || compacting.has(draftId) || !long(replica)) return;
+    if (compacting.has(draftId) || !((replica && long(replica)) || appends >= COMPACT_TAIL_ROWS))
+      return;
     compacting.add(draftId);
     void (async () => {
       const { replica: current } = await loadBase(draftId);
@@ -623,6 +569,13 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
       .finally(() => compacting.delete(draftId));
   }
 
+  async function appendWriterFrame(frame: WriterFrame): Promise<void> {
+    const { revision, checkpointRevision } = await input.store.appendWriterRow(frame);
+    await testHook("draft.append.afterCommit");
+    input.onAppendCommitted(frame.draftId);
+    compactIfLong(frame.draftId, revision - checkpointRevision);
+  }
+
   /** A fold over everything appended past `replica`'s cursor. */
   function foldPolicy(replica: CommittedReplica): RewritePolicy {
     return { kind: "fold", checkpointRevision: replica.checkpointRevision, seq: replica.seq };
@@ -636,9 +589,9 @@ export function createDraftRuntime(input: DraftRuntimeInput): DraftRuntime {
     containment: documentContainment,
     reconcileRoom,
     prepareAppend,
-    acknowledgeContainedFrame,
     prepareRewrite,
     foldPolicy,
+    appendWriterFrame,
     commitOnce,
   };
 }

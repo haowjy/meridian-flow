@@ -105,11 +105,10 @@ it.each(["live", "draft"] as const)(
         const doc = new Y.Doc({ gc: false });
         try {
           Y.applyUpdate(doc, await draftContent(db, documentDraft.id));
-          await view.draftCoordinator.commitWriterUpdate({
+          await view.draftCoordinator.appendWriterFrame({
             draftId: documentDraft.id,
             updateData: change(doc),
             actorUserId: USER_ID,
-            roomDocument: doc,
           });
         } finally {
           doc.destroy();

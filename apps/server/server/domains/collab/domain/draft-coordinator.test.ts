@@ -73,49 +73,6 @@ function materialize(snapshot: { state: Uint8Array } | MemoryDraft): Y.Doc {
 }
 
 describe("DraftCoordinator", () => {
-  it("acknowledges already-contained draft writer updates without another journal row", async () => {
-    const store = new MemoryDraftStore();
-    const draftDoc = docWithText("seed");
-    store.drafts.set("work", draftSnapshot({ draftId: "work", doc: draftDoc }));
-    const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
-
-    await expect(
-      coordinator.commitWriterUpdate({
-        draftId: "work",
-        updateData: Y.encodeStateAsUpdate(draftDoc),
-        actorUserId: "user-1",
-        roomDocument: materialize(storedDraft(store, "work")),
-      }),
-    ).resolves.toEqual({ admitted: false });
-
-    expect(store.journal).toHaveLength(0);
-    expect(materialize(storedDraft(store, "work")).getText("content").toString()).toBe("seed");
-  });
-
-  it("rejects reserved namespace deletion against the snapshot it would commit", async () => {
-    const store = new MemoryDraftStore();
-    const draftDoc = documentWithReservedFacts();
-    store.drafts.set("work", draftSnapshot({ draftId: "work", doc: draftDoc }));
-    const roomDocument = materialize(storedDraft(store, "work"));
-    const hostileClient = materialize(storedDraft(store, "work"));
-    const before = Y.encodeStateVector(hostileClient);
-    hostileClient.getMap(APPLY_RECORD_ROOT).delete("nested");
-    const updateData = Y.encodeStateAsUpdate(hostileClient, before);
-
-    const coordinator = createDraftCoordinator({ onAppendCommitted: () => {}, store });
-    await expect(
-      coordinator.commitWriterUpdate({
-        draftId: "work",
-        updateData,
-        actorUserId: "user-1",
-        roomDocument,
-      }),
-    ).rejects.toThrow("reserved provenance");
-
-    expect(store.journal).toHaveLength(0);
-    expect(materialize(storedDraft(store, "work")).getMap(APPLY_RECORD_ROOT).size).toBe(1);
-  });
-
   it("journals only new multi-range deletions so replay reaches byte-identical state", async () => {
     const store = new MemoryDraftStore();
     const base = docWithText("abcdef");

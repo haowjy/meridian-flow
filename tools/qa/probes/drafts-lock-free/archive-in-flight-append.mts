@@ -1,19 +1,19 @@
 /**
  * Phase 4 (design §5, F6): Archive locks no draft row; the append keeps the Work
- * predicate in its `UPDATE` and rechecks the lifecycle in its post-lock read. What remains is
- * the honest window: a key whose post-lock read ran before Archive committed may land in the
- * archived draft; every later key is refused.
+ * predicate in its `UPDATE` and nothing after the lock. What remains is the honest window: a key
+ * whose `UPDATE` started before Archive committed lands in the archived draft, however long it
+ * waited for the row; every later key is refused.
  *
  * - Arm 1 (holder): a frame holds at `draft.append.beforeCommit` while Archive commits; the
  *   row commits, the text holds the token under `archived`, the next frame is refused, and
  *   after unarchive the next frame lands with the token kept.
- * - Arm 2 (queued waiter): a second frame waits on the first's row when Archive commits; after
- *   it takes the lock, its post-lock read sees `archived` and it writes nothing.
+ * - Arm 2 (queued waiter): a second frame waits on the first's row when Archive commits; it
+ *   takes the lock after Archive and still lands, its `UPDATE` having started before.
  * - Arm 3: a frame started after Archive is refused by the predicate.
  *
  * Each arm types one key first, so the measured keys flip no review membership on today's code.
- * Negative control on `586e58ae1e`: Archive's `fenceWorkDrafts` waits on the held row (arms
- * 1 and 2 report the wait instead of an Archive that committed).
+ * Negative control: a lock on the draft row in Archive waits on the held row (arms 1 and 2
+ * report the wait instead of an Archive that committed).
  */
 import assert from "node:assert/strict";
 import { independently, observe, type Probe, settled } from "./harness.mts";
@@ -32,7 +32,7 @@ export const archiveInFlightAppend: Probe = {
   name: "archive-in-flight-append",
   decision: "D30 Q3 (§5 F6)",
   expected:
-    "arm 1: Archive commits while the frame holds its row, the key lands archived, the next is refused, unarchive admits; arm 2: the queued key is refused with zero rows; arm 3: refused",
+    "arm 1: Archive commits while the frame holds its row, the key lands archived, the next is refused, unarchive admits; arm 2: the queued key lands in the archived draft; arm 3: refused",
   async run(harness) {
     const coordinator = phase4Coordinator(harness);
 
@@ -117,9 +117,9 @@ export const archiveInFlightAppend: Probe = {
           });
           assert.equal(observed.settled, true, "Archive commits while a key waits on the row");
           assert.equal(outcomes[0], "appended");
-          assert.ok(typeof outcomes[1] === "object", "the queued key is refused");
-          assert.equal(rows.length, 2, "the warm-up key and FIRST");
-          assert.doesNotMatch(durable.text, / QUEUED/);
+          assert.equal(outcomes[1], "appended", "the queued key's UPDATE started before Archive");
+          assert.equal(rows.length, 3, "the warm-up key, FIRST and QUEUED");
+          assert.match(durable.text, / QUEUED/);
         } finally {
           pause.remove();
           tab.room.destroy();

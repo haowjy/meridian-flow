@@ -52,7 +52,6 @@ export async function appendDraftRows(
           candidateState: Y.encodeStateAsUpdate(candidate),
           rows: journals,
           containment: createDocumentContainment(),
-          validateWriter: () => {},
         });
         doc = judged.doc;
         return judged.finalization;

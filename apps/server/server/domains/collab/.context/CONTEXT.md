@@ -37,12 +37,12 @@ not a new deletion. The per-document namespace cache invalidates when protected
 roots change; deletion checks read current item flags. Provenance roots retain
 their existing stricter admission, including live's repeated-delete refusal.
 
-`finalizeAppend` judges incoming writer and agent rows under the draft row hold.
-Server rows bypass both writer authorship and agent freshness checks. Restoration
-records in `__meridian_review_restored_v1` are writer-writable and checked only
-for integer, non-overlapping link and known-range bounds after integration;
-content kinds and tombstone text never certify them. Browser restoration
-certificates are not written into journal metadata.
+A writer's frame is judged in its room (see below); `finalizeAppend` judges incoming agent
+rows under the draft row hold. Server rows bypass agent freshness checks. Restoration
+records in `__meridian_review_restored_v1` are writer-writable and the server does not check
+them: their readers (`readRestorations`, the browser's attribution) drop any entry whose ranges are
+not integers, not known or overlap. Browser restoration certificates are not written into
+journal metadata.
 
 Apply has one HTTP door per document: `draft/apply`. It compiles the frozen
 snapshot off-lock, then commits live, the prefix-authored review base and Apply
@@ -263,16 +263,13 @@ lower id is committed before a higher one is visible (tail order): a fold's
 separate statement reads the committed prefix since the caller's base, and
 `finalizeAppend` (`domain/draft-receipts.ts`) owns every fact that depends on
 it: containment, the novel trim (`Y.diffUpdate`), deletes the prefix already
-held, restoration id-range bounds, writer/agent admission on the committed prefix, complete
-integration, and one receipt per logical write on the final document. An
-update with nothing novel is `contained` (nothing written, acknowledged); one
-whose prefix the journal lacks is `prefixMissing` (nothing written, the socket
-closes `4207 draft-prefix-missing`, which the client treats as a reconnect,
-never a refusal; its next SyncStep2 carries the prefix). `appendRows` runs in
-its own savepoint, so either outcome rolls its bump and its commit callbacks
-back inside a reply's transaction too. Nothing judged before the lock is
-written as truth: the frame's pre-lock containment and authorship checks are
-early exits only. `waitMs` and `holdMs` of every append are the
+held, agent admission on the committed prefix, complete integration, and one
+receipt per logical write on the final document. An update with nothing novel
+is `contained` (nothing written); one whose rows leave structs pending that the
+prefix did not already wait on is `prefixMissing` (nothing written, the command
+fails). `appendRows` runs in its own savepoint, so either outcome rolls its bump
+and its commit callbacks back inside a reply's transaction too. Nothing judged
+before the lock is written as truth. `waitMs` and `holdMs` of every append are the
 `collab.draft` `append_committed` debug event. The hold (about 6 ms at the
 median) is the append's whole row-locked transaction: a slower step there is
 keystroke latency for every writer on the draft.
@@ -294,11 +291,10 @@ mutation boundary below and orders itself against the transition, and the
 append keeps the Work predicate in its `UPDATE`. That predicate keeps its
 statement's snapshot, so an `UPDATE` that started before an Archive committed,
 including one queued behind another holder of the row for seconds, still takes
-the row; the post-lock read runs in a fresh snapshot and refuses it. What lands
-in the archived draft is a frame whose post-lock read ran before Archive
-committed and whose `COMMIT` came after: the finalization phases and inserts, a
-few milliseconds, independent of how long the frame waited for the row. Every
-later key is refused and shown as not saved; unarchive admits the next. This
+the row, and a writer's frame has no post-lock read to refuse it; an agent append's
+post-lock read runs in a fresh snapshot and does. What lands in the archived
+draft is a frame whose `UPDATE` started before Archive committed, however long it
+waited for the row. Every later key is refused and shown as not saved; unarchive admits the next. This
 archive window is accepted rather than a lock on every keystroke (probe
 `archive-in-flight-append`); do not close it with a lifecycle revision bump or
 a Work lock on the append.
@@ -362,15 +358,23 @@ items into `prosemirror` and `review_base`, equal at revision 0, with no
 the retired baseline and settlement storage. There is no null-baseline repair
 arm or fingerprint cache in the runtime.
 
-A writer frame takes no lease, mutex or document lock. It is judged once on the
-committed replica (admissible, its room, the echo exit, authorship as an early
-rejection) and appended once; a concurrent writer costs it one row-lock wait,
-never a second judgement. It first checks its room holds the committed replica,
-and a room that does not has missed a delivery: it is reconciled to the replica
-(`reconcileRoom`, logged as a `room_reconciled` warning) and the frame goes on.
-A draft a purge deleted refuses with terminal `4205`, or removal `4208`.
-An inactive Work refuses without ending the draft (`4409 access-changed:<why>`, `why` being
-`work_archived`, `work_deleted` or `chat_frozen`, read from the owner as it is now).
+A writer frame takes no lease, mutex or document lock, and reads nothing from the journal. It
+is judged in its room's memory (`novelToRoom`, `domain/document-mutation-policy.ts`: contained,
+reserved authorship, a gap, trimmed to what the room lacks; the same judgement as a Live frame)
+and stored by `DraftStore.appendWriterRow` before Hocuspocus applies, broadcasts and
+acknowledges it: the revision bump with its Work-is-active predicate and one journal row, one
+short transaction. A writer's frame writes no edit receipt; its author is on the journal row
+(`actor_user_id`). It does not touch the committed replica: the next command's read catches the
+replica up from the tail, and the frame reports `has_effect` staleness (`onAppendCommitted`) and
+the fold bound (revision minus checkpoint revision) as an append does. A frame that waits on
+another tab's edit the journal lacks is stored and waits as pending structs; an append's
+`prefixMissing` counts only the pending structs its own rows leave. A frame the draft's owner no
+longer admits (`DraftStaleUpdateError`: an inactive Work, a closed draft) closes the socket
+`4409 access-changed:<why>` (`work_archived`, `work_deleted` or `chat_frozen`, read from the
+owner as it is now) or terminal `4205` for a purged draft, `4208` for a removed one; any other
+failure closes `1013`, and the reconnect's handshake resends what the journal lacks. Typing into a
+paragraph that a model edit, a pull or a Discard deleted before the typing reached the server
+follows plain Yjs and disappears, as in a Live room.
 
 Room delivery has one owner: `install` in
 `domain/draft-runtime.ts`, the only place a replica becomes the draft's
@@ -397,13 +401,13 @@ push delivery is the fast path, and the room is reconciled against the
 committed replica (structs past its state vector plus the delete set) at every
 exchange that reads the draft: its enrollment, every tab's SyncStep1 handshake
 (the same `reconcileRegisteredRoom`, before Hocuspocus answers the tab, whether
-the tab may write or only read), and a frame that finds its room behind. A room
+the tab may write or only read). A room
 that missed a delivery, or another server process's commit, therefore heals on
 the next exchange and is never refused for it; the tab's own Yjs handshake then
-brings the tab current. `1008` remains a nonterminal admission error; closed identity is terminal. Another process's
+brings the tab current. Another process's
 commits also reach this process's rooms when its runtime reads the draft for a
 turn inverse's `deliverCommitted`. There is no periodic reconciliation: an idle
-room with no exchange catches up at the next keystroke, rejoin or handshake.
+room with no exchange catches up at the next rejoin or handshake.
 Every committed append (writer, agent or server) schedules a background tail fold at
 512 rows or 2 MiB (`compact`: no content, effect or `updatedAt` change).
 `domain/draft-runtime.ts` owns committed replicas, prefix materialization, prepared
@@ -412,7 +416,7 @@ append/rewrite ownership, monotonic installation/delivery and maintenance. Its
 first makes the fold miss; the next append past the bound tries again. Failure
 is logged as `collab.draft` `compaction.failed`. Neither maintenance nor dirty
 signaling runs before the root commit, even when a prepared append's savepoint
-has released. `domain/draft-coordinator.ts` owns read and save operation policy; `domain/draft-writer-frames.ts` owns writer admission.
+has released. `domain/draft-coordinator.ts` owns read and save operation policy.
 
 The shared `prepareAppend(base, rows, { admitted?, authorServerRows?, precondition? })` prepares
 no server bytes before the lock. `finalizeAppend` first materializes the committed
@@ -440,13 +444,13 @@ or one savepoint inside an ambient one) opened before its first draft-store
 lock, and a miss that leaves that scope before the next capture. The attempt
 owns its candidates: a completed attempt transfers them to installation, and any
 unwind disposes the rest, including a write whose own statement succeeded in a
-scope a later miss rolled back. An append (a frame, a reply's rows, a content rebase or an Apply review-base update) is one
+scope a later miss rolled back. An append (a reply's rows, a content rebase or an Apply review-base update) is one
 attempt and never retries; exact and fold rewrites recapture on a miss. The bound's exhaustion outcome stays with each caller.
 
 A model write is one `modelEdits().write` in its command's transaction: it reads the
 committed replica and the journal through one `DraftReplayJournalReads` port,
 `prepareSave` plans on a private copy, and the rows reach the Work draft as a sequenced
-append under its row hold, like a frame's, never missing on a revision. Its confirmation
+append under its row hold, never missing on a revision. Its confirmation
 runs once, and its Work rows and branch-row and live advisory locks are taken first
 (`enterDraftSeam`, `approveBranchWriteJoin`).
 
@@ -520,35 +524,6 @@ It takes neither a live lock nor a Work boundary, capture or revision predicate,
 any Work lifecycle (`work: "any"`): a server rebase is not an incoming edit, so an archived
 Work's draft opened read-only shows current text. Server append events include
 `holdMs` and `serverRows` for measuring hold time.
-
-Writer and agent admission runs `findLostEdits` against the committed prefix.
-A writer's typing that the deleter never saw is recovered, whoever deleted: a
-rebase, a peer's Discard revert, another writer or the model. Two arrival orders
-find it. Typing that arrives under a block already deleted (its parent chain
-reaches a deleted item, judged by the committed document however the update
-encodes the ancestor), and a delete that arrives after the typing and removes it
-without listing it (a deleter's delete set lists every item its own transaction
-deleted, children included, so an unlisted item was typed unseen). The typist's
-view of the text beside its words is its own frame's delete set when the typing
-arrives second, and the document before the frame when the delete does.
-
-Whose text it is comes from the journal, never from a client id or a cache. A
-frame's typing counts when the row is `writer`'s. Typing a delete removed counts
-when `DraftStore.writerText` finds the inserting row: a `writer` row, or a
-recovery row (`updateMeta.lateTyping`) in `document_edit_parts` of the draft, or
-a row of the same append not yet journaled. The model's rows and the server's
-pulls never count, and nothing is lost when the process restarts. Recovery authors another client-1 server row
-in the same append; its opaque per-draft `LateTyping` memory (spans only, to extend
-a paragraph in place) installs only after commit. A paragraph is extended by
-inserting the new characters where the typist placed them among the old ones, so
-the characters a peer saw keep their ids; paragraphs the typist's edit would join
-stay separate for the same reason. Deletion-only frames advance memory
-without writing; a contained echo with existing recovery observes its deleted
-separators without a row hold. Deferred observers read latest memory at commit
-(`retainLateTypingDeletions` keeps the kernel's memory bound). Stale backspaces
-never remove recovered writing. Losses that stay are under Known losses in
-[content-merge](../../../../../../packages/agent-edit/.context/content-merge.md);
-live rooms have no recovery: see TODO.
 
 Room loads read in the caller's transaction because that transaction may
 already hold the authority head. Provisioning locks the canonical thread row

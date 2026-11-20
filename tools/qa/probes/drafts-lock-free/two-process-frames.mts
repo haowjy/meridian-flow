@@ -12,7 +12,6 @@
 import assert from "node:assert/strict";
 import { createDraftCoordinator } from "../../../../apps/server/server/domains/collab/domain/draft-coordinator.ts";
 import type { DraftStore } from "../../../../apps/server/server/domains/collab/domain/draft-store.ts";
-import { commitDraftRows } from "../../../../apps/server/server/domains/collab/test-support/draft-update-writes.ts";
 import {
   appendToFirstParagraph,
   gate,
@@ -23,7 +22,7 @@ import {
   settled,
   Y,
 } from "./harness.mts";
-import { pausedAppend, rebaseLive, roomHolds } from "./phase4.mts";
+import { commitWriterUpdate, pausedAppend, rebaseLive, roomHolds } from "./phase4.mts";
 
 const KEYS = 20;
 
@@ -86,7 +85,7 @@ async function type(process: Process, draftId: string, token: string, wall?: num
   const update = keystroke(process.room, token);
   const started = performance.now();
   const result = await settled(
-    process.coordinator.commitWriterUpdate({
+    commitWriterUpdate(process.coordinator, {
       draftId,
       updateData: update,
       roomDocument: process.room,
@@ -111,16 +110,15 @@ const roomText = (process: Process) => process.room.getXmlFragment("prosemirror"
 export const twoProcessFrames: Probe = {
   name: "two-process-frames",
   decision: "D25",
-  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; no DraftCasConflictError, one appendRows per frame`,
+  expected: `frames: {"admitted":${2 * KEYS},"failures":{}}; ${2 * KEYS} tokens durable and in both rooms after a rejoin; one insert per frame`,
   async run(harness) {
-    // One sequence point per frame (design §9): today's revision miss, retried inside the frame
-    // as `DraftCasConflictError`, would show as a second `appendRows` call.
-    let appendRowsCalls = 0;
+    // One insert per frame: a retried frame would show as a second `appendWriterRow` call.
+    let insertCalls = 0;
     const counted = (store: DraftStore): DraftStore => ({
       ...store,
-      appendRows(input) {
-        appendRowsCalls += 1;
-        return store.appendRows(input);
+      appendWriterRow(input) {
+        insertCalls += 1;
+        return store.appendWriterRow(input);
       },
     });
     const { draftId, live, a, b, other } = await twoProcesses(
@@ -152,24 +150,14 @@ export const twoProcessFrames: Probe = {
       await process.coordinator.readDraft(draftId, async () => {});
       rooms[process.label] = tokens(roomText(process));
     }
-    const appends = [...harness.appends, ...other.appends].filter(
-      (append) => append.draftId === draftId,
-    );
     await other.close();
     const durable = tokens((await harness.readDraft(draftId)).text);
     observe("frames", { admitted, failures });
     observe("tokens", { durable, rooms });
-    // `lock_timeout` plays no part here: an append waits for the row as long as a holder holds it.
     // Wall time is reported, not asserted: it tracks the machine. The structural claim, one
-    // sequence point per frame, is the `appendRowsCalls` check below.
-    observe("latency", {
-      wallMs: latency(wall),
-      waitMs: latency(appends.map((append) => append.waitMs)),
-      holdMs: latency(appends.map((append) => append.holdMs)),
-      foldedPrefixRows: appends.reduce((total, append) => total + append.prefixRows, 0),
-      appendRowsCalls,
-    });
-    assert.equal(appendRowsCalls, 2 * KEYS, "a frame retried its sequence point");
+    // insert per frame, is the `insertCalls` check below.
+    observe("latency", { wallMs: latency(wall), insertCalls });
+    assert.equal(insertCalls, 2 * KEYS, "a frame retried its insert");
     assert.ok(!Object.keys(failures).some((name) => name.startsWith("DraftCasConflictError")));
     assert.equal(admitted, 2 * KEYS);
     assert.deepEqual(
@@ -238,20 +226,15 @@ export const twoProcessFold: Probe = {
 
 const COMPACT_TAIL_ROWS = 512;
 
-/** A tail one row short of the bound; the next frame triggers the background fold. */
+/** A tail one frame short of the bound; the next frame triggers the background fold. */
 async function seedCompactTail(f: { draftId: string; a: Process }) {
   const source = new Y.Doc({ gc: false });
   Y.applyUpdate(source, Y.encodeStateAsUpdate(f.a.room));
-  const rows = Array.from({ length: COMPACT_TAIL_ROWS - 1 }, () => ({
-    draftId: f.draftId,
-    source: "writer" as const,
-    updateData: appendToFirstParagraph(source, "x"),
-  }));
-  await commitDraftRows(f.a.coordinator, {
-    draftId: f.draftId,
-    sourceDoc: source,
-    rows,
-  });
+  for (let row = 0; row < COMPACT_TAIL_ROWS - 1; row += 1)
+    await f.a.coordinator.appendWriterFrame({
+      draftId: f.draftId,
+      updateData: appendToFirstParagraph(source, "x"),
+    });
   source.destroy();
   await f.a.coordinator.readDraft(f.draftId, async () => {});
 }
@@ -310,12 +293,12 @@ export const twoProcessCompaction: Probe = {
 
 /**
  * B's fold wins the row, so A's is dropped as designed and room A gets nothing pushed:
- * another process's commit reaches an open room on its next exchange.
+ * another process's commit reaches an open room at its next handshake, not at a frame.
  */
 export const twoProcessCompactionMoved: Probe = {
   name: "two-process-compaction-moved",
   decision: "D25",
-  expected: `room A lacks FOREIGN after its dropped compaction; next: {"ok":true,"value":{"admitted":true}} and room A holds FOREIGN`,
+  expected: `room A lacks FOREIGN after its dropped compaction; next: {"ok":true,"value":{"admitted":true}}, room A still lacks FOREIGN, and holds it after the tab's handshake`,
   async run(harness) {
     const pause = pausedCompaction(harness.store);
     const bFolded = gate();
@@ -342,15 +325,23 @@ export const twoProcessCompactionMoved: Probe = {
       await pause.done.wait;
       const before = roomText(f.a);
       const next = await type(f.a, f.draftId, " NEXT");
-      const after = roomText(f.a);
+      const afterFrame = roomText(f.a);
+      await f.a.coordinator.reconcileRegisteredRoom({
+        draftId: f.draftId,
+        room: f.a.room,
+        trigger: "handshake",
+      });
+      const afterHandshake = roomText(f.a);
       observe("moved", {
         roomHadForeign: before.includes("FOREIGN"),
-        roomHasForeign: after.includes("FOREIGN"),
+        afterFrame: afterFrame.includes("FOREIGN"),
+        afterHandshake: afterHandshake.includes("FOREIGN"),
       });
       observe("next", next);
       assert.ok(!before.includes("FOREIGN"));
       assert.deepEqual(next, { ok: true, value: { admitted: true } });
-      assert.match(after, /FOREIGN/);
+      assert.doesNotMatch(afterFrame, /FOREIGN/);
+      assert.match(afterHandshake, /FOREIGN/);
     } finally {
       await f.other.close();
     }
