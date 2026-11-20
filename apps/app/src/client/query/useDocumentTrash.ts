@@ -7,11 +7,7 @@ import { useAccountId } from "@/features/project/context/account-feature-context
 import { getTrash, getTrashDiscards, getTrashedDocument } from "../api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
-import {
-  useAccountContextSources,
-  useEndedSources,
-  useProjectContextSources,
-} from "./useContextSources";
+import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
 import { listIsComplete, useTreeList } from "./useProjectTree";
 
 /**
@@ -43,24 +39,26 @@ export function useTrashRows(projectId: string): readonly TrashEntry[] | null {
   const account = useTreeList({ kind: "account", userId: accountId });
   const projectSources = useProjectContextSources(projectId);
   const accountSources = useAccountContextSources();
-  const ended = useEndedSources(projectId);
   const versions = [project, account].map((list) => list.snapshot?.version);
   // The replay's input is each list's version.
   return useMemo(() => {
-    if (!projectSources || !accountSources || !ended) return null;
+    if (!projectSources || !accountSources) return null;
     if (![project, account].every(({ session, snapshot }) => session && snapshot)) return null;
     if (![project, account].every(({ snapshot }) => snapshot && listIsComplete(snapshot.status)))
       return null;
     const schemes = new Map(
       [...projectSources, ...accountSources].map((source) => [source.id as string, source.scheme]),
     );
+    // Two deletes of one node (two clients, or a folder deleted again) are one entry.
+    const seen = new Set<string>();
     return [project, account].flatMap(({ session }) => {
       const projection = session?.replay();
       if (!projection) return [];
       return [...projection.trash].reverse().flatMap((entry): TrashEntry[] => {
         const node = projection.nodes.get(entry.node);
         const scheme = node && schemes.get(node.source);
-        if (!node || node.purged || !scheme || ended.has(node.source)) return [];
+        if (!node || node.purged || !scheme || seen.has(node.id)) return [];
+        seen.add(node.id);
         return [
           {
             nodeId: node.id,
@@ -80,7 +78,7 @@ export function useTrashRows(projectId: string): readonly TrashEntry[] | null {
         ];
       });
     });
-  }, [project, account, projectSources, accountSources, ended, ...versions]);
+  }, [project, account, projectSources, accountSources, ...versions]);
 }
 
 /**

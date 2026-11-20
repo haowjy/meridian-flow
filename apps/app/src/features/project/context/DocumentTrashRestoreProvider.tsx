@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { type TrashEntry, useTrashRows } from "@/client/query/useDocumentTrash";
+import { type TrashEntry, useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { useTreeList } from "@/client/query/useProjectTree";
 import type { GoneRow } from "@/components/app/RowWord";
 import { endTreeNotice } from "@/core/project-tree/tree-undo";
@@ -55,7 +55,7 @@ export function DocumentTrashRestoreProvider({
   const accountId = useAccountId();
   const projectList = useTreeList({ kind: "project", projectId });
   const accountList = useTreeList({ kind: "account", userId: accountId });
-  const listed = useTrashRows(projectId) ?? [];
+  const listed = useDocumentTrash(projectId).data?.entries ?? [];
   const [states, setStates] = useState<ReadonlyMap<string, TrashRestoreState>>(() => new Map());
   const [restored, setRestored] = useState<readonly GoneRow<TrashEntry>[]>([]);
 

@@ -24,7 +24,7 @@ import {
   uploadIntakes,
   works,
 } from "@meridian/database/schema";
-import { LIVE, type TreeWriter } from "@meridian/project-tree";
+import { LIVE, type TrashEntry, type TreeWriter } from "@meridian/project-tree";
 import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
@@ -58,10 +58,17 @@ function purgeSources(writer: TreeWriter, sources: ReadonlySet<string>): Documen
     "system",
     standing.filter((node) => !standingIds.has(node.parent)).map((node) => node.id),
   );
+  // A node can hold several deletes in force (a folder deleted again after a restore left a child
+  // standing): one purge per node names one of them and every node they took.
   const view = writer.view(LIVE);
-  for (const entry of view.trash)
-    if (sources.has(view.nodes.get(entry.node)?.source ?? ""))
-      writer.purge("system", entry, [entry.node, ...entry.cascade]);
+  const takenBy = new Map<string, { entry: TrashEntry; nodes: Set<string> }>();
+  for (const entry of view.trash) {
+    if (!sources.has(view.nodes.get(entry.node)?.source ?? "")) continue;
+    const taken = takenBy.get(entry.node) ?? { entry, nodes: new Set() };
+    for (const id of [entry.node, ...entry.cascade]) taken.nodes.add(id);
+    takenBy.set(entry.node, taken);
+  }
+  for (const { entry, nodes } of takenBy.values()) writer.purge("system", entry, [...nodes]);
   return inSources()
     .filter((node) => node.kind !== "folder")
     .map((node) => node.id as DocumentId);
@@ -236,11 +243,15 @@ export function createDrizzleWorkPurger(deps: {
       // The Work's nodes end in the project's list, after their drafts and before their source
       // rows go: the browsers read "gone for good" from the `purge` record.
       const sources = new Set<string>(sourceRows.map(({ id }) => id));
-      const { result: documentIds } = await deps.tree.submit({
-        lists: [{ kind: "project", projectId: work.projectId }],
-        make: ([{ writer }]) => purgeSources(writer, sources),
-      });
-      const released = await releaseDocumentContent(deps.db, documentIds);
+      const released =
+        sources.size === 0
+          ? { storageUrls: [] as string[] }
+          : await deps.tree
+              .submit({
+                lists: [{ kind: "project", projectId: work.projectId }],
+                make: ([{ writer }]) => purgeSources(writer, sources),
+              })
+              .then(({ result }) => releaseDocumentContent(deps.db, result));
       const objectKeys = [
         // The incoming object is where an upload's PUT lands; one never finished is still there.
         ...uploads.flatMap((upload) => [

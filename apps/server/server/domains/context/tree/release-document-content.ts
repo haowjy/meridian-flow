@@ -5,7 +5,6 @@
  * Runs in the caller's transaction, which holds the documents' locks and has closed their drafts;
  * the caller deletes the returned storage objects after the commit.
  */
-export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
 import type { DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
@@ -26,6 +25,8 @@ import {
 } from "@meridian/database/schema";
 import { and, inArray, isNull, like, or } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+
+export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
 export async function releaseDocumentContent(
   db: Database,
