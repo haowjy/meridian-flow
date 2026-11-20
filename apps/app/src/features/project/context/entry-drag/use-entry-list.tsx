@@ -9,11 +9,9 @@
  * crumb, Recent row, receipt or Uploads entry), waits for the writer's choice
  * at the drop point, Move or Copy (see `drop-choice.ts`).
  */
-import type { ListTrashResponse, TrashEntry } from "@meridian/contracts/protocol";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { type TrashEntry, useTrashRows } from "@/client/query/useDocumentTrash";
 import {
   useOptionalContextRemovalCoordinator,
   useOptionalLiveDocumentSessionRegistry,
@@ -75,12 +73,12 @@ export function useEntryList({
       registry?.openStateVector(documentId as DocumentId, view) ?? null,
     [registry],
   );
-  const queryClient = useQueryClient();
   const { restoreInto } = useDocumentTrashRestore();
   const selection = useEntrySelection();
-  const latest = useRef({ areas, selection });
+  const trashRows = useTrashRows(projectId);
+  const latest = useRef({ areas, selection, trashRows });
   useLayoutEffect(() => {
-    latest.current = { areas, selection };
+    latest.current = { areas, selection, trashRows };
   });
 
   const [pending, setPending] = useState<PendingChoice | null>(null);
@@ -104,9 +102,7 @@ export function useEntryList({
     };
     // Trash rows the drag carries, as Trash lists them now; a row Trash no longer lists is gone.
     const trashed = (drag: NonNullable<ReturnType<typeof activeDragSession>>) => {
-      const listed =
-        queryClient.getQueryData<ListTrashResponse>(projectQueryKeys.trash(projectId))?.entries ??
-        [];
+      const listed = latest.current.trashRows ?? [];
       const entries = drag.entries.flatMap(({ ref }) => {
         const found = listed.find(({ nodeId }) => nodeId === ref.id);
         return found ? [found] : [];
@@ -185,7 +181,7 @@ export function useEntryList({
         if (planned.kind === "ready") runListMove(planned);
       },
     };
-  }, [projectId, queryClient, restoreInto, runListMove]);
+  }, [projectId, restoreInto, runListMove]);
 
   const choice = useMemo<DropChoiceState | null>(() => {
     if (!pending) return null;

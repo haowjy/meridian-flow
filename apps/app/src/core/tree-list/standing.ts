@@ -73,7 +73,7 @@ export function standingAcross(
 }
 
 /** The names of the folders above a node, top first, as the replay shows them. */
-function foldersAbove(projection: TreeProjection, node: TreeNode): string[] {
+export function foldersAbove(projection: TreeProjection, node: TreeNode): string[] {
   const names: string[] = [];
   for (
     let at = projection.nodes.get(node.parent);

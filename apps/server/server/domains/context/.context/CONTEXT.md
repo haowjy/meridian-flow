@@ -447,8 +447,9 @@ available notes. A lineage root names Scratch ownership, never a reader: draft
 visibility for link answers comes from the selected Work's branch tree view, so
 never pass `rootThreadId` as the viewing thread. Rebinding a chat selects a
 different bare Scratch owner and never moves notes; the durable Work-switch
-Notice names the previous Scratch root. Work purge explicitly removes lineage sources in its purge
-set, with documents, journals, memberships, and blobs.
+Notice names the previous Scratch root. Work purge ends the nodes of its sources (the Work's, its lineages' and its chats') with a
+`purge` record in the project's list, releases their documents through `release-document-content.ts`
+(a purged tombstone stays), then removes the source rows, memberships and blobs.
 
 `unfiled://` is project-owned storage with the same ContextFS, Yjs authority,
 availability, and identity-preserving move rules as Manuscript and

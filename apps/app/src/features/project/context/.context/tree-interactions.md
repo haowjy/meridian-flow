@@ -479,7 +479,7 @@ the entry's node (a document or a folder, `trashRef`). The entries route recogni
 `restoreInto` on `DocumentTrashRestoreProvider` and shows the rows like a move (`revealPlaced`). It appends a `restore` record per entry and a
 `move` to the destination as one gesture (`TreeActions.restore` with its destination), one Undo step.
 A restore never crosses systems (it has no Copy): a project document onto Your files, or the reverse,
-refuses with the hint. The rows leave Trash (the Trash list is a server query, edited in place) and appear in the
+refuses with the hint. The rows leave Trash (its entries are the replay's) and appear in the
 destination at once from the replay. The server never refuses a restore; one into a Work that
 closed meanwhile bounces on its row ("Not restored") and the entry stays in Trash. Until the writer's next gesture,
 the restored rows say "Undo" in the tree and stay struck through in Trash with the same Undo, the

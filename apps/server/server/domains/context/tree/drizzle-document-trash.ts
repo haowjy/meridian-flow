@@ -1,10 +1,6 @@
 /** Drizzle adapter for restorable document trash and retention: emptying Trash, and the purge window. */
 import { type DocumentId, type ProjectId, serializeRemovalIdentity } from "@meridian/contracts";
-import {
-  type DocumentTrashEntry,
-  isProjectContextTreeScheme,
-  type TrashEntry,
-} from "@meridian/contracts/protocol";
+import type { DocumentTrashEntry, TrashEntryFacts } from "@meridian/contracts/protocol";
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
@@ -33,7 +29,7 @@ import { createObjectRelease, type ObjectStorePort } from "../../storage/index.j
 import { trashActorsOf } from "../adapters/trash-removals.js";
 import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/document-trash.js";
 import { type TreeList, type TreeListStore, TreeRefusal } from "../ports/tree-list-store.js";
-import { releaseDocumentContent } from "./release-document-content.js";
+import { type Released, releaseDocumentContent } from "./release-document-content.js";
 import { retentionHolds } from "./retention-holds.js";
 import {
   ownedByRequestSql,
@@ -41,7 +37,7 @@ import {
   ownerProjectIdSql,
   sourceOwnerProjectId,
 } from "./source-owner.js";
-import { loadDocumentAddresses, loadFolderAddresses, ownerOfDocument } from "./tree-addresses.js";
+import { loadDocumentAddresses, ownerOfDocument } from "./tree-addresses.js";
 
 /** Documents released in one run: bounds how long one run holds the database. */
 const DOCUMENT_PURGE_BATCH_LIMIT = 100;
@@ -68,8 +64,6 @@ function unsettledOn(doc: Y.Doc, nodes: ReadonlySet<string>): boolean {
         ((record.type === "create" || record.type === "move") && nodes.has(record.parent))),
   );
 }
-
-type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
 export function createDrizzleDocumentTrash(deps: {
   db: Database;
@@ -128,14 +122,12 @@ export function createDrizzleDocumentTrash(deps: {
   const entryRows = (projectId: ProjectId) =>
     currentDrizzleDb(deps.db).execute<{
       id: string;
-      kind: "document" | "folder";
-      name: string;
       trash_record: string;
       trashed_at: Date | string;
       location_version: string;
       trashed_by: string | null;
     }>(sql`
-      SELECT t.id::text AS id, t.kind, t.name, t.trash_record,
+      SELECT t.id::text AS id, t.trash_record,
         t.trashed_at, t.location_version, t.trashed_by
       FROM ${treeNodes} t
         LEFT JOIN ${treeNodes} p ON p.id = t.parent_id
@@ -219,7 +211,7 @@ export function createDrizzleDocumentTrash(deps: {
     });
   };
 
-  async function listEntries(projectId: ProjectId): Promise<TrashEntry[]> {
+  async function listEntries(projectId: ProjectId): Promise<TrashEntryFacts[]> {
     const roots = await entryRows(projectId);
     if (roots.length === 0) return [];
     // What each folder's delete took: its documents count, and hold it while a Work has changes.
@@ -242,79 +234,23 @@ export function createDrizzleDocumentTrash(deps: {
       deps.db,
       roots.map((root) => root.trashed_by),
     );
-    const documentAddresses = new Map(
-      (
-        await loadDocumentAddresses(deps.db, {
-          ids: roots.filter((root) => root.kind === "document").map((root) => root.id),
-        })
-      ).map((address) => [address.documentId as string, address]),
-    );
-    const folderAddresses = new Map(
-      (
-        await loadFolderAddresses(
-          deps.db,
-          roots.filter((root) => root.kind === "folder").map((root) => root.id),
-        )
-      ).map((address) => [address.folderId as string, address]),
-    );
-    return roots.flatMap((root): TrashEntry[] => {
-      const address =
-        root.kind === "folder" ? folderAddresses.get(root.id) : documentAddresses.get(root.id);
-      if (!address || !isProjectContextTreeScheme(address.scheme)) return [];
+    return roots.map((root) => {
       const trashedAt = new Date(root.trashed_at);
-      const took = documentsOf.get(root.trash_record) ?? [];
       const works = new Map(
-        took.flatMap((id) => held.get(id) ?? []).map((work) => [work.id, work]),
+        (documentsOf.get(root.trash_record) ?? [])
+          .flatMap((id) => held.get(id) ?? [])
+          .map((work) => [work.id, work]),
       );
-      return [
-        {
-          nodeId: root.id,
-          kind: root.kind,
-          name: root.name,
-          scheme: address.scheme,
-          formerPath: address.path,
-          removal: serializeRemovalIdentity({
-            time: trashedAt,
-            locationVersion: BigInt(root.location_version),
-          }),
-          actor: actorOf(root.trashed_by),
-          retention: retentionOf(trashedAt, [...works.values()]),
-          documents: root.kind === "folder" ? took.length : 0,
-        },
-      ];
+      return {
+        nodeId: root.id,
+        removal: serializeRemovalIdentity({
+          time: trashedAt,
+          locationVersion: BigInt(root.location_version),
+        }),
+        actor: actorOf(root.trashed_by),
+        retention: retentionOf(trashedAt, [...works.values()]),
+      };
     });
-  }
-
-  /**
-   * Releases the documents' content, after their rows are gone from every view: the journal and
-   * what hung on the text, then the row is marked and loses its bytes. The caller holds the
-   * documents' locks and has closed their drafts.
-   */
-  async function release(documentIds: DocumentId[]): Promise<Released> {
-    const tx = currentDrizzleDb(deps.db);
-    if (documentIds.length === 0) return { documentIds, storageUrls: [] };
-    const held = await tx
-      .select({ id: documents.id, storageUrl: documents.storageUrl })
-      .from(documents)
-      .where(and(inArray(documents.id, documentIds), isNull(documents.contentPurgedAt)));
-    const ids = held.map(({ id }) => id as DocumentId);
-    await releaseDocumentContent(deps.db, ids);
-    const purgedAt = new Date();
-    await tx
-      .update(documents)
-      .set({
-        contentPurgedAt: purgedAt,
-        storageUrl: null,
-        mimeType: null,
-        sizeBytes: null,
-        metadata: {},
-        updatedAt: purgedAt,
-      })
-      .where(inArray(documents.id, ids));
-    return {
-      documentIds: ids,
-      storageUrls: held.flatMap(({ storageUrl }) => (storageUrl ? [storageUrl] : [])),
-    };
   }
 
   /**
@@ -362,7 +298,7 @@ export function createDrizzleDocumentTrash(deps: {
             writer.purge("system", taken.entry, taken.nodes);
           },
         });
-        return release(taken.documentIds);
+        return releaseDocumentContent(deps.db, taken.documentIds);
       });
     } catch (cause) {
       if (cause instanceof TreeRefusal) return null;
@@ -452,7 +388,7 @@ export function createDrizzleDocumentTrash(deps: {
             }
           },
         });
-        return release([documentId]);
+        return releaseDocumentContent(deps.db, [documentId]);
       });
     } catch (cause) {
       if (cause instanceof TreeRefusal) return null;

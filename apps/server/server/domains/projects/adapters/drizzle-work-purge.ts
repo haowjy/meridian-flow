@@ -3,30 +3,33 @@
  * A purged Work's branches end first through collab's Discard (contract §2.6, F10): their drafts
  * leased before the transaction, then, after the deleted/cutoff proof, one settlement discards
  * every pending record of the Work. The documents it drafted are then in no view, and retention
- * releases them on its own window. The Work's sources go with it and the list's replay follows:
- * the cascade of its source rows takes their node rows; the documents of those nodes go here.
+ * releases them on its own window. The Work's sources go with it: first a `purge` record in the
+ * project's list for every node in them (the browsers read "gone for good" from that record), and
+ * the content release Trash retention uses; then their source rows, which take any node rows left.
  */
 
+import type { DocumentId } from "@meridian/contracts";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   branches,
   contextSources,
-  documents,
   eventJournal,
   projectResults,
   promptBakes,
   threads,
   threadWorks,
-  treeNodes,
   turns,
   uploadIntakes,
   works,
 } from "@meridian/database/schema";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { and, asc, eq, gt, inArray, isNotNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { lockWorkThreadTree } from "../../../shared/thread-work-lock.js";
+import { releaseDocumentContent } from "../../context/index.js";
+import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import {
   chatMediaPrefix,
@@ -40,11 +43,37 @@ import type { WorkProjectionMutation } from "./work-projection-mutation.js";
 
 const WORK_PURGE_BATCH_LIMIT = 100;
 
+/**
+ * Ends every node in the sources for good, in one submission (a folder purged while a child's row
+ * stands fails the deferred foreign key). What stands is deleted first, since a `purge` names a
+ * delete in force. Returns the documents to release.
+ */
+function purgeSources(writer: TreeWriter, sources: ReadonlySet<string>): DocumentId[] {
+  const inSources = () =>
+    [...writer.view(LIVE).nodes.values()].filter((node) => sources.has(node.source));
+  const standing = inSources().filter((node) => !node.trashed && !node.purged);
+  const standingIds = new Set(standing.map((node) => node.id));
+  writer.deleteAll(
+    LIVE,
+    "system",
+    standing.filter((node) => !standingIds.has(node.parent)).map((node) => node.id),
+  );
+  const view = writer.view(LIVE);
+  for (const entry of view.trash)
+    if (sources.has(view.nodes.get(entry.node)?.source ?? ""))
+      writer.purge("system", entry, [entry.node, ...entry.cascade]);
+  return inSources()
+    .filter((node) => node.kind !== "folder")
+    .map((node) => node.id as DocumentId);
+}
+
 export function createDrizzleWorkPurger(deps: {
   db: Database;
   objectStore: Pick<ObjectStorePort, "delete" | "list">;
   eventSink: EventSink;
   branches: WorkBranchDisposal;
+  /** The project's list, where the Work's sources' nodes end. */
+  tree: Pick<TreeListStore, "submit">;
   /** A purged Work leaves the project's Works list, which is woken for it. */
   works: Pick<WorkProjectionMutation, "lifecycleChanged">;
   /** What the model was shown of documents, kept by the document side. */
@@ -157,7 +186,7 @@ export function createDrizzleWorkPurger(deps: {
         }
       }
 
-      const [uploads, results, binaries] = await Promise.all([
+      const [uploads, results, sourceRows] = await Promise.all([
         // The Work owns no uploads; its threads' chats do.
         lockedTree.threadIds.length
           ? activeDb
@@ -174,10 +203,8 @@ export function createDrizzleWorkPurger(deps: {
           .from(projectResults)
           .where(eq(projectResults.deletedByWorkId, workId)),
         activeDb
-          .select({ id: treeNodes.id, storageUrl: documents.storageUrl })
-          .from(treeNodes)
-          .innerJoin(documents, eq(documents.id, treeNodes.id))
-          .innerJoin(contextSources, eq(contextSources.id, treeNodes.contextSourceId))
+          .select({ id: contextSources.id })
+          .from(contextSources)
           .where(
             or(
               eq(contextSources.workId, workId),
@@ -206,31 +233,32 @@ export function createDrizzleWorkPurger(deps: {
           ).map((row) => row.id)
         : [];
       const disposed = await disposeDrafts(purgedRoots);
+      // The Work's nodes end in the project's list, after their drafts and before their source
+      // rows go: the browsers read "gone for good" from the `purge` record.
+      const sources = new Set<string>(sourceRows.map(({ id }) => id));
+      const { result: documentIds } = await deps.tree.submit({
+        lists: [{ kind: "project", projectId: work.projectId }],
+        make: ([{ writer }]) => purgeSources(writer, sources),
+      });
+      const released = await releaseDocumentContent(deps.db, documentIds);
       const objectKeys = [
         // The incoming object is where an upload's PUT lands; one never finished is still there.
         ...uploads.flatMap((upload) => [
           upload.objectKey,
           incomingObjectKey(upload.projectId, upload.documentId),
         ]),
-        ...[...results, ...binaries].flatMap(({ storageUrl }) => {
-          const key = storageUrl ? objectStoreKeyFromStorageUrl(storageUrl) : null;
-          return key ? [key] : [];
-        }),
+        ...[...results.map(({ storageUrl }) => storageUrl), ...released.storageUrls].flatMap(
+          (storageUrl) => {
+            const key = storageUrl ? objectStoreKeyFromStorageUrl(storageUrl) : null;
+            return key ? [key] : [];
+          },
+        ),
         ...disposed.releasedObjects.flatMap((storageUrl) => {
           const key = objectStoreKeyFromStorageUrl(storageUrl);
           return key ? [key] : [];
         }),
       ];
 
-      // The documents of the Work's nodes go before their source rows do: a node's row follows its
-      // source's, and a document's content with it.
-      if (binaries.length > 0)
-        await activeDb.delete(documents).where(
-          inArray(
-            documents.id,
-            binaries.map(({ id }) => id),
-          ),
-        );
       // Results and journal history restrict conversation deletion.
       await activeDb.delete(projectResults).where(eq(projectResults.deletedByWorkId, workId));
       if (lockedTree.threadIds.length > 0) {

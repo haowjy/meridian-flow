@@ -1125,6 +1125,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
     branches: ports.documentSync.workBranchDisposal,
+    tree: ports.treeLists,
     works: ports.workProjectionMutation,
     evidence: ports.documentSync.modelEvidence(),
   });

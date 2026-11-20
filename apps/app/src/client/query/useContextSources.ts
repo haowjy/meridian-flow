@@ -43,21 +43,12 @@ export function useAccountContextSources(enabled = true): readonly ContextSource
   return useAccountContextSourcesResult(enabled).data?.sources;
 }
 
-/** What both queries said of every source, and the time of the older answer; null until both have come. */
-export function useContextSourceFacts(projectId: string) {
-  const project = useProjectContextSourcesResult(projectId);
-  const account = useAccountContextSourcesResult();
-  const { data: mine, dataUpdatedAt: projectAt } = project;
-  const { data: yours, dataUpdatedAt: accountAt } = account;
+/** The ids of the sources that ended and can be restored, in the project and the account; null until both queries have answered. */
+export function useEndedSources(projectId: string): ReadonlySet<string> | null {
+  const { data: mine } = useProjectContextSourcesResult(projectId);
+  const { data: yours } = useAccountContextSourcesResult();
   return useMemo(
-    () =>
-      mine && yours
-        ? {
-            live: new Set([...mine.sources, ...yours.sources].map((source) => source.id as string)),
-            ended: new Set([...mine.ended, ...yours.ended] as string[]),
-            fetchedAt: Math.min(projectAt, accountAt),
-          }
-        : null,
-    [mine, yours, projectAt, accountAt],
+    () => (mine && yours ? new Set<string>([...mine.ended, ...yours.ended]) : null),
+    [mine, yours],
   );
 }

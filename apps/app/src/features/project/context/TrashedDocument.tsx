@@ -196,7 +196,7 @@ function useTrashedDetails(
     (source) => source.id === trashed.node.source,
   )?.scheme;
   if (!scheme) return null;
-  const kept = read ?? listed;
+  const kept = read ?? listed?.kept;
   return {
     scheme,
     folders: trashed.folders,

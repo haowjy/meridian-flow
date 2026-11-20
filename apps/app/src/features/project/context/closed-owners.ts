@@ -3,7 +3,7 @@ import type { ContextSource } from "@meridian/contracts/protocol";
 import { type Work, workLifecycleState } from "@meridian/contracts/works";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useContextSourceFacts, useProjectContextSources } from "@/client/query/useContextSources";
+import { useEndedSources, useProjectContextSources } from "@/client/query/useContextSources";
 import { useWorks } from "@/client/query/useWorks";
 import type { ClosedOwner, ClosedOwners } from "@/core/project-tree/tree-undo";
 
@@ -12,7 +12,7 @@ type Read = {
   deleted: readonly Work[];
   nameOf: (work: Work) => string;
   sources: readonly ContextSource[] | undefined;
-  facts: { ended: ReadonlySet<string> } | null;
+  ended: ReadonlySet<string> | null;
 };
 
 type Shared = { read: Read | null; reader: ClosedOwners };
@@ -30,9 +30,9 @@ export function useClosedOwners(projectId: string): ClosedOwners {
   const queryClient = useQueryClient();
   const { works, deleted, nameOf } = useWorks(projectId, { enabled: Boolean(projectId) });
   const sources = useProjectContextSources(projectId);
-  const facts = useContextSourceFacts(projectId);
+  const ended = useEndedSources(projectId);
   const shared = sharedOf(queryClient, projectId);
-  shared.read = { works, deleted, nameOf, sources, facts };
+  shared.read = { works, deleted, nameOf, sources, ended };
   return shared.reader;
 }
 
@@ -48,8 +48,8 @@ function sharedOf(queryClient: QueryClient, projectId: string): Shared {
     read: null,
     reader: {
       source: (sourceId) => {
-        const { sources, facts } = shared.read ?? {};
-        if (facts?.ended.has(sourceId)) return { why: "chat_frozen" };
+        const { sources, ended } = shared.read ?? {};
+        if (ended?.has(sourceId)) return { why: "chat_frozen" };
         const source = sources?.find((one) => one.id === sourceId);
         return source ? ownerOf(source) : null;
       },

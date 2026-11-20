@@ -121,27 +121,20 @@ export type DocumentTrashEntry = {
 };
 
 /**
- * One Trash entry, restored whole: a document deleted on its own, or a folder with what its
- * delete took (an empty folder included).
+ * What only the server knows of one Trash entry, named by the node its delete took: when, by
+ * whom, and how long it stays. Which entries exist, their names, places and what a folder took are
+ * the list's own (its replay).
  */
-export type TrashEntry = {
-  /** The deleted document's or folder's id: what a restore names. */
+export type TrashEntryFacts = {
   nodeId: string;
-  kind: "document" | "folder";
-  name: string;
-  scheme: ProjectContextTreeScheme;
-  /** Source-relative path, without a leading slash; a folder's ends in `/`. */
-  formerPath: string;
   removal: RemovalIdentity;
   actor: DocumentRemovalRecord["actor"];
   /** A folder is held while a Work has changes to any document it took. */
   retention: TrashRetention;
-  /** The documents a folder's delete took with it; 0 for a document. */
-  documents: number;
 };
 
 export type ListTrashResponse = {
-  entries: TrashEntry[];
+  entries: TrashEntryFacts[];
 };
 
 /** Stable writer-selected parent. URI callers may continue to omit this. */

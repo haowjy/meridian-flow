@@ -1,10 +1,8 @@
 /** Live project removal host; mounted only after Work/bootstrap readiness. */
 
 import { t } from "@lingui/core/macro";
-import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { projectQueryKeys } from "@/client/query/project-query-keys";
-import { useContextSourceFacts } from "@/client/query/useContextSources";
+import { useEndedSources } from "@/client/query/useContextSources";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
 import type { AccountRecentItem } from "@/client/recents";
 import { logInAgain } from "@/components/app/AppStatus";
@@ -71,8 +69,7 @@ export function ProjectContextRemovalController({
     [],
   );
 
-  const queryClient = useQueryClient();
-  const sources = useContextSourceFacts(projectId);
+  const ended = useEndedSources(projectId);
   const [observer, setObserver] = useState<ListRemovalObserver | null>(null);
   useEffect(() => {
     const created = observeListRemovals({
@@ -80,12 +77,6 @@ export function ProjectContextRemovalController({
       standings,
       removal: coordinator,
       registry,
-      refreshSources: () => {
-        void queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextSources(projectId),
-        });
-        void queryClient.invalidateQueries({ queryKey: projectQueryKeys.accountContextSources() });
-      },
       signInRequired: () =>
         notifyFailure({
           key: "sign-in-expired",
@@ -98,8 +89,8 @@ export function ProjectContextRemovalController({
       created.stop();
       setObserver(null);
     };
-  }, [coordinator, projectId, queryClient, registry, standings]);
-  useEffect(() => observer?.setSources(sources), [observer, sources]);
+  }, [coordinator, projectId, registry, standings]);
+  useEffect(() => observer?.setEndedSources(ended), [observer, ended]);
 
   useLayoutEffect(() => {
     const registration = coordinator.registerRoutePort(projectId, stableRoute);
