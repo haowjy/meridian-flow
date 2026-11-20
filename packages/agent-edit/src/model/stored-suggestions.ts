@@ -9,6 +9,7 @@ import {
   type Authors,
   accept,
   type Filter,
+  list,
   pendingChanges,
   pendingTurns,
   reject,
@@ -19,6 +20,8 @@ import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
 import { lowerBlock, lowerResolved, resolvedEdit } from "../resolver/lower-block.js";
+import type { EditRange } from "../undo/receipt.js";
+import { itemsInRange } from "../yjs-mutation.js";
 import { getTopLevelXmlBlocks } from "./block-hash.js";
 import { applyOps as applyRawOps, fragmentOf } from "./y-prosemirror.js";
 
@@ -112,6 +115,70 @@ const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
  */
 export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string, WorkPending> {
   return pendingChanges(storedRoot(doc, schema), suggestionAuthors(doc));
+}
+
+/**
+ * Takes a Work's suggestions out of a stored document for good, as its owner ends: they are
+ * rejected and their authors forgotten, in one transaction with no record, since nothing can take
+ * it back. Returns whether anything changed.
+ */
+export function dropWork(doc: Y.Doc, schema: Schema, work: string): boolean {
+  const ids = new Set(
+    list(storedRoot(doc, schema), { work }, suggestionAuthors(doc)).map(({ id }) => id),
+  );
+  if (ids.size === 0) return false;
+  doc.transact(() => {
+    resolveStored(doc, schema, "reject", { work });
+    const authors = doc.getMap<unknown>(AUTHORS_ROOT);
+    for (const id of ids) authors.delete(id);
+  });
+  return true;
+}
+
+/**
+ * What the writer did with the suggestions one write left, read from the items it inserted
+ * (`EditEffect.inserted`): `applied` when accepted, `discarded` when rejected, null when it left
+ * none or one is still pending. The rule is `verdicts`'s: struck text decides when the write
+ * struck any, else whether what it added is all gone.
+ */
+export function writeVerdict(
+  doc: Y.Doc,
+  inserted: readonly EditRange[],
+): "applied" | "discarded" | null {
+  const ids = new Set<string>();
+  const added: Y.Item[] = [];
+  const struck: Y.Item[] = [];
+  for (const range of inserted)
+    for (const { item } of itemsInRange(doc, range)) {
+      const { content } = item;
+      if (content instanceof Y.ContentFormat) {
+        const mark = markOf(content.key);
+        const id = mark ? changeId(content.value) : null;
+        if (!id) continue;
+        ids.add(id);
+        if (mark === STRUCK) struck.push(...markedAfter(item, content.key));
+      } else if (item.parentSub === null && item.countable) added.push(item);
+      else if (item.parentSub === "sug") {
+        const id = changeId(content.getContent()[0]);
+        if (id) ids.add(id);
+      }
+    }
+  if (ids.size === 0) return null;
+  const pending = suggestionItems(fragmentOf(doc)).changes;
+  if ([...ids].some((id) => pending.has(id))) return null;
+  if (struck.length > 0) return struck.some((item) => !item.deleted) ? "discarded" : "applied";
+  if (added.length > 0) return added.every((item) => item.deleted) ? "discarded" : "applied";
+  return null;
+}
+
+/** The countable items a mark started at `start` covered, deleted ones too, up to its end. */
+function markedAfter(start: Y.Item, key: string): Y.Item[] {
+  const out: Y.Item[] = [];
+  for (let item = start.right; item; item = item.right) {
+    if (item.content instanceof Y.ContentFormat && item.content.key === key) break;
+    if (item.countable) out.push(item);
+  }
+  return out;
 }
 
 /** Yjs item ids by client, as `[clock, len]` runs in clock order. */
@@ -246,6 +313,14 @@ type ChangeItems = {
 const INSERTED = "suggest_ins";
 const STRUCK = "suggest_del";
 
+function markOf(key: string): typeof INSERTED | typeof STRUCK | null {
+  return key === INSERTED || key.startsWith(`${INSERTED}--`)
+    ? INSERTED
+    : key === STRUCK || key.startsWith(`${STRUCK}--`)
+      ? STRUCK
+      : null;
+}
+
 /**
  * Every change a document's visible items carry, read from Yjs items, since a resolve is told by
  * which items it deleted. Also each block's attribute layers with the item that holds them, and
@@ -267,12 +342,6 @@ function suggestionItems(fragment: Y.XmlFragment): {
     }
     return parts;
   };
-  const markOf = (key: string) =>
-    key === INSERTED || key.startsWith(`${INSERTED}--`)
-      ? INSERTED
-      : key === STRUCK || key.startsWith(`${STRUCK}--`)
-        ? STRUCK
-        : null;
   const walkText = (text: Y.XmlText) => {
     const marks = new Map<string, string>();
     for (let item = text._start; item; item = item.right) {

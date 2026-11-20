@@ -18,7 +18,7 @@ import type { Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
-import { submitPress, submitPressUndo } from "@/client/query/press-commands";
+import { restorePressDiscard, submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   cachedOwnerDrafts,
@@ -30,7 +30,11 @@ import { documentBasename } from "@/client/query/work-branch-files";
 import { notifyFailure } from "@/components/app/failure-toast";
 import { ApplyEntries, type ApplyPort } from "@/features/draft-review/apply-history";
 import { type CommandOutcome, folderKey } from "@/features/draft-review/draft-command-owner";
-import type { DiscardPart, NoticeSurface } from "@/features/draft-review/draft-notices";
+import type {
+  DiscardPart,
+  DiscardUndo,
+  NoticeSurface,
+} from "@/features/draft-review/draft-notices";
 import type { DraftReviewSelection } from "@/features/draft-review/draft-review-session";
 import type { ChangeTarget } from "@/features/draft-review/review-model";
 import {
@@ -106,19 +110,25 @@ export function usePressCommands({
       return settled?.state === "done";
     };
 
-    /** A Discard's Undo, once: the notice and every row that offers it send this. */
-    const undoOf = (commandId: string) => {
-      let sent: Promise<boolean> | null = null;
-      return () => {
-        sent ??= unpress(commandId).then((done) => {
-          if (done) return true;
-          notifyFailure({ key: `unpress:${commandId}`, title: t`Couldn't undo`, brief: true });
-          sent = null;
-          return false;
-        });
-        return sent;
-      };
-    };
+    /**
+     * A Discard's Undo: the press's Undo, sent through the one restore progress Trash reads too
+     * (`DiscardRestores`), so a Restore from either place ends the other's.
+     */
+    const undoDiscard = (commandId: string, driver: CommandDriver): DiscardUndo => ({
+      undo: async () => ({
+        landed: Promise.resolve(),
+        ...(await owner.restores.restore(commandId, async () => {
+          const answer = await restorePressDiscard(driver, {
+            projectId,
+            owner: ownerKey,
+            pressCommandId: commandId,
+          });
+          await refresh();
+          return answer;
+        })),
+      }),
+      end: () => {},
+    });
 
     /**
      * An Apply in the history of every editor open on its documents, as a draft's Apply is
@@ -266,7 +276,6 @@ export function usePressCommands({
             })),
           });
         } else {
-          const undo = undoOf(pressed.commandId);
           const [first] = changed;
           const part: DiscardPart = {
             documentId: input.documentId ?? first ?? "",
@@ -274,13 +283,8 @@ export function usePressCommands({
             scope: input.folder ? "folder" : "draft",
             ...(changed.length > 1 ? { count: changed.length } : {}),
             covers: changed,
-            handle: {
-              undo: async () => ({
-                answer: (await undo()) ? "ok" : "failed",
-                landed: Promise.resolve(),
-              }),
-              end: () => {},
-            },
+            handle: undoDiscard(pressed.commandId, driver),
+            restore: pressed.commandId,
           };
           notices.showDiscard({ projectId, ownerKey, surface: where, parts: [part] });
         }

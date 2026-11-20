@@ -73,7 +73,7 @@ import { createDrizzleTurnInverseService } from "./adapters/drizzle-turn-inverse
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleWorkBranchPendingStore } from "./adapters/drizzle-work-branch-pending.js";
 import { createDrizzleWorkCreates } from "./adapters/drizzle-work-creates.js";
-import { createDrizzleWorkBranchDisposal } from "./adapters/drizzle-work-tree-discard.js";
+import { createDrizzleWorkBranchDisposal } from "./adapters/drizzle-work-disposal.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import {
   createDeferredLiveProjectionCoordinator,
@@ -530,6 +530,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       workBranchDisposal: createDrizzleWorkBranchDisposal(deps.db, {
         branches: workBranches,
         treeLists: deps.treeLists,
+        live: persistence.journal,
+        liveCoordinator,
+        onCommitted: async (documentId) => {
+          await runDocumentWriteHook({ documentId }, "collab.work-purge");
+        },
       }),
       documentPurgeDisposal: createDrizzleDocumentPurgeDisposal(deps.db, {
         closeRemovedRooms: (documentIds) =>

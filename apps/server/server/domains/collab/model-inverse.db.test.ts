@@ -208,7 +208,7 @@ describe("model document stack", () => {
       }
     },
   );
-  it("leaves text the writer applied to the manuscript", async () => {
+  it("leaves text the writer applied to the manuscript, and says so", async () => {
     const { harness, view, context, responseId } = await fixture();
     try {
       const core = view.collab.agentEdit();
@@ -236,8 +236,7 @@ describe("model document stack", () => {
       await core.read(address, secondContext);
       expect(await core.read({ ...address, format: "edits" }, context)).toMatchObject({
         status: "success",
-        // The press changed the suggestion into Live text: the edit no longer stands as written.
-        result: { message: expect.stringMatching(/e1.*changed.*none/) },
+        result: { message: expect.stringMatching(/e1.*applied.*none/) },
       });
       expect(await core.write({ ...address, command: "undo" }, secondContext)).toMatchObject({
         status: "cant_undo_changed",
