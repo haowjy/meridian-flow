@@ -111,7 +111,10 @@ creates a new edit at the current (destination) view. Both read the part's `delt
 and listed by its 1-based immutable part ordinal and reason, without quoting old
 or current text. Undo refuses `cant_undo_changed` only when nothing of a text-only
 edit remains to reverse. The model uses ordinary `read` for the passage;
-`read(format: "edits")` reads immutable parts through the host port. Model actions
+`read(format: "edits")` reads immutable parts through the host port, and says what became of a
+drafted write's suggestions from the items the write inserted (`writeVerdict`): `applied` (or
+`partly applied`, by parts) when the writer accepted them, `discarded` when rejected, the same
+rule the planning view uses to drop a rejected suggestion (`withdrawRejected`). Model actions
 cannot use a reconstruction endpoint, reversal table, or reserved client. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack

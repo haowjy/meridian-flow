@@ -23,6 +23,3 @@ with more than suggestions (a tree change, a whole item) stay the server's.
   the Changes list does nothing after Apply all. Its seat's `push` is empty.
 - The review never reads as failed: an editor that never syncs (a refused room, lost access)
   leaves the band and sheet loading; nothing says "Changes couldn't load" or offers Retry.
-- A socket admitted to a Work-only document's room keeps its draft target after the document is
-  applied into Live: a later change to that Work (archived) re-checks the old target and can
-  close or freeze the tab until it reconnects (`lib/yjs-ws-handler.ts`).
