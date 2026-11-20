@@ -354,6 +354,81 @@ export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<stri
 
 const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
 
+/** Yjs item ids by client, as `[clock, len]` runs in clock order. */
+export type IdRanges = Record<string, [number, number][]>;
+
+/** What a press's one transaction did to a stored document: all a Yjs undo of it needs. */
+export type PressRecord = { insertions: IdRanges; deletions: IdRanges };
+
+/**
+ * A press's text half: `resolveStored` as one transaction of its own, and the ids that transaction
+ * inserted and deleted. Null when nothing changed.
+ */
+export function pressStored(
+  doc: Y.Doc,
+  schema: Schema,
+  verdict: "accept" | "reject",
+  filter: Filter,
+): PressRecord | null {
+  const origin = Symbol("press");
+  const recorder = new Y.UndoManager(fragmentOf(doc), {
+    trackedOrigins: new Set([origin]),
+    captureTimeout: Number.POSITIVE_INFINITY,
+  });
+  try {
+    let changed = false;
+    doc.transact(() => {
+      changed = resolveStored(doc, schema, verdict, filter);
+    }, origin);
+    const item = recorder.undoStack[0];
+    return changed && item
+      ? { insertions: rangesOf(item.insertions), deletions: rangesOf(item.deletions) }
+      : null;
+  } finally {
+    recorder.destroy();
+  }
+}
+
+/**
+ * Takes a press back from its record: the Yjs undo the tab's own `UndoManager` would run. Text
+ * written since stays; a change whose text was removed since does not come back. The document must
+ * keep deleted items (`gc: false`) and be the authority generation the press ran on. Returns
+ * whether anything changed.
+ */
+export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
+  const undo = new Y.UndoManager(fragmentOf(doc), { trackedOrigins: new Set() });
+  try {
+    // Yjs 13 does not export its stack item; `undo` reads only these three fields.
+    undo.undoStack.push({
+      insertions: deleteSetOf(record.insertions),
+      deletions: deleteSetOf(record.deletions),
+      meta: new Map(),
+    } as unknown as (typeof undo.undoStack)[number]);
+    return undo.undo() !== null;
+  } finally {
+    undo.destroy();
+  }
+}
+
+type DeleteSet = ReturnType<typeof Y.createDeleteSet>;
+
+function rangesOf(set: DeleteSet): IdRanges {
+  const out: IdRanges = {};
+  for (const [client, items] of set.clients)
+    out[client] = items.map((item): [number, number] => [item.clock, item.len]);
+  return out;
+}
+
+function deleteSetOf(ranges: IdRanges): DeleteSet {
+  const set = Y.createDeleteSet();
+  for (const [client, runs] of Object.entries(ranges))
+    set.clients.set(
+      Number(client),
+      runs.map(([clock, len]) => ({ clock, len }) as never),
+    );
+  return set;
+}
+
 /** The Works whose suggestions a stored document holds: the views that read it otherwise than Live. */
 export function storedPendingWorks(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
   return pendingWorks(storedRoot(doc, schema));

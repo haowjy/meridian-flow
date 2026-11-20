@@ -912,7 +912,7 @@ CREATE TABLE "commands" (
 	"request_digest" text,
 	"outcome" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides'))
+	CONSTRAINT "commands_kind_valid" CHECK ("commands"."kind" IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress'))
 );
 --> statement-breakpoint
 CREATE TABLE "discard_command_effects" (
@@ -1041,6 +1041,16 @@ CREATE TABLE "pending_notices" (
 	"message" text NOT NULL,
 	"data" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "press_text_effects" (
+	"command_id" uuid NOT NULL,
+	"document_id" uuid NOT NULL,
+	"authority_generation" bigint NOT NULL,
+	"insertions" jsonb NOT NULL,
+	"deletions" jsonb NOT NULL,
+	"undone_by" uuid,
+	CONSTRAINT "press_text_effects_command_id_document_id_pk" PRIMARY KEY("command_id","document_id")
 );
 --> statement-breakpoint
 ALTER TABLE "agent_definition_revisions" ADD CONSTRAINT "agent_definition_revisions_package_revision_id_agent_package_revisions_id_fk" FOREIGN KEY ("package_revision_id") REFERENCES "public"."agent_package_revisions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -1175,6 +1185,8 @@ ALTER TABLE "draft_write_journal" ADD CONSTRAINT "draft_write_journal_thread_id_
 ALTER TABLE "draft_write_journal" ADD CONSTRAINT "draft_write_journal_turn_id_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."turns"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "draft_write_journal" ADD CONSTRAINT "draft_write_journal_actor_user_id_users_id_fk" FOREIGN KEY ("actor_user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pending_notices" ADD CONSTRAINT "pending_notices_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_text_effects" ADD CONSTRAINT "press_text_effects_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "press_text_effects" ADD CONSTRAINT "press_text_effects_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_definition_revisions_package_slug_grammar" ON "agent_definition_revisions" USING btree ("package_revision_id","slug","grammar_version");--> statement-breakpoint
 CREATE UNIQUE INDEX "agent_package_revisions_coordinate_digest" ON "agent_package_revisions" USING btree ("coordinate","content_digest");--> statement-breakpoint
 CREATE INDEX "agent_package_saves_user_folder_seq" ON "agent_package_saves" USING btree ("user_id","folder","seq" DESC NULLS LAST);--> statement-breakpoint

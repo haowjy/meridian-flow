@@ -31,6 +31,8 @@ const DONE_STATUSES: ReadonlySet<string> = new Set([
   "returned",
   "reversed",
   "copied",
+  "pressed",
+  "unpressed",
 ]);
 
 /** `done` when the effect committed or answered with the document as it stands; every other answer is a refusal that changed nothing. */

@@ -58,6 +58,11 @@ export type ModelEditWriteDeps = {
   draftBehindLive(documentId: DocumentId): void;
   /** Suggestion mode (prototype): a drafted write goes into Live as the Work's suggestions. */
   workView?: WorkViews | null;
+  /**
+   * Suggestion mode: the document exists only in this owner's Work (its create is pending there).
+   * Its text is plain: the pending create is its whole pending state.
+   */
+  existsOnlyInWork(documentId: DocumentId, owner: DraftOwner): Promise<boolean>;
 };
 
 export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["write"] {
@@ -134,14 +139,13 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       await deps.enterLiveSeam(documentId);
       await testHook("command.afterLock");
     }
-    const work = draftOwnerKey(owner);
     const turn =
       given.turnId ?? (given.actor?.kind === "agent" ? given.actor.turnId : null) ?? null;
-    return workView.core(work, { chat: given.threadId ?? null, turn, by: "agent" }).write(command, {
-      ...given,
-      linkView: { kind: "live" },
-      documentVersion: "live",
-    });
+    const core =
+      documentId && (await deps.existsOnlyInWork(documentId, owner))
+        ? deps.liveCore
+        : workView.core(draftOwnerKey(owner), { chat: given.threadId ?? null, turn, by: "agent" });
+    return core.write(command, { ...given, linkView: { kind: "live" }, documentVersion: "live" });
   }
 
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {

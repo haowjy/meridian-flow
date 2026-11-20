@@ -21,8 +21,11 @@ import { type EventSink, emitEvent } from "../../observability/index.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 
 const DISCARD_PURGE_BATCH_LIMIT = 100;
-/** A Restore's and an Un-Apply's rows go on the Discard's clock: they only ever name its entry. */
-const PURGED_KINDS = ["discard", "undo_discard", "unapply"] as const;
+/**
+ * A Restore's and an Un-Apply's rows go on the Discard's clock: they only ever name its entry. A
+ * press (suggestion mode) can be undone for as long as its row lives; its records go with it.
+ */
+const PURGED_KINDS = ["discard", "undo_discard", "unapply", "press", "unpress"] as const;
 
 export function createDrizzleDiscardPurge(
   db: Database,
