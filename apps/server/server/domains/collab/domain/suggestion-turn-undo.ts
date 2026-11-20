@@ -9,7 +9,7 @@ import { writeBlocks } from "@meridian/agent-edit/diff";
 import type { ReversalOutcome, TurnReceiptChip } from "@meridian/contracts/protocol";
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts/runtime";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { reject } from "@meridian/suggestions";
+import { pendingTurns, reject } from "@meridian/suggestions";
 import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
@@ -40,29 +40,30 @@ export function createSuggestionTurnUndo(deps: {
 }) {
   const rootOf = (doc: Y.Doc) =>
     yXmlFragmentToProseMirrorRootNode(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), deps.schema);
+  // Every card of a long thread asks after each pause in typing: one read per document state.
+  const pending = new WeakMap<Y.Doc, Set<string>>();
+  const turnsIn = (doc: Y.Doc) => {
+    let turns = pending.get(doc);
+    if (!turns) {
+      turns = pendingTurns(rootOf(doc));
+      pending.set(doc, turns);
+      doc.once("afterTransaction", () => pending.delete(doc));
+    }
+    return turns;
+  };
 
   async function holdsSuggestions(threadId: ThreadId, turn: TurnId): Promise<boolean> {
     const targets = await deps.listTurnDocuments(threadId, turn);
-    for (const documentId of new Set(targets.map((target) => target.documentId))) {
-      const holds = await deps.withLiveDocument(documentId, async ({ doc }) => {
-        let found = false;
-        rootOf(doc).descendants((node) => {
-          if (found) return false;
-          found =
-            (node.attrs.sug as { turn?: string } | null)?.turn === turn ||
-            node.marks.some((mark) => mark.attrs.turn === turn);
-          return !found;
-        });
-        return found;
-      });
-      if (holds) return true;
-    }
+    for (const documentId of new Set(targets.map((target) => target.documentId)))
+      if (await deps.withLiveDocument(documentId, async ({ doc }) => turnsIn(doc).has(turn)))
+        return true;
     return false;
   }
 
   async function chip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null> {
     const live = await deps.liveTurnChip(threadId, turnId);
-    if (live?.control === "undo" || !(await holdsSuggestions(threadId, turnId))) return live;
+    if (live?.control === "undo" || live?.undone) return live;
+    if (!(await holdsSuggestions(threadId, turnId))) return live;
     return { drafts: live?.drafts, control: "undo" };
   }
 

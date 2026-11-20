@@ -3,6 +3,22 @@ import type { EditorState, Transaction } from "prosemirror-state";
 import { RAW_META } from "./rewrite.js";
 import { blockKind, kindOf, type SuggestionAttrs, type View } from "./view.js";
 
+/** The turns with suggestions still in `doc`: where a reject of `{ turn }` would change it. */
+export function pendingTurns(doc: Node): Set<string> {
+  const turns = new Set<string>();
+  const note = (attrs: SuggestionAttrs | null) => {
+    if (attrs?.turn) turns.add(attrs.turn);
+  };
+  doc.forEach((block) => {
+    note(block.attrs.sug);
+    if (block.isTextblock)
+      block.forEach((child) => {
+        for (const mark of child.marks) if (isSuggestion(mark)) note(mark.attrs as SuggestionAttrs);
+      });
+  });
+  return turns;
+}
+
 /** Which suggestions an accept or reject takes: one change, a Work's turn, or a whole Work's. */
 export type Filter = { id: string } | { work: string } | { turn: string };
 

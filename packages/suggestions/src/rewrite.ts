@@ -87,6 +87,15 @@ export function rewrite(
 
 type At = (pos: number, assoc?: number) => number;
 
+/**
+ * Maps a position read from `out.doc` now through the steps added after this call: `out.mapping`
+ * also holds the steps before it, which the position has already passed.
+ */
+function since(out: Transaction): At {
+  const start = out.mapping.maps.length;
+  return (pos, assoc = 1) => out.mapping.slice(start).map(pos, assoc);
+}
+
 /** Whether a Live-view step must be rewritten: it removes hidden text or carries a suggestion. */
 function touchesSuggestions(step: Step, doc: Node, view: View): boolean {
   if (step instanceof AddMarkStep || step instanceof RemoveMarkStep) {
@@ -266,6 +275,7 @@ function replaceLive(
     return null;
   }
   // Delete only what is shown; hidden suggestions stay where they are.
+  const map = since(out);
   const startBlock = topBlock(doc, from);
   const endBlock = topBlock(doc, to);
   const removed: Array<[number, number]> = [];
@@ -273,25 +283,25 @@ function replaceLive(
     if (piece.kind !== "hidden") removed.push([piece.from, piece.to]);
   for (const { node, pos } of wholeBlocks(doc, from, to))
     if (blockKind(node, view) !== "hidden") removed.push([pos, pos + node.nodeSize]);
-  for (const [a, b] of removed.sort((x, y) => y[0] - x[0]))
-    out.delete(out.mapping.map(a, 1), out.mapping.map(b, -1));
+  for (const [a, b] of removed.sort((x, y) => y[0] - x[0])) out.delete(map(a, 1), map(b, -1));
   // A join across hidden blocks moves the last block's text to the end of the first; the hidden
   // blocks stay between, where they were.
   if (startBlock && endBlock && startBlock.pos !== endBlock.pos) {
-    const endAt = out.mapping.map(endBlock.pos, 1);
+    const endAt = map(endBlock.pos, 1);
     const end = out.doc.nodeAt(endAt);
-    const target = out.mapping.map(startBlock.pos + startBlock.node.nodeSize - 1, -1);
+    const target = map(startBlock.pos + startBlock.node.nodeSize - 1, -1);
     if (end?.isTextblock) {
       out.delete(endAt, endAt + end.nodeSize);
       out.insert(target, end.content);
     }
   }
-  const insertAt = out.mapping.map(from, -1);
+  const insertAt = map(from, -1);
   if (slice.size > 0) {
+    const inserted = since(out);
     out.replace(insertAt, insertAt, slice);
-    return out.mapping.map(insertAt, 1);
+    return inserted(insertAt, 1);
   }
-  return forward && removed.length === 0 ? out.mapping.map(to, 1) : insertAt;
+  return forward && removed.length === 0 ? map(to, 1) : insertAt;
 }
 
 // ─── A Work's view ──────────────────────────────────────────────────
@@ -343,12 +353,13 @@ function suggestRemoval(
   const inOwn = (pos: number) =>
     own.some((block) => pos >= block.pos && pos < block.pos + block.node.nodeSize);
   const work = pieces(out.doc, from, to, view).filter((piece) => !inOwn(piece.from));
+  const map = since(out);
   for (const piece of work.reverse()) {
     if (piece.kind === "live") out.addMark(piece.from, piece.to, del);
     else if (piece.kind === "own-ins") retract(out, piece.from, piece.to, del, attrs);
   }
   for (const block of own.reverse()) {
-    const a = out.mapping.map(block.pos, 1);
+    const a = map(block.pos, 1);
     out.delete(a, a + block.node.nodeSize);
   }
 }
@@ -455,6 +466,7 @@ function replaceInWork(
     joining && !keepEnd
       ? visibleContent(endBlock.node, to - endBlock.pos - 1, endBlock.node.content.size, view)
       : Fragment.empty;
+  const map = since(out);
   suggestRemoval(
     out,
     from,
@@ -464,12 +476,12 @@ function replaceInWork(
   );
   if (joining && endOwn) {
     // An own block goes whole; its text is already copied as the tail.
-    const a = out.mapping.map(endBlock.pos, 1);
+    const a = map(endBlock.pos, 1);
     const own = out.doc.nodeAt(a);
     if (own?.attrs.sug) out.delete(a, a + own.nodeSize);
   }
-  const blockEnd = out.mapping.map(startBlock.pos + startBlock.node.nodeSize - 1, -1);
-  let insertAt = joining ? blockEnd : pastOwnDeletion(out.doc, out.mapping.map(to, 1), view);
+  const blockEnd = map(startBlock.pos + startBlock.node.nodeSize - 1, -1);
+  let insertAt = joining ? blockEnd : pastOwnDeletion(out.doc, map(to, 1), view);
   const target = topBlockAt(out.doc, insertAt);
   const ownTarget = blockKind(target.node, view) === "own";
   const inline = (content: Fragment) => (ownTarget ? content : marked(schema, content, attrs));
@@ -480,7 +492,7 @@ function replaceInWork(
     if (head.size > 0) out.insert(insertAt, inline(head));
     if (slice.size > 0) return insertAt + parts.head.size;
     if (joining) return insertAt;
-    return forward ? out.mapping.map(to, 1) : out.mapping.map(from, -1);
+    return forward ? map(to, 1) : map(from, -1);
   }
   // A split: the target keeps its text up to the cut; the rest is suggested as new blocks.
   if (parts.head.size > 0) {
@@ -488,6 +500,18 @@ function replaceInWork(
     insertAt += parts.head.size;
   }
   const targetNow = topBlockAt(out.doc, insertAt);
+  if (keepEnd) {
+    // The Live block kept after the cut is the split's second half: the paste's whole blocks go
+    // before it and its last line opens it, all the writer's.
+    const opensAt = map(to, 1);
+    const blocks = parts.middle.map((block) =>
+      block.type.create({ ...block.attrs, id: null, sug: attrs }, block.content, block.marks),
+    );
+    const opening = parts.last?.content ?? Fragment.empty;
+    if (opening.size > 0) out.insert(opensAt, marked(schema, opening, attrs));
+    if (blocks.length > 0) out.insert(targetNow.pos + targetNow.node.nodeSize, blocks);
+    return opensAt + blocks.reduce((size, block) => size + block.nodeSize, 0) + opening.size;
+  }
   const targetEnd = targetNow.pos + targetNow.node.nodeSize - 1;
   const rest = visibleContent(
     targetNow.node,
@@ -495,23 +519,20 @@ function replaceInWork(
     targetNow.node.content.size,
     view,
   ).append(tail);
+  const cut = since(out);
   if (ownTarget) out.delete(insertAt, targetEnd);
   else suggestRemoval(out, insertAt, targetEnd, view, attrs);
-  const after = out.mapping.map(targetNow.pos + targetNow.node.nodeSize, 1);
+  const after = cut(targetNow.pos + targetNow.node.nodeSize, 1);
   const template = parts.last ?? targetNow.node;
-  const lastContent = (parts.last?.content ?? Fragment.empty).append(rest);
   const blocks = [
     ...parts.middle.map((block) =>
       block.type.create({ ...block.attrs, id: null, sug: change }, block.content, block.marks),
     ),
-    template.type.create({ ...template.attrs, id: null, sug: change }, lastContent),
+    template.type.create(
+      { ...template.attrs, id: null, sug: change },
+      (parts.last?.content ?? Fragment.empty).append(rest),
+    ),
   ];
-  // The Live block kept after the cut is the split's second half.
-  if (keepEnd && lastContent.size === 0) {
-    blocks.pop();
-    out.insert(after, blocks);
-    return out.mapping.map(to, 1);
-  }
   out.insert(after, blocks);
   const lastStart =
     after + blocks.slice(0, -1).reduce((size, block) => size + block.nodeSize, 0) + 1;
