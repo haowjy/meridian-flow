@@ -1,5 +1,7 @@
+import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
+import { getTopLevelXmlBlocks } from "../model/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "../model/prosemirror-fragment.js";
 import { readRepairedRoot, type SchemaRepairPath } from "../model/schema-repair.js";
 
@@ -13,65 +15,68 @@ export function readBlocks(fragment: Y.XmlFragment, schema: Schema): PMNode[] {
   return blocks;
 }
 
-/** A document's top-level blocks as nodes, each converted once per change (`heldBlocks`). */
-export interface HeldBlocks {
-  /** Every top-level block, in order. */
-  all(): PMNode[];
-  /** One top-level block; null when the schema cannot build it. */
-  of(element: Y.XmlElement): PMNode | null;
-}
-
 type Held = { nodes: Map<Y.XmlElement, PMNode>; filled: boolean };
 
 const heldByDoc = new WeakMap<Y.Doc, Map<Schema, Held>>();
 
 /**
- * The document's top-level blocks as ProseMirror nodes, kept across transactions: each
- * transaction forgets only the blocks it changed, and a block not held is converted alone.
- * A writer of one paragraph after another (a draft write's segments, their receipts) then
- * converts each paragraph it touched, not the whole document and every deleted item in it.
- * The first read converts the whole fragment, repairing the document as every read of it does,
- * counted under `path`; a block converted alone is read from a copy of it. Inside a transaction, the blocks
- * it has changed so far are converted afresh on every read.
+ * The document's top-level blocks as ProseMirror nodes, kept between transactions: each
+ * transaction forgets the blocks it changed, and the next read converts a block it doesn't hold
+ * alone, from a copy. A writer of one paragraph after another (a draft write's segments, their
+ * receipts) then converts each paragraph it touched, not the whole document and every deleted
+ * item in it. Nodes are stored only while no transaction is open: Yjs records a change to a
+ * block in `transaction.changed` only when the block existed before the transaction, so a block
+ * held from before is the only kind whose changes it sees. Inside a transaction, a block it has
+ * changed, or one not held, is converted on every read. A read repairs the document as
+ * `readRepairedRoot` does, counted under `path`: the first read converts the whole fragment, and
+ * a block whose copy needed repair is read with the whole fragment again.
  */
 export function heldBlocks(doc: Y.Doc, schema: Schema, path: Exclude<SchemaRepairPath, "editor">) {
   const held = heldOf(doc, schema);
   const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  const changedNow = () => {
-    const open = doc._transaction;
-    return open ? changedBlocks(fragment, open) : NONE;
-  };
-  const read = (element: Y.XmlElement, changed: ReadonlySet<Y.XmlElement>) => {
-    if (changed.has(element)) return convertAlone(element, schema, path);
-    let node = held.nodes.get(element);
-    if (!node) {
-      node = convertAlone(element, schema, path) ?? undefined;
-      if (node) held.nodes.set(element, node);
-    }
-    return node ?? null;
-  };
-  const fill = () => {
-    if (held.filled) return;
-    held.filled = true;
+  /** The whole fragment, repaired; stored when no transaction is open. */
+  const readWhole = (): Map<Y.XmlElement, PMNode> => {
     const root = readRepairedRoot(path, fragment, schema);
     // The read deleted what it could not build: the elements left pair with its nodes.
-    const elements = topLevel(fragment);
-    if (elements.length !== root.childCount) return;
-    elements.forEach((element, index) => {
-      held.nodes.set(element, root.child(index));
-    });
+    const elements = getTopLevelXmlBlocks(doc);
+    if (elements.length !== root.childCount)
+      throw new Error(
+        `Projection lost alignment: ${elements.length} elements for ${root.childCount} nodes`,
+      );
+    const nodes = new Map(elements.map((element, index) => [element, root.child(index)]));
+    if (!doc._transaction) {
+      held.nodes = nodes;
+      held.filled = true;
+    }
+    return nodes;
+  };
+  const read = (elements: readonly Y.XmlElement[]): PMNode[] => {
+    const fromWhole = () => {
+      const whole = readWhole();
+      return elements.flatMap((element) => whole.get(element) ?? []);
+    };
+    if (!held.filled) return fromWhole();
+    const open = doc._transaction;
+    const changed = open ? changedBlocks(fragment, open) : NONE;
+    const nodes: PMNode[] = [];
+    for (const element of elements) {
+      let node = changed.has(element) ? undefined : held.nodes.get(element);
+      if (!node) {
+        const alone = convertAlone(element, schema);
+        if (!alone) return fromWhole();
+        node = alone;
+        if (!open) held.nodes.set(element, node);
+      }
+      nodes.push(node);
+    }
+    return nodes;
   };
   return {
-    all() {
-      fill();
-      const changed = changedNow();
-      return topLevel(fragment).flatMap((element) => read(element, changed) ?? []);
-    },
-    of(element) {
-      fill();
-      return read(element, changedNow());
-    },
-  } satisfies HeldBlocks;
+    /** Every top-level block, in order. */
+    all: (): PMNode[] => read(getTopLevelXmlBlocks(doc)),
+    /** One top-level block; null when the read repaired it away. */
+    of: (element: Y.XmlElement): PMNode | null => read([element])[0] ?? null,
+  };
 }
 
 const NONE: ReadonlySet<Y.XmlElement> = new Set();
@@ -113,21 +118,22 @@ function changedBlocks(fragment: Y.XmlFragment, transaction: Y.Transaction): Set
   return blocks;
 }
 
-function topLevel(fragment: Y.XmlFragment): Y.XmlElement[] {
-  return fragment.toArray().filter((value): value is Y.XmlElement => value instanceof Y.XmlElement);
-}
-
-/** One element read from a copy of it: the binding reads a fragment, and the document's would carry every deleted item. */
-function convertAlone(
-  element: Y.XmlElement,
-  schema: Schema,
-  path: Exclude<SchemaRepairPath, "editor">,
-): PMNode | null {
+/**
+ * One element read from a copy of it (the binding reads a fragment, and the document's would
+ * carry every deleted item). Null when the copy needed repair, which only a read of the
+ * document itself may make.
+ */
+function convertAlone(element: Y.XmlElement, schema: Schema): PMNode | null {
   const scratch = new Y.Doc();
   try {
     const fragment = scratch.getXmlFragment("block");
     fragment.insert(0, [element.clone()]);
-    return readRepairedRoot(path, fragment, schema).maybeChild(0);
+    let repaired = false;
+    scratch.on("update", () => {
+      repaired = true;
+    });
+    const node = yXmlFragmentToProseMirrorRootNode(fragment, schema).maybeChild(0);
+    return repaired ? null : node;
   } finally {
     scratch.destroy();
   }
