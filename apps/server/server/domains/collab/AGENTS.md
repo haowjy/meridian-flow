@@ -10,7 +10,8 @@ marks in the Live document, plus its draft's tree records; Apply and Discard is 
   restores the wrong text silently ([probe](../../../../../docs/qa/frontier-survives-compaction.md)).
   A stored checkpoint, and the room once it is stored, drop deleted items' content (ids kept), so no reader may need it: Undo
   reads content (`domain/inverse-text.ts`), and a snapshot reader goes through
-  `planningSnapshot`, which refuses a frontier that saw dropped content.
+  `planningSnapshot`, which refuses a frontier that saw dropped content; a write then plans on
+  the transcript's read (agent-edit `tool/read-view.ts`).
 - Any apply after an `await` rechecks the durable authority, its generation and the
   concurrency fence; a coordinator lock doesn't cover socket writes.
 - Anything that runs on a journal or receipt insert, triggers included, adds to every

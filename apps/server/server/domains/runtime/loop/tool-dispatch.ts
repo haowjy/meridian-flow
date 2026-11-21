@@ -43,6 +43,7 @@ import {
   type FrontierRecordingDeps,
   frontierLookup,
   recordStoredResult,
+  shownLookup,
   shownNamesLookup,
 } from "./frontier-recording.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
@@ -403,6 +404,12 @@ export async function dispatchToolCall(
       frontiers: {
         recording: frontierLookup(deps, () => ctx.credited.ids(), correlation),
         planning: frontierLookup(deps, () => ctx.planningBlockIds, correlation),
+        planningShown: shownLookup(
+          deps,
+          () => ctx.planningBlockIds as TurnBlockId[],
+          () => ctx.allBlocks,
+          correlation,
+        ),
         credited: () => ctx.credited.ids(),
         reply: ctx.replyMutations,
       },

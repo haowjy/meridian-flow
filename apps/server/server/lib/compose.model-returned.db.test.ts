@@ -149,6 +149,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             frontiers: {
               recording: frontierLookup(deps, () => credited.ids(), correlation),
               planning: frontierLookup(deps, () => credited.ids(), correlation),
+              planningShown: async () => [],
               credited: () => credited.ids(),
               reply: mutations,
             },

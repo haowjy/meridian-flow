@@ -122,6 +122,7 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
+export type { ShownBlock } from "./tool/read-view.js";
 export { returnedWriteResult } from "./tool/receipt.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/write-deps.js";

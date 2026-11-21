@@ -15,12 +15,13 @@ import type {
   FrontierLookup,
   ObservationFrontier,
   ReplyMutations,
+  ShownBlock,
 } from "@meridian/agent-edit/integration";
 import type { LinkView, ProjectId } from "@meridian/contracts";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 
-export type { FrontierLookup, ObservationFrontier, ReplyMutations };
+export type { FrontierLookup, ObservationFrontier, ReplyMutations, ShownBlock };
 
 /** One recorded showing; `at` is its global sequence, larger is more recent. */
 export interface ShownLink extends CorrespondenceShownLink {
