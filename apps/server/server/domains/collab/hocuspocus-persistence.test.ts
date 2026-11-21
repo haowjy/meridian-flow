@@ -81,12 +81,11 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
     expect(fixture.journal.captureCheckpoint).toHaveBeenCalledTimes(2);
     expect(fixture.journal.captureCheckpoint).toHaveBeenLastCalledWith(DOCUMENT_ID, {
       authorityId: DOCUMENT_ID,
-      generation: 1n,
     });
     expect(fixture.journal.storeCheckpoint).toHaveBeenLastCalledWith(
       expect.objectContaining({
         documentId: DOCUMENT_ID,
-        authority: { authorityId: DOCUMENT_ID, generation: 1n },
+        authority: { authorityId: DOCUMENT_ID },
         upToSeq: 0,
       }),
     );
@@ -113,7 +112,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
         document: liveDocument,
         update: insertion,
         origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
       }),
     ).resolves.toEqual({ admitted: true });
 
@@ -129,7 +127,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
         document: liveDocument,
         update: deletion,
         origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
       }),
     ).resolves.toEqual({ admitted: true });
 
@@ -138,14 +135,14 @@ describe("createHocuspocusPersistenceService writer frames", () => {
       DOCUMENT_ID,
       insertion,
       expect.anything(),
-      { authorityId: DOCUMENT_ID, generation: 1n },
+      { authorityId: DOCUMENT_ID },
     );
     expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
       2,
       DOCUMENT_ID,
       deletion,
       expect.anything(),
-      { authorityId: DOCUMENT_ID, generation: 1n },
+      { authorityId: DOCUMENT_ID },
     );
   });
 
@@ -165,7 +162,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
         document: wrongDocument,
         update: writerUpdate(),
         origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
       }),
     ).rejects.toThrow("live-document-room-mismatch");
     expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
@@ -198,7 +194,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
         document: liveDocument,
         update,
         origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
       })
       .then((result) => {
         events.push("apply/broadcast/ack");
@@ -237,7 +232,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
           document: liveDocument,
           update: writerUpdate(),
           origin: { type: "user", userId: "user-1" },
-          expectedGeneration: 1n,
         })
         .then(() => {
           appliedOrAcknowledged = true;
@@ -261,14 +255,14 @@ function tombstoneBearingDoc(): Y.Doc {
   return doc;
 }
 
-function docWithText(text: string, generation = 1n): Y.Doc {
-  const doc = boundDoc({ gc: false }, generation);
+function docWithText(text: string): Y.Doc {
+  const doc = boundDoc({ gc: false });
   doc.getText("content").insert(0, text);
   return doc;
 }
 
-function cloneDoc(doc: Y.Doc, generation = 1n): Y.Doc {
-  const clone = boundDoc({ gc: false }, generation);
+function cloneDoc(doc: Y.Doc): Y.Doc {
+  const clone = boundDoc({ gc: false });
   Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
   return clone;
 }
@@ -290,8 +284,8 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
   };
 }
 
-function boundDoc(options?: ConstructorParameters<typeof Y.Doc>[0], generation = 1n): Y.Doc {
+function boundDoc(options?: ConstructorParameters<typeof Y.Doc>[0]): Y.Doc {
   const doc = new Y.Doc(options);
-  bindDocumentAuthority(doc, { authorityId: DOCUMENT_ID, generation });
+  bindDocumentAuthority(doc, { authorityId: DOCUMENT_ID });
   return doc;
 }

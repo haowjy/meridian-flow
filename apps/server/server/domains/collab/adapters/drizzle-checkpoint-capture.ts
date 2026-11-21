@@ -34,7 +34,7 @@ export async function captureDrizzleCheckpoint(
     floor_seq: string | number;
     ceiling_seq: string | number;
   }>(sql`select * from capture_document_checkpoint_range(
-    ${docId}::text, ${authority.authorityId}::uuid, ${authority.generation}::bigint
+    ${docId}::text, ${authority.authorityId}::uuid
   )`);
   if (!reference) return null;
   const selected = {
@@ -44,19 +44,11 @@ export async function captureDrizzleCheckpoint(
   };
   const validateInputs = async () => {
     const [head] = await currentDrizzleDb(db as Database)
-      .select({
-        authorityId: documentYjsHeads.authorityId,
-        generation: documentYjsHeads.authorityGeneration,
-      })
+      .select({ authorityId: documentYjsHeads.authorityId })
       .from(documentYjsHeads)
       .where(eq(documentYjsHeads.documentId, asDocumentId(docId)));
-    if (
-      !head ||
-      head.authorityId !== authority.authorityId ||
-      head.generation !== authority.generation
-    ) {
+    if (head?.authorityId !== authority.authorityId)
       throw new Error("Checkpoint inputs retired during materialization");
-    }
   };
   // The room's latest model read: the chat working on the document now plans on it. Every
   // chat's last read would keep each discarded rewrite a fresh chat wrote, for good.
@@ -65,7 +57,7 @@ export async function captureDrizzleCheckpoint(
       await currentDrizzleDb(db as Database)
         .select({ snapshot: observationFrontiers.snapshot })
         .from(observationFrontiers)
-        .where(eq(observationFrontiers.roomKey, liveRoom(docId, authority.generation)))
+        .where(eq(observationFrontiers.roomKey, liveRoom(docId)))
         .orderBy(desc(observationFrontiers.recordedSeq))
         .limit(1)
     ).map((row) => new Uint8Array(row.snapshot));
@@ -83,7 +75,6 @@ export async function captureDrizzleCheckpoint(
             and(
               eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
               eq(documentYjsCheckpoints.authorityId, authority.authorityId),
-              eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
               lte(documentYjsCheckpoints.upToSeq, selected.floor),
             ),
           )
@@ -98,13 +89,12 @@ export async function captureDrizzleCheckpoint(
         and(
           eq(documentYjsUpdates.documentId, asDocumentId(docId)),
           eq(documentYjsUpdates.authorityId, authority.authorityId),
-          eq(documentYjsUpdates.authorityGeneration, authority.generation),
           gt(documentYjsUpdates.id, replayFloor),
           lte(documentYjsUpdates.id, selected.ceiling),
         ),
       )
       .orderBy(asc(documentYjsUpdates.id));
-    // Check after reading: a restore or removal since the capture invalidates the read.
+    // Check after reading: a removal since the capture invalidates the read.
     // Persistence repeats this check under the mutation lock.
     await validateInputs();
     return materializeCheckpoint(

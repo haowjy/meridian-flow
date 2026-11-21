@@ -12,8 +12,8 @@ handshake carries the prefix), or new, trimmed to what the room lacks. A new fra
 `LiveWriterJournal.appendWriterUpdate` before Hocuspocus applies, broadcasts and acknowledges it,
 in one short transaction: the head row's counter bump and one insert. The head row's lock is the
 whole lock a keystroke takes; it keeps journal order equal to commit order. The head it returns is
-compared with the room's generation before the insert (the insert stamps what the bump returned);
-a room bound to an older generation stores nothing and is retired. Two sockets relaying one new
+compared with the room's authority before the insert (the insert stamps what the bump returned);
+a room bound to another authority stores nothing and is retired. Two sockets relaying one new
 update can both pass the room's judgement and store it twice: Yjs ignores the copy, and the cost
 is a redundant row.
 

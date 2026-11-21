@@ -16,7 +16,6 @@ export type JournalReplayKey = {
 export type AttributionManifestV1 = {
   version: 1;
   authorityId: DocumentAuthorityId;
-  generation: bigint;
   checkpointId: string;
   /** The exact retained prefix represented by checkpointUpdate. */
   floor: JournalReplayKey | null;
@@ -31,7 +30,6 @@ export type AttributionRunV1 = {
 
 export type AttributedJournalRow = JournalReplayKey & {
   authorityId: DocumentAuthorityId;
-  generation: bigint;
   originType: string | null;
   actorUserId: string | null;
   update: Uint8Array;

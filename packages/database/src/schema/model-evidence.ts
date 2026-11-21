@@ -71,7 +71,7 @@ export const threadShownLinks = pgTable(
  * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
  * (`encodeSnapshotV2`); `journal_position` is the host journal high-water mark
  * captured with that cut.
- * `room_key` is `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`; the room
+ * `room_key` is `live:<documentId>`; the room
  * `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map of
  * names shown, `domains/context/tree/names-shown.ts`).
  *

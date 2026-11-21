@@ -139,7 +139,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     for (const row of snapshot.updates) Y.applyUpdate(doc, row.update);
     return {
       doc,
-      room: snapshot.authority ? liveRoom(documentId, snapshot.authority.generation) : null,
+      room: snapshot.authority ? liveRoom(documentId) : null,
     };
   }
   /**

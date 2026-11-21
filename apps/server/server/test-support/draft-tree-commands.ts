@@ -312,7 +312,6 @@ export function draftTreeCommands(
           document,
           update: Y.encodeStateAsUpdate(tab, Y.encodeStateVector(document)),
           origin: { type: "user", userId },
-          expectedGeneration: await sync.currentLiveGeneration(documentId),
         });
       } finally {
         hocuspocus.documents.delete(documentId);

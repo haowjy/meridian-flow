@@ -51,12 +51,12 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
         const cut = await deps.coordinator.withDocument(documentId, (doc) =>
           deps.journal.captureCheckpoint(documentId, documentAuthority(doc)),
         );
-        if (!cut) return Err({ code: "stale_generation", documentId });
+        if (!cut) return Err({ code: "stale_document", documentId });
         const id = await deps.store.createCheckpoint(cut, reason);
-        return id === null ? Err({ code: "stale_generation", documentId }) : Ok(id);
+        return id === null ? Err({ code: "stale_document", documentId }) : Ok(id);
       } catch (cause) {
         if (cause instanceof RetiredDocumentHandleError)
-          return Err({ code: "stale_generation", documentId });
+          return Err({ code: "stale_document", documentId });
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
         throw cause;
       }

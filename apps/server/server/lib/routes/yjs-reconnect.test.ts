@@ -36,7 +36,6 @@ describe("Yjs reconnect writer admission", () => {
         onLoadDocument: async ({ document }) => {
           bindDocumentAuthority(document, {
             authorityId: "test-authority" as never,
-            generation: 1n,
           });
           return Y.encodeStateAsUpdate(liveDocument);
         },
@@ -48,7 +47,6 @@ describe("Yjs reconnect writer admission", () => {
             syncType: type,
             payload,
             userId: "user-1" as never,
-            expectedGeneration: 1n,
           });
           if (result) {
             writerFrames.push({

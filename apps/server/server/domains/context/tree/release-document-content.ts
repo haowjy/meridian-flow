@@ -21,8 +21,9 @@ import {
   threadShownLinks,
   userRecentDocuments,
 } from "@meridian/database/schema";
-import { and, inArray, isNull, like, or } from "drizzle-orm";
+import { and, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { liveRoom } from "../../collab/index.js";
 
 export type Released = { documentIds: DocumentId[]; storageUrls: string[] };
 
@@ -45,7 +46,7 @@ export async function releaseDocumentContent(
   // Observation frontiers have no document foreign key; their room key is the only ownership.
   await tx
     .delete(observationFrontiers)
-    .where(or(...list.map((id) => like(observationFrontiers.roomKey, `live:${id}:%`))));
+    .where(inArray(observationFrontiers.roomKey, list.map(liveRoom)));
   await tx.delete(threadShownLinks).where(inArray(threadShownLinks.documentId, list));
   await tx.delete(threadDocuments).where(inArray(threadDocuments.documentId, list));
   await tx.delete(userRecentDocuments).where(inArray(userRecentDocuments.documentId, list));

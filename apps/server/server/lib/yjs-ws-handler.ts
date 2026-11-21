@@ -89,7 +89,6 @@ type SchemaAdmissionRefusal =
 type YjsAdmissionTarget = {
   kind: "live";
   documentId: DocumentId;
-  liveGeneration: bigint;
 };
 
 /**
@@ -349,7 +348,7 @@ async function classifyYjsConnectionAdmission(input: {
   }
   const admitted = found;
   // The room's explicit touch: a living document missing its authority is seeded empty
-  // before the first generation read, which never creates one.
+  // before the room loads.
   await services.documentSync.ensureDocumentAuthority(documentId);
   const headSchemaVersion = await services.documentSync.headSchemaVersion(documentId);
   if (headSchemaVersion !== null && !serverServesHead(headSchemaVersion, COLLAB_SCHEMA_VERSION)) {
@@ -375,11 +374,7 @@ async function classifyYjsConnectionAdmission(input: {
 
   return {
     kind: "allowed",
-    target: {
-      kind: "live",
-      documentId,
-      liveGeneration: await services.documentSync.currentLiveGeneration(documentId),
-    },
+    target: { kind: "live", documentId },
     fileTarget,
     access: admitted.access,
     accessKeys: accessKeys(admitted.facts, documentId),
@@ -419,20 +414,17 @@ export async function admitWriterSync(input: {
   syncType: number;
   payload: Uint8Array;
   userId: UserId;
-  expectedGeneration?: bigint;
 }): Promise<AdmitLiveWriterUpdateResult | undefined> {
   const room = parseRoomOrDeny(input.documentName);
   const { services, document } = input;
   if (!carriesUpdate(input.syncType, input.payload)) return;
   const origin = writerOrigin(input);
-  if (input.expectedGeneration === undefined) throw permissionDenied("permission-denied");
   try {
     return await services.documentSync.admitLiveWriterUpdate({
       documentId: room.documentId,
       document,
       update: input.payload,
       origin,
-      expectedGeneration: input.expectedGeneration,
     });
   } catch (cause) {
     refuseWriterSync(input, room, cause);
@@ -591,7 +583,6 @@ export function createHocuspocus(
             syncType: type,
             payload,
             userId,
-            expectedGeneration: target.liveGeneration,
           });
         });
       });
@@ -651,14 +642,14 @@ export function createHocuspocus(
       };
       await withRemovalRefusal(services, room, context.userId, closing, async () => {
         try {
-          // The room can finish loading after restore's disconnection. Validate
+          // A retired room can finish loading after its connections were closed. Validate
           // after connection creation too, so the late join is closed and retries.
           await services.documentSync.validateHocuspocusDocument(
             room.documentId,
             connection.document,
           );
         } catch (cause) {
-          refuse({ code: 1013, reason: "retired-durable-authority-generation" }, cause);
+          refuse({ code: 1013, reason: "retired-durable-authority" }, cause);
         }
       });
     },

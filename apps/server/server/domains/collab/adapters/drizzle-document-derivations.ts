@@ -42,7 +42,6 @@ export async function captureDocumentDerivation(
 ): Promise<DocumentDerivationCut | null> {
   const [row] = await tx
     .select({
-      generation: documentYjsHeads.authorityGeneration,
       admissionSequence: documentYjsHeads.nextAdmissionSequence,
       locationVersion: liveLocationVersion,
       inLive: sql<boolean>`${treeNodes.trashRecord} IS NULL AND ${treeNodes.id} IS NOT NULL`,
@@ -67,7 +66,6 @@ export async function captureDocumentDerivation(
     holderUri,
     state,
     watermark: {
-      generation: row.generation,
       admissionSequence: row.admissionSequence,
       locationVersion: row.locationVersion,
       extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
@@ -105,12 +103,7 @@ export async function certifyDocumentDerivation(
     .from(documentYjsHeads)
     .where(eq(documentYjsHeads.documentId, cut.documentId))
     .limit(1);
-  if (
-    !head ||
-    head.authorityGeneration !== w.generation ||
-    head.nextAdmissionSequence !== w.admissionSequence
-  )
-    return false;
+  if (head?.nextAdmissionSequence !== w.admissionSequence) return false;
   // A document no live row places derives at version 0; a replay that moves one waits here.
   const [location] = await tx
     .select({ version: treeNodes.locationVersion })
@@ -126,7 +119,6 @@ export async function certifyDocumentDerivation(
   if (room && room.extractorVersion > w.extractorVersion) return false;
   if (
     room &&
-    room.cutGeneration === w.generation &&
     room.cutAdmissionSeq === w.admissionSequence &&
     room.cutLocationVersion === w.locationVersion &&
     room.extractorVersion === w.extractorVersion
@@ -156,7 +148,6 @@ export async function certifyDocumentDerivation(
     wordCount: outputs.wordCount,
     pendingChanges: outputs.pendingChanges,
     documentHash: outputs.documentHash,
-    cutGeneration: w.generation,
     cutAdmissionSeq: w.admissionSequence,
     cutLocationVersion: w.locationVersion,
     extractorVersion: w.extractorVersion,

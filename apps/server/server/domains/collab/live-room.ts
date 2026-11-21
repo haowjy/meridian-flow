@@ -43,14 +43,12 @@ export type LiveRoomDeps = {
   metaForOrigin(origin: UpdateOrigin): UpdateMeta;
   /** Runs `callback` once the caller's ambient DB transaction commits; with none, now. */
   afterCallerCommit(callback: () => void): void;
-  readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
 };
 
 export type LiveRoom = Pick<
   CollabTransport,
   | "loadHocuspocusDocument"
   | "validateHocuspocusDocument"
-  | "currentLiveGeneration"
   | "admitLiveWriterUpdate"
   | "storeHocuspocusDocument"
 > & {
@@ -89,11 +87,8 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
         while (created.next) {
           const { document, authority } = created.next;
           created.next = undefined;
-          // A retired room's state belongs to an authority generation that has
-          // since been replaced.
-          if (isDocumentHandleRetired(document)) {
-            continue;
-          }
+          // A retired room's state belongs to an authority that has since been replaced.
+          if (isDocumentHandleRetired(document)) continue;
           try {
             const cut = await deps.journal.captureCheckpoint(documentId, authority);
             if (cut) {
@@ -134,28 +129,15 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
 
   async function validate(documentId: DocumentId, document: Y.Doc): Promise<void> {
     try {
-      const authority = documentAuthority(document);
-      const generation = await deps.readAuthorityHeadGeneration?.(documentId);
-      if (
-        isDocumentHandleRetired(document) ||
-        (generation !== undefined && authority.generation !== generation)
-      ) {
-        throw new RetiredDocumentHandleError();
-      }
+      documentAuthority(document);
     } catch (cause) {
-      if (cause instanceof RetiredDocumentHandleError) {
-        retireRoom(documentId, document);
-      }
+      if (cause instanceof RetiredDocumentHandleError) retireRoom(documentId, document);
       throw cause;
     }
   }
 
   return {
     validateHocuspocusDocument: validate,
-
-    async currentLiveGeneration(documentId) {
-      return (await deps.readAuthorityHeadGeneration?.(documentId)) ?? 1n;
-    },
 
     async loadHocuspocusDocument(documentId, document) {
       if (!document) return (await loadDocumentState(deps.journal, documentId)) ?? undefined;
@@ -172,10 +154,6 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
     async admitLiveWriterUpdate(input) {
       const room = input.document;
       const authority = documentAuthority(room);
-      if (authority.generation !== input.expectedGeneration) {
-        queue.recordDropped(input.documentId);
-        throw new Error("stale-durable-authority-generation");
-      }
       if (deps.hocuspocus()?.documents.get(input.documentId) !== room) {
         throw new Error("live-document-room-mismatch");
       }

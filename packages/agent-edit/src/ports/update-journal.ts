@@ -23,7 +23,7 @@ type JournalMutationBase = {
 
 export type JournalMutation = JournalMutationBase;
 
-export type JournalAuthority = { authorityId: string; generation: bigint };
+export type JournalAuthority = { authorityId: string };
 
 export interface JournalBatchAppendEntry {
   /** Authority of the canonical handle used to prepare this update. */

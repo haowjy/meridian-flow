@@ -902,7 +902,6 @@ CREATE TABLE "document_block_rooms" (
 	"word_count" integer NOT NULL,
 	"pending_changes" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"document_hash" "bytea" NOT NULL,
-	"cut_generation" bigint NOT NULL,
 	"cut_admission_seq" bigint NOT NULL,
 	"cut_location_version" bigint NOT NULL,
 	"extractor_version" integer NOT NULL
@@ -920,7 +919,6 @@ CREATE TABLE "document_yjs_checkpoints" (
 	"id" bigserial PRIMARY KEY NOT NULL,
 	"document_id" uuid NOT NULL,
 	"authority_id" uuid NOT NULL,
-	"authority_generation" bigint NOT NULL,
 	"attribution_manifest" jsonb NOT NULL,
 	"state" "bytea" NOT NULL,
 	"state_vector" "bytea" NOT NULL,
@@ -936,7 +934,6 @@ CREATE TABLE "document_yjs_heads" (
 	"project_id" uuid,
 	"user_id" uuid,
 	"authority_id" uuid DEFAULT gen_random_uuid() NOT NULL,
-	"authority_generation" bigint DEFAULT 1 NOT NULL,
 	"next_admission_sequence" bigint DEFAULT 1 NOT NULL,
 	"fragment_name" text DEFAULT 'prosemirror' NOT NULL,
 	"schema_version" integer DEFAULT 3003000 NOT NULL,
@@ -952,7 +949,6 @@ CREATE TABLE "document_yjs_updates" (
 	"id" bigserial PRIMARY KEY NOT NULL,
 	"document_id" uuid NOT NULL,
 	"authority_id" uuid NOT NULL,
-	"authority_generation" bigint NOT NULL,
 	"admission_sequence" bigint NOT NULL,
 	"batch_ordinal" integer DEFAULT 0 NOT NULL,
 	"update_data" "bytea" NOT NULL,
@@ -1222,16 +1218,15 @@ CREATE INDEX "document_block_rooms_pending_changes" ON "document_block_rooms" US
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX "document_yjs_checkpoints_initial" ON "document_yjs_checkpoints" USING btree ("document_id") WHERE "document_yjs_checkpoints"."up_to_seq" = 0;--> statement-breakpoint
 CREATE INDEX "document_yjs_updates_document_id" ON "document_yjs_updates" USING btree ("document_id","id");--> statement-breakpoint
-CREATE UNIQUE INDEX "document_yjs_updates_authority_admission" ON "document_yjs_updates" USING btree ("authority_id","authority_generation","admission_sequence","batch_ordinal");--> statement-breakpoint
+CREATE UNIQUE INDEX "document_yjs_updates_authority_admission" ON "document_yjs_updates" USING btree ("authority_id","admission_sequence","batch_ordinal");--> statement-breakpoint
 CREATE INDEX "pending_notices_thread" ON "pending_notices" USING btree ("thread_id","created_at","id");
 --> statement-breakpoint
--- Capture only generation-qualified checkpoint and journal references. The
+-- Capture only the authority's checkpoint and journal references. The
 -- exception block releases its own mutation lock without rolling back sibling
 -- statements or retaining capture-acquired locks in an ambient transaction.
 CREATE OR REPLACE FUNCTION capture_document_checkpoint_range(
   p_document_id text,
-  p_authority_id uuid,
-  p_generation bigint
+  p_authority_id uuid
 )
 RETURNS TABLE (base_id bigint, floor_seq bigint, ceiling_seq bigint)
 LANGUAGE plpgsql
@@ -1250,24 +1245,20 @@ BEGIN
       SELECT 1 FROM document_yjs_heads h
       WHERE h.document_id = p_document_id::uuid
         AND h.authority_id = p_authority_id
-        AND h.authority_generation = p_generation
     ) INTO v_matches;
     IF v_matches THEN
       SELECT c.id, c.up_to_seq INTO v_base_id, v_floor
       FROM document_yjs_checkpoints c
       WHERE c.document_id = p_document_id::uuid
         AND c.authority_id = p_authority_id
-        AND c.authority_generation = p_generation
       ORDER BY c.up_to_seq DESC, c.id DESC
       LIMIT 1;
       v_floor := coalesce(v_floor, 0);
       -- Admissions allocate IDs under the head row, which a keystroke holds without the mutation
-      -- lock and a command holds with it, so IDs follow commit order. The generation's
-      -- admission index avoids scanning retained rows of retired generations.
+      -- lock and a command holds with it, so IDs follow commit order.
       SELECT u.id INTO v_ceiling FROM document_yjs_updates u
       WHERE u.document_id = p_document_id::uuid
         AND u.authority_id = p_authority_id
-        AND u.authority_generation = p_generation
       ORDER BY u.admission_sequence DESC, u.batch_ordinal DESC
       LIMIT 1;
       v_ceiling := greatest(v_floor, coalesce(v_ceiling, 0));

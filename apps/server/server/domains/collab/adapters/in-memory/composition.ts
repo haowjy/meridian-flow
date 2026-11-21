@@ -121,7 +121,6 @@ export function createInMemoryCollabDomain(
       headSchemaVersion: async () => null,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
-      currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
       // Nothing is removed in memory.
       draftsHolding: async () => [],
       roomRemoval: async () => null,

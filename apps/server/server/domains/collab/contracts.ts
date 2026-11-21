@@ -49,7 +49,7 @@ export type UpdateOrigin =
 export type DocumentSeedOrigin = Extract<UpdateOrigin, { type: "import" | "system" }>;
 
 export type SyncError =
-  | { code: "stale_generation"; documentId: string }
+  | { code: "stale_document"; documentId: string }
   | { code: "not_found"; documentId: string }
   | { code: "checkpoint_not_found"; checkpointId: string }
   | { code: "corrupt_state"; documentId: string; message: string };
@@ -113,9 +113,7 @@ export type CollabTransport = {
     document: Y.Doc;
     update: Uint8Array;
     origin: Extract<UpdateOrigin, { type: "user" | "system" }>;
-    expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
-  currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
   /**
    * The drafts that alone hold the document (its create is pending there): its Live room serves
    * their view of it. Unauthorized, like `roomRemoval`.
