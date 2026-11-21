@@ -24,7 +24,7 @@ export {
 } from "./model/schema-repair.js";
 export {
   dropDraft,
-  type IdRanges,
+  forgetVerdicts,
   type PressRecord,
   pressStored,
   resolveScope,
@@ -33,7 +33,6 @@ export {
   storedPendingTurns,
   suggestionAuthors,
   suggestionVerdicts,
-  undoPressStored,
   writeVerdict,
 } from "./model/stored-suggestions.js";
 export {

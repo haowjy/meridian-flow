@@ -295,10 +295,10 @@ export const applyCommandTrees = pgTable(
 );
 
 /**
- * The text half of a press: what the press's one transaction in this document
- * inserted and deleted, as Yjs id ranges by client (`[clock, len]`), and the authority generation
- * it ran on. The press's Undo is a Yjs undo of these ranges; a restore since (another generation)
- * ends it. Server documents keep deleted items (`gc: false`), which the undo needs.
+ * The text half of a press: what the press's one transaction did to this document, by content
+ * (the blocks it changed, before and after, as ProseMirror JSON) and the verdict keys it wrote
+ * (`suggestion_verdicts`). Its Undo takes each change that still stands back out by content and
+ * forgets those verdicts, so it reads no deleted item: a checkpoint has dropped their content.
  */
 export const pressTextEffects = pgTable(
   "press_text_effects",
@@ -311,9 +311,10 @@ export const pressTextEffects = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
-    insertions: jsonb("insertions").$type<Record<string, [number, number][]>>().notNull(),
-    deletions: jsonb("deletions").$type<Record<string, [number, number][]>>().notNull(),
+    delta: jsonb("delta")
+      .$type<{ before: Record<string, unknown>[]; after: Record<string, unknown>[] }>()
+      .notNull(),
+    verdicts: jsonb("verdicts").$type<string[]>().notNull(),
     /** The Undo that took it back: a press is taken back once. */
     undoneBy: uuid("undone_by").$type<CommandId>(),
   },

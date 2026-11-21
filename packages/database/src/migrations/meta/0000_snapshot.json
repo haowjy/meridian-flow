@@ -9720,20 +9720,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "authority_generation": {
-          "name": "authority_generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "insertions": {
-          "name": "insertions",
+        "delta": {
+          "name": "delta",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
-        "deletions": {
-          "name": "deletions",
+        "verdicts": {
+          "name": "verdicts",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true

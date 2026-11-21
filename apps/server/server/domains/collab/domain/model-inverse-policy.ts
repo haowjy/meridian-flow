@@ -12,6 +12,7 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { FileEditRefusedError } from "../../file-policy/index.js";
 import { partKey as key } from "./inverse-actions.js";
 import type { InverseStep } from "./inverse-stream.js";
+import { deltaExcerpt } from "./inverse-text.js";
 import { textOmission, textPlanRefusal } from "./model-inverse-presentation.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import { createCapturedReversalPlanner, type ModelInverseQuery } from "./model-reversal-planner.js";
@@ -234,6 +235,9 @@ export function createModelInversePolicy(store: TurnInverseStore) {
         // A write whose turn still has suggestions here is pending, not Live.
         const pending = storedPendingTurns(document.live, schema);
         const suggesting = (turnId: string | null | undefined) => !!turnId && pending.has(turnId);
+        const updates = await store.partUpdates(
+          page.flatMap((entry) => entry.parts.map((part) => part.id)),
+        );
         const lines = await Promise.all(
           page.map(async (entry) => {
             const undos = index.actions.filter((action) =>
@@ -243,9 +247,10 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
             // What the writer did with the suggestions each part left: the model reads Apply and
             // Discard apart from an edit of its text.
-            const verdicts = entry.parts.map((part) =>
-              writeVerdict(document.live, part.effect.inserted),
-            );
+            const verdicts = entry.parts.map((part) => {
+              const update = updates.get(part.id);
+              return update ? writeVerdict(document.live, update) : null;
+            });
             const applied = verdicts.filter((verdict) => verdict === "applied").length;
             const state = fullyUndone
               ? undos.some((undo) =>
@@ -275,7 +280,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                   ? "revert"
                   : `revert ${revert} of ${entry.parts.length}`;
             if (entry.id === topEntry?.id && undo?.status === "planned") command = "undo";
-            const excerpt = await store.describePart(document, entry.parts[0]);
+            const excerpt = deltaExcerpt(entry.parts[0].delta);
             const summary =
               excerpt.before && excerpt.after
                 ? `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}`

@@ -111,6 +111,8 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
                   payload: {
                     documentId,
                     clientCount: Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)).size,
+                    // The growth curve of a document's stored history against its text.
+                    ...(await cut.history()),
                   },
                 });
             }

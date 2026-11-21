@@ -7,6 +7,7 @@ type CheckpointPayload = {
   readonly authority: Readonly<CheckpointAuthority>;
   readonly upToSeq: number;
   materializeState(): Promise<Uint8Array>;
+  history(): Promise<{ bytes: number; structs: number; contentBytes: number }>;
   validateInputs(): Promise<void>;
 };
 
@@ -18,6 +19,7 @@ export function mintCheckpointCut(payload: CheckpointPayload): CapturedCheckpoin
     authority: payload.authority,
     upToSeq: payload.upToSeq,
     materializeState: () => payload.materializeState(),
+    history: () => payload.history(),
   }) as CapturedCheckpointCut;
   payloads.set(cut, Object.freeze(payload));
   return cut;

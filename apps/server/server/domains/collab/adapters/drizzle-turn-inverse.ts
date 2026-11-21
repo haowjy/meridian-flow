@@ -7,11 +7,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
-import {
-  captureMutationUpdates,
-  type ItemRanges,
-  textInRanges,
-} from "@meridian/agent-edit/yjs-mutation";
+import { captureMutationUpdates } from "@meridian/agent-edit/yjs-mutation";
 import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
 import { type Database, documentEditParts, documentEdits, drafts } from "@meridian/database";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
@@ -185,7 +181,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           removal,
           createdInTurn: createdDocuments.has(documentId),
           history: partsByDocument.get(documentId) ?? [],
-          excerptView: null,
           destination: {
             kind: "live",
             view: live,
@@ -263,26 +258,13 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       };
     },
     readHistory: (documentId) => history([documentId]),
-    async describePart(document, part) {
-      let excerpt = document.excerptView;
-      if (!excerpt) {
-        excerpt = new Y.Doc({ gc: false });
-        Y.applyUpdate(excerpt, Y.encodeStateAsUpdate(document.live));
-        document.excerptView = excerpt;
-      }
-      const [stored] = await db()
-        .select({ update: documentEditParts.update })
+    async partUpdates(ids) {
+      if (!ids.length) return new Map();
+      const rows = await db()
+        .select({ id: documentEditParts.id, update: documentEditParts.update })
         .from(documentEditParts)
-        .where(eq(documentEditParts.id, part.id));
-      if (!stored) throw new Error(`Edit part ${part.id} is gone`);
-      Y.applyUpdate(excerpt, new Uint8Array(stored.update));
-      const fragment = excerpt.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-      // Only the changed words, with `…` where other text sits between them in a block.
-      const read = (ranges: ItemRanges) => textInRanges(fragment, ranges, { gap: " … " }).text;
-      return {
-        before: read(clockRanges(part.effect.deleted)),
-        after: read(clockRanges(part.effect.inserted)),
-      };
+        .where(inArray(documentEditParts.id, [...ids]));
+      return new Map(rows.map((row) => [row.id, new Uint8Array(row.update)]));
     },
     async commit({ plans, sequence, kind, userId, query }) {
       const attempt = attemptStorage.getStore();
@@ -573,18 +555,6 @@ type InverseCapture = {
   documents: InverseDocument[];
 };
 
-function clockRanges(
-  ranges: readonly { client: number; clock: number; len: number }[],
-): ItemRanges {
-  const clients = new Map<number, { clock: number; len: number }[]>();
-  for (const { client, clock, len } of ranges) {
-    const list = clients.get(client) ?? [];
-    list.push({ clock, len });
-    clients.set(client, list);
-  }
-  return { clients };
-}
-
 /** The attempt a store call runs in: its capture, and the deliveries that wait for its commit. */
 const attemptStorage = new AsyncLocalStorage<
   InverseCapture & { deliveries: (() => Promise<void>)[] }
@@ -592,7 +562,6 @@ const attemptStorage = new AsyncLocalStorage<
 
 function destroyDocuments(documents: readonly InverseDocument[]): void {
   for (const document of documents) {
-    document.excerptView?.destroy();
     document.live.destroy();
   }
 }

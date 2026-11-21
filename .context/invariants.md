@@ -16,7 +16,8 @@ receives and the history keeps.
 or acknowledged, under a per-document lock and admission sequence
 (`apps/server/server/domains/collab/live-room.ts`, `adapters/drizzle-journal.ts`).
 A cold load replays the journal above the last checkpoint, and checkpoints come only
-from the journal. Server documents keep Yjs history (`gc: false`). Mechanism and reasons:
+from the journal. Server documents keep Yjs history (`gc: false`) in memory and in the journal;
+a stored checkpoint drops deleted items' content, keeping their ids. Mechanism and reasons:
 the KB's `wiki/architecture/collaboration/durability-and-honest-outcomes.md`; contracts:
 `apps/server/server/domains/collab/.context/CONTEXT.md`.
 
@@ -26,7 +27,7 @@ deliveries through the production admission path), `hocuspocus-persistence.test.
 Postgres.
 
 **Gaps.** The convergence test uses the in-memory journal, not Postgres. Nothing checks
-`gc: false`. Five write paths (live, draft, model edit, Apply, import) each have their
+`gc: false`, nor that no reader needs a deleted item's content. Five write paths (live, draft, model edit, Apply, import) each have their
 own tests; none spans them. Open: #691 and #680.
 
 Two paths change text on one copy with no edit the others receive:

@@ -208,6 +208,19 @@ rows after the checkpoint it builds on. Retiring live rows into a checkpoint has
 that is built must fold into a checkpoint that is kept, not the background one the next store
 deletes, and cuts captured before it must stop validating.
 
+A checkpoint, a version and the background one alike, stores the document with the content of
+its deleted items dropped (`materializeCheckpoint`, agent-edit's `dropUnseenContent`): each
+item keeps its id, so a late edit anchored on deleted text still integrates, but its text,
+marks and subtree are gone. A rejected rewrite then costs Live's history its item headers
+(about a quarter of its bytes), not its words. Kept are the items some chat's latest frontier on
+the room shows, so a model that read before a deletion still plans on what it read; every other
+reader of deleted content was moved off it: press Undo and card Undo are by content
+(`inverse-text.ts`), the edit list reads receipts, and `planningSnapshot` refuses a frontier
+that saw an item whose content is gone (a fork planning on its parent's row, a race with the
+capture), so that write plans on the current room. The warm room and every in-memory copy stay
+`gc: false`; the journal rows keep every byte. A version stored before this keeps its full
+history and still restores.
+
 A document rebuilt from journal rows is integrable only after every row has applied with no
 pending structs and no pending delete set. State-vector equality, or a pending-struct check
 before applying, is not enough. A room release queues a live checkpoint's immutable binding, and

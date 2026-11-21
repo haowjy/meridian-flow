@@ -46,6 +46,8 @@ export function createSuggestionTurnUndo(deps: {
     operation: (held: HeldLiveDocument) => Promise<T>,
   ): Promise<T>;
   liveTurnChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
+  /** Told of each card Undo that changed something. */
+  turnUndone?(input: { threadId: ThreadId; turnId: TurnId }): Promise<void>;
 }) {
   const holds = (documentId: DocumentId, turn: TurnId) =>
     deps.withLiveDocument(documentId, async ({ doc }) =>
@@ -67,6 +69,13 @@ export function createSuggestionTurnUndo(deps: {
   }
 
   const reverseTurn = async (query: Query): Promise<ReversalOutcome> => {
+    const outcome = await reverse(query);
+    if (outcome.status === "reversed" && query.turnId && query.actor.type === "user")
+      await deps.turnUndone?.({ threadId: query.threadId, turnId: query.turnId });
+    return outcome;
+  };
+
+  const reverse = async (query: Query): Promise<ReversalOutcome> => {
     const turn = query.turnId;
     if (!turn) return { status: "nothing_to_undo", documents: [] };
     const documentIds = await documentsOf(query.threadId, turn);

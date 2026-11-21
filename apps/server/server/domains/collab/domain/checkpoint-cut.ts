@@ -8,4 +8,6 @@ export declare class CapturedCheckpointCut {
   readonly authority: Readonly<CheckpointAuthority>;
   readonly upToSeq: number;
   materializeState(): Promise<Uint8Array>;
+  /** The stored history's shape, once the state is materialized. */
+  history(): Promise<{ bytes: number; structs: number; contentBytes: number }>;
 }

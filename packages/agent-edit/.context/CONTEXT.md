@@ -34,8 +34,8 @@ that transaction's update: read before a capture starts.
 
 ## Reading blocks per change
 
-A whole-fragment read walks every deleted item the document keeps (`gc: false`), so it costs the
-document's history, not its text. Code that reads the document again after each of many small
+A whole-fragment read walks every deleted item the document keeps (`gc: false`; a checkpoint
+drops their content but keeps their ids), so it costs the document's history, not its text. Code that reads the document again after each of many small
 changes (the suggestion model per block, a draft write's receipts per paragraph segment) reads
 through `heldBlocks` (`diff/fragments.ts`): the first read converts the whole fragment, repairs
 and all, and each transaction then forgets only the top-level blocks it changed, which the next

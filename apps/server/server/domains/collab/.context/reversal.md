@@ -112,8 +112,10 @@ and listed by its 1-based immutable part ordinal and reason, without quoting old
 or current text. Undo refuses `cant_undo_changed` only when nothing of a text-only
 edit remains to reverse. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port, and says what became of a
-drafted write's suggestions from the changes the write's items carry and the verdicts their
-resolves recorded (`writeVerdict`, `suggestion_verdicts`): `applied` (or `partly applied`, by
+drafted write's suggestions from the changes the part's stored update bytes carry and the
+verdicts their resolves recorded (`writeVerdict`, `suggestion_verdicts`); its excerpt of each
+edit is read from the part's `delta` (`deltaExcerpt`). Neither reads Live's deleted items, whose
+content a checkpoint drops: `applied` (or `partly applied`, by
 parts) when the writer accepted them, `discarded` when rejected. A change nobody resolved (an edit
 removed it) or one two resolves decided opposite ways has no verdict, and the line reads from the
 text as for any write (`changed`, `pending` or `live`). Model actions

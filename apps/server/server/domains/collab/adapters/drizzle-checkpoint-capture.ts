@@ -1,13 +1,22 @@
 /** Trusted checkpoint minting: a short locked range snapshot, then unlocked journal replay. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentYjsCheckpoints, documentYjsHeads, documentYjsUpdates } from "@meridian/database";
+import {
+  documentYjsCheckpoints,
+  documentYjsHeads,
+  documentYjsUpdates,
+  observationFrontiers,
+} from "@meridian/database";
 import { and, asc, desc, eq, gt, lte, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
+import { liveRoom } from "../domain/observation-rooms.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 import { mintCheckpointCut } from "./checkpoint-capability.js";
-import { materializeCheckpoint } from "./checkpoint-materialization.js";
+import {
+  type MaterializedCheckpoint,
+  materializeCheckpoint,
+} from "./checkpoint-materialization.js";
 
 type JournalDb = Pick<Database, "select" | "execute">;
 const asDocumentId = (id: string) => id as DocumentId;
@@ -47,7 +56,7 @@ export async function captureDrizzleCheckpoint(
       throw new Error("Checkpoint inputs retired during materialization");
     }
   };
-  let state: Promise<Uint8Array> | undefined;
+  let state: Promise<MaterializedCheckpoint> | undefined;
   const materialize = async () => {
     const readDb = currentDrizzleDb(db as Database) as JournalDb;
     // A store since the capture may have deleted the base (a superseded background checkpoint);
@@ -85,9 +94,21 @@ export async function captureDrizzleCheckpoint(
     // Check after reading: a restore or removal since the capture invalidates the read.
     // Persistence repeats this check under the mutation lock.
     await validateInputs();
+    // Each chat's latest read of the room is what its next write plans on.
+    const frontiers = async () =>
+      (
+        await currentDrizzleDb(db as Database)
+          .selectDistinctOn([observationFrontiers.threadId], {
+            snapshot: observationFrontiers.snapshot,
+          })
+          .from(observationFrontiers)
+          .where(eq(observationFrontiers.roomKey, liveRoom(docId, authority.generation)))
+          .orderBy(observationFrontiers.threadId, desc(observationFrontiers.recordedSeq))
+      ).map((row) => new Uint8Array(row.snapshot));
     return materializeCheckpoint(
       base ? new Uint8Array(base.state) : null,
       rows.map((row) => new Uint8Array(row.update)),
+      frontiers,
     );
   };
   return mintCheckpointCut({
@@ -98,9 +119,14 @@ export async function captureDrizzleCheckpoint(
     async materializeState() {
       await validateInputs();
       state ??= materialize();
-      const bytes = await state;
+      const bytes = (await state).state;
       await validateInputs();
       return bytes.slice();
+    },
+    async history() {
+      state ??= materialize();
+      const { state: bytes, structs, contentBytes } = await state;
+      return { bytes: bytes.byteLength, structs, contentBytes };
     },
   });
 }

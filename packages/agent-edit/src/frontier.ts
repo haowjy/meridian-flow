@@ -324,7 +324,12 @@ function below(ranges: readonly Range[], limit: number): Range[] {
   );
 }
 
-/** A planning frontier is usable only in its room and when all its history survives. */
+/**
+ * A planning frontier is usable only in its room and when all its history survives: every item
+ * visible at it is still in `doc` with its content. A stored document's checkpoint drops the
+ * content of deleted items (`dropUnseenContent`), and a view rebuilt from a snapshot that saw one
+ * of them reads the wrong text with no error.
+ */
 export function planningSnapshot(
   doc: Y.Doc,
   room: string,
@@ -332,7 +337,76 @@ export function planningSnapshot(
 ): Y.Snapshot | null {
   if (!frontier || frontier.room !== room) return null;
   const snapshot = decodeSnapshot(frontier.snapshot);
-  return snapshot && containsSnapshot(Y.snapshot(doc), snapshot) ? snapshot : null;
+  if (!snapshot) return null;
+  const current = Y.snapshot(doc);
+  return containsSnapshot(current, snapshot) && contentSurvives(doc, snapshot, current)
+    ? snapshot
+    : null;
+}
+
+/** No item visible at `previous` and deleted by `current` has lost its content in `doc`. */
+function contentSurvives(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot): boolean {
+  for (const [client, deleted] of current.ds.clients) {
+    const seen = previous.sv.get(client) ?? 0;
+    if (seen === 0) continue;
+    const deletedSince = below(
+      subtract(deleteRanges(deleted), deleteRanges(previous.ds.clients.get(client) ?? [])),
+      seen,
+    );
+    const structs = doc.store.clients.get(client) ?? [];
+    for (const [start, end] of deletedSince)
+      for (let index = Y.findIndexSS(structs, start); index < structs.length; index += 1) {
+        const struct = structs[index];
+        if (struct.id.clock >= end) break;
+        if (!(struct instanceof Y.Item) || struct.content instanceof Y.ContentDeleted) return false;
+      }
+  }
+  return true;
+}
+
+/**
+ * Drops the content of every deleted item that none of `frontiers` (encoded snapshots) shows,
+ * keeping its id: an edit anchored on it still integrates, but its text, marks and subtree are
+ * gone. A stored document's checkpoint runs it, so text the writer deleted, a rejected suggestion
+ * included, leaves only item headers in the history every later load reads. Keeping what a
+ * frontier shows lets a model that read before the deletion still plan on what it read
+ * (`planningSnapshot` refuses one that can't).
+ */
+export function dropUnseenContent(doc: Y.Doc, frontiers: readonly Uint8Array[]): void {
+  const shown = frontiers.flatMap((bytes) => {
+    const snapshot = decodeSnapshot(bytes);
+    return snapshot ? [visibleAt(snapshot)] : [];
+  });
+  Y.tryGc(
+    Y.createDeleteSetFromStructStore(doc.store),
+    doc.store,
+    (item) => item.content instanceof Y.ContentDeleted || !shown.some((visible) => visible(item)),
+  );
+}
+
+/** Whether some clock of an item is visible at `snapshot`: born before it and not deleted in it. */
+function visibleAt(snapshot: Y.Snapshot): (item: Y.Item) => boolean {
+  const deleted = new Map<number, Range[]>();
+  return (item) => {
+    const { client, clock } = item.id;
+    const end = Math.min(clock + item.length, snapshot.sv.get(client) ?? 0);
+    if (end <= clock) return false;
+    let ranges = deleted.get(client);
+    if (!ranges) {
+      ranges = deleteRanges(snapshot.ds.clients.get(client) ?? []);
+      deleted.set(client, ranges);
+    }
+    // The last deleted range starting at or before `clock`: the only one that could cover it.
+    let low = 0;
+    let high = ranges.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (ranges[middle][0] <= clock) low = middle + 1;
+      else high = middle;
+    }
+    const range = ranges[low - 1];
+    return !range || range[1] < end;
+  };
 }
 
 /**

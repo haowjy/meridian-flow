@@ -2,18 +2,21 @@
  * The press: Apply or Discard pressed on documents, folders or a whole Work, as one
  * recorded command over both halves, and its one Undo. The tree half is the Apply's
  * (`drizzle-apply-tree.ts`) or the Discard's (`discardTreeRecords`); the text half accepts or
- * rejects the Work's suggestions in each document as one Yjs transaction on Live, whose inserted
- * and deleted id ranges are kept (`press_text_effects`). Undo is `undoApply` or `restoreDiscard`
- * for the tree, and a Yjs undo of those ranges for the text. Pressing again is the Redo.
+ * rejects the Work's suggestions in each document as one Yjs transaction on Live, whose changed
+ * blocks before and after and verdict keys are kept (`press_text_effects`). Undo is `undoApply` or
+ * `restoreDiscard` for the tree, and for the text each change that still stands taken back out by
+ * content (`takeBack`, as the card's Undo does) with its verdicts forgotten. Pressing again is the
+ * Redo.
  *
  * Lock order (`.context/CONTEXT.md`), after the command's claim: the draft's owner and the owners
  * the tree effect changes, the draft, the lists' keys, the documents' keys in id order, then writes.
  */
+import { readBlocks, writeBlocks } from "@meridian/agent-edit/diff";
 import {
-  type PressRecord,
+  forgetVerdicts,
+  fragmentOf,
   pressStored,
   type UpdateJournal,
-  undoPressStored,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, DraftId, ProjectId, UserId } from "@meridian/contracts";
 import type {
@@ -34,7 +37,6 @@ import {
   restoreDiscard,
   undoApply,
 } from "@meridian/project-tree";
-import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, isNull } from "drizzle-orm";
 import * as Y from "yjs";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
@@ -50,6 +52,7 @@ import type { DocumentArrivals } from "../../context/ports/document-arrivals.js"
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Drafts } from "../domain/drafts.js";
+import { inverseSchema, takeBack } from "../domain/inverse-text.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { PressUnsynced, type TreeCut } from "../domain/press.js";
 import { storedDocument } from "../domain/stored-document.js";
@@ -57,8 +60,7 @@ import { createApplyTreeOperations, type TreeItemFacts } from "./drizzle-apply-t
 import { documentsHolding } from "./drizzle-block-text.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
-
-const schema = buildDocumentSchema();
+import type { UsageEvents } from "./usage-events.js";
 
 export type PressCommand = {
   envelope: CommandEnvelope;
@@ -86,6 +88,7 @@ export function createDrizzlePress(
     arrivals?: Pick<DocumentArrivals, "settle">;
     treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
     onCommitted(documentId: DocumentId): Promise<void>;
+    usage?: Pick<UsageEvents, "pressUndone">;
   },
 ): PressStore {
   const treeHalf = createApplyTreeOperations({
@@ -213,7 +216,9 @@ export function createDrizzlePress(
     const doc = storedDocument(snapshot);
     try {
       const before = Y.encodeStateVector(doc);
-      const record = pressStored(doc, schema, verdict === "apply" ? "accept" : "reject", { draft });
+      const record = pressStored(doc, inverseSchema, verdict === "apply" ? "accept" : "reject", {
+        draft,
+      });
       if (!record || !snapshot.authority) return false;
       await deps.live.append(
         documentId as DocumentId,
@@ -226,7 +231,6 @@ export function createDrizzlePress(
         .values({
           commandId: envelope.commandId,
           documentId: documentId as DocumentId,
-          authorityGeneration: snapshot.authority.generation,
           ...record,
         });
       delivered(documentId);
@@ -357,7 +361,7 @@ export function createDrizzlePress(
     const pressId = pressCommandId as PressResult["commandId"];
     const tx = () => currentDrizzleDb(db);
     const [row] = await tx()
-      .select({ outcome: commands.outcome })
+      .select({ outcome: commands.outcome, pressedAt: commands.createdAt })
       .from(commands)
       .where(
         and(
@@ -470,6 +474,12 @@ export function createDrizzlePress(
                   ),
                 );
             }
+            deps.usage?.pressUndone({
+              projectId: envelope.projectId,
+              verdict: pressed.verdict,
+              pressedAt: row.pressedAt,
+              documents: text.length,
+            });
             return answer(text, [...tree]);
           },
           { requireActive: false },
@@ -501,17 +511,25 @@ export function createDrizzlePress(
     return withTreeOwners(db, sources, run);
   }
 
-  /** One document's text back as before the press: a Yjs undo of its ranges, appended. */
+  /**
+   * One document's text back as before the press, appended: each change of the press that still
+   * stands taken out by content, and the verdicts it wrote forgotten. Content survives a version
+   * restore and a checkpoint that dropped the deleted text, so an Undo never needs either.
+   */
   async function undoText(effect: typeof pressTextEffects.$inferSelect): Promise<boolean> {
     const snapshot = await deps.live.read(effect.documentId);
-    // A version restore since replaced the document: the press's ranges no longer describe it.
-    if (!snapshot.authority || snapshot.authority.generation !== effect.authorityGeneration)
-      return false;
+    if (!snapshot.authority) return false;
     const doc = storedDocument(snapshot);
     try {
+      const fragment = fragmentOf(doc);
+      const back = takeBack(readBlocks(fragment, inverseSchema), [effect]);
       const before = Y.encodeStateVector(doc);
-      const record: PressRecord = { insertions: effect.insertions, deletions: effect.deletions };
-      if (!undoPressStored(doc, record)) return false;
+      let forgot = false;
+      doc.transact(() => {
+        if (back.taken.length) writeBlocks(fragment, inverseSchema, back.live);
+        forgot = forgetVerdicts(doc, effect.verdicts);
+      });
+      if (!back.taken.length && !forgot) return false;
       await deps.live.append(
         effect.documentId,
         Y.encodeStateAsUpdate(doc, before),

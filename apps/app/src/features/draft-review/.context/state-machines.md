@@ -28,7 +28,8 @@ stateDiagram-v2
 ```
 
 - **The Undo is the press's `unpress`**, once: the server takes back that press's text effects
-  (`press_text_effects`) and tree records, and a second Undo of the same press takes nothing.
+  (`press_text_effects`, by content: a change typed inside since stays as it is) and tree
+  records, and a second Undo of the same press takes nothing.
 - **A Redo presses the same items again** as a new command, which becomes the one in force.
 - `owner.presses` holds every entry, so an editor session that opens after the press joins it
   (`observeHistories`); the owner ends them when the account closes.
