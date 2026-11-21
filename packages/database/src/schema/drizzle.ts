@@ -9,6 +9,7 @@ export * from "./content";
 export * from "./document-edits";
 export * from "./drafts";
 export * from "./imports";
+export * from "./loro";
 export * from "./mcp";
 export * from "./model-evidence";
 export * from "./recent-documents";

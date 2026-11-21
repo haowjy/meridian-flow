@@ -42,6 +42,11 @@ per command sent as a request, of any kind (documents, Work, project), inserted 
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
 its project and chat, so a resend of a create cannot create twice.
 
+`document_snapshots` and `document_forks` are the Loro storage that replaces the Yjs tables in
+the Loro build; both tables sit beside them, unused, until the cutover. A snapshot row is one doc of
+one room (`room_key`, `doc_key`), so a save writes only the docs that changed; fork rooms' rows have
+no foreign key and are deleted by `room_key` prefix with their `document_forks` row.
+
 A stored object (`documents.storage_url`) requires a MIME type. Text documents
 need neither column; purge clears both. Export chooses the output format rather
 than treating a missing stored MIME type as an imported binary's type.
