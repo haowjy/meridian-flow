@@ -6,12 +6,11 @@
  * blocks', are handed over with `resultStored` once their blocks are stored. Every lookup names the
  * block ids it asks about: the blocks a request carries, never the whole conversation.
  */
-
-import type { ShownBlock } from "@meridian/agent-edit/integration";
 import type {
   FrontierLookup,
   ObservationFrontier,
   ReplyMutations,
+  ShownBlock,
   StoredEvidence,
 } from "../../../shared/model-evidence.js";
 
