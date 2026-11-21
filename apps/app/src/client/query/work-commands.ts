@@ -18,8 +18,9 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { projectLane, unsettledProjectCreation } from "./project-commands";
+import { projectQueryKeys } from "./project-query-keys";
 import { convergeWorkProjection } from "./work-projection-cache";
-import { observeWorksReads, refreshWorksSnapshot } from "./works-projection-acquisition";
+import { observeWorksReads, refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
 export type WorkCommandVariables = {
   create: { workId: ParsedRequestId; name: string; goal?: string };
@@ -252,21 +253,36 @@ export function workCommandOf(record: CommandRecord): WorkCommandRecord | null {
 
 /**
  * The Work kinds, and the binding that tells the driver which Work outcomes each read of this
- * tab's Works included. Every tab runs `onSettled` for each Work record it sees settle:
- * converge what a Work change touches and read the Works again.
+ * tab's Works included. Every tab runs `onSettled` for each Work record it sees settle, and for
+ * each settled record still in the journal as it opens.
  */
 export function workDomain(client: QueryClient): CommandDomain {
+  // A record settled before the tab opened is in every read the tab starts; only the route's
+  // threads and Works, read on the server first, may predate it.
+  const opened = Date.now();
+  const settled = (record: CommandRecord, operation: WorkOperation) => {
+    const { projectId } = record.body as WorkCommandBody;
+    const since = record.settledAt ?? Date.now();
+    void refreshWorksSnapshotSince(client, projectId, since);
+    if (since > opened) {
+      convergeWorkProjection(client, { kind: "entity", projectId, operation });
+      return;
+    }
+    // Any read already out began after the tab opened, so it is joined, not restarted.
+    const threads = client.getQueryState(projectQueryKeys.threads(projectId));
+    if (threads && threads.dataUpdatedAt < since)
+      void client.invalidateQueries(
+        { queryKey: projectQueryKeys.threads(projectId), exact: true },
+        { cancelRefetch: false },
+      );
+  };
   const kinds: Record<string, CommandKind> = {};
   for (const operation of Object.keys(KINDS) as WorkOperation[]) {
     kinds[KINDS[operation]] = {
       version: 1,
       migrate: (body) => body as WorkCommandBody,
       request: ({ body }) => workCommandSpecs[operation].request(body as never),
-      onSettled: (record) => {
-        const { projectId } = record.body as WorkCommandBody;
-        convergeWorkProjection(client, { kind: "entity", projectId, operation });
-        void refreshWorksSnapshot(client, projectId).then(undefined, () => undefined);
-      },
+      onSettled: (record) => settled(record, operation),
     };
   }
   return { kinds, bind: (driver) => observeWorksReads(client, driver) };

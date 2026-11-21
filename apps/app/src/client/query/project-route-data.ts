@@ -76,7 +76,10 @@ export function seedProjectRouteData(
   data: ProjectRouteData,
 ): void {
   if (data.threads !== null) {
-    client.setQueryData(projectQueryKeys.threads(projectId), data.threads);
+    // Dated from when the server's read began, which is what a settled Work command is judged by.
+    client.setQueryData(projectQueryKeys.threads(projectId), data.threads, {
+      updatedAt: data.worksStarted.at,
+    });
   }
   if (data.works !== null) {
     seedWorksSnapshot(client, data.works, data.worksStarted);
