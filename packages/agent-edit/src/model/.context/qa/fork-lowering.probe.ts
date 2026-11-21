@@ -1,8 +1,8 @@
 /**
  * Probe (gate B-G): can one change of a draft that lives in its own fork of Live be applied into
  * Live by a struct-level lowering named by the Yjs ids both documents share, on the real schema?
- * Random scripts build a fork through y-tiptap, suggest in it with `rewrite`, apply one change,
- * forward, withdraw and take the press back, checking state after each. Run it by hand: see
+ * Fixed cases, then random scripts, build a fork through y-tiptap, suggest in it with `rewrite`,
+ * apply one change, forward, withdraw and take the Apply back, checking state after each. Run it by hand: see
  * fork-lowering.md beside this file. It is not shipped code and not part of `pnpm check`.
  */
 import { buildDocumentSchema, withBlockIds } from "@meridian/prosemirror-schema";
@@ -505,9 +505,21 @@ function liveCopy(el: Y.XmlElement): Y.XmlElement {
   const children: Array<Y.XmlElement | Y.XmlText> = [];
   for (const child of el.toArray()) {
     if (child instanceof Y.XmlText) {
-      const delta = (child.toDelta() as Array<{ insert: unknown; attributes?: Attrs }>)
-        .filter((d) => !Object.keys(d.attributes ?? {}).some((k) => k.startsWith("suggest_ins")))
-        .map((d) => ({ insert: d.insert, attributes: plainAttrs(d.attributes ?? {}) }));
+      const delta: Array<{ insert: unknown; attributes: Attrs }> = [];
+      // Text another change's hidden insertion split reads as one run in Live: write it as one.
+      for (const d of child.toDelta() as Array<{ insert: unknown; attributes?: Attrs }>) {
+        if (Object.keys(d.attributes ?? {}).some((k) => k.startsWith("suggest_ins"))) continue;
+        const attributes = plainAttrs(d.attributes ?? {});
+        const last = delta[delta.length - 1];
+        if (
+          last &&
+          typeof last.insert === "string" &&
+          typeof d.insert === "string" &&
+          stable(last.attributes) === stable(attributes)
+        )
+          last.insert += d.insert;
+        else delta.push({ insert: d.insert, attributes });
+      }
       if (delta.length === 0) continue;
       const text = new Y.XmlText();
       text.applyDelta(delta);
@@ -1763,8 +1775,8 @@ const counts = {
   presses: 0,
   undos: 0,
   undosAfterConcurrent: 0,
-  /** Undos after a peer deleted some of what the Apply deleted: Yjs restores it anyway. */
-  undoRestoresPeerDeleted: 0,
+  /** Undos after a peer's edit reached what the Apply deleted: Yjs settles them as for two Live clients. */
+  undoAfterPeerReachedApplied: 0,
   noChange: 0,
   twoDraft: 0,
   /** Units of the other draft's suggestions Live took away: on Live text the Apply deleted... */
@@ -1833,6 +1845,31 @@ function suggestIn(live: Y.Doc, fork: Y.Doc, draft: string, edits: number, forks
         }
       }
   }
+}
+
+/** Whether an update deletes, or writes inside, any of the `removed` units of `doc`. */
+function reachesRemoved(doc: Y.Doc, update: Uint8Array, removed: Set<string>): boolean {
+  const within = (id: Y.ID) => {
+    let item: Y.Item | null = Y.getItem(doc.store, id);
+    let first = true;
+    while (item) {
+      if (
+        (first || item.content instanceof Y.ContentType) &&
+        removed.has(key(item.id.client, item.id.clock))
+      )
+        return true;
+      first = false;
+      item = (item.parent as Y.AbstractType<any>)._item;
+    }
+    return false;
+  };
+  const { structs, ds } = Y.decodeUpdate(update);
+  for (const st of structs) if (st instanceof Y.Item && within(st.id)) return true;
+  for (const [client, runs] of ds.clients)
+    for (const r of runs)
+      for (let clock = r.clock; clock < r.clock + r.len; clock++)
+        if (within(Y.createID(client, clock))) return true;
+  return false;
 }
 
 /**
@@ -2001,16 +2038,12 @@ function applyRound(
     const forkNow = pmOf(fork);
     const liveWant = pmOf(expectLive);
     const forkWant = pmOf(expectFork);
-    // A Yjs Undo restores what the Apply deleted even where the peer deleted it too, in one
-    // document as here: then only the fork's agreement with Live is checked below.
-    const peerDeleted = peerEdit ? Y.decodeUpdate(peerEdit).ds.clients : new Map();
-    const overlap = [...pressed.liveRemoved].some((k) => {
-      const [client, clock] = k.split(":").map(Number) as [number, number];
-      return (peerDeleted.get(client) ?? []).some(
-        (r: { clock: number; len: number }) => r.clock <= clock && clock < r.clock + r.len,
-      );
-    });
-    if (overlap) counts.undoRestoresPeerDeleted++;
+    // Where the peer's edit reached what the Apply deleted (deleted it too, or wrote inside a
+    // block it removed), Yjs settles the two as it would for two Live clients in one document,
+    // and "before, plus the peer's edit" is not what Live holds: only the fork's agreement with
+    // Live is checked then.
+    const overlap = !!peerEdit && reachesRemoved(live, peerEdit, pressed.liveRemoved);
+    if (overlap) counts.undoAfterPeerReachedApplied++;
     check(
       "Undo: the fork's Live view == Live",
       json(viewDoc(forkNow, liveView)) === json(liveNow),
