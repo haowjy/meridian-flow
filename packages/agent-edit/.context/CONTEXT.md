@@ -83,6 +83,30 @@ inside a text run copies the text after it into a new run, so those characters c
 author and a peer's edit aimed at them can be lost. `main` rebuilt the whole paragraph
 there; this is a rare case left as it is.
 
+## Planning on what the model read
+
+A write plans on the document as the model last read it, so a word the writer deleted after
+that read stays deleted. That read has two sources:
+
+- **The Yjs frontier** (`planningSnapshot`), the main one: the room copy at the frontier
+  recorded with the read, plus the reply's own writes. It gives the whole document as read,
+  including blocks the model saw only partly (an outline heading, a grep passage, an echo's
+  opening words), so a writer's later edit anywhere in them survives.
+- **The transcript** (`tool/read-view.ts`), only when a checkpoint has dropped content the
+  frontier saw, so the frontier can't be rebuilt. Each block a stored result showed in full
+  (`{hash, body}`, latest showing wins) is the base; the model's command applied to that base is
+  ours; the room now is theirs; the three-way content merge writes the result as a
+  whole-document replace. A shown hash counts only when it matches exactly one block visible at
+  the frontier, so a block made since the read can't take a shown body by prefix. It covers a
+  `replace` with content and no `find`; `insert` and `remove` can't bring deleted text back, and
+  `find` matches the room as it is now.
+
+The transcript isn't the main source, because a block it showed only partly has no base but
+current Live: the model's text for it lands as a plain rewrite, and the writer's later edits
+there are overwritten. That is also what the fallback still loses: a block with no full showing
+whose writer edit came after the read. The concurrent listing can't name who made an edit since
+a collected read either (it needs the read's document), so it says `unknown`.
+
 ## What an Undo reads
 
 No Yjs item is followed to undo an edit. Each AI write records its `delta` (the blocks it changed,

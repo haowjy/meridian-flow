@@ -12,6 +12,7 @@ import {
 } from "./model/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./model/prosemirror-fragment.js";
 import { withdrawRejected } from "./model/stored-suggestions.js";
+import type { ShownBlock } from "./tool/read-view.js";
 
 export interface ObservationFrontier {
   /** The host's opaque label for the room the document belongs to; carried, never read. */
@@ -38,6 +39,11 @@ export interface FrontierLookups {
   recording: FrontierLookup;
   /** Required for a model reply's write; a read plans nothing. */
   planning?: FrontierLookup;
+  /**
+   * The blocks the planning frontier's results showed in full in `room`, oldest first: what a
+   * write plans on when the frontier saw content a checkpoint has dropped (`readMergedContent`).
+   */
+  planningShown?: (room: string) => Promise<readonly ShownBlock[]>;
   reply?: ReplyMutations;
 }
 
@@ -325,23 +331,32 @@ function below(ranges: readonly Range[], limit: number): Range[] {
 }
 
 /**
- * A planning frontier is usable only in its room and when all its history survives: every item
- * visible at it is still in `doc` with its content. A stored document's checkpoint drops the
- * content of deleted items (`dropUnseenContent`), and a view rebuilt from a snapshot that saw one
- * of them reads the wrong text with no error.
+ * A planning frontier's snapshot when it names this room and `doc` holds every item visible at
+ * it. `collected` when a checkpoint has since dropped the content of one of them
+ * (`dropUnseenContent`): a view rebuilt from that snapshot reads the wrong text with no error,
+ * so the write plans on the text the model read instead (`readMergedContent`).
  */
+export function frontierSnapshot(
+  doc: Y.Doc,
+  room: string,
+  frontier: ObservationFrontier | null,
+): { snapshot: Y.Snapshot; collected: boolean } | null {
+  if (!frontier || frontier.room !== room) return null;
+  const snapshot = decodeSnapshot(frontier.snapshot);
+  if (!snapshot) return null;
+  const current = Y.snapshot(doc);
+  if (!containsSnapshot(current, snapshot)) return null;
+  return { snapshot, collected: !contentSurvives(doc, snapshot, current) };
+}
+
+/** A frontier's snapshot when every item visible at it still has its content in `doc`. */
 export function planningSnapshot(
   doc: Y.Doc,
   room: string,
   frontier: ObservationFrontier | null,
 ): Y.Snapshot | null {
-  if (!frontier || frontier.room !== room) return null;
-  const snapshot = decodeSnapshot(frontier.snapshot);
-  if (!snapshot) return null;
-  const current = Y.snapshot(doc);
-  return containsSnapshot(current, snapshot) && contentSurvives(doc, snapshot, current)
-    ? snapshot
-    : null;
+  const at = frontierSnapshot(doc, room, frontier);
+  return at && !at.collected ? at.snapshot : null;
 }
 
 /** No item visible at `previous` and deleted by `current` has lost its content in `doc`. */

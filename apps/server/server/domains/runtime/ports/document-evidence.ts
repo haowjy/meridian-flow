@@ -6,6 +6,8 @@
  * blocks', are handed over with `resultStored` once their blocks are stored. Every lookup names the
  * block ids it asks about: the blocks a request carries, never the whole conversation.
  */
+
+import type { ShownBlock } from "@meridian/agent-edit/integration";
 import type {
   FrontierLookup,
   ObservationFrontier,
@@ -37,6 +39,8 @@ export type RecordedFrontier = { blockId: string; recordedSeq: number; snapshot:
 export interface FrontierLookups {
   recording: FrontierLookup;
   planning: FrontierLookup;
+  /** What `planning`'s blocks showed of a room in full, oldest first (`shownLookup`). */
+  planningShown(room: string): Promise<readonly ShownBlock[]>;
   credited(): readonly string[];
   reply: ReplyMutations;
 }

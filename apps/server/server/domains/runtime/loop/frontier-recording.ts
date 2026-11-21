@@ -4,8 +4,14 @@
  * hand-over is logged and leaves the block with no frontier, and a failed lookup is logged and
  * answers the empty frontier: what records next is conservative, never missing.
  */
-import type { FrontierLookup } from "@meridian/agent-edit/integration";
+import {
+  type AgentEditResultV1,
+  type FrontierLookup,
+  isAgentEditResultEnvelope,
+  type ShownBlock,
+} from "@meridian/agent-edit/integration";
 import type { ProjectId, TurnBlockId } from "@meridian/contracts";
+import type { Block } from "@meridian/contracts/threads";
 import {
   evidenceFrontiers,
   type ResultEvidence,
@@ -128,4 +134,48 @@ export function frontierLookup(
       return null;
     }
   };
+}
+
+/**
+ * What the blocks among `blockIds` that showed `room` showed in full, oldest first: the text a write
+ * plans on when its frontier's content was collected. Each block's result is read from the run's
+ * own blocks, a tool result's or a reference read's. A failed lookup is logged and answers
+ * nothing shown, so the write plans on the room.
+ */
+export function shownLookup(
+  deps: FrontierRecordingDeps,
+  blockIds: () => readonly TurnBlockId[] | Promise<readonly TurnBlockId[]>,
+  blocks: () => readonly Block[],
+  correlation: { threadId: string; turnId: string },
+): (room: string) => Promise<ShownBlock[]> {
+  return async (room) => {
+    try {
+      const rows = await deps.documentEvidence.frontiersIn(room, await blockIds());
+      const byId = new Map(blocks().map((block) => [block.id as string, block]));
+      return rows.flatMap((row) => shownIn(byId.get(row.blockId)));
+    } catch (error) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "runtime.orchestrator",
+        name: "observation_frontier.lookup_failed",
+        correlation,
+        payload: unknownToEventPayload(error),
+      });
+      return [];
+    }
+  };
+}
+
+function shownIn(block: Block | undefined): ShownBlock[] {
+  const content = block?.content as { result?: unknown; read?: { result?: unknown } } | undefined;
+  const result = [content?.result, content?.read?.result].find(isAgentEditResultEnvelope) as
+    | AgentEditResultV1
+    | undefined;
+  if (!result?.blocks) return [];
+  const view = (result.read?.version ?? result.destination) === "draft" ? "draft" : "live";
+  return result.blocks.flatMap((group) =>
+    group.extent === "full"
+      ? group.items.map((item) => ({ hash: item.hash, body: item.body, view }))
+      : [],
+  );
 }
