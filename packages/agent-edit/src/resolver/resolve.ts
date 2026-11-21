@@ -349,7 +349,8 @@ function planReplace(
     if (!sectionCheck.ok) return sectionCheck;
     return replaceScopeWithCopies(ctx, params, scope.scope, params.blocks);
   }
-  if (params.content.length === 0) {
+  // Parsed content stands for itself: an empty paragraph is a block even though it spells "".
+  if (params.content.length === 0 && !params.parsedContent) {
     return error("invalid_write", "Use `remove` to remove blocks");
   }
   const parsed = parseAt(ctx, params, params.wholeDocument ? null : scope.scope.startIndex);

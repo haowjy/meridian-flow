@@ -148,7 +148,7 @@ type CollabDomainDeps = {
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   /**
-   * Live's text advanced and committed: through a room, a direct write, or a generation replacement.
+   * Live's text advanced and committed: through a room or a direct write.
    * The one notice every consumer of Live's text hangs on; each coalesces it on its own cadence.
    */
   const liveAdvanced = (documentId: DocumentId) => {

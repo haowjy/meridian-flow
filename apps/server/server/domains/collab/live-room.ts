@@ -1,7 +1,7 @@
 /**
  * A Live document's room: loaded from its checkpoint and tail, its writer frames judged in the
- * room and stored with one insert, its checkpoints written from the journal in the background,
- * its generation fenced against a restore. Rooms catch up by reading in the live coordinator
+ * room and stored with one insert, its checkpoints written from the journal in the background.
+ * Rooms catch up by reading in the live coordinator
  * (`adapters/hocuspocus-coordinator.ts`).
  */
 import type { Hocuspocus } from "@hocuspocus/server";
@@ -193,7 +193,7 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
       try {
         await append;
       } catch (cause) {
-        // The head moved on (a restore): this room's state belongs to the old generation.
+        // The head no longer names this room's authority: the room's state is stale.
         if (cause instanceof RetiredDocumentHandleError) retireRoom(input.documentId, room);
         throw cause;
       }
