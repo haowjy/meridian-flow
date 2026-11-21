@@ -36,14 +36,17 @@ function commentKeys(c, out = new Set()) {
   return out;
 }
 
+// Loro gives a span's attributes in an order that can differ between two docs holding the same state.
 const sorted = (v) =>
-  v && typeof v === "object" && !Array.isArray(v)
-    ? Object.fromEntries(
-        Object.keys(v)
-          .sort()
-          .map((k) => [k, sorted(v[k])]),
-      )
-    : v;
+  Array.isArray(v)
+    ? v.map(sorted)
+    : v && typeof v === "object"
+      ? Object.fromEntries(
+          Object.keys(v)
+            .sort()
+            .map((k) => [k, sorted(v[k])]),
+        )
+      : v;
 export const sameValue = (a, b) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
 
 /** A block's content as a plain value: node name, attributes, children, text with its marks; plus the bodies it carries. */
@@ -66,7 +69,7 @@ export function blockValue(doc, c) {
   const bodies = {};
   for (const k of [...commentKeys(c)].sort())
     bodies[k] = sorted(doc.getMap(COMMENTS).get(k) ?? null);
-  return JSON.stringify([contentOf(c), bodies]);
+  return JSON.stringify([sorted(contentOf(c)), bodies]);
 }
 
 /**
