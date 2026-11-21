@@ -6,7 +6,7 @@ import type { EventSink } from "../observability/index.js";
 import type { CollabTransport, UpdateOrigin } from "./contracts.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
-import { createLiveRoom, type LiveRoom } from "./live-room.js";
+import { createLiveRoom } from "./live-room.js";
 import { createWriterQueue } from "./writer-queue.js";
 
 type HocuspocusPersistenceDeps = {
@@ -32,8 +32,7 @@ export type HocuspocusPersistenceService = Pick<
   | "storeHocuspocusDocument"
   | "drainHocuspocusPersistence"
   | "getPersistenceQueueMetrics"
-> &
-  Pick<LiveRoom, "disconnectLiveGeneration">;
+>;
 
 export function createHocuspocusPersistenceService(
   deps: HocuspocusPersistenceDeps,

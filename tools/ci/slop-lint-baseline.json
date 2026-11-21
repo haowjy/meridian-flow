@@ -425,11 +425,6 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts",
-        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
-        "count": 2
-      },
-      {
         "path": "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
         "line": "inherited = new Promise((resolve) => setTimeout(resolve, 20)).then(() =>",
         "count": 1

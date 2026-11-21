@@ -186,23 +186,26 @@ reported and not retried: the next Live commit or the next connection to the roo
 A live document's authority identity and generation bind its loaded Y.Doc,
 room, checkpoint, writer frame, Markdown replacement, and agent journal batch.
 Persistence validates the binding under the document mutation lock (a writer frame, under the
-head row it bumps) and drops stale bytes rather than relabeling them. Restore retires acquired handles and
-rooms; late load or connection completion revalidates the binding. Sequence
-bounds never authorize retired-generation history.
+head row it bumps) and drops stale bytes rather than relabeling them; room load and connection
+revalidate the binding against the head. Nothing moves a document's generation: version restore
+is a forward write (`restoreFromYDoc`, below), because a browser's copy can't tell generations
+apart (neither its room name nor its IndexedDB copy carries one). A copy that predates a new
+generation would merge the old history into it on reconnect, showing the text twice, and would
+upload it to a server that has no record of the old one. Whatever needs a new generation (a
+history rebuild) has to give copies a way to tell first, and a way for their unsent typing to land.
 
 A checkpoint is a host-minted `CapturedCheckpointCut`, not a free state-vector
 and watermark pair and not warm-room bytes. It covers every journal row at or
 below its cut. Materialize outside the persistence lock, then revalidate
 identity and generation under lock. A stale checkpoint returns
 `stale_generation`; it does not manufacture a successful checkpoint ID.
-Live journal rows are deleted only by a purge (a generation replacement keeps the old rows but
-never reads them again):
+Live journal rows are deleted only by a purge:
 the model's report of what changed since its last read attributes each
 change from the rows after its frontier, however old. A background checkpoint
 (`storeCheckpoint`, `background` set) deletes the document's other background
 checkpoints in its own transaction, before it updates the head row every keystroke
-frame waits on. A document holds its seed, its explicit checkpoints, one checkpoint
-per restore and one background checkpoint. A capture whose base a later store
+frame waits on. A document holds its seed, its explicit checkpoints and one background
+checkpoint. A capture whose base a later store
 deleted replays from an older checkpoint and more rows. The manifest reads only the
 rows after the checkpoint it builds on. Retiring live rows into a checkpoint has no code: one
 that is built must fold into a checkpoint that is kept, not the background one the next store

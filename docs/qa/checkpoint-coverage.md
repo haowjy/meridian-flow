@@ -24,14 +24,10 @@ the [checkpoint capture rule][checkpoint-capture].
   captures do not roll back sibling work.
 - Capture a cut, append another row, and materialize. Its ceiling must remain
   fixed; cold load must still replay the later row.
-- Replace the authority generation. Verify old cuts fail materialization and both
-  persistence doors, even if already materialized or waiting for the mutation lock,
-  and new cuts persist. Document deletion must also invalidate old cuts.
+- Delete the document. Verify old cuts fail materialization and both persistence
+  doors, even if already materialized or waiting for the mutation lock.
 - Spread-copy a cut and substitute bytes. Both persistence doors must reject the
   unrecognized capability.
-- Invalidate a background room store through a generation replacement. Observe
-  `checkpoint.failed`, then request another store and confirm fresh capture and
-  persistence. No automatic same-request retry is promised.
 
 Record the revision, exact commands, observed cold-loaded text, persisted
 coverage, failure events, and cleanup. Run `pnpm check` separately; runtime

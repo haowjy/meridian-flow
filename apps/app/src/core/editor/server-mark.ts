@@ -5,8 +5,8 @@
  * that marks nothing.
  *
  * The mark only grows, per client, in one transaction, except when a handshake's state vector does
- * not cover it: the server no longer holds items it counts (a room restored from a checkpoint or
- * reseeded), and that handshake's vector replaces it. A mark too low offers words the server has;
+ * not cover it: the server no longer holds items it counts (a room reseeded empty), and
+ * that handshake's vector replaces it. A mark too low offers words the server has;
  * one too high would lose words, so only the server's own vector and what the server itself
  * showed on the socket (`shown` in `transport/server-has.ts`) are written; never the document's,
  * which can hold a local peer's items no frame carried, and never a frame this client wrote until

@@ -9,7 +9,6 @@
 import type { TransactionOrigin } from "@hocuspocus/server";
 import {
   createAgentEditCodecFactory,
-  fragmentOf,
   isDocumentNotFoundError,
   type MutationActor,
   overwriteWithAssigned,
@@ -546,18 +545,16 @@ export function createMarkdownDocumentEngine(
       // Restore the snapshot's nodes as projected: a Markdown round trip would
       // drop every attribute the codec does not spell.
       const blocks = projectBlocks(documentId, snapshot, (blocks) => blocks);
-      // Restore runs under the document's lock against what it holds now: a
-      // whole replacement, not a bound write.
+      const links = await spelling(documentId, [snapshot]);
+      const markdown = serializeForSchema(documentId, snapshot, format.value.schemaType, links);
+      // A forward write onto what the document holds now, aligned so unchanged text keeps its
+      // items: a tab or the AI that wrote against the old text merges into the restored text
+      // like any concurrent edit. Installing the snapshot's bytes instead would leave every
+      // copy made since unable to merge.
       return changeDocument(
         { documentId, origin },
-        (draft, yjsOrigin) => {
-          draft.transact(() => {
-            const fragment = fragmentOf(draft);
-            if (fragment.length > 0) fragment.delete(0, fragment.length);
-            deps.model.insertBlocks(toDocHandle(draft), null, { blocks });
-          }, yjsOrigin);
-          return Ok(undefined);
-        },
+        (draft, yjsOrigin) =>
+          overwriteDraft(documentId, draft, { fresh: false, blocks, markdown }, yjsOrigin),
         format.value,
       );
     },

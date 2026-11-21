@@ -1,78 +1,18 @@
-/** Tests for Hocuspocus room persistence: generation guards, writer frames and deferred live checkpoints.
+/** Tests for Hocuspocus room persistence: writer frames and deferred live checkpoints.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - Checkpoint coalescing (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#journal-first-then-live)
  */
 
-import { Hocuspocus } from "@hocuspocus/server";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
-import {
-  bindDocumentAuthority,
-  documentAuthority,
-  RetiredDocumentHandleError,
-} from "./domain/document-handle.js";
+import { bindDocumentAuthority } from "./domain/document-handle.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
-
-describe("createHocuspocusPersistenceService room loading", () => {
-  it("refuses a room whose load hooks finish after a restore and opens the current generation", async () => {
-    let generation = 1n;
-    let finishLoad!: () => void;
-    let reachedAfterLoad!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      finishLoad = resolve;
-    });
-    const ready = new Promise<void>((resolve) => {
-      reachedAfterLoad = resolve;
-    });
-    const journal = fakeJournal();
-    journal.read = async () => ({
-      authority: { authorityId: DOCUMENT_ID, generation },
-      checkpoint: Y.encodeStateAsUpdate(new Y.Doc()),
-      updates: [],
-    });
-    const hp = new Hocuspocus({
-      async onLoadDocument({ document }) {
-        const state = await persistence.loadHocuspocusDocument(DOCUMENT_ID, document);
-        if (state) Y.applyUpdate(document, state);
-      },
-      async afterLoadDocument({ document }) {
-        if (documentAuthority(document).generation === 1n) {
-          reachedAfterLoad();
-          await gate;
-        }
-        await persistence.validateHocuspocusDocument(DOCUMENT_ID, document);
-      },
-    });
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => hp,
-      readAuthorityHeadGeneration: async () => generation,
-      metaForOrigin: () => ({ origin: "system", seq: 0 }),
-    });
-    const loading = hp.openDirectConnection(DOCUMENT_ID, {}).catch((cause: unknown) => cause);
-    await ready;
-    expect(hp.documents.has(DOCUMENT_ID)).toBe(false);
-    expect(hp.loadingDocuments.has(DOCUMENT_ID)).toBe(true);
-    generation = 2n;
-    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    finishLoad();
-    expect(await loading).toBeInstanceOf(RetiredDocumentHandleError);
-    expect(hp.documents.has(DOCUMENT_ID)).toBe(false);
-    const current = await hp.openDirectConnection(DOCUMENT_ID, {});
-    if (!current.document) throw new Error("Current room did not load");
-    expect(documentAuthority(current.document).generation).toBe(2n);
-    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    expect(hp.documents.get(DOCUMENT_ID)).toBe(current.document);
-    expect(documentAuthority(current.document).generation).toBe(2n);
-    await current.disconnect();
-  });
-});
 
 describe("createHocuspocusPersistenceService live checkpoints", () => {
   function liveCheckpointFixture(
@@ -207,69 +147,6 @@ describe("createHocuspocusPersistenceService writer frames", () => {
       expect.anything(),
       { authorityId: DOCUMENT_ID, generation: 1n },
     );
-  });
-
-  it("disconnects the retired live generation and rejects its replayed bytes", async () => {
-    const checkpoint = docWithText("checkpoint", 2n);
-    const retired = cloneDoc(checkpoint);
-    const retiredVector = Y.encodeStateVector(retired);
-    retired.getText("content").insert(retired.getText("content").length, " retired");
-    const retiredUpdate = Y.encodeStateAsUpdate(retired, retiredVector);
-    const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
-    const closeConnections = vi.fn();
-    const journal = fakeJournal();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents, closeConnections }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-    });
-
-    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    expect(closeConnections).toHaveBeenCalledWith(DOCUMENT_ID);
-    expect(documents.has(DOCUMENT_ID)).toBe(false);
-
-    documents.set(DOCUMENT_ID, checkpoint);
-    await expect(
-      persistence.admitLiveWriterUpdate({
-        documentId: DOCUMENT_ID,
-        document: checkpoint,
-        update: retiredUpdate,
-        origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
-      }),
-    ).rejects.toThrow("stale-durable-authority-generation");
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-  });
-
-  it("rejects a retained-identity delete-only replay without journaling or applying", async () => {
-    const retired = docWithText("retained");
-    const staleClient = cloneDoc(retired);
-    const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
-    const journal = fakeJournal();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-    });
-    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    const current = cloneDoc(retired, 2n);
-    documents.set(DOCUMENT_ID, current);
-    const beforeDelete = Y.encodeStateVector(staleClient);
-    staleClient.getText("content").delete(0, staleClient.getText("content").length);
-    const deleteOnly = Y.encodeStateAsUpdate(staleClient, beforeDelete);
-    expect(Y.decodeUpdate(deleteOnly).structs).toHaveLength(0);
-
-    await expect(
-      persistence.admitLiveWriterUpdate({
-        documentId: DOCUMENT_ID,
-        document: current,
-        update: deleteOnly,
-        origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 2n,
-      }),
-    ).rejects.toThrow("retired-durable-authority-generation");
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-    expect(current.getText("content").toString()).toBe("retained");
   });
 
   it("rejects a caller-supplied document that is not the bound room liveDocument", async () => {

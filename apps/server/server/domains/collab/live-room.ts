@@ -1,7 +1,7 @@
 /**
  * A Live document's room: loaded from its checkpoint and tail, its writer frames judged in the
- * room and stored with one insert, its checkpoints written from the journal in the background,
- * its generation fenced against a restore. Rooms catch up by reading in the live coordinator
+ * room and stored with one insert, its checkpoints written from the journal in the background.
+ * Rooms catch up by reading in the live coordinator
  * (`adapters/hocuspocus-coordinator.ts`).
  */
 import type { Hocuspocus } from "@hocuspocus/server";
@@ -54,15 +54,11 @@ export type LiveRoom = Pick<
   | "admitLiveWriterUpdate"
   | "storeHocuspocusDocument"
 > & {
-  disconnectLiveGeneration(documentId: DocumentId, generation: bigint): Promise<void>;
   drainCheckpoints(): Promise<void>;
 };
 
 export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
   const { queue } = deps;
-  // A reconnected client has current transport authority but can replay cached
-  // pre-restore structs/deletes. Handle fencing cannot identify that byte history.
-  const retiredStateVectors = new Map<string, Uint8Array>();
   const checkpointSlots = new Map<string, CheckpointSlot>();
 
   function emitCheckpointFailure(documentId: string, cause: unknown): void {
@@ -183,11 +179,6 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
       if (deps.hocuspocus()?.documents.get(input.documentId) !== room) {
         throw new Error("live-document-room-mismatch");
       }
-      const retiredStateVector = retiredStateVectors.get(input.documentId);
-      if (retiredStateVector && replaysRetiredGeneration(input.update, room, retiredStateVector)) {
-        queue.recordDropped(input.documentId);
-        throw new Error("retired-durable-authority-generation");
-      }
       const novel = queue.judge({
         room,
         update: input.update,
@@ -205,7 +196,7 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
       try {
         await append;
       } catch (cause) {
-        // The head moved on (a restore): this room's state belongs to the old generation.
+        // The head no longer names this room's authority: the room's state is stale.
         if (cause instanceof RetiredDocumentHandleError) retireRoom(input.documentId, room);
         throw cause;
       }
@@ -227,57 +218,10 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
       deps.afterCallerCommit(() => startCheckpoint(documentId, pending));
     },
 
-    async disconnectLiveGeneration(documentId, generation) {
-      const hocuspocus = deps.hocuspocus();
-      // Hocuspocus serves a room only after all load hooks complete. Its
-      // registered continuation runs before this one retires and evicts it.
-      void hocuspocus?.loadingDocuments?.get(documentId)?.then(
-        (loaded) => {
-          if (
-            isDocumentHandleRetired(loaded) ||
-            documentAuthority(loaded).generation <= generation
-          ) {
-            retireRoom(documentId, loaded);
-          }
-        },
-        () => {},
-      );
-      const document = hocuspocus?.documents.get(documentId);
-      if (!hocuspocus || !document) return;
-      if (!isDocumentHandleRetired(document) && documentAuthority(document).generation > generation)
-        return;
-      retiredStateVectors.set(documentId, Y.encodeStateVector(document));
-      retireRoom(documentId, document);
-    },
-
     async drainCheckpoints() {
       while (checkpointSlots.size > 0) {
         await Promise.allSettled([...checkpointSlots.values()].map((slot) => slot.running));
       }
     },
   };
-}
-
-function replaysRetiredGeneration(
-  update: Uint8Array,
-  current: Y.Doc,
-  retiredStateVector: Uint8Array,
-): boolean {
-  const currentClocks = Y.decodeStateVector(Y.encodeStateVector(current));
-  const retiredClocks = Y.decodeStateVector(retiredStateVector);
-  const decoded = Y.decodeUpdate(update);
-  if (
-    decoded.structs.some((struct) => {
-      const end = struct.id.clock + struct.length;
-      const currentClock = currentClocks.get(struct.id.client) ?? 0;
-      const retiredClock = retiredClocks.get(struct.id.client) ?? 0;
-      return end > currentClock && struct.id.clock < retiredClock;
-    })
-  )
-    return true;
-  for (const [client, ranges] of decoded.ds.clients) {
-    const retainedClock = Math.min(currentClocks.get(client) ?? 0, retiredClocks.get(client) ?? 0);
-    if (ranges.some(({ clock, len }) => clock < retainedClock && clock + len > 0)) return true;
-  }
-  return false;
 }

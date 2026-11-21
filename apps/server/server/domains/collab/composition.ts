@@ -38,7 +38,6 @@ import {
   SILENT_TURN_INVERSE_NOTICES,
   UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
 } from "./adapters/declared-stubs.js";
-import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
 import { createDrizzleBlockText } from "./adapters/drizzle-block-text.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
@@ -150,7 +149,7 @@ type CollabDomainDeps = {
 
 export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   /**
-   * Live's text advanced and committed: through a room, a direct write, or a generation replacement.
+   * Live's text advanced and committed: through a room or a direct write.
    * The one notice every consumer of Live's text hangs on; each coalesces it on its own cadence.
    */
   const liveAdvanced = (documentId: DocumentId) => {
@@ -374,19 +373,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     createDrizzleWorkCreates(deps.db, { documents: runtime.markdownDocuments }),
   );
 
-  const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
-    db: deps.db,
-    coordinator: liveCoordinator,
-    checkpoints: persistence.store,
-    disconnectGeneration: hocuspocusPersistence.disconnectLiveGeneration,
-    onReplaced: liveAdvanced,
-  });
   const checkpoints = createCheckpointService({
     coordinator: liveCoordinator,
     store: persistence.store,
     journal: persistence.journal,
     markdownDocuments: runtime.markdownDocuments,
-    replaceAuthorityGeneration,
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   const usage = createUsageEvents(deps.db, deps.eventSink);

@@ -94,9 +94,9 @@ focused resets no delete order.
 claim, taken by one insert in the admitting transaction, and `tree_nodes` / `draft_tree_nodes`
 reference `(id, list_id)` in it, so a row cannot be written for another list's id. They are the
 project tree's rows, written only by the tree list store (domains/context). Live journal rows are deleted only by a
-purge; a generation replacement keeps the old generation's rows unread. A checkpoint row with `background` set (a room store, or an empty
+purge. A checkpoint row with `background` set (a room store, or an empty
 seed's placeholder) deletes the document's other background rows in its own transaction;
-seeds with content, explicit checkpoints and restore installs survive until document
+seeds with content and explicit checkpoints survive until document
 cascade. Retention reads the column, never `reason`, which is free text. Lazy checkpoint cuts validate their captured authority and
 generation after fetching inputs and again under the persistence lock. Schema versions are packed
 only inside Drizzle adapters and must use the shared packer (no second literal);

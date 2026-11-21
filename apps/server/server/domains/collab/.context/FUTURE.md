@@ -12,9 +12,10 @@ feature's history: each one deletes the one it supersedes (a 10,000-word chapter
 rewritten ten times kept 21 full states, 120 MiB). A version the writer can go back
 to is an explicit checkpoint (`createCheckpoint`, whatever its reason), which no
 retention touches; the journal keeps every row, so any earlier state can also be
-rebuilt from the seed and the rows. Restore from an explicit checkpoint: a
-background one can be deleted between `getCheckpoint` and `replaceGeneration`,
-which then refuses with `checkpoint_incomplete`.
+rebuilt from the seed and the rows. Restore writes the version's Live text onto the
+document as it stands, aligned so unchanged text keeps its items: open tabs, offline
+copies and the AI merge into it like any edit. Each draft's pending suggestions stay, except
+inside a block the version lacks: Live deleting a block takes them with it, as in the editor.
 `seed_live_snapshot` can't reuse a checkpoint yet: nothing resolves one by exact
 position with attribution.
 

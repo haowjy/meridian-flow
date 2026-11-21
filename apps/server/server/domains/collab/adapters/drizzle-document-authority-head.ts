@@ -136,7 +136,7 @@ export async function advanceHead(
 /**
  * A document's current head without materializing a missing one. `notPurged` reads it only when
  * the document may change: under the caller's lock, every door that changes retained history
- * (checkpoints, version replacement) asks for it.
+ * (checkpoints) asks for it.
  */
 export async function findDocumentAuthorityHead(
   db: AuthorityHeadDb,
@@ -208,94 +208,4 @@ function holdsText(documentId: string) {
 export function createDrizzleAuthorityGenerationReader(db: Database) {
   return async (documentId: DocumentId): Promise<bigint> =>
     (await readDocumentAuthorityHead(currentDrizzleDb(db), documentId)).generation;
-}
-
-/**
- * Atomically installs a retained checkpoint as a new fenced durable authority generation.
- * The source checkpoint is copied rather than applied to the current Y.Doc: Yjs apply
- * would merge the checkpoint and current live-document state instead of replacing it.
- */
-export async function replaceGeneration(
-  db: Database,
-  input: { documentId: DocumentId; checkpointId: number; expectedGeneration: bigint },
-): Promise<
-  | { ok: true; generation: bigint; checkpointId: number }
-  | { ok: false; code: "checkpoint_incomplete" | "stale_generation" }
-> {
-  const { documentYjsCheckpoints } = await import("@meridian/database");
-  const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
-
-  return db.transaction(async (tx) => {
-    const txDb = tx as unknown as Database;
-    await lockDocumentMutation(txDb, input.documentId);
-    const head = await readDocumentAuthorityHead(txDb, input.documentId, { notPurged: true });
-    if (head.generation !== input.expectedGeneration) {
-      return { ok: false as const, code: "stale_generation" as const };
-    }
-    const [checkpoint] = await txDb
-      .select()
-      .from(documentYjsCheckpoints)
-      .where(
-        and(
-          eq(documentYjsCheckpoints.id, input.checkpointId),
-          eq(documentYjsCheckpoints.documentId, input.documentId),
-        ),
-      )
-      .limit(1);
-    if (!checkpoint?.attributionManifest || checkpoint.state.length === 0) {
-      return { ok: false as const, code: "checkpoint_incomplete" as const };
-    }
-
-    const generation = head.generation + 1n;
-    const [installed] = await txDb
-      .insert(documentYjsCheckpoints)
-      .values({
-        documentId: input.documentId,
-        authorityId: head.authorityId,
-        authorityGeneration: generation,
-        // The checkpoint carries old-generation birth attribution, but the new
-        // generation has no admitted journal prefix yet. Keeping the old floor
-        // would make its first admission look like a replay gap.
-        attributionManifest: rebaseCheckpointManifest(checkpoint.attributionManifest),
-        state: checkpoint.state,
-        stateVector: checkpoint.stateVector,
-        upToSeq: checkpoint.upToSeq,
-        reason: `authority-replacement:${checkpoint.id}`,
-      })
-      .returning({ id: documentYjsCheckpoints.id });
-    if (!installed) throw new Error("Failed to install the durable authority checkpoint");
-    const [updated] = await txDb
-      .update(documentYjsHeads)
-      .set({
-        authorityGeneration: generation,
-        nextAdmissionSequence: 1n,
-        latestUpdateSeq: checkpoint.upToSeq,
-        latestStateVector: checkpoint.stateVector,
-        latestCheckpointId: installed.id,
-        updatedAt: sql`now()`,
-      })
-      .where(
-        and(
-          eq(documentYjsHeads.documentId, input.documentId),
-          eq(documentYjsHeads.authorityGeneration, input.expectedGeneration),
-        ),
-      )
-      .returning({ generation: documentYjsHeads.authorityGeneration });
-    if (!updated) return { ok: false as const, code: "stale_generation" as const };
-    return { ok: true as const, generation, checkpointId: installed.id };
-  });
-}
-
-function rebaseCheckpointManifest(manifest: unknown): unknown {
-  if (
-    typeof manifest !== "object" ||
-    manifest === null ||
-    !("version" in manifest) ||
-    manifest.version !== 1 ||
-    !("attributions" in manifest) ||
-    !Array.isArray(manifest.attributions)
-  ) {
-    return manifest;
-  }
-  return { ...manifest, floor: null };
 }

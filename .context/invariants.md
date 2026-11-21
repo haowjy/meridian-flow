@@ -30,19 +30,17 @@ Postgres.
 `gc: false`, nor that no reader needs a deleted item's content. Five write paths (live, draft, model edit, Apply, import) each have their
 own tests; none spans them. Open: #691 and #680.
 
-Two paths change text on one copy with no edit the others receive:
+One path changes text on one copy with no edit the others receive:
 
 - **Schema repair while projecting.** `deriveDocument`
   (`apps/server/server/domains/collab/domain/document-derivations.ts`) and `projectBlocks`
   (`packages/agent-edit/src/model/y-prosemirror.ts`) drop an element the schema cannot
   represent from a private copy and append nothing. What the model reads can omit text the
   stored document still holds.
-- **Checkpoint restore.** `apps/server/server/domains/collab/checkpoints.ts` and
-  `adapters/drizzle-document-authority-head.ts` install a checkpoint's state as a new
-  generation and disconnect the old one. Edits made after that checkpoint are gone, not
-  undone by a recorded edit.
 
-Import seeds a new document as its first checkpoint; that is creation, not an edit.
+Checkpoint restore (`apps/server/server/domains/collab/checkpoints.ts`) is an edit every copy
+receives: it writes the version's text onto the document as it stands. Import seeds a new
+document as its first checkpoint; that is creation, not an edit.
 
 ## Writer text stays out of logs and diagnostics
 

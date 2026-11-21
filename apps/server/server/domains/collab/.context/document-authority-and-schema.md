@@ -8,22 +8,20 @@ warm Y.Doc or an operation-specific mutation policy.
 
 - The **document authority head** is the durable `document_yjs_heads` row and
   its fenced journal prefix.
-- A **document mutation policy** admits fresh, certified, replicated, or
-  generation-replacement content against a neutral `MutationTarget`.
 - A **live document** is the mutable Y.Doc held by a loaded Hocuspocus room.
 
 Every loaded handle, room, checkpoint, writer frame, Markdown replacement, and
 agent journal batch carries the authority identity and generation that loaded
 it. Persistence revalidates both under the document mutation lock (a writer frame, under the head row
-its counter bump holds) and drops stale bytes instead of relabeling them. Restore retires warm handles and
-rooms; late load and connection completion revalidate before use.
+its counter bump holds) and drops stale bytes instead of relabeling them. Nothing moves a
+generation today ([why](CONTEXT.md#authority-checkpoints-and-derivation)).
 
 ## Only explicit creation makes a head
 
 `adapters/drizzle-document-authority-head.ts` is the one writer of
-`document_yjs_heads`: `initializeHead`, `allocateAdmission`, `advanceHead`
-(with `checkpointId` when a checkpoint insert moves it), `retireThrough` and
-`replaceGeneration`. Each write that moves a head proves in its own statement that some tree view
+`document_yjs_heads`: `initializeHead`, `insertFreshHeads`, `allocateAdmission` and
+`advanceHead` (with `checkpointId` when a checkpoint insert moves it). Each write that moves a
+head proves in its own statement that some tree view
 shows the document (`livingDocumentSql`, exported by context's `tree/living-document.ts`: a
 live row not in Trash, or a Work's row that is not deleted), so a removal that won the
 document mutation lock refuses it at no extra query; a tree list's head is exempt. The
@@ -72,7 +70,7 @@ is not a document that may change. Head reads say which they mean:
 `findDocumentAuthorityHead` / `readDocumentAuthorityHead` (nullable / required)
 read a retained head for history; with `{ living: true }`, read under the
 mutation lock, they gate every other door that mutates retained history:
-version replacement and an explicit checkpoint refuse with the record; a
+an explicit checkpoint refuses with the record; a
 background checkpoint store does nothing. `advanceHead`, which
 every checkpoint insert passes, is the backstop. A press reads committed
 live through the mutation-locked journal read; no live fingerprint or review revision token
@@ -95,8 +93,9 @@ was shown); a write by a path that no longer resolves stays `document_not_found`
 `domain/markdown-document.ts` is the sole read/write and Y.Doc projection
 engine. It resolves persisted filetype before parse or serialization. Markdown
 uses the document codec; code uses the constrained code representation and
-returns raw text without fences. Checkpoint restore installs projected nodes
-directly rather than serializing and reparsing a snapshot.
+returns raw text without fences. Checkpoint restore writes the snapshot's projected nodes
+onto the document as it stands (the whole-document overwrite below), rather than serializing
+and reparsing it.
 
 All whole-document writes enter as a `BoundWrite`, not an unscoped Markdown
 string. The link binder parses, prepares the holder's link scope, assigns or
