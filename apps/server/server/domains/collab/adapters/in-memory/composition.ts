@@ -286,9 +286,6 @@ function createInMemoryBranchStub(): CollabBranches {
       async items() {
         return { branchId: null, items: [] };
       },
-      async branchOwner() {
-        return null;
-      },
       async resolveItem() {
         return null;
       },

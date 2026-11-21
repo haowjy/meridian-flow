@@ -15,7 +15,6 @@ import {
 } from "react";
 import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { DocumentSession } from "@/core/editor/document-session";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
@@ -23,7 +22,6 @@ import {
   useDraftReviewController,
   useDraftReviewStateOwner,
 } from "./useDraftReviewController";
-import { useReviewRefresh } from "./useReviewRefresh";
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
@@ -33,12 +31,7 @@ export type DraftReviewContextValue = {
   activeEditorDocumentId: string | null;
   /** Returns the host's document to Live: its view, not the review, decides what paints. */
   showLive: () => void;
-  setActiveEditorDocumentId: (
-    documentId: string | null,
-    session?: DocumentSession | null,
-    inReview?: boolean,
-    owner?: object,
-  ) => void;
+  setActiveEditorDocumentId: (documentId: string | null, owner?: object) => void;
 };
 
 const DraftReviewContext = createContext<DraftReviewContextValue | null>(null);
@@ -105,20 +98,13 @@ export function useDraftReviewScopeValue({
   // itself lives in the controller state machine.
   const [activeEditorProjection, setActiveEditorProjection] = useState<{
     documentId: string;
-    session: DocumentSession | null;
-    inReview: boolean;
     owner: object | null;
   } | null>(null);
   const activeEditorDocumentId = activeEditorProjection?.documentId ?? null;
   const setActiveEditorDocumentId = useCallback(
-    (
-      documentId: string | null,
-      session: DocumentSession | null = null,
-      inReview = false,
-      owner: object | null = null,
-    ) => {
+    (documentId: string | null, owner: object | null = null) => {
       setActiveEditorProjection((current) => {
-        if (documentId) return { documentId, session, inReview, owner };
+        if (documentId) return { documentId, owner };
         return owner && current?.owner !== owner ? current : null;
       });
     },
@@ -139,17 +125,6 @@ export function useDraftReviewScopeValue({
   }, [effectiveProjectId, ownerKey, queryClient, controller.exitReview]);
 
   const fileForDocument = drafts.fileForDocument;
-
-  useReviewRefresh({
-    projectId,
-    ownerKey: ownerKey || null,
-    review: controller.inlineReview,
-    liveSession:
-      !activeEditorProjection?.inReview &&
-      activeEditorProjection?.documentId === controller.inlineReview?.documentId
-        ? (activeEditorProjection?.session ?? null)
-        : null,
-  });
 
   const value = useMemo<DraftReviewContextValue>(
     () => ({

@@ -279,7 +279,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     address.itemKey && listRead
       ? (listedDrafts.files?.find((file) => file.draft.itemKey === address.itemKey)?.draft ?? null)
       : undefined;
-  const reviewVersion = useDraftTreeVersion(reviewedItem?.branchId ?? null, listedDrafts.drafts);
+  const reviewVersion = useDraftTreeVersion(reviewedItem?.branchId ?? null);
   const reviewsDelete = reviewedItem?.tree?.deleted === true;
   const reviewTrees = useProjectTrees(reviewVersion && !reviewsDelete ? projectId : "", {
     version: reviewVersion ?? undefined,

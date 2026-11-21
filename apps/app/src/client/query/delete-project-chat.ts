@@ -35,9 +35,8 @@ export async function deleteProjectChat(
 }
 
 /**
- * Brings a chat back from Trash: a delete's Undo, or Restore over a trashed chat's draft. Resolves
- * once every list that names the chat has reread it, its drafts included: a chat with no Work
- * keeps its drafts under its lineage, frozen while it is in Trash.
+ * Brings a chat back from Trash: a delete's Undo, or Trash's Restore. Resolves once every list
+ * that names the chat has reread it.
  */
 export async function restoreProjectChat(
   client: QueryClient,
@@ -51,7 +50,6 @@ export async function restoreProjectChat(
   }
   await Promise.all([
     invalidateProjectThreadData(client, projectId),
-    client.invalidateQueries({ queryKey: projectQueryKeys.ownerDraftsOf(projectId) }),
     // Reset, not invalidate: a kept "deleted" error would read as proof the chat is gone when it
     // next mounts, and drop its unsent words.
     client.resetQueries({ queryKey: threadQueryKeys.snapshot(threadId) }),

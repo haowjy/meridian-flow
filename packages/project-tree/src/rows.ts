@@ -95,6 +95,7 @@ export function pendingCreates(
  * Work. A node exists only in the Work when live has no row for it or the Work's pending records
  * create it and the Work still shows it: Un-Apply puts a create back to pending while live keeps
  * the node in Trash, and an Undo of that create leaves it in Trash in both, which is no change.
+ * A node in Trash in both is no change whatever the Work drafted for it: that waits for a restore.
  */
 export function branchRows(
   live: ReadonlyMap<string, ProjectedRow>,
@@ -107,7 +108,7 @@ export function branchRows(
     const base = live.get(row.id);
     if (!base || (created.has(row.id) && !row.deleted))
       out.set(row.id, { ...row, existsOnlyInDraft: true, changed: true });
-    else if (!same(base, row))
+    else if (!(base.deleted && row.deleted) && !same(base, row))
       out.set(row.id, { ...row, existsOnlyInDraft: false, changed: !sameFacts(base, row) });
   }
   return out;

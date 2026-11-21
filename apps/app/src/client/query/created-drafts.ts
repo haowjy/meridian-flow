@@ -38,17 +38,7 @@ export function useCreatedDrafts(
         : [],
     );
   }, [branchId, listed, project.snapshot, account.snapshot]);
-  // The rows the list will hold once these join it: one version, shared with every reader of them.
-  const version = useMemo(
-    () =>
-      branchId && candidates.length > 0
-        ? draftTreeVersion(branchId, [
-            ...(listed ?? []),
-            ...candidates.map((documentId) => ({ documentId, hasDraft: true })),
-          ])
-        : undefined,
-    [branchId, listed, candidates],
-  );
+  const version = branchId && candidates.length > 0 ? draftTreeVersion(branchId) : undefined;
   const trees = useProjectTrees(projectId, { version });
   return useMemo(() => {
     if (!branchId || !version) return NONE;
@@ -68,7 +58,6 @@ export function useCreatedDrafts(
         wholeItem: true,
         documentName: uri ? documentTitleFromUri(uri) : null,
         contextLocation: location ? { scheme: location.scheme, path: location.path } : null,
-        deletedLive: false,
         tree: null,
         actorThreads: [],
         unattributed: false,

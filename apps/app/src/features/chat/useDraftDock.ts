@@ -6,7 +6,6 @@ import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { useDraftNotice, useNoticeLine } from "@/features/draft-review/CommandNotice";
 import type { DraftImagePreviewTarget } from "@/features/draft-review/DraftImagePreview";
-import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { reviewFileTargetName } from "@/features/draft-review/review-files";
 import {
   listedItemChanges,
@@ -137,11 +136,9 @@ export function useDraftDock({
   const applicable = actionableFiles.filter((file) => hasApply(file.row.draft));
 
   const discardItems = (files: readonly DockFile[]) => {
-    // A frozen owner's draft takes only the whole draft's Discard, which the server ends.
-    const whole = controller.frozen;
     return files.map((file) => ({
       draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
-      target: whole || file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
+      target: file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
     }));
   };
   /** Sends the strip's command. */
@@ -159,7 +156,7 @@ export function useDraftDock({
       // An Apply is one command over every file; a Discard is one notice with one Undo.
       void (mode === "apply" ? runner.applyMany(items) : runner.discardMany(items));
     },
-    [actionableFiles, applicable, runner, controller.frozen],
+    [actionableFiles, applicable, runner],
   );
 
   return {
@@ -179,23 +176,18 @@ export function useDraftDock({
       useSidebarTabs.getState().reveal("changes");
     },
     showCommands: actionableFiles.length > 0,
-    canApply:
-      controller.canApply &&
-      applicable.some(
-        (file) =>
-          (!file.row.draft.hasDraft && file.row.draft.isNew) ||
-          hasTreeLine(file.row.draft) ||
-          isDeletedLive(file.row.draft) ||
-          (file.whole && file.row.draft.textChanges > 0),
-      ),
+    canApply: applicable.some(
+      (file) =>
+        (!file.row.draft.hasDraft && file.row.draft.isNew) ||
+        hasTreeLine(file.row.draft) ||
+        (file.whole && file.row.draft.textChanges > 0),
+    ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
     ownerKey,
     review,
     imagePreview,
     closeImagePreview: () => setImagePreview(null),
-    /** The files Apply would bring back from a delete; more than one file asks first. */
-    deletedToApply: applicable.filter((file) => isDeletedLive(file.row.draft)),
     /** The files Apply would delete; more than one file asks first. */
     deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
     apply: () => send("apply"),

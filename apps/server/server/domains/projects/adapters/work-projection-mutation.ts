@@ -57,8 +57,6 @@ export type WorkWriteOptions = {
   seam?: boolean;
   /** Refuses unless every Work and lineage of the set is active. */
   requireActive?: boolean;
-  /** With `requireActive`: a lineage with no live member still passes, so Discard can clear it. */
-  allowFrozenLineage?: boolean;
 };
 
 export type LockedWorkWriteSet = {
@@ -107,10 +105,10 @@ export type WorkProjectionMutation = {
    */
   lifecycleChanged(work: { id: WorkId; projectId: string }): void;
   /**
-   * A tree commit changed live rows that these branches have rows on, or their rows' parents: once it commits, each
-   * branch's owner gets its `draft-owner-hint`, since its list reads live there (`deletedLive`,
-   * a move's place) and neither its count nor its membership need have moved. No lock, no
-   * revision.
+   * A tree commit changed live rows that these branches have rows on, their rows' parents, or a
+   * document their Work has suggestions in: once it commits, each
+   * branch's owner gets its `draft-owner-hint`, since its list reads live there (a move's
+   * place) and neither its count nor its membership need have moved. No lock, no revision.
    */
   liveChangedUnder(branchIds: readonly string[]): void;
 };
@@ -382,7 +380,7 @@ export function createWorkProjectionMutation(input: {
         }
       }
       for (const root of rootIds) {
-        if (!options.allowFrozenLineage && locked.lineages.get(root) !== "active") {
+        if (locked.lineages.get(root) !== "active") {
           throw new LineageDraftsUnavailableError(root);
         }
       }

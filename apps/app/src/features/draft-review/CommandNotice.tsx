@@ -7,7 +7,6 @@ import { i18n } from "@lingui/core";
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
@@ -20,7 +19,6 @@ import {
   useDraftCommandOwner,
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
-import { schemeLabel } from "@/features/project/context/context-schemes";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import type { AppliedFact, DraftNotice } from "./draft-notices";
@@ -331,47 +329,13 @@ export const noticeAction = (container: HTMLElement) =>
   container.querySelector<HTMLElement>("[data-command-notice] [data-row-word]:not(:disabled)") ??
   container.querySelector<HTMLElement>("[data-command-notice] button:not(:disabled)");
 
-/** A document named in a sentence, with the source it is (or was) in. */
-type InArea = { name: string; scheme: ProjectContextTreeScheme | null | undefined };
-
-/** The names joined per area, in the order each area first appears. */
-function byArea(documents: readonly InArea[]): { area: string | null; names: string }[] {
-  const groups = new Map<string | null, string[]>();
-  for (const { name, scheme } of documents) {
-    const area = schemeLabel(scheme);
-    groups.set(area, [...(groups.get(area) ?? []), name]);
-  }
-  const list = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" });
-  return [...groups].map(([area, names]) => ({
-    area,
-    names: list.format(names),
-  }));
-}
-
-/**
- * The question an Apply all asks first, naming every document it will delete and every one it
- * brings back, with the area it was deleted from.
- */
-export function ApplyAllQuestion({
-  deleting,
-  restoring,
-}: {
-  deleting: readonly string[];
-  restoring: readonly InArea[];
-}) {
+/** The question an Apply all asks first, naming every document it will delete. */
+export function ApplyAllQuestion({ deleting }: { deleting: readonly string[] }) {
   useLingui();
   const deletes = new Intl.ListFormat(i18n.locale || undefined, { type: "conjunction" }).format(
     deleting,
   );
-  const sentences = [
-    ...(deleting.length > 0 ? [t`Applying deletes ${deletes}.`] : []),
-    ...byArea(restoring).map(({ area, names }) =>
-      area
-        ? t`Applying brings back ${names}, deleted from ${area}`
-        : t`Applying brings back ${names}`,
-    ),
-  ];
-  return <>{sentences.join(" ")}</>;
+  return <>{t`Applying deletes ${deletes}.`}</>;
 }
 
 /** "Ch 3 and Outline are now in Manuscript/Arc 3.": one sentence per place, in landing order. */

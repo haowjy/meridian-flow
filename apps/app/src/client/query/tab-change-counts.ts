@@ -57,8 +57,7 @@ export function useTabChangeCounts(): Counts {
 }
 
 /** A row the server lists for its suggestions alone: no tree change or whole item. */
-const suggestionsOnly = (row: ThreadDraftListItem) =>
-  row.hasDraft && !row.wholeItem && !row.tree && !row.deletedLive;
+const suggestionsOnly = (row: ThreadDraftListItem) => row.hasDraft && !row.wholeItem && !row.tree;
 
 /** `owner`'s rows as this tab's open editors hold their documents. */
 export function withTabChangeCounts(

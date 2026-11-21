@@ -7,7 +7,6 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import type { BranchOwnerLifecycle } from "../../../../shared/draft-owner.js";
 import type { WorkWriteOptions } from "../../../projects/index.js";
 
 export type BranchStatus = "active" | "closed";
@@ -25,16 +24,15 @@ export type Branch = {
   createdAt: Date;
 };
 
-/** A branch with its owner's lifecycle as the row reads now; any status. */
+/** A branch with its owner; any status. */
 export type BranchOwnerView = {
   branch: Branch;
   owner: DraftOwner | null;
   handle: string | null;
-  lifecycle: BranchOwnerLifecycle;
 };
 
 export interface BranchStore {
-  /** No lock. The branch and its owner's lifecycle; null when there is no such branch. */
+  /** No lock. The branch and its owner; null when there is no such branch. */
   ownerOf(branchId: BranchId): Promise<BranchOwnerView | null>;
   /** No lock. Oldest active branch this owner has, else null. */
   activeForOwner(owner: DraftOwner): Promise<Branch | null>;

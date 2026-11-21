@@ -294,7 +294,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
-    it("Apply restores a moved document at the Work's place; Discard drops a move and keeps its text", async () => {
+    it("a move of a document live deleted waits for its restore; Discard drops a move and keeps its text", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
       const draft = (args: Record<string, unknown>) =>
@@ -303,11 +303,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       const writer = review(script);
 
-      // Deleted live, another document at its old path: restored where the Work moved it.
+      // Deleted live, another document at its old path: Apply leaves the move waiting, and once
+      // the document is restored the move lands at the Work's place.
       await draft({ command: "move", from: { path: "ch1" }, path: "part1/ch1-moved" });
       await script.reply(async (edit) => {
         await edit("write", { command: "delete", path: "ch1" });
         await edit("write", { command: "create", path: "ch1", content: "New." });
+      });
+      expect(await writer.item(CH1)).toBeUndefined();
+      expect(await writer.apply(CH1)).toMatchObject({ status: "pressed", items: [] });
+      expect((await placement(CH1))?.deletedAt).not.toBeNull();
+      await script.reply(async (edit) => {
+        await edit("write", { command: "restore", path: "ch1" });
       });
       expect(await writer.apply(CH1)).toMatchObject({
         status: "pressed",

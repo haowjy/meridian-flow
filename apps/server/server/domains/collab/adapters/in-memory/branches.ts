@@ -33,7 +33,7 @@ export function createInMemoryBranchStore(): BranchStore {
               rootThreadId: branch.originRootThreadId,
             }
           : null;
-      return { branch, owner, handle: null, lifecycle: owner ? "active" : "missing" };
+      return { branch, owner, handle: null };
     },
     activeForOwner: async (owner) => activeOf(owner),
     // Lookup and insert with no await between them: one critical section.

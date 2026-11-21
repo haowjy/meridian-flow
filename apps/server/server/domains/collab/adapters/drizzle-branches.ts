@@ -55,11 +55,11 @@ export function createDrizzleBranchStore(db: Database): BranchStore {
       if (!isUuid(branchId)) return null;
       const owner = branchOwnerSql(branches);
       const [row] = await tx()
-        .select({ ...branchColumns, handle: owner.handle, lifecycle: owner.lifecycle })
+        .select({ ...branchColumns, handle: owner.handle })
         .from(branches)
         .where(eq(branches.id, branchId));
       if (!row) return null;
-      const { handle, lifecycle, ...branch } = row;
+      const { handle, ...branch } = row;
       return {
         branch,
         owner: ownerOfColumns({
@@ -68,7 +68,6 @@ export function createDrizzleBranchStore(db: Database): BranchStore {
           rootThreadId: branch.originRootThreadId,
         }),
         handle,
-        lifecycle,
       };
     },
     async ensureActiveLocked(input) {

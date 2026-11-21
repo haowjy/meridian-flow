@@ -113,7 +113,7 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
   options: { enabled?: boolean; version?: TreeVersion } & TreeOwner,
 ): Record<S, TreeViewResult> {
   const { workId, rootThreadId, chatThreadId } = options;
-  const { view, pendingText } = options.version ?? LIVE_VERSION;
+  const { view } = options.version ?? LIVE_VERSION;
   const enabled = (options.enabled ?? true) && Boolean(projectId);
   const accountId = useAccountId();
   const wantsAccount = schemes.includes("user" as S);
@@ -142,7 +142,7 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
         tree:
           list.session && snapshot && source
             ? buildTreeView({
-                projection: list.session.replay(view, pendingText),
+                projection: list.session.replay(view),
                 scheme,
                 source,
                 authority: source.authority,
@@ -164,7 +164,6 @@ export function useProjectTreeViews<S extends ProjectContextTreeScheme>(
     projectSources,
     owner,
     view,
-    pendingText,
   ]);
 }
 

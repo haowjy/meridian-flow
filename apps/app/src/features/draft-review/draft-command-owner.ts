@@ -25,9 +25,7 @@ export type CommandOutcome =
       took?: DiscardTook;
     }
   /** The server answered and the press changed none of these items. */
-  | { kind: "settled"; took?: DiscardTook }
-  /** A closed owner (an archived Work, a chat in Trash) answered and changed nothing; nothing is said. */
-  | { kind: "returned" };
+  | { kind: "settled"; took?: DiscardTook };
 
 export class DraftCommandOwner {
   private readonly records = new Map<string, DraftCommandState>();

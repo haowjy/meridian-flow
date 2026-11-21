@@ -6,8 +6,8 @@
  * - a document that exists only in the Work's draft (a creation);
  * - a document the Work's tree lacks while live shows it (a drafted delete);
  * - any other row the Work changed: it shows the document differently from live (a move,
- *   rename, reorder, or a document live has in Trash that the Work keeps because it has a change
- *   on it). A row that differs only in a twin's suffix is not one (`changed` is false).
+ *   rename or reorder). A row that differs only in a twin's suffix is not one (`changed` is
+ *   false), and a document in Trash in live is in Trash in every Work's view.
  * - the Work's suggestions in the Live document, on a document the Work's tree shows: a drafted
  *   delete, or a document in no view, hides the text changes everywhere.
  *

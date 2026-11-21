@@ -255,11 +255,10 @@ export async function undoLatest(
   view: View,
   actor: string,
   closed: ClosedOwners,
-  pendingText?: ReadonlySet<string>,
 ): Promise<UndoOutcome> {
   actedIn(session);
   show(session, null);
-  return takeLatest(session, source, view, actor, closed, pendingText);
+  return takeLatest(session, source, view, actor, closed);
 }
 
 async function takeLatest(
@@ -268,7 +267,6 @@ async function takeLatest(
   view: View,
   actor: string,
   closed: ClosedOwners,
-  pendingText?: ReadonlySet<string>,
 ): Promise<UndoOutcome> {
   const stack = stackOf(session);
   for (let at = stack.length - 1; at >= 0; at -= 1) {
@@ -279,7 +277,7 @@ async function takeLatest(
     }
     if (waitsForClosed(step, closed) || rests(session, step)) continue;
     stack.splice(at, 1);
-    const back = takeBack(session, step, view, actor, closed, pendingText);
+    const back = takeBack(session, step, view, actor, closed);
     if (back === "undone") {
       step.ended?.();
       return { kind: "undone", nodes: step.nodes };
@@ -303,7 +301,6 @@ export async function undoStep(
   step: UndoStep,
   actor: string,
   closed: ClosedOwners,
-  pendingText?: ReadonlySet<string>,
 ): Promise<boolean> {
   if (step.kind === "press") return step.undo();
   const stack = stackOf(session);
@@ -313,7 +310,7 @@ export async function undoStep(
   actedIn(session);
   show(session, null);
   const view = step.draft === null ? LIVE : { draft: step.draft };
-  const back = takeBack(session, step, view, actor, closed, pendingText);
+  const back = takeBack(session, step, view, actor, closed);
   if (back === "undone") {
     step.ended?.();
     show(session, null);
@@ -372,13 +369,13 @@ export function endWhenRestored(session: TreeListSession, step: TreeStep): () =>
   return stop;
 }
 
-function writerOf(session: TreeListSession, view: View, pendingText?: ReadonlySet<string>) {
+function writerOf(session: TreeListSession, view: View) {
   const { doc } = session.getSnapshot();
   return new TreeWriter(doc, "local", (asked) =>
     asked.draft === null
       ? session.replay(LIVE)
       : asked.draft === view.draft
-        ? session.replay(asked, pendingText)
+        ? session.replay(asked)
         : null,
   );
 }
@@ -393,9 +390,8 @@ function takeBack(
   view: View,
   actor: string,
   closed: ClosedOwners,
-  pendingText?: ReadonlySet<string>,
 ): "undone" | string[] {
-  const writer = writerOf(session, view, pendingText);
+  const writer = writerOf(session, view);
   // One walk: each record is judged against the list the one before it left, and the records that
   // land go into the list as one update. A record into a source the tab reads as closed is not
   // written; admission drops one into a source closed since, when the update reaches the server.
@@ -404,7 +400,6 @@ function takeBack(
     actor,
     [...step.records].reverse().map((id) => ({ id, view })),
     (source) => closed.source(source) !== null,
-    pendingText,
   );
   const answers = [...walked.values()];
   if (answers.some((back) => typeof back !== "string" && !("closed" in back))) return "undone";

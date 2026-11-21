@@ -169,22 +169,6 @@ async function loadBranches(
 }
 
 /** Documents a Work has suggestions in, which the list cannot see (rule 7). */
-async function pendingTextOf(tx: DrizzleDb, drafts: readonly string[]) {
-  const out = new Map<string, Set<string>>();
-  if (drafts.length === 0) return out;
-  const rows = await tx.execute<{ branch_id: string; document_id: string }>(
-    pendingText(
-      sql.join(
-        drafts.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      ),
-    ),
-  );
-  for (const row of rows)
-    out.set(row.branch_id, (out.get(row.branch_id) ?? new Set<string>()).add(row.document_id));
-  return out;
-}
-
 /** An admitted `create`'s node id is refused: another node, a document or a list has it. */
 export class NodeIdRefusedError extends Error {
   /** The node id at fault, when the claim could tell which. */
@@ -570,15 +554,14 @@ export async function syncRows(
   const liveRows = shownRows(live);
 
   const kept = [...(await keptBranches(tx, list))];
-  const text = await pendingTextOf(tx, kept);
   const works = new Map<
     string,
     { rows: Map<string, ProjectedRow>; faulted: Set<string>; pending: TreeRecord[] }
   >();
   for (const branchId of kept) {
     const pending = pendingRecords(doc, branchId);
-    if (!text.has(branchId) && pending.length === 0) continue;
-    const projection = replayView(doc, { draft: branchId }, text.get(branchId));
+    if (pending.length === 0) continue;
+    const projection = replayView(doc, { draft: branchId });
     works.set(branchId, {
       rows: shownRows(projection),
       faulted: changedFolders(live, projection, pending),
@@ -620,7 +603,7 @@ export async function syncRows(
   await testHook("treeList.afterLiveRows");
 
   const prev = await loadBranches(tx, listId);
-  // A branch row reads live's rows on its node and its parent (`deletedLive`, a move's place),
+  // A branch row reads live's rows on its node and its parent (a move's place),
   // so a live change there changes the owner's list even when the branch's own rows don't.
   // `writeLive` names every node under a changed folder, so the parent covers deeper folders.
   const liveIds = new Set(changed);
@@ -633,7 +616,11 @@ export async function syncRows(
         ),
     ),
   );
-  const changedBranches: string[] = [];
+  // A live change to a document a Work has suggestions in changes the Work's list (a move's place),
+  // and a trash or restore its count, though the Work has no row there.
+  const holding = await branchesWithText(tx, [...liveIds].filter(isUuid));
+  const changedBranches: string[] = [...holding];
+  liveChangedUnder.push(...holding.filter((branchId) => !liveChangedUnder.includes(branchId)));
   for (const branchId of new Set([...prev.keys(), ...next.keys()])) {
     const written = await writeBranch(
       tx,
@@ -646,5 +633,18 @@ export async function syncRows(
     changed.push(...written);
   }
   await markUnviewed(tx, changed);
-  return { created, changedBranches, liveChangedUnder, reassigned };
+  return { created, changedBranches: [...new Set(changedBranches)], liveChangedUnder, reassigned };
+}
+
+/** The active branches whose Work has suggestions in one of `documentIds`. */
+async function branchesWithText(tx: DrizzleDb, documentIds: readonly string[]): Promise<string[]> {
+  if (documentIds.length === 0) return [];
+  const rows = await tx.execute<{ branch_id: string }>(sql`
+    SELECT DISTINCT text.branch_id::text AS branch_id
+    FROM (${pendingText(sql`SELECT id FROM branches WHERE status = 'active'`)}) text
+    WHERE text.document_id IN (${sql.join(
+      documentIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )})`);
+  return rows.map((row) => row.branch_id);
 }

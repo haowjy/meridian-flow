@@ -197,7 +197,6 @@ export function changedSources(before: TreeProjection, after: TreeProjection): S
       node.hasProperties,
       node.trashed,
       node.keptByChild,
-      node.keptByPending,
       node.purged,
       node.blob,
     ];

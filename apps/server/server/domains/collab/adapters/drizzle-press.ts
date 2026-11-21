@@ -57,13 +57,11 @@ import {
 } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import type { TreeReader } from "../../context/tree/tree-view.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { PressUnsynced, type TreeCut } from "../domain/press.js";
 import { storedDocument } from "../domain/stored-document.js";
-import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { createApplyTreeOperations, type TreeItemFacts } from "./drizzle-apply-tree.js";
 import { documentsHolding } from "./drizzle-block-text.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
@@ -97,14 +95,12 @@ export function createDrizzlePress(
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     arrivals?: Pick<DocumentArrivals, "settle">;
     treeLists: Pick<TreeListStore, "lock" | "read" | "submit" | "resync">;
-    tree: Pick<TreeReader, "identityStatus">;
     onCommitted(documentId: DocumentId): Promise<void>;
   },
 ): PressStore {
   const treeHalf = createApplyTreeOperations({
     db,
     treeLists: deps.treeLists,
-    tree: deps.tree,
     arrivals: deps.arrivals,
     onCommitted: deps.onCommitted,
   });
@@ -269,97 +265,86 @@ export function createDrizzlePress(
     const work = draftOwnerKey(owner);
     const lists = listsOf(envelope);
     const seen = new Map((request.seen ?? []).map((one) => [one.documentId, one.vector]));
-    const answer = (items: PressResult["items"], settled?: PressResult["settled"]) => ({
+    const answer = (items: PressResult["items"]) => ({
       status: "pressed" as const,
       commandId: envelope.commandId,
       owner: work,
       verdict: request.verdict,
       items,
-      ...(settled ? { settled } : {}),
     });
 
     const run = (owners: TreeOwners) =>
-      runDocumentCommand(
-        db,
-        envelope,
-        () =>
-          deps.workProjection.mutate(
-            {
-              works: [...(owner.kind === "work" ? [owner.workId] : []), ...owners.works],
-              lineages: [
-                ...(owner.kind === "lineage" ? [owner.rootThreadId] : []),
-                ...owners.lineages,
-              ],
-            },
-            async (locked): Promise<PressResult> => {
-              // Read under the owner's lock: a branch is made or closed only under it.
-              const branch = await deps.branches.activeForOwner(owner);
-              const active = branch ? await deps.branches.lockActive(branch.id) : null;
-              const branchId = active?.id ?? null;
-              const judge = await owners.judge(locked);
-              await deps.treeLists.lock(lists);
-              await awaitSeen(seen);
-              const picked = await selection(envelope, lists, branchId, request, work);
-              const nodes = [...new Set([...picked.tree, ...picked.text])];
-              const tree = new Set<string>();
-              const text = new Set<string>();
-              if (request.verdict === "apply") {
-                const listOf = await treeHalf.lockItems(nodes);
-                const facts = branchId
-                  ? await treeHalf.apply({
-                      branchId,
-                      userId: envelope.accountId as UserId,
-                      commandId: envelope.commandId,
-                      saw: request.saw,
-                      items: nodes.map((node) => ({
-                        node,
-                        list: listOf.get(node) ?? null,
-                        tree: picked.tree.has(node),
-                        textOpen: picked.text.has(node),
-                      })),
-                      judge,
-                    })
-                  : null;
-                for (const [node, one] of facts ?? []) if (treeLanded(one)) tree.add(node);
-                const standing = facts ?? (await liveFacts(lists, [...picked.text], judge));
-                judge.assertLocked();
-                for (const documentId of [...picked.text].sort()) {
-                  const one = standing.get(documentId);
-                  if (!one?.standsInLive || one.textClosed) continue;
-                  if (await pressText(envelope, documentId, "apply", work)) text.add(documentId);
-                }
-              } else {
-                await lockDocuments(nodes);
-                if (branchId && picked.tree.size > 0) {
-                  const { had } = await discardTreeRecords(db, deps, {
+      runDocumentCommand(db, envelope, () =>
+        deps.workProjection.mutate(
+          {
+            works: [...(owner.kind === "work" ? [owner.workId] : []), ...owners.works],
+            lineages: [
+              ...(owner.kind === "lineage" ? [owner.rootThreadId] : []),
+              ...owners.lineages,
+            ],
+          },
+          async (locked): Promise<PressResult> => {
+            // Read under the owner's lock: a branch is made or closed only under it.
+            const branch = await deps.branches.activeForOwner(owner);
+            const active = branch ? await deps.branches.lockActive(branch.id) : null;
+            const branchId = active?.id ?? null;
+            const judge = await owners.judge(locked);
+            await deps.treeLists.lock(lists);
+            await awaitSeen(seen);
+            const picked = await selection(envelope, lists, branchId, request, work);
+            const nodes = [...new Set([...picked.tree, ...picked.text])];
+            const tree = new Set<string>();
+            const text = new Set<string>();
+            if (request.verdict === "apply") {
+              const listOf = await treeHalf.lockItems(nodes);
+              const facts = branchId
+                ? await treeHalf.apply({
                     branchId,
                     userId: envelope.accountId as UserId,
                     commandId: envelope.commandId,
-                    ...(request.items === "all"
-                      ? {}
-                      : { documents: [...picked.tree] as DocumentId[] }),
-                  });
-                  for (const node of had) tree.add(node);
-                  if (request.items === "all") await deps.treeLists.resync(lists);
-                }
-                for (const documentId of [...picked.text].sort())
-                  if (await pressText(envelope, documentId, "discard", work)) text.add(documentId);
+                    saw: request.saw,
+                    items: nodes.map((node) => ({
+                      node,
+                      list: listOf.get(node) ?? null,
+                      tree: picked.tree.has(node),
+                    })),
+                    judge,
+                  })
+                : null;
+              for (const [node, one] of facts ?? []) if (one.landed) tree.add(node);
+              const standing = facts ?? (await liveFacts(lists, [...picked.text], judge));
+              judge.assertLocked();
+              for (const documentId of [...picked.text].sort()) {
+                const one = standing.get(documentId);
+                if (!one?.standsInLive || one.textClosed) continue;
+                if (await pressText(envelope, documentId, "apply", work)) text.add(documentId);
               }
-              return answer(
-                [...new Set([...tree, ...text])].sort().map((node) => ({
-                  node,
-                  ...(tree.has(node) ? { tree: true as const } : {}),
-                  ...(text.has(node) ? { text: true as const } : {}),
-                })),
-              );
-            },
-            // Presses keep the commands' rules for a closed owner: Apply lands, Discard bounces.
-            { requireActive: request.verdict === "discard" },
-          ),
-        (cause) => {
-          const returned = closedOwnerBounce(cause);
-          return returned ? answer([], returned) : undefined;
-        },
+            } else {
+              await lockDocuments(nodes);
+              if (branchId && picked.tree.size > 0) {
+                const { had } = await discardTreeRecords(db, deps, {
+                  branchId,
+                  userId: envelope.accountId as UserId,
+                  commandId: envelope.commandId,
+                  ...(request.items === "all"
+                    ? {}
+                    : { documents: [...picked.tree] as DocumentId[] }),
+                });
+                for (const node of had) tree.add(node);
+                if (request.items === "all") await deps.treeLists.resync(lists);
+              }
+              for (const documentId of [...picked.text].sort())
+                if (await pressText(envelope, documentId, "discard", work)) text.add(documentId);
+            }
+            return answer(
+              [...new Set([...tree, ...text])].sort().map((node) => ({
+                node,
+                ...(tree.has(node) ? { tree: true as const } : {}),
+                ...(text.has(node) ? { text: true as const } : {}),
+              })),
+            );
+          },
+        ),
       );
 
     if (request.verdict === "discard") return run(NO_OWNERS);
@@ -493,7 +478,6 @@ export function createDrizzlePress(
                     // A document the press created stays in Live (gate 3): the writer deletes it.
                     const result = undoApply(writer, pressId, by, envelope.commandId, {
                       writtenSince: new Set(created),
-                      restoredByApply: one.restored,
                       closed: judge.closed,
                     });
                     for (const record of result.undone) tree.add(record.node);
@@ -537,8 +521,7 @@ export function createDrizzlePress(
           const out = new Set<string>();
           for (const { writer } of ends) {
             const live = writer.view(LIVE);
-            const restored = trees.flatMap((one) => one.restored);
-            for (const record of madeBy(writer.doc, pressId, restored)) {
+            for (const record of madeBy(writer.doc, pressId)) {
               for (const source of live.changes.get(record.id)?.sources ?? []) out.add(source);
               const node = live.nodes.get(record.node);
               if (node) out.add(node.source);
@@ -587,13 +570,4 @@ function holds(state: Uint8Array, seen: Uint8Array): boolean {
   for (const [client, clock] of Y.decodeStateVector(seen))
     if ((have.get(client) ?? 0) < clock) return false;
   return true;
-}
-
-/** The item's tree half landed: a restore, or a record that was neither left nor superseded. */
-function treeLanded(one: TreeItemFacts): boolean {
-  const stayed = new Set([
-    ...one.left.map(({ record }) => record.id),
-    ...one.superseded.map((record) => record.id),
-  ]);
-  return one.restore !== null || one.records.some((record) => !stayed.has(record.id));
 }

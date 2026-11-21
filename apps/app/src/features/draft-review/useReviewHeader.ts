@@ -101,8 +101,7 @@ export function useReviewHeader({
     view,
     next,
     locked,
-    // A trashed chat's drafts take no Apply; its notice says how to bring it back.
-    canApply: ready && view.items.length > 0 && controller.canApply,
+    canApply: ready && view.items.length > 0,
     finished,
     completing,
     showLive,

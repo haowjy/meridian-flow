@@ -35,7 +35,7 @@ stateDiagram-v2
 ## Rules
 
 - On **Draft** the sidebar's trees are the Work's view, replayed in the browser
-  (`TreeListSession.replay(view, pendingText)`), and every `TreeActions` record carries the
+  (`TreeListSession.replay(view)`), and every `TreeActions` record carries the
   Work's branch as `draft`. On **Live** they are live. Trash restore stays live: Trash lists
   live's Trash.
 - **One rule for a page's version** (`shownDraft`, `features/project/views.ts`), read by the

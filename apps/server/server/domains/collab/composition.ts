@@ -515,7 +515,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         liveCoordinator,
         arrivals: deps.arrivals,
         treeLists: deps.treeLists,
-        tree: treeReader,
         onCommitted: async (documentId) => {
           await runDocumentWriteHook({ documentId }, "collab.press");
         },
