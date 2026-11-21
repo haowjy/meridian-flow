@@ -18,7 +18,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { projectLane, unsettledProjectCreation } from "./project-commands";
-import { projectQueryKeys } from "./project-query-keys";
+import { refreshRouteThreadsSince } from "./project-route-data";
 import { convergeWorkProjection } from "./work-projection-cache";
 import { observeWorksReads, refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
@@ -264,17 +264,8 @@ export function workDomain(client: QueryClient): CommandDomain {
     const { projectId } = record.body as WorkCommandBody;
     const since = record.settledAt ?? Date.now();
     void refreshWorksSnapshotSince(client, projectId, since);
-    if (since > opened) {
-      convergeWorkProjection(client, { kind: "entity", projectId, operation });
-      return;
-    }
-    // Any read already out began after the tab opened, so it is joined, not restarted.
-    const threads = client.getQueryState(projectQueryKeys.threads(projectId));
-    if (threads && threads.dataUpdatedAt < since)
-      void client.invalidateQueries(
-        { queryKey: projectQueryKeys.threads(projectId), exact: true },
-        { cancelRefetch: false },
-      );
+    if (since > opened) convergeWorkProjection(client, { kind: "entity", projectId, operation });
+    else refreshRouteThreadsSince(client, projectId, since);
   };
   const kinds: Record<string, CommandKind> = {};
   for (const operation of Object.keys(KINDS) as WorkOperation[]) {

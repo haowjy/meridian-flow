@@ -70,18 +70,35 @@ export async function loadProjectRouteData(projectId: string): Promise<ProjectRo
   };
 }
 
+/** When the route's read of each project's threads began, by the clock. */
+const threadsReadAt = new WeakMap<QueryClient, Map<string, number>>();
+
 export function seedProjectRouteData(
   client: QueryClient,
   projectId: string,
   data: ProjectRouteData,
 ): void {
   if (data.threads !== null) {
-    // Dated from when the server's read began, which is what a settled Work command is judged by.
-    client.setQueryData(projectQueryKeys.threads(projectId), data.threads, {
-      updatedAt: data.worksStarted.at,
-    });
+    client.setQueryData(projectQueryKeys.threads(projectId), data.threads);
+    const byProject = threadsReadAt.get(client) ?? new Map<string, number>();
+    threadsReadAt.set(client, byProject.set(projectId, data.worksStarted.at));
   }
   if (data.works !== null) {
     seedWorksSnapshot(client, data.works, data.worksStarted);
   }
+}
+
+/**
+ * After a change that committed at `since`, before this tab opened: every read the tab started
+ * includes it, so only threads the route read before it are read again. A read already out began
+ * after the tab opened, so it is joined, not restarted.
+ */
+export function refreshRouteThreadsSince(client: QueryClient, projectId: string, since: number) {
+  const readAt = threadsReadAt.get(client)?.get(projectId);
+  if (readAt === undefined || readAt >= since) return;
+  threadsReadAt.get(client)?.delete(projectId);
+  void client.invalidateQueries(
+    { queryKey: projectQueryKeys.threads(projectId), exact: true },
+    { cancelRefetch: false },
+  );
 }
