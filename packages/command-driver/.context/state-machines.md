@@ -48,12 +48,14 @@ stateDiagram-v2
 - **Every tab runs `onSettled` once per record it sees settle**, so it must be safe to run twice.
   A tab sees every settled record still in the journal as it opens, so a domain that reads its
   data again per record makes that many requests on each load. A record settled before the tab
-  opened is already in every read the tab makes (`press-commands.ts` checks `settledAt`).
+  opened is in every read the tab starts, but not in route data the server read first: judge a
+  record against when the read began (`refreshWorksSnapshotSince`, `observeWorksReads`).
 - **Not sent yet.** `notSent` is true while a record has been unanswered for 10 s, or the
   browser is offline with one waiting. It is the app's only marker of an unsent change.
 - `thread_set_overrides` (`thread-overrides-command.ts`) sets or clears a chat's model and reasoning overrides together; the server stores them whatever the values, so it never ends `never`, and a resend under its id answers the stored result without reapplying it. Its record shows the writer's pick until it is observed (the chat's snapshot, refetched after it settles, succeeds; at once when no snapshot is cached), and an observed record no longer overrides, so a change made on another device shows.
 - The Work kinds (`work_create` ... `work_restore`) are the first instances: `apps/app/src/client/query/work-commands.ts`. `project_create` is the second (`project-commands.ts`): its record is the unsent project, it has `holdsLane`, and a Work command submitted while the project's create is unsettled (judged inside the saving transaction) also queues on its lane `project:<id>`, so it waits through a refusal and Retry of the create. The loader (by account) and the read gate read it through `awaitPendingProjectCreation` and `readPendingProjectCreation`.
 - `press` and `unpress` (`press-commands.ts`) share one lane per Work, `press:<owner>`, so an Undo goes after the press it names. Its `onSettled` reads what
-  a draft-hint reads (`refreshDraftReads`) and the turn cards of the documents it changed. A press waits on 503 until the server holds the tab's typing, which the driver's resend covers.
+  a draft-hint reads (`refreshDraftReads`); one settled before the tab opened reads only the
+  route's Works, and only when that read began before it. A press waits on 503 until the server holds the tab's typing, which the driver's resend covers.
 
 Pattern: [a command that may have landed](../../../.context/state-machines/command-that-may-have-landed.md).

@@ -41,7 +41,10 @@ export function observeWorksReads(client: QueryClient, driver: CommandDriver): (
 type RequestWorksSnapshot = () => Promise<WorksSnapshot>;
 type ProjectState = {
   installedStart: number;
+  /** When the installed snapshot's read began, by the clock. */
+  installedAt: number;
   inFlight: Promise<WorksSnapshot> | null;
+  inFlightAt: number;
 };
 
 const states = new WeakMap<QueryClient, Map<string, ProjectState>>();
@@ -65,7 +68,7 @@ function stateFor(client: QueryClient, projectId: string): ProjectState {
   }
   let state = byProject.get(projectId);
   if (!state) {
-    state = { installedStart: 0, inFlight: null };
+    state = { installedStart: 0, installedAt: 0, inFlight: null, inFlightAt: 0 };
     byProject.set(projectId, state);
   }
   return state;
@@ -103,6 +106,7 @@ function installSnapshot(
   if (ordering > 0 || (ordering === 0 && start.order >= state.installedStart)) {
     client.setQueryData(projectQueryKeys.works(projectId), response);
     state.installedStart = start.order;
+    state.installedAt = start.at;
     readObservers.get(client)?.(projectId, start.at);
     return response;
   }
@@ -122,6 +126,7 @@ function startAcquisition(
     installSnapshot(client, projectId, response, start),
   );
   state.inFlight = acquisition;
+  state.inFlightAt = start.at;
   void acquisition
     .finally(() => {
       if (state.inFlight === acquisition) state.inFlight = null;
@@ -163,6 +168,26 @@ export async function repairWorksSnapshot(
       refetchType: "none",
     });
   }
+}
+
+/**
+ * After a change that committed at `since`: reads the Works again unless a read that began at or
+ * after it is installed or out, so one read covers every change before it. A project whose Works
+ * this tab holds no read of has nothing to repair.
+ */
+export async function refreshWorksSnapshotSince(
+  client: QueryClient,
+  projectId: string,
+  since: number,
+): Promise<void> {
+  const state = stateFor(client, projectId);
+  if (state.inFlight && state.inFlightAt >= since) {
+    await state.inFlight.catch(() => undefined);
+    return;
+  }
+  if (!currentSnapshot(client, projectId) && !state.inFlight) return;
+  if (state.installedAt >= since) return;
+  await repairWorksSnapshot(client, projectId);
 }
 
 /** Route data is hydration only and may never replace an equal or newer live snapshot. */

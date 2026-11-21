@@ -19,7 +19,7 @@ import { useProjectThreads } from "./useProjectThreads";
 import { useProjectTreeViews } from "./useProjectTree";
 import { useWorks } from "./useWorks";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
-import { repairWorksSnapshot } from "./works-projection-acquisition";
+import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
 export type OwnerDraftListStatus = ListQueryStatus<DraftItem> & {
   files: ReviewFileTarget[] | null;
@@ -56,14 +56,16 @@ export function ownerDraftsQueryOptions(projectId: string, owner: string) {
 }
 
 /**
- * Reads again what shows drafts' state: their lists (every draft's when `drafts` holds
- * `undefined`), a Work's row in the Works list (its count and lifecycle), the documents' draft
- * hints and link resolution. A read already out is restarted: it may predate the change.
+ * Reads again what shows drafts' state after a change that committed at `since`: their lists
+ * (every draft's when `drafts` holds `undefined`), a Work's row in the Works list (its count and
+ * lifecycle), the documents' draft hints and link resolution. A list's read already out is
+ * restarted: it may predate the change.
  */
 export function refreshDraftReads(
   queryClient: QueryClient,
   projectId: string,
   drafts: ReadonlySet<string | undefined>,
+  since = Date.now(),
 ): Promise<unknown> {
   const all = drafts.has(undefined);
   const named = [...drafts].filter((draft): draft is string => draft !== undefined);
@@ -77,7 +79,7 @@ export function refreshDraftReads(
   );
   const works = queryClient.getQueryData<WorksSnapshot>(projectQueryKeys.works(projectId));
   if (all || named.some((draft) => works?.works.some((work) => work.draftId === draft)))
-    reads.push(repairWorksSnapshot(queryClient, projectId));
+    reads.push(refreshWorksSnapshotSince(queryClient, projectId, since));
   reads.push(
     queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentDraftHintsOf(projectId) }),
   );
