@@ -11,18 +11,19 @@ The card's state and Undo read what an edit recorded, never Yjs item ids. Each A
 manuscript records its `delta` (the blocks it changed, before and after:
 `document_edit_parts.delta`). A change of the edit is one of the differences its delta cuts
 (`content-merge/stands.ts`). It **stands** in a text when the text holds it and merges it out
-cleanly (`changeStateIn`), and a press writes only a change that stands: one state for the offer
-and the press, so the card offers Undo exactly when a press takes something back.
+cleanly (`changeStateIn`). The Live inverse and a press's Undo write only a change that stands;
+the card's offer uses that same test for Live text.
 
 A drafted write (Draft mode, or a named Work) leaves the Work's suggestions in Live, not text the
-manuscript holds. The card's Undo of a turn that left suggestions rejects them
-(`domain/suggestion-turn-undo.ts`, `resolveStored`), as a client of the document would, under the
-presser's Live edit grant; text the writer typed beside them stays. The documents where the turn
-left no suggestion (it wrote Live there, or its suggestions were applied or discarded) go to the
-Live inverse: one operation takes a change out of Live, `takeOut`, the merge of its inverse. The
-card's Undo plans (`prepare` in `domain/turn-inverse-service.ts`) in step order, newest edit
-first, each judged on what the steps before it leave. An applied suggestion is Live text no
-`delta` of the turn describes, so the Live inverse finds nothing of it standing and leaves it.
+manuscript holds. The card's Undo handles a document that still holds the turn's suggestions in a
+separate path: `suggestion-turn-undo.ts` finds them with `storedPendingTurns` and rejects them with
+`resolveStored(..., "reject", { turn })`, without a `stands` check; text the writer typed beside
+them stays. Documents where the turn left no pending suggestion (it wrote Live there, or its
+suggestions were applied or discarded) go to the Live inverse: one operation takes a change out of
+Live, `takeOut`, the merge of its inverse. The card's Undo plans (`prepare` in
+`domain/turn-inverse-service.ts`) in step order, newest edit first, each judged on what the steps
+before it leave. An applied suggestion is Live text no `delta` of the turn describes, so the Live
+inverse finds nothing of it standing and leaves it.
 
 A step records one receipt of kind `undo` that names the parts it took, so the card says
 "Undone". The model's `undo` and `revert` of a part in Live are the same step the card's Undo of
@@ -238,10 +239,11 @@ of one edit. Under them each step plans again on the committed text: the step re
 inverse runs: the card and the model's Undo and Revert are never told to read and try again.
 Delivery runs after the commit, outside the scope.
 
-The card's chip answers from the same plan as the card's Undo (`prepare`): it reads each change's
-`stands` against the text and builds nothing, so the offer and the press cannot differ. The cost is
-one read of each document's blocks and about 2.5 ms per change, one document per turn of the loop
-(`setImmediate`). The model's `undo` plans one document at a time on the same reads.
+The card's chip exposes and the press handles the two cases in `suggestion-turn-undo.ts`: pending
+suggestions use the `storedPendingTurns` scan, while Live text uses the `prepare` plan and its
+`stands` check. The cost is one read of each document's blocks and about 2.5 ms per change, one
+document per turn of the loop (`setImmediate`). The model's `undo` plans one document at a time on
+the same reads.
 
 A card outcome reports committed destination per document. The reverse endpoint may return
 semantic unavailable outcomes such as `nothing_to_undo`,

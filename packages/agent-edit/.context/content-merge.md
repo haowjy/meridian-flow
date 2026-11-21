@@ -1,14 +1,19 @@
 # The content merge: its rules, repairs, rescues and known losses
 
-`src/content-merge/` merges two versions of a block list against their base. The server runs it in
-two places: an agent package's Save merges each package file (a code document, one code block) into
-the project's copy (`mergeCodeText`, `collab/domain/code-merge.ts`, where the project's text is the
-`draft` side), and the Live turn inverse reads and takes out an AI edit's change with it
-(`stands.ts`, below). The sides keep the names `base`, `live` and `draft`. This page lists
-everything in the system that changes document text other than a person's or a model's own edit,
-and everything that gives text back. Adding a merge rule, a repair or a rescue is the owner's
-decision; `rules.ts` is the one place a rule's name is declared, so a new one is a visible
-one-line change.
+`src/content-merge/` merges two versions of a block list against their base. Production uses it in
+three places:
+
+- `apps/server/server/domains/collab/domain/code-merge.ts` (`mergeCodeText`) brings an agent
+  package's Save of a code document into the project's copy.
+- `packages/agent-edit/src/content-merge/stands.ts` checks and takes out recorded AI changes; the
+  Live turn inverse calls these helpers through `apps/server/server/domains/collab/domain/inverse-text.ts`.
+- `packages/agent-edit/src/tool/read-view.ts` (`readMergedContent`) merges a whole-document write
+  with the text the model read when checkpoint collection dropped part of that read.
+
+The sides keep the names `base`, `live` and `draft`. This page lists everything in the system that
+changes document text other than a person's or a model's own edit, and everything that gives text
+back. Adding a merge rule, a repair or a rescue is the owner's decision; `rules.ts` is the one place
+a rule's name is declared, so a new one is a visible one-line change.
 
 ## The rule
 

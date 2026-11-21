@@ -45,9 +45,9 @@ marks (the binding, the server's projections) would need the verdicts, and the b
 still write the difference back the next time the writer edits the paragraph.
 
 A mark holds only what `kindOf` reads per run, because every changed word carries it on its
-insertion and its deletion and Live's history keeps it for good. `work` stays on the mark rather
-than in the map: the view is `{ draft }` for any document, and a map lookup per run would make every
-reader's view depend on the document's map. Change ids are 12 base-36 characters (`newChangeId`).
+insertion and its deletion. `work` stays on the mark rather than in the map: the view is `{ draft }`
+for any document, and a map lookup per run would make every reader's view depend on the document's
+map. Change ids are 12 base-36 characters (`newChangeId`).
 - `comment` marks an anchor (`markdown: false`: the model's Markdown never writes or removes it).
 
 `id` is one change, the unit of review: an insertion and the deletion it replaces share it.
@@ -234,12 +234,8 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   entry only by `dropDraft` when its draft's Work or chat is purged: a change that is accepted, rejected or deleted keeps its entry in `suggestion_authors` (about 60
   bytes each), and each decision about 44 bytes in `suggestion_verdicts`. Typing never writes
   the verdicts.
-- Live's history keeps every suggestion for good. A 4,200-word chapter (24 KB of history)
-  stores about 400 KB per whole-chapter AI rewrite (30% of words changed) and under 1 KB per
-  discard; ten discarded rewrites come to 3.9 MB (A2, measured as B2 did; with the earlier
-  `{ id, work, chat, turn, by }` marks and diffed resolves it was 7.5 MB). What is left per changed
-  word is Yjs structure: the new text, and a format item at each edge of its insertion and its
-  deletion, each holding the mark's key and `{ id, draft }`. Naming the draft by its 12-character id
-  instead of the owner key `work:<uuid>` stores about 16% less per rewrite (measured on a
-  synthetic 4,200-word chapter, 30% of words rewritten: about 186 KB per rewrite against 222 KB
-  for the owner key; discards about 1.5 KB each).
+- Live's history keeps each suggestion's item skeleton after a checkpoint, including its item id,
+  so a later edit can still integrate against that item. Checkpoint materialization runs
+  `dropUnseenContent`: it collects the text, marks and subtrees of deleted items unless the room's
+  latest model-read frontier still shows them. Live content that has not been deleted remains, but
+  a discarded or otherwise deleted suggestion's words are not kept forever.
