@@ -243,8 +243,8 @@ export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
 /**
  * Takes out of a planning view (`createPlanningView`) the suggestions it shows that `room` records
  * as rejected, so a write that proposes one again is a new suggestion, not a match with the view.
- * A block's attribute layers share one item, which goes when any of them was rejected: the view
- * then shows the block's Live attributes. Every step is a deletion of an item the room has deleted
+ * A block's attribute layers share one item, which goes when every one of them was rejected.
+ * Every step is a deletion of an item the room has deleted
  * or replaced too: the write planned on the view ships the view's own updates to the room, so the
  * view writes nothing new and references nothing the room lacks.
  */
@@ -264,8 +264,10 @@ export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
     parts?.blocks.forEach(take);
     parts?.strikes.forEach(take);
   }
+  // The item holds every Work's layers on the block, and a write planned without it would set
+  // the block's layers to its own alone: it goes only when nothing on it stands.
   for (const { item, ids } of shown.layers)
-    if (ids.some((id) => rejected.has(id))) take({ id: item.id, len: 1 });
+    if (ids.every((id) => rejected.has(id))) take({ id: item.id, len: 1 });
   for (const runs of Object.values(out)) runs.sort((a, b) => a[0] - b[0]);
   // Undoing an insertion deletes its items: the press's Undo does the deleting.
   undoPressStored(view, { insertions: out, deletions: {} });

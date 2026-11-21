@@ -160,10 +160,11 @@ export class DocumentSessionRegistry {
     return session ? Y.encodeStateVector(session.document) : null;
   }
 
-  openStateVectors(): Map<DocumentId, Uint8Array> {
+  unsentStateVectors(): Map<DocumentId, Uint8Array> {
     const vectors = new Map<DocumentId, Uint8Array>();
     for (const [documentId, { session }] of this.liveRooms)
-      if (session) vectors.set(documentId, Y.encodeStateVector(session.document));
+      if (session?.hasUnacknowledgedEdits())
+        vectors.set(documentId, Y.encodeStateVector(session.document));
     return vectors;
   }
 

@@ -35,8 +35,11 @@ export interface LiveDocumentSessionRegistry {
    * acknowledged included; null when this tab holds no such session.
    */
   openStateVector(documentId: DocumentId): Uint8Array | null;
-  /** `openStateVector` of every document with a live session in this tab. */
-  openStateVectors(): Map<DocumentId, Uint8Array>;
+  /**
+   * `openStateVector` of every live session in this tab with typing the server hasn't
+   * acknowledged: what a press must wait for. An acknowledged session's state is stored already.
+   */
+  unsentStateVectors(): Map<DocumentId, Uint8Array>;
   /**
    * Settles once the server holds the typing in this tab's live session of the document; at once
    * when the tab holds none or it is not connected.

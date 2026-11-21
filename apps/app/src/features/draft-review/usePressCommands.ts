@@ -298,8 +298,9 @@ export function usePressCommands({
       );
       const release = owner.hold([...rowKeys, ...folders], verdict === "apply");
       try {
-        // Every open room, not only the pressed rows: a press finds documents the list hasn't.
-        const open = [...registry.openStateVectors()].map(([documentId, vector]) => ({
+        // Every room with unsent typing, not only the pressed rows: a press finds documents the
+        // list hasn't.
+        const open = [...registry.unsentStateVectors()].map(([documentId, vector]) => ({
           documentId,
           vector: btoa(String.fromCharCode(...vector)),
         }));

@@ -100,8 +100,8 @@ where Live text separates its pieces; `pending` the turns and the Works
   without that, the same rewrite asked for after a card Undo, a Discard or an inline Reject
   matched the model's view and changed nothing. The withdraw only deletes view items the room has
   deleted or replaced: the write ships the view's own updates to the room. A block's attribute
-  layers share one item, which leaves the view when any of them was rejected; the view then shows
-  the block's Live attributes. An accepted change stays in the view, whose text is the same
+  layers, every Work's, share one item, which leaves the view only when every layer on it was
+  rejected (see Known limits). An accepted change stays in the view, whose text is the same
   either way, and a change an edit removed has no verdict and stays too, as Live text the writer
   removed after the model's read does. `suggestionItems` there is the item-level twin of
   `pendingBy`: a change to how marks or `sug`/`sugAttrs` are stored updates both.
@@ -187,12 +187,14 @@ a later Work suggestion inside the range makes the change stop standing, and Und
 - A change the writer removed by typing (a pending AI insertion deleted, an applied one then
   deleted) has no verdict: an identical re-proposal from the same stale plan keeps the writer's
   deletion, as for Live text, and the next read shows the model the real text.
-- A block's attribute layers are one Yjs value. Rejecting a later turn's layer writes the
-  earlier layers anew in the room, and a re-proposal planned on the view writes its own value
-  concurrently: Yjs keeps one of the two by client id, so about half the time the re-proposal's
-  attributes are lost (or, when it wins, the earlier turn's layer). Concurrent attribute
-  proposals by two writers on one block lose one the same way. Per-layer items would fix it at
-  the cost of a stored-model change.
+- A block's attribute layers, every Work's, are one Yjs value. With turn 1 and turn 2 both
+  proposing a heading level, rejecting turn 2 alone writes the remaining layers anew in the room,
+  and the planning view keeps the old value (it can't hold the room's new one without writing):
+  the same level-2 rewrite then changes nothing. Taking the old value out of the view instead
+  would let the write set the block's layers to its own alone, racing the room's value on Yjs
+  client id and, about half the time, erasing other Works' layers. Concurrent attribute writes
+  by two peers on one block keep one value the same way. Per-layer items would fix both at the
+  cost of a stored-model change.
 - Rejecting an earlier turn's change first leaves a later turn's insertion over it standing
   beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
   discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work

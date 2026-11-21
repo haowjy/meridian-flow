@@ -21,7 +21,8 @@ has no branch row.
   behind the head, another extractor). That set is exact for committed writes: every live write
   moves its document's head (`allocateAdmission`), so a document the derivation hasn't caught up
   on is stale and pressed; a stale one with nothing of the Work's costs one journal read and
-  resolves to nothing.
+  resolves to nothing. While two builds overlap in a deploy, every room the newer extractor
+  certified is stale to the older build, so its Apply all reads every document in scope.
 - **The branch is read under the owner's lock**, where it is made and closed: a branch read
   before it could miss the first tree records an AI turn admitted in between.
 - **Tree half.** Apply is the tree Apply (`createApplyTreeOperations`, the same judge, locks and
@@ -32,11 +33,13 @@ has no branch row.
   `press_text_effects` with the authority generation. The ranges hold the verdicts the resolve
   recorded (`suggestion_verdicts`), so its Undo takes them back with the text. A document the press leaves out of Live
   (a discarded create) keeps its text untouched.
-- **`seen`.** The pressing tab's state vector of every live room it holds open
-  (`openStateVectors`), checked first, after the lists' keys and before the selection is read:
+- **`seen`.** The pressing tab's state vector of every live room with typing the server hasn't
+  acknowledged (`unsentStateVectors`), checked first, after the lists' keys and before the selection is read:
   until Live holds them all, the press is `PressUnsynced` (503, nothing stored), and the command
   driver resends. A held vector stays held, so the typing it covers has moved its document's
   head and the selection finds the document. `seen` only waits; it adds no document to press.
+  A document with no stored authority (purged) is skipped. A session left with unsent typing
+  from before a version restore holds every press at 503 until the tab replaces it.
 - **A resend answers only with the stored result.** The driver reads any 2xx as the command's
   result, so a resend that finds the first request still running is a 503 (sent again), and an
   id stored for another body, or settled `never`, is the routes' 409 `command_conflict`

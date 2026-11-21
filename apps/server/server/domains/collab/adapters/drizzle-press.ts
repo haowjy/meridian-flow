@@ -76,7 +76,7 @@ export type PressCommand = {
   owner: DraftOwner;
   request: Omit<PressRequest, "saw" | "seen"> & {
     saw?: TreeCut;
-    /** Decoded state vectors of every live room open in the pressing tab. */
+    /** Decoded state vectors of the pressing tab's live rooms with unacknowledged typing. */
     seen?: { documentId: string; vector: Uint8Array }[];
   };
 };
@@ -124,7 +124,10 @@ export function createDrizzlePress(
    */
   async function awaitSeen(seen: ReadonlyMap<string, Uint8Array>): Promise<void> {
     for (const [documentId, vector] of seen) {
-      const doc = storedDocument(await deps.live.read(documentId as DocumentId));
+      const snapshot = await deps.live.read(documentId as DocumentId);
+      // A document with no stored authority (purged, never stored) has nothing to wait for.
+      if (!snapshot.authority) continue;
+      const doc = storedDocument(snapshot);
       try {
         if (!holds(Y.encodeStateVector(doc), vector)) throw new PressUnsynced();
       } finally {

@@ -98,7 +98,7 @@ function resolve(state: EditorState, matches: Match, action: Verdict): Transacti
   const { suggest_ins: ins, suggest_del: del } = state.schema.marks;
   const decided = new Map<string, Verdict>();
   const fated = fates(state.doc, matches, action);
-  // Every change a fate is read for has a piece the transaction changes.
+  // Every change a fate is read for has a piece the transaction changes or deletes.
   const fateOf = (attrs: SuggestionAttrs | null) => {
     const fate = fated(attrs);
     if (attrs && fate) decided.set(attrs.id, fate);
@@ -114,6 +114,13 @@ function resolve(state: EditorState, matches: Match, action: Verdict): Transacti
     const blockFate = fateOf(block.attrs.sug);
     if (blockFate === "reject") {
       remove.push([blockPos, blockPos + block.nodeSize]);
+      // Later changes inside go with it: the filter's are decided too.
+      block.descendants((node) => {
+        fateOf(node.attrs.sug ?? null);
+        for (const layer of Object.values(proposals(node)).flat()) fateOf(layer);
+        for (const mark of node.marks)
+          if (isSuggestionMark(mark)) fateOf(mark.attrs as SuggestionAttrs);
+      });
       return false;
     }
     if (blockFate === "accept") set.push([blockPos, "sug", null]);
