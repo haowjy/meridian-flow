@@ -119,6 +119,21 @@ export class TmuxSessionStore {
     );
   }
 
+  /**
+   * The variables the session was started with (`new-session -e`), or `null` when it isn't
+   * running. Read in `-s` form, whose quoting survives a value with a newline in it.
+   */
+  sessionEnv(sessionName: string): Record<string, string> | null {
+    const result = this.tmux(["show-environment", "-s", "-t", `=${sessionName}`]);
+    if (result.status !== 0) return null;
+    const env: Record<string, string> = {};
+    for (const [, key, quoted] of result.stdout.matchAll(
+      /^([A-Za-z_][A-Za-z0-9_]*)="((?:[^"\\]|\\.)*)"; export \1;$/gms,
+    ))
+      env[key] = quoted.replace(/\\(.)/gs, "$1");
+    return env;
+  }
+
   killSession(sessionName: string): CommandResult {
     return this.tmux(["kill-session", "-t", sessionName]);
   }
