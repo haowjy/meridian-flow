@@ -1,0 +1,24 @@
+{
+  "name": "gate-fuzz",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "loro-crdt": "1.18.0",
+    "loro-prosemirror": "0.4.4",
+    "prosemirror-model": "link:../../node_modules/.pnpm/prosemirror-model@1.25.13/node_modules/prosemirror-model",
+    "prosemirror-state": "link:../../node_modules/.pnpm/prosemirror-state@1.4.4/node_modules/prosemirror-state",
+    "prosemirror-transform": "link:../../node_modules/.pnpm/prosemirror-transform@1.12.5/node_modules/prosemirror-transform",
+    "tsx": "^4.20.0",
+    "prosemirror-view": "link:../../node_modules/.pnpm/prosemirror-view@1.42.9_patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e/node_modules/prosemirror-view",
+    "lib0": "link:../../node_modules/.pnpm/lib0@0.2.120/node_modules/lib0"
+  },
+  "pnpm": {
+    "overrides": {
+      "prosemirror-model": "link:../../node_modules/.pnpm/prosemirror-model@1.25.13/node_modules/prosemirror-model",
+      "prosemirror-state": "link:../../node_modules/.pnpm/prosemirror-state@1.4.4/node_modules/prosemirror-state",
+      "prosemirror-transform": "link:../../node_modules/.pnpm/prosemirror-transform@1.12.5/node_modules/prosemirror-transform",
+      "prosemirror-view": "link:../../node_modules/.pnpm/prosemirror-view@1.42.9_patch_hash=069fe440cf04c00bc469007c9039464c3e3c1d152bcd715e703629b15190f42e/node_modules/prosemirror-view",
+      "lib0": "link:../../node_modules/.pnpm/lib0@0.2.120/node_modules/lib0"
+    }
+  }
+}
