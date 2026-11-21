@@ -1221,7 +1221,6 @@ CREATE INDEX "tree_nodes_parent" ON "tree_nodes" USING btree ("parent_id");--> s
 CREATE INDEX "tree_nodes_list" ON "tree_nodes" USING btree ("list_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_trashed" ON "tree_nodes" USING btree ("trashed_at") WHERE "tree_nodes"."trashed_at" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "commands_thread" ON "commands" USING btree ("thread_id");--> statement-breakpoint
-CREATE INDEX "commands_press_project" ON "commands" USING btree ("project_id","created_at") WHERE "commands"."kind" = 'press';--> statement-breakpoint
 CREATE UNIQUE INDEX "document_block_rooms_document" ON "document_block_rooms" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "document_block_rooms_pending_changes" ON "document_block_rooms" USING gin ("pending_changes");--> statement-breakpoint
 CREATE INDEX "document_yjs_checkpoints_document_id_desc" ON "document_yjs_checkpoints" USING btree ("document_id","id" DESC NULLS LAST);--> statement-breakpoint

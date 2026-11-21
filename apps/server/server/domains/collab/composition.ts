@@ -52,7 +52,6 @@ import {
   createDrizzleBranchWriteBoundary,
 } from "./adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
-import { createDrizzleDiscardEntries } from "./adapters/drizzle-discard-entries.js";
 import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
 import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
@@ -349,13 +348,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const commands = createDrizzleDocumentCommands(deps.db);
-  const discardEntries = createDrizzleDiscardEntries(deps.db);
   const discardPurge = createDrizzleDiscardPurge(deps.db, {
     workProjection: deps.workProjectionMutation,
     ...(deps.eventSink ? { eventSink: deps.eventSink } : {}),
   });
   const branches = createWorkBranchReviewService({
-    listDiscards: (projectId) => discardEntries.list(projectId),
     purgeDiscards: () => discardPurge.purge(),
     branches: workBranches,
     reviewItems,

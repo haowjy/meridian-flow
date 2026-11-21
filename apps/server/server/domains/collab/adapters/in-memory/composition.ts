@@ -265,9 +265,6 @@ function createInMemoryBranchStub(): CollabBranches {
   return {
     presses: { press: unsupported, undo: unsupported },
     draftReview: {
-      async listDiscards() {
-        return [];
-      },
       async purgeDiscards() {
         return 0;
       },

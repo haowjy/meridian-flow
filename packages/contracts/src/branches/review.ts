@@ -1,6 +1,6 @@
 /**
  * Wire contracts for draft review: the list of a Work's drafts, the hints on an open document,
- * Trash's Discard entries, and the stored results of document commands.
+ * and the stored results of document commands.
  *
  * Vocabulary: `branchId` is a `branches` row (the Work's whole branch), and `itemKey`
  * (`${branchId}:${documentId}`) is the client's identity for one reviewed document. A command's
@@ -8,7 +8,7 @@
  */
 import type { CommandOutcome, Settlement } from "../commands/index.js";
 import type { ParsedContextUri } from "../context-uri.js";
-import type { BranchId, CommandId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
+import type { BranchId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
 import type { ReversalOutcome } from "../protocol/write-reversal.js";
 import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js";
@@ -23,34 +23,6 @@ import type { DraftOwnerKey } from "./owner.js";
 export type TreeSaw = {
   project?: { list: string; vector: string };
   account?: { list: string; vector: string };
-};
-
-/**
- * A Trash entry: one press Discard, with the documents whose suggestions it rejected that its Undo
- * hasn't taken back. Restore is the press's Undo. The tree half is the tree's own answer for the
- * same command id; an entry with no member in either is not listed.
- */
-export type DiscardEntry = {
-  commandId: CommandId;
-  /** When the command ran: its entry leaves Trash 30 days later. */
-  at: string;
-  /** The Work pressed on, as its owner key. */
-  owner: string;
-  workId: string | null;
-  documents: string[];
-};
-
-/** `GET /api/projects/:projectId/context/trash/discards`: entries with a member in either half. */
-export type ListDiscardEntriesResponse = {
-  entries: (DiscardEntry & {
-    /** What the command settled in the tree and no restore has taken. */
-    tree: {
-      records: number;
-      /** Every node those records are on. */
-      nodes: string[];
-      created: { node: string; kind: string; name: string; path: string[] }[];
-    };
-  })[];
 };
 
 /** What one kind's effect answered, as stored in a command's outcome. */

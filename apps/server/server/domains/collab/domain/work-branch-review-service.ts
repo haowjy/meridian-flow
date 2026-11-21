@@ -15,7 +15,6 @@ export function createWorkBranchReviewService(input: {
   reviewItems: BranchReviewItems;
   identity: BranchReviewIdentity;
   commands: DocumentCommands;
-  listDiscards: CollabBranches["draftReview"]["listDiscards"];
   purgeDiscards: CollabBranches["draftReview"]["purgeDiscards"];
   resolveThreadTitles(threadIds: readonly string[]): Promise<ReadonlyMap<string, string>>;
   folderIds(branchId: BranchId): Promise<{ id: string }[]>;
@@ -33,7 +32,6 @@ export function createWorkBranchReviewService(input: {
 
   return {
     draftReview: {
-      listDiscards: input.listDiscards,
       purgeDiscards: input.purgeDiscards,
       async list(command) {
         const { items } = await ownerItems(command.owner);

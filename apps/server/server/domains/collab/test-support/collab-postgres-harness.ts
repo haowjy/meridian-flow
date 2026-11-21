@@ -376,7 +376,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const lookups = createDrizzleCollabLookups(db);
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
-    listDiscards: async () => [],
     purgeDiscards: async () => 0,
     branches: workBranches,
     reviewItems,

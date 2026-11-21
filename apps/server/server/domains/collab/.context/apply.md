@@ -74,7 +74,6 @@ bring back the miss of move destinations and folders.
 
 **The day-30 purge** (`recovery.purgeDiscards`, `adapters/drizzle-discard-purge.ts`, run hourly
 beside `purgeWorks` and `purgeDocuments`) deletes each press and unpress command row past 30
-days, which cascades its text effects; a Restore after that finds no press and takes nothing
+days, which cascades its text effects; an Undo after that finds no press and takes nothing
 back. A drafted create is not the press's: the tree purges it on its own clock
-(`purgeUnviewed`), and the tree's `discarded` settlements stay. Trash's listing has no clock: it
-lists whatever still exists, which is what restores.
+(`purgeUnviewed`), and the tree's `discarded` settlements stay.

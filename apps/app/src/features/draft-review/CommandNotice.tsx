@@ -11,7 +11,6 @@ import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { ActionNotice } from "@/components/app/ActionNotice";
-import { notifyFailure } from "@/components/app/failure-toast";
 import { RowWord } from "@/components/app/RowWord";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
 import {
@@ -194,15 +193,8 @@ function useNoticeUndo() {
     // Where main was when the notice showed (null: Recently opened); the view follows only
     // if main is still there.
     const stays = left ? left.landed : review?.documentId;
+    // A failed Undo is the press's pill (`PressEntries`), said once.
     void notice.undo().then((answer) => {
-      if (answer === "failed") {
-        notifyFailure({
-          key: `undo-discard:${notice.id}`,
-          title: t`Couldn't undo`,
-          brief: true,
-        });
-        return;
-      }
       if (answer !== "ok" || !review || stays === undefined || !presented) return;
       if (presented.mainDocumentId(projectId) === stays) openReviewFile(review, ownerKey);
       // Beside main the address is main's: only the document's view changes.

@@ -545,17 +545,15 @@ export function undoApply(
   return { undone, left };
 }
 
-/** What one Discard command settled, for Trash to show as an entry. */
+/** What one Discard command settled. */
 export type DiscardedBy = {
   /** The records it discarded, in list order. */
   records: TreeRecord[];
-  /** The nodes those records created. */
-  created: string[];
   /** Restored already: copies of these records are pending again. */
   restored: boolean;
 };
 
-/** The records a Discard command settled, with the nodes they created. */
+/** The records a Discard command settled. */
 export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
   const last = lastSettlements(doc);
   const all = listRecords(doc);
@@ -563,11 +561,7 @@ export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
     const settle = last.get(record.id);
     return settle?.to === "discarded" && settle.command === discarded;
   });
-  return {
-    records,
-    created: records.flatMap((record) => (record.type === "create" ? [record.node] : [])),
-    restored: all.some((record) => record.restores === discarded),
-  };
+  return { records, restored: all.some((record) => record.restores === discarded) };
 }
 
 /**

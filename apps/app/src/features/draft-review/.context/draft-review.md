@@ -46,11 +46,9 @@ with more than suggestions (a tree change, a whole item) stay the server's.
 surfaces, and outlives them:
 
 - `hold(itemKeys, applying)` marks items in flight, which hides their rows and leaves their review.
-- `applied` holds every Apply this tab can still take back (`ApplyEntries`,
+- `presses` holds every press this tab can still take back (`PressEntries`,
   [state-machines.md](state-machines.md)): one entry in the history of each open editor of its
-  documents. Ctrl+Z there, or an applied row's Undo, sends the press's `unpress`.
-- `restores` (`DiscardRestores`) holds each Discard's restore by the Discard's command id, so the
-  notice's Undo and Trash's Restore show one progress.
+  documents. Ctrl+Z there, or its row's or notice's Undo, sends the press's `unpress`.
 - `notices` (`DraftNotices`) holds one notice per draft owner.
 
 A press is sent through the command driver (`client/query/press-commands.ts`, lane
@@ -62,11 +60,13 @@ reads the owner's lifecycle.
 ## Discard
 
 Every Discard of a document, a folder, a selection or the Work is one press with
-`verdict: "discard"`; its notice's Undo restores what it took. Trash lists each press Discard
-(`drizzle-discard-entries.ts` on the server): its Restore is the same restore as the notice's
-Undo (`restorePressDiscard`), and Undo of a Restore discards what the Restore brought back again
-(`rediscard`). A Discard whose items were all taken back already lists nothing. A Discard of one
-change in the editor is an editor transaction and is not in Trash.
+`verdict: "discard"`: it rejects the Work's suggestions there and discards the Work's tree changes
+(a document the Work created leaves every view). Trash has no entry for it. Its Undo is the
+press's `unpress`, as Apply's is (`PressEntries`): the notice's Undo, the sidebar's Undo step or
+Ctrl+Z in an open editor of its documents, once between them, in the tab that pressed. After a
+reload nothing offers it, and what it took is gone: the writer's own typing in the Work's view,
+and documents the Work created. A Discard of
+one change in the editor is an editor transaction, undone with Ctrl+Z.
 
 ### Notices
 

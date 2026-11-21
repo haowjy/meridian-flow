@@ -49,16 +49,15 @@ has no branch row.
 - Lock order is the Apply click's: Works, branch, lists, documents in id order, then writes.
   Deliveries and the derivation hook run after commit.
 
-## Trash
+## Discard is not in Trash
 
-Trash lists each press Discard that still holds something (`drizzle-discard-entries.ts`): an entry
-is the press's command with the documents its text effects touched and its tree records. An
-entry whose effects and records were all taken back by its Undo is not listed. Restore from Trash
-is the press's `unpress`, so it is once-only like any Undo; the client's Undo of a Restore is a
-new Discard press of what came back. The Discard notice's Undo is the same Restore, sent through the
-one restore progress per Discard (`DiscardRestores` in the app), so a Restore from either place ends
-the other's offer in that tab; in another tab, the second finds nothing and its notice ends
-quietly.
+A Discard rejects suggestions as Apply accepts them, and settles the Work's tree records
+discarded; Trash has no entry for it. Its only Undo is the press's `unpress`, as Apply's is, sent
+from the tab that pressed it: the notice's Undo, the sidebar's Undo step and Ctrl+Z in an open
+editor share one send. After a reload nothing offers it, and what it took is gone: the writer's own
+typing in the Work's view, and a document the Work created (no view shows it, and
+`purgeUnviewed` releases its content). That is the chosen cost: keeping it would need a store of
+its own.
 
 ## Work purge
 
@@ -113,5 +112,3 @@ a Discard closes the room and its Undo opens it again.
 - A press Apply leaves `apply_command_trees.created_heads` as the tree Apply's placeholders:
   the press never calls `recordCreatedHeads`, since its Undo keeps every created document in
   Live. Anything that comes to read those heads for a press must record them first.
-- A `rediscard` (the client's Undo of a Restore) of a node whose Discard took only text presses
-  the whole node: a press item has no text-only half.
