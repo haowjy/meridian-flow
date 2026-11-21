@@ -282,9 +282,10 @@ item), and Show changes. A document opens on Live; a draft paints only when the 
 arrives at an address naming it, and a draft-created document paints its own draft. `views.ts`
 resolves the paint and holds it while the pinned owner's list loads, so a document never paints
 Live and then the draft. A view lasts only as long as the scope's draft owner: when a Work pick, a
-chat switch or a new chat's composer changes whose drafts the scope shows, pages on another
-owner's draft return to Live (`enterScope`), so a page never shows the chat before's draft on the
-next chat's screen. A page only a draft holds stays on it.
+chat switch or a new chat's composer changes whose drafts the scope shows, pins to another owner's
+draft end and the toggle goes to Draft (`enterScope`): each page shows the new scope's own draft
+where it has one, else Live, and never the chat before's draft. A page only a draft holds stays on
+it.
 
 Every document host (main, the side, the phone) has its own review (`DocumentReview.tsx`);
 `useReviewAdmission` makes it enter, keep or leave the draft its paint names. Only a host on screen
