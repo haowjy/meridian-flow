@@ -1,8 +1,7 @@
 /**
  * Day-30 purge of presses and their Undos: the command row, which carries its text effects with
- * it, in one transaction. This is the only reader of the clock for them: Trash lists and Undo
- * takes back whatever still exists, so what is listed is exactly what restores, and an Undo after
- * the purge finds no press and takes nothing back. A drafted create is not ours: the tree purges
+ * it, in one transaction. This is the only reader of the clock for them: an Undo after the purge
+ * finds no press and takes nothing back. A drafted create is not ours: the tree purges
  * it on its own clock (`purgeUnviewed`), and the tree's `discarded` settlements stay.
  *
  * Lock order, a prefix of Undo's: the Work (no `requireActive`: an archived or deleted Work's

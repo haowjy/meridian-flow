@@ -1,17 +1,8 @@
 import { plural, t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import { useCommandDriver } from "@/client/commands/driver-context";
-import { rediscard } from "@/client/query/press-commands";
-import {
-  type TrashEntry,
-  useDocumentTrash,
-  useTrashDiscards,
-} from "@/client/query/useDocumentTrash";
-import { useProjectTrees } from "@/client/query/useProjectTrees";
-import { useWorks } from "@/client/query/useWorks";
-import { notifyFailure } from "@/components/app/failure-toast";
+import { useMemo } from "react";
+import { type TrashEntry, useDocumentTrash } from "@/client/query/useDocumentTrash";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { withGone } from "@/components/app/RowWord";
 import { ListLine, ListRow } from "@/components/ui/list-row";
@@ -22,7 +13,6 @@ import { schemeLocation } from "../../context/context-schemes";
 import { useDocumentTrashRestore } from "../../context/DocumentTrashRestoreProvider";
 import { trashDragEntry, trashRef } from "../../context/entry-drag/entry";
 import { useEntryRow } from "../../context/entry-drag/use-entry-row";
-import { useRestoreDiscard } from "../../context/use-restore-discard";
 import {
   type NoticePlace,
   type TreeNoticeWords,
@@ -31,12 +21,11 @@ import {
 import { relativeTime } from "../../relative-time";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { type SourceDrop, SourcePane } from "./SourcePane";
-import { type DiscardEntry, TrashDiscardRow } from "./TrashDiscardRow";
 
 /**
  * Trash as a source: its entries, newest first, a deleted folder as one entry with what its
- * delete took, and each Discard as one entry with the drafts it took. Rows dropped on it are deleted at once; its rows drag out to be restored where
- * they land. Picking a document or an uploaded file shows it in main, read-only with Restore.
+ * delete took. Rows dropped on it are deleted at once; its rows drag out to be restored where they
+ * land. Picking a document or an uploaded file shows it in main, read-only with Restore.
  */
 export function TrashSource({
   projectId,
@@ -64,42 +53,12 @@ export function TrashSource({
     trashKey,
     restored.filter(({ key }) => notices.restored(key)),
   );
-  const discards = useTrashDiscardRows(projectId);
-  const lines = [
-    ...rows.map(({ row, gone }) => ({
-      at: row.kept?.removal.time ?? new Date(now).toISOString(),
-      entry: row,
-      gone,
-      discard: null,
-    })),
-    ...discards.rows.map((discard) => ({
-      at: discard.entry.at,
-      entry: null,
-      gone: false,
-      discard,
-    })),
-  ].sort((left, right) => right.at.localeCompare(left.at));
   return (
     <SourcePane label={t`Trash`} drop={drop} notice={notices.header}>
-      {lines.length > 0 ? (
+      {rows.length > 0 ? (
         <div className="px-2">
-          {lines.map(({ entry, gone, discard }) =>
-            discard ? (
-              <TrashDiscardRow
-                key={discard.entry.commandId}
-                entry={discard.entry}
-                names={discard.names}
-                workName={discard.workName}
-                now={now}
-                state={discards.states.get(discard.entry.commandId)}
-                onRestore={() => {
-                  notices.end();
-                  discards.restore(discard.entry);
-                }}
-                onUndo={discards.undoOf(discard.entry)}
-                undo={discards.undoing.has(discard.entry.commandId)}
-              />
-            ) : !entry ? null : gone ? (
+          {rows.map(({ row: entry, gone }) =>
+            gone ? (
               <ListRow
                 key={entry.nodeId}
                 gone
@@ -134,15 +93,9 @@ export function TrashSource({
           )}
         </div>
       ) : null}
-      {query.isError || discards.isError ? (
-        <InlineErrorRow
-          message={t`Couldn't load Trash.`}
-          onRetry={() => {
-            void query.refetch();
-            void discards.refetch();
-          }}
-        />
-      ) : lines.length > 0 ? null : (
+      {query.isError ? (
+        <InlineErrorRow message={t`Couldn't load Trash.`} onRetry={() => void query.refetch()} />
+      ) : rows.length > 0 ? null : (
         <div className="px-2">
           {query.isPending ? (
             <ListLine iconSlot status>
@@ -214,104 +167,3 @@ function deletedFrom(entry: TrashEntry, location: string): string {
     other: `# documents, deleted from ${location}`,
   });
 }
-
-/**
- * Trash's Discard entries with what names them: each document by its name in the tree, a
- * created one by the name its creation had, and the Work they were taken from. An entry restored
- * here stays, struck through, until the next restore or the pane closes.
- */
-function useTrashDiscardRows(projectId: string) {
-  const query = useTrashDiscards(projectId);
-  const trees = useProjectTrees(projectId);
-  const { works, deleted, nameOf } = useWorks(projectId);
-  const { states, restore } = useRestoreDiscard(projectId);
-  const driver = useCommandDriver();
-  const restored = useRef(
-    new Map<string, { entry: DiscardEntry; listedThen: ReadonlySet<string> }>(),
-  );
-  const [undoing, setUndoing] = useState<ReadonlySet<string>>(new Set());
-  const mark = (commandId: string, sending: boolean) =>
-    setUndoing((current) => {
-      const next = new Set(current);
-      if (sending) next.add(commandId);
-      else next.delete(commandId);
-      return next;
-    });
-  const listed = query.data?.entries ?? [];
-  for (const entry of listed) {
-    const kind = states.get(entry.commandId)?.kind;
-    if (kind === "restored" && !restored.current.has(keyOf(entry)))
-      restored.current.set(keyOf(entry), {
-        entry,
-        listedThen: new Set(listed.map(keyOf)),
-      });
-  }
-  // A new Discard of a restored document is the next thing done to it: the restore's Undo ends.
-  for (const [commandId, { entry: held, listedThen }] of restored.current) {
-    const took = new Set(documentsOf(held));
-    if (
-      listed.some(
-        (entry) =>
-          !listedThen.has(keyOf(entry)) &&
-          documentsOf(entry).some((document) => took.has(document)),
-      )
-    )
-      restored.current.delete(commandId);
-  }
-  const entries = [
-    ...listed,
-    ...[...restored.current.values()]
-      .map(({ entry }) => entry)
-      .filter((held) => !listed.some((entry) => keyOf(entry) === keyOf(held))),
-  ];
-  const rows = entries.map((entry) => {
-    const created = new Map(entry.tree.created.map((node) => [node.node, node.name]));
-    const names = documentsOf(entry).map(
-      (documentId) =>
-        created.get(documentId) ?? trees.find(documentId)?.file.name ?? t`Untitled document`,
-    );
-    const work = [...(works ?? []), ...deleted].find(({ id }) => id === entry.workId);
-    return { entry, names, workName: work ? nameOf(work) : null };
-  });
-  return {
-    rows,
-    states,
-    isError: query.isError,
-    refetch: query.refetch,
-    undoing,
-    /** The Undo of a restore made here: the documents go back to Trash as a new Discard entry. */
-    undoOf: (entry: DiscardEntry) => {
-      const state = states.get(entry.commandId);
-      if (state?.kind !== "restored" || !driver) return undefined;
-      const { brought } = state;
-      if (!brought.text.length && !brought.tree.length) return undefined;
-      return () => {
-        if (undoing.has(keyOf(entry))) return;
-        mark(keyOf(entry), true);
-        void rediscard(driver, { projectId, owner: entry.owner, brought }).then((done) => {
-          if (done)
-            // The restored row gives way to the new entry the refetch lists.
-            restored.current.delete(keyOf(entry));
-          else
-            notifyFailure({
-              key: `rediscard:${entry.commandId}`,
-              title: t`Couldn't undo`,
-              brief: true,
-            });
-          mark(keyOf(entry), false);
-        });
-      };
-    },
-    restore: (entry: DiscardEntry) => {
-      restored.current.clear();
-      void restore({ commandId: entry.commandId, owner: entry.owner });
-    },
-  };
-}
-
-const keyOf = (entry: DiscardEntry) => entry.commandId;
-
-/** What a Discard took: the documents whose suggestions it rejected and every node its tree half settled. */
-const documentsOf = (entry: DiscardEntry) => [
-  ...new Set([...entry.documents, ...entry.tree.nodes]),
-];

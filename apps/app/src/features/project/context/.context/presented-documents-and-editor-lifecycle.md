@@ -136,7 +136,7 @@ to one), else to Recently opened itself (the bare Editor). The open replaces
 the history entry, so Back skips the removed document. A removal by someone
 else, from another device, or a remote Discard keeps the address on the
 removed document. A tree delete's notice has an Undo (`entry-failure.ts`); a created
-document's Discard has none; a restore from Trash never moves main. A Discard of an existing
+document's Discard has the press's Undo (in the tab that pressed); a restore from Trash never moves main. A Discard of an existing
 document's edits removes nothing. Discard is a server command, not a record the browser writes.
 
 A document in Trash still takes text: the live room admits it until its node is purged and

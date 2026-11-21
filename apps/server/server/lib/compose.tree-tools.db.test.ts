@@ -8,13 +8,12 @@
 import { randomUUID } from "node:crypto";
 import type { ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
-import { LIVE, listRecords, type TreeWriter } from "@meridian/project-tree";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
-import { discardedTree } from "../domains/context/tree/trash-entries.js";
 import { runWorkLifecycleCommand } from "../domains/projects/index.js";
 import { createDrizzleThreadLock } from "../domains/runtime/adapters/drizzle-thread-lock.js";
 import { setTestHook } from "../shared/test-hooks.js";
@@ -663,29 +662,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await placementsNamed("private")).every((row) => row.deletedAt === null)).toBe(
           true,
         );
-      });
-
-      it("a Discard entry names the folders it discarded from the discarded history", async () => {
-        const script = await start();
-        await drafting(script).reply(async (edit) => {
-          await edit("write", { command: "create", path: "part1/inner/" });
-        });
-        const list = await treeListOfSource(db, SOURCE_ID);
-        const command = randomUUID();
-        await store().submit({
-          lists: [list],
-          make: ([{ writer }]) => {
-            const ids = listRecords(writer.doc)
-              .filter((record) => record.draft !== null && record.type === "create")
-              .map((record) => record.id);
-            writer.transact(() => writer.settle(WRITER, ids, "discarded", { command }));
-          },
-        });
-        const [entry] = await discardedTree(store(), list, [command]);
-        if (!entry) throw new Error("no entry");
-        expect(entry.created).toMatchObject([
-          { kind: "folder", name: "inner", path: ["part1", "inner"] },
-        ]);
       });
 
       it("a move into a folder deleted since is made and the folder stands: kept, with who deleted it", async () => {

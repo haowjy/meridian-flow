@@ -402,10 +402,6 @@ export type ModelDraftRow = {
 export type DraftReviewApi = {
   /** The day-30 purge of presses and their Undos (`drizzle-discard-purge.ts`); the rows removed. */
   purgeDiscards(): Promise<number>;
-  /** The text half of Trash's entries: the project's press Discards not yet taken back. */
-  listDiscards(
-    projectId: ProjectId,
-  ): Promise<import("@meridian/contracts/branches").DiscardEntry[]>;
   list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the active branch's listed items with live text tokens. */
   listItems(input: { owner: DraftOwner }): Promise<{

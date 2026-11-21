@@ -8988,28 +8988,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "commands_press_project": {
-          "name": "commands_press_project",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"commands\".\"kind\" = 'press'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
