@@ -7,9 +7,9 @@ it may write, whether a node id is in use) comes in as plain inputs.
 
 - A record is one act by one actor. The list never deletes, and nothing here edits a record:
   a record's state is its last settlement in the `settle` array, never a field on it.
-- Replay is a pure function of the records. It never changes what Yjs merged; the fourteen rules
+- Replay is a pure function of the records. It never changes what Yjs merged; the fifteen rules
   in [.context/CONTEXT.md](.context/CONTEXT.md) are the only place the product decides
-  anything, each beside the Yjs default it replaces. A fifteenth rule goes there, in `replay.ts`,
+  anything, each beside the Yjs default it replaces. A sixteenth rule goes there, in `replay.ts`,
   and in a casebook test that fails without it.
 - Two siblings may share a name (rule 14): a node's `name` is its label, and the later twin's
   path segment adds `~` and its `suffix` (`segmentOf`). A reader that spells or walks a path
@@ -34,9 +34,10 @@ it may write, whether a node id is in use) comes in as plain inputs.
   schema, are the server's facts: they come in through `Connection`.
 - A Discard is final: `restoreDiscard` appends new pending copies on the draft it is given (`carries` names the original, `restores` the Discard,
   `restoredBy` who restored it); the discarded records stay discarded. A Discard with `trash`
-  (the press's) puts the nodes the Work created in live's Trash and returns the deletes, which
-  the caller records; `restoreDiscard` given them takes them back, which is Trash's Restore, so
-  they come back in live and their drafted records stay discarded. `trashAgain` is the Redo.
+  (the press's) puts the nodes the Work created in live's Trash, by live creates that carry the
+  drafted ones, and returns the deletes, which the caller records; `restoreDiscard` given them
+  takes back each delete still in force and the create under it, so the nodes are the Work's
+  pending creates again and in no live view (rule 15). One Trash's Restore lifted first stays in live.
 - Every record the package writes goes through `writable`, the reader that will read it back, and
   throws if that would drop it. A document's `create` states its `filetype`.
 - Who a delete covers is `deleteCovering` (rows, Trash, the tools), and a document's item in a

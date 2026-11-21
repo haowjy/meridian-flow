@@ -13,7 +13,7 @@ page says where each part lives and what the code decided where the design left 
 | `names.ts` | `shownName` (the replay's name for a node of a kind: `normalEntryName`) |
 | `list-index.ts` | `listIndex`: record ids, node ids and command ids kept with a copy; `assertNewCommand` |
 | `view.ts` | `View` (live, or live then one Work), settlements, `viewValues` and `viewRecords`, `replayView` |
-| `replay.ts` | `startReplay`, an open replay (`push`, `wouldTake`, `standing`, `finish`); `replay` is `startReplay(values).finish()`: rules 1 to 13, then one pass over the nodes for Trash and kept folders (`stand`), then the twin suffixes (rule 14, in `derive`) |
+| `replay.ts` | `startReplay`, an open replay (`push`, `wouldTake`, `standing`, `finish`); `replay` is `startReplay(values).finish()`: rules 1 to 13, then one pass over the nodes for Trash and kept folders (`stand`), then withdrawn nodes and the twin suffixes (rules 15 and 14, in `derive`) |
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
 | `writer.ts` | `TreeWriter`: makes records in one copy of the list |
 | `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
@@ -61,6 +61,13 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
     What an Apply's restore brings back keeps its own arrival, so a returning twin may take the
     plain name and the twin the writer applied may then read suffixed (the property test's seed 137
     pins it).
+15. A node hidden only by withdrawals is in no view (`derive`): no node, no row, no Trash entry. A
+    withdrawal is a live delete that takes back a create a draft landed in live (a create with
+    `fromDraft`: an Apply's copy, or a press Discard's create for Trash). The node is the
+    draft's again, as before the press: its Work's pending create shows it there. A node also
+    hidden by another delete, or holding anything else, stays in Trash as any node does. A live
+    create a writer or the model made, taken back, is a delete Trash lists as before. Older builds
+    read a withdrawal as a plain delete, so they show the node in Trash.
 
 A row that differs from live only in a suffix is no change the Work made: `DraftRow.changed`
 is false, and the count and the Changes list skip it (`changedFolders`, the server's
@@ -228,13 +235,13 @@ the replay uses them (package `AGENTS.md`).
   live will show it (a waiting move can put a node inside a delete's cascade). A Discard all takes
   waiting records with the rest.
   `covers(doc, saw)` says whether a copy holds the state the writer saw.
-- **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { writtenSince,
-  closed })` writes each landed copy's opposite record through `takeBackAll` (a create's
+- **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { closed })` writes each landed copy's opposite record through `takeBackAll` (a create's
   opposite is a delete that keeps what others put inside standing), then puts back to pending the
   records this Apply settled whose copies went back, matched by root (`carries ?? id`): a restored
   Discard's record is itself a copy, so its id is not its live copy's `carries`. It answers
   `{ undone, left }`; every copy not taken back is in `left` with its why (`changed_since`,
-  `purged`, `already`, `has_text`, `closed` with the source). `undoChange` answers
+  `purged`, `already`, `closed` with the source). A create taken back is a withdrawal (rule 15):
+  the node is the Work's pending create again, in no live row and no Trash entry. `undoChange` answers
   `changed_since | purged | already | unknown`, or `{ closed }`. `changeUndone` reads a change's
   records together: `acts`, `changed_since`, `purged`, `closed` (the one that can pass, so last),
   or `taken`.
@@ -249,19 +256,19 @@ the replay uses them (package `AGENTS.md`).
   Discard settled, for the press's Undo.
 - **What a Discard created goes to live's Trash** when the caller asks (`discardDraft(..., { trash:
   true })`, the press; Work purge does not). Read before the settlement, from the Work's view:
-  each node a discarded create made that the view shows standing and live has never had gets a
-  live create as the view shows it (the drafted create's `actor`; a topmost node whose folder is
+  each node a discarded create made that the view shows standing and live does not have gets a
+  live create as the view shows it, carrying the drafted create (`carries`, `fromDraft`, so its
+  Undo is a withdrawal) with its `actor` (a topmost node whose folder is
   not in live goes to the top of its source), and each topmost one a live delete by the
   discarder. A node's subtree stops at a node that does not go (a live folder the Work moved in,
   one the Work deleted), so each node is created once and covered by one delete. The deletes are
   returned (`trashed`): the press stores them with its command, since a field on the record would
   make older readers skip the delete and show the document standing. `restoreDiscard` given them
-  leaves the records on their nodes discarded and takes each delete back (`takeBackAll`, the
-  restore Trash's Restore writes): the nodes come back in live, never pending in the Work, since
-  taking a live create back is itself a Trash entry while the Work would show the node pending.
-  A delete Trash already lifted answers `already`, so the two never act twice. `trashAgain`
-  (Redo) takes back the restores in force that lifted them and returns the deletes standing
-  again.
+  takes back each one still in Trash and then the live create under each node it covers
+  (`takeBackAll`), and copies the records on those nodes pending like the rest: the nodes leave
+  live and Trash and are the Work's again (rule 15). A delete Trash's Restore lifted first stays
+  lifted, its nodes stay in live and their records discarded, so the two never act twice. Redo is
+  a Discard of the pending copies: their nodes are not in live, so they go to Trash again.
 - **Settlements carry `command`** when a command made them, so Undo of an Apply and the restore
   of a Discard select by it.
 - **Every read of the list goes through `readStored`.** `replay`, `listRecords` (what `viewRecords`,
