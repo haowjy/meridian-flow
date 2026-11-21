@@ -190,7 +190,7 @@ async function reverseReceipt(
   const target = await threadContainerTarget(call.context.resolution, input.path);
   const grant = target ? await deps.fileAccess.authorize(call.principal, target, "edit") : null;
   if (grant && "denied" in grant) return fileAccessDeniedError(input.command, grant, input.path);
-  const drafted = receipt.draftBranchId !== null;
+  const drafted = receipt.draftId !== null;
   const port = drafted
     ? call.context.port
     : contextPortForThread(deps.contextPorts, call.context.resolution, {
@@ -253,7 +253,7 @@ async function reverseReceipt(
               ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
               // An applied change is taken back in live: the Work's draft no longer has it.
               ...(scope.view.draft && !result.inLive
-                ? { draftBranchId: scope.view.draft as DraftId }
+                ? { draftId: scope.view.draft as DraftId }
                 : {}),
               shownAt: `${parts.area}${parts.rest}`,
               reverses: { kind, receipt: receipt.id },

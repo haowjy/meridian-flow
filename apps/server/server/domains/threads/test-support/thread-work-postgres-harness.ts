@@ -14,7 +14,7 @@ export const THREAD_WORK_RACE = {
   contextId: "00000000-0000-4000-8000-000000000476",
   documentId: "00000000-0000-4000-8000-000000000477",
   noWorkId: "00000000-0000-4000-8000-000000000478",
-  branchId: "racetarget01",
+  draftId: "racetarget01",
 } as const;
 
 export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
@@ -42,7 +42,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
       createdByUserId: ids.userId,
       name: "Race target",
       handle: "w2",
-      draftId: ids.branchId,
+      draftId: ids.draftId,
     },
     {
       id: ids.targetWorkId,
@@ -67,5 +67,5 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     projectId: ids.projectId,
     slug: "project-context",
   });
-  await treeSeeder(db).document(ids.contextId, "Branch target", { id: ids.documentId });
+  await treeSeeder(db).document(ids.contextId, "Draft target", { id: ids.documentId });
 }

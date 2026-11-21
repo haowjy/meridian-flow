@@ -38,7 +38,7 @@ export function testFileGrant(
             agent: {
               projectId: "test-project" as ProjectId,
               chain: [],
-              branchOwner: {
+              draftOwner: {
                 owner: given.owner,
                 draftId: given.draftId,
                 handle: given.ownerHandle,
@@ -60,7 +60,7 @@ export function testFileGrant(
       ancestors: [],
       ...(given.kind === "draft"
         ? {
-            branchOwner: {
+            draftOwner: {
               draftId: given.draftId,
               owner: given.owner,
               handle: given.ownerHandle,

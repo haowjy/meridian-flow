@@ -38,7 +38,7 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const shell = useShellTreeVersion();
   const shown = shell?.showing === "draft" ? shell.draftId : null;
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
-    hint.tree && hint.branchId !== shown ? [{ work: hint.label, line: hint.tree }] : [],
+    hint.tree && hint.draftId !== shown ? [{ work: hint.label, line: hint.tree }] : [],
   );
   if (pending.length > 0) {
     const location = tabLocation(tab);

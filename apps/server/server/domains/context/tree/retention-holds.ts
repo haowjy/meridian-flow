@@ -5,7 +5,7 @@
  *
  * - a row of a kept view shows it (`draft_tree_nodes`: the Work drafted a create of it, kept a
  *   delete's victim, moved it...), or
- * - a branch that has not ended has suggestions in it, whatever the rows say (they outlive a
+ * - a draft that has not ended has suggestions in it, whatever the rows say (they outlive a
  *   delete of their document, and a Discard of that delete brings both back).
  *
  * The third source, an unsettled record in the list for a kept Work, is read from the list's

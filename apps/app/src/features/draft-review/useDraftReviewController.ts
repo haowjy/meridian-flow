@@ -13,7 +13,7 @@ import {
   inlineReviewFromState,
 } from "./draft-review-session";
 import type { ReviewFocus } from "./review-model";
-import { type CommandStart, usePressCommands, type WorkBranchCommands } from "./usePressCommands";
+import { type CommandStart, usePressCommands, type WorkDraftCommands } from "./usePressCommands";
 
 export type { DraftReviewSelection, InlineDraftReview };
 
@@ -44,7 +44,7 @@ export type DraftReviewController = {
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
   /** Dispatch the normalized target through this review's Work authority. */
-  commandChange: WorkBranchCommands["commandChange"];
+  commandChange: WorkDraftCommands["commandChange"];
   /** A command on this presented draft only. */
   /**
    * Every Apply and Discard control disables on this: there is no owner to press on, or no

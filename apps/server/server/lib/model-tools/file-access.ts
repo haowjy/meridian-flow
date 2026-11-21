@@ -54,7 +54,7 @@ export async function agentPrincipal(
     agent: {
       projectId: thread.projectId as ProjectId,
       chain: await deps.readAgentChain(thread.id as ThreadId),
-      branchOwner: {
+      draftOwner: {
         owner: chatOwner(thread, {
           id: execution.scope.workId,
           isNoWork: execution.scope.workHandle === null,
@@ -74,14 +74,14 @@ export async function agentPrincipal(
  * reads where its access sends it, as `draft` always did there.
  */
 export async function keptDraft(
-  deps: Pick<ToolWiringDeps, "branches">,
+  deps: Pick<ToolWiringDeps, "drafts">,
   grant: Pick<FileGrant, "facts">,
   documentId: string,
   execution: ThreadExecutionContext,
 ): Promise<FileDestination | null> {
   if (!isDrafted(grant.facts.contentScheme)) return null;
   const draft = execution.draftId;
-  const drafts = await deps.branches.draftReview.list({ draft });
+  const drafts = await deps.drafts.draftReview.list({ draft });
   return drafts.some((row) => row.documentId === documentId)
     ? { kind: "draft", draftId: draft, ownerHandle: execution.scope.workHandle }
     : null;

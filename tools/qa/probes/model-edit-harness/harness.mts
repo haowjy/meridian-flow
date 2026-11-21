@@ -182,7 +182,7 @@ export class Child {
 }
 
 /**
- * A Work with its branch and `n` chats in it, none with a turn yet (a chat the writer just
+ * A Work with its draft and `n` chats in it, none with a turn yet (a chat the writer just
  * opened). `mode` is the chats' write mode.
  */
 export async function seedWorkWithChats(

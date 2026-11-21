@@ -1,6 +1,6 @@
 /**
  * Permanently removes expired Works, then best-effort removes their object-store blobs.
- * A purged Work's branches end first through collab's Discard (contract §2.6, F10): their drafts
+ * A purged Work's drafts end first through collab's Discard (contract §2.6, F10): their drafts
  * leased before the transaction, then, after the deleted/cutoff proof, one settlement discards
  * every pending record of the Work. The documents it drafted are then in no view, and retention
  * releases them on its own window. The Work's sources go with it: first a `purge` record in the
@@ -38,7 +38,7 @@ import {
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
 } from "../../storage/index.js";
-import type { WorkBranchDisposal } from "../ports/work-branch-disposal.js";
+import type { WorkDraftDisposal } from "../ports/work-draft-disposal.js";
 import type { WorkProjectionMutation } from "./work-projection-mutation.js";
 
 const WORK_PURGE_BATCH_LIMIT = 100;
@@ -78,7 +78,7 @@ export function createDrizzleWorkPurger(deps: {
   db: Database;
   objectStore: Pick<ObjectStorePort, "delete" | "list">;
   eventSink: EventSink;
-  branches: WorkBranchDisposal;
+  drafts: WorkDraftDisposal;
   /** The project's list, where the Work's sources' nodes end. */
   tree: Pick<TreeListStore, "submit">;
   /** A purged Work leaves the project's Works list, which is woken for it. */
@@ -127,7 +127,7 @@ export function createDrizzleWorkPurger(deps: {
     workId: WorkId,
     cutoff: Date,
   ): Promise<{ purged: boolean; objectKeys: string[]; threadIds: readonly string[] }> {
-    return deps.branches.withDisposal(workId, (disposeDrafts) =>
+    return deps.drafts.withDisposal(workId, (disposeDrafts) =>
       purgeLocked(workId, cutoff, disposeDrafts),
     );
   }
@@ -229,7 +229,7 @@ export function createDrizzleWorkPurger(deps: {
             ),
           ),
       ]);
-      // F10: the Work's branches end through the Discard kernel, after this proof and before
+      // F10: the Work's drafts end through the Discard kernel, after this proof and before
       // their rows go, so nothing they created stays live and their storage is released.
       const purgedRoots = lockedTree.threadIds.length
         ? (

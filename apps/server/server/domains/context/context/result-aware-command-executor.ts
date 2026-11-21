@@ -1,9 +1,9 @@
 /** Transactional execution for commands whose domain failures are returned as Results. */
 import { Err, type Result } from "../../../shared/result.js";
 import type {
-  ContextCommandActiveBranch,
-  ContextCommandBranch,
+  ContextCommandActiveDraft,
   ContextCommandContext,
+  ContextCommandDraft,
   ContextCommandOptions,
   ContextCommandScopes,
   ContextCommandTransaction,
@@ -19,9 +19,9 @@ export interface ResultAwareCommandExecutor<TError> {
    * A command in an owner's draft, which the transaction locks, with the namespaces of
    * `sourceIds` taken in key order with its own.
    */
-  runInBranch<T>(
-    branch: ContextCommandBranch,
-    operation: (branch: ContextCommandActiveBranch) => Promise<Result<T, TError>>,
+  runInDraft<T>(
+    draft: ContextCommandDraft,
+    operation: (draft: ContextCommandActiveDraft) => Promise<Result<T, TError>>,
     sourceIds?: readonly string[],
   ): Promise<Result<T, TError>>;
   /**
@@ -84,15 +84,15 @@ export function createResultAwareCommandExecutor<TError>(input: {
 
   return {
     run,
-    runInBranch(branch, operation, sourceIds) {
+    runInDraft(draft, operation, sourceIds) {
       return run(
-        ({ branch: active }) => {
-          // The transaction contract: an `ensure` command always resolves a branch.
-          if (!active) throw new Error("An ensuring command transaction resolved no branch");
+        ({ draft: active }) => {
+          // The transaction contract: an `ensure` command always resolves a draft.
+          if (!active) throw new Error("An ensuring command transaction resolved no draft");
           return operation(active);
         },
         undefined,
-        { branch, ...(sourceIds?.length ? { sourceIds } : {}) },
+        { draft, ...(sourceIds?.length ? { sourceIds } : {}) },
       );
     },
     exclusive<T>(operation: () => Promise<T>): Promise<T> {

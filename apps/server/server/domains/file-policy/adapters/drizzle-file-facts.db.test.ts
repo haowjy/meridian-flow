@@ -2,7 +2,7 @@
  * Postgres file facts: ownership, lifecycle and the ancestor chain.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - ordered ancestor, owner-Work, and branch-Work fact assembly (kb/wiki/architecture/documents/access.md)
+ * - ordered ancestor, owner-Work, and draft-Work fact assembly (kb/wiki/architecture/documents/access.md)
  */
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import { contextSources, projects, users, works } from "@meridian/database/schema";
@@ -117,9 +117,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const drafted = await facts.load({
         target: { kind: "document", documentId: chapter },
-        branchOwner: "filefactsa01",
+        draftOwner: "filefactsa01",
       });
-      expect(drafted?.branchOwner?.owner).toEqual({ kind: "work", workId: a });
+      expect(drafted?.draftOwner?.owner).toEqual({ kind: "work", workId: a });
 
       const container = await facts.load({
         target: { kind: "container", scheme: "scratch", owner: { scope: "work", workId: a } },

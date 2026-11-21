@@ -6,7 +6,7 @@
  * A document opens on Live. A view shows a draft only when the writer chose it (the version menu,
  * a review launch) or arrived at an address naming it. The view outlives no browser-tab session:
  * a remembered draft would hide a later draft of the same owner, because an item names the
- * branch and the document, not one draft.
+ * draft and the document, not one draft.
  */
 import { parseDraftItemKey } from "@meridian/contracts";
 import type { QueryClient } from "@tanstack/react-query";

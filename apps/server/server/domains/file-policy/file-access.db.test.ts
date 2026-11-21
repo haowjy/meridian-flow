@@ -62,7 +62,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       agent: {
         projectId: p as never,
         chain,
-        branchOwner: { owner: { kind: "work", workId: w }, draftId: "fileaccessw1", handle: null },
+        draftOwner: { owner: { kind: "work", workId: w }, draftId: "fileaccessw1", handle: null },
         writeMode: "direct",
       },
     };

@@ -28,10 +28,10 @@ import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../../context/ports/tree-list-store.js";
 import {
-  type BranchHolder,
-  branchMayHold,
+  type DraftHolder,
+  draftMayHold,
   type SourceOwner,
-} from "../../context/tree/branch-ownership.js";
+} from "../../context/tree/draft-ownership.js";
 import { ownerFrom, sourceOwnerProjectId } from "../../context/tree/source-owner.js";
 import { loadDocumentPlacements } from "../../context/tree/tree-addresses.js";
 import {
@@ -40,7 +40,7 @@ import {
   type TreeView,
 } from "../../context/tree/tree-view.js";
 import {
-  type FileBranchOwnerFacts,
+  type FileDraftOwnerFacts,
   type FileFacts,
   type FileNode,
   type FileOwnerRef,
@@ -52,7 +52,7 @@ import type { FileFactsPort, FileFactsRequest } from "../ports/file-facts.js";
 type WorkRow = {
   id: WorkId;
   projectId: ProjectId;
-  /** The account that owns the Work's project: its branch's holder (`branchMayHold`). */
+  /** The account that owns the Work's project: its draft's holder (`draftMayHold`). */
   accountId: UserId;
   handle: string | null;
   isNoWork: boolean;
@@ -64,11 +64,11 @@ type FolderRow = { id: FolderId; deleted: boolean };
 
 export function createDrizzleFileFacts(db: Database): FileFactsPort {
   const viewForOwner = async (draftId?: DraftId): Promise<TreeView> =>
-    draftId ? { kind: "branch", branchId: draftId } : { kind: "live" };
+    draftId ? { kind: "draft", draftId: draftId } : { kind: "live" };
   async function load(request: FileFactsRequest): Promise<FileFacts | null> {
     const target = request.target;
-    const branchOwnerId = target.kind === "draft" ? target.draftId : request.branchOwner;
-    const view = await viewForOwner(branchOwnerId);
+    const draftOwnerId = target.kind === "draft" ? target.draftId : request.draftOwner;
+    const view = await viewForOwner(draftOwnerId);
     let base: BaseFacts | null;
     let survivingDraft = false;
     if (target.kind === "container") {
@@ -88,49 +88,49 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
         ? undefined
         : (await loadPhysicalOwnership(db, [target.documentId])).get(target.documentId);
     const facts: FileFacts = { ...base, ...physical, target };
-    if (branchOwnerId === undefined) return facts;
-    const branchOwner = await readBranchOwner(db, branchOwnerId);
+    if (draftOwnerId === undefined) return facts;
+    const draftOwner = await readDraftOwner(db, draftOwnerId);
     // An owner's draft of a document it may not hold doesn't exist.
-    if (branchOwner && !branchMayHold(branchOwner.holder, ownerOf(facts))) return null;
+    if (draftOwner && !draftMayHold(draftOwner.holder, ownerOf(facts))) return null;
     return {
       ...facts,
-      branchOwner: branchOwner?.facts ?? missingOwner(branchOwnerId),
-      ...(branchOwner && facts.deleted && survivingDraft ? { survivingDraft: true } : {}),
+      draftOwner: draftOwner?.facts ?? missingOwner(draftOwnerId),
+      ...(draftOwner && facts.deleted && survivingDraft ? { survivingDraft: true } : {}),
     };
   }
 
   return {
     load,
-    async loadList(documentIds, branchOwnerId, branchViews) {
+    async loadList(documentIds, draftOwnerId, draftViews) {
       const ids = [...new Set(documentIds)].filter(isUuid);
       const out = new Map<DocumentId, FileFacts>();
       if (ids.length === 0) return out;
-      const defaultView = await viewForOwner(branchOwnerId);
+      const defaultView = await viewForOwner(draftOwnerId);
       const groups = new Map<string, { view: TreeView; ids: DocumentId[] }>();
       for (const id of ids) {
-        const view = branchViews?.get(id) ?? defaultView;
-        const key = view.kind === "live" ? "live" : view.branchId;
+        const view = draftViews?.get(id) ?? defaultView;
+        const key = view.kind === "live" ? "live" : view.draftId;
         const group = groups.get(key);
         if (group) group.ids.push(id);
         else groups.set(key, { view, ids: [id] });
       }
-      const branchOwner =
-        branchOwnerId === undefined ? undefined : await readBranchOwner(db, branchOwnerId);
+      const draftOwner =
+        draftOwnerId === undefined ? undefined : await readDraftOwner(db, draftOwnerId);
       for (const { view, ids } of groups.values()) {
         for (const [documentId, { base, survivingDraft }] of await loadDocuments(db, ids, view, {
           includeTreeDeletion: true,
         })) {
           const target = { kind: "document", documentId } as const;
           const facts: FileFacts = { ...base, target };
-          if (branchOwnerId === undefined) {
+          if (draftOwnerId === undefined) {
             out.set(documentId, facts);
             continue;
           }
-          if (branchOwner && !branchMayHold(branchOwner.holder, ownerOf(base))) continue;
+          if (draftOwner && !draftMayHold(draftOwner.holder, ownerOf(base))) continue;
           out.set(documentId, {
             ...facts,
-            branchOwner: branchOwner?.facts ?? missingOwner(branchOwnerId),
-            ...(branchOwner && facts.deleted && survivingDraft ? { survivingDraft: true } : {}),
+            draftOwner: draftOwner?.facts ?? missingOwner(draftOwnerId),
+            ...(draftOwner && facts.deleted && survivingDraft ? { survivingDraft: true } : {}),
           });
         }
       }
@@ -141,7 +141,7 @@ export function createDrizzleFileFacts(db: Database): FileFactsPort {
   };
 }
 
-type BaseFacts = Omit<FileFacts, "target" | "branchOwner">;
+type BaseFacts = Omit<FileFacts, "target" | "draftOwner">;
 
 function ownerOf(facts: BaseFacts): SourceOwner {
   return { owner: facts.owner, accountId: facts.ownerAccountId, scheme: facts.scheme };
@@ -259,7 +259,7 @@ async function loadDocuments(
         ),
         scheme: source.scheme,
       },
-      survivingDraft: view.kind === "branch" && lineage.inTrash && lineage.status === "visible",
+      survivingDraft: view.kind === "draft" && lineage.inTrash && lineage.status === "visible",
     });
   }
   return out;
@@ -477,10 +477,10 @@ function workFacts(
  * The lifecycle of whoever names a draft (its Work, or the lineage its root chat begins), and the
  * project that holds the draft. Null when there is no such draft.
  */
-async function readBranchOwner(
+async function readDraftOwner(
   db: Database,
   draftId: DraftId,
-): Promise<{ holder: BranchHolder; facts: FileBranchOwnerFacts } | null> {
+): Promise<{ holder: DraftHolder; facts: FileDraftOwnerFacts } | null> {
   const named = draftOwnerSql();
   const [draft] = await currentDrizzleDb(db)
     .select({
@@ -541,7 +541,7 @@ async function readBranchOwner(
 }
 
 /** A purged draft is gone, never a free pass. */
-function missingOwner(draftId: DraftId): FileBranchOwnerFacts {
+function missingOwner(draftId: DraftId): FileDraftOwnerFacts {
   return {
     draftId,
     owner: null,

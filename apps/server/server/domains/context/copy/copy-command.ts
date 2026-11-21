@@ -1,5 +1,5 @@
 import type { DraftId } from "@meridian/contracts";
-import type { ContextCommandBranch } from "../ports/context-command-transaction.js";
+import type { ContextCommandDraft } from "../ports/context-command-transaction.js";
 /**
  * Copy: one atomic command per drop, for a selection of roots into one destination.
  *
@@ -117,7 +117,7 @@ export interface CopyDestinationHandoff {
   /** The folder the writer named by id, and the folders to make under it; `dir` spells where it stands. */
   parent?: { folderId: string; createFolders: readonly string[] };
   /** The Work's draft this copy lands in, when the destination is a drafted scheme's draft view. */
-  branch: ContextCommandBranch | null;
+  draft: ContextCommandDraft | null;
 }
 
 export interface ContextCopyCommandDeps {
@@ -211,11 +211,11 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
             try {
               return await commandTransaction.run(
-                (command) => write(selected, prepared.value, command.branch?.id ?? null),
+                (command) => write(selected, prepared.value, command.draft?.id ?? null),
                 [scopeOf(input.destination)],
                 {
                   sourceIds: prepared.value.sourceIds,
-                  ...(input.destination.branch ? { branch: input.destination.branch } : {}),
+                  ...(input.destination.draft ? { draft: input.destination.draft } : {}),
                 },
               );
             } catch (cause) {
@@ -252,7 +252,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       }
       const view =
         source.view.kind === "draft"
-          ? { kind: "branch" as const, branchId: source.view.draft }
+          ? { kind: "draft" as const, draftId: source.view.draft }
           : { kind: "live" as const };
       const snapshot = await source.copy.snapshotSource({
         id: source.expected.nodeId,
@@ -452,7 +452,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
-    branchId: DraftId | null,
+    draftId: DraftId | null,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
     const destination = await resolvedDestination(input);
     if (!destination.ok) return destination;
@@ -474,7 +474,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         ...(dest.parent ? { parent: dest.parent } : {}),
         plan: planned.value.plan,
         contents: planned.value.contents,
-        branchId,
+        draftId,
         ...(input.request.position ? { position: input.request.position } : {}),
       });
       if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
@@ -580,7 +580,7 @@ function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
 export function receiptCommand(
   sources: readonly Pick<CopySourceHandoff, "uri" | "view" | "expected" | "copyId">[],
   destinationUri: string,
-  request: Pick<ContextCopyRequest, "destinationParent" | "destinationBranch" | "position">,
+  request: Pick<ContextCopyRequest, "destinationParent" | "destinationDraft" | "position">,
 ): ContextOperationCommand {
   return {
     kind: "copy",
@@ -594,11 +594,11 @@ export function receiptCommand(
       }),
     ),
     destinationUri,
-    ...(request.destinationBranch
+    ...(request.destinationDraft
       ? {
           destinationView: {
             kind: "draft" as const,
-            draft: request.destinationBranch.draftId,
+            draft: request.destinationDraft.draftId,
           },
         }
       : {}),

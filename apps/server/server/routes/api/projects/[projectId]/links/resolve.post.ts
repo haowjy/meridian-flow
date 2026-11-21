@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
       linkScopes: app.linkScopes,
       workAuthorityResolver: app.workAuthorityResolver,
       fileAccess: app.fileAccess,
-      branches: app.documentSync.branches,
+      drafts: app.documentSync.drafts,
       documentTrash: app.documentTrash,
       files: app.uploadIdentity,
     },

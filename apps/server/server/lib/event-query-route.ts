@@ -44,9 +44,6 @@ const correlationParsers = {
   draftId: parseStringCorrelation,
   yjsClient: parseNumberCorrelation,
   yjsSpans: parseStringCorrelation,
-  batchId: parseStringCorrelation,
-  pushId: parseStringCorrelation,
-  branchId: parseStringCorrelation,
   folderIds: parseStringCorrelation,
 } satisfies Record<keyof EventCorrelation, CorrelationParser>;
 

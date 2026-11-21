@@ -79,10 +79,10 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
   kind: new Set([
     "agent",
     "all",
-    "branch",
     "buffered",
     "closed",
     "committing",
+    "draft",
     "human",
     "latest",
     "live",

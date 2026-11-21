@@ -131,7 +131,7 @@ export const treeEditReceipts = pgTable(
     kind: text("kind").$type<"write" | "undo" | "redo">().notNull().default("write"),
     reverses: uuid("reverses"),
     /** The draft the record was drafted in; null when it is live. No FK: the receipt outlives it. */
-    draftBranchId: text("draft_id").$type<DraftId>(),
+    draftId: text("draft_id").$type<DraftId>(),
     /** The path the model gave, for the turn's receipt lines and the Undo of a deleted node. */
     shownAt: text("shown_at"),
     createdAt: createdAt(),

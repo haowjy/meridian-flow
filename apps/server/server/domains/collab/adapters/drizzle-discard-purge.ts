@@ -28,7 +28,7 @@ export function createDrizzleDiscardPurge(
   },
 ) {
   async function purgeCommand(id: CommandId, draft: DraftId | null): Promise<void> {
-    await deps.workProjection.mutate({ branches: draft ? [draft] : [] }, async () => {
+    await deps.workProjection.mutate({ drafts: draft ? [draft] : [] }, async () => {
       await currentDrizzleDb(db).delete(commands).where(eq(commands.id, id));
     });
   }

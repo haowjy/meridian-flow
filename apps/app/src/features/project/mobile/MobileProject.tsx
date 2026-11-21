@@ -9,7 +9,7 @@ import { useDismissalFocus } from "@/components/ui/dialog";
 import { IconButton } from "@/components/ui/icon-button";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ChatFilesMenu } from "@/features/chat/ChatFilesMenu";
-import { WorkBranchCommandsBoundary } from "@/features/draft-review/usePressCommands";
+import { WorkDraftCommandsBoundary } from "@/features/draft-review/usePressCommands";
 import { ChatSurface } from "../chat/ChatSurface";
 import { RecentChatsLanding } from "../chat/RecentChatsLanding";
 import { useAccountId } from "../context/account-feature-context";
@@ -182,7 +182,7 @@ export function MobileProject(props: MobileProjectProps) {
               }
             />
           ) : (
-            <WorkBranchCommandsBoundary value={props.chatCommands}>
+            <WorkDraftCommandsBoundary value={props.chatCommands}>
               <MobileKeyboardAware>
                 <ChatSurface
                   projectId={props.projectId}
@@ -212,7 +212,7 @@ export function MobileProject(props: MobileProjectProps) {
                   onOpenContextTarget={(target) => void props.onOpenContextTarget(target)}
                 />
               </MobileKeyboardAware>
-            </WorkBranchCommandsBoundary>
+            </WorkDraftCommandsBoundary>
           )}
         </SheetContent>
       </Sheet>
@@ -247,7 +247,7 @@ function renderActiveView(props: MobileProjectProps) {
     return <RecentChatsLanding projectId={props.projectId} />;
   if (props.chatDisplay) {
     return (
-      <WorkBranchCommandsBoundary value={props.chatCommands}>
+      <WorkDraftCommandsBoundary value={props.chatCommands}>
         <MobileChatHost
           projectId={props.projectId}
           threadId={props.chatDisplay.kind === "thread" ? props.chatDisplay.threadId : null}
@@ -255,7 +255,7 @@ function renderActiveView(props: MobileProjectProps) {
           availableWorks={props.availableWorks}
           onOpenContextTarget={props.onOpenContextTarget}
         />
-      </WorkBranchCommandsBoundary>
+      </WorkDraftCommandsBoundary>
     );
   }
   return <PhoneMain {...props} />;

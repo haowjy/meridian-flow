@@ -10,10 +10,10 @@ import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  branchTreeNodes,
   contextSources,
   documentBlockRooms,
   documents,
+  draftTreeNodes,
   projects,
   users,
   works,
@@ -40,7 +40,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
   const SOURCE = randomUUID();
   const WORK = randomUUID();
   const AGENT = `agent:${randomUUID()}/${randomUUID()}`;
-  let branchId: DraftId;
+  let draftId: DraftId;
   const { treeLists } = createTestRemovalDeps(db);
   const seed = treeSeeder(db);
   const trash = createDrizzleDocumentTrash({
@@ -68,15 +68,15 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
       .select({ draftId: works.draftId })
       .from(works)
       .where(eq(works.id, WORK));
-    branchId = work?.draftId as DraftId;
+    draftId = work?.draftId as DraftId;
   });
 
-  const branchRow = async (id: string) =>
+  const draftRow = async (id: string) =>
     (
       await db
         .select()
-        .from(branchTreeNodes)
-        .where(and(eq(branchTreeNodes.id, id), eq(branchTreeNodes.branchId, branchId)))
+        .from(draftTreeNodes)
+        .where(and(eq(draftTreeNodes.id, id), eq(draftTreeNodes.draftId, draftId)))
     )[0];
   const document = async (id: string) =>
     (await db.select().from(documents).where(eq(documents.id, id)))[0];
@@ -93,19 +93,19 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
 
   it("keeps an archived Work's drafted create, with its text, through an unrelated change and the window", async () => {
     const id = (await seed.document(SOURCE, "drafted.md", {
-      view: { draft: branchId },
+      view: { draft: draftId },
       actor: AGENT,
     })) as DocumentId;
     await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
     await unrelatedChange();
-    expect(await branchRow(id)).toMatchObject({ existsOnlyInDraft: true });
+    expect(await draftRow(id)).toMatchObject({ existsOnlyInDraft: true });
     expect((await document(id))?.inNoViewSince).toBeNull();
 
     await backdate("documents", id);
     expect(await trash.purge()).toBe(0);
     await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
     expect((await document(id))?.contentPurgedAt).toBeNull();
-    expect(await branchRow(id)).toMatchObject({ existsOnlyInDraft: true });
+    expect(await draftRow(id)).toMatchObject({ existsOnlyInDraft: true });
   });
 
   it("keeps a trashed document an archived Work still has suggestions in", async () => {
@@ -144,7 +144,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
 
   it("keeps a deleted Work's drafted create while the Work can be restored, and releases it after a whole Discard", async () => {
     const id = (await seed.document(SOURCE, "drafted.md", {
-      view: { draft: branchId },
+      view: { draft: draftId },
       actor: AGENT,
     })) as DocumentId;
     await db.update(works).set({ deletedAt: new Date() }).where(eq(works.id, WORK));
@@ -153,12 +153,12 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     expect(await trash.purge()).toBe(0);
     expect((await document(id))?.contentPurgedAt).toBeNull();
 
-    // The Work is purged for good: its branch is discarded whole, its view's rows go, and the
+    // The Work is purged for good: its draft is discarded whole, its view's rows go, and the
     // document is in no view until the window passes.
     await runInDrizzleTransaction(db, () =>
-      discardTreeRecords(db, { treeLists }, { branchId, userId: USER, commandId: randomUUID() }),
+      discardTreeRecords(db, { treeLists }, { draftId, userId: USER, commandId: randomUUID() }),
     );
-    expect(await branchRow(id)).toBeUndefined();
+    expect(await draftRow(id)).toBeUndefined();
     await backdate("documents", id);
     expect(await trash.purge()).toBe(1);
     expect((await document(id))?.contentPurgedAt).not.toBeNull();

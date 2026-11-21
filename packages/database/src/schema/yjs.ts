@@ -284,7 +284,7 @@ export const applyCommandTrees = pgTable(
       .$type<CommandId>()
       .notNull()
       .references(() => commands.id, { onDelete: "cascade" }),
-    branchId: draftIdColumn("draft_id").notNull(),
+    draftId: draftIdColumn("draft_id").notNull(),
     /** The project's list, or its owner's account list (`user://`). */
     scope: text("scope").$type<"project" | "account">().notNull(),
     mark: byteaColumn("mark").notNull(),

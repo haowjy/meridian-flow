@@ -412,7 +412,7 @@ const COMMANDS: { [C in CommandName]: CommandHandler<C> } = {
   async show(deps, thread, { work }) {
     const [threads, drafts] = await Promise.all([
       deps.threads.listRecentByWork(thread.projectId, work.id, 10),
-      deps.branches.draftReview.list({ draft: draftOf(thread, work) }),
+      deps.drafts.draftReview.list({ draft: draftOf(thread, work) }),
     ]);
     return {
       work: modelWork(work),

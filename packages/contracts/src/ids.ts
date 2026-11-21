@@ -37,20 +37,20 @@ export function isDraftId(value: unknown): value is DraftId {
 export type DraftItemKey = string;
 
 /** The one builder of a draft item key, for text and binary items alike. */
-export function draftItemKey(branchId: DraftId, documentId: DocumentId): DraftItemKey {
-  return `${branchId}:${documentId}`;
+export function draftItemKey(draftId: DraftId, documentId: DocumentId): DraftItemKey {
+  return `${draftId}:${documentId}`;
 }
 
-/** The branch and document a draft item key names; null when the string is not one. */
+/** The draft and document a draft item key names; null when the string is not one. */
 export function parseDraftItemKey(
   itemKey: string,
-): { branchId: DraftId; documentId: DocumentId } | null {
+): { draftId: DraftId; documentId: DocumentId } | null {
   const separator = itemKey.indexOf(":");
   if (separator <= 0 || separator === itemKey.length - 1) return null;
-  const branchId = itemKey.slice(0, separator);
+  const draftId = itemKey.slice(0, separator);
   const documentId = itemKey.slice(separator + 1) as DocumentId;
-  return draftItemKey(branchId, documentId) === itemKey && !documentId.includes(":")
-    ? { branchId, documentId }
+  return draftItemKey(draftId, documentId) === itemKey && !documentId.includes(":")
+    ? { draftId, documentId }
     : null;
 }
 /** A client-generated UUID naming one document command; resends reuse it. */

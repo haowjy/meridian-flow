@@ -3,7 +3,7 @@
  * cross-domain effects: the same Work-first order and touches, with no wake hints.
  */
 import type { Database } from "@meridian/database";
-import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
+import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-work-draft-pending.js";
 import {
   createWorkProjectionMutation,
   type WorkProjectionMutation,
@@ -13,6 +13,6 @@ export function createTestWorkProjectionMutation(db: Database): WorkProjectionMu
   return createWorkProjectionMutation({
     db,
     draftOwnerHints: { publishDraftHints: () => {} },
-    pendingCounts: createDrizzleWorkBranchPendingStore(db),
+    pendingCounts: createDrizzleWorkDraftPendingStore(db),
   });
 }

@@ -21,10 +21,10 @@ export function mergeOwnerLocks(...sets: readonly OwnerLocks[]): OwnerLocks {
   };
 }
 
-export type BranchOwnerLifecycle = "active" | "archived" | "frozen" | "deleted" | "missing";
+export type DraftOwnerLifecycle = "active" | "archived" | "frozen" | "deleted" | "missing";
 
-/** Why a branch's owner is closed to writes, or null while it is active. */
-export function closedOwnerOf(lifecycle: BranchOwnerLifecycle): ClosedOwnerWhy | null {
+/** Why a draft's owner is closed to writes, or null while it is active. */
+export function closedOwnerOf(lifecycle: DraftOwnerLifecycle): ClosedOwnerWhy | null {
   switch (lifecycle) {
     case "active":
       return null;
@@ -108,7 +108,7 @@ function lineageLockKey(rootThreadId: string): string {
 
 /**
  * Takes the lineages' draft-owner locks in root-id order, in the caller's transaction. They
- * go after the Work row locks and before any branch, namespace or document lock: the owner
+ * go after the Work row locks and before any draft, namespace or document lock: the owner
  * slot of the global order. Returns each lineage's liveness under its lock.
  */
 export async function lockLineageOwners(

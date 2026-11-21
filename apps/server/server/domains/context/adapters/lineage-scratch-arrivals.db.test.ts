@@ -17,7 +17,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { NO_PROJECT_HINTS } from "../../../test-support/project-hints.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
-import { createDrizzleWorkBranchPendingStore } from "../../collab/adapters/drizzle-work-branch-pending.js";
+import { createDrizzleWorkDraftPendingStore } from "../../collab/adapters/drizzle-work-draft-pending.js";
 import { createTestLinkAheadRegistry } from "../../collab/test-support/document-link-scopes.js";
 import { createLocalFileAccessChanges } from "../../file-policy/index.js";
 import { createWorkProjectionMutation } from "../../projects/adapters/work-projection-mutation.js";
@@ -109,7 +109,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
         arrivals,
         projectionMutation: createWorkProjectionMutation({
           db,
-          pendingCounts: createDrizzleWorkBranchPendingStore(db),
+          pendingCounts: createDrizzleWorkDraftPendingStore(db),
           draftOwnerHints: NO_PROJECT_HINTS,
         }),
         fileAccessChanges,

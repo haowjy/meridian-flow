@@ -18,7 +18,7 @@ page says where each part lives and what the code decided where the design left 
 | `writer.ts` | `TreeWriter`: makes records in one copy of the list |
 | `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
 | `admission.ts` | `guard` (the faults that close a copy), `clientMayWrite`, `admit`: guard, integrate, stamp `dropped` |
-| `rows.ts` | `projectedRows`, `branchRows`, `changedRows`: what to write to SQL after a replay, with each node's type and extension |
+| `rows.ts` | `projectedRows`, `draftRows`, `changedRows`: what to write to SQL after a replay, with each node's type and extension |
 
 ## The rules
 
@@ -62,7 +62,7 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
     plain name and the twin the writer applied may then read suffixed (the property test's seed 137
     pins it).
 
-A row that differs from live only in a suffix is no change the Work made: `BranchRow.changed`
+A row that differs from live only in a suffix is no change the Work made: `DraftRow.changed`
 is false, and the count and the Changes list skip it (`changedFolders`, the server's
 `treeChanges`).
 
@@ -233,7 +233,7 @@ the replay uses them (package `AGENTS.md`).
   records together: `acts`, `changed_since`, `purged`, `closed` (the one that can pass, so last),
   or `taken`.
 - **A Discard is final.** `restoreDiscard` appends fresh pending copies of what the command
-  settled, on the branch the caller names (the Work's current one, which may differ from the one the
+  settled, on the draft the caller names (the Work's current one, which may differ from the one the
   Discard closed): new record ids, the same node ids, `carries` naming the
   original, `restores` the Discard and `restoredBy` who restored it (server only; `actor` stays who drafted it). They land after anything drafted since, so the restored change wins on a
   fact both touched; each pending record a copy overrides (same node, same fact: a rename's name

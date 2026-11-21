@@ -17,7 +17,7 @@
 import { t } from "@lingui/core/macro";
 import { Eye, EyeOff, List } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture, useAfterPaintRelease } from "@/components/app/PaintHold";
 import { IconButton } from "@/components/ui/icon-button";

@@ -31,10 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
-import {
-  usePressCommands,
-  type WorkBranchCommands,
-} from "@/features/draft-review/usePressCommands";
+import { usePressCommands, type WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
@@ -98,7 +95,7 @@ type WriteSources = {
   writable: Record<TreeKey, boolean>;
   changes: ChangesScope;
   /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
-  changesCommands: WorkBranchCommands;
+  changesCommands: WorkDraftCommands;
 };
 
 const WriteSourcesContext = createContext<WriteSources | null>(null);

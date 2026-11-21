@@ -46,7 +46,7 @@ export function createDocumentRevisions(deps: {
             agent: {
               projectId: thread.projectId as ProjectId,
               chain: await deps.readAgentChain(threadId),
-              branchOwner: {
+              draftOwner: {
                 owner: chatOwner(thread, work),
                 draftId: threadExecutionContext(work, thread).draftId,
                 handle: work.handle,

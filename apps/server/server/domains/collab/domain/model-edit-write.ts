@@ -11,14 +11,14 @@ import {
 } from "@meridian/agent-edit/integration";
 import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
+import { approveDraftWriteJoin } from "../../../shared/draft-write-join.js";
 import { testHook } from "../../../shared/test-hooks.js";
 import { runWithEditGrants } from "../../file-policy/edit-confirmation.js";
-import { agentBranchOwner, type FileAccess, type FileGrant } from "../../file-policy/index.js";
+import { agentDraftOwner, type FileAccess, type FileGrant } from "../../file-policy/index.js";
 import type { LiveAgentEditCore, RoutedWriteOutcome } from "./agent-edit-cores.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { DraftViews } from "./agent-edit-runtime.js";
-import type { Branches } from "./branches.js";
+import type { Drafts } from "./drafts.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
 import { runInLockedWrite } from "./locked-write.js";
 import type { ModelEdits, ModelEditWriteContext } from "./model-edit.js";
@@ -31,7 +31,7 @@ export type ModelEditWriteDeps = {
   liveCore: LiveAgentEditCore;
   /** A draft's view of Live: a drafted write goes into Live as the draft's suggestions. */
   draftView: DraftViews;
-  branches: Pick<Branches, "lockForWrite">;
+  drafts: Pick<Drafts, "lockForWrite">;
   fileAccess: Pick<FileAccess, "authorize" | "confirmEdit">;
   /** The seam a live journal append enters first: the grants' Works, then the document's lock. */
   enterLiveSeam(documentId: DocumentId): Promise<void>;
@@ -68,8 +68,8 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
     grant: FileGrant<"edit">,
   ): Promise<WriteOutcome> {
     await deps.enterDraftSeam();
-    approveBranchWriteJoin();
-    const draft = (await deps.branches.lockForWrite(agentBranchOwner(grant.principal).owner)).id;
+    approveDraftWriteJoin();
+    const draft = (await deps.drafts.lockForWrite(agentDraftOwner(grant.principal).owner)).id;
     if (documentId) {
       await deps.enterLiveSeam(documentId);
       await testHook("command.afterLock");
@@ -80,7 +80,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       documentId && (await deps.existsOnlyIn(documentId, draft))
         ? deps.draftView.onlyIn(draft)
         : deps.draftView.core(draft, { chat: given.threadId ?? null, turn, by: "agent" });
-    return core.write(command, { ...given, linkView: { kind: "branch", branchId: draft } });
+    return core.write(command, { ...given, linkView: { kind: "draft", draftId: draft } });
   }
 
   return (command, routed: ModelEditWriteContext): Promise<RoutedWriteOutcome> => {
@@ -91,9 +91,7 @@ export function createModelEditWriter(deps: ModelEditWriteDeps): ModelEdits["wri
       // in the draft's view, where the suggestions it took back show.
       if (command.command === "undo" || command.command === "revert") {
         const drafted = grant.destination.kind === "live" ? null : grant.destination.draftId;
-        const linkView: LinkView = drafted
-          ? { kind: "branch", branchId: drafted }
-          : { kind: "live" };
+        const linkView: LinkView = drafted ? { kind: "draft", draftId: drafted } : { kind: "live" };
         const core = drafted
           ? deps.draftView.core(drafted, {
               chat: given.threadId ?? null,

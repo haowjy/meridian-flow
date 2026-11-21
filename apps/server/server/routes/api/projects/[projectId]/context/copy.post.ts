@@ -15,7 +15,7 @@ export default defineEventHandler((event) =>
         availability: app.projectContextAvailability,
         contextPorts: app.contextPorts,
         workAuthorityResolver: app.workAuthorityResolver,
-        drafts: app.documentSync.branches,
+        drafts: app.documentSync.drafts,
       },
       {
         projectId: getRouterParam(event, "projectId") ?? "",

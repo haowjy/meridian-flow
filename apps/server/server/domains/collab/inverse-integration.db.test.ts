@@ -50,10 +50,10 @@ describe("inverse integration (postgres)", () => {
   afterAll(() => closeDatabase(db));
 
   /** The Work's draft creates the chapter, as ContextFS leaves a model's create in a draft-mode Work. */
-  async function claimCreate(branchId: string, documentId: string) {
+  async function claimCreate(draftId: string, documentId: string) {
     await treeSeeder(db).document(SOURCE_ID, "created", {
       id: documentId,
-      view: { draft: branchId },
+      view: { draft: draftId },
       actor: `agent:${THREAD_ID}/${TURN_ID}`,
     });
   }
@@ -129,8 +129,8 @@ describe("inverse integration (postgres)", () => {
         ),
     ).toMatchObject({ status: "success" });
     const item = () =>
-      fixture.collab.draftReview.resolveItemInBranch({
-        branchId: WORK_DRAFT_ID,
+      fixture.collab.draftReview.resolveItemInDraft({
+        draftId: WORK_DRAFT_ID,
         documentId: NEW_ID as never,
       });
     expect(await item()).toMatchObject({ item: { origin: "created" } });

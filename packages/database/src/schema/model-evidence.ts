@@ -49,7 +49,7 @@ export const threadShownLinks = pgTable(
     ref: text("ref").notNull(),
     address: text("address").notNull(),
     holderUri: text("holder_uri").notNull(),
-    /** `live` or `branch:<branchId>`. */
+    /** `live` or `draft:<draftId>`. */
     view: text("view").notNull(),
     showingDigest: text("showing_digest").notNull(),
     turnId: uuid("turn_id").$type<TurnId>().notNull(),

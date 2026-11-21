@@ -15,9 +15,9 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("production-composed branch settlement (postgres)", () => {});
+  describe.skip("production-composed draft settlement (postgres)", () => {});
 } else {
-  describe("production-composed branch settlement (postgres)", async () => {
+  describe("production-composed draft settlement (postgres)", async () => {
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -128,7 +128,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("writes a No Work draft onto a branch keyed by the chat's lineage", async () => {
+    it("writes a No Work draft onto a draft keyed by the chat's lineage", async () => {
       await db.insert(schema.works).values({
         id: NO_WORK_ID,
         projectId: PROJECT_ID,

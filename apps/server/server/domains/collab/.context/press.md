@@ -43,10 +43,10 @@ chat has its draft from its creation, so a press never makes one.
 - **A resend answers only with the stored result.** The driver reads any 2xx as the command's
   result, so a resend that finds the first request still running is a 503 (sent again), and an
   id stored for another body, or settled `never`, is the routes' 409 `command_conflict`
-  (`storedAnswer` in `lib/branch-review-route.ts`). The driver then resolves the id: a `never`
+  (`storedAnswer` in `lib/draft-review-route.ts`). The driver then resolves the id: a `never`
   settles as never-ran, but an id that holds another body's `done` resolves to that body's result,
   since resolve reads the id alone. Every command route shares this; only a client bug reaches it.
-- Lock order is the Apply click's: Works, branch, lists, documents in id order, then writes.
+- Lock order is the Apply click's: Works, draft, lists, documents in id order, then writes.
   Deliveries and the derivation hook run after commit.
 
 ## Discard is not in Trash
@@ -62,7 +62,7 @@ its own.
 ## Work purge
 
 A Work purged for good (`drizzle-work-disposal.ts`, inside the purge's transaction) has its
-branches' tree records discarded, and its suggestions, and those of the lineages the purge
+drafts' tree records discarded, and its suggestions, and those of the lineages the purge
 deletes, rejected in every document the press's enumeration finds for them (`documentsHolding`,
 over the Work's project and its creator's account: a project has one owner), with their
 `suggestion_authors` and `suggestion_verdicts` entries deleted (`dropDraft`). The reject reports

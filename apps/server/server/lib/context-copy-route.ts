@@ -18,7 +18,7 @@ import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import { decodeStateVector } from "yjs";
-import type { Branches } from "../domains/collab/index.js";
+import type { Drafts } from "../domains/collab/index.js";
 import {
   type ContextCopyRequest,
   type CopySourceView,
@@ -58,7 +58,7 @@ export interface ContextCopyRouteDeps {
   projectRepo: ProjectRepository;
   contextPorts: UnifiedContextPortFactory;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
-  drafts: Pick<Branches, "ownerOf">;
+  drafts: Pick<Drafts, "ownerOf">;
 }
 
 /** A copy source: a context locator, or one chat's uploads. */
@@ -320,7 +320,7 @@ export async function handleContextCopyRequest(
     const known = owners.get(view.draft);
     if (known) return known;
     const found = await deps.drafts.ownerOf(view.draft);
-    if (found?.branch.projectId !== input.projectId || !found.owner)
+    if (found?.draft.projectId !== input.projectId || !found.owner)
       throw createError({ statusCode: 404, message: "Draft not found" });
     owners.set(view.draft, found.owner);
     return found.owner;
@@ -462,7 +462,7 @@ export async function handleContextCopyRequest(
     destinationUri,
     ...(destinationView.kind === "draft" && destinationOwner
       ? {
-          destinationBranch: {
+          destinationDraft: {
             owner: destinationOwner,
             draftId: destinationView.draft,
             threadId: null,

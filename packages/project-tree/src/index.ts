@@ -67,9 +67,9 @@ export {
   type TreeProjection,
 } from "./replay.js";
 export {
-  type BranchRow,
-  branchRows,
   changedRows,
+  type DraftRow,
+  draftRows,
   type ProjectedRow,
   pendingCreates,
   projectedRows,

@@ -12,9 +12,9 @@ export { isDrafted, skillLevel, sourceDestination } from "./domain/policy.js";
 export {
   type AgentChain,
   type AgentLink,
-  agentBranchOwner,
+  agentDraftOwner,
   agentProject,
-  type BranchOwnerRef,
+  type DraftOwnerRef,
   type FileAccessDenial,
   type FileAccessDenied,
   type FileDestination,

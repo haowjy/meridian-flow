@@ -31,7 +31,7 @@ import {
   type View,
   viewRecords,
 } from "./index.js";
-import { branchRows, projectedRows } from "./rows.js";
+import { draftRows, projectedRows } from "./rows.js";
 import { undoChange } from "./undo-open.js";
 
 const ROOT = sourceRoot("manuscript");
@@ -221,7 +221,7 @@ describe("part 1: a draft and live changed the same thing", () => {
     expect(t.at(ch)?.trashed).toBe(true);
     expect(t.at(ch, D)?.trashed).toBe(true);
     // A node in Trash in both is no change in the Work's rows.
-    expect(branchRows(projectedRows(t.w.view(LIVE)), projectedRows(t.w.view(D)), []).has(ch)).toBe(
+    expect(draftRows(projectedRows(t.w.view(LIVE)), projectedRows(t.w.view(D)), []).has(ch)).toBe(
       false,
     );
     const first = applyDraft(t.w, "work-1", WRITER, cmd());
@@ -846,7 +846,7 @@ describe("part 5: what a document is", () => {
     expect(undoChange(t.w, LIVE, WRITER, renamed.id)).toBe("already");
   });
 
-  it("34. restores a Discard into another branch: the copies are pending there", () => {
+  it("34. restores a Discard into another draft: the copies are pending there", () => {
     const t = start();
     const ch = t.chapter("Chapter 1");
     t.w.rename(D, CHAT, ch, "Draft name");
@@ -1200,7 +1200,7 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     const work = t.w.view(D);
     const pending = pendingRecords(t.doc, "work-1");
     expect([...changedFolders(live, work, pending)]).toEqual([first]);
-    const rows = branchRows(projectedRows(live), projectedRows(work), pending);
+    const rows = draftRows(projectedRows(live), projectedRows(work), pending);
     expect(rows.get(later)).toMatchObject({ suffix: null, changed: false });
     expect(rows.get(first)).toMatchObject({ changed: true });
   });

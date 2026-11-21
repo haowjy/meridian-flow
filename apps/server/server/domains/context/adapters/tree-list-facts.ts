@@ -42,7 +42,7 @@ export async function treeListOfSource(db: DrizzleDb, sourceId: string): Promise
  * project's list holds its project's drafts, an account's its projects'. Only `open` ones may
  * write.
  */
-async function activeBranches(db: DrizzleDb, list: TreeList, open: boolean): Promise<Set<string>> {
+async function activeDrafts(db: DrizzleDb, list: TreeList, open: boolean): Promise<Set<string>> {
   const rows = await currentDrizzleDb(db as Database).execute<{ id: string }>(sql`
     SELECT b.id AS id FROM drafts b
     LEFT JOIN works w ON w.draft_id = b.id
@@ -57,22 +57,22 @@ async function activeBranches(db: DrizzleDb, list: TreeList, open: boolean): Pro
 }
 
 /**
- * The Works whose view the rows keep (`draft_tree_nodes`, pending text counted): every branch
+ * The Works whose view the rows keep (`draft_tree_nodes`, pending text counted): every draft
  * that can still come back, so an archived Work's drafted creates and a restorable deleted
  * Work's changes are never in no view. Readers that show only open Works filter by the Work's
  * state themselves.
  */
-export const keptBranches = (db: DrizzleDb, list: TreeList) => activeBranches(db, list, false);
+export const keptDrafts = (db: DrizzleDb, list: TreeList) => activeDrafts(db, list, false);
 
 /**
  * The open Works of a list: the one meaning of "open" for a write's check
- * (`Connection.drafts`). A Work is open while its branch is active and the Work is neither
- * archived nor deleted; a branch with no Work (a chat's) is open while active.
+ * (`Connection.drafts`). A Work is open while its draft is active and the Work is neither
+ * archived nor deleted; a draft with no Work (a chat's) is open while active.
  */
-export const openBranches = (db: DrizzleDb, list: TreeList) => activeBranches(db, list, true);
+export const openDrafts = (db: DrizzleDb, list: TreeList) => activeDrafts(db, list, true);
 
 /**
- * The facts admission needs: open branches and whether each source is closed or gone.
+ * The facts admission needs: open drafts and whether each source is closed or gone.
  * Null when the list is not the account's (the project or account is gone or another's).
  */
 export async function readConnection(
@@ -113,7 +113,7 @@ export async function readConnection(
   );
   const open = new Set(rows.filter((row) => !closedWhyOf(row, owners)).map((row) => row.id));
   return {
-    drafts: await openBranches(tx, list),
+    drafts: await openDrafts(tx, list),
     closed: (source) => !open.has(source),
   };
 }

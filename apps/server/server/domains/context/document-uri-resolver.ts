@@ -2,7 +2,7 @@
 import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branchTreeNodes } from "@meridian/database/schema";
+import { draftTreeNodes } from "@meridian/database/schema";
 import { eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../shared/drizzle-transaction.js";
 import { currentDocumentAddress } from "./adapters/document-address.js";
@@ -17,7 +17,7 @@ export type DocumentUriResolver = (documentId: string) => Promise<string | null>
  */
 export type DocumentLastAddress = (
   documentId: DocumentId,
-  branchId?: DraftId,
+  draftId?: DraftId,
 ) => Promise<{ uri: string; deleted: boolean } | null>;
 
 export function createDocumentUriResolver(db: Database): DocumentUriResolver {
@@ -26,22 +26,22 @@ export function createDocumentUriResolver(db: Database): DocumentUriResolver {
 }
 
 export function createDocumentLastAddress(db: Database): DocumentLastAddress {
-  return async (documentId, branchId) => {
+  return async (documentId, draftId) => {
     const [live] = await loadDocumentAddresses(db, { ids: [documentId] });
     if (live) return live;
-    // A caller that knows the Work's branch reads that one; otherwise any branch that placed it.
+    // A caller that knows the Work's draft reads that one; otherwise any draft that placed it.
     const placedIn =
-      branchId ??
+      draftId ??
       (
         await currentDrizzleDb(db)
-          .select({ branchId: branchTreeNodes.branchId })
-          .from(branchTreeNodes)
-          .where(eq(branchTreeNodes.id, documentId))
-          .orderBy(branchTreeNodes.branchId)
+          .select({ draftId: draftTreeNodes.draftId })
+          .from(draftTreeNodes)
+          .where(eq(draftTreeNodes.id, documentId))
+          .orderBy(draftTreeNodes.draftId)
           .limit(1)
-      )[0]?.branchId;
+      )[0]?.draftId;
     if (!placedIn) return null;
-    const view = { kind: "branch", branchId: placedIn } as const;
+    const view = { kind: "draft", draftId: placedIn } as const;
     return (await loadDocumentAddresses(db, { ids: [documentId] }, view))[0] ?? null;
   };
 }

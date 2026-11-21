@@ -25,7 +25,7 @@ import type { TreeListStore } from "../domains/context/ports/tree-list-store.js"
 export { treeListOfSource };
 
 export type SeedOptions = {
-  /** `LIVE` (default) or a Work's draft view, `{ draft: branchId }`. */
+  /** `LIVE` (default) or a Work's draft view, `{ draft: draftId }`. */
   view?: View;
   /** The record's actor; default `system`. */
   actor?: string;

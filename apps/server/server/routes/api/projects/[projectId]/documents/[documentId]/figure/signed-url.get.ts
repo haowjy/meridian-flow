@@ -33,7 +33,7 @@ export function createFigureSignedUrlHandler(
       throw createError({ statusCode: 400, message: "Invalid draft" });
     }
     const draft = queryDraft ?? null;
-    const view = draft ? { kind: "branch" as const, branchId: draft } : { kind: "live" as const };
+    const view = draft ? { kind: "draft" as const, draftId: draft } : { kind: "live" as const };
     // A draft of another project reads nothing here: its facts name that project's owner.
     const asset = await requireFileGrant(
       app.fileAccess,

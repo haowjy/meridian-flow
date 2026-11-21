@@ -25,12 +25,12 @@ import { closeTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { grantedJournal, testFileGrant } from "../../../test-support/file-grants.js";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDocumentLastAddress } from "../../context/document-uri-resolver.js";
-import {
-  createDrizzleBranchStore,
-  createDrizzleBranchWriteBoundary,
-} from "../adapters/drizzle-branches.js";
 import { createDrizzleCollabLookups } from "../adapters/drizzle-collab-lookups.js";
 import { createDrizzleDocumentCommands } from "../adapters/drizzle-document-commands.js";
+import {
+  createDrizzleDraftStore,
+  createDrizzleDraftWriteBoundary,
+} from "../adapters/drizzle-drafts.js";
 import { enterLiveWriteSeam } from "../adapters/drizzle-journal.js";
 import { createDrizzleModelEdits } from "../adapters/drizzle-model-edits.js";
 import { createDrizzleModelEvidence } from "../adapters/drizzle-model-evidence.js";
@@ -43,9 +43,9 @@ import {
 } from "../adapters/in-memory/static-document-link-scopes.js";
 import type { RoutedWriteContext } from "../domain/agent-edit-cores.js";
 import { createAgentEditRouter } from "../domain/agent-edit-router.js";
-import { createBranchReviewIdentity } from "../domain/branch-review-identity.js";
-import { createBranches } from "../domain/branches.js";
 import { scopeModelEditWrite } from "../domain/document-link-scope-doors.js";
+import { createDraftReviewIdentity } from "../domain/draft-review-identity.js";
+import { createDrafts } from "../domain/drafts.js";
 import { createModelDocumentEdits } from "../domain/model-document-edits.js";
 import { createModelEditRead, createModelEditWriter } from "../domain/model-edit-write.js";
 import type { DocumentLinkScopes } from "../domain/ports/document-link-scope.js";
@@ -73,15 +73,15 @@ const { lockDocumentMutation } = await import("../../../shared/document-mutation
 export const { DOCUMENT_RUNTIME_RESET_TABLES, deleteDrizzleRows } = await import(
   "../../../test-support/drizzle-reset.js"
 );
-const { createDrizzleWorkBranchPendingStore } = await import(
-  "../adapters/drizzle-work-branch-pending.js"
+const { createDrizzleWorkDraftPendingStore } = await import(
+  "../adapters/drizzle-work-draft-pending.js"
 );
-const { createBranchReviewItems } = await import("../domain/branch-review-items.js");
+const { createDraftReviewItems } = await import("../domain/draft-review-items.js");
 const { createTreeReader } = await import("../../context/tree/tree-view.js");
-const { branchFolderIds, createDrizzleBranchTreeState } = await import(
-  "../adapters/drizzle-branch-tree-state.js"
+const { draftFolderIds, createDrizzleDraftTreeState } = await import(
+  "../adapters/drizzle-draft-tree-state.js"
 );
-const { createDrizzleBranchTreeActors } = await import("../adapters/drizzle-branch-tree-actors.js");
+const { createDrizzleDraftTreeActors } = await import("../adapters/drizzle-draft-tree-actors.js");
 const { treeSeeder } = await import("../../../test-support/tree-seed.js");
 const { createDrizzleCollabPersistence } = await import("../adapters/drizzle-journal.js");
 const { createDeferredLiveProjectionCoordinator, createHocuspocusCoordinator } = await import(
@@ -102,7 +102,7 @@ const { createTurnReversalService } = await import("../domain/turn-reversal-serv
 const { UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS } = await import(
   "../adapters/declared-stubs.js"
 );
-const { createWorkBranchReviewService } = await import("../domain/work-branch-review-service.js");
+const { createWorkDraftReviewService } = await import("../domain/work-draft-review-service.js");
 
 /** Each suite owns its connection; importing this module allocates no database resources. */
 export function createTestDatabase(): Database {
@@ -252,13 +252,13 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     hocuspocus: () => hocuspocus as never,
     journal: persistence.journal,
   });
-  const workBranches = createBranches({
-    store: createDrizzleBranchStore(db),
-    boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
+  const workDrafts = createDrafts({
+    store: createDrizzleDraftStore(db),
+    boundary: createDrizzleDraftWriteBoundary(db, createTestWorkProjectionMutation(db)),
   });
   const { treeLists, removals } = createTestRemovalDeps(db);
   const notices = createDrizzleNoticePort(db);
-  const durableWorkBranchPendingStore = createDrizzleWorkBranchPendingStore(db);
+  const durableWorkDraftPendingStore = createDrizzleWorkDraftPendingStore(db);
   const events: Array<{
     name: string;
     level: string;
@@ -288,8 +288,8 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const resolveDocumentUri = async (documentId: string) =>
     `manuscript/${documentName(documentId as DocumentId)}.md`;
   const documentLastAddress = createDocumentLastAddress(db);
-  const resolveLastDocumentUri = async (documentId: string, branchId?: DraftId) =>
-    (await documentLastAddress(documentId as DocumentId, branchId))?.uri ?? null;
+  const resolveLastDocumentUri = async (documentId: string, draftId?: DraftId) =>
+    (await documentLastAddress(documentId as DocumentId, draftId))?.uri ?? null;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
     hook: async () => {},
@@ -336,7 +336,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
         createModelEditWriter({
           liveCore: runtime.liveUtilityCore,
           draftView: runtime.draftView,
-          branches: workBranches,
+          drafts: workDrafts,
           fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
           enterLiveSeam: (documentId) => enterLiveWriteSeam(db, documentId),
           enterDraftSeam: async () => {
@@ -374,28 +374,28 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     resolveDocumentUri,
     commands: createDrizzleDocumentCommands(db),
   });
-  const reviewItems = createBranchReviewItems({
-    tree: createDrizzleBranchTreeState(db, createTreeReader(db)),
-    text: (branchId, documentIds) =>
-      durableWorkBranchPendingStore.listBranchTextChanges(branchId, documentIds),
-    treeActors: createDrizzleBranchTreeActors(db, treeLists),
+  const reviewItems = createDraftReviewItems({
+    tree: createDrizzleDraftTreeState(db, createTreeReader(db)),
+    text: (draftId, documentIds) =>
+      durableWorkDraftPendingStore.listDraftTextChanges(draftId, documentIds),
+    treeActors: createDrizzleDraftTreeActors(db, treeLists),
   });
   const lookups = createDrizzleCollabLookups(db);
-  const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
-  const branches = createWorkBranchReviewService({
+  const identity = createDraftReviewIdentity({ drafts: workDrafts, reviewItems });
+  const drafts = createWorkDraftReviewService({
     purgeDiscards: async () => 0,
     reviewItems,
-    folderIds: (branchId) => branchFolderIds(db, branchId),
+    folderIds: (draftId) => draftFolderIds(db, draftId),
     // No tree lists in this fixture: a list read without a cut.
     treeCut: async () => ({}),
-    pending: durableWorkBranchPendingStore,
+    pending: durableWorkDraftPendingStore,
     identity,
     commands: createDrizzleDocumentCommands(db),
     resolveThreadTitles: lookups.resolveThreadTitles,
   });
   const presses = createDrizzlePress(db, {
     workProjection: createTestWorkProjectionMutation(db),
-    branches: workBranches,
+    drafts: workDrafts,
     live: persistence.journal,
     liveCoordinator,
     treeLists,
@@ -431,7 +431,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     writeDocument: runtime.markdownDocuments.writeDocument,
     mergeCodeText: runtime.markdownDocuments.mergeCodeText,
     bindMarkdown: runtime.linkBinder.bindMarkdown,
-    ...branches,
+    ...drafts,
     presses,
   };
 

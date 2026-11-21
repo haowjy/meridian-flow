@@ -53,12 +53,12 @@ its outcome, the no-op answers included (`nothing_to_undo`, `expired`); every st
 `done`. The turn's Work receipts (`reverseTurnCard`'s `alongside`,
 `lib/work-receipt-reversal.ts`) run in the same command, after the documents, so a click holds
 both halves or neither; its one stored outcome answers a resend, and another request under the id
-is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's branch no longer places the node (a Discard took it out) is
+is `command_conflict` (409). The receipts the reversal writes carry `document_edits.command_id`. A drafted tree step whose Work's draft no longer places the node (a Discard took it out) is
 dropped from the grants and never run: it is left alone, and the rest of the reply still
 reverses (`TreePlan.gone`). A target in a closed owner's draft (an archived or deleted Work, a chat
 in Trash) is planned per target, not refused: the reversal lands Live and open targets and plans nothing
 for a closed one, and the card says nothing about it (its Undo is absent while the owner is
-closed). A reversal whose every target is closed answers `expired`. An owner that closes (or a branch that is purged) between the capture and the commit takes nothing, as one closed at the capture does: a closure the locks find rolls the commit back to a result that took nothing, so the card answers `expired` and the model what a fresh plan would. A denial for another reason refuses the
+closed). A reversal whose every target is closed answers `expired`. An owner that closes (or a draft that is purged) between the capture and the commit takes nothing, as one closed at the capture does: a closure the locks find rolls the commit back to a result that took nothing, so the card answers `expired` and the model what a fresh plan would. A denial for another reason refuses the
 whole reversal (`permission_denied`), which the card shows as a failed press.
 A tab that predates the removal of Redo still sends `direction`; the route accepts it, and a
 `"redo"` answers 200 `{ status: "expired", documents: [] }` without running anything.
@@ -136,7 +136,7 @@ only a change that stands, and leaves the others whole. The text decides, not wh
 
 A card's reversal decides which tree steps can still act before it plans or admits any text
 (`plan` in `adapters/drizzle-turn-tree-inverse.ts`), from the package's walk (`undoReports`) as the lists
-stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's branch
+stand (the fates are below, under tree receipts), and a drafted Undo only while its Work's draft
 places the node. A step that can't act is a skip and never runs, so one purged document never
 refuses the rest of the reply. The text targets and the grants come from the steps that act. A
 card never targets the text of a document created by the turn, even after the create was undone;
@@ -188,13 +188,13 @@ is the model's own undo). A drafted change says each half: `drafts` the text, fr
 parts, and `trees` the tree, from `draftedFates` in `@meridian/project-tree` over the receipt's
 records (it follows a restored Discard's copies, and a record a later change landed over reads
 `replaced`); per node, pending, else applied, else replaced, else discarded. A restored Discard may
-put its copies in a new branch of the Work, so the card's tree plan judges and takes back each
-drafted receipt in the branch of its newest copy (`newestDrafted`), not the branch it was written in. The card's label and
+put its copies in a new draft of the Work, so the card's tree plan judges and takes back each
+drafted receipt in the draft of its newest copy (`newestDrafted`), not the draft it was written in. The card's label and
 row word read both. Its lists' keys are taken before the documents' (in
 `acquireMutationScope`), and its edit grants are the documents' own, a live restore its own grant.
 A turn's text on a document the same turn deleted is not a card target while the document is in
 Trash: the card's Undo restores the document, and a second Undo takes the text. The model's tree call
-keeps a receipt (`tree_edit_receipts`: the record ids, the Work's branch) and one
+keeps a receipt (`tree_edit_receipts`: the record ids, the Work's draft) and one
 `tree_edit_receipt_nodes` row for every node it changed, each with a write ordinal reserved on
 that node's counter (`agent_edit_wid_counters`), the sequence the node's text edits take. The
 `e<N>` the model is given is the ordinal on the receipt's subject.

@@ -170,7 +170,7 @@ export interface ContextCopyAdapter {
     parent?: { folderId: string; createFolders: readonly string[] };
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
-    branchId: DraftId | null;
+    draftId: DraftId | null;
     position?: ContextSiblingPosition;
   }): Promise<Result<CopyOutcome, AdapterFault>>;
 }

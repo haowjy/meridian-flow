@@ -584,7 +584,7 @@ export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
 
 /**
  * Restoring a Discard: a Discard is final, so its records stay discarded and the Work gets fresh
- * pending copies of them, on `draft` (the Work's current branch, which may not be the one the
+ * pending copies of them, on `draft` (the Work's current draft, which may not be the one the
  * Discard closed), after anything it drafted since (so on a fact both touched, the restored
  * change wins; each pending record a copy overrides is settled discarded under `command`, so
  * restoring that command brings it back as a copy that wins in turn). A copy has a new id and the same node id; `carries` names the original, `restores`

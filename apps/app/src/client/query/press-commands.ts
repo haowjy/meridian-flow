@@ -4,7 +4,7 @@
  * server runs both halves; an open document's text changes when its update arrives on the socket.
  */
 import type { CommandDriver, CommandKind } from "@meridian/command-driver";
-import type { PressRequest } from "@meridian/contracts/branches";
+import type { PressRequest } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 

@@ -28,7 +28,7 @@ deleted (`shared/test-hook-controller.ts`; points in `shared/test-hooks.ts`).
    write; an open live tab holds no AI text; the receipt says the file was
    deleted before the edit ran. Repeat in a No Work chat.
 4. **A held create, then Discard.** Pause at `command.beforeClaim`; a
-   draft-mode chat creates a file; Discard all the Work's branch; resume. PASS:
+   draft-mode chat creates a file; Discard all the Work's draft; resume. PASS:
    the hidden row is a `discarded` tombstone with no head, no checkpoint, no
    other row at its name. Then compaction, the generation reader, provenance and
    seed on that id refuse with `DocumentNotFoundError` carrying `removal`, and no head appears.

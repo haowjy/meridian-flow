@@ -19,27 +19,27 @@ import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
-import type { WorkBranchDisposal } from "../../projects/index.js";
-import type { Branches } from "../domain/branches.js";
+import type { WorkDraftDisposal } from "../../projects/index.js";
+import type { Drafts } from "../domain/drafts.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { storedDocument } from "../domain/stored-document.js";
 import { documentsHolding } from "./drizzle-block-text.js";
-import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
+import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
 
 const schema = buildDocumentSchema();
 
-export function createDrizzleWorkBranchDisposal(
+export function createDrizzleWorkDraftDisposal(
   db: Database,
   deps: {
-    branches: Pick<Branches, "namedBy" | "lock">;
+    drafts: Pick<Drafts, "namedBy" | "lock">;
     treeLists: Pick<TreeListStore, "lock" | "submit" | "resync">;
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     /** After commit, for each document whose text changed: its derivations (the pending index). */
     onCommitted(documentId: DocumentId): Promise<void>;
   },
-): WorkBranchDisposal {
+): WorkDraftDisposal {
   /** The drafts' suggestions out of one document, appended as nobody's edit. Its key is held. */
   async function dropText(id: DocumentId, draftIds: readonly DraftId[]): Promise<void> {
     const snapshot = await deps.live.read(id);
@@ -69,9 +69,9 @@ export function createDrizzleWorkBranchDisposal(
     workId: WorkId,
     lineageRootIds: readonly string[],
   ): Promise<{ releasedObjects: readonly string[]; draftIds: readonly DraftId[] }> {
-    const named = (await deps.branches.namedBy({ workId, lineageRootIds })).sort();
+    const named = (await deps.drafts.namedBy({ workId, lineageRootIds })).sort();
     const draftIds: DraftId[] = [];
-    for (const draftId of named) if (await deps.branches.lock(draftId)) draftIds.push(draftId);
+    for (const draftId of named) if (await deps.drafts.lock(draftId)) draftIds.push(draftId);
     // Every list in one call, after the drafts and before the documents (the press's lock
     // order): the drafts' lists, the held documents' lists, and the Work's project's list,
     // which the purge writes next.
@@ -84,7 +84,7 @@ export function createDrizzleWorkBranchDisposal(
     const held = work ? await documentsHolding(db, work, draftIds) : [];
     const lists = new Map<string, TreeList>();
     for (const draftId of draftIds)
-      for (const list of await treeListsOfBranch(db, draftId)) lists.set(listKey(list), list);
+      for (const list of await treeListsOfDraft(db, draftId)) lists.set(listKey(list), list);
     for (const projectId of [work?.projectId, ...held.map((row) => row.projectId)])
       if (projectId) {
         const list: TreeList = { kind: "project", projectId: projectId as ProjectId };
@@ -98,9 +98,9 @@ export function createDrizzleWorkBranchDisposal(
     if (lists.size > 0) await deps.treeLists.lock([...lists.values()]);
     // One pass per draft: its tree records settled discarded in each list, then its view's rows
     // go. The purge deletes the rows after the Work and chats naming them.
-    for (const branchId of draftIds) {
-      await discardTreeRecords(db, deps, { branchId, commandId: newId() });
-      await deps.treeLists.resync(await treeListsOfBranch(db, branchId));
+    for (const draftId of draftIds) {
+      await discardTreeRecords(db, deps, { draftId, commandId: newId() });
+      await deps.treeLists.resync(await treeListsOfDraft(db, draftId));
     }
     const ids = [...new Set(held.map((row) => row.id as DocumentId))].sort();
     for (const id of ids) await lockDocumentMutation(currentDrizzleDb(db), id);

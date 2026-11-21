@@ -358,7 +358,7 @@ every place.
 
 The hover verdict, the decision to ask and the menu all come from `dropChoices`
 for a crossing drop (`planMove` alone serves a same-system drop), so a new action
-is a new item there and a branch in the list's `choose`. The contract:
+is a new item there and a draft in the list's `choose`. The contract:
 
 - `EntryDrag` (`entry.ts`, held by `drag-session.ts`): `{ entries, source }`. An entry is
   identity (`ref`), the name the preview shows, and the `view` a Copy of it reads (the live
@@ -429,8 +429,8 @@ they are (`planCopy`, `copyRows` in `execute-copy.ts`). Every carried row is
 copied, the one already in the destination's parent included (its copy is a
 twin), and an edge drop may anchor on a carried row. Each entry's `view` goes to the
 server with its root: a tree row copies the live document, a draft title or receipt row the draft it
-shows. A draft view names its Work and no chat; the server reads that Work's active branch's draft
-of the document, and where the Work holds no draft of it, its live text, which is what Draft view shows. The copies are
+shows. A draft view names its Work and no chat; the server reads the document in that Work's draft,
+and where the Work holds no change to it, its live text, which is what Draft view shows. The copies are
 one request with one root per row: the browser mints the copies' ids and the command's id and sends
 them once (`copyRows`), and the answer places every root or refuses the whole Copy. The copies
 arrive through the list like anyone's records.

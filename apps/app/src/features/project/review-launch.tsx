@@ -10,7 +10,7 @@ import type { EventRecord } from "@meridian/contracts/observability";
 import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { claimDocumentTarget, whenEditorMounted } from "@/core/editor/reading-position-navigation";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
@@ -225,15 +225,14 @@ export function useOpenCreatedDocument(): (
 ) => Promise<void> {
   const shell = useShellTreeVersion();
   const { openAiDraft } = useAiDraftLauncher();
-  const branchId = shell?.version.view.draft ?? null;
-  const draftId = shell?.draftId ?? null;
+  const shown = shell?.version.view.draft ?? null;
   return useCallback(
     async (document, live, opened) => {
-      if (!branchId || !draftId) return live();
+      if (!shown) return live();
       openAiDraft({
-        draftId,
+        draftId: shown,
         documentId: document.documentId,
-        itemKey: draftItemKey(branchId as DraftId, document.documentId as DocumentId),
+        itemKey: draftItemKey(shown as DraftId, document.documentId as DocumentId),
         contextLocation: document.contextLocation,
         documentName: document.documentName,
         draftOnly: true,
@@ -241,7 +240,7 @@ export function useOpenCreatedDocument(): (
       });
       opened?.();
     },
-    [branchId, draftId, openAiDraft],
+    [shown, openAiDraft],
   );
 }
 

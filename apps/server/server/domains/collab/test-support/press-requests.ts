@@ -1,7 +1,7 @@
 /** The writer's press, driven through the store with the envelope the route would build. */
 import { randomUUID } from "node:crypto";
 import type { CommandId, DraftId, ProjectId, UserId } from "@meridian/contracts";
-import type { PressRequest } from "@meridian/contracts/branches";
+import type { PressRequest } from "@meridian/contracts/drafts";
 import { type CommandEnvelope, commandDigest } from "../../../shared/commands/command-record.js";
 import type { PressStore } from "../adapters/drizzle-press.js";
 import { PROJECT_ID, USER_ID, WORK_DRAFT_ID } from "./collab-postgres-harness.js";

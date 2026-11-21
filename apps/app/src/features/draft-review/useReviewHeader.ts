@@ -10,7 +10,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { useDraftReview } from "./DraftReviewProvider";
 import { nextReviewFile } from "./review-files";
 import { type ReviewChangesView, useReviewChanges } from "./useReviewChanges";

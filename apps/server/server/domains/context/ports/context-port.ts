@@ -1,4 +1,4 @@
-import type { ContextCommandBranch } from "./context-command-transaction.js";
+import type { ContextCommandDraft } from "./context-command-transaction.js";
 /**
  * Context port + scheme vocabulary: the stat/read/list/write/search/delete
  * contract over context URI schemes plus file-entry, result, and error types.
@@ -23,7 +23,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { SpelledLinkFact } from "@meridian/markup/links";
 import type { Result } from "../../../shared/result.js";
 import type { BoundWrite } from "../../collab/index.js";
-import type { BranchOwnerRef, FileDestination } from "../../file-policy/index.js";
+import type { DraftOwnerRef, FileDestination } from "../../file-policy/index.js";
 import type { DocumentCreationMetadata } from "../document-metadata.js";
 import type { AddressGlob } from "../grep/address-glob.js";
 import type { GrepMatcher } from "../grep/matcher.js";
@@ -49,8 +49,8 @@ export interface ThreadContextView {
   /** The chat whose uploads bare `uploads://` names: this thread's top primary (a subagent's parent). */
   uploadsOwner?: UploadsOwner;
   threadId: string;
-  /** The owner whose branch this thread's drafts land in, in either write mode. */
-  branchOwner: BranchOwnerRef;
+  /** The owner whose draft this thread's drafts land in, in either write mode. */
+  draftOwner: DraftOwnerRef;
   writeMode: AiWriteMode;
   /**
    * Where every write of this port lands, when its caller already knows: a person's write, an
@@ -305,7 +305,7 @@ export interface ContextCopyRequest {
   }[];
   /** Canonical address of the destination parent folder. */
   destinationUri: string;
-  destinationBranch?: ContextCommandBranch;
+  destinationDraft?: ContextCommandDraft;
   /** The identity-based destination, for the receipt and the in-transaction recheck. */
   destinationParent?: ContextDestinationParent;
   position?: ContextSiblingPosition;

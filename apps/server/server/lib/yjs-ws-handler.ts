@@ -388,7 +388,7 @@ async function classifyYjsConnectionAdmission(input: {
 
 /** Why the file's owner is closed, if it is: the 4409 reason a writer typing into it is told. */
 function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | undefined {
-  const owner = facts?.branchOwner ?? facts?.ownerWork;
+  const owner = facts?.draftOwner ?? facts?.ownerWork;
   if (!owner) return undefined;
   if ("frozen" in owner && owner.owner?.kind === "lineage") {
     return owner.frozen ? "chat_frozen" : undefined;

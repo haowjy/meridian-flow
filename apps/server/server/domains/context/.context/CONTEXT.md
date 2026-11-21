@@ -137,8 +137,8 @@ writer text (`term`; the app's door finds the passage again with it).
 
 ## Views, identity, and revisions
 
-The tree module supplies `LIVE_TREE` and `{ kind: "branch", branchId }`. ContextFS
-uses that view for `stat`, `read`, `list`, `grep`, and `locate`; a branch's
+The tree module supplies `LIVE_TREE` and `{ kind: "draft", draftId }`. ContextFS
+uses that view for `stat`, `read`, `list`, `grep`, and `locate`; a draft's
 document or folder that exists only in that Work's draft appears only there. A draft create has an
 empty live Y.Doc and text in its draft until Apply. Readers compose `visibleDocuments(view)` and
 `visibleFolders(view)` ([tree](../tree/AGENTS.md)); there is no hidden row to filter.
@@ -164,9 +164,9 @@ and still under a live source and project. The list returns removal metadata;
 the identity read adds the document's Markdown, serialized from its frozen Yjs on request. Both authorize
 through the project before exposing the tombstone or its text. The hourly
 purge releases content after the shared 30-day retention period while keeping
-the tombstone and incoming identity links. It takes the Work, branch,
+the tombstone and incoming identity links. It takes the Work, draft,
 namespace, document, and draft locks before rechecking eligibility. Pending
-branch text or tree changes defer purge; otherwise collab closes active drafts
+draft text or tree changes defer purge; otherwise collab closes active drafts
 before the storage-release kernel erases the content.
 
 ## Writes to the tree
@@ -182,14 +182,14 @@ document keys; a caller holds no document or namespace key when it submits. `con
 
 - **Placement.** People write live (`LIVE`), and so does an auto-apply chat in a place whose AI access
   is auto-apply. A chat whose write mode is draft, or whose place asks for review, writes a drafted
-  source to the chat's branch (`{ draft: branchId }`; the owner is set in both modes and
+  source to the chat's draft (`{ draft: draftId }`; the owner is set in both modes and
   `sourceDestination(writeMode, scheme, owner)` decides); the command transaction ensures and
-  locks the branch (`runInBranch`). A port built with a `destination` (a person's write, an Undo, a
+  locks the draft (`runInDraft`). A port built with a `destination` (a person's write, an Undo, a
   tool call holding its grants) places every write there and ignores the chat's mode. Scratch content writes stay live in draft mode, while its tree
   writes are drafted, so one drafted move can cross Scratch and a drafted source. A draft never
   seeds live Yjs: whole-file seed is a live-only command.
 - **Text reads take the document's destination.** A document's address scheme is where it was found;
-  a branch move can leave its content in another source. Grep's `readable` returns each document's
+  a draft move can leave its content in another source. Grep's `readable` returns each document's
   decision (`level` and `destination`) and ContextFS reads each text there; the model's read tool
   reads at its grant's destination, and `keptDraft` asks the grant's `contentScheme`. The per-source
   decider (`sourceDestination` in `placementFor` and `ContextFS.threadView()` with no decision)
@@ -397,7 +397,7 @@ ref through the final tree. Every tracked create, upload, move-in, Work
 restore, and Apply settles arrivals once in its completion transaction. A ref
 binds once, to the first live document its address reaches through the tree's walk (a `Kael/Note` link reaches a Note in a folder `Kael~f1` beside a document `Kael`), for every holder:
 a later occupant never captures it, nothing rebinds it, and a paste copies it
-as is. A branch's hidden create and a deleted row are no arrival. Lineage
+as is. A draft's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
 capture each other's waiting refs; a soft-deleted Work keeps its identity and
 its files until the purge, so refs to its address bind while it is deleted. Refs in a Work's suggestions, or in a
@@ -421,7 +421,7 @@ reach the document by identity; an alias returns only when that identity is
 currently available to the request owner in the requested project.
 
 A link resolver is not a capability. A reader who cannot reach a ref receives
-`gone` without a location. A document that exists only in the reader's Work draft answers `inBranch` with that branch and
+`gone` without a location. A document that exists only in the reader's Work draft answers `inDraft` with that draft and
 path; another Work's draft-only document is not shown to the reader. Holder binding is stable by document identity, and
 relative spelling uses only a holder the reader may name and read.
 
@@ -438,7 +438,7 @@ lock with trash/restore liveness. The source remains while any lineage member
 is live, hides when the last member leaves, and restores with a live member.
 The first chat may be trashed and still names its lineage; `ls` lists only
 available notes. A lineage root names Scratch ownership, never a reader: draft
-visibility for link answers comes from the selected Work's branch tree view, so
+visibility for link answers comes from the selected Work's draft tree view, so
 never pass `rootThreadId` as the viewing thread. Rebinding a chat selects a
 different bare Scratch owner and never moves notes; the durable Work-switch
 Notice names the previous Scratch root. Work purge ends the nodes of its sources (the Work's, its lineages' and its chats') with a

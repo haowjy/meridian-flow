@@ -4,9 +4,9 @@ import type { DocumentTrashEntry, TrashEntryFacts } from "@meridian/contracts/pr
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
-  branchTreeNodes,
   contextSources,
   documents,
+  draftTreeNodes,
   projects,
   threads,
   treeNodes,
@@ -407,8 +407,8 @@ export function createDrizzleDocumentTrash(deps: {
       notExists(
         currentDrizzleDb(deps.db)
           .select({ one: sql`1` })
-          .from(branchTreeNodes)
-          .where(eq(branchTreeNodes.id, documents.id)),
+          .from(draftTreeNodes)
+          .where(eq(draftTreeNodes.id, documents.id)),
       ),
     );
   }

@@ -36,8 +36,8 @@ lifecycle lock.
 Work deletion marks primary chats, result rows and the Work's context sources with
 `deletedByWorkId`; restore clears exactly the rows marked by that deletion. A source's end is
 its row's: the cascade writes no node, because the project's tree list is the only writer of
-node rows and its replay follows the source. Branches and their drafts remain until purge, so
-restore finds them. Purge ends the Work's branches through collab's Discard, which settles every
+node rows and its replay follows the source. Drafts and their drafts remain until purge, so
+restore finds them. Purge ends the Work's drafts through collab's Discard, which settles every
 pending record of the Work, and rejects the Work's suggestions in Live documents for good
 (`collab/.context/press.md`, "Work purge"); the documents it drafted are then in no view and
 context retention releases them after its window. Purge also deletes the documents of the Work's own nodes before
@@ -53,9 +53,9 @@ own transaction (`stopThreads`), before `lockWorkThreadTree` locks the tree's
 rows parents first.
 
 A lineage lock (`pg_advisory_xact_lock` on `draft-owner:lineage:<root>`) follows the
-Work locks and precedes branch, list, namespace and document locks; the thread tree lock,
+Work locks and precedes draft, list, namespace and document locks; the thread tree lock,
 trash and restore take it too, because they change whether a lineage is live. Purge
-also disposes the active branches of the lineages it deletes.
+also disposes the active drafts of the lineages it deletes.
 Delete and purge lock the thread tree before the Work, then recheck the full
 membership set; a concurrent join retries. Restore locks the threads carrying
 that Work's deletion marker and clears exactly that set.

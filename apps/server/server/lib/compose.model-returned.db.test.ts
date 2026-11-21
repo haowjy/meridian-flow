@@ -38,8 +38,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-    const { handleDraftListRequest, handlePressRequest, selectBranchRouteServices } = await import(
-      "./branch-review-route.js"
+    const { handleDraftListRequest, handlePressRequest, selectDraftRouteServices } = await import(
+      "./draft-review-route.js"
     );
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
@@ -169,7 +169,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.commands)
         .where(eq(schema.commands.kind, "model_edit"))
         .orderBy(schema.commands.createdAt);
-    const branchRows = () => db.select({ id: schema.drafts.id }).from(schema.drafts);
+    const draftRows = () => db.select({ id: schema.drafts.id }).from(schema.drafts);
     const workDraft = async () => {
       const [row] = await db
         .select({ draftId: schema.works.draftId })
@@ -184,7 +184,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ?.split("|")[0] as string;
 
     async function writerDiscards(runtime: Awaited<ReturnType<typeof reply>>["runtime"]) {
-      const routes = selectBranchRouteServices(runtime.app);
+      const routes = selectDraftRouteServices(runtime.app);
       const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
       const listed = await handleDraftListRequest(routes, {
         ...scope,
@@ -214,7 +214,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       expect(first.isError, first.text).toBeFalsy();
       await writerDiscards(runtime);
-      const earlier = await branchRows();
+      const earlier = await draftRows();
 
       const replayId = randomUUID();
       const args = {
@@ -228,8 +228,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(landed.text).toContain("status: success");
       expect(landed.text).not.toMatch(/re-read|retry|read again/i);
       // A Discard closes no draft: the write lands in the Work's one draft.
-      expect(await branchRows()).toHaveLength(earlier.length);
-      const listed = await handleDraftListRequest(selectBranchRouteServices(runtime.app), {
+      expect(await draftRows()).toHaveLength(earlier.length);
+      const listed = await handleDraftListRequest(selectDraftRouteServices(runtime.app), {
         userId: USER_ID,
         projectId: PROJECT_ID,
         draft: await workDraft(),

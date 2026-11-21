@@ -32,7 +32,7 @@ with `POST /api/projects/$P/works` (body `{"commandId": <uuid>, "name": ...}`), 
 cell. The Draft chats use `workId` and `aiWriteMode: "draft"`. Read each
 document once on its chat to learn the hashes for heading, A, B, C, D, and E.
 Prime each Draft document with a write to paragraph A so the Work's draft holds a change;
-get the `itemKey` (`<draftId>:<documentId>`) from `GET /api/projects/$P/works/$W/branches` and open
+get the `itemKey` (`<draftId>:<documentId>`) from `GET /api/projects/$P/drafts?draft=<the Work's draftId>` and open
 `/p/<P>/editor/manuscript/<document>?item=<itemKey>`.
 
 ## Each cell

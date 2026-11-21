@@ -13,7 +13,7 @@ import {
   targetOfChanges,
 } from "@/features/draft-review/review-model";
 import { hasApply, hasTreeLine, opensAsDocument } from "@/features/draft-review/tree-line";
-import { useBoundWorkBranchCommands } from "@/features/draft-review/usePressCommands";
+import { useBoundWorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { useAiDraftLauncher } from "@/features/project/review-launch";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
@@ -38,7 +38,7 @@ export function useDraftDock({
   generating: boolean;
   active?: boolean;
 }) {
-  const controller = useBoundWorkBranchCommands();
+  const controller = useBoundWorkDraftCommands();
   const shell = useShellTreeVersion();
   useSyncExternalStore(
     controller.owner.subscribe,

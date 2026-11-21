@@ -21,7 +21,7 @@
  * A draft-created document is always on its draft: every way of opening one names it, and the
  * rule keeps it there with the toggle on Live.
  */
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import {
