@@ -124,7 +124,7 @@ function dump(label: string, doc: Y.Doc) {
             : c.constructor.name;
       items.push(`${n.deleted ? "~" : ""}${n.id.client}:${n.id.clock}${body}`);
     }
-    console.log(label, items.join(" "));
+    process.stdout.write(`${label} ${items.join(" ")}\n`);
   }
 }
 
