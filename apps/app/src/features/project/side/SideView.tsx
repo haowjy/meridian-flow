@@ -67,6 +67,8 @@ type SideView = {
   main: MainForSide;
   /** The chat on screen, in main or beside: the draft scope under None reads it. */
   chatOnScreen: string | null;
+  /** A new chat's composer is on screen, in main or beside: a chat that has no drafts yet. */
+  newChatOnScreen: boolean;
   /** The chat host's thread: the chat on screen, else the one it last showed (kept warm, hidden). */
   hostChatId: string | null;
   /** What the side's new-chat composer is about, as its draft stands. */
@@ -314,6 +316,7 @@ export function SideViewProvider({
       side,
       main,
       chatOnScreen,
+      newChatOnScreen: showing === null,
       hostChatId,
       newChatAbout,
       reportNewChatAbout,
@@ -325,6 +328,7 @@ export function SideViewProvider({
       side,
       JSON.stringify(main),
       chatOnScreen,
+      showing,
       hostChatId,
       newChatAbout,
       revealed,
@@ -380,6 +384,11 @@ export function useMainForSide(): MainForSide {
 /** The chat on screen, in main or beside; null on the new-chat composer. */
 export function useChatOnScreen(): string | null {
   return useSideView().chatOnScreen;
+}
+
+/** A new chat's composer is on screen, in main or beside. */
+export function useNewChatOnScreen(): boolean {
+  return useSideView().newChatOnScreen;
 }
 
 /** Outside the project view (a document menu mounted elsewhere), there is no chat on screen. */

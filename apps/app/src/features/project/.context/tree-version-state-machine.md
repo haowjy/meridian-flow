@@ -60,14 +60,18 @@ stateDiagram-v2
 - **The Work chip** under None names the chat's Work when its drafts drive the toggle, with the
   count Changes shows; the pick itself stays None.
 - **A change of the scope's draft owner** (a Work pick, or under None another chat on screen
-  whose drafts are another owner's) keeps every page that is on one of the new owner's drafts on
-  it, and a page only a draft holds on its draft; every other page showing a draft returns to Live
-  (`enterScope`). So a pin, the focused change it carries, never outlives the scope it was made
-  in. A Work pick writes it with the scope in `useWorkScope` and then puts the toggle on Draft
-  if a page stayed on the Work's draft, else on Live: a writer who opened a Work's draft under
-  another scope and then picks that Work stays on the draft. A chat switch writes it from
-  `TreeVersionProvider` when the owner changes, and leaves the toggle as it is; no chat on
-  screen, or a chat whose row is still loading, is no owner and changes nothing.
+  whose drafts are another owner's, or a new chat's composer, which has none) keeps every page
+  that is on one of the new owner's drafts on it, and a page only a draft holds on its draft;
+  every other page showing a draft returns to Live (`enterScope`). So a pin, and the focused
+  change it carries, ends when the owner changes. A Work pick writes it with the scope in
+  `useWorkScope`, so the first render under the Work is already right, and then puts the toggle
+  on Draft if a page stayed on the Work's draft, else on Live: a writer who opened a Work's draft
+  under another scope and then picks that Work stays on the draft. Every owner change, a Work
+  pick's included, runs it again from `TreeVersionProvider`; after a pick that run finds nothing
+  to change. A chat switch leaves the toggle as it is. No chat on screen (the side closed or
+  holding a document, the phone's document), or a chat whose row is still loading, is no owner
+  known and changes nothing: a pin written then is checked at the next known owner. A No Work
+  pick enters no owner (`null`), so pages on the chat's own draft return to Live with the toggle.
 - **An archived or deleted Work stays picked** (`use-work-scope.ts`): only the writer's pick
   changes the scope, here or on another device. The chip says Archived or Deleted with Unarchive
   or Restore in its menu. An archived Work's Draft view reads and offers its tree controls as an

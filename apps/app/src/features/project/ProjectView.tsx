@@ -47,7 +47,12 @@ import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRoute
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
-import { SideViewProvider, useChatOnScreen, usePlaceChat } from "./side/SideView";
+import {
+  SideViewProvider,
+  useChatOnScreen,
+  useNewChatOnScreen,
+  usePlaceChat,
+} from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
 import { TreeVersionProvider } from "./tree-version";
 import { useMainArrival } from "./use-main-arrival";
@@ -340,6 +345,7 @@ function HydratedReviewControllers({
 }) {
   // Under None the draft scope is the chat on screen: beside a document, the side's chat.
   const chatThreadId = useChatOnScreen();
+  const newChat = useNewChatOnScreen();
   // Every chat door and reveal opens through the one placement command.
   const openThread = usePlaceChat();
   useConversationRevealRouting(openThread);
@@ -386,7 +392,11 @@ function HydratedReviewControllers({
     <ChatThreadNavigationProvider onOpenThread={openThread}>
       <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
         <LiveTabsProvider projectId={props.projectId}>
-          <TreeVersionProvider projectId={props.projectId} chatThreadId={chatThreadId}>
+          <TreeVersionProvider
+            projectId={props.projectId}
+            chatThreadId={chatThreadId}
+            newChat={newChat}
+          >
             {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
           </TreeVersionProvider>
         </LiveTabsProvider>
