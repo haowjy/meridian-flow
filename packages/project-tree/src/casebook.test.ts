@@ -736,15 +736,24 @@ describe("Undo of an Apply, fact by fact", () => {
     expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([b]);
   });
 
-  it("a document with text written since stays, and the folder it stands in while it does", () => {
+  it("a created folder and document, Applied then Undone, are the Work's alone again: no live row, no Trash entry", () => {
     const t = start();
     const folder = t.folder("Arc", ROOT, D, CHAT);
     const ch = t.chapter("Chapter 50", folder, D, CHAT);
     const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
-    const result = undoApply(t.w, command, WRITER, cmd(), { writtenSince: new Set([ch]) });
-    expect(result.left.map(({ record, why }) => [record.node, why])).toEqual([[ch, "has_text"]]);
-    expect(t.at(ch)).toMatchObject({ trashed: false, parent: folder });
-    expect(t.at(folder)).toMatchObject({ trashed: false, keptByChild: true });
+    expect(undoApply(t.w, command, WRITER, cmd()).left).toEqual([]);
+    const live = t.w.view(LIVE);
+    expect([live.nodes.has(folder), live.nodes.has(ch), live.trash]).toEqual([false, false, []]);
+    expect(t.at(ch, D)).toMatchObject({ trashed: false, parent: folder });
+    expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([folder, ch]);
+    // A Discard after it puts them in Trash as one entry, and its Undo makes them pending again.
+    const discard = cmd();
+    const { trashed } = discardDraft(t.w, "work-1", WRITER, discard, undefined, { trash: true });
+    expect(t.w.view(LIVE).trash.map((entry) => entry.node)).toEqual([folder]);
+    restoreDiscard(t.w, discard, WRITER, "work-1", cmd(), trashed);
+    expect([t.w.view(LIVE).nodes.has(folder), t.w.view(LIVE).trash]).toEqual([false, []]);
+    expect(t.at(ch, D)).toMatchObject({ trashed: false, parent: folder });
+    t.valid();
   });
 
   it("a second Undo of the same Apply has nothing to take back", () => {

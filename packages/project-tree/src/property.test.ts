@@ -157,7 +157,14 @@ function makeReplicas(): Replica[] {
 function viewProblems(doc: Y.Doc, view: View): string[] {
   const projection = replayView(doc, view);
   const ops = viewRecords(doc, view);
-  const created = ops.flatMap((op) => (op.type === "create" ? [op.node] : []));
+  // A node whose last create is a draft's landed in live and taken back is withdrawn.
+  const lastCreate = new Map<string, TreeRecord>();
+  for (const op of ops) if (op.type === "create") lastCreate.set(op.node, op);
+  const created = [...lastCreate.values()].flatMap((op) =>
+    op.draft === null && op.fromDraft !== undefined && !projection.inForce.has(op.id)
+      ? []
+      : [op.node],
+  );
   const problems = treeViolations(projection, created);
   const named = new Set(
     ops.flatMap((op) => (op.type === "delete" ? [op.node, ...op.cascade] : [])),

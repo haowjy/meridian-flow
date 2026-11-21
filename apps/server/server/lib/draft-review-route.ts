@@ -111,7 +111,6 @@ const PressBody = z.strictObject({
       .refine((items) => new Set(items.map((item) => item.node)).size === items.length),
   ]),
   saw: SawBody.optional(),
-  redoes: CommandIdSchema.optional(),
   seen: z
     .array(z.strictObject({ documentId: z.string().uuid(), vector: VectorBody }))
     .max(64)

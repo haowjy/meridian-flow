@@ -5,23 +5,15 @@
 import type { DraftId, UserId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  discardDraft,
-  LIVE,
-  pendingRecords,
-  recordsOfItem,
-  trashAgain,
-} from "@meridian/project-tree";
+import { discardDraft, pendingRecords, recordsOfItem } from "@meridian/project-tree";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
 /**
  * Settles the Work's pending tree records discarded, in every list it spans. With `documents`,
  * the records of those documents' items (and what stands on a node they create); without, all
- * of them. With `trash` (a press), what the Work created goes to live's Trash (`discardDraft`),
- * and `again` (a Redo's: the deletes the press it repeats made) goes back to Trash
- * (`trashAgain`). Returns the documents that had records, and the Trash deletes the press
- * records for its Undo.
+ * of them. With `trash` (a press), what the Work created goes to live's Trash (`discardDraft`).
+ * Returns the documents that had records, and the Trash deletes the press records for its Undo.
  */
 export async function discardTreeRecords(
   db: Database,
@@ -32,7 +24,6 @@ export async function discardTreeRecords(
     commandId: string;
     documents?: readonly DocumentId[];
     trash?: boolean;
-    again?: readonly string[];
   },
 ): Promise<{ had: Set<DocumentId>; trashed: string[] }> {
   const had = new Set<DocumentId>();
@@ -58,14 +49,6 @@ export async function discardTreeRecords(
         );
         const discarded = new Set(done.discarded);
         trashed.push(...done.trashed);
-        if (input.again?.length) {
-          const back = new Set(trashAgain(writer, by, input.again));
-          for (const entry of writer.view(LIVE).trash)
-            if (back.has(entry.id)) {
-              trashed.push(entry.id);
-              for (const node of [entry.node, ...entry.cascade]) had.add(node as DocumentId);
-            }
-        }
         // A discarded delete had what it covered in the Work's view, not what its author saw.
         return pending
           .filter((record) => discarded.has(record.id))

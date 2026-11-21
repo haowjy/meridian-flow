@@ -199,6 +199,8 @@ type DeleteInForce = {
   cascade: Set<string>;
   /** The viewed Work's own delete, pending or already applied. */
   own: boolean;
+  /** The Undo of a draft's create that landed in live: it takes the node out of live, not to Trash. */
+  withdraws: boolean;
 };
 
 /**
@@ -367,6 +369,8 @@ export function startReplay(
   // one change.
   const changes = new Map<string, Change>();
   const families = new Map<string, Change>();
+  // The live creates that landed a draft's create (`fromDraft`: an Apply's, or a Discard's for Trash).
+  const landed = new Set<string>();
   const chains = new Map<string, Change[]>();
   // The records about `record`'s change whose being in force taking `record` flips: the rule
   // (`standingOf`) over the chain as it stands, with `record` at its end.
@@ -416,6 +420,8 @@ export function startReplay(
     for (const each of flips) each.inForce = !each.inForce;
     changes.set(change.id, change);
     families.set(change.root, change);
+    if (record.type === "create" && record.draft === null && record.fromDraft !== undefined)
+      landed.add(record.id);
     const chain = chains.get(change.base.root);
     if (chain) chain.push(change);
     else chains.set(change.base.root, [change]);
@@ -644,6 +650,7 @@ export function startReplay(
       case "delete": {
         if (dry) return { parent: parentAfter(node, flipsOf(record)) };
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
+        const withdraws = target !== undefined && landed.has(target.id);
         take(record, index);
         if (back) {
           putBack(record, back);
@@ -657,6 +664,7 @@ export function startReplay(
           node: record.node,
           cascade: new Set(record.cascade),
           own: ownDelete(record),
+          withdraws,
         });
         return;
       }
@@ -1000,11 +1008,8 @@ const inForce = (nodes: Map<string, Working>, deletes: DeleteInForce[]) =>
 const deletesInTrash = (
   nodes: Map<string, Working>,
   deletes: DeleteInForce[],
-  standing: ReadonlyMap<string, Standing>,
-) =>
-  inForce(nodes, deletes).filter((entry) =>
-    [entry.node, ...entry.cascade].some((id) => hidden(standing, id)),
-  );
+  hides: (id: string) => boolean,
+) => inForce(nodes, deletes).filter((entry) => [entry.node, ...entry.cascade].some(hides));
 
 const hidden = (standing: ReadonlyMap<string, Standing>, id: string) => {
   const state = standing.get(id);
@@ -1034,6 +1039,29 @@ function derive(
   rescuedTo: Rescued,
 ): Omit<TreeProjection, "dropped" | "changes" | "inForce"> {
   const { children, standing } = stand(nodes, deletes, rescuedTo);
+  // A node hidden only by withdrawals (the Undo of the press that landed it), with nothing under
+  // it but such nodes, is in no view but its draft's, as before the press: no row, no Trash
+  // entry. One holding anything else (a node the writer put in it and deleted) stays in Trash.
+  const bare = deletes.some((entry) => entry.withdraws)
+    ? stand(
+        nodes,
+        deletes.filter((entry) => !entry.withdraws),
+        rescuedTo,
+      ).standing
+    : standing;
+  const absence = new Map<string, boolean>();
+  const absent = (id: string): boolean => {
+    let known = absence.get(id);
+    if (known === undefined) {
+      known =
+        hidden(standing, id) &&
+        bare.get(id)?.deleted !== true &&
+        (children.get(id) ?? []).every((kid) => absent(kid.id));
+      absence.set(id, known);
+    }
+    return known;
+  };
+  const hides = (id: string) => hidden(standing, id) && !absent(id);
   const parentOf = (node: Working) => rescuedTo.get(node.id)?.parent ?? node.parent;
   const arrivedAt = (node: Working) => rescuedTo.get(node.id)?.arrivedAt ?? node.arrivedAt;
   const suffixes = new Map<string, string>();
@@ -1051,6 +1079,7 @@ function derive(
   const out = new Map<string, TreeNode>();
   const history = new Map<string, NodeHistory>();
   for (const node of nodes.values()) {
+    if (absent(node.id)) continue;
     history.set(node.id, {
       born: node.born,
       label: node.label,
@@ -1081,12 +1110,14 @@ function derive(
   }
   const ordered = new Map<string, TreeNode[]>();
   for (const [parent, kids] of children)
-    ordered.set(parent, kids.map((kid) => out.get(kid.id) as TreeNode).sort(byRankThenId));
-  const inTrash = deletesInTrash(nodes, deletes, standing);
+    if (!absent(parent))
+      ordered.set(parent, kids.flatMap((kid) => out.get(kid.id) ?? []).sort(byRankThenId));
+  const inTrash = deletesInTrash(nodes, deletes, hides);
   // A delete covers the nodes of its cascade whose ancestry still runs through its node: one
   // moved out since (by a move placed before the delete, whose author did not see it) is not.
   const covered = (entry: DeleteInForce) =>
     [...entry.cascade].filter((member) => {
+      if (absent(member)) return false;
       for (let at = nodes.get(member); at; at = nodes.get(parentOf(at)))
         if (at.id === entry.node) return true;
       return false;
@@ -1105,7 +1136,7 @@ function derive(
       cascade: covered(entry),
     })),
     standingDeletes: rootsOf(inForce(nodes, deletes), (put) => put.size > 0),
-    hidingDeletes: rootsOf(inTrash, (put) => [...put].some((id) => hidden(standing, id))),
+    hidingDeletes: rootsOf(inTrash, (put) => [...put].some(hides)),
   };
 }
 
