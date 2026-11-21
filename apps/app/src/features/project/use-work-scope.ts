@@ -2,12 +2,7 @@ import { draftOf, type Work } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { enterScope } from "@/client/project-shell/document-views";
-import {
-  NO_SCOPE,
-  useProjectScope,
-  writeProjectScope,
-  writeTreeVersionChoice,
-} from "@/client/project-shell/store";
+import { NO_SCOPE, useProjectScope, writeProjectScope } from "@/client/project-shell/store";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { useAccountId } from "./context/account-feature-context";
@@ -45,10 +40,9 @@ export function useWorkScopeState(projectId: string): WorkScope & { retry: () =>
 }
 
 /**
- * Pick a Work, or No Work by its row id. Main, the address and the open documents stay put; a page
- * on the picked Work's draft stays on it with the toggle on Draft, and every other page showing a
- * draft returns to Live with the toggle (`enterScope`). Written with the scope, so the first
- * render under the new scope already shows them.
+ * Pick a Work, or No Work by its row id. Main, the address and the open documents stay put; each
+ * page shows the picked Work's draft where it has one, else Live (`enterScope`). Written with the
+ * scope, so the first render under the new scope already shows them.
  */
 export function useWorkScope(projectId: string): {
   workId: string | null;
@@ -63,8 +57,7 @@ export function useWorkScope(projectId: string): {
     (id: string) => {
       if (id === workId) return;
       const draft = id === noWorkId ? null : workDraftId(works, id);
-      const onWorkDraft = enterScope(queryClient, accountId, projectId, draft);
-      writeTreeVersionChoice(accountId, projectId, onWorkDraft ? "draft" : "live");
+      enterScope(queryClient, accountId, projectId, draft);
       writeProjectScope(accountId, projectId, id === noWorkId ? NO_SCOPE : id);
     },
     [queryClient, accountId, projectId, noWorkId, workId, works],

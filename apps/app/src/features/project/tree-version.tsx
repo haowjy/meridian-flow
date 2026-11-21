@@ -6,7 +6,8 @@
  * the version it says (`shownDraft` in `views.ts`): the Work's draft where it has one, else Live,
  * and a page live doesn't have stays on its draft. The page's version chip is the same state:
  * picking the Work's draft or Live there, or opening one of the Work's drafts anywhere
- * (`review-launch`, a review address), sets the toggle.
+ * (`review-launch`, a review address), sets the toggle; a change of the scope's draft owner puts
+ * it on Draft.
  */
 import { type Work, type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE, pendingRecords } from "@meridian/project-tree";
@@ -106,11 +107,12 @@ export function TreeVersionProvider({
 }) {
   const accountId = useAccountId();
   const { draftId, work } = useScopeDraftOwner(projectId, chatThreadId);
-  // Whose drafts the scope shows changed hands: pages leave the drafts of the owner before
-  // (`enterScope`). A new chat on screen has no drafts, so it is a change to no owner. "" with no
-  // new chat is no owner known yet (no chat on screen, or its row still loading), which changes
-  // nothing. A layout effect, so the address's arrival after it in this commit wins. A Work pick
-  // has already run `enterScope` with the scope's write, and this run finds nothing to change.
+  // Whose drafts the scope shows changed hands: pages leave the drafts of the owner before and
+  // show the new owner's (`enterScope`). A new chat on screen has no drafts, so it is a change to
+  // no owner. "" with no new chat is no owner known yet (no chat on screen, or its row still
+  // loading), which changes nothing. A layout effect, so the address's arrival after it in this
+  // commit wins. A Work pick has already run `enterScope` with the scope's write, and this run
+  // finds nothing to change.
   const queryClient = useQueryClient();
   const ownerKey = draftId || (newChat ? NO_OWNER : "");
   const owner = useRef(ownerKey);

@@ -78,7 +78,13 @@ export function EditorView(props: EditorViewProps) {
     (listener) => session?.subscribe(listener) ?? (() => undefined),
     () => session?.getSnapshot().status === "synced",
   );
-  const holds = synced || props.localContentReady === true;
+  // Once synced, the editor holds the document for the session's life: going offline or
+  // reconnecting leaves its text in place, and dropping it then would unlist the tab's own
+  // changes the moment a peer's resolution arrives (the page would fall back to Live).
+  const [heldSession, setHeldSession] = useState<DocumentSession | null>(null);
+  if (synced && session !== heldSession) setHeldSession(session);
+  const holds =
+    (session !== null && (synced || session === heldSession)) || props.localContentReady === true;
   useEffect(() => {
     if (!constructed || !holds || !hostEditor) return;
     hostEditor.set(constructed);
