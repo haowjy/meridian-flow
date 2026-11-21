@@ -10,7 +10,6 @@
  */
 import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
-import type { CommandId } from "@meridian/contracts";
 import type { DraftItem, DraftItemsResponse, PressResult } from "@meridian/contracts/drafts";
 import type { TreeListRef } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
@@ -21,7 +20,7 @@ import { useCommandDriver } from "@/client/commands/driver-context";
 import { submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { cachedOwnerDrafts, patchOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { documentBasename } from "@/client/query/work-draft-files";
+import { documentBasename, projectWorkDraftFiles } from "@/client/query/work-draft-files";
 import { notifyFailure } from "@/components/app/failure-toast";
 import {
   dropUndoStep,
@@ -34,8 +33,10 @@ import {
   useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
   useOptionalContextRemovalCoordinator,
+  useOptionalPresentedDocuments,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
+import { useItemLauncher } from "@/features/project/review-launch";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "./draft-notices";
 import type { DraftItemRef } from "./draft-review-session";
@@ -82,6 +83,8 @@ export function usePressCommands({
   const registry = useLiveDocumentSessionRegistry();
   const treeLists = useOptionalTreeLists();
   const removal = useOptionalContextRemovalCoordinator();
+  const presented = useOptionalPresentedDocuments();
+  const { openReviewFile } = useItemLauncher();
   const queryClient = useQueryClient();
   const locked = !draftId || !driver;
   return useMemo(() => {
@@ -144,6 +147,18 @@ export function usePressCommands({
       return placement.length ? placement : [{ list: project, sources: [] }];
     };
 
+    /** A folder's name as the Work's tree shows it, in the project's list or the account's. */
+    const folderName = (node: string): string => {
+      if (!treeLists) return "";
+      for (const list of [{ kind: "project", projectId } as TreeListRef, treeLists.account]) {
+        const handle = treeLists.acquire(list);
+        const name = handle.session.replay({ draft: draftId }).nodes.get(node)?.name;
+        handle.release();
+        if (name) return name;
+      }
+      return "";
+    };
+
     /**
      * A press's step on the Undo stack of each list in its placement, one `undo` for all of them.
      * The stacks belong to the lists' sessions, whoever holds them, as a gesture's steps do.
@@ -188,21 +203,26 @@ export function usePressCommands({
         async () => (await entries.undo(null)).kind !== "failed",
       );
       place(pressed.placement);
-      // The press in force, which a Redo presses again.
-      let inForce = pressed.commandId;
       const port: PressPort = {
         unpress: async (commandId) => {
+          // An Apply's Undo takes a created document out of Live, and main with it: main,
+          // read before, follows the document to the Work's review, where it is pending again.
+          const main = presented?.mainDocumentId(projectId);
           const answer = await unpress(commandId);
-          if (answer === "done") return { kind: "answered", unpressId: commandId, took: true };
-          return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
+          if (answer !== "done")
+            return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
+          const created = rows().find((row) => row.documentId === main && row.isNew);
+          if (verdict === "apply" && created && taken.some(({ node }) => node === main))
+            for (const file of projectWorkDraftFiles([created], null))
+              openReviewFile(file, draftId);
+          return { kind: "answered", unpressId: commandId, took: true };
         },
         redo: async () => {
           if (!driver) return "failed";
-          const again = await press(verdict, taken, driver, inForce);
+          const again = await press(verdict, taken, driver);
           if (again === "told") return null;
           if (again === "failed") return "failed";
           place(again.placement);
-          inForce = again.commandId;
           return { commandId: again.commandId };
         },
       };
@@ -233,7 +253,6 @@ export function usePressCommands({
       verdict: Verdict,
       items: readonly PressItem[] | "all",
       live: CommandDriver,
-      redoes?: string,
     ): Promise<Pressed | Unpressed> => {
       const listed = queryClient.getQueryData<DraftItemsResponse>(
         projectQueryKeys.drafts(projectId, draftId),
@@ -277,7 +296,6 @@ export function usePressCommands({
           items: items === "all" ? "all" : [...items],
           ...(listed?.saw ? { saw: listed.saw } : {}),
           ...(open.length ? { seen: open } : {}),
-          ...(redoes ? { redoes: redoes as CommandId } : {}),
         });
         if (!record) return "told";
         const settled = await live.whenSettled(record.id);
@@ -312,7 +330,8 @@ export function usePressCommands({
       notices.end(draftId);
       // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
-      const named = (node: string) => names.get(node) ?? "";
+      // A folder has no row: its name is the Work's tree's.
+      const named = (node: string) => names.get(node) ?? folderName(node);
       // A document the Work created goes to Trash with its Discard: main leaves it first.
       if (verdict === "discard") {
         const taken = items === "all" ? null : new Set(items.map((item) => item.node));
@@ -371,7 +390,6 @@ export function usePressCommands({
             handle: {
               undo: async () => ({
                 answer: (await step.undo(null)).kind === "failed" ? "failed" : "ok",
-                landed: Promise.resolve(),
               }),
               end: () => {},
             },
@@ -455,6 +473,8 @@ export function usePressCommands({
     registry,
     treeLists,
     removal,
+    presented,
+    openReviewFile,
     queryClient,
     locked,
     projectId,

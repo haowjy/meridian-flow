@@ -76,7 +76,6 @@ export type LeftOutWhy =
   | "after_press"
   | "needs"
   | "changed_since"
-  | "has_text"
   | "closed"
   | "already";
 

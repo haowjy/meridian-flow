@@ -29,7 +29,6 @@ import type {
 import type { Database } from "@meridian/database";
 import { applyCommandTrees, commands, pressTextEffects } from "@meridian/database/schema";
 import {
-  appliedCreates,
   descendantsOf,
   LIVE,
   madeBy,
@@ -329,16 +328,12 @@ export function createDrizzlePress(
               }
             } else {
               await lockDocuments(nodes);
-              const again = request.redoes
-                ? ((await storedPress(envelope, request.redoes))?.result.trashed ?? [])
-                : [];
-              if (draftId && (picked.tree.size > 0 || again.length > 0)) {
+              if (draftId && picked.tree.size > 0) {
                 const discarded = await discardTreeRecords(db, deps, {
                   draftId,
                   userId: envelope.accountId as UserId,
                   commandId: envelope.commandId,
                   trash: true,
-                  again,
                   ...(request.items === "all"
                     ? {}
                     : { documents: [...picked.tree] as DocumentId[] }),
@@ -433,10 +428,6 @@ export function createDrizzlePress(
               .where(
                 and(eq(pressTextEffects.commandId, pressId), isNull(pressTextEffects.undoneBy)),
               );
-            const created = await deps.treeLists.read({
-              lists,
-              view: (ends) => ends.flatMap(({ writer }) => appliedCreates(writer, pressId)),
-            });
             await lockDocuments([
               ...effects.map((effect) => effect.documentId),
               ...pressed.items.filter((item) => item.tree).map((item) => item.node),
@@ -464,9 +455,7 @@ export function createDrizzlePress(
                     const scope = lists[at]?.kind;
                     const one = trees.find((candidate) => candidate.scope === scope);
                     if (!one) continue;
-                    // A document the press created stays in Live (gate 3): the writer deletes it.
                     const result = undoApply(writer, pressId, by, envelope.commandId, {
-                      writtenSince: new Set(created),
                       closed: judge.closed,
                     });
                     for (const record of result.undone) tree.add(record.node);

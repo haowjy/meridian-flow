@@ -75,7 +75,7 @@ Sees: a Draft chip in the toolbar and a line of review controls above the page. 
 
 Does: presses Apply (the filled green button) or Discard (quiet text).
 
-Sees: after Apply, the suggestions become the page's text. After Discard, they are gone and the page reads as it did; Discard does not ask first, and a notice reads "Draft of … discarded." with Undo. Only a document or folder the Work created goes to Trash, where Restore brings it back into the project. The notice's Undo, the sidebar's Undo step or Ctrl+Z in the document takes a Discard back while the tab is open; for a created document that Undo is the same Restore.
+Sees: after Apply, the suggestions become the page's text. After Discard, they are gone and the page reads as it did; Discard does not ask first, and a notice reads "Draft of … discarded." with Undo. Only a document or folder the Work created goes to Trash, where Restore brings it back into the project. The notice's Undo, the sidebar's Undo step or Ctrl+Z in the document takes an Apply or a Discard back while the tab is open, and puts the writer back where they were before it: a created document or folder is pending in the review again, out of Live and out of Trash. Trash's Restore brings a discarded created document into Live instead; after it, that Undo has nothing left to do.
 
 - Map: [draft-review](../app-documents.md#draft-review), [collab](../server-documents.md#collab), [agent-edit](../code.md#agent-edit)
 - Machines: [An Apply's Undo](../../../apps/app/src/features/draft-review/.context/state-machines.md), [Press text effect](../../../apps/server/server/domains/collab/.context/state-machines.md)

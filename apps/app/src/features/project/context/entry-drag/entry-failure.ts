@@ -218,7 +218,6 @@ function showDeleteNotice(
       answer: (await Promise.all(taken.map(({ list, step }) => list.undo(step)))).some(Boolean)
         ? "ok"
         : "gone",
-      landed: Promise.resolve(),
     }),
     end: () => {},
   };
