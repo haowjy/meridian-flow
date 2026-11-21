@@ -14,7 +14,7 @@ A folder the index doesn't hold, including another Work's Scratch, asks the serv
 still finds a folder by identity, so a move or rename after the link was written opens its
 current location.
 
-Every project wake hint that can change what a link reaches (a draft owner, the sources) advances `link-resolution-epoch`, which registers a new resolver
+Every project wake hint that can change what a link reaches (a draft, the sources) advances `link-resolution-epoch`, which registers a new resolver
 generation even when the changed tree isn't one this surface loads. That is how a deleted
 folder in another Work turns dashed without a reload. Focus and network return recheck after
 15 seconds as a missed-wake fallback.

@@ -1,15 +1,14 @@
 # The press
 
-A Work's draft is suggestion marks in each Live document
-(`packages/suggestions`) plus the Work's pending tree records. Apply or Discard pressed on
-documents, folders or the whole Work is one command, `press`, over both halves
+A draft (a `drafts` row, named by a Work or, under No Work, a root chat) is suggestion marks in
+each Live document (`packages/suggestions`) plus its pending tree records. Apply or Discard pressed
+on documents, folders or the whole draft is one command, `press`, over both halves
 (`adapters/drizzle-press.ts`, routes `POST /api/projects/:id/press` and `/press/undo`).
 
 ## What a press does
 
-`{ owner, verdict, items | "all", saw?, seen? }`, addressed by the Work's owner key
-(`work:<id>` or `lineage:<root>`), not by a branch: a Work with suggestions and no tree change
-has no branch row.
+`{ draft, verdict, items | "all", saw?, seen? }`, addressed by the draft id. Every Work and root
+chat has its draft from its creation, so a press never makes one.
 
 - **Selection.** `items` expands folders to what is under them in the Work's view. The tree half
   takes the Work's pending records on those nodes; the text half takes every document among
@@ -23,12 +22,13 @@ has no branch row.
   on is stale and pressed; a stale one with nothing of the Work's costs one journal read and
   resolves to nothing. While two builds overlap in a deploy, every room the newer extractor
   certified is stale to the older build, so its Apply all reads every document in scope.
-- **The branch is read under the owner's lock**, where it is made and closed: a branch read
-  before it could miss the first tree records an AI turn admitted in between.
+- **The draft's records are read under its owner's lock**, the lock an AI write takes
+  (`lockForWrite`): a read before it could miss the first tree records an AI turn admitted in
+  between.
 - **Tree half.** Apply is the tree Apply (`createApplyTreeOperations`, the same judge, locks and
   `apply_command_trees` rows as an Apply click). Discard is `discardTreeRecords`.
 - **Text half.** For each selected document that stands in Live after the tree half,
-  `pressStored` (agent-edit) runs `accept` or `reject({ work })` as one Yjs transaction, appends
+  `pressStored` (agent-edit) runs `accept` or `reject({ draft })` as one Yjs transaction, appends
   it to the Live journal as `human:<account>`, and stores its inserted and deleted id ranges in
   `press_text_effects` with the authority generation. The ranges hold the verdicts the resolve
   recorded (`suggestion_verdicts`), so its Undo takes them back with the text. A document the press leaves out of Live
@@ -65,13 +65,13 @@ A Work purged for good (`drizzle-work-disposal.ts`, inside the purge's transacti
 branches' tree records discarded, and its suggestions, and those of the lineages the purge
 deletes, rejected in every document the press's enumeration finds for them (`documentsHolding`,
 over the Work's project and its creator's account: a project has one owner), with their
-`suggestion_authors` and `suggestion_verdicts` entries deleted (`dropWork`). The reject reports
+`suggestion_authors` and `suggestion_verdicts` entries deleted (`dropDraft`). The reject reports
 every change it decided, a proposal Live has since matched included, which no review lists.
 Nothing records it: nothing can take it back. Changes the writer applied or discarded earlier
 keep their entries: nothing reads them for a purged Work.
 Archive, delete and Trash leave the suggestions in place and open: the press, the editor and card
 Undo take an archived Work's or a trashed chat's suggestions as they take any. What archive and
-Trash stop is new AI writes, at the model's write (`ensureActiveForWrite` in `model-edit-write.ts`
+Trash stop is new AI writes, at the model's write (`lockForWrite` in `model-edit-write.ts`
 refuses a closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree judge
 below.
 
@@ -90,8 +90,8 @@ purged with discards after 30 days.
 
 ## The pending index
 
-`document_block_rooms.pending_changes` holds, for each Work with suggestions in a document, its
-review's change count, the chats that wrote them and whether one is no chat's, written by the
+`document_block_rooms.pending_changes` holds, keyed by draft id, for each draft with suggestions
+in a document, its review's change count, the chats that wrote them and whether one is no chat's, written by the
 document derivation (`pendingChanges` in `packages/suggestions`). The Work's counts, the Changes
 list's rows and export's pending count read it. It lags the derivation's debounce (2–10 s for
 room typing), so no command takes a lagging row as its authority: the press and Work purge read
@@ -100,15 +100,15 @@ it only where its cut is current, and read the room for the rest.
 ## Work-only documents
 
 A document that exists only in a Work is the tree's drafted create; its text is plain in Live,
-not suggestions (`model-edit-write.ts`, `existsOnlyInWork`). Applying the create makes it
+not suggestions (`model-edit-write.ts`, `existsOnlyIn`). Applying the create makes it
 visible; discarding it hides it. The browser opens it in its Live room as plain text: the
 project's list does not have it, so the opener admits it as the Work's (`workOnly`) and the Yjs
-gateway admits the room through `documentSync.workOnlyOwners`. The tab follows the Work's row, so
+gateway admits the room through `documentSync.draftsHolding`. The tab follows the Work's row, so
 a Discard closes the room and its Undo opens it again.
 
 ## Not covered yet
 
-- No per-document grant check: the press is the Work owner's, like Apply all.
+- No per-document grant check: the press is the draft owner's, like Apply all.
 - A press Apply leaves `apply_command_trees.created_heads` as the tree Apply's placeholders:
   the press never calls `recordCreatedHeads`, since its Undo keeps every created document in
   Live. Anything that comes to read those heads for a press must record them first.

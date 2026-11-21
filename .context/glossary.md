@@ -24,10 +24,12 @@ is in the [knowledge base](https://github.com/haowjy/meridian-flow-docs/blob/mai
   with areas: `manuscript://`, `kb://` (reference notes, shown as Knowledge), `user://`,
   `scratch://` and `uploads://`.
 - **Live.** A document's current shared text.
-- **Draft.** A pending version of one document. The model writes into a draft, the writer
-  reviews it as a diff against live, and nothing reaches live until the writer applies it.
-- **Branch.** The set of drafts one owner holds. The owner is a Work, or, under No Work, one
-  chat and the chats derived from it. Writers never see the word.
+- **Draft.** The pending changes one Work, or one chat with no Work, holds across the project:
+  suggestion marks in Live documents and tree records (creates, moves, renames, deletes). It is
+  its own row (`drafts`, a 12-character id), minted with the Work or the first chat of a lineage
+  and named by it (`works.draft_id`, the root chat's `threads.draft_id`); the draft names no
+  owner. The writer reviews it against Live, and nothing reaches Live until the writer applies
+  it. Code that predates the rename still says **branch** for the same thing.
 - **Apply, Discard, Undo.** **Apply** lands a draft's changes on live. **Discard** drops them.
   **Undo** reverses what one reply wrote, wherever that text now is.
 - **Write mode.** A chat's setting for where the model's writes go: **Draft** (into a draft, for

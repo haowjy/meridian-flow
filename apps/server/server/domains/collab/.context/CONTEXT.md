@@ -101,7 +101,7 @@ either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
-Work and lineage of the set is active: new AI writes and branch creation use it, while a press on a closed owner's suggestions locks without it. `ensureActiveForWrite` takes the caller's `WorkWriteOptions` the same way. No other collab code locks a Work for a write; the
+Work and lineage of the set is active: new AI writes use it (`lockForWrite`), while a press on a closed owner's suggestions locks without it. A draft is minted with its Work or root chat, so no lock creates one. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. No keystroke enters the boundary:
 no keystroke locks a Work or counts. Tests use the same boundary
 (`apps/server/server/test-support/work-projection.ts`), with no catalog or
@@ -129,7 +129,7 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    (`lockThreadAsRuntime`: the thread's asks, the inbox advisory lock, the row), since its Work
    step ends those chats through that lock; the documents' Works lock as rows alone. Then Work rows (only through
    the Works mutation boundary, in ID order, with the lifecycle and grant locks `lockSeamWorks`
-   takes), then the branch row.
+   takes), then the draft row.
 4. **Every tree list key the command will write or resync**, in list-ID order: the project's list
    and the account's. A path that takes document keys takes all of them here (`treeLists.lock`,
    or `lockProjectTreeList`, which takes both of a project's), and no path takes a list key after

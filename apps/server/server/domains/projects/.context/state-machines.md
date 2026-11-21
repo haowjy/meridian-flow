@@ -23,7 +23,7 @@ stateDiagram-v2
   `FileAccessChanges` in the same transaction.** That publication is what makes the Work's
   notes, uploads and the documents only it has reconnect at their new access level; without it an archived Work
   stays writable in tabs that are already open. Purge included, each also wakes the project's
-  browsers with the Work's `draft-owner-hint` after commit (`WorkProjectionMutation.lifecycleChanged`),
+  browsers with the Work's `draft-hint` after commit (`WorkProjectionMutation.lifecycleChanged`),
   the hint a moved pending count sends, so another device's Works list and picker follow at once.
 - **Delete marks what it took.** The Work's primary chats and results get `deletedByWorkId`, and
   restore clears exactly the rows carrying that mark. The Work's sources are not marked: a deleted

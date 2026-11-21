@@ -1,13 +1,13 @@
-# Suggestions — a Work's draft as marks in Live
+# Suggestions — a draft as marks in Live
 
 ## Stored shape
 
 Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
 
-- `suggest_ins` and `suggest_del` marks on text, each `{ id, work }` (`SuggestionAttrs`).
-  `excludes: ""`, so two Works can mark one word; the Yjs binding then stores each under
+- `suggest_ins` and `suggest_del` marks on text, each `{ id, draft }` (`SuggestionAttrs`, the
+  draft's 12-character id). `excludes: ""`, so two drafts can mark one word; the Yjs binding then stores each under
   `name--<hash>` (`yjsMarkKey`).
-- `sug` on a block that exists only as one Work's suggestion, `{ id, work }`. Every block inside
+- `sug` on a block that exists only as one draft's suggestion, `{ id, draft }`. Every block inside
   it carries the same `sug`.
 - `sugAttrs` on a block: the layers of pending changes to the block's attributes, by layer id
   (`AttrLayer`, `{ id, draft, layer, order, attrs, remove? }`). `remove: true` is the draft
@@ -31,7 +31,7 @@ Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
 
 A mark holds only what `kindOf` reads per run, because every changed word carries it on its
 insertion and its deletion and Live's history keeps it for good. `work` stays on the mark rather
-than in the map: the view is `{ work }` for any document, and a map lookup per run would make every
+than in the map: the view is `{ draft }` for any document, and a map lookup per run would make every
 reader's view depend on the document's map. Change ids are 12 base-36 characters (`newChangeId`).
 - `comment` marks an anchor (`markdown: false`: the model's Markdown never writes or removes it).
 
@@ -47,8 +47,8 @@ it rewrites that change's text: a later turn's rewrite is its own row in `list`.
 
 ## The view
 
-`View` is `{ work }`: `null` is Live, otherwise Live plus that Work's suggestions. `kindOf`
-classifies each run of a block as `live`, `own-ins`, `own-del` or `hidden` (another Work's
+`View` is `{ draft }`: `null` is Live, otherwise Live plus that draft's suggestions. `kindOf`
+classifies each run of a block as `live`, `own-ins`, `own-del` or `hidden` (another draft's
 insertion, absent from this view). `viewBlock` is a block as a view reads it; readers project
 through it.
 
@@ -81,7 +81,7 @@ agent-edit pairs a split's new block with it.
 ## Resolving: `accept` and `reject`
 
 Each is one local transaction (`RAW_META`), filtered by `{ id }`, `{ turn }` (read through
-`Authors`) or `{ work }`, which stages how it decided each change it touches under
+`Authors`) or `{ draft }`, which stages how it decided each change it touches under
 `DECIDED_META` (id → `accept` or `reject`): an accept's superseded changes as `reject`. Accept makes insertions Live, deletes deleted text, applies attribute
 layers. Reject is the reverse. Either only deletes text and blocks and removes marks and
 attributes: nothing it keeps is rewritten. Accepting a deletion rejects every other Work's change deleting the same text: the
@@ -174,7 +174,7 @@ a later Work suggestion inside the range makes the change stop standing, and Und
 
 - One transaction that splits off a block, gives it attributes and joins it away loses those
   attributes. No editor command or model op does that.
-- `settle` (a block's attributes after an edit inside it) is called from `replaceInWork` as well
+- `settle` (a block's attributes after an edit inside it) is called from `replaceInDraft` as well
   as the driver: the one seam left.
 - Enter in a block with a pending heading gives the new half the stored attributes. (The toolbar
   reads the view: `shownState` in the editor's suggestion mode.)
@@ -203,7 +203,7 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
   discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work
   the writer did not reject.
-- An author or verdict entry is never removed, except by `dropWork` when a Work is purged: a
+- An author or verdict entry is never removed, except by `dropDraft` when its draft's Work or chat is purged: a
   change that is accepted, rejected or deleted keeps its entry in `suggestion_authors` (about 60
   bytes each), and each decision about 44 bytes in `suggestion_verdicts`. Typing never writes
   the verdicts.
@@ -212,5 +212,7 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   discard; ten discarded rewrites come to 3.9 MB (A2, measured as B2 did; with the earlier
   `{ id, work, chat, turn, by }` marks and diffed resolves it was 7.5 MB). What is left per changed
   word is Yjs structure: the new text, and a format item at each edge of its insertion and its
-  deletion, each holding the mark's key and `{ id, work }`. Dropping `work` from the mark would
-  save about another 20%.
+  deletion, each holding the mark's key and `{ id, draft }`. Naming the draft by its 12-character id
+  instead of the owner key `work:<uuid>` stores about 16% less per rewrite (measured on a
+  synthetic 4,200-word chapter, 30% of words rewritten: about 186 KB per rewrite against 222 KB
+  for the owner key; discards about 1.5 KB each).
