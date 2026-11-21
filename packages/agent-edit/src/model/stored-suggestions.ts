@@ -104,6 +104,14 @@ export function resolveStored(
   if (!applied.ok) throw new Error(applied.message);
   const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
   for (const [id, fate] of decided) verdicts.set(`${id}:${fate}`, true);
+  // A delete leaves the format items around what it deletes (the yjs patch), so the items that
+  // open a decided change's mark go here, in the resolve's own transaction: its Undo brings them
+  // back, and a peer's `dropResolvedMarks` finds nothing of this resolve to delete.
+  deleteOpenings(
+    doc,
+    fragmentOf(doc).createTreeWalker(() => true),
+    (id) => decided.has(id),
+  );
   return decided;
 }
 
@@ -132,21 +140,18 @@ export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string,
 
 /**
  * Takes a draft's suggestions out of a stored document for good, as its owner ends: they are
- * rejected and their authors and verdicts forgotten, in one transaction with no record, since
- * nothing can take it back. Every change the draft's items carry goes, a proposal Live has since
- * matched included, which no review lists. Returns whether anything changed.
+ * rejected and their authors forgotten, in one transaction with no record, since nothing can take
+ * it back. Every change the draft's items carry goes, a proposal Live has since matched included,
+ * which no review lists. The verdicts stay: a tab offline meanwhile may bring back a mark of one of
+ * these changes, and only the verdict lets `dropResolvedMarks` delete it. Returns whether anything
+ * changed.
  */
 export function dropDraft(doc: Y.Doc, schema: Schema, draft: string): boolean {
   let decided = NONE;
   doc.transact(() => {
     decided = resolveStored(doc, schema, "reject", { draft });
     const authors = doc.getMap<unknown>(AUTHORS_ROOT);
-    const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
-    for (const id of decided.keys()) {
-      authors.delete(id);
-      verdicts.delete(`${id}:accept`);
-      verdicts.delete(`${id}:reject`);
-    }
+    for (const id of decided.keys()) authors.delete(id);
   });
   return decided.size > 0;
 }
@@ -261,6 +266,51 @@ export function forgetVerdicts(
     forgot = true;
   }
   return forgot;
+}
+
+/**
+ * Deletes every item, left after `transaction`, that opens a mark of a change some resolve decided.
+ * Yjs holds a mark as an item that opens it and one that closes it, and typing inside a change's
+ * text with other marks re-opens the change's mark after the typing. A peer that typed there before
+ * it saw the change resolved holds such an opening; the resolve deleted the closing item, so once
+ * the two merge, the mark runs on over every word after it to the end of the block: an insertion's
+ * mark hides them from Live. A decided change has no pending text, so every such item is stale.
+ * Each client that edits runs this on every transaction it did not make, as its own write with no
+ * origin (`unsent-edits.ts` counts that as a repair); two clients deleting one item agree. A
+ * resolve deletes its own changes' openings (`resolveStored`), so this meets only an opening
+ * written concurrently with a resolve, which that resolve's Undo cannot bring back.
+ */
+export function dropResolvedMarks(doc: Y.Doc, transaction: Y.Transaction): void {
+  const verdicts = suggestionVerdicts(doc);
+  const changed = [...transaction.changed.keys()];
+  // A new verdict can end marks anywhere; otherwise only the texts this transaction changed.
+  const scope = changed.some((type) => Object.is(type, doc.getMap(VERDICTS_ROOT)))
+    ? fragmentOf(doc).createTreeWalker(() => true)
+    : changed;
+  deleteOpenings(doc, scope, (id) => verdicts.has(id, "accept") || verdicts.has(id, "reject"));
+}
+
+/** Deletes the live items in `types`' texts that open a mark of a change `decided` names. */
+function deleteOpenings(
+  doc: Y.Doc,
+  types: Iterable<unknown>,
+  decided: (changeId: string) => boolean,
+): void {
+  const stale: Y.Item[] = [];
+  for (const text of types) {
+    if (!(text instanceof Y.XmlText)) continue;
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted || !(item.content instanceof Y.ContentFormat)) continue;
+      const { key, value } = item.content;
+      const id = markOf(key) && changeId(value);
+      if (id && decided(id)) stale.push(item);
+    }
+  }
+  if (stale.length === 0) return;
+  // Inside a transaction (a resolve's) this joins it; otherwise it is a write of its own.
+  doc.transact((tr) => {
+    for (const item of stale) item.delete(tr);
+  }, null);
 }
 
 /** Yjs item ids by client, as `[clock, len]` runs in clock order. */

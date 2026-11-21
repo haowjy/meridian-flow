@@ -142,7 +142,7 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `dist/index.js` and `dist/index.cjs` identically (`package.json` `exports` point only at `dist`;
   the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
   `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
-  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), the empty-fragment guard, the attribute layers (a block's
+  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), formatting only the runs whose marks differ (`updateYText`; re-formatting every run moved format items a peer needed, `qa/offline-press.md`), the empty-fragment guard, the attribute layers (a block's
   `sugAttrs` record folded from and expanded to one `sugAttrs--<layer id>` element attribute per
   layer, compared by content, in `createNodeFromYElement`, `createTypeFromElementNode`,
   `updateYFragment` and `equalYTypePNode`; the rule is `@meridian/prosemirror-schema`

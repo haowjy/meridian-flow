@@ -29,6 +29,21 @@ Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
   ways at once and Yjs keeps both texts' deletions: both entries stand, and each Undo takes back
   only its own.
 
+Yjs keeps a text mark as an item that opens it and one that closes it, which concurrent edits can
+leave unpaired: the mark then runs to the end of the block, and an insertion's mark hides those
+words from Live. Three rules keep the pairs (`apps/app/src/core/editor/.context/qa/offline-press.md`
+checks them): the binding formats only the runs whose marks a local edit changed (y-tiptap
+patch); Yjs no longer deletes the format items a delete or a remote change leaves redundant, which
+a peer's concurrent insertion between them needs (yjs patch); and no item that opens a decided
+change's mark stays live. A resolve deletes its own changes' openings in its transaction
+(`resolveStored`), so its Undo brings them back. Each editing tab deletes, from what it receives,
+any opening of a change with a verdict (agent-edit's `dropResolvedMarks`, wired in
+`DocumentSession`): typing inside a change's text re-opens its mark after the typing, and a
+concurrent resolve deletes the closing item. That sweep is why verdicts are never forgotten.
+Ruled out: reading a decided change's marks as none instead of deleting them. Every reader of
+marks (the binding, the server's projections) would need the verdicts, and the binding would
+still write the difference back the next time the writer edits the paragraph.
+
 A mark holds only what `kindOf` reads per run, because every changed word carries it on its
 insertion and its deletion and Live's history keeps it for good. `work` stays on the mark rather
 than in the map: the view is `{ draft }` for any document, and a map lookup per run would make every
@@ -207,8 +222,16 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
   discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work
   the writer did not reject.
-- An author or verdict entry is never removed, except by `dropDraft` when its draft's Work or chat is purged: a
-  change that is accepted, rejected or deleted keeps its entry in `suggestion_authors` (about 60
+- Typing that continues a change (the writer's own earlier suggestion) offline while another
+  client resolves it loses its marks when the tab reconnects (`dropResolvedMarks`): an insertion
+  stays as Live text, a deletion is dropped. Ctrl+Z of a tab's inline resolve, when a peer had
+  typed inside the change concurrently, leaves the change's text after that typing unmarked; the
+  press's Undo, by content, does not.
+- Enter pressed offline inside a paragraph undoes a concurrent change to the text after the caret
+  (a resolve's deletions come back): the binding writes the tail again as new items. Not specific
+  to suggestions ([#1827](https://github.com/haowjy/meridian-flow/issues/1827)).
+- A verdict entry is never removed, except by an Undo of the resolve that wrote it; an author
+  entry only by `dropDraft` when its draft's Work or chat is purged: a change that is accepted, rejected or deleted keeps its entry in `suggestion_authors` (about 60
   bytes each), and each decision about 44 bytes in `suggestion_verdicts`. Typing never writes
   the verdicts.
 - Live's history keeps every suggestion for good. A 4,200-word chapter (24 KB of history)
