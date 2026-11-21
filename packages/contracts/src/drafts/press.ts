@@ -27,6 +27,11 @@ export type PressRequest = {
    * in a document the press names or one it finds.
    */
   seen?: { documentId: string; vector: string }[];
+  /**
+   * A Redo after this tab's Undo: the press it presses again. What that press put in Trash (the
+   * documents the Work created) and its Undo brought back goes to Trash again.
+   */
+  redoes?: CommandId;
 };
 
 export type PressResult = {
@@ -37,6 +42,8 @@ export type PressResult = {
   verdict: PressVerdict;
   /** The nodes the press changed, with the halves that changed: what its Undo takes back. */
   items: { node: string; tree?: true; text?: true }[];
+  /** A Discard's: the tree's delete records that put the documents the Work created in Trash. */
+  trashed?: string[];
 };
 
 export type PressUndoRequest = { commandId: CommandId; pressCommandId: CommandId };

@@ -50,8 +50,6 @@ type RecordBase = {
   restores?: string;
   /** On a pending copy made by restoring a Discard: who restored it. `actor` stays who drafted it. Server only. */
   restoredBy?: Actor;
-  /** On a live delete a Discard made (the nodes the Work created, put in Trash): that Discard's command. Server only. */
-  discards?: string;
 };
 
 export type CreateRecord = RecordBase & {

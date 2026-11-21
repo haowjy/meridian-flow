@@ -60,15 +60,18 @@ view that it rejected is gone. That is the chosen cost: keeping it would need a 
 
 A document or folder the Work created is a whole document, not a change, so a Discard puts it in
 Trash (`discardDraft` with `trash`): it is created in Live where the Work's view showed it (a
-child whose created folder stays in the Work lands at the top of its source), and deleted there by
-the presser, the topmost node taking what the Work put inside it. The delete names the press
-(`discards`), and the press's Undo is the Undo of that delete (`restoreDiscard`): the same restore
-record Trash's Restore writes, so whichever comes first, the other finds the delete lifted and does
-nothing. Either way the document comes back in Live, not in the Work: as on Undo of an Apply, a
-press never takes a created document out of Live again, because that delete would itself be a
-Trash entry while the Work showed the document pending. So Redo (pressing Discard again) leaves it
-standing: the Work no longer holds it. Work purge passes no `trash`: a purged Work's documents
-leave every view and `purgeUnviewed` releases them.
+child whose created folder stays in the Work lands at the top of its source; one the Work itself
+deleted stays gone), and deleted there by the presser, each topmost node taking what the Work put
+inside it. The press's result records those deletes (`trashed`, stored with the command), and its
+Undo takes them back (`restoreDiscard`): the same restore record Trash's Restore writes, so
+whichever comes first, the other finds the delete lifted and does nothing. Either way the document
+comes back in Live, not in the Work: as on Undo of an Apply, a press never takes a created
+document out of Live again, because that delete would itself be a Trash entry while the Work
+showed the document pending. Redo is a press that names the press it repeats (`redoes`): it takes
+back the restores that lifted that press's deletes (`trashAgain`, Trash's Undo of a Restore), so
+the documents go back to Trash, and records the deletes as its own `trashed` for the next Undo.
+Work purge passes no `trash`: a purged Work's documents leave every view and `purgeUnviewed`
+releases them.
 
 ## Work purge
 
@@ -102,7 +105,7 @@ says it was resolved. It reads no deleted item: a checkpoint drops their content
 outlives a version restore too. The tab's Apply and Reject inside the text are a resolve on the
 editor's Y.Doc, undone by Ctrl+Z from the editor's own history. An effect whose notes are closed
 is marked taken back without changing its text. A document the press created stays in Live on
-Undo of Apply, and one a Discard put in Trash comes back in Live on its Undo. There is no Redo command: pressing again is the Redo. Press and unpress rows are
+Undo of Apply, and one a Discard put in Trash comes back in Live on its Undo. There is no Redo command: pressing again is the Redo, naming the press it repeats (`redoes`). Press and unpress rows are
 purged with discards after 30 days.
 
 ## The pending index

@@ -10,6 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
+import type { CommandId } from "@meridian/contracts";
 import type {
   PressResult,
   ThreadDraftListItem,
@@ -192,6 +193,8 @@ export function usePressCommands({
         async () => (await entries.undo(null)).kind !== "failed",
       );
       place(pressed.placement);
+      // The press in force, which a Redo presses again.
+      let inForce = pressed.commandId;
       const port: PressPort = {
         unpress: async (commandId) => {
           const answer = await unpress(commandId);
@@ -200,10 +203,11 @@ export function usePressCommands({
         },
         redo: async () => {
           if (!driver) return "failed";
-          const again = await press(verdict, taken, driver);
+          const again = await press(verdict, taken, driver, inForce);
           if (again === "told") return null;
           if (again === "failed") return "failed";
           place(again.placement);
+          inForce = again.commandId;
           return { commandId: again.commandId };
         },
       };
@@ -234,6 +238,7 @@ export function usePressCommands({
       verdict: Verdict,
       items: readonly PressItem[] | "all",
       live: CommandDriver,
+      redoes?: string,
     ): Promise<Pressed | Unpressed> => {
       const listed = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.drafts(projectId, draftId),
@@ -277,6 +282,7 @@ export function usePressCommands({
           items: items === "all" ? "all" : [...items],
           ...(listed?.saw ? { saw: listed.saw } : {}),
           ...(open.length ? { seen: open } : {}),
+          ...(redoes ? { redoes: redoes as CommandId } : {}),
         });
         if (!record) return "told";
         const settled = await live.whenSettled(record.id);

@@ -65,7 +65,8 @@ Every Discard of a document, a folder, a selection or the Work is one press with
 has no entry for the rest. Its Undo is the press's `unpress`, as Apply's is (`PressEntries`): the
 notice's Undo, the sidebar's Undo step or Ctrl+Z in an open editor of its documents, once between
 them, in the tab that pressed. Undo, or Trash's Restore, brings a created document back in Live,
-not in the Work; whichever comes first, the other has nothing left to do
+not in the Work; whichever comes first, the other has nothing left to do, and the editor's Redo
+sends it back to Trash
 ([press](../../../../../server/server/domains/collab/.context/press.md#discard-and-what-goes-to-trash)).
 After a reload nothing offers the Undo, and the writer's own typing in the Work's view that it
 rejected is gone. A Discard of

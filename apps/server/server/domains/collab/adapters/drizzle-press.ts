@@ -31,7 +31,6 @@ import { applyCommandTrees, commands, pressTextEffects } from "@meridian/databas
 import {
   appliedCreates,
   descendantsOf,
-  discardedBy,
   LIVE,
   madeBy,
   pendingRecords,
@@ -254,17 +253,39 @@ export function createDrizzlePress(
       await lockDocumentMutation(tx, id as DocumentId);
   }
 
+  /** A press this account made in this project, as it answered: null for an unknown or purged id. */
+  async function storedPress(
+    envelope: CommandEnvelope,
+    id: string,
+  ): Promise<{ result: PressResult; pressedAt: Date } | null> {
+    const [row] = await currentDrizzleDb(db)
+      .select({ outcome: commands.outcome, pressedAt: commands.createdAt })
+      .from(commands)
+      .where(
+        and(
+          eq(commands.id, id as PressResult["commandId"]),
+          eq(commands.accountId, envelope.accountId),
+          eq(commands.projectId, envelope.projectId as ProjectId),
+          eq(commands.kind, "press"),
+        ),
+      );
+    return row?.outcome.status === "done" && row.outcome.result
+      ? { result: row.outcome.result as PressResult, pressedAt: row.pressedAt }
+      : null;
+  }
+
   async function press(command: PressCommand): Promise<PressResult> {
     const { envelope, request } = command;
     const { draft } = request;
     const lists = listsOf(envelope);
     const seen = new Map((request.seen ?? []).map((one) => [one.documentId, one.vector]));
-    const answer = (items: PressResult["items"]) => ({
+    const answer = (items: PressResult["items"], trashed: string[] = []): PressResult => ({
       status: "pressed" as const,
       commandId: envelope.commandId,
       draft,
       verdict: request.verdict,
       items,
+      ...(trashed.length > 0 ? { trashed } : {}),
     });
 
     const run = (owners: TreeOwners) =>
@@ -281,6 +302,7 @@ export function createDrizzlePress(
             const nodes = [...new Set([...picked.tree, ...picked.text])];
             const tree = new Set<string>();
             const text = new Set<string>();
+            const trashed: string[] = [];
             if (request.verdict === "apply") {
               const listOf = await treeHalf.lockItems(nodes);
               const facts = draftId
@@ -307,17 +329,22 @@ export function createDrizzlePress(
               }
             } else {
               await lockDocuments(nodes);
-              if (draftId && picked.tree.size > 0) {
-                const had = await discardTreeRecords(db, deps, {
+              const again = request.redoes
+                ? ((await storedPress(envelope, request.redoes))?.result.trashed ?? [])
+                : [];
+              if (draftId && (picked.tree.size > 0 || again.length > 0)) {
+                const discarded = await discardTreeRecords(db, deps, {
                   draftId,
                   userId: envelope.accountId as UserId,
                   commandId: envelope.commandId,
                   trash: true,
+                  again,
                   ...(request.items === "all"
                     ? {}
                     : { documents: [...picked.tree] as DocumentId[] }),
                 });
-                for (const node of had) tree.add(node);
+                for (const node of discarded.had) tree.add(node);
+                trashed.push(...discarded.trashed);
                 if (request.items === "all") await deps.treeLists.resync(lists);
               }
               for (const documentId of [...picked.text].sort())
@@ -329,6 +356,7 @@ export function createDrizzlePress(
                 ...(tree.has(node) ? { tree: true as const } : {}),
                 ...(text.has(node) ? { text: true as const } : {}),
               })),
+              trashed,
             );
           },
         ),
@@ -362,19 +390,8 @@ export function createDrizzlePress(
     const { envelope, pressCommandId } = command;
     const pressId = pressCommandId as PressResult["commandId"];
     const tx = () => currentDrizzleDb(db);
-    const [row] = await tx()
-      .select({ outcome: commands.outcome, pressedAt: commands.createdAt })
-      .from(commands)
-      .where(
-        and(
-          eq(commands.id, pressId),
-          eq(commands.accountId, envelope.accountId),
-          eq(commands.projectId, envelope.projectId as ProjectId),
-          eq(commands.kind, "press"),
-        ),
-      );
-    const pressed =
-      row?.outcome.status === "done" ? (row.outcome.result as PressResult | undefined) : undefined;
+    const stored = await storedPress(envelope, pressId);
+    const pressed = stored?.result;
     const answer = (text: string[], tree: string[]): PressUndoResult => ({
       status: "unpressed",
       commandId: envelope.commandId,
@@ -383,7 +400,7 @@ export function createDrizzlePress(
       tree: tree.sort(),
     });
     // Another account's press, an unknown id, or one the day-30 purge took: nothing to take back.
-    if (!pressed) return runDocumentCommand(db, envelope, async () => answer([], []));
+    if (!stored || !pressed) return runDocumentCommand(db, envelope, async () => answer([], []));
     const lists = listsOf(envelope);
     const trees = await tx()
       .select()
@@ -430,13 +447,14 @@ export function createDrizzlePress(
                 make: (ends) => {
                   for (const [at, { writer }] of ends.entries()) {
                     if (pressed.verdict === "discard") {
-                      if (!target || !discardedBy(writer.doc, pressId).records.length) continue;
+                      if (!target) continue;
                       const restored = restoreDiscard(
                         writer,
                         pressId,
                         by,
                         target.id,
                         envelope.commandId,
+                        pressed.trashed,
                       );
                       if (restored !== "already")
                         for (const record of [...restored.copies, ...restored.back])
@@ -480,7 +498,7 @@ export function createDrizzlePress(
             deps.usage?.pressUndone({
               projectId: envelope.projectId,
               verdict: pressed.verdict,
-              pressedAt: row.pressedAt,
+              pressedAt: stored.pressedAt,
               documentIds: text,
             });
             return answer(text, [...tree]);
