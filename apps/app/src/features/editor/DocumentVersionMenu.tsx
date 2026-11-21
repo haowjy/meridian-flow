@@ -1,8 +1,9 @@
 /**
  * Which version of the open document its view shows, as one chip and menu on desktop and phone:
  * Live, or a draft, with every draft of the document one pick away. It reads the host's
- * paint (`useDocumentPaint`) and the document's draft hints, and writes the document's view: a
- * picked draft becomes the view's pin, Live drops it. `DraftSwitcher` draws it.
+ * paint (`useDocumentPaint`) and the document's draft hints, and writes the document's view: another
+ * owner's picked draft becomes the view's pin; the scope's own draft and Live set the sidebar
+ * toggle and drop the pin. `DraftSwitcher` draws it.
  *
  * In review the host passes the review's own controls (`review`): its lock, the draft-only way
  * out, and the phone's Apply, Discard and Show changes.
@@ -85,12 +86,14 @@ export function DocumentVersionMenu({
     current: shown?.draftId === hint.draftId,
     scope: hint.draftId === scopeDraft,
     onSelect: () => {
-      // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft.
-      if (hint.draftId === shell?.draftId) shell.show("draft");
-      else
-        setDocumentView(accountId, projectId, documentId, {
-          pin: { draftId: hint.draftId, itemKey: hint.itemKey },
-        });
+      // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft,
+      // and another owner's pin, which outranks the toggle, goes. Pinning the scope's own draft
+      // instead would outlive a scope change and hold the next chat's page on this draft.
+      const scoped = hint.draftId === shell?.draftId;
+      if (scoped) shell.show("draft");
+      setDocumentView(accountId, projectId, documentId, {
+        pin: scoped ? null : { draftId: hint.draftId, itemKey: hint.itemKey },
+      });
       followToChip(documentId);
     },
   }));
