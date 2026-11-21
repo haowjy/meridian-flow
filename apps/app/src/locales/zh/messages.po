@@ -2131,7 +2131,7 @@ msgstr ""
 msgid "Couldn't read report from {line}"
 msgstr "无法读取来自 {line} 的报告"
 
-#: src/features/draft-review/apply-history.ts
+#: src/features/draft-review/press-history.ts
 msgid "Couldn't redo"
 msgstr ""
 
@@ -2281,9 +2281,7 @@ msgstr ""
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/tool-renderers.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/draft-review/apply-history.ts
-#: src/features/draft-review/CommandNotice.tsx
-#: src/features/draft-review/usePressCommands.ts
+#: src/features/draft-review/press-history.ts
 msgid "Couldn't undo"
 msgstr ""
 

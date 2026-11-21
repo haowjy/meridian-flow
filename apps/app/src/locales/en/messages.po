@@ -2131,7 +2131,7 @@ msgstr "Couldn't read properties"
 msgid "Couldn't read report from {line}"
 msgstr "Couldn't read report from {line}"
 
-#: src/features/draft-review/apply-history.ts
+#: src/features/draft-review/press-history.ts
 msgid "Couldn't redo"
 msgstr "Couldn't redo"
 
@@ -2281,9 +2281,7 @@ msgstr "Couldn't switch Work"
 #: src/features/chat/thread-controls/control-copy.ts
 #: src/features/chat/tool-renderers.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
-#: src/features/draft-review/apply-history.ts
-#: src/features/draft-review/CommandNotice.tsx
-#: src/features/draft-review/usePressCommands.ts
+#: src/features/draft-review/press-history.ts
 msgid "Couldn't undo"
 msgstr "Couldn't undo"
 
