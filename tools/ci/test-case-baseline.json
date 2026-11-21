@@ -112,7 +112,7 @@
     "apps/server/server/domains/billing/domain/stripe-webhook-grants.test.ts": 12,
     "apps/server/server/domains/billing/service.test.ts": 12,
     "apps/server/server/domains/collab/adapters/drizzle-drafts.db.test.ts": 1,
-    "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts": 13,
+    "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts": 9,
     "apps/server/server/domains/collab/adapters/hocuspocus-coordinator.test.ts": 2,
     "apps/server/server/domains/collab/collab-domain.image-paths.db.test.ts": 2,
     "apps/server/server/domains/collab/collab-domain.reverse-turn.db.test.ts": 2,
