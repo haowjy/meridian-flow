@@ -392,7 +392,6 @@ export function usePressCommands({
             handle: {
               undo: async () => ({
                 answer: (await step.undo(null)).kind === "failed" ? "failed" : "ok",
-                landed: Promise.resolve(),
               }),
               end: () => {},
             },

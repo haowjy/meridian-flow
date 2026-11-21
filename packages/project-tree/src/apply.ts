@@ -601,7 +601,7 @@ export function undoApply(
     const answers = takeBackAll(
       writer,
       by,
-      copies.map((copy) => ({ id: copy.id, view: LIVE })),
+      copies.map((copy) => ({ id: copy.id, view: LIVE, withdraw: copy.fromDraft })),
       options.closed,
     );
     for (const copy of copies) {
@@ -700,16 +700,26 @@ export function restoreDiscard(
     (record) => record.type === "delete" && trashed.includes(record.id),
   );
   if ((restored || settled.length === 0) && deletes.length === 0) return "already";
-  // What each delete still in Trash covers comes back to the Work; what Trash restored stays live.
-  const trash = writer.view(LIVE).trash.filter((entry) => trashed.includes(entry.id));
-  const going = new Set(trash.flatMap((entry) => [entry.node, ...entry.cascade]));
+  // What each delete still in Trash covers comes back to the Work; what Trash restored stays
+  // live, and so does each folder above it, which it keeps standing there (rule 3).
+  const live = writer.view(LIVE);
+  const trash = live.trash.filter((entry) => trashed.includes(entry.id));
+  const covered = new Set(trash.flatMap((entry) => [entry.node, ...entry.cascade]));
   const stays = new Set(
     deletes.flatMap((record) =>
       record.type === "delete"
-        ? [record.node, ...record.cascade].filter((node) => !going.has(node))
+        ? [record.node, ...record.cascade].filter((node) => !covered.has(node))
         : [],
     ),
   );
+  for (const node of [...stays]) {
+    let at = live.nodes.get(node)?.parent;
+    while (at !== undefined && covered.has(at)) {
+      stays.add(at);
+      at = live.nodes.get(at)?.parent;
+    }
+  }
+  const going = new Set([...covered].filter((node) => !stays.has(node)));
   const records = restored ? [] : settled.filter((record) => !stays.has(record.node));
   // The node a copy acts on stands in its Work's view, or the Discard held its create and the
   // copy of that brings it back.
@@ -752,7 +762,7 @@ export function restoreDiscard(
       ...records
         .filter((record) => record.type === "create" && going.has(record.node))
         .reverse()
-        .map((record) => ({ id: record.id, view: LIVE })),
+        .map((record) => ({ id: record.id, view: LIVE, withdraw: draft })),
     ]);
     for (const answer of answers.values())
       if (typeof answer === "object" && "id" in answer) back.push(answer);

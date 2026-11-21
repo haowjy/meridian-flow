@@ -36,8 +36,9 @@ it may write, whether a node id is in use) comes in as plain inputs.
   `restoredBy` who restored it); the discarded records stay discarded. A Discard with `trash`
   (the press's) puts the nodes the Work created in live's Trash, by live creates that carry the
   drafted ones, and returns the deletes, which the caller records; `restoreDiscard` given them
-  takes back each delete still in force and the create under it, so the nodes are the Work's
-  pending creates again and in no live view (rule 15). One Trash's Restore lifted first stays in live.
+  takes back each delete still in force and the create under it with a withdrawal, so the nodes
+  are the Work's pending creates again and in no live view (rule 15). What Trash's Restore lifted
+  first stays in live, with the folders above it. Only the press's Undo writes withdrawals.
 - Every record the package writes goes through `writable`, the reader that will read it back, and
   throws if that would drop it. A document's `create` states its `filetype`.
 - Who a delete covers is `deleteCovering` (rows, Trash, the tools), and a document's item in a

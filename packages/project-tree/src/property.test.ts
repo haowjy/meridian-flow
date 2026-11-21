@@ -157,13 +157,21 @@ function makeReplicas(): Replica[] {
 function viewProblems(doc: Y.Doc, view: View): string[] {
   const projection = replayView(doc, view);
   const ops = viewRecords(doc, view);
-  // A node whose last create is a draft's landed in live and taken back is withdrawn.
-  const lastCreate = new Map<string, TreeRecord>();
-  for (const op of ops) if (op.type === "create") lastCreate.set(op.node, op);
-  const created = [...lastCreate.values()].flatMap((op) =>
-    op.draft === null && op.fromDraft !== undefined && !projection.inForce.has(op.id)
-      ? []
-      : [op.node],
+  // Rule 15: a node may leave the view only while a withdrawal in force names it. That another
+  // delete keeps it in Trash is the casebook's rule 15 case.
+  const byRoot = new Map(ops.map((op) => [op.carries ?? op.id, op]));
+  // A withdrawal, or the Undo of a restore that took one back, which puts it back.
+  const withdraws = (op: TreeRecord): boolean => {
+    if (op.type !== "delete" || op.draft !== null || op.undoes === undefined) return false;
+    if (op.fromDraft !== undefined && op.carries === undefined) return true;
+    const restore = byRoot.get(op.undoes);
+    const back = restore?.type === "restore" && restore.undoes && byRoot.get(restore.undoes);
+    return back ? withdraws(back) : false;
+  };
+  const withdrawn = (node: string) =>
+    ops.some((op) => op.node === node && projection.inForce.has(op.id) && withdraws(op));
+  const created = ops.flatMap((op) =>
+    op.type === "create" && !withdrawn(op.node) ? [op.node] : [],
   );
   const problems = treeViolations(projection, created);
   const named = new Set(

@@ -61,13 +61,19 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
     What an Apply's restore brings back keeps its own arrival, so a returning twin may take the
     plain name and the twin the writer applied may then read suffixed (the property test's seed 137
     pins it).
-15. A node hidden only by withdrawals is in no view (`derive`): no node, no row, no Trash entry. A
-    withdrawal is a live delete that takes back a create a draft landed in live (a create with
-    `fromDraft`: an Apply's copy, or a press Discard's create for Trash). The node is the
-    draft's again, as before the press: its Work's pending create shows it there. A node also
-    hidden by another delete, or holding anything else, stays in Trash as any node does. A live
-    create a writer or the model made, taken back, is a delete Trash lists as before. Older builds
-    read a withdrawal as a plain delete, so they show the node in Trash.
+15. A node hidden only by withdrawals, with nothing under it but such nodes, is in no view
+    (`stand` marks it `absent`; `derive` leaves it out): no node, no row, no Trash entry. A
+    withdrawal is the live delete the press's Undo writes when it gives a landed create back to
+    its draft, recorded where it is decided: an Undo (`undoes`) with `fromDraft` naming the draft
+    and no `carries` (an Apply's copy of a drafted delete carries its original). Only `undoApply`
+    and `restoreDiscard` write one (`UndoStep.withdraw`), and both put the draft's records pending
+    again, so the Work's pending create shows the node there. Every other Undo of such a create
+    (the model's `undo`, the writer's tree Undo) is a plain delete Trash lists: its record stays
+    applied, and the node would otherwise be in no view at all. A node also hidden by another
+    delete stays in Trash, and so does a withdrawn folder holding anything else: after the Undo of
+    an Apply whose created folder holds a document the writer deleted in live since, the folder is
+    in Trash and pending in the Work at once (left as it is: rare, and nothing is lost). Older
+    builds read a withdrawal as a plain delete, so they show the node in Trash.
 
 A row that differs from live only in a suffix is no change the Work made: `DraftRow.changed`
 is false, and the count and the Changes list skip it (`changedFolders`, the server's

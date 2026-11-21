@@ -135,8 +135,12 @@ export type TakenBack = TreeRecord | NotUndone | ClosedUndo;
 /** What the Undo of one record would do now: `undoes`, or why it would not, and the sources it would change. */
 export type UndoReport = { answer: "undoes" | NotUndone; sources: readonly string[] };
 
-/** One record to take back, in the view its Undo was asked in. */
-export type UndoStep = { id: string; view: View };
+/**
+ * One record to take back, in the view its Undo was asked in. `withdraw`: the draft a landed
+ * create goes back to (the press's Undo, which puts its record pending again); its opposite is a
+ * withdrawal (rule 15), not a delete Trash lists.
+ */
+export type UndoStep = { id: string; view: View; withdraw?: string };
 
 /** The view an opposite record is written to: live when the record it takes back is live (an Apply landed it). */
 const viewOfRecord = (record: TreeRecord, asked: View): View =>
@@ -200,7 +204,7 @@ function takeBack(
   };
 
   const out = new Map<string, { back: TakenBack; sources: readonly string[] }>();
-  for (const { id, view: asked } of steps) {
+  for (const { id, view: asked, withdraw } of steps) {
     if (out.has(id)) continue;
     const answer = (back: TakenBack, sources: readonly string[] = []) =>
       out.set(id, { back, sources });
@@ -216,7 +220,7 @@ function takeBack(
     }
     const view = viewOfRecord(named, asked);
     const replay = replayOf(view);
-    const made = opposite(writer, view, actor, replay.standing(), named);
+    const made = opposite(writer, view, actor, replay.standing(), named, withdraw);
     if (typeof made === "string") {
       answer(made);
       continue;
@@ -333,6 +337,7 @@ function opposite(
   actor: Actor,
   tree: TreeStanding,
   named: TreeRecord,
+  withdraw?: string,
 ): TreeRecord | NotUndone {
   const change = tree.changes.get(named.id);
   if (!change?.inForce) return "already";
@@ -367,6 +372,13 @@ function opposite(
     case "create":
       if (node.trashed) return "already";
       // Only the node the create made: what others put in a folder since stands, and keeps it standing.
+      if (withdraw !== undefined && view.draft === null && named.fromDraft !== undefined)
+        return writer.prepare(
+          view,
+          actor,
+          { type: "delete", node: named.node, cascade: [] },
+          { ...extra, fromDraft: withdraw },
+        );
       return author({ type: "delete", node: named.node, cascade: [] });
     case "delete":
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.

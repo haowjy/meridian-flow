@@ -756,6 +756,32 @@ describe("Undo of an Apply, fact by fact", () => {
     t.valid();
   });
 
+  it("any other Undo of a create an Apply landed goes to Trash, and a Trash restore keeps its folder in live", () => {
+    const t = start();
+    const scene = t.chapter("Scene", ROOT, D, CHAT);
+    const create = pendingRecords(t.doc, "work-1")[0] as TreeRecord;
+    applyDraft(t.w, "work-1", WRITER, cmd());
+    // The model's own Undo of its create: its record stays applied, so the node is no draft's.
+    expect(typeof undoChange(t.w, D, CHAT, create.id)).toBe("object");
+    expect(t.w.view(LIVE).trash.map((entry) => entry.node)).toEqual([scene]);
+
+    const folder = t.folder("Arc", ROOT, D, CHAT);
+    const a = t.chapter("A", folder, D, CHAT);
+    const b = t.chapter("B", folder, D, CHAT);
+    const discard = cmd();
+    const { trashed } = discardDraft(t.w, "work-1", WRITER, discard, undefined, { trash: true });
+    t.w.restore(LIVE, WRITER, a);
+    restoreDiscard(t.w, discard, WRITER, "work-1", cmd(), trashed);
+    // A stays live, and the folder holding it; B is the Work's again.
+    expect([t.at(folder)?.trashed, t.at(a)?.trashed, t.w.view(LIVE).nodes.has(b)]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([b]);
+    t.valid();
+  });
+
   it("a second Undo of the same Apply has nothing to take back", () => {
     const t = reorganisedOnce();
     const { command } = applyDraft(t.w, "work-1", WRITER, cmd());

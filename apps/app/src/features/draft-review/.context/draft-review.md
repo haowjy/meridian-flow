@@ -67,7 +67,9 @@ notice's Undo, the sidebar's Undo step or Ctrl+Z in an open editor of its docume
 them, in the tab that pressed. Undo puts a created document back where it was before the press:
 pending in the Work, out of Trash and Live. Trash's Restore brings it into Live instead; whichever
 comes first, the other has nothing left to do. The editor's Redo presses again, and it goes back to
-Trash
+Trash. An Apply's Undo takes a created document out of Live too: if main shows it, main reopens it on
+its review item (`unpress` in `usePressCommands`), read before the Undo is sent, since main
+unmounts the document as soon as Live loses it
 ([press](../../../../../server/server/domains/collab/.context/press.md#discard-and-what-goes-to-trash)).
 After a reload nothing offers the Undo, and the writer's own typing in the Work's view that it
 rejected is gone. A Discard of
@@ -97,6 +99,13 @@ changes, rejecting the suggestions the turn left (`suggestion-turn-undo.ts`). Th
 Apply entry.
 
 ## Not covered yet
+
+- Main follows a created document back to its review item only in the tab that pressed the Undo.
+  Another tab or device with it in main shows "This destination is unavailable." until the writer
+  opens it from Changes: a Work-only document resolves only through its review item, and nothing
+  makes main follow its document when the document leaves Live.
+- After a Discard's Undo, main stays where the Discard sent it; the created document is pending
+  in Changes.
 
 - The review never reads as failed: an editor that never syncs (a refused room, lost access)
   leaves the band and sheet loading; nothing says "Changes couldn't load" or offers Retry.

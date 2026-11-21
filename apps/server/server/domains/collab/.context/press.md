@@ -108,8 +108,10 @@ editor's Y.Doc, undone by Ctrl+Z from the editor's own history. An effect whose 
 is marked taken back without changing its text. A document or folder a draft created is the
 draft's again after the Undo of the press that put it in Live or in Trash: pending in the Work,
 in no Live row and no Trash entry. This rests on the tree's rule 15 (withdrawn nodes,
-`packages/project-tree/.context/CONTEXT.md`): taking back a create a draft landed in Live is
-not a delete Trash lists. Its text stays plain in its Live room, as before the press. There is no
+`packages/project-tree/.context/CONTEXT.md`): the press's Undo takes back such a create with a
+withdrawal, a delete Trash does not list. Any other Undo of it (the model's `undo`) still puts it
+in Trash, since nothing makes it pending again. A Trash Restore of part of a discarded folder
+keeps that part, and the folders above it, in Live on the press's Undo. Its text stays plain in its Live room, as before the press. There is no
 Redo command: pressing again is the Redo. Press and unpress rows are
 purged with discards after 30 days.
 

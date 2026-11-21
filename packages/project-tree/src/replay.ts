@@ -369,8 +369,6 @@ export function startReplay(
   // one change.
   const changes = new Map<string, Change>();
   const families = new Map<string, Change>();
-  // The live creates that landed a draft's create (`fromDraft`: an Apply's, or a Discard's for Trash).
-  const landed = new Set<string>();
   const chains = new Map<string, Change[]>();
   // The records about `record`'s change whose being in force taking `record` flips: the rule
   // (`standingOf`) over the chain as it stands, with `record` at its end.
@@ -420,8 +418,6 @@ export function startReplay(
     for (const each of flips) each.inForce = !each.inForce;
     changes.set(change.id, change);
     families.set(change.root, change);
-    if (record.type === "create" && record.draft === null && record.fromDraft !== undefined)
-      landed.add(record.id);
     const chain = chains.get(change.base.root);
     if (chain) chain.push(change);
     else chains.set(change.base.root, [change]);
@@ -650,7 +646,13 @@ export function startReplay(
       case "delete": {
         if (dry) return { parent: parentAfter(node, flipsOf(record)) };
         const back = record.undoes === undefined ? undefined : lifted.get(record.undoes);
-        const withdraws = target !== undefined && landed.has(target.id);
+        // Rule 15: the press's Undo gives a landed create back to its draft (`fromDraft` on the
+        // original delete; an Apply's copy of a drafted delete carries another record).
+        const withdraws =
+          record.draft === null &&
+          record.undoes !== undefined &&
+          record.fromDraft !== undefined &&
+          record.carries === undefined;
         take(record, index);
         if (back) {
           putBack(record, back);
@@ -918,7 +920,15 @@ export function standingOf(
   return standing;
 }
 
-type Standing = { deleted: boolean; keptByChild: boolean; source: string };
+type Standing = {
+  deleted: boolean;
+  keptByChild: boolean;
+  source: string;
+  /** Deleted by a delete that is no withdrawal. */
+  hard: boolean;
+  /** In no view (rule 15): hidden only by withdrawals, with nothing under it but such nodes. */
+  absent: boolean;
+};
 
 /**
  * One pass over the nodes, parents before children on the way down and children before parents
@@ -955,12 +965,22 @@ function stand(
     kids: Working[];
     next: number;
     liveBelow: boolean;
+    /** Every child is absent (rule 15). */
+    allAbsent: boolean;
     source: string;
     node?: Working;
   };
   const stack: Frame[] = [];
   const open = (key: string, source: string, node?: Working) =>
-    stack.push({ key, kids: children.get(key) ?? [], next: 0, liveBelow: false, source, node });
+    stack.push({
+      key,
+      kids: children.get(key) ?? [],
+      next: 0,
+      liveBelow: false,
+      allAbsent: true,
+      source,
+      node,
+    });
 
   for (const root of children.keys()) {
     if (!isSourceRoot(root)) continue;
@@ -973,13 +993,26 @@ function stand(
         const mine = ownedBy.get(child.id);
         const cascades = takenBy.get(child.id);
         let deleted = false;
+        let hard = false;
         if (mine)
           for (const entry of mine) {
             active.add(entry);
             deleted = true;
+            if (!entry.withdraws) hard = true;
           }
-        if (cascades) for (const entry of cascades) if (active.has(entry)) deleted = true;
-        standing.set(child.id, { deleted, keptByChild: false, source: frame.source });
+        if (cascades)
+          for (const entry of cascades)
+            if (active.has(entry)) {
+              deleted = true;
+              if (!entry.withdraws) hard = true;
+            }
+        standing.set(child.id, {
+          deleted,
+          keptByChild: false,
+          source: frame.source,
+          hard,
+          absent: false,
+        });
         open(child.id, frame.source, child);
         continue;
       }
@@ -990,8 +1023,10 @@ function stand(
       const state = standing.get(node.id) as Standing;
       // Rule 3: a node nobody deleted keeps every folder above it standing.
       state.keptByChild = state.deleted && frame.liveBelow;
+      state.absent = state.deleted && !state.keptByChild && !state.hard && frame.allAbsent;
       const parent = stack[stack.length - 1];
       if (parent && (!state.deleted || frame.liveBelow)) parent.liveBelow = true;
+      if (parent && !state.absent) parent.allAbsent = false;
     }
   }
   return { children, standing };
@@ -1039,28 +1074,9 @@ function derive(
   rescuedTo: Rescued,
 ): Omit<TreeProjection, "dropped" | "changes" | "inForce"> {
   const { children, standing } = stand(nodes, deletes, rescuedTo);
-  // A node hidden only by withdrawals (the Undo of the press that landed it), with nothing under
-  // it but such nodes, is in no view but its draft's, as before the press: no row, no Trash
-  // entry. One holding anything else (a node the writer put in it and deleted) stays in Trash.
-  const bare = deletes.some((entry) => entry.withdraws)
-    ? stand(
-        nodes,
-        deletes.filter((entry) => !entry.withdraws),
-        rescuedTo,
-      ).standing
-    : standing;
-  const absence = new Map<string, boolean>();
-  const absent = (id: string): boolean => {
-    let known = absence.get(id);
-    if (known === undefined) {
-      known =
-        hidden(standing, id) &&
-        bare.get(id)?.deleted !== true &&
-        (children.get(id) ?? []).every((kid) => absent(kid.id));
-      absence.set(id, known);
-    }
-    return known;
-  };
+  // Rule 15: a node hidden only by withdrawals, with nothing under it but such nodes, is in no
+  // view but its draft's, as before the press: no row, no Trash entry.
+  const absent = (id: string) => standing.get(id)?.absent === true;
   const hides = (id: string) => hidden(standing, id) && !absent(id);
   const parentOf = (node: Working) => rescuedTo.get(node.id)?.parent ?? node.parent;
   const arrivedAt = (node: Working) => rescuedTo.get(node.id)?.arrivedAt ?? node.arrivedAt;
