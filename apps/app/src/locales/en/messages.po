@@ -113,6 +113,11 @@ msgstr "(if the server asks for one)"
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, one {# call} other {# calls}}"
 
+#. placeholder {0}: result.pendingDocuments
+#: src/features/export/ExportProjectDialog.tsx
+msgid "{0, plural, one {# document has changes waiting for review; the export has its live text.} other {# documents have changes waiting for review; the export has their live text.}}"
+msgstr "{0, plural, one {# document has changes waiting for review; the export has its live text.} other {# documents have changes waiting for review; the export has their live text.}}"
+
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
@@ -124,11 +129,6 @@ msgstr "{0, plural, one {# document, deleted from {location}} other {# documents
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# document} other {# documents}}"
 msgstr "{0, plural, one {# document} other {# documents}}"
-
-#. placeholder {0}: result.pendingDrafts
-#: src/features/export/ExportProjectDialog.tsx
-msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
-msgstr "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
 
 #. placeholder {0}: changes.length
 #: src/features/agents/PackageChanges.tsx
@@ -1065,14 +1065,6 @@ msgstr "Apply this chat's changes to {name}"
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Applying"
 msgstr "Applying"
-
-#: src/features/draft-review/CommandNotice.tsx
-#~ msgid "Applying brings back {names}"
-#~ msgstr "Applying brings back {names}"
-
-#: src/features/draft-review/CommandNotice.tsx
-#~ msgid "Applying brings back {names}, deleted from {area}"
-#~ msgstr "Applying brings back {names}, deleted from {area}"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applying deletes {deletes}."
@@ -2033,10 +2025,6 @@ msgstr "Couldn't load the preview."
 msgid "Couldn't load this document."
 msgstr "Couldn't load this document."
 
-#: src/features/project/context/ContextDocumentHost.tsx
-msgid "Couldn't load this draft."
-msgstr "Couldn't load this draft."
-
 #: src/features/agents/AgentFileDialog.tsx
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
@@ -2163,10 +2151,6 @@ msgstr "Couldn’t restore {name}"
 #: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "Couldn't restore {title}"
 msgstr "Couldn't restore {title}"
-
-#: src/features/draft-review/TrashedChatNotice.tsx
-#~ msgid "Couldn't restore the chat"
-#~ msgstr "Couldn't restore the chat"
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -2445,14 +2429,6 @@ msgstr "Deleted a document"
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
 msgstr "Deleted a Work"
-
-#: src/features/draft-review/DraftCommandStatus.tsx
-#~ msgid "Deleted from {area}"
-#~ msgstr "Deleted from {area}"
-
-#: src/features/editor/ManuscriptStateNotice.tsx
-#~ msgid "Deleted from {from}"
-#~ msgstr "Deleted from {from}"
 
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Deleted from {location}"
@@ -3926,8 +3902,8 @@ msgid "Next change"
 msgstr "Next change"
 
 #: src/features/draft-review/ReviewCompletion.tsx
-msgid "Next draft"
-msgstr "Next draft"
+msgid "Next document"
+msgstr "Next document"
 
 #: src/features/project/context/DocumentPropertyValue.tsx
 msgid "No"
@@ -4409,12 +4385,12 @@ msgid "Opening checkout…"
 msgstr "Opening checkout…"
 
 #: src/features/project/context/DocumentHost.tsx
-msgid "Opening document…"
-msgstr "Opening document…"
+msgid "Opening document"
+msgstr "Opening document"
 
 #: src/features/project/context/DocumentHost.tsx
-msgid "Opening draft"
-msgstr "Opening draft"
+msgid "Opening document…"
+msgstr "Opening document…"
 
 #: src/features/links/FollowOutcomeContent.tsx
 msgid "Opening the link"
@@ -5845,11 +5821,6 @@ msgstr "This chat"
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
 msgstr "This chat continues without a brief."
-
-#: src/features/draft-review/TrashedChatNotice.tsx
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-#~ msgid "This chat is in Trash"
-#~ msgstr "This chat is in Trash"
 
 #. placeholder {0}: naming.current(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts
