@@ -222,7 +222,10 @@ the writer discarded, for good. Every other
 reader of deleted content was moved off it: press Undo and card Undo are by content
 (`inverse-text.ts`), the edit list reads receipts, and `planningSnapshot` refuses a frontier
 that saw an item whose content is gone (a fork planning on its parent's row, a race with the
-capture), so that write plans on the current room. Once a background checkpoint is stored the
+capture), so that write plans on the current room. That is a known gap: a write planned on
+the room merges as if the model had read it, so text the writer deleted after the model's read
+comes back when the model's output still holds it. The fix plans such a write on the text the
+model read, as a three-way merge against Live. Once a background checkpoint is stored the
 room drops its own deleted content the same way (`cut.dropUnseenContent`), so a room that stays
 loaded through a sitting copies no more per command than a cold load would. Between captures
 the room stays `gc: false`, and the journal rows keep every byte. A version stored before this keeps its full
