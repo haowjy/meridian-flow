@@ -33,7 +33,16 @@ export function observeWorksReads(client: QueryClient, driver: CommandDriver): (
         record.settledAt <= startedAt,
     );
   readObservers.set(client, observer);
+  // The route's Works can be installed before the driver has read its journal, when no record
+  // was there to observe: once it has, tell it what the installed reads already include.
+  const stopWaiting = driver.subscribe(() => {
+    if (!driver.hasRead) return;
+    stopWaiting();
+    for (const [projectId, state] of states.get(client) ?? [])
+      if (state.installedAt > 0) observer(projectId, state.installedAt);
+  });
   return () => {
+    stopWaiting();
     if (readObservers.get(client) === observer) readObservers.delete(client);
   };
 }
