@@ -2,6 +2,7 @@
 import { LoroDoc } from "loro-crdt";
 import * as M from "./block-diff.mjs";
 import {
+  checkReal,
   commentMark,
   copyOf,
   edit,
@@ -230,5 +231,22 @@ for (const fn of ["restoreBeforeAsWritten", "restoreBeforeOnLive"]) {
     !text(fork).includes("DRAFT") && text(fork).includes("typed"),
     `fork: ${text(fork)}   pending: ${M.changedBlocks(live, fork).changes.length}`,
   );
+}
+// R10 (Loro + binding): Loro keeps every concurrent mark; the schema's `excludes` (code excludes all marks) is not a merge rule.
+{
+  const live = live0("one two");
+  const a = copyOf(live, "2");
+  const b = copyOf(live, "3");
+  edit(a, (tr) => tr.addMark(1, 4, schema.marks.code.create()));
+  edit(b, (tr) => tr.addMark(1, 4, schema.marks.em.create()));
+  a.import(b.export({ mode: "update", from: a.oplogVersion() }));
+  let res;
+  try {
+    checkReal(a);
+    res = "valid";
+  } catch (e) {
+    res = e.message;
+  }
+  out("R10 tab 1 makes 'one' code; tab 2 makes it italic meanwhile", res === "valid", `merged: ${res}`);
 }
 freeAll();
