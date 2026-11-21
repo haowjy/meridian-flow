@@ -24,7 +24,8 @@ marks in the Live document, plus its draft's tree records; Apply and Discard is 
   through `treeListStore.submit` in the press's command transaction (each list the Work spans);
   collab writes no tree row. The list's lock comes after the Works and
   before any document's key (the lock order in `.context/CONTEXT.md`). A press's Discard puts
-  what the Work created in live's Trash, and its Undo is Trash's Restore
+  what the Work created in live's Trash; its Undo makes it pending in the Work again, and
+  Trash's Restore brings it into live instead
   ([press](.context/press.md#discard-and-what-goes-to-trash)); Work purge's leaves it in no view
   until retention purges it.
 - A model edit plans under the lock its append takes, on the one connection of its command (`modelEdits().write`). Nothing reachable from it may open a second connection or wait on one; see [model edits](.context/model-edits.md). Each tree tool call is such a command too.

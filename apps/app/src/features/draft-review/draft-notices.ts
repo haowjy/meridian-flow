@@ -5,7 +5,6 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
-import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { PressEntries } from "./press-history";
 
 export type NoticeSurface =
@@ -33,10 +32,7 @@ type NoticeSubject =
  */
 export type DiscardTook = { untaken: readonly string[] };
 
-type DiscardUndoAnswer = {
-  answer: "ok" | "failed" | "gone";
-  landed: Promise<void>;
-};
+type DiscardUndoAnswer = { answer: "ok" | "failed" | "gone" };
 
 /**
  * One share of a notice's Undo: a Discard the server ran, which the press's Undo takes back, or a
@@ -60,13 +56,6 @@ export type DiscardPart = {
   /** Every document and folder the share brings back, when more than `documentId`. */
   covers?: readonly string[];
   handle: DiscardUndo;
-  /** The draft's review, for the view to follow an Undo back to. */
-  review?: ReviewFileTarget;
-  /**
-   * Right after this Discard's Undo, given its `landed`: the caller's caches catch up. Resolves
-   * true once the server lists the draft again, so a view may open it.
-   */
-  undone?: (landed: Promise<void>) => Promise<boolean>;
 };
 
 type Base = { id: number; projectId: string; draftId: string; surface: NoticeSurface };
@@ -77,13 +66,10 @@ export type DraftNotice =
       subject: NoticeSubject;
       /** What the Discard took (its answer's word, once it came): the rows its Undo brings back. */
       documentIds: readonly string[];
-      /** A single draft's review, which an Undo may return main to. */
-      review: ReviewFileTarget | null;
       status: "ready" | "undoing";
       /** The Discard sent main away from the page it was made on; `landed` is where main went. */
       left: { landed: string | null } | null;
-      /** `ok` once the server lists every restored draft again; `unlisted` if one never was. */
-      undo(): Promise<"ok" | "unlisted" | "failed">;
+      undo(): Promise<void>;
       dismiss(): void;
     })
   | (Base & {
@@ -264,19 +250,16 @@ export class DraftNotices {
     this.publish();
   }
 
-  private async undo(draftId: string, id: number): Promise<"ok" | "unlisted" | "failed"> {
+  private async undo(draftId: string, id: number): Promise<void> {
     const notice = this.notices.get(draftId);
     const parts = this.parts.get(id);
     if (notice?.id !== id || notice.kind !== "discarded" || notice.status === "undoing" || !parts)
-      return "failed";
+      return;
     this.pressed.add(id);
     this.settle(draftId, id);
     // Retry takes back only the shares still out: a share that undid leaves the list.
     const answers = await Promise.all(
       parts.map(async (part) => ({ part, ...(await part.handle.undo()) })),
-    );
-    const listed = answers.flatMap(({ part, answer, landed }) =>
-      answer !== "ok" ? [] : [part.undone ? part.undone(landed) : landed.then(() => true)],
     );
     const failed = answers.some(({ answer }) => answer === "failed");
     if (this.parts.has(id)) {
@@ -290,11 +273,6 @@ export class DraftNotices {
       this.pressed.delete(id);
       this.settle(draftId, id, failed);
     }
-    if (failed) return "failed";
-    if (listed.length === 0) return "unlisted";
-    // A view following the Undo waits until the server lists the draft again: a draft-only
-    // document opened on a draft the list omits closes as discarded.
-    return (await Promise.all(listed)).every(Boolean) ? "ok" : "unlisted";
   }
 
   /** The notice as its shares stand: undoing while its Undo is out, gone once nothing is left. */
@@ -336,7 +314,6 @@ export class DraftNotices {
             ? { kind: "deletes" as const, count }
             : { kind: "drafts" as const, count },
       documentIds: parts.flatMap((part) => part.covers ?? [part.documentId]),
-      review: (count === 1 && only?.review) || null,
     };
   }
 

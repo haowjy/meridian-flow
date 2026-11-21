@@ -8,18 +8,12 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Trans } from "@lingui/react/macro";
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from "react";
-import { setDocumentView } from "@/client/project-shell/document-views";
 import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { ActionNotice } from "@/components/app/ActionNotice";
 import { RowWord } from "@/components/app/RowWord";
 import { documentDisplayName, documentLocationName } from "@/features/chat/document-display-name";
-import {
-  useAccountId,
-  useDraftCommandOwner,
-  useOptionalPresentedDocuments,
-} from "@/features/project/context/account-feature-context";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useItemLauncher } from "@/features/project/review-launch";
 import type { AppliedFact, DraftNotice } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
@@ -125,7 +119,6 @@ export function DraftNoticeLine({
   className?: string;
 }) {
   useLingui();
-  const undo = useNoticeUndo();
   const openDocument = useOpenProjectDocument(notice.projectId);
   const landed = useLandedNow(notice);
   if (notice.kind === "applied") {
@@ -157,7 +150,8 @@ export function DraftNoticeLine({
     );
   }
   const { subject } = notice;
-  const onUndo = () => undo(notice);
+  // A failed Undo is the press's pill (`PressEntries`), said once.
+  const onUndo = () => void notice.undo();
   const sentence =
     subject.kind === "drafts"
       ? t`${subject.count} discarded.`
@@ -178,34 +172,6 @@ export function DraftNoticeLine({
   );
 }
 
-type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
-
-/**
- * A Discard notice's Undo. When main, the side or the phone's sheet still presents the document
- * the Discard left there, the view returns to the draft; anywhere else nothing moves.
- */
-function useNoticeUndo() {
-  const presented = useOptionalPresentedDocuments();
-  const accountId = useAccountId();
-  const { openReviewFile } = useItemLauncher();
-  return (notice: Discarded) => {
-    const { review, left, projectId, draftId } = notice;
-    // Where main was when the notice showed (null: Recently opened); the view follows only
-    // if main is still there.
-    const stays = left ? left.landed : review?.documentId;
-    // A failed Undo is the press's pill (`PressEntries`), said once.
-    void notice.undo().then((answer) => {
-      if (answer !== "ok" || !review || stays === undefined || !presented) return;
-      if (presented.mainDocumentId(projectId) === stays) openReviewFile(review, draftId);
-      // Beside main the address is main's: only the document's view changes.
-      else if (stays !== null && presented.isPresented(projectId, stays))
-        setDocumentView(accountId, projectId, stays, {
-          pin: { draftId, itemKey: review.item.itemKey },
-        });
-    });
-  };
-}
-
 type DraftNoticeWords = {
   /** The row (a document's or folder's id) is one the notice speaks for. */
   held: (id: string) => boolean;
@@ -222,7 +188,6 @@ const takeOnce = (id: number) => !focused.has(id) && Boolean(focused.add(id));
 
 export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWords {
   useLingui();
-  const undo = useNoticeUndo();
   const whereabouts = useWhereabouts(notice?.projectId ?? "");
   if (!notice) return { held: () => false, word: () => null };
   if (notice.kind === "applied") {
@@ -264,7 +229,7 @@ export function useDraftNoticeWords(notice: DraftNotice | null): DraftNoticeWord
           label={count > 1 ? t`Undo discard of ${count} changes` : t`Undo discard of ${name}`}
           sentence={t`Discarded`}
           pending={notice.status === "undoing"}
-          onAction={() => undo(notice)}
+          onAction={() => void notice.undo()}
         />
       );
     },

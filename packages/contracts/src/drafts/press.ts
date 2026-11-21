@@ -27,11 +27,6 @@ export type PressRequest = {
    * in a document the press names or one it finds.
    */
   seen?: { documentId: string; vector: string }[];
-  /**
-   * A Redo after this tab's Undo: the press it presses again. What that press put in Trash (the
-   * documents the Work created) and its Undo brought back goes to Trash again.
-   */
-  redoes?: CommandId;
 };
 
 export type PressResult = {

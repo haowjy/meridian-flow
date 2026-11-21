@@ -62,15 +62,14 @@ A document or folder the Work created is a whole document, not a change, so a Di
 Trash (`discardDraft` with `trash`): it is created in Live where the Work's view showed it (a
 child whose created folder stays in the Work lands at the top of its source; one the Work itself
 deleted stays gone), and deleted there by the presser, each topmost node taking what the Work put
-inside it. The press's result records those deletes (`trashed`, stored with the command), and its
-Undo takes them back (`restoreDiscard`): the same restore record Trash's Restore writes, so
-whichever comes first, the other finds the delete lifted and does nothing. Either way the document
-comes back in Live, not in the Work: as on Undo of an Apply, a press never takes a created
-document out of Live again, because that delete would itself be a Trash entry while the Work
-showed the document pending. Redo is a press that names the press it repeats (`redoes`): it takes
-back the restores that lifted that press's deletes (`trashAgain`, Trash's Undo of a Restore), so
-the documents go back to Trash, and records the deletes as its own `trashed` for the next Undo.
-Work purge passes no `trash`: a purged Work's documents leave every view and `purgeUnviewed`
+inside it. Its live create carries the drafted create (`carries`, `fromDraft`), as an Apply's copy
+does. The press's result records those deletes (`trashed`, stored with the command). Its Undo
+(`restoreDiscard`) puts back the state from before the press: each delete still in Trash is taken
+back, and so is the live create under it, so the documents leave Live and Trash and are pending in
+the Work again with their text. Trash's Restore is the other way back: it brings them into Live,
+and then the press's Undo finds the delete lifted and leaves them there, so whichever comes first
+the other does nothing. Redo is pressing again: the Work's pending creates go to Trash as on the
+first press. Work purge passes no `trash`: a purged Work's documents leave every view and `purgeUnviewed`
 releases them.
 
 ## Work purge
@@ -106,8 +105,14 @@ says it was resolved. It reads no deleted item: a checkpoint drops their content
 ([checkpoints](CONTEXT.md#authority-checkpoints-and-derivation)), and the content of an effect
 outlives a version restore too. The tab's Apply and Reject inside the text are a resolve on the
 editor's Y.Doc, undone by Ctrl+Z from the editor's own history. An effect whose notes are closed
-is marked taken back without changing its text. A document the press created stays in Live on
-Undo of Apply, and one a Discard put in Trash comes back in Live on its Undo. There is no Redo command: pressing again is the Redo, naming the press it repeats (`redoes`). Press and unpress rows are
+is marked taken back without changing its text. A document or folder a draft created is the
+draft's again after the Undo of the press that put it in Live or in Trash: pending in the Work,
+in no Live row and no Trash entry. This rests on the tree's rule 15 (withdrawn nodes,
+`packages/project-tree/.context/CONTEXT.md`): the press's Undo takes back such a create with a
+withdrawal, a delete Trash does not list. Any other Undo of it (the model's `undo`) still puts it
+in Trash, since nothing makes it pending again. A Trash Restore of part of a discarded folder
+keeps that part, and the folders above it, in Live on the press's Undo. Its text stays plain in its Live room, as before the press. There is no
+Redo command: pressing again is the Redo. Press and unpress rows are
 purged with discards after 30 days.
 
 ## The pending index
@@ -130,6 +135,5 @@ Yjs gateway admits the room through `documentSync.draftsHolding`.
 ## Not covered yet
 
 - No per-document grant check: the press is the draft owner's, like Apply all.
-- A press Apply leaves `apply_command_trees.created_heads` as the tree Apply's placeholders:
-  the press never calls `recordCreatedHeads`, since its Undo keeps every created document in
-  Live. Anything that comes to read those heads for a press must record them first.
+- Older builds read a withdrawn node as in Trash (the Undo's delete looks like any delete):
+  nothing is lost, and the node is pending in the Work there too.

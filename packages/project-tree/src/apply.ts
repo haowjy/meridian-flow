@@ -18,7 +18,7 @@ import {
   type TreeProjection,
 } from "./replay.js";
 import { fingerprint } from "./shape.js";
-import { type NotUndone, takeBackAll } from "./undo.js";
+import { type NotUndone, type TakenBack, takeBackAll } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
@@ -496,48 +496,37 @@ function toTrash(
     const held = below(top);
     for (const id of [top, ...held]) {
       const node = view.nodes.get(id) as TreeNode;
-      const { actor } = creates.find((record) => record.node === id) as TreeRecord;
+      const create = creates.find((record) => record.node === id) as TreeRecord;
       const parent =
         id !== top || isSourceRoot(node.parent) || placeIn(live.nodes, node.parent)
           ? node.parent
           : sourceRoot(node.source);
       made.push(
-        writer.prepare(LIVE, actor, {
-          type: "create",
-          node: id,
-          kind: node.kind,
-          name: node.name,
-          parent,
-          source: node.source,
-          rank: node.rank,
-          ...(node.filetype ? { filetype: node.filetype } : {}),
-          ...(node.provisional ? { provisional: true as const } : {}),
-          ...(node.aliases ? { aliases: node.aliases } : {}),
-          ...(node.hasProperties ? { hasProperties: true as const } : {}),
-          ...(node.blob ? { blob: node.blob } : {}),
-        }),
+        writer.prepare(
+          LIVE,
+          create.actor,
+          {
+            type: "create",
+            node: id,
+            kind: node.kind,
+            name: node.name,
+            parent,
+            source: node.source,
+            rank: node.rank,
+            ...(node.filetype ? { filetype: node.filetype } : {}),
+            ...(node.provisional ? { provisional: true as const } : {}),
+            ...(node.aliases ? { aliases: node.aliases } : {}),
+            ...(node.hasProperties ? { hasProperties: true as const } : {}),
+            ...(node.blob ? { blob: node.blob } : {}),
+          },
+          // Landed from the draft, as an Apply's copy is: its Undo leaves the node the draft's alone.
+          { carries: create.carries ?? create.id, fromDraft: draft },
+        ),
       );
     }
     made.push(writer.prepare(LIVE, by, { type: "delete", node: top, cascade: held }));
   }
   return made;
-}
-
-/**
- * Redo of a Discard after its Undo: each of `trashed` (the deletes `discardDraft` made) that a
- * restore lifted is put back, by taking that restore back (as Trash's Undo of a Restore does).
- * Returns the deletes in force afterwards, which the Redo records as its own `trashed`.
- */
-export function trashAgain(writer: TreeWriter, by: Actor, trashed: readonly string[]): string[] {
-  const live = writer.view(LIVE);
-  const lifting = [...live.changes.values()].flatMap((change) =>
-    change.inForce && change.undoes !== undefined && trashed.includes(change.undoes)
-      ? [{ id: change.id, view: LIVE }]
-      : [],
-  );
-  if (lifting.length > 0) takeBackAll(writer, by, lifting);
-  const now = writer.view(LIVE);
-  return trashed.filter((id) => now.standingDeletes.has(id));
 }
 
 /** Why a restored record would have nothing to act on: what it stands on is gone. */
@@ -573,15 +562,8 @@ export function madeBy(doc: Y.Doc, applied: string): TreeRecord[] {
   return appliedBy(doc, applied).copies;
 }
 
-/** The nodes an Apply command created in live: the documents whose text `undoApply` must ask about. */
-export function appliedCreates(writer: TreeWriter, applied: string): string[] {
-  return appliedBy(writer.doc, applied).copies.flatMap((copy) =>
-    copy.type === "create" ? [copy.node] : [],
-  );
-}
-
 /** Why a fact an Apply landed is not taken back; the document or record stays as it stands. */
-export type UndoLeftWhy = NotUndone | "has_text" | "closed";
+export type UndoLeftWhy = NotUndone | "closed";
 
 export type UndoApplyResult = {
   /** The opposite records made, newest copy first. */
@@ -594,20 +576,18 @@ export type UndoApplyResult = {
  * Undo of an Apply, fact by fact: for each live copy the Apply landed, newest first, the opposite
  * record `undoChange` makes, so what others did since (a rename of the same node, a node put in
  * a created folder) is kept, as it is for any other Undo. A fact something later changed stays
- * (`changed_since`), as does a document with text written since (`has_text`, from
- * `writtenSince`: text is not in the list), a node that is gone (`purged`) and a change no longer
- * in force (`already`); each is in `left`. The records whose copies were taken back are pending
- * again in the Work; the others stay applied.
+ * (`changed_since`), as does a node that is gone (`purged`) and a change no longer in force
+ * (`already`); each is in `left`. The records whose copies were taken back are pending again in
+ * the Work; the others stay applied. A create taken back leaves the node the Work's alone, in no
+ * live row and no Trash entry (the replay's withdrawn nodes): its text, plain in its Live room,
+ * is the Work's again.
  */
 export function undoApply(
   writer: TreeWriter,
   applied: string,
   by: Actor,
   command: string,
-  options: {
-    writtenSince?: ReadonlySet<string>;
-    closed?: (source: string) => boolean;
-  } = {},
+  options: { closed?: (source: string) => boolean } = {},
 ): UndoApplyResult {
   assertNewCommand(writer.doc, command);
   const { settled } = appliedBy(writer.doc, applied);
@@ -618,21 +598,14 @@ export function undoApply(
   const reversed = new Set<string>();
   writer.transact(() => {
     const copies = made.reverse();
-    const asked = copies.filter(
-      (copy) => !(copy.type === "create" && options.writtenSince?.has(copy.node)),
-    );
     const answers = takeBackAll(
       writer,
       by,
-      asked.map((copy) => ({ id: copy.id, view: LIVE })),
+      copies.map((copy) => ({ id: copy.id, view: LIVE, withdraw: copy.fromDraft })),
       options.closed,
     );
     for (const copy of copies) {
-      const back = answers.get(copy.id);
-      if (back === undefined) {
-        left.push({ record: copy, why: "has_text" });
-        continue;
-      }
+      const back = answers.get(copy.id) as TakenBack;
       if (typeof back === "string") {
         left.push({ record: copy, why: back });
         continue;
@@ -705,11 +678,12 @@ export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
  * record whose node cannot be acted on once the copies are in (purged, or its create is not in
  * force and no copy brings it back) is left out. Once.
  *
- * What the Discard put in live's Trash (`trashed`, the deletes `discardDraft` or `trashAgain`
- * returned) comes back in live, not in the Work: each delete is taken back while it stands
- * (Trash's Restore lifts it too, and then this does nothing), and the drafted records on its
- * nodes stay discarded. A press Undo never takes a created node out of live again, as for an
- * Apply: taking a live create back is a delete Trash lists. `back` is the restores written.
+ * What the Discard put in live's Trash (`trashed`, the deletes `discardDraft` returned) goes back to
+ * the Work with the rest, as before the Discard: each delete still in Trash is taken back, and the
+ * live create that put each node it covers there, so live has those nodes no more and no Trash
+ * entry (the replay's withdrawn nodes), and their records come back pending. A delete Trash's
+ * Restore lifted first stays lifted: its nodes stay in live and their records discarded, so the
+ * two never act twice. `back` is the records written in live.
  */
 export function restoreDiscard(
   writer: TreeWriter,
@@ -726,10 +700,27 @@ export function restoreDiscard(
     (record) => record.type === "delete" && trashed.includes(record.id),
   );
   if ((restored || settled.length === 0) && deletes.length === 0) return "already";
-  const inTrash = new Set(
-    deletes.flatMap((record) => (record.type === "delete" ? [record.node, ...record.cascade] : [])),
+  // What each delete still in Trash covers comes back to the Work; what Trash restored stays
+  // live, and so does each folder above it, which it keeps standing there (rule 3).
+  const live = writer.view(LIVE);
+  const trash = live.trash.filter((entry) => trashed.includes(entry.id));
+  const covered = new Set(trash.flatMap((entry) => [entry.node, ...entry.cascade]));
+  const stays = new Set(
+    deletes.flatMap((record) =>
+      record.type === "delete"
+        ? [record.node, ...record.cascade].filter((node) => !covered.has(node))
+        : [],
+    ),
   );
-  const records = restored ? [] : settled.filter((record) => !inTrash.has(record.node));
+  for (const node of [...stays]) {
+    let at = live.nodes.get(node)?.parent;
+    while (at !== undefined && covered.has(at)) {
+      stays.add(at);
+      at = live.nodes.get(at)?.parent;
+    }
+  }
+  const going = new Set([...covered].filter((node) => !stays.has(node)));
+  const records = restored ? [] : settled.filter((record) => !stays.has(record.node));
   // The node a copy acts on stands in its Work's view, or the Discard held its create and the
   // copy of that brings it back.
   const view = writer.view({ draft });
@@ -765,11 +756,14 @@ export function restoreDiscard(
   writer.transact(() => {
     writer.settle(by, overridden, "discarded", { command });
     recordsOf(doc).push(copies);
-    const answers = takeBackAll(
-      writer,
-      by,
-      deletes.map((record) => ({ id: record.id, view: LIVE })),
-    );
+    // Out of Trash, then out of live: each create's last live copy is the one that landed it.
+    const answers = takeBackAll(writer, by, [
+      ...trash.map((entry) => ({ id: entry.id, view: LIVE })),
+      ...records
+        .filter((record) => record.type === "create" && going.has(record.node))
+        .reverse()
+        .map((record) => ({ id: record.id, view: LIVE, withdraw: draft })),
+    ]);
     for (const answer of answers.values())
       if (typeof answer === "object" && "id" in answer) back.push(answer);
   });

@@ -736,15 +736,51 @@ describe("Undo of an Apply, fact by fact", () => {
     expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([b]);
   });
 
-  it("a document with text written since stays, and the folder it stands in while it does", () => {
+  it("an Apply or Discard Undo leaves a created folder and document the Work's alone, out of live and Trash; any other Undo of the create goes to Trash", () => {
     const t = start();
     const folder = t.folder("Arc", ROOT, D, CHAT);
     const ch = t.chapter("Chapter 50", folder, D, CHAT);
     const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
-    const result = undoApply(t.w, command, WRITER, cmd(), { writtenSince: new Set([ch]) });
-    expect(result.left.map(({ record, why }) => [record.node, why])).toEqual([[ch, "has_text"]]);
-    expect(t.at(ch)).toMatchObject({ trashed: false, parent: folder });
-    expect(t.at(folder)).toMatchObject({ trashed: false, keptByChild: true });
+    expect(undoApply(t.w, command, WRITER, cmd()).left).toEqual([]);
+    const live = t.w.view(LIVE);
+    expect([live.nodes.has(folder), live.nodes.has(ch), live.trash]).toEqual([false, false, []]);
+    expect(t.at(ch, D)).toMatchObject({ trashed: false, parent: folder });
+    expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([folder, ch]);
+    // A Discard after it puts them in Trash as one entry, and its Undo makes them pending again.
+    const discard = cmd();
+    const { trashed } = discardDraft(t.w, "work-1", WRITER, discard, undefined, { trash: true });
+    expect(t.w.view(LIVE).trash.map((entry) => entry.node)).toEqual([folder]);
+    restoreDiscard(t.w, discard, WRITER, "work-1", cmd(), trashed);
+    expect([t.w.view(LIVE).nodes.has(folder), t.w.view(LIVE).trash]).toEqual([false, []]);
+    expect(t.at(ch, D)).toMatchObject({ trashed: false, parent: folder });
+    t.valid();
+
+    // Any other Undo of a create an Apply landed goes to Trash, and a Trash restore of part of a
+    // discarded folder keeps it, and the folder, in live.
+    const scene = t.chapter("Scene", ROOT, D, CHAT);
+    const create = pendingRecords(t.doc, "work-1").find(
+      (record) => record.node === scene,
+    ) as TreeRecord;
+    applyDraft(t.w, "work-1", WRITER, cmd());
+    // The model's own Undo of its create: its record stays applied, so the node is no draft's.
+    expect(typeof undoChange(t.w, D, CHAT, create.id)).toBe("object");
+    expect(t.w.view(LIVE).trash.map((entry) => entry.node)).toEqual([scene]);
+
+    const arc = t.folder("Arc 2", ROOT, D, CHAT);
+    const a = t.chapter("A", arc, D, CHAT);
+    const b = t.chapter("B", arc, D, CHAT);
+    const again = cmd();
+    const second = discardDraft(t.w, "work-1", WRITER, again, undefined, { trash: true });
+    t.w.restore(LIVE, WRITER, a);
+    restoreDiscard(t.w, again, WRITER, "work-1", cmd(), second.trashed);
+    // A stays live, and the folder holding it; B is the Work's again.
+    expect([t.at(arc)?.trashed, t.at(a)?.trashed, t.w.view(LIVE).nodes.has(b)]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([b]);
+    t.valid();
   });
 
   it("a second Undo of the same Apply has nothing to take back", () => {
