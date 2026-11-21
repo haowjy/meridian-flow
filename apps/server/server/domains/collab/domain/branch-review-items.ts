@@ -8,7 +8,7 @@
  * Every item is keyed `${branchId}:${documentId}` (F12) and carries the tree-derived address and
  * whether it has text changes.
  */
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import { type DraftItemKey, draftItemKey } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { BranchDocumentTree, BranchTreeStateReader } from "./ports/branch-tree-state.js";
@@ -16,7 +16,7 @@ import type { WorkBranchTextChanges } from "./ports/work-branch-pending-store.js
 import { documentTitleFromUri } from "./reversal-notices.js";
 
 export type DraftReviewItem = {
-  branchId: BranchId;
+  branchId: DraftId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
   /** Whether this item has text changes: the owner's suggestions in the Live document. */
@@ -50,29 +50,29 @@ export type ResolvedDraftItem = { item: DraftReviewItem; listed: boolean };
 
 export interface BranchReviewItems {
   /** The branch's listed items. */
-  list(branchId: BranchId): Promise<DraftReviewItem[]>;
+  list(branchId: DraftId): Promise<DraftReviewItem[]>;
   /**
    * One document's item and whether it is listed, for every document the branch has a view
    * of (text changes, or a change row); null only when it is not addressable.
    */
-  resolve(branchId: BranchId, documentId: DocumentId): Promise<ResolvedDraftItem | null>;
+  resolve(branchId: DraftId, documentId: DocumentId): Promise<ResolvedDraftItem | null>;
 }
 
 export function createBranchReviewItems(deps: {
   tree: BranchTreeStateReader;
   /** The documents the branch's owner has suggestions in (only these documents' when given). */
   text(
-    branchId: BranchId,
+    branchId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<readonly WorkBranchTextChanges[]>;
   /** The chats behind each document's branch row (moved or deleted it, created it). */
   treeActors(
-    branchId: BranchId,
+    branchId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, readonly string[]>>;
 }): BranchReviewItems {
   async function items(
-    branchId: BranchId,
+    branchId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<ResolvedDraftItem[]> {
     const text = await deps.text(branchId, documentIds);
@@ -107,7 +107,7 @@ export function createBranchReviewItems(deps: {
 }
 
 function toItem(
-  branchId: BranchId,
+  branchId: DraftId,
   node: BranchDocumentTree,
   text: WorkBranchTextChanges | undefined,
   treeActorThreadIds: readonly string[],

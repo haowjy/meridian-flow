@@ -55,7 +55,7 @@ export function MobileDocumentReview({
     documentId,
     itemKey: itemKey ?? "",
     onCloseDraftOnly,
-    onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.ownerKey),
+    onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.draftId),
   });
   const [listOpen, setListOpen] = useState(false);
   const manuscriptState = useManuscriptState(projectId, document);

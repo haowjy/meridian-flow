@@ -49,7 +49,7 @@ export function DraftReviewBoundary({
 export function useDraftReviewScopeValue({
   projectId,
   work,
-  ownerKey,
+  draftId,
   threadId = null,
   marks,
   showLive,
@@ -58,7 +58,7 @@ export function useDraftReviewScopeValue({
   /** The Work whose archived state freezes these drafts. */
   work: Work | null;
   /** Whose drafts this scope reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
-  ownerKey: string;
+  draftId: string;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
   /** The host document's Show changes. */
@@ -67,18 +67,18 @@ export function useDraftReviewScopeValue({
 }): DraftReviewContextValue {
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
-  const drafts = useOwnerDrafts(projectId, ownerKey || null);
+  const drafts = useOwnerDrafts(projectId, draftId || null);
   const files = drafts.files ?? [];
   const reviewState = useDraftReviewStateOwner();
-  const scope = useRef({ projectId: effectiveProjectId, ownerKey, queryClient });
+  const scope = useRef({ projectId: effectiveProjectId, draftId, queryClient });
   const scopeChanged =
     scope.current.projectId !== effectiveProjectId ||
-    scope.current.ownerKey !== ownerKey ||
+    scope.current.draftId !== draftId ||
     scope.current.queryClient !== queryClient;
   const controller = useDraftReviewController({
     projectId: effectiveProjectId,
     work,
-    ownerKey,
+    draftId,
     threadId,
     stateOwner: scopeChanged ? { ...reviewState, state: EMPTY_DRAFT_REVIEW_STATE } : reviewState,
     marks,
@@ -115,14 +115,14 @@ export function useDraftReviewScopeValue({
   // development re-run) would end a review admission entered since, and admission doesn't retry.
   useLayoutEffect(() => {
     const previous = scope.current;
-    scope.current = { projectId: effectiveProjectId, ownerKey, queryClient };
+    scope.current = { projectId: effectiveProjectId, draftId, queryClient };
     if (
       previous.projectId !== effectiveProjectId ||
-      previous.ownerKey !== ownerKey ||
+      previous.draftId !== draftId ||
       previous.queryClient !== queryClient
     )
       controller.exitReview();
-  }, [effectiveProjectId, ownerKey, queryClient, controller.exitReview]);
+  }, [effectiveProjectId, draftId, queryClient, controller.exitReview]);
 
   const fileForDocument = drafts.fileForDocument;
 

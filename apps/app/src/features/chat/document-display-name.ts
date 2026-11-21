@@ -49,7 +49,7 @@ function parseContextLocation(uriOrPath: string): ParsedContextLocation {
   return { scheme, path: parsed.value.path, owner };
 }
 
-function ownerKey(owner: ContextOwner | null | undefined): string {
+function draftId(owner: ContextOwner | null | undefined): string {
   switch (owner?.kind) {
     case "work":
       return `work:${owner.workHandle}`;
@@ -136,8 +136,7 @@ export function describeMove(
   const path = `${folderOf(destination.path)}${name}`;
   const otherArea =
     destination.scheme !== null &&
-    (source.scheme !== destination.scheme ||
-      ownerKey(source.owner) !== ownerKey(destination.owner));
+    (source.scheme !== destination.scheme || draftId(source.owner) !== draftId(destination.owner));
   if (otherArea && destination.scheme)
     return {
       kind: "move",

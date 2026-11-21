@@ -1332,7 +1332,7 @@
       "minor": 2,
       "patch": 0
     },
-    "compatibilityNote": "Adds suggestion mode: the `suggest_ins` and `suggest_del` marks (`{ id, work }`; who wrote a change is kept once per change in the document's `suggestion_authors` map), the `comment` mark (all with defaults, overlapping) and the `sug` block attribute (default null). Additive: no stored content changes meaning. A 3.1 client must not edit a 3.2 head, since its binding would delete marks it cannot build; the minor fence already refuses it.",
+    "compatibilityNote": "Adds suggestion mode: the `suggest_ins` and `suggest_del` marks (`{ id, draft }`; who wrote a change is kept once per change in the document's `suggestion_authors` map), the `comment` mark (all with defaults, overlapping) and the `sug` block attribute (default null). Additive: no stored content changes meaning. A 3.1 client must not edit a 3.2 head, since its binding would delete marks it cannot build; the minor fence already refuses it.",
     "surface": {
       "fragmentName": "prosemirror",
       "nodes": {
@@ -1767,11 +1767,11 @@
         },
         "suggest_del": {
           "attrs": {
-            "id": {
+            "draft": {
               "hasDefault": true,
               "default": null
             },
-            "work": {
+            "id": {
               "hasDefault": true,
               "default": null
             }
@@ -1780,11 +1780,11 @@
         },
         "suggest_ins": {
           "attrs": {
-            "id": {
+            "draft": {
               "hasDefault": true,
               "default": null
             },
-            "work": {
+            "id": {
               "hasDefault": true,
               "default": null
             }
@@ -1800,7 +1800,7 @@
       "minor": 3,
       "patch": 0
     },
-    "compatibilityNote": "Adds `sugAttrs` (default null) to every block that has `sug`: a Work's pending change to a Live block's attributes. Additive. A 3.2 client must not edit a 3.3 head, since its binding would drop the attribute; the minor fence already refuses it.",
+    "compatibilityNote": "Adds `sugAttrs` (default null) to every block that has `sug`: a draft's pending change to a Live block's attributes. Additive. A 3.2 client must not edit a 3.3 head, since its binding would drop the attribute; the minor fence already refuses it.",
     "surface": {
       "fragmentName": "prosemirror",
       "nodes": {
@@ -2263,11 +2263,11 @@
         },
         "suggest_del": {
           "attrs": {
-            "id": {
+            "draft": {
               "hasDefault": true,
               "default": null
             },
-            "work": {
+            "id": {
               "hasDefault": true,
               "default": null
             }
@@ -2276,11 +2276,11 @@
         },
         "suggest_ins": {
           "attrs": {
-            "id": {
+            "draft": {
               "hasDefault": true,
               "default": null
             },
-            "work": {
+            "id": {
               "hasDefault": true,
               "default": null
             }

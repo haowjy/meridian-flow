@@ -7,7 +7,6 @@ import { openDocumentFromDraftGroup } from "../context/open-document-from-draft"
 import { openDocumentFromFile, treeFileFromCatalogEntry } from "../context/open-document-from-file";
 import type { AddressedDocument } from "../context/route-document-owner";
 import { canonicalDocumentAddress } from "./document-address-canonical";
-import { addressReviewOwner } from "./document-address-review";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref } from "./project-address";
 import type { createProjectNavigation } from "./project-navigation";
@@ -79,10 +78,6 @@ export function ProjectAddressDocument({
   navigation: ReturnType<typeof createProjectNavigation> | null;
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
-  // A hidden create can name its item through its draft row rather than the address.
-  const reviewOwner = reviewItemKey
-    ? addressReviewOwner({ owner: address.owner, itemKey: reviewItemKey }, workId)
-    : null;
   const admissionInput = useRef({ address, result, reviewItemKey });
   admissionInput.current = { address, result, reviewItemKey };
   // Address projections are rebuilt from JSON snapshots. Their object identity is not an
@@ -101,8 +96,8 @@ export function ProjectAddressDocument({
       return;
     }
     if (reviewItemKey) {
-      // The link to a draft carries its owner, which a hidden create takes from the scope.
-      const next = { ...canonical, owner: reviewOwner ?? canonical.owner, itemKey: reviewItemKey };
+      // The link to a draft carries its item key, which names the draft.
+      const next = { ...canonical, itemKey: reviewItemKey };
       if (projectAddressHref(next) !== href) void navigation.replaceIfCurrent(ticket, next);
       return;
     }
@@ -124,6 +119,6 @@ export function ProjectAddressDocument({
     return () => {
       current = false;
     };
-  }, [href, entryKey, admissionFingerprint, workId, reviewOwner, navigation, onAdmission]);
+  }, [href, entryKey, admissionFingerprint, workId, navigation, onAdmission]);
   return null;
 }

@@ -140,7 +140,7 @@ Every reader of a document's text reads a view: `viewBlock`, `viewDoc` for a who
 matter. A view reads `live` and `own-ins` text, and no block that is another Work's or that the
 view removes. The Markdown codecs throw on a suggestion mark, so a reader that skips the view
 fails loudly; a reader of plain text does not, which is where to look for the next miss. The
-server's one way to a view is the runtime's `model` (Live) or `workView.model(work)`; the
+server's one way to a view is the runtime's `model` (Live) or `draftView.model(work)`; the
 browser's is `suggestionView(state)`, the view the editor shows, and `shownText(state, from,
 to)` for a range's words with their positions back in the stored document.
 

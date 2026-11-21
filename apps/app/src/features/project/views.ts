@@ -61,7 +61,7 @@ export type DocumentPaint = {
   /** The painted draft's owner is not the scope's. */
   outOfScope: boolean;
   /** The Work scope's draft owner, whose draft the chip offers; null under No Work. */
-  scopeOwnerKey: string | null;
+  scopeDraftId: string | null;
   /** The scope's draft of this document, whether or not it is painted. */
   scopeDraft: DraftPin | null;
   view: DocumentView;
@@ -71,19 +71,19 @@ type Rows = { status: "loading" | "ready" | "failed"; rows: readonly ThreadDraft
 const NO_ROWS: readonly ThreadDraftListItem[] = [];
 
 /** One owner's draft rows; a null owner has none. */
-export function useOwnerDraftRows(projectId: string, ownerKey: string | null): Rows {
-  const query = useOwnerDraftList(projectId, ownerKey ?? "", ownerKey !== null);
+export function useOwnerDraftRows(projectId: string, draftId: string | null): Rows {
+  const query = useOwnerDraftList(projectId, draftId ?? "", draftId !== null);
   const list = unwrapListQuery({ ...query, data: query.data?.items });
   return useMemo(
     () =>
-      ownerKey === null || list.status === "disabled"
+      draftId === null || list.status === "disabled"
         ? { status: "ready", rows: NO_ROWS }
         : list.status === "error"
           ? { status: "failed", rows: NO_ROWS }
           : list.data === null
             ? { status: "loading", rows: NO_ROWS }
             : { status: "ready", rows: list.data },
-    [ownerKey, list.status, list.data],
+    [draftId, list.status, list.data],
   );
 }
 
@@ -105,17 +105,17 @@ export function useOwnerDraftRows(projectId: string, ownerKey: string | null): R
  */
 export function shownDraft(input: {
   pin: DraftPin | undefined;
-  scopeOwnerKey: string | null;
+  scopeDraftId: string | null;
   /** The scope's draft of the document, from its list. */
   scopeItemKey: string | undefined;
   choice: TreeVersionChoice;
 }): DraftPin | undefined {
-  const { pin, scopeOwnerKey, scopeItemKey } = input;
-  if (pin && pin.ownerKey !== scopeOwnerKey) return pin;
-  if (!scopeOwnerKey || input.choice !== "draft") return undefined;
+  const { pin, scopeDraftId, scopeItemKey } = input;
+  if (pin && pin.draftId !== scopeDraftId) return pin;
+  if (!scopeDraftId || input.choice !== "draft") return undefined;
   if (!scopeItemKey) return pin;
   return {
-    ownerKey: scopeOwnerKey,
+    draftId: scopeDraftId,
     itemKey: scopeItemKey,
     ...(pin?.itemKey === scopeItemKey && pin.changeId ? { changeId: pin.changeId } : {}),
   };
@@ -130,18 +130,18 @@ export function useShownDraft(
   chatThreadId: string | null,
 ): (documentId: string) => DraftPin | undefined {
   const accountId = useAccountId();
-  const scopeOwnerKey = useScopeDraftOwner(projectId, chatThreadId).ownerKey || null;
-  const scopeRows = useOwnerDraftRows(projectId, scopeOwnerKey).rows;
+  const scopeDraftId = useScopeDraftOwner(projectId, chatThreadId).draftId || null;
+  const scopeRows = useOwnerDraftRows(projectId, scopeDraftId).rows;
   const choice = useTreeVersionChoice(accountId, projectId);
   return useCallback(
     (documentId) =>
       shownDraft({
         pin: readDocumentView(accountId, projectId, documentId).pin,
-        scopeOwnerKey,
+        scopeDraftId,
         scopeItemKey: scopeRows.find((row) => row.documentId === documentId)?.itemKey,
         choice,
       }),
-    [accountId, projectId, scopeOwnerKey, scopeRows, choice],
+    [accountId, projectId, scopeDraftId, scopeRows, choice],
   );
 }
 
@@ -149,15 +149,15 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const accountId = useAccountId();
   const documentId = document?.documentId ?? null;
   const stored = useDocumentView(accountId, projectId, documentId);
-  const scopeOwnerKey = useScopeDraftOwner(projectId, useOptionalChatOnScreen()).ownerKey || null;
-  const scopeRows = useOwnerDraftRows(projectId, scopeOwnerKey);
+  const scopeDraftId = useScopeDraftOwner(projectId, useOptionalChatOnScreen()).draftId || null;
+  const scopeRows = useOwnerDraftRows(projectId, scopeDraftId);
   const choice = useTreeVersionChoice(accountId, projectId);
   const scopeRow = documentId
     ? scopeRows.rows.find((row) => row.documentId === documentId)
     : undefined;
   const chosen = shownDraft({
     pin: stored.pin,
-    scopeOwnerKey,
+    scopeDraftId,
     scopeItemKey: scopeRow?.itemKey,
     choice,
   });
@@ -170,7 +170,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     draft: DraftPin;
     chose: string;
   } | null>(null);
-  const choseKey = JSON.stringify([stored.pin?.ownerKey, stored.pin?.itemKey, choice]);
+  const choseKey = JSON.stringify([stored.pin?.draftId, stored.pin?.itemKey, choice]);
   const heldItem =
     painted?.documentId === documentId && painted.chose === choseKey ? painted.draft : null;
   // What became of it here: `ended` once it is gone or a press holds it.
@@ -178,13 +178,13 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   const fate = useSyncExternalStore(commands.subscribe, fateOf, fateOf);
   const held = heldItem && fate !== "ended" ? heldItem : null;
   const pin = chosen ?? held ?? undefined;
-  const foreign = pin !== undefined && pin.ownerKey !== scopeOwnerKey;
+  const foreign = pin !== undefined && pin.draftId !== scopeDraftId;
   // A page the scope's version doesn't govern shows Live, and holds no ended review open.
   const view = useMemo<DocumentView>(
     () => (foreign || choice === "draft" ? stored : { ...stored, version: "live" }),
     [stored, foreign, choice],
   );
-  const pinRows = useOwnerDraftRows(projectId, foreign ? pin.ownerKey : null);
+  const pinRows = useOwnerDraftRows(projectId, foreign ? pin.draftId : null);
   const pinList = foreign ? pinRows : scopeRows;
   const pinListed = pin ? pinList.rows.some((row) => row.itemKey === pin.itemKey) : false;
   // The painted draft left its list (an Apply or a Discard took it): the page goes on.
@@ -197,13 +197,13 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
 
   const queryClient = useQueryClient();
   const createsDraft = useCreatesDraft(projectId);
-  const missingKey = pinMissing ? JSON.stringify([pin.ownerKey, pin.itemKey]) : null;
+  const missingKey = pinMissing ? JSON.stringify([pin.draftId, pin.itemKey]) : null;
   useEffect(() => {
     if (!pin || !missingKey) return;
     verifyPin(queryClient, accountId, projectId, pin, createsDraft);
   }, [missingKey, queryClient, accountId, projectId, createsDraft]);
 
-  const pinOwner = pin?.ownerKey;
+  const pinOwner = pin?.draftId;
   const pinItem = pin?.itemKey;
   const pinChange = pin?.changeId;
   const paints = pinListed;
@@ -212,10 +212,10 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
       setPainted((prior) =>
         prior?.documentId === documentId &&
         prior.chose === choseKey &&
-        prior.draft.ownerKey === pinOwner &&
+        prior.draft.draftId === pinOwner &&
         prior.draft.itemKey === pinItem
           ? prior
-          : { documentId, draft: { ownerKey: pinOwner, itemKey: pinItem }, chose: choseKey },
+          : { documentId, draft: { draftId: pinOwner, itemKey: pinItem }, chose: choseKey },
       );
     else
       setPainted((prior) => {
@@ -225,19 +225,19 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
   }, [documentId, pinOwner, pinItem, paints, choseKey, unlisted, fate]);
   return useMemo((): DocumentPaint => {
     const scopeDraft =
-      scopeOwnerKey && scopeRow ? { ownerKey: scopeOwnerKey, itemKey: scopeRow.itemKey } : null;
-    const base = { scopeOwnerKey, scopeDraft, view };
+      scopeDraftId && scopeRow ? { draftId: scopeDraftId, itemKey: scopeRow.itemKey } : null;
+    const base = { scopeDraftId, scopeDraft, view };
     if (pinOwner && pinItem && unlisted !== "gone") {
       if (pinListed)
         return {
           ...base,
           showing: "draft",
           draft: {
-            ownerKey: pinOwner,
+            draftId: pinOwner,
             itemKey: pinItem,
             ...(pinChange ? { changeId: pinChange } : {}),
           },
-          outOfScope: pinOwner !== scopeOwnerKey,
+          outOfScope: pinOwner !== scopeDraftId,
         };
       return {
         ...base,
@@ -248,7 +248,7 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     }
     return { ...base, showing: "live", draft: null, outOfScope: false };
   }, [
-    scopeOwnerKey,
+    scopeDraftId,
     scopeRow,
     view,
     pinOwner,

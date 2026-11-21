@@ -38,8 +38,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { bindEditAgent, useComposedRuntimes } = await import(
       "../test-support/composed-runtime.js"
     );
-    const { handleOwnerDraftListRequest, handlePressRequest, selectBranchRouteServices } =
-      await import("./branch-review-route.js");
+    const { handleDraftListRequest, handlePressRequest, selectBranchRouteServices } = await import(
+      "./branch-review-route.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000e01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000e02";
@@ -168,7 +169,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.commands)
         .where(eq(schema.commands.kind, "model_edit"))
         .orderBy(schema.commands.createdAt);
-    const branchRows = () => db.select({ id: schema.branches.id }).from(schema.branches);
+    const branchRows = () => db.select({ id: schema.drafts.id }).from(schema.drafts);
+    const workDraft = async () => {
+      const [row] = await db
+        .select({ draftId: schema.works.draftId })
+        .from(schema.works)
+        .where(eq(schema.works.id, WORK_ID));
+      return row?.draftId;
+    };
     const hashOf = (read: string, word: string) =>
       read
         .split("\n")
@@ -178,9 +186,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     async function writerDiscards(runtime: Awaited<ReturnType<typeof reply>>["runtime"]) {
       const routes = selectBranchRouteServices(runtime.app);
       const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
-      const listed = await handleOwnerDraftListRequest(routes, {
+      const listed = await handleDraftListRequest(routes, {
         ...scope,
-        owner: `work:${WORK_ID}`,
+        draft: await workDraft(),
       } as never);
       if (!listed.items.some((item) => item.documentId === CH1))
         throw new Error("the model's edit made no draft to discard");
@@ -188,7 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ...scope,
         request: {
           commandId: randomUUID(),
-          owner: `work:${WORK_ID}`,
+          draft: await workDraft(),
           verdict: "discard",
           items: [{ node: CH1 }],
         },
@@ -219,12 +227,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(landed.isError, landed.text).toBeFalsy();
       expect(landed.text).toContain("status: success");
       expect(landed.text).not.toMatch(/re-read|retry|read again/i);
-      // A Discard closes no draft: the write lands in the Work's one branch.
+      // A Discard closes no draft: the write lands in the Work's one draft.
       expect(await branchRows()).toHaveLength(earlier.length);
-      const listed = await handleOwnerDraftListRequest(selectBranchRouteServices(runtime.app), {
+      const listed = await handleDraftListRequest(selectBranchRouteServices(runtime.app), {
         userId: USER_ID,
         projectId: PROJECT_ID,
-        owner: `work:${WORK_ID}`,
+        draft: await workDraft(),
       } as never);
       expect(listed.items.find((item) => item.documentId === CH1)?.actorThreads).toEqual([
         expect.objectContaining({ threadId: DRAFTING.threadId }),

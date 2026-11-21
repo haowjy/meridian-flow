@@ -14,6 +14,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./collab-postgres-harness.js";
 
@@ -82,6 +83,7 @@ export function responseContext(responseId: string) {
     grant: inProject(
       testFileGrant({
         kind: "draft",
+        draftId: WORK_DRAFT_ID,
         owner: { kind: "work", workId: WORK_ID },
         ownerHandle: "atomicity-work",
       }),

@@ -89,7 +89,7 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
 }
 
 /** The editor shows a review: a Work's view of Live. */
-const reviewsIn = (editor: Editor) => suggestionView(editor.state).work !== null;
+const reviewsIn = (editor: Editor) => suggestionView(editor.state).draft !== null;
 
 /**
  * Open the editor's bar block while `wanted`, and return its element. The block

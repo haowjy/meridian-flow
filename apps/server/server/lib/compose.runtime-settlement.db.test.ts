@@ -62,10 +62,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         handle: "w1",
         defaultAiWriteMode: "direct",
       });
-      // The Work already has its branch, as if an earlier write ensured it (contract §2.5).
-      await db
-        .insert(schema.branches)
-        .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
@@ -202,16 +198,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
-      const owners = await db
-        .select({
-          workId: schema.branches.originWorkId,
-          rootThreadId: schema.branches.originRootThreadId,
-        })
-        .from(schema.branches)
-        .where(eq(schema.branches.projectId, PROJECT_ID));
-      // A chat with no Work drafts per lineage, not on the shared No Work row.
-      expect(owners).toContainEqual({ workId: null, rootThreadId: THREAD_ID });
-      expect(owners.map((owner) => owner.workId)).not.toContain(NO_WORK_ID);
+      // A chat with no Work drafts into its lineage's draft; the shared No Work names none.
+      const [chat] = await db
+        .select({ draftId: schema.threads.draftId })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, THREAD_ID));
+      if (!chat) throw new Error("The chat names no draft");
+      const drafted = await runtime.ports.documentSync.readDraftMarkdown({
+        documentId: DOC_ID,
+        draft: chat.draftId as string,
+      });
+      expect(drafted.ok && drafted.value.content.trim()).toBe("Model draft content.");
       expect(await db.select().from(schema.threadWorks)).toEqual([
         expect.objectContaining({
           threadId: THREAD_ID,

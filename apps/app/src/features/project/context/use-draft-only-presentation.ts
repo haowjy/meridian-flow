@@ -15,7 +15,7 @@ export function useDocumentLiveness(projectId: string, tab: OpenDocument | null)
   const accountId = useAccountId();
   const view = useDocumentView(accountId, projectId, tab?.documentId ?? null);
   const pin = tab?.kind === "tracked" ? view.pin : undefined;
-  const rows = useOwnerDraftRows(projectId, pin?.ownerKey ?? null);
+  const rows = useOwnerDraftRows(projectId, pin?.draftId ?? null);
   const row = pin ? rows.rows.find((candidate) => candidate.itemKey === pin.itemKey) : undefined;
   if (!pin) return "live";
   if (row?.isNew) return "draft-only";

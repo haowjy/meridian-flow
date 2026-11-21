@@ -1,17 +1,10 @@
 /** The writer's press, driven through the store with the envelope the route would build. */
 import { randomUUID } from "node:crypto";
-import {
-  type CommandId,
-  type DraftOwner,
-  draftOwnerKey,
-  type ProjectId,
-  type UserId,
-  type WorkId,
-} from "@meridian/contracts";
+import type { CommandId, DraftId, ProjectId, UserId } from "@meridian/contracts";
 import type { PressRequest } from "@meridian/contracts/branches";
 import { type CommandEnvelope, commandDigest } from "../../../shared/commands/command-record.js";
 import type { PressStore } from "../adapters/drizzle-press.js";
-import { PROJECT_ID, USER_ID, WORK_ID } from "./collab-postgres-harness.js";
+import { PROJECT_ID, USER_ID, WORK_DRAFT_ID } from "./collab-postgres-harness.js";
 
 function pressEnvelope(kind: "press" | "unpress", accountId: UserId, body: unknown) {
   const envelope: CommandEnvelope = {
@@ -24,20 +17,13 @@ function pressEnvelope(kind: "press" | "unpress", accountId: UserId, body: unkno
   return envelope;
 }
 
-export function pressDriver(
-  presses: PressStore,
-  scope: { owner?: DraftOwner; userId?: UserId } = {},
-) {
-  const owner = scope.owner ?? { kind: "work", workId: WORK_ID as WorkId };
+export function pressDriver(presses: PressStore, scope: { draft?: DraftId; userId?: UserId } = {}) {
+  const draft = scope.draft ?? WORK_DRAFT_ID;
   const userId = scope.userId ?? (USER_ID as UserId);
   const press = (verdict: PressRequest["verdict"], items: PressRequest["items"]) => {
-    const request = { owner: draftOwnerKey(owner), verdict, items };
+    const request = { draft, verdict, items };
     const envelope = pressEnvelope("press", userId, request);
-    return presses.press({
-      envelope,
-      owner,
-      request: { ...request, commandId: envelope.commandId },
-    });
+    return presses.press({ envelope, request: { ...request, commandId: envelope.commandId } });
   };
   return {
     apply: (documentId: string) => press("apply", [{ node: documentId }]),

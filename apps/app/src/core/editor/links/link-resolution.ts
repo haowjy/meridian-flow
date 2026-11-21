@@ -117,9 +117,8 @@ export function linkFolderId(
   return ref?.kind === "folder" ? ref.folderId : null;
 }
 
-/** The branch a hidden document lives in: what the server says a link to it opens. */
-/** The branch a link opens in review, and who owns it (`work:<id>` or `lineage:<root>`). */
-export type LinkBranchDestination = { branchId: string; owner: string };
+/** The draft a hidden document lives in: what the server says a link to it opens in review. */
+export type LinkBranchDestination = { branchId: string };
 
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }

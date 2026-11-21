@@ -1,11 +1,11 @@
 /** What is pending review in a Work: its text changes by document, counts and the branches changing a document. */
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, WorkId } from "@meridian/contracts/runtime";
 import type { WorkBranchPendingCounts } from "../../../projects/ports/work-branch-pending-counts.js";
 
 /** An active branch with changes to one document, oldest first, and the owner it came from. */
 export type DocumentBranchOrigin = {
-  branchId: BranchId;
+  branchId: DraftId;
   /** Exactly one of these two is set. */
   originWorkId: WorkId | null;
   originRootThreadId: string | null;
@@ -19,7 +19,7 @@ export type DocumentBranchOrigin = {
  */
 export type WorkBranchTextChanges = {
   documentId: DocumentId;
-  branchId: BranchId;
+  branchId: DraftId;
   updatedAt: Date;
   /** How many changes the Work's review shows in the document. */
   textChanges: number;
@@ -30,7 +30,7 @@ export type WorkBranchTextChanges = {
 export type WorkBranchPendingStore = {
   /** Every document the branch's owner has suggestions in (only these documents' when given). */
   listBranchTextChanges(
-    branchId: BranchId,
+    branchId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<WorkBranchTextChanges[]>;
   /**

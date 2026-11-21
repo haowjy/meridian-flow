@@ -1,5 +1,5 @@
 /** Document ids to canonical URIs, answered by the one document-address owner (L32). */
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { branchTreeNodes } from "@meridian/database/schema";
@@ -17,7 +17,7 @@ export type DocumentUriResolver = (documentId: string) => Promise<string | null>
  */
 export type DocumentLastAddress = (
   documentId: DocumentId,
-  branchId?: BranchId,
+  branchId?: DraftId,
 ) => Promise<{ uri: string; deleted: boolean } | null>;
 
 export function createDocumentUriResolver(db: Database): DocumentUriResolver {

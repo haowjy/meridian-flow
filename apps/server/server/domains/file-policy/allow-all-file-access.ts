@@ -12,7 +12,7 @@ const OPEN_PROJECT = "00000000-0000-4000-8000-00000000a11a" as ProjectId;
 
 function openFacts(request: FileFactsRequest): FileFacts {
   const { target } = request;
-  const branchOwner = target.kind === "draft" ? target.owner : request.branchOwner;
+  const draftId = target.kind === "draft" ? target.draftId : request.branchOwner;
   const scheme = target.kind === "container" ? target.scheme : "manuscript";
   return {
     target,
@@ -25,10 +25,11 @@ function openFacts(request: FileFactsRequest): FileFacts {
     contentScheme: scheme,
     self: target.kind === "container" ? null : { kind: "document", id: target.documentId },
     ancestors: [{ kind: "project", id: OPEN_PROJECT }],
-    ...(branchOwner
+    ...(draftId
       ? {
           branchOwner: {
-            owner: branchOwner,
+            draftId,
+            owner: null,
             handle: null,
             isNoWork: false,
             archived: false,

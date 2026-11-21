@@ -1,6 +1,6 @@
 /**
  * Which version of the open document its view shows, as one chip and menu on desktop and phone:
- * Live, or a draft, with every owner's draft of the document one pick away. It reads the host's
+ * Live, or a draft, with every draft of the document one pick away. It reads the host's
  * paint (`useDocumentPaint`) and the document's draft hints, and writes the document's view: a
  * picked draft becomes the view's pin, Live drops it. `DraftSwitcher` draws it.
  *
@@ -9,7 +9,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { type DocumentDraftHint, workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
+import type { DocumentDraftHint } from "@meridian/contracts/branches";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useWorks } from "@/client/query/useWorks";
@@ -51,30 +51,27 @@ export function DocumentVersionMenu({
   // The chip reads the paint, the one version rule, never whether the review's controls are up:
   // a draft whose room is still opening is already the version on screen.
   const shown = paint?.draft ?? null;
-  const ownerWork = (owner: string) => {
-    const workId = workIdOfDraftOwnerKey(owner);
-    return workId ? works?.find((candidate) => candidate.id === workId) : undefined;
-  };
-  const ownerName = (owner: string, label: string | null) => {
-    const work = ownerWork(owner);
+  const draftWork = (draft: string) => works?.find((candidate) => candidate.draftId === draft);
+  const draftName = (draft: string, label: string | null) => {
+    const work = draftWork(draft);
     return work ? nameOf(work) : label;
   };
-  const listed: Pick<DocumentDraftHint, "owner" | "itemKey" | "label" | "tree">[] = [...hints];
+  const listed: DocumentDraftHint[] = [...hints];
   // A draft on screen that the hints have not caught up with is still a version of the document.
-  if (shown && !hints.some((hint) => hint.owner === shown.ownerKey))
+  if (shown && !hints.some((hint) => hint.branchId === shown.draftId))
     listed.push({
-      owner: shown.ownerKey as DocumentDraftHint["owner"],
+      branchId: shown.draftId,
       itemKey: shown.itemKey as DocumentDraftHint["itemKey"],
       label: null,
       tree: null,
     });
-  const scopeOwner = paint?.scopeOwnerKey ?? null;
+  const scopeDraft = paint?.scopeDraftId ?? null;
 
   const drafts = listed.map((hint) => ({
-    key: `${hint.owner}:${hint.itemKey}`,
+    key: hint.itemKey,
     name: (
       <WorkIdentity
-        work={ownerWork(hint.owner)}
+        work={draftWork(hint.branchId)}
         unavailableLabel={hint.label || t`Unnamed draft`}
       />
     ),
@@ -85,14 +82,14 @@ export function DocumentVersionMenu({
         <Trans>Moves it to {hint.tree.movedTo.path}</Trans>
       )
     ) : undefined,
-    current: shown?.ownerKey === hint.owner,
-    scope: hint.owner === scopeOwner,
+    current: shown?.draftId === hint.branchId,
+    scope: hint.branchId === scopeDraft,
     onSelect: () => {
       // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft.
-      if (hint.owner === shell?.ownerKey) shell.show("draft");
+      if (hint.branchId === shell?.draftId) shell.show("draft");
       else
         setDocumentView(accountId, projectId, documentId, {
-          pin: { ownerKey: hint.owner, itemKey: hint.itemKey },
+          pin: { draftId: hint.branchId, itemKey: hint.itemKey },
         });
       followToChip(documentId);
     },
@@ -101,9 +98,9 @@ export function DocumentVersionMenu({
   // while the document has a version besides the one on screen, or its review needs the menu.
   const showing = paint && paint.showing !== "live" ? "draft" : "live";
   if (showing === "live" && drafts.length === 0 && !review) return null;
-  const shownLabel = listed.find((hint) => hint.owner === shown?.ownerKey)?.label ?? null;
+  const shownLabel = listed.find((hint) => hint.branchId === shown?.draftId)?.label ?? null;
   const outOfScope =
-    shown && paint?.outOfScope ? (ownerName(shown.ownerKey, shownLabel) ?? t`Unnamed draft`) : null;
+    shown && paint?.outOfScope ? (draftName(shown.draftId, shownLabel) ?? t`Unnamed draft`) : null;
 
   return (
     <DraftSwitcher

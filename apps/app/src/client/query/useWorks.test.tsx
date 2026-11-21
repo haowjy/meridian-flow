@@ -339,7 +339,7 @@ describe("Work creation", () => {
       const staleRead = deferred<WorksSnapshot>();
       const stale = acquireWorksSnapshot(client, PROJECT_ID, () => staleRead.promise);
       await act(async () => {
-        void commands.create({ workId: CREATED_ID, name: "Branch three" });
+        void commands.create({ workId: CREATED_ID, draftId: "createdraft1", name: "Branch three" });
       });
       await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("pending"));
       expect(seen.works?.map((work) => work.id)).toEqual([WORK.id]);
@@ -367,7 +367,7 @@ describe("Work creation", () => {
     vi.mocked(listProjectWorks).mockImplementation(async () => server);
     await withProbe(server, async () => {
       await act(async () => {
-        void commands.create({ workId: CREATED_ID, name: "Branch three" });
+        void commands.create({ workId: CREATED_ID, draftId: "createdraft1", name: "Branch three" });
       });
       await settle(() => expect(seen.creations.get(CREATED.id)?.phase).toBe("failed"));
       expect(seen.creations.get(CREATED.id)?.work.name).toBe("Branch three");

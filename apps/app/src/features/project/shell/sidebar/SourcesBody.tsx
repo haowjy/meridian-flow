@@ -1,5 +1,4 @@
 import { t } from "@lingui/core/macro";
-import type { DraftOwnerKey } from "@meridian/contracts";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Ellipsis, ListChecks, type LucideIcon, MessageSquare, Trash2 } from "lucide-react";
@@ -227,7 +226,7 @@ const SOURCES: Record<SourceKey, Source> = {
       return (
         <ChangesSource
           // A question asked of one Work must not be answered for the next one picked.
-          key={changes.ownerKey}
+          key={changes.draftId}
           projectId={projectId}
           scope={changes}
           controller={changesCommands}
@@ -374,7 +373,7 @@ export function SourcesBody({
   const changesCommands = usePressCommands({
     projectId,
     work: changes.work,
-    ownerKey: changes.ownerKey,
+    draftId: changes.draftId,
     surface: "changes",
   });
 
@@ -418,7 +417,7 @@ export function SourcesBody({
     (scheme, file, options) => {
       const draft = drafting && shell ? shell.draftOf(file.documentId) : null;
       if (!draft || !shell) return onSelectFile(scheme, file, options);
-      openReviewFile(draft, shell.ownerKey);
+      openReviewFile(draft, shell.draftId);
       onPicked?.();
     },
     [drafting, shell, onSelectFile, openReviewFile, onPicked],
@@ -448,7 +447,7 @@ export function SourcesBody({
                   ? {
                       view: {
                         kind: "draft" as const,
-                        owner: shell.ownerKey as DraftOwnerKey,
+                        draft: shell.draftId,
                       },
                     }
                   : {}),
@@ -641,7 +640,7 @@ function TreeVersionChip() {
       showing={shell.showing}
       drafts={[
         {
-          key: shell.ownerKey,
+          key: shell.draftId,
           name: <WorkIdentity work={shell.work} unavailableLabel={t`This chat`} />,
           current: shell.showing === "draft",
           scope: true,

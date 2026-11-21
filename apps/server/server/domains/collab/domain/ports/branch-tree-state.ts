@@ -1,5 +1,5 @@
 /** What a Work's tree shows of a document, against live: the tree half of a review item. */
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 
 /**
@@ -32,7 +32,7 @@ export interface BranchTreeStateReader {
    * documents the caller names (the Work's text drafts). `only` limits it to these ids.
    */
   read(
-    branchId: BranchId,
+    branchId: DraftId,
     edited?: readonly DocumentId[],
     only?: readonly DocumentId[],
   ): Promise<BranchDocumentTree[]>;

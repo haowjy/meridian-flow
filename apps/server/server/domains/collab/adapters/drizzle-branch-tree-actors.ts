@@ -1,5 +1,5 @@
 /** The chats behind a Work's pending tree records, for the review list's `actorThreadIds`. */
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { pendingRecords, recordsOfItem } from "@meridian/project-tree";
@@ -17,7 +17,7 @@ export function createDrizzleBranchTreeActors(
   treeLists: Pick<TreeListStore, "read">,
 ) {
   return async function treeActors(
-    branchId: BranchId,
+    branchId: DraftId,
     documentIds?: readonly DocumentId[],
   ): Promise<ReadonlyMap<DocumentId, readonly string[]>> {
     const lists = await treeListsOfBranch(db, branchId);

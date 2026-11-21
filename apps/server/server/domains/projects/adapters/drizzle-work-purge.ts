@@ -8,13 +8,13 @@
  * the content release Trash retention uses; then their source rows, which take any node rows left.
  */
 
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  branches,
   contextSources,
+  drafts,
   eventJournal,
   projectResults,
   promptBakes,
@@ -137,7 +137,7 @@ export function createDrizzleWorkPurger(deps: {
     cutoff: Date,
     disposeDrafts: (
       lineageRootIds: readonly string[],
-    ) => Promise<{ releasedObjects: readonly string[] }>,
+    ) => Promise<{ releasedObjects: readonly string[]; draftIds: readonly DraftId[] }>,
   ): Promise<{ purged: boolean; objectKeys: string[]; threadIds: readonly string[] }> {
     return runInDrizzleTransaction(deps.db, async () => {
       const lockedTree = await lockWorkThreadTree(deps.db, workId, { includeMarked: true });
@@ -146,7 +146,12 @@ export function createDrizzleWorkPurger(deps: {
       }
       const activeDb = currentDrizzleDb(deps.db);
       const [work] = await activeDb
-        .select({ id: works.id, projectId: works.projectId, deletedAt: works.deletedAt })
+        .select({
+          id: works.id,
+          projectId: works.projectId,
+          draftId: works.draftId,
+          deletedAt: works.deletedAt,
+        })
         .from(works)
         .where(eq(works.id, workId));
       if (!work?.deletedAt || work.deletedAt.getTime() > cutoff.getTime()) {
@@ -291,15 +296,6 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
         await deps.evidence.forgetThreads(lockedTree.threadIds);
       }
-      // The disposed branches' rows go with the Work and its purged lineages; their closed drafts cascade.
-      await activeDb
-        .delete(branches)
-        .where(
-          or(
-            eq(branches.originWorkId, workId),
-            purgedRoots.length ? inArray(branches.originRootThreadId, purgedRoots) : undefined,
-          ),
-        );
       // A chat that moved to another Work keeps this Work's membership as non-primary history.
       // Its readers (the Work's chat list, the Work switcher's recent summary) filter by this Work,
       // which is gone after this. A primary membership still blocks the delete: those chats went above.
@@ -320,8 +316,15 @@ export function createDrizzleWorkPurger(deps: {
             entityRevision: sql`${works.entityRevision} + ${String(deleted[0].entityRevision)}::bigint + 1`,
           })
           .where(and(eq(works.projectId, work.projectId), eq(works.isNoWork, true)));
-        deps.works.lifecycleChanged({ id: workId, projectId: work.projectId });
+        deps.works.lifecycleChanged({
+          id: workId,
+          projectId: work.projectId,
+          draftId: work.draftId,
+        });
       }
+      // The disposed drafts go after the Work and chats naming them; their tree records cascade.
+      if (disposed.draftIds.length > 0)
+        await activeDb.delete(drafts).where(inArray(drafts.id, [...disposed.draftIds]));
       return { purged: deleted.length > 0, objectKeys, threadIds: lockedTree.threadIds };
     });
   }

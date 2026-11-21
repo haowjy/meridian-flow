@@ -6,7 +6,7 @@
  * reversal is recorded as a receipt in turn, so the model's `undo` and the card's see one order.
  */
 
-import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { DraftId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnDraftState } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, treeEditReceipts, treeNodes } from "@meridian/database/schema";
@@ -62,9 +62,9 @@ export type TreePlan = {
   /** The lists that hold the steps' nodes, to be locked before any document key. */
   lists: TreeList[];
   /** The Works whose branches a drafted step writes. */
-  branches: BranchId[];
+  branches: DraftId[];
   /** The steps' documents, each where it is reversed, for the edit grants (a restore is its own). */
-  documents: { documentId: string; branchId: BranchId | null; restore: boolean }[];
+  documents: { documentId: string; branchId: DraftId | null; restore: boolean }[];
   /**
    * Documents created in this turn: their text stays with the document.
    */
@@ -211,7 +211,7 @@ export function createTurnTreeInverse(deps: {
         ]);
     for (const [branchId, nodes] of draftedIn)
       for (const row of await db().execute<{ id: string }>(sql`
-        SELECT n.id::text AS id FROM ${placedNodesSql({ kind: "branch", branchId: branchId as BranchId })} n
+        SELECT n.id::text AS id FROM ${placedNodesSql({ kind: "branch", branchId: branchId as DraftId })} n
         WHERE n.id IN (${sql.join(
           nodes.map((id) => sql`${id}::uuid`),
           sql`, `,
@@ -309,7 +309,7 @@ export function createTurnTreeInverse(deps: {
       lists: [...lists.values()],
       branches: [
         ...new Set(steps.flatMap((step) => (step.draftBranchId ? [step.draftBranchId] : []))),
-      ] as BranchId[],
+      ] as DraftId[],
       documents: steps.flatMap((step) => {
         const restore = restores(step);
         // A document in Trash takes no edit grant but its own restore.
@@ -319,7 +319,7 @@ export function createTurnTreeInverse(deps: {
           ? [
               {
                 documentId: step.subject,
-                branchId: step.draftBranchId as BranchId | null,
+                branchId: step.draftBranchId as DraftId | null,
                 restore,
               },
             ]
@@ -416,7 +416,7 @@ export function createTurnTreeInverse(deps: {
           nodes: nodesOf(receipt),
           records: made,
           ...(receipt.draftBranchId && !inLive
-            ? { draftBranchId: receipt.draftBranchId as BranchId }
+            ? { draftBranchId: receipt.draftBranchId as DraftId }
             : {}),
         });
       }

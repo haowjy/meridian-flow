@@ -104,7 +104,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     async destinationAvailability(target, destination) {
       const facts = await deps.facts.load({
         target,
-        ...(destination.kind === "draft" ? { branchOwner: destination.owner } : {}),
+        ...(destination.kind === "draft" ? { branchOwner: destination.draftId } : {}),
       });
       if (!facts) return { closed: null };
       const work = destination.kind === "draft" ? facts.branchOwner : facts.ownerWork;
@@ -124,7 +124,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     async authorizeAt(principal, target, destination, need) {
       const facts = await deps.facts.load({
         target,
-        ...(destination.kind === "draft" ? { branchOwner: destination.owner } : {}),
+        ...(destination.kind === "draft" ? { branchOwner: destination.draftId } : {}),
       });
       if (!facts) return notFound(principal, target);
       const grants = await deps.grants.personGrants(principal.accountId, facts);
@@ -140,7 +140,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
         fresh.push(
           await deps.facts.load({
             target: facts.target,
-            ...(destination.kind === "draft" ? { branchOwner: destination.owner } : {}),
+            ...(destination.kind === "draft" ? { branchOwner: destination.draftId } : {}),
           }),
         );
       }
@@ -190,7 +190,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
       const facts = at
         ? await deps.facts.loadList(
             documentIds,
-            at.kind === "draft" ? at.owner : undefined,
+            at.kind === "draft" ? at.draftId : undefined,
             options.branchViews,
           )
         : await loadListFor(principal, documentIds, options?.branchViews);
@@ -217,7 +217,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
     const agent = principal.agent;
     if (!agent || target.kind === "draft" || target.kind === "restore")
       return deps.facts.load({ target });
-    const branched = { target, branchOwner: agent.branchOwner.owner };
+    const branched = { target, branchOwner: agent.branchOwner.draftId };
     if (agent.writeMode === "draft") return deps.facts.load(branched);
     const live = await deps.facts.load({ target });
     if (live)
@@ -234,7 +234,7 @@ export function createFileAccess(deps: FileAccessDeps): FileAccess {
   ): Promise<Map<DocumentId, FileFacts>> {
     const agent = principal.agent;
     if (!agent) return deps.facts.loadList(documentIds, undefined, branchViews);
-    const owner = agent.branchOwner.owner;
+    const owner = agent.branchOwner.draftId;
     if (agent.writeMode === "draft") return deps.facts.loadList(documentIds, owner, branchViews);
     const facts = await deps.facts.loadList(documentIds, undefined, branchViews);
     const onlyBranch = new Set<DocumentId>();

@@ -69,7 +69,7 @@ export type DiscardPart = {
   undone?: (landed: Promise<void>) => Promise<boolean>;
 };
 
-type Base = { id: number; projectId: string; ownerKey: string; surface: NoticeSurface };
+type Base = { id: number; projectId: string; draftId: string; surface: NoticeSurface };
 
 export type DraftNotice =
   | (Base & {
@@ -124,8 +124,8 @@ export class DraftNotices {
   };
   snapshot = () => this.revision;
 
-  get(ownerKey: string): DraftNotice | null {
-    return this.notices.get(ownerKey) ?? null;
+  get(draftId: string): DraftNotice | null {
+    return this.notices.get(draftId) ?? null;
   }
 
   /**
@@ -167,8 +167,8 @@ export class DraftNotices {
   }
 
   /** Replaces the owner's notice: an Apply or a Discard with no Undo shows nothing in its place. */
-  end(ownerKey: string) {
-    const notice = this.notices.get(ownerKey);
+  end(draftId: string) {
+    const notice = this.notices.get(draftId);
     if (!notice) return;
     this.drop(notice);
     this.publish();
@@ -178,27 +178,27 @@ export class DraftNotices {
     input: Omit<Extract<DraftNotice, { kind: "applied" }>, "id" | "kind" | "dismiss">,
   ): void {
     if (this.closed) return;
-    const held = this.notices.get(input.ownerKey);
+    const held = this.notices.get(input.draftId);
     if (held) this.drop(held);
     const id = this.nextId++;
-    this.notices.set(input.ownerKey, {
+    this.notices.set(input.draftId, {
       ...input,
       kind: "applied",
       id,
-      dismiss: () => this.endIf(input.ownerKey, id),
+      dismiss: () => this.endIf(input.draftId, id),
     });
     this.publish();
   }
 
   /** The facts an Apply adds to the owner's applied notice, if it is the one showing. */
-  appliedFacts(ownerKey: string) {
-    const held = this.notices.get(ownerKey);
+  appliedFacts(draftId: string) {
+    const held = this.notices.get(draftId);
     return held?.kind === "applied" ? held : null;
   }
 
   showDiscard(input: {
     projectId: string;
-    ownerKey: string;
+    draftId: string;
     surface: NoticeSurface;
     parts: readonly DiscardPart[];
   }): number | null {
@@ -206,22 +206,22 @@ export class DraftNotices {
       for (const part of input.parts) part.handle.end();
       return null;
     }
-    const held = this.notices.get(input.ownerKey);
+    const held = this.notices.get(input.draftId);
     if (held) this.drop(held);
     const id = this.nextId++;
     this.parts.set(id, [...input.parts]);
-    const { ownerKey } = input;
-    this.notices.set(ownerKey, {
+    const { draftId } = input;
+    this.notices.set(draftId, {
       kind: "discarded",
       id,
       projectId: input.projectId,
-      ownerKey,
+      draftId,
       surface: input.surface,
       left: null,
       status: "ready",
       ...this.subjectOf(input.parts),
-      undo: () => this.undo(ownerKey, id),
-      dismiss: () => this.endIf(ownerKey, id),
+      undo: () => this.undo(draftId, id),
+      dismiss: () => this.endIf(draftId, id),
     });
     this.publish();
     return id;
@@ -231,9 +231,9 @@ export class DraftNotices {
    * Where main landed after the Discard made it leave (`documentId` null: Recently opened).
    * Null: the writer moved first, so no place shows the notice, and its Undo ends.
    */
-  landed(ownerKey: string, id: number, landing: { documentId: string | null } | null) {
-    if (landing) this.update(ownerKey, id, () => ({ left: { landed: landing.documentId } }));
-    else this.endIf(ownerKey, id);
+  landed(draftId: string, id: number, landing: { documentId: string | null } | null) {
+    if (landing) this.update(draftId, id, () => ({ left: { landed: landing.documentId } }));
+    else this.endIf(draftId, id);
   }
 
   /** A share's Undo ended on its own (refused or blocked): the notice stops naming it. */
@@ -244,9 +244,9 @@ export class DraftNotices {
       parts.splice(index, 1);
       const notice = [...this.notices.values()].find((candidate) => candidate.id === id);
       if (notice?.kind !== "discarded" || notice.status === "undoing") return;
-      this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf(parts) });
+      this.notices.set(notice.draftId, { ...notice, ...this.subjectOf(parts) });
       this.publish();
-      this.settle(notice.ownerKey, id);
+      this.settle(notice.draftId, id);
       return;
     }
   }
@@ -264,13 +264,13 @@ export class DraftNotices {
     this.publish();
   }
 
-  private async undo(ownerKey: string, id: number): Promise<"ok" | "unlisted" | "failed"> {
-    const notice = this.notices.get(ownerKey);
+  private async undo(draftId: string, id: number): Promise<"ok" | "unlisted" | "failed"> {
+    const notice = this.notices.get(draftId);
     const parts = this.parts.get(id);
     if (notice?.id !== id || notice.kind !== "discarded" || notice.status === "undoing" || !parts)
       return "failed";
     this.pressed.add(id);
-    this.settle(ownerKey, id);
+    this.settle(draftId, id);
     // Retry takes back only the shares still out: a share that undid leaves the list.
     const answers = await Promise.all(
       parts.map(async (part) => ({ part, ...(await part.handle.undo()) })),
@@ -288,7 +288,7 @@ export class DraftNotices {
         ),
       );
       this.pressed.delete(id);
-      this.settle(ownerKey, id, failed);
+      this.settle(draftId, id, failed);
     }
     if (failed) return "failed";
     if (listed.length === 0) return "unlisted";
@@ -298,8 +298,8 @@ export class DraftNotices {
   }
 
   /** The notice as its shares stand: undoing while its Undo is out, gone once nothing is left. */
-  private settle(ownerKey: string, id: number, narrow = false) {
-    const notice = this.notices.get(ownerKey);
+  private settle(draftId: string, id: number, narrow = false) {
+    const notice = this.notices.get(draftId);
     const parts = this.parts.get(id);
     if (notice?.id !== id || notice.kind !== "discarded" || !parts) return;
     const status: Discarded["status"] | null = this.pressed.has(id)
@@ -314,7 +314,7 @@ export class DraftNotices {
     }
     const next = { ...notice, status, ...(narrow ? this.subjectOf(parts) : {}) };
     if (next.status === notice.status && next.subject === notice.subject) return;
-    this.notices.set(ownerKey, next);
+    this.notices.set(draftId, next);
     this.publish();
   }
 
@@ -341,19 +341,19 @@ export class DraftNotices {
   }
 
   private update(
-    ownerKey: string,
+    draftId: string,
     id: number,
     patch: () => Partial<Extract<DraftNotice, { kind: "discarded" }>>,
   ) {
-    const notice = this.notices.get(ownerKey);
+    const notice = this.notices.get(draftId);
     if (notice?.id !== id || notice.kind !== "discarded") return;
-    this.notices.set(ownerKey, { ...notice, ...patch() });
+    this.notices.set(draftId, { ...notice, ...patch() });
     this.publish();
   }
 
-  private endIf(ownerKey: string, id: number) {
-    const notice = this.notices.get(ownerKey);
-    if (notice?.id === id) this.end(ownerKey);
+  private endIf(draftId: string, id: number) {
+    const notice = this.notices.get(draftId);
+    if (notice?.id === id) this.end(draftId);
   }
 
   private drop(notice: DraftNotice) {
@@ -363,7 +363,7 @@ export class DraftNotices {
   }
 
   private forget(notice: DraftNotice) {
-    this.notices.delete(notice.ownerKey);
+    this.notices.delete(notice.draftId);
     this.parts.delete(notice.id);
     this.pressed.delete(notice.id);
   }

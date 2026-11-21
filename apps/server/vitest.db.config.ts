@@ -39,7 +39,6 @@ const expectedSuites = [
   "apps/server/server/domains/collab/collab-domain.image-paths.db.test.ts",
   "apps/server/server/domains/collab/grep-text.db.test.ts",
   "apps/server/server/domains/collab/document-revisions.db.test.ts",
-  "apps/server/server/domains/collab/branch-tree.reply.db.test.ts",
   "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",
   "apps/server/server/domains/context/adapters/tree-list-store.db.test.ts",
   "apps/server/server/domains/context/tree/retention.db.test.ts",

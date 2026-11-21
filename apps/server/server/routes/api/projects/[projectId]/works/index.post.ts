@@ -1,6 +1,6 @@
 /** Creates a named Work in an owned project. */
 
-import type { CommandId } from "@meridian/contracts";
+import { type CommandId, type DraftId, isDraftId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import type { CreateWorkRequest } from "@meridian/contracts/works";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
@@ -26,6 +26,9 @@ export default defineEventHandler(async (event) => {
   if (body.goal !== undefined && typeof body.goal !== "string") {
     throw createError({ statusCode: 400, message: "goal must be a string" });
   }
+  if (body.draftId !== undefined && !isDraftId(body.draftId)) {
+    throw createError({ statusCode: 400, message: "draftId must be a draft id" });
+  }
   await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
   const work = await runWorkCommand(
     app.commands,
@@ -35,6 +38,7 @@ export default defineEventHandler(async (event) => {
         { works: app.workRepo },
         {
           id: parseOptionalRequestId(body.id, "id"),
+          ...(body.draftId !== undefined ? { draftId: body.draftId as DraftId } : {}),
           projectId,
           createdByUserId: user.userId,
           name,

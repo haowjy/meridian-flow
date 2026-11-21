@@ -6,11 +6,10 @@
  * whole Discard ends the hold.
  */
 import { randomUUID } from "node:crypto";
-import type { BranchId, DocumentId, UserId } from "@meridian/contracts";
+import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  branches,
   branchTreeNodes,
   contextSources,
   documentBlockRooms,
@@ -41,7 +40,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
   const SOURCE = randomUUID();
   const WORK = randomUUID();
   const AGENT = `agent:${randomUUID()}/${randomUUID()}`;
-  let branchId: BranchId;
+  let branchId: DraftId;
   const { treeLists } = createTestRemovalDeps(db);
   const seed = treeSeeder(db);
   const trash = createDrizzleDocumentTrash({
@@ -65,11 +64,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     await db
       .insert(works)
       .values({ id: WORK, projectId: PROJECT, createdByUserId: USER, name: "W", handle: "w1" });
-    const [branch] = await db
-      .insert(branches)
-      .values({ projectId: PROJECT, originWorkId: WORK, createdBy: USER })
-      .returning({ id: branches.id });
-    branchId = (branch as { id: BranchId }).id;
+    const [work] = await db
+      .select({ draftId: works.draftId })
+      .from(works)
+      .where(eq(works.id, WORK));
+    branchId = work?.draftId as DraftId;
   });
 
   const branchRow = async (id: string) =>

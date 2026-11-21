@@ -9,6 +9,7 @@
  * Canonical history stays in the server admission/turn records.
  */
 
+import { isDraftId } from "@meridian/contracts";
 import type { AgentSelection } from "@meridian/contracts/agents";
 import {
   readRunState,
@@ -94,6 +95,8 @@ export type ChatSubmission = {
   draft?: ComposerDraftSnapshot;
   creation?: {
     title: string;
+    /** The chat's lineage draft (`newDraftId`), minted with `threadId`. */
+    draftId: string;
     workId: string | null;
     /** The Work's default when sent: the optimistic chat's mode when no choice was made. */
     workAiWriteMode: AiWriteMode;
@@ -185,6 +188,7 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     (!isObject(creation) ||
       typeof value.projectId !== "string" ||
       typeof creation.title !== "string" ||
+      !isDraftId(creation.draftId) ||
       (creation.workId !== null && typeof creation.workId !== "string") ||
       !isAiWriteMode(creation.workAiWriteMode) ||
       (creation.aiWriteMode !== undefined && !isAiWriteMode(creation.aiWriteMode)) ||

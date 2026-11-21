@@ -68,9 +68,9 @@ const nestingAttrs = {
 const idAttr = { default: null };
 
 /**
- * Suggestion mode (`@meridian/suggestions`): `sug` marks a block that exists only as one Work's
- * suggestion (`{ id, work }`); `sugAttrs` holds, by Work, one layer per turn of a pending change
- * to a Live block: its attributes, or its removal (`{ id, work, attrs, remove? }`). Who wrote each
+ * Suggestion mode (`@meridian/suggestions`): `sug` marks a block that exists only as one draft's
+ * suggestion (`{ id, draft }`); `sugAttrs` holds, by draft, one layer per turn of a pending change
+ * to a Live block: its attributes, or its removal (`{ id, draft, attrs, remove? }`). Who wrote each
  * change is kept once per change beside the fragment, not here. The binding drops marks on
  * blocks, so they are attributes.
  */
@@ -247,7 +247,7 @@ const customMarks = {
 
   strike: {},
 
-  // Suggestion mode (`@meridian/suggestions`). `excludes: ""` lets two Works mark the same text:
+  // Suggestion mode (`@meridian/suggestions`). `excludes: ""` lets two drafts mark the same text:
   // the binding then keys each mark `name--<hash>` instead of overwriting one with the other.
   suggest_ins: suggestionMark(),
   suggest_del: suggestionMark(),
@@ -261,7 +261,7 @@ function suggestionMark(): MarkSpec {
   return {
     attrs: {
       id: { default: null },
-      work: { default: null },
+      draft: { default: null },
     },
     inclusive: false,
     excludes: "",

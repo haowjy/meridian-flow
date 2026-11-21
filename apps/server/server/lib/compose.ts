@@ -641,7 +641,7 @@ export async function createProductionAppPorts(input: {
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db, workProjectionMutation),
+    facts: createDrizzleFileFacts(db),
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
@@ -719,7 +719,7 @@ export async function createProductionAppPorts(input: {
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
     sourceHints: projectHints,
-    copy: { documentSync, branches: documentSync.branches, objectStore, release: objectRelease },
+    copy: { documentSync, objectStore, release: objectRelease },
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db, projectHints),

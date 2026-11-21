@@ -1,4 +1,4 @@
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 /**
  * Copy's destination half in one ContextFS source: naming and identity, planned without a
  * lock, and the insertion of a plan inside the caller's command transaction.
@@ -109,7 +109,7 @@ export async function insertPlannedTrees(
   }[],
   position?: ContextSiblingPosition,
   draft?: {
-    branchId: BranchId;
+    branchId: DraftId;
     documentSync: Pick<DraftPeerShadowAccess, "writeWorkCreatedContent">;
   },
 ): Promise<Result<CopyOutcome, AdapterFault>> {

@@ -39,7 +39,7 @@ type InlineReviewRuntime = {
 
 export type DraftReviewController = {
   projectId: string;
-  ownerKey: string;
+  draftId: string;
   /** Focused thread owning this review surface; threads Apply/Discard cache invalidation. */
   threadId: string | null;
   inlineReview: InlineDraftReview | null;
@@ -92,7 +92,7 @@ export type DraftReviewController = {
 export function useDraftReviewController({
   projectId,
   work,
-  ownerKey,
+  draftId,
   threadId = null,
   stateOwner,
   marks,
@@ -101,7 +101,7 @@ export function useDraftReviewController({
   /** The Work whose archived state freezes these drafts; null scopes nothing. */
   work: Work | null;
   /** Whose drafts this surface reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
-  ownerKey: string;
+  draftId: string;
   threadId?: string | null;
   stateOwner: DraftReviewStateOwner;
   /** Show changes, which belongs to the presented tab's view, not to this review. */
@@ -113,7 +113,7 @@ export function useDraftReviewController({
   const commands = usePressCommands({
     projectId,
     work,
-    ownerKey,
+    draftId,
     threadId,
     surface: "band",
   });
@@ -200,7 +200,7 @@ export function useDraftReviewController({
   return useMemo(
     () => ({
       projectId,
-      ownerKey,
+      draftId,
       threadId,
       inlineReview,
       commandChange: commands.commandChange,
@@ -223,7 +223,7 @@ export function useDraftReviewController({
     [
       commands.commandChange,
       projectId,
-      ownerKey,
+      draftId,
       threadId,
       inlineReview,
       dispositionLocked,

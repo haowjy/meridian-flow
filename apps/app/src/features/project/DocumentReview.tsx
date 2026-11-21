@@ -12,7 +12,6 @@
  * hidden: a host that is not showing paints nothing of a draft, admits nothing, holds no draft
  * room and writes no pin, so Discard's Undo lands in the editor the writer sees.
  */
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -75,13 +74,13 @@ export function useDocumentReview(
   const documentId = tab?.documentId ?? null;
   const { workId: activeWorkId } = useWorkScopeState(projectId);
   const { works, noWork } = useWorks(projectId);
-  const ownerKey = paint.draft?.ownerKey ?? paint.view.pin?.ownerKey ?? paint.scopeOwnerKey ?? "";
+  const draftId = paint.draft?.draftId ?? paint.view.pin?.draftId ?? paint.scopeDraftId ?? "";
   // A lineage's drafts carry no Work: its review reads the scope's Work for archive state.
-  const reviewWorkId = workIdOfDraftOwnerKey(ownerKey) ?? activeWorkId;
   const reviewWork =
-    reviewWorkId === noWork?.id
+    (draftId ? works?.find((work) => work.draftId === draftId) : undefined) ??
+    (activeWorkId === noWork?.id
       ? noWork
-      : (works?.find((work) => work.id === reviewWorkId) ?? null);
+      : (works?.find((work) => work.id === activeWorkId) ?? null));
   const showChanges = paint.view.showChanges;
   const marks = useMemo(
     () => ({
@@ -102,7 +101,7 @@ export function useDocumentReview(
   const value = useDraftReviewScopeValue({
     projectId,
     work: reviewWork,
-    ownerKey,
+    draftId,
     threadId: null,
     marks,
     showLive,

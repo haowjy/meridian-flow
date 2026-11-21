@@ -2,26 +2,26 @@ import { type Attrs, Fragment, type Mark, type Node, Slice } from "prosemirror-m
 import type { SuggestionAttrs } from "./change.js";
 
 /**
- * One turn's layer of a Work's pending change to a block's attributes (a heading level, a list),
- * kept in the block's `sugAttrs` by Work, oldest first, each under its turn's change id. The block and
+ * One turn's layer of a draft's pending change to a block's attributes (a heading level, a list),
+ * kept in the block's `sugAttrs` by draft, oldest first, each under its turn's change id. The block and
  * its text stay Live: accept sets the layers' attributes, reject drops layers, and nothing
  * anchored in the block moves. Rejecting a later turn leaves the earlier turn's layer, as a later
  * turn's deletion layered over an earlier insertion does for text.
  */
 export type AttrProposal = SuggestionAttrs & { attrs: Attrs; remove?: boolean };
 
-/** A block's pending attribute changes: by Work, its layers. */
+/** A block's pending attribute changes: by draft, its layers. */
 export function proposals(node: Node): Record<string, AttrProposal[]> {
   return (node.attrs.sugAttrs ?? {}) as Record<string, AttrProposal[]>;
 }
 
 /** Whether a view removes a block: one of its own layers on it proposes so. */
 export function removedIn(node: Node, view: View): boolean {
-  if (view.work === null) return false;
-  return (proposals(node)[view.work] ?? []).some((layer) => layer.remove);
+  if (view.draft === null) return false;
+  return (proposals(node)[view.draft] ?? []).some((layer) => layer.remove);
 }
 
-/** What a Work's layers set, the later over the earlier. */
+/** What a draft's layers set, the later over the earlier. */
 export function layered(layers: readonly AttrProposal[]): Attrs {
   return Object.assign({}, ...layers.map((layer) => layer.attrs));
 }
@@ -34,15 +34,15 @@ export function sameValue(a: unknown, b: unknown): boolean {
 /** Attributes that say who suggested what: never themselves suggested, accepted or shown. */
 export const SUGGESTION_ATTRS = ["sug", "sugAttrs"];
 
-/** Whose suggestions a view shows: one Work's, or none (`work: null`, the Live view). */
-export type View = { work: string | null };
+/** Whose suggestions a view shows: one draft's, or none (`draft: null`, the Live view). */
+export type View = { draft: string | null };
 
-export const liveView: View = { work: null };
+export const liveView: View = { draft: null };
 
 /**
  * The one decision table every writer uses. `live`: Live text the view shows and may suggest
  * removing. `own-ins`: the view's own insertion. `own-del`: Live text the view proposes to
- * remove. `hidden`: another Work's insertion, which the view neither shows nor touches.
+ * remove. `hidden`: another draft's insertion, which the view neither shows nor touches.
  */
 export type RunKind = "live" | "own-ins" | "own-del" | "hidden";
 
@@ -54,11 +54,11 @@ export function isSuggestionMark(mark: Mark): boolean {
 }
 
 function mine(attrs: SuggestionAttrs | null, view: View): boolean {
-  return !!attrs?.work && attrs.work === view.work;
+  return !!attrs?.draft && attrs.draft === view.draft;
 }
 
 /**
- * A block: Live, the view's own suggested block, or another Work's (not shown). Every block
+ * A block: Live, the view's own suggested block, or another draft's (not shown). Every block
  * inside a suggested block carries its `sug` too (`suggested`), so a textblock at any depth knows
  * its owner without its ancestors.
  */
@@ -86,7 +86,7 @@ export function ownerOf(
 }
 
 /**
- * Inside a block the view's Work added, text is its insertion, and the Work's own deletion still
+ * Inside a block the view's draft added, text is its insertion, and the draft's own deletion still
  * counts: a later turn that rewrites an earlier turn's paragraph strikes the earlier wording
  * instead of losing it, so rejecting the later turn brings it back, as in a Live paragraph.
  */
@@ -98,7 +98,7 @@ export function kindOf(marks: readonly Mark[], block: Node, view: View): RunKind
   for (const mark of marks) {
     const attrs = mark.attrs as SuggestionAttrs;
     if (mark.type.name === "suggest_ins") {
-      // Another Work's insertion is absent.
+      // Another draft's insertion is absent.
       if (!mine(attrs, view)) return "hidden";
       ownIns = true;
     }
@@ -126,7 +126,7 @@ export function visible(kind: RunKind): boolean {
 
 /**
  * One top-level block as a view means it, or null when the view does not contain it: Live with
- * the view's own suggestions accepted, and no other Work's. Every reader goes through it (the
+ * the view's own suggestions accepted, and no other draft's. Every reader goes through it (the
  * model's port projects with it); one that reads the stored block shows pending text as real.
  */
 export function viewBlock(block: Node, view: View): Node | null {
@@ -148,7 +148,7 @@ export function viewDoc(doc: Node, view: View): Node {
 /** A block's attributes in a view: Live's, with the view's own pending change applied. */
 export function viewAttrs(node: Node, view: View): Attrs {
   if (!("sug" in node.attrs)) return node.attrs;
-  const own = view.work !== null ? proposals(node)[view.work] : null;
+  const own = view.draft !== null ? proposals(node)[view.draft] : null;
   return { ...node.attrs, ...layered(own ?? []), sug: null, sugAttrs: null };
 }
 
@@ -198,8 +198,8 @@ export function stripSuggestions(fragment: Fragment): Fragment {
 }
 
 /**
- * `node` as one Work's suggested block (`sug`), or as no one's (null): it and every block in it
- * carry `sug`, and none carries a pending attribute change, since the Work edits its own block
+ * `node` as one draft's suggested block (`sug`), or as no one's (null): it and every block in it
+ * carry `sug`, and none carries a pending attribute change, since the draft edits its own block
  * directly. A node that cannot carry `sug` (a table row) is left as it is.
  */
 export function suggested(node: Node, sug: SuggestionAttrs | null): Node {

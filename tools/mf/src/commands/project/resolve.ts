@@ -31,7 +31,7 @@ export async function resolveWork(
   session: Session,
   projectId: string,
   raw: string,
-): Promise<{ id: string; handle: WorkHandle }> {
+): Promise<{ id: string; handle: WorkHandle; draftId: string | null }> {
   const text = raw.startsWith("@") ? raw.slice(1) : raw;
   const handle = decodeWorkHandle(text);
   const snapshot = await session.request("GET", apiProjectWorksPath(projectId), undefined, {
@@ -48,7 +48,7 @@ export async function resolveWork(
   const workHandle = decodeWorkHandle(work.handle);
   if (!workHandle)
     throw new CliError("protocol", `Server returned malformed Work handle ${work.handle}`);
-  return { id: work.id, handle: workHandle };
+  return { id: work.id, handle: workHandle, draftId: work.draftId };
 }
 
 /** `--work w3` → that Work's id; omitted → No Work (null). */

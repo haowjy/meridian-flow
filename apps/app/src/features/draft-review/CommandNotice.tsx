@@ -34,11 +34,11 @@ export type CommandQuestion = {
 };
 
 /** The owner's notice, wherever it was made; the caller shows it if it was made there. */
-export function useDraftNotice(ownerKey: string): DraftNotice | null {
+export function useDraftNotice(draftId: string): DraftNotice | null {
   const { notices } = useDraftCommandOwner();
   return useSyncExternalStore(
     notices.subscribe,
-    () => (ownerKey ? notices.get(ownerKey) : null),
+    () => (draftId ? notices.get(draftId) : null),
     () => null,
   );
 }
@@ -189,18 +189,18 @@ function useNoticeUndo() {
   const accountId = useAccountId();
   const { openReviewFile } = useAiDraftLauncher();
   return (notice: Discarded) => {
-    const { review, left, projectId, ownerKey } = notice;
+    const { review, left, projectId, draftId } = notice;
     // Where main was when the notice showed (null: Recently opened); the view follows only
     // if main is still there.
     const stays = left ? left.landed : review?.documentId;
     // A failed Undo is the press's pill (`PressEntries`), said once.
     void notice.undo().then((answer) => {
       if (answer !== "ok" || !review || stays === undefined || !presented) return;
-      if (presented.mainDocumentId(projectId) === stays) openReviewFile(review, ownerKey);
+      if (presented.mainDocumentId(projectId) === stays) openReviewFile(review, draftId);
       // Beside main the address is main's: only the document's view changes.
       else if (stays !== null && presented.isPresented(projectId, stays))
         setDocumentView(accountId, projectId, stays, {
-          pin: { ownerKey, itemKey: review.draft.itemKey },
+          pin: { draftId, itemKey: review.draft.itemKey },
         });
     });
   };

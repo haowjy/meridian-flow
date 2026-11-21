@@ -1,8 +1,8 @@
-/** Proof that a Work's first drafted writes share one branch, and the resolver's lifecycle surface. */
+/** Proof that drafted writes lock a Work's draft behind the Work, and the resolver's surface. */
 import { createDb, type Database } from "@meridian/database";
 import { assertThrowawayDatabaseForRunDbTests } from "@meridian/database/__test-support__/db-fixtures";
-import { branches, users } from "@meridian/database/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { users, works } from "@meridian/database/schema";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   approveBranchWriteJoin,
@@ -52,26 +52,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await Promise.all([root.close(), first.close(), second.close()]);
     });
 
-    it("makes one active branch when two first writes in a Work race, and serves its lifecycle (T-2)", async () => {
+    it("locks a Work's draft for a write behind its owner, and resolves it both ways (T-2)", async () => {
       const scenario = await branchTreeScenario(root);
       const work = await scenario.work("Ascension", "draft");
       const owner = { kind: "work", workId: work.id } as const;
-      const input = {
-        owner,
-        projectId: scenario.project.id,
-        threadId: work.threadId,
-        userId: scenario.project.userId,
-      };
 
       // An ambient transaction the command boundary didn't approve is refused, not joined.
       await expect(
-        runInRootDrizzleTransaction(first, () => resolverOn(first).ensureActiveForWrite(input)),
+        runInRootDrizzleTransaction(first, () => resolverOn(first).lockForWrite(owner)),
       ).rejects.toBeInstanceOf(BranchWriteJoinRefusedError);
 
-      // The first write's command transaction ensures the branch and stays open.
-      let ensured!: () => void;
-      const ensuredSignal = new Promise<void>((resolve) => {
-        ensured = resolve;
+      // The first write's command transaction locks the draft and stays open.
+      let locked!: () => void;
+      const lockedSignal = new Promise<void>((resolve) => {
+        locked = resolve;
       });
       let release!: () => void;
       const held = new Promise<void>((resolve) => {
@@ -79,13 +73,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const firstWrite = runInRootDrizzleTransaction(first, async () => {
         approveBranchWriteJoin();
-        const branch = await resolverOn(first).ensureActiveForWrite(input);
-        ensured();
+        const draft = await resolverOn(first).lockForWrite(owner);
+        locked();
         await held;
-        return branch;
+        return draft;
       });
-      await ensuredSignal;
-      const secondWrite = resolverOn(second).ensureActiveForWrite(input);
+      await lockedSignal;
+      const secondWrite = resolverOn(second).lockForWrite(owner);
       const secondOrder = await Promise.race([
         secondWrite.then(
           () => "settled" as const,
@@ -96,32 +90,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       release();
       const [made, joined] = await Promise.all([firstWrite, secondWrite]);
 
-      const active = await root
-        .select({ id: branches.id })
-        .from(branches)
-        .where(and(eq(branches.originWorkId, work.id), eq(branches.status, "active")));
-      expect(active).toEqual([{ id: made.id }]);
+      const [named] = await root
+        .select({ draftId: works.draftId })
+        .from(works)
+        .where(eq(works.id, work.id));
+      expect(made.id).toBe(named?.draftId);
       expect(joined.id).toBe(made.id);
       // The second write waited on the Work row rather than reading around it.
       expect(secondOrder).toBe("waiting");
 
       // The rest of the public surface, through the same resolver object.
       const resolver = resolverOn(root);
-      expect(await resolver.activeForOwner(owner)).toMatchObject({ id: made.id });
+      expect(await resolver.ofOwner(owner)).toMatchObject({ id: made.id });
+      expect(await resolver.ownerOf(made.id)).toMatchObject({ owner, branch: { id: made.id } });
       expect(await resolver.viewForOwner(owner)).toEqual({ kind: "branch", branchId: made.id });
-      expect(await resolver.byIds([made.id])).toMatchObject([{ id: made.id, status: "active" }]);
+      expect(await resolver.byIds([made.id])).toMatchObject([{ id: made.id }]);
       await runInRootDrizzleTransaction(root, async () => {
-        expect(await resolver.shareActive(made.id)).toMatchObject({ id: made.id });
-        expect(await resolver.lockActive(made.id)).toMatchObject({ id: made.id });
-        await resolver.close(made.id, new Date());
+        expect(await resolver.share(made.id)).toMatchObject({ id: made.id });
+        expect(await resolver.lock(made.id)).toMatchObject({ id: made.id });
       });
-      expect(await resolver.activeForOwner(owner)).toBeNull();
-      expect(await resolver.viewForOwner(owner)).toEqual({ kind: "live" });
-      expect(await resolver.shareActive(made.id)).toBeNull();
-      expect(await resolver.lockActive(made.id)).toBeNull();
-      expect(await resolver.byOriginWork(work.id)).toMatchObject([
-        { id: made.id, status: "closed" },
-      ]);
     });
   });
 }

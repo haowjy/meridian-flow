@@ -1,4 +1,4 @@
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { FileDestination } from "../../domains/file-policy/index.js";
 /**
  * The sources of a model's `move` that are in another list (a project's files and the account's
@@ -17,7 +17,11 @@ import type { TreeScope } from "../../domains/context/ports/context-adapter.js";
 import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
 import { movesInto, reachPath } from "../../domains/context/tree/tree-commands.js";
-import { type FileGrant, runWithEditGrants } from "../../domains/file-policy/index.js";
+import {
+  agentBranchOwner,
+  type FileGrant,
+  runWithEditGrants,
+} from "../../domains/file-policy/index.js";
 import type { ToolHandlerContext } from "../../domains/runtime/index.js";
 import { fileAccessDeniedError, firstRefusal } from "./file-access.js";
 import { areaOfPath, printedNames, shownNamesOf } from "./shown-paths.js";
@@ -109,15 +113,15 @@ export async function copyAcross(
         uri: source.uri,
         expected: { kind: source.kind, nodeId: source.nodeId },
         ...(destination?.kind === "draft"
-          ? { view: { kind: "draft" as const, owner: destination.owner } }
+          ? { view: { kind: "draft" as const, draft: destination.draftId } }
           : {}),
       })),
       destinationUri: joinContextUri(to.area, into),
       ...(destination?.kind === "draft"
         ? {
             destinationBranch: {
-              mode: "ensure" as const,
-              owner: destination.owner,
+              owner: agentBranchOwner(call.principal).owner,
+              draftId: destination.draftId,
               threadId: ctx.threadId as ThreadId,
               userId: call.principal.accountId,
             },
@@ -222,9 +226,7 @@ export async function recordCopies(
         })),
         records: made.value.records,
         op: "create",
-        ...(made.value.draftBranchId
-          ? { draftBranchId: made.value.draftBranchId as BranchId }
-          : {}),
+        ...(made.value.draftBranchId ? { draftBranchId: made.value.draftBranchId as DraftId } : {}),
         threadId: ctx.threadId as ThreadId,
         ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
         ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),

@@ -1,14 +1,15 @@
 /**
  * Work purge's disposal of a purged Work (§2.6, F10), inside purge's transaction after its
- * deleted/cutoff proof: each of its active branches has its tree records discarded and closes, and
- * its suggestions leave every document that holds them, with their authors. The Work and the
+ * deleted/cutoff proof: the draft the Work names and those its purged lineages' roots name each
+ * have their tree records discarded, and their suggestions leave every document that holds them,
+ * with their authors; the purge then deletes their rows. The Work and the
  * lineages it purges are gone for good, so nothing is recorded to take back. The public command's
  * active-Work fence is never used, and no pending projection runs: the Work is being deleted.
  * Its drafted creates are in no view afterwards and retention purges them.
  */
-import { dropWork, type UpdateJournal } from "@meridian/agent-edit/integration";
-import { type BranchId, type DraftOwnerKey, draftOwnerKey, type WorkId } from "@meridian/contracts";
-import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import { dropDraft, type UpdateJournal } from "@meridian/agent-edit/integration";
+import type { DraftId, WorkId } from "@meridian/contracts";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { works } from "@meridian/database/schema";
 import { newId } from "@meridian/project-tree";
@@ -31,7 +32,7 @@ const schema = buildDocumentSchema();
 export function createDrizzleWorkBranchDisposal(
   db: Database,
   deps: {
-    branches: Pick<Branches, "byOriginWork" | "activeByOriginLineages" | "lockActive" | "close">;
+    branches: Pick<Branches, "namedBy" | "lock">;
     treeLists: Pick<TreeListStore, "lock" | "submit" | "resync">;
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
@@ -39,23 +40,15 @@ export function createDrizzleWorkBranchDisposal(
     onCommitted(documentId: DocumentId): Promise<void>;
   },
 ): WorkBranchDisposal {
-  /** One branch: every pending tree record settled discarded in each list, then the row closes. */
-  async function disposeBranch(branchId: Parameters<Branches["close"]>[0]): Promise<void> {
-    await discardTreeRecords(db, deps, { branchId, commandId: newId() });
-    await deps.branches.close(branchId, new Date());
-    // The branch ended and its drafts closed: the rows of its view go.
-    await deps.treeLists.resync(await treeListsOfBranch(db, branchId));
-  }
-
-  /** The owners' suggestions out of one document, appended as nobody's edit. Its key is held. */
-  async function dropText(id: DocumentId, owners: readonly DraftOwnerKey[]): Promise<void> {
+  /** The drafts' suggestions out of one document, appended as nobody's edit. Its key is held. */
+  async function dropText(id: DocumentId, draftIds: readonly DraftId[]): Promise<void> {
     const snapshot = await deps.live.read(id);
     if (!snapshot.authority) return;
     const doc = storedDocument(snapshot);
     try {
       const before = Y.encodeStateVector(doc);
       let changed = false;
-      for (const owner of owners) changed = dropWork(doc, schema, owner) || changed;
+      for (const draft of draftIds) changed = dropDraft(doc, schema, draft) || changed;
       if (!changed) return;
       await deps.live.append(
         id,
@@ -75,20 +68,12 @@ export function createDrizzleWorkBranchDisposal(
   async function dispose(
     workId: WorkId,
     lineageRootIds: readonly string[],
-  ): Promise<{ releasedObjects: readonly string[] }> {
-    const owners = [
-      draftOwnerKey({ kind: "work", workId }),
-      ...lineageRootIds.map((rootThreadId) => draftOwnerKey({ kind: "lineage", rootThreadId })),
-    ];
-    const owned = [
-      ...(await deps.branches.byOriginWork(workId)),
-      ...(await deps.branches.activeByOriginLineages(lineageRootIds as ThreadId[])),
-    ];
-    const branchIds: BranchId[] = [];
-    for (const branchId of owned.map((branch) => branch.id).sort())
-      if (await deps.branches.lockActive(branchId)) branchIds.push(branchId);
-    // Every list in one call, after the branches and before the documents (the press's lock
-    // order): the branches' lists, the held documents' lists, and the Work's project's list,
+  ): Promise<{ releasedObjects: readonly string[]; draftIds: readonly DraftId[] }> {
+    const named = (await deps.branches.namedBy({ workId, lineageRootIds })).sort();
+    const draftIds: DraftId[] = [];
+    for (const draftId of named) if (await deps.branches.lock(draftId)) draftIds.push(draftId);
+    // Every list in one call, after the drafts and before the documents (the press's lock
+    // order): the drafts' lists, the held documents' lists, and the Work's project's list,
     // which the purge writes next.
     const [work] = await currentDrizzleDb(db)
       .select({ projectId: works.projectId, userId: works.createdByUserId })
@@ -96,10 +81,10 @@ export function createDrizzleWorkBranchDisposal(
       .where(eq(works.id, workId));
     // The press's enumeration: projects have one owner, so the Work's documents are its project's
     // and its creator's account's.
-    const held = work ? await documentsHolding(db, work, owners) : [];
+    const held = work ? await documentsHolding(db, work, draftIds) : [];
     const lists = new Map<string, TreeList>();
-    for (const branchId of branchIds)
-      for (const list of await treeListsOfBranch(db, branchId)) lists.set(listKey(list), list);
+    for (const draftId of draftIds)
+      for (const list of await treeListsOfBranch(db, draftId)) lists.set(listKey(list), list);
     for (const projectId of [work?.projectId, ...held.map((row) => row.projectId)])
       if (projectId) {
         const list: TreeList = { kind: "project", projectId: projectId as ProjectId };
@@ -111,11 +96,16 @@ export function createDrizzleWorkBranchDisposal(
         lists.set(listKey(list), list);
       }
     if (lists.size > 0) await deps.treeLists.lock([...lists.values()]);
-    for (const branchId of branchIds) await disposeBranch(branchId);
+    // One pass per draft: its tree records settled discarded in each list, then its view's rows
+    // go. The purge deletes the rows after the Work and chats naming them.
+    for (const branchId of draftIds) {
+      await discardTreeRecords(db, deps, { branchId, commandId: newId() });
+      await deps.treeLists.resync(await treeListsOfBranch(db, branchId));
+    }
     const ids = [...new Set(held.map((row) => row.id as DocumentId))].sort();
     for (const id of ids) await lockDocumentMutation(currentDrizzleDb(db), id);
-    for (const id of ids) await dropText(id, owners);
-    return { releasedObjects: [] };
+    for (const id of ids) await dropText(id, draftIds);
+    return { releasedObjects: [], draftIds };
   }
 
   return {

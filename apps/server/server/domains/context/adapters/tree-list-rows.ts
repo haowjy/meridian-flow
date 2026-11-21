@@ -1,6 +1,6 @@
 /**
  * The tree's rows, written from the list in the transaction that admitted its records
- * (`tree_nodes` for live, `branch_tree_nodes` for each open Work's view). Only this module
+ * (`tree_nodes` for live, `draft_tree_nodes` for each open Work's view). Only this module
  * writes them: it replays live and each view the records can change, compares with what the
  * last replay wrote, and writes the rows that differ with the history text derivations need.
  */
@@ -522,7 +522,7 @@ async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void
       UPDATE documents d SET in_no_view_since = v.since
       FROM (
         SELECT d2.id, CASE WHEN EXISTS (SELECT 1 FROM tree_nodes t WHERE t.id = d2.id)
-            OR EXISTS (SELECT 1 FROM branch_tree_nodes b WHERE b.id = d2.id)
+            OR EXISTS (SELECT 1 FROM draft_tree_nodes b WHERE b.id = d2.id)
           THEN NULL ELSE coalesce(d2.in_no_view_since, now()) END AS since
         FROM documents d2 WHERE d2.id IN (${list})
       ) v
@@ -645,12 +645,16 @@ async function branchesWithText(
   if (kept.length === 0 || documentIds.length === 0) return [];
   const list = (ids: readonly string[]) =>
     sql.join(
-      ids.map((id) => sql`${id}::uuid`),
+      ids.map((id) => sql`${id}`),
       sql`, `,
     );
-  const rows = await tx.execute<{ branch_id: string }>(sql`
-    SELECT DISTINCT text.branch_id::text AS branch_id
+  const documents = sql.join(
+    documentIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rows = await tx.execute<{ draft_id: string }>(sql`
+    SELECT DISTINCT text.draft_id AS draft_id
     FROM (${pendingText(list(kept))}) text
-    WHERE text.document_id IN (${list(documentIds)})`);
-  return rows.map((row) => row.branch_id);
+    WHERE text.document_id IN (${documents})`);
+  return rows.map((row) => row.draft_id);
 }

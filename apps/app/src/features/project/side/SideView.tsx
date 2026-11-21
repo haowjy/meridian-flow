@@ -106,7 +106,7 @@ function useDescriptions(projectId: string): Descriptions {
       if (pin) {
         // slop-lint: allow swallowed-error a draft list that won't load leaves the live lookup to answer
         const drafts = await queryClient
-          .fetchQuery(ownerDraftsQueryOptions(projectId, pin.ownerKey))
+          .fetchQuery(ownerDraftsQueryOptions(projectId, pin.draftId))
           .catch(() => null);
         const row = drafts?.items.find(
           (item) => item.itemKey === pin.itemKey && item.documentId === documentId,

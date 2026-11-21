@@ -9,7 +9,6 @@ import type { DraftOwner } from "@meridian/contracts";
 import type { Filetype } from "@meridian/contracts/protocol";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  branches,
   contextSources,
   documents,
   linkAheadRefs,
@@ -455,12 +454,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await treeSeeder(db).document(contextSourceId, name, { id, view: { draft: branchId } });
         return id;
       };
-      const branchA = crypto.randomUUID();
-      const branchB = crypto.randomUUID();
-      await db.insert(branches).values([
-        { id: branchA, projectId: p, originWorkId: a, createdBy: u },
-        { id: branchB, projectId: p, originWorkId: b, createdBy: u },
-      ]);
+      const draftOf = async (workId: string) => {
+        const [row] = await db
+          .select({ draftId: works.draftId })
+          .from(works)
+          .where(eq(works.id, workId));
+        if (!row?.draftId) throw new Error(`Work ${workId} names no draft`);
+        return row.draftId;
+      };
+      const branchA = await draftOf(a);
+      const branchB = await draftOf(b);
       const created = await hidden("created", branchA);
       await hidden("live", branchA);
       await hidden("elsewhere", branchB);

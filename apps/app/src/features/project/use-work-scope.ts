@@ -1,5 +1,4 @@
-import type { DraftOwnerKey } from "@meridian/contracts/branches";
-import type { Work } from "@meridian/contracts/works";
+import { draftOf, type Work } from "@meridian/contracts/works";
 import { useCallback, useMemo } from "react";
 import { pickWorkViews } from "@/client/project-shell/document-views";
 import {
@@ -11,7 +10,6 @@ import {
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { useIsThreadPendingCreation } from "@/client/stores";
-import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { useAccountId } from "./context/account-feature-context";
 
 /** The Work scope as the shell can use it: ready with a Work row id (No Work's included), or not yet. */
@@ -63,15 +61,12 @@ export function useWorkScope(projectId: string): {
   const setWorkId = useCallback(
     (id: string) => {
       if (id === workId) return;
-      const onWorkDraft = pickWorkViews(
-        accountId,
-        projectId,
-        id === noWorkId ? null : workOwnerKey({ id }),
-      );
+      const draft = id === noWorkId ? null : works.works?.find((work) => work.id === id)?.draftId;
+      const onWorkDraft = pickWorkViews(accountId, projectId, draft ?? null);
       writeTreeVersionChoice(accountId, projectId, onWorkDraft ? "draft" : "live");
       writeProjectScope(accountId, projectId, id === noWorkId ? NO_SCOPE : id);
     },
-    [accountId, projectId, noWorkId, workId],
+    [accountId, projectId, noWorkId, workId, works.works],
   );
   return useMemo(() => ({ workId, setWorkId }), [workId, setWorkId]);
 }
@@ -79,13 +74,13 @@ export function useWorkScope(projectId: string): {
 /**
  * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's, which
  * are its Work's when it has one and its own when it has none. The sidebar's toggle, Changes
- * and the Work chip all show these, so under No Work they follow the chat. `ownerKey` is "" when
+ * and the Work chip all show these, so under No Work they follow the chat. `draftId` is "" when
  * there are none to show; `work` is the Work its commands act for.
  */
 export function useScopeDraftOwner(
   projectId: string,
   chatThreadId: string | null,
-): { picked: Work | null; work: Work | null; ownerKey: DraftOwnerKey | "" } {
+): { picked: Work | null; work: Work | null; draftId: string } {
   const { workId } = useWorkScope(projectId);
   const { works, deleted, noWork } = useWorks(projectId);
   const thread = useDisplayedThread(projectId, chatThreadId);
@@ -98,12 +93,12 @@ export function useScopeDraftOwner(
       : null;
   const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
   const chatKey =
-    picked || pendingCreation ? "" : chatOwnerKey(chatWork, thread?.rootThreadId ?? null);
+    picked || pendingCreation || !chatWork || !thread ? "" : draftOf(thread, chatWork);
   return useMemo(
     () =>
       picked
-        ? { picked, work: picked, ownerKey: workOwnerKey(picked) }
-        : { picked: null, work: chatKey ? chatWork : null, ownerKey: chatKey },
+        ? { picked, work: picked, draftId: picked.draftId ?? "" }
+        : { picked: null, work: chatKey ? chatWork : null, draftId: chatKey },
     [picked, chatWork, chatKey],
   );
 }

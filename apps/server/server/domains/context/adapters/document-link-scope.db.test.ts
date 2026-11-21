@@ -8,7 +8,6 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  branches,
   contextSources,
   documents,
   linkAheadRefs,
@@ -65,7 +64,7 @@ const RETIRED_SOURCE = id(27);
 const RETIRED_IMAGE = id(28);
 const RETIRED_CHAT = id(29);
 const LIVE = { kind: "live" } as const;
-const BRANCH = id(25);
+const BRANCH = "linkscopebr1";
 
 const schema = buildDocumentSchema();
 
@@ -152,10 +151,8 @@ if (!RUN) {
         createdByUserId: USER,
         name: "Branch",
         handle: "w1",
+        draftId: BRANCH,
       });
-      await db
-        .insert(branches)
-        .values({ id: BRANCH, projectId: PROJECT, originWorkId: WORK, createdBy: USER });
       const seed = treeSeeder(db);
       const PNG = { storageKey: "img.png", mime: "image/png", size: 1 };
       const trash = async (sourceId: string, ...ids: string[]) =>
@@ -381,7 +378,7 @@ if (!RUN) {
           },
         },
         viewFor: liveViewFor,
-        work: null,
+        draft: null,
       });
       await scopes.within({ projectId: "test-project" }, async () => {
         await port.prepare({ documentId: HOLDER, docs: [] });

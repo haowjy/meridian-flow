@@ -1,6 +1,6 @@
 /**
  * A stored document's suggestions as a whole (`@meridian/suggestions` over a Y.Doc): who wrote
- * each change, which turns and Works still have some, and resolving them. The browser's Apply and
+ * each change, which turns and drafts still have some, and resolving them. The browser's Apply and
  * Reject, the press and the card's Undo all resolve through `resolveStored`, so a resolve writes the
  * same Yjs operations wherever it runs.
  */
@@ -9,12 +9,12 @@ import {
   type Authors,
   accept,
   DECIDED_META,
+  type DraftPending,
   type Filter,
   pendingChanges,
   pendingTurns,
   reject,
   type Verdict,
-  type WorkPending,
 } from "@meridian/suggestions";
 import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
@@ -121,23 +121,23 @@ export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<stri
 const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
 
 /**
- * The Works whose suggestions a stored document holds, each with what it has pending: the views
+ * The drafts whose suggestions a stored document holds, each with what it has pending: the views
  * that read it otherwise than Live.
  */
-export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string, WorkPending> {
+export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string, DraftPending> {
   return pendingChanges(storedRoot(doc, schema), suggestionAuthors(doc));
 }
 
 /**
- * Takes a Work's suggestions out of a stored document for good, as its owner ends: they are
+ * Takes a draft's suggestions out of a stored document for good, as its owner ends: they are
  * rejected and their authors and verdicts forgotten, in one transaction with no record, since
- * nothing can take it back. Every change the Work's items carry goes, a proposal Live has since
+ * nothing can take it back. Every change the draft's items carry goes, a proposal Live has since
  * matched included, which no review lists. Returns whether anything changed.
  */
-export function dropWork(doc: Y.Doc, schema: Schema, work: string): boolean {
+export function dropDraft(doc: Y.Doc, schema: Schema, draft: string): boolean {
   let decided = NONE;
   doc.transact(() => {
-    decided = resolveStored(doc, schema, "reject", { work });
+    decided = resolveStored(doc, schema, "reject", { draft });
     const authors = doc.getMap<unknown>(AUTHORS_ROOT);
     const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
     for (const id of decided.keys()) {
@@ -264,7 +264,7 @@ export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
     parts?.blocks.forEach(take);
     parts?.strikes.forEach(take);
   }
-  // The item holds every Work's layers on the block, and a write planned without it would set
+  // The item holds every draft's layers on the block, and a write planned without it would set
   // the block's layers to its own alone: it goes only when nothing on it stands.
   for (const { item, ids } of shown.layers)
     if (ids.every((id) => rejected.has(id))) take({ id: item.id, len: 1 });
@@ -355,7 +355,7 @@ function changeId(value: unknown): string | null {
   return typeof id === "string" ? id : null;
 }
 
-/** The change ids of a block's `sugAttrs` value: its layers, by Work. */
+/** The change ids of a block's `sugAttrs` value: its layers, by draft. */
 function layerIds(value: unknown): string[] {
   if (typeof value !== "object" || value === null) return [];
   return Object.values(value as Record<string, unknown>).flatMap((layers) =>

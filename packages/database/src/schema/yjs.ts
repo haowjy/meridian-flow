@@ -1,5 +1,4 @@
 import type {
-  BranchId,
   CommandId,
   DocumentAuthorityId,
   DocumentId,
@@ -30,9 +29,9 @@ import {
 } from "drizzle-orm/pg-core";
 import { byteaColumn, createdAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
-import { branches } from "./branches";
 import { documents, projects } from "./content";
 import { documentEdits } from "./document-edits";
+import { draftIdColumn } from "./drafts";
 import { users } from "./users";
 
 export const documentYjsCheckpoints = pgTable(
@@ -199,9 +198,9 @@ export const documentBlockRooms = pgTable(
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
     /**
-     * By Work (`draftOwnerKey`), what it has pending in the cut: its review's change count, the
-     * chats that wrote them, and whether one is no chat's. The blocks hold Live's text, so a
-     * reader in one of these Works' views reads the document itself.
+     * By draft id, what it has pending in the cut: its review's change count, the chats that
+     * wrote them, and whether one is no chat's. The blocks hold Live's text, so a reader in one
+     * of these drafts' views reads the document itself.
      */
     pendingChanges: jsonb("pending_changes")
       .$type<Record<string, { changes: number; chats: string[]; writer: boolean }>>()
@@ -216,7 +215,7 @@ export const documentBlockRooms = pgTable(
   },
   (table) => [
     uniqueIndex("document_block_rooms_document").on(table.documentId),
-    // A Work's documents with suggestions: `pending_changes ? <owner key>`.
+    // A draft's documents with suggestions: `pending_changes ? <draft id>`.
     index("document_block_rooms_pending_changes").using("gin", table.pendingChanges),
   ],
 );
@@ -285,10 +284,7 @@ export const applyCommandTrees = pgTable(
       .$type<CommandId>()
       .notNull()
       .references(() => commands.id, { onDelete: "cascade" }),
-    branchId: uuid("branch_id")
-      .$type<BranchId>()
-      .notNull()
-      .references(() => branches.id, { onDelete: "cascade" }),
+    branchId: draftIdColumn("draft_id").notNull(),
     /** The project's list, or its owner's account list (`user://`). */
     scope: text("scope").$type<"project" | "account">().notNull(),
     mark: byteaColumn("mark").notNull(),

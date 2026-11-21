@@ -12,7 +12,7 @@ import {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { walkLinkOccurrences } from "@meridian/markup/links";
 import { extractStoredLinks, type StoredLinkOccurrence } from "@meridian/markup/stored-links";
-import type { WorkPending } from "@meridian/suggestions";
+import type { DraftPending } from "@meridian/suggestions";
 import * as Y from "yjs";
 import { createKeyedCoalescer } from "../../../shared/keyed-coalescer.js";
 import { type DocumentLinkRow, deriveDocumentLinkRows } from "./document-link-rows.js";
@@ -37,7 +37,7 @@ export type ReadCut = (documentId: DocumentId, doc: Y.Doc) => Promise<CutRead>;
 export type CutRead = {
   blocks: DerivedBlock[];
   links: StoredLinkOccurrence[];
-  pendingChanges: Record<string, WorkPending>;
+  pendingChanges: Record<string, DraftPending>;
 };
 
 export function createDocumentDerivationService(input: {

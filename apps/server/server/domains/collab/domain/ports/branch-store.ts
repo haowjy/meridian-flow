@@ -1,62 +1,37 @@
-/** Persistence port for Work branches: the `branches` rows the resolver owns. */
-import type {
-  BranchId,
-  DraftOwner,
-  ProjectId,
-  ThreadId,
-  UserId,
-  WorkId,
-} from "@meridian/contracts";
+/** Persistence port for drafts: the `drafts` rows the resolver owns. */
+import type { DraftId, DraftOwner, ProjectId, UserId, WorkId } from "@meridian/contracts";
 import type { WorkWriteOptions } from "../../../projects/index.js";
 
-export type BranchStatus = "active" | "closed";
-
+/** A draft: everything pending in it. It names no owner; a Work or a root chat names it. */
 export type Branch = {
-  id: BranchId;
+  id: DraftId;
   projectId: ProjectId;
-  status: BranchStatus;
-  /** The owner is one of these: a Work, or a lineage. Both null: a purged Work's closed branch. */
-  originWorkId: WorkId | null;
-  originRootThreadId: ThreadId | null;
-  /** Provenance, not ownership: the chat that created the branch. */
-  originThreadId: ThreadId | null;
   createdBy: UserId;
   createdAt: Date;
 };
 
-/** A branch with its owner; any status. */
+/** A draft with who names it, as it reads now. */
 export type BranchOwnerView = {
   branch: Branch;
+  /** The Work or lineage naming the draft; null when nothing names it any more. */
   owner: DraftOwner | null;
   handle: string | null;
 };
 
 export interface BranchStore {
-  /** No lock. The branch and its owner; null when there is no such branch. */
-  ownerOf(branchId: BranchId): Promise<BranchOwnerView | null>;
-  /** No lock. Oldest active branch this owner has, else null. */
-  activeForOwner(owner: DraftOwner): Promise<Branch | null>;
-  /** Caller's transaction, owner already locked: the active branch, inserted if absent. */
-  ensureActiveLocked(input: {
-    owner: DraftOwner;
-    projectId: ProjectId;
-    originThreadId: ThreadId | null;
-    createdBy: UserId;
-  }): Promise<Branch>;
-  /** Caller's transaction, after Work locks: `FOR NO KEY UPDATE`; null when closed or missing. */
-  lockActive(branchId: BranchId): Promise<Branch | null>;
-  /** `FOR SHARE`: a writer that needs the branch to stay active without changing it. */
-  shareActive(branchId: BranchId): Promise<Branch | null>;
-  /**
-   * Caller's transaction, branch locked: closes the `branches` row only. The Discard kernel closes
-   * the drafts first (`closeBranchDrafts`), because it owns peer retirement and disposition.
-   */
-  close(branchId: BranchId, at: Date): Promise<void>;
-  byIds(branchIds: readonly BranchId[]): Promise<Branch[]>;
-  /** Purge only: every branch whose origin is this Work, any status. */
-  byOriginWork(workId: WorkId): Promise<Branch[]>;
-  /** Purge only: every active branch owned by these lineages. */
-  activeByOriginLineages(rootThreadIds: readonly ThreadId[]): Promise<Branch[]>;
+  /** No lock. The draft and who names it; null when there is no such draft. */
+  ownerOf(draftId: DraftId): Promise<BranchOwnerView | null>;
+  /** No lock. The draft this owner names; null when the owner is gone. */
+  ofOwner(owner: DraftOwner): Promise<Branch | null>;
+  /** Caller's transaction, after the owner locks: `FOR NO KEY UPDATE`; null when missing. */
+  lock(draftId: DraftId): Promise<Branch | null>;
+  /** `FOR SHARE`: a writer that needs the draft to stay without changing it. */
+  share(draftId: DraftId): Promise<Branch | null>;
+  byIds(draftIds: readonly DraftId[]): Promise<Branch[]>;
+  /** Purge only: the drafts a Work and these lineages' roots name. */
+  namedBy(input: { workId: WorkId; lineageRootIds: readonly string[] }): Promise<DraftId[]>;
+  /** Purge only, caller's transaction: deletes the rows; their tree records go with them. */
+  delete(draftIds: readonly DraftId[]): Promise<void>;
 }
 
 /** The write boundary's transaction and owner lock. */

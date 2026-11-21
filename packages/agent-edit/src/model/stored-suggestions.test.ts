@@ -24,7 +24,7 @@ import { suggestingModel } from "./suggesting-model.js";
 import { fragmentOf, yProsemirrorModel } from "./y-prosemirror.js";
 
 const schema = buildDocumentSchema();
-const work = "work-1";
+const draft = "draft-1";
 
 /** A one-paragraph document whose paragraph the AI rewrote as `rewritten` in the Work's view. */
 function suggested(text: string, rewritten: string): Y.Doc {
@@ -39,7 +39,7 @@ function suggested(text: string, rewritten: string): Y.Doc {
 function rewrite(doc: Y.Doc, text: string): void {
   const model = suggestingModel(
     yProsemirrorModel(schema),
-    { work },
+    { draft },
     {
       chat: "chat-1",
       turn: "turn-1",
@@ -56,7 +56,7 @@ function rewrite(doc: Y.Doc, text: string): void {
 
 function read(doc: Y.Doc, view: string | null): string {
   const root = yXmlFragmentToProseMirrorRootNode(fragmentOf(doc), schema);
-  return viewBlock(root.child(0), { work: view })?.textContent ?? "";
+  return viewBlock(root.child(0), { draft: view })?.textContent ?? "";
 }
 
 /** The writer types `typed` into the paragraph's text before the first `before`. */
@@ -68,13 +68,13 @@ function type(doc: Y.Doc, before: string, typed: string): void {
 
 it("a press's Undo leaves text typed inside a resolved word where it was typed", () => {
   const applied = suggested("Hello world, said Tom.", "Hello earth, said Tom.");
-  const apply = pressStored(applied, schema, "accept", { work });
+  const apply = pressStored(applied, schema, "accept", { draft });
   type(applied, "rth", "?");
   expect(apply && undoPressStored(applied, apply)).toBe(true);
-  expect(read(applied, work)).toBe("Hello ea?rth, said Tom.");
+  expect(read(applied, draft)).toBe("Hello ea?rth, said Tom.");
 
   const discarded = suggested("The cat sat on the mat.", "The dog sat on the rug.");
-  const discard = pressStored(discarded, schema, "reject", { work });
+  const discard = pressStored(discarded, schema, "reject", { draft });
   type(discarded, "at.", "X");
   expect(discard && undoPressStored(discarded, discard)).toBe(true);
   expect(read(discarded, null)).toBe("The cat sat on the mXat.");
@@ -83,28 +83,28 @@ it("a press's Undo leaves text typed inside a resolved word where it was typed",
 it("the same rewrite after a Discard plans as a new suggestion; after an Apply the view keeps it", () => {
   const discarded = suggested("The cat sat.", "The dog sat.");
   const shown = Y.snapshot(discarded);
-  pressStored(discarded, schema, "reject", { work });
+  pressStored(discarded, schema, "reject", { draft });
   const view = createPlanningView(discarded, shown, []);
-  expect(view && read(view, work)).toBe("The cat sat.");
+  expect(view && read(view, draft)).toBe("The cat sat.");
   const written: Uint8Array[] = [];
   view?.on("update", (update: Uint8Array) => written.push(update));
   if (view) rewrite(view, "The dog sat.");
   for (const update of written) Y.applyUpdate(discarded, update);
   expect(discarded.store.pendingStructs).toBeNull();
-  expect([read(discarded, work), read(discarded, null)]).toEqual(["The dog sat.", "The cat sat."]);
+  expect([read(discarded, draft), read(discarded, null)]).toEqual(["The dog sat.", "The cat sat."]);
 
   const applied = suggested("The cat sat.", "The dog sat.");
   const seen = Y.snapshot(applied);
-  pressStored(applied, schema, "accept", { work });
+  pressStored(applied, schema, "accept", { draft });
   const kept = createPlanningView(applied, seen, []);
-  expect(kept && read(kept, work)).toBe("The dog sat.");
+  expect(kept && read(kept, draft)).toBe("The dog sat.");
 
   // An Apply whose new word the writer then deleted is still an Apply: the struck word stays gone.
   const deleted = suggested("The cat sat.", "The dog sat.");
   const before = Y.snapshot(deleted);
-  pressStored(deleted, schema, "accept", { work });
+  pressStored(deleted, schema, "accept", { draft });
   const text = (fragmentOf(deleted).get(0) as Y.XmlElement).get(0) as Y.XmlText;
   text.delete("The ".length, "dog ".length);
   const stale = createPlanningView(deleted, before, []);
-  expect(stale && read(stale, work)).toBe("The dog sat.");
+  expect(stale && read(stale, draft)).toBe("The dog sat.");
 });

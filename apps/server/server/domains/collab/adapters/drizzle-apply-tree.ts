@@ -8,7 +8,7 @@
  * the lists' keys come next (`lockItems`), then the documents', and only then the writes.
  */
 
-import type { BranchId, CommandId, DocumentId, UserId } from "@meridian/contracts";
+import type { CommandId, DocumentId, DraftId, UserId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { applyCommandTrees } from "@meridian/database/schema";
 import {
@@ -85,7 +85,7 @@ export function createApplyTreeOperations(input: {
    * there: its text takes no Apply until the writer restores it.
    */
   async function apply(click: {
-    branchId: BranchId;
+    branchId: DraftId;
     userId: UserId;
     commandId: CommandId;
     saw: TreeCut | undefined;

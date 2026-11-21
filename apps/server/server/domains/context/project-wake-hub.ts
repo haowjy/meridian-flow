@@ -57,7 +57,7 @@ export function createProjectHints(wake: ProjectWakePort): ProjectHintPort {
     });
   }
   return {
-    publishDraftOwnerHints: publishLossy,
+    publishDraftHints: publishLossy,
     publishSourcesHint: (projectId) => publishLossy([{ type: "context-sources-hint", projectId }]),
   };
 }

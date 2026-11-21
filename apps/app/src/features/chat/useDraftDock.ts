@@ -46,15 +46,15 @@ export function useDraftDock({
     controller.owner.snapshot,
   );
   // The owner's notice, if this chat's strip made it.
-  const owned = useDraftNotice(controller.ownerKey);
+  const owned = useDraftNotice(controller.draftId);
   const here =
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
   const notice = useNoticeLine(here);
-  const listedFiles = useOwnerDrafts(controller.projectId, controller.ownerKey).files ?? [];
+  const listedFiles = useOwnerDrafts(controller.projectId, controller.draftId).files ?? [];
   const { openReviewFile } = useAiDraftLauncher();
   const runner = controller;
   const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
-  const { projectId, ownerKey } = controller;
+  const { projectId, draftId } = controller;
   const { setWorkId } = useWorkScope(projectId);
 
   const candidates = useMemo(
@@ -103,7 +103,7 @@ export function useDraftDock({
   // screen, so an Apply in flight doesn't count its own documents as more.
   const { work } = controller;
   const workCount =
-    shell?.ownerKey === ownerKey
+    shell?.draftId === draftId
       ? shell.changeCount
       : work && !work.isNoWork
         ? reviewCount(shell, work)
@@ -122,15 +122,15 @@ export function useDraftDock({
         if (file.row.draft.binary)
           setImagePreview({
             projectId,
-            ownerKey,
+            draftId,
             documentId: file.row.documentId,
             name: file.name,
           });
         return;
       }
-      openReviewFile(file.row, ownerKey, change ?? file.changes[0]);
+      openReviewFile(file.row, draftId, change ?? file.changes[0]);
     },
-    [openReviewFile, projectId, ownerKey],
+    [openReviewFile, projectId, draftId],
   );
 
   const applicable = actionableFiles.filter((file) => hasApply(file.row.draft));
@@ -172,7 +172,7 @@ export function useDraftDock({
     inWork: work !== null && !work.isNoWork,
     /** Opens the sidebar's Changes list on this chat's Work, which acts on all of its changes. */
     showChanges: () => {
-      if (work && shell?.ownerKey !== ownerKey) setWorkId(work.id);
+      if (work && shell?.draftId !== draftId) setWorkId(work.id);
       useSidebarTabs.getState().reveal("changes");
     },
     showCommands: actionableFiles.length > 0,
@@ -184,7 +184,7 @@ export function useDraftDock({
     ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
-    ownerKey,
+    draftId,
     review,
     imagePreview,
     closeImagePreview: () => setImagePreview(null),

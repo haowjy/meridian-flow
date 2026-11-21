@@ -1,4 +1,4 @@
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 /**
  * Where a ContextFS adapter's writes land, as a strategy (contract §2.3, §6.1). The port factory
  * decides the placement once (`placementFor`); ContextFS delegates the commands whose meaning
@@ -12,7 +12,6 @@ import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contrac
 import { entrySegment, renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { Ok, type Result } from "../../../../shared/result.js";
-import type { Branches } from "../../../collab/domain/branches.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
@@ -26,14 +25,14 @@ import { actorOf, type SourceTree, type TreeWriteTarget, viewOfBranch } from "./
 
 /**
  * People and auto-apply chats are live. A draft-mode chat on a drafted source is a draft
- * placement: reads see the Work's active branch (live while it has none), and creates are
- * records of that branch, which the command transaction ensures.
+ * placement: reads see the chat's draft, and creates are records of it, written under its
+ * owner's lock, which the command transaction takes.
  */
 export interface BranchPlacement {
   owner: DraftOwner;
+  draftId: DraftId;
   threadId: ThreadId;
   userId: UserId;
-  branches: Pick<Branches, "viewForOwner">;
 }
 
 export type ContextPlacement =
@@ -43,8 +42,13 @@ export type ContextPlacement =
 /** Commands only a live placement runs. */
 export type LiveOnlyCommand = "take a whole-file write" | "create a file with text";
 
-/** The branch a drafted tree command is made in: the owner, its thread and user. */
-export type BranchCommandOwner = { owner: DraftOwner; threadId: ThreadId; userId: UserId };
+/** The draft a drafted tree command is made in: it, its owner, its thread and user. */
+export type BranchCommandOwner = {
+  owner: DraftOwner;
+  draftId: DraftId;
+  threadId: ThreadId;
+  userId: UserId;
+};
 
 export interface CreatePlacement {
   readonly kind: ContextPlacement["kind"];
@@ -137,7 +141,7 @@ function livePlacement(
     kind: "live",
     readView: (version) =>
       version !== "live" && placement.branch
-        ? placement.branch.branches.viewForOwner(placement.branch.owner)
+        ? Promise.resolve({ kind: "branch" as const, branchId: placement.branch.draftId })
         : Promise.resolve(LIVE_TREE),
     refuse: () => null,
     ensureTracked(path, options) {
@@ -192,14 +196,14 @@ function draftPlacement(
   const { executor, tree } = deps;
   const owner = branchOwnerOf(placement);
   /** A command in the drafting Work's branch, which the transaction ensures and locks. */
-  const inBranch = <T>(operation: (branch: { id: BranchId }) => Promise<Result<T, AdapterFault>>) =>
-    executor.runInBranch({ ...owner, mode: "ensure" }, (branch) => operation({ id: branch.id }));
+  const inBranch = <T>(operation: (branch: { id: DraftId }) => Promise<Result<T, AdapterFault>>) =>
+    executor.runInBranch(owner, (branch) => operation({ id: branch.id }));
   return {
     kind: "draft",
     readView: (version) =>
       version === "live"
         ? Promise.resolve(LIVE_TREE)
-        : placement.branches.viewForOwner(placement.owner),
+        : Promise.resolve({ kind: "branch" as const, branchId: placement.draftId }),
     refuse: (operation) => ({
       code: "invalid_operation",
       message: `In draft mode, you can't ${operation}; create the file empty and write into it`,
@@ -253,5 +257,10 @@ function draftPlacement(
 }
 
 function branchOwnerOf(placement: BranchPlacement): BranchCommandOwner {
-  return { owner: placement.owner, threadId: placement.threadId, userId: placement.userId };
+  return {
+    owner: placement.owner,
+    draftId: placement.draftId,
+    threadId: placement.threadId,
+    userId: placement.userId,
+  };
 }

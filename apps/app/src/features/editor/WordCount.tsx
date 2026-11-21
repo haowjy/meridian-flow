@@ -38,7 +38,7 @@ export function WordCount({ editor }: { editor: Editor }) {
     // Switching the view changes the words shown without changing the document.
     const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }) => {
       const shown = suggestionView(editor.state);
-      if (!transaction.docChanged && shown.work === view.work) return;
+      if (!transaction.docChanged && shown.draft === view.draft) return;
       view = shown;
       onSelection();
       clearTimeout(timer);

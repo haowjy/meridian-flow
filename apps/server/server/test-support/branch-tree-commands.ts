@@ -1,9 +1,4 @@
-import {
-  type DocumentId,
-  type DocumentLinkAnswer,
-  draftOwnerKey,
-  type WorkId,
-} from "@meridian/contracts";
+import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
 import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { canonicalContextUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
@@ -18,10 +13,7 @@ import {
 } from "../domains/context/context-port-resolution.js";
 import type { ContextPort, GrepQuery } from "../domains/context/ports/context-port.js";
 import type { ToolExecutionResult } from "../domains/runtime/tools/types.js";
-import {
-  handleOwnerDraftListRequest,
-  selectBranchRouteServices,
-} from "../lib/branch-review-route.js";
+import { handleDraftListRequest, selectBranchRouteServices } from "../lib/branch-review-route.js";
 import { handleDocumentLinkResolveRequest } from "../lib/document-link-route.js";
 import { type BranchTreeWorld, type ScenarioWork, sourceOf } from "./branch-tree-seeds.js";
 import type { useComposedRuntimes } from "./composed-runtime.js";
@@ -99,11 +91,9 @@ export interface BranchTreeCommands {
    */
   purge(work: ScenarioWork): Promise<number>;
   /** The Work's review list through its route core: the `items`. */
-  review(work: ScenarioWork): ReturnType<typeof handleOwnerDraftListRequest>;
+  review(work: ScenarioWork): ReturnType<typeof handleDraftListRequest>;
   /** The review list's `items` only. */
   items(work: ScenarioWork): Promise<ThreadDraftListItem[]>;
-  /** The statuses of every branch whose origin is the Work, oldest first. */
-  branchStatuses(work: ScenarioWork): Promise<string[]>;
   /**
    * The resolve route's answer for one stored link, read in a Work's view or live, from
    * `baseUri` (null for chat) and, when given, the holder pinned by id.
@@ -385,10 +375,10 @@ export function branchTreeCommands(
 
   const routes = () => selectBranchRouteServices(composed().runtime.app);
 
-  function review(work: ScenarioWork) {
-    return handleOwnerDraftListRequest(routes(), {
+  async function review(work: ScenarioWork) {
+    return handleDraftListRequest(routes(), {
       projectId,
-      owner: draftOwnerKey({ kind: "work", workId: work.id }),
+      draft: (await world.branchOf(work)).id,
       userId,
     });
   }
@@ -411,9 +401,6 @@ export function branchTreeCommands(
     purge,
     review,
     items: async (work) => (await review(work)).items,
-    async branchStatuses(work) {
-      return (await world.branches.byOriginWork(work.id)).map((branch) => branch.status);
-    },
     storedLinks: (documentId) =>
       ports().documentSync.withLiveDocument(documentId, async ({ doc }) =>
         extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME)).map((link) => ({

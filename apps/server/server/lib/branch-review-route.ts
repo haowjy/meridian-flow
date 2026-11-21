@@ -1,12 +1,12 @@
 /**
- * Route core for authenticated review of a Work's drafts: the list, the per-document hints, and
+ * Route core for authenticated review of a draft: the list, the per-document hints, and
  * the press (Apply or Discard) with its Undo. A command carries a client `commandId`: the route
  * looks it up first (a resend gets its stored answer), builds the digest envelope, and maps the
  * service's errors to HTTP. Nothing here decides an effect.
  */
 
-import type { BranchId, CommandId, DraftOwner } from "@meridian/contracts";
-import { type DraftOwnerKey, draftItemKey, draftOwnerFromKey } from "@meridian/contracts";
+import type { CommandId, DraftId } from "@meridian/contracts";
+import { draftItemKey, isDraftId } from "@meridian/contracts";
 import type {
   DocumentDraftHint,
   DocumentDraftHintsResponse,
@@ -31,22 +31,19 @@ import {
   commandDigest,
   replay,
 } from "../shared/commands/command-record.js";
-import { ownerKeyOfColumns } from "../shared/draft-owner.js";
 import type { AppServices } from "./app.js";
 import { throwCommandConflict } from "./command-route.js";
 import { throwWorkMutationHttpError } from "./work-http.js";
 
 type BranchRouteServices = {
   projects: Pick<AppServices["projectRepo"], "findById">;
-  works: Pick<AppServices["workRepo"], "findById">;
   fileAccess: Pick<AppServices["fileAccess"], "listAccess">;
-  documentSync: Pick<AppServices["documentSync"], "draftReview" | "presses">;
+  documentSync: Pick<AppServices["documentSync"], "draftReview" | "presses" | "branches">;
 };
 
 export function selectBranchRouteServices(app: AppServices): BranchRouteServices {
   return {
     projects: app.projectRepo,
-    works: app.workRepo,
     fileAccess: app.fileAccess,
     documentSync: app.documentSync,
   };
@@ -62,22 +59,20 @@ async function requireProjectOwned(
   }
 }
 
-/** The owner a list names: a Work of this project that is not deleted, or a lineage of it. */
-export async function requireListedOwner(
-  deps: Pick<BranchRouteServices, "projects" | "works">,
-  input: { projectId: ProjectId; owner: string; userId: UserId },
-): Promise<DraftOwner> {
+/**
+ * The draft a request names, of this project. A deleted Work's draft still reads until the Work
+ * is purged, which deletes the draft: it stays picked, with Restore.
+ */
+export async function requireDraft(
+  deps: Pick<BranchRouteServices, "projects" | "documentSync">,
+  input: { projectId: ProjectId; draft: string; userId: UserId },
+): Promise<DraftId> {
   await requireProjectOwned(deps, input);
-  const owner = draftOwnerFromKey(input.owner, input.projectId);
-  if (!owner) throw createError({ statusCode: 400, message: "Invalid draft owner" });
-  if (owner.kind === "work") {
-    // A deleted Work's drafts still read until it is purged: it stays picked, with Restore.
-    const work = await deps.works.findById(owner.workId);
-    if (!work || work.projectId !== input.projectId) {
-      throw createError({ statusCode: 404, message: "Work not found" });
-    }
-  }
-  return owner;
+  if (!isDraftId(input.draft)) throw createError({ statusCode: 400, message: "Invalid draft" });
+  const found = await deps.documentSync.branches.ownerOf(input.draft);
+  if (found?.branch.projectId !== input.projectId)
+    throw createError({ statusCode: 404, message: "Draft not found" });
+  return input.draft;
 }
 
 // --- Request bodies ----------------------------------------------------------------------------
@@ -100,7 +95,7 @@ const SawBody = z.strictObject({
 });
 const PressBody = z.strictObject({
   commandId: CommandIdSchema,
-  owner: z.string().min(1).max(128),
+  draft: z.string().min(1).max(128),
   verdict: z.enum(["apply", "discard"]),
   items: z.union([
     z.literal("all"),
@@ -128,31 +123,26 @@ function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: strin
 
 // --- Reads -------------------------------------------------------------------------------------
 
-export async function handleOwnerDraftListRequest(
+export async function handleDraftListRequest(
   deps: BranchRouteServices,
-  input: { projectId: ProjectId; owner: string; userId: UserId },
+  input: { projectId: ProjectId; draft: string; userId: UserId },
 ): Promise<ThreadDraftListResponse> {
-  const owner = await requireListedOwner(deps, input);
-  const listed = await deps.documentSync.draftReview.listItems({ owner });
-  // Readable in the branch's view, where its created documents are (file-access §6); a
-  // document deleted live is no longer readable anywhere, but stays the branch's item.
-  const readable = listed.branchId
-    ? await deps.fileAccess.listAccess(
-        { accountId: input.userId },
-        listed.items.map((item) => item.documentId),
-        {
-          // A document the branch deletes is gone from its view; it is read where it still is.
-          branchViews: new Map(
-            listed.items
-              .filter((item) => !item.tree?.deleted)
-              .map((item) => [
-                item.documentId,
-                { kind: "branch" as const, branchId: listed.branchId as BranchId },
-              ]),
-          ),
-        },
-      )
-    : new Map();
+  const draft = await requireDraft(deps, input);
+  const listed = await deps.documentSync.draftReview.listItems({ draft });
+  // Readable in the draft's view, where its created documents are (file-access §6); a
+  // document deleted live is no longer readable anywhere, but stays the draft's item.
+  const readable = await deps.fileAccess.listAccess(
+    { accountId: input.userId },
+    listed.items.map((item) => item.documentId),
+    {
+      // A document the draft deletes is gone from its view; it is read where it still is.
+      branchViews: new Map(
+        listed.items
+          .filter((item) => !item.tree?.deleted)
+          .map((item) => [item.documentId, { kind: "branch" as const, branchId: draft }]),
+      ),
+    },
+  );
   // A broken proposed placement must not erase a pending fact. Existing documents retain
   // their stable live-source authority even when the branch view cannot resolve an ancestor.
   const liveReadable = await deps.fileAccess.listAccess(
@@ -194,10 +184,6 @@ export async function handleDocumentDraftHintsRequest(
         branchId: branch.branchId,
         itemKey: draftItemKey(branch.branchId, input.documentId),
         label: branch.originLabel,
-        owner: ownerKeyOfColumns({
-          workId: branch.originWorkId,
-          rootThreadId: branch.originRootThreadId,
-        }) as DraftOwnerKey,
         tree: await pendingTreeChange(deps, branch, input.documentId),
       })),
     ),
@@ -270,10 +256,9 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
 }
 
 /**
- * The press: Apply or Discard on documents, folders or the whole Work, one command
- * (`drizzle-press.ts`). It addresses the Work, not a branch: a Work whose drafts are only text
- * has none. It takes no per-document grant: the writer owns the project and the Work, and the
- * press writes only that Work's suggestions.
+ * The press: Apply or Discard on documents, folders or a whole draft, one command
+ * (`drizzle-press.ts`). It takes no per-document grant: the writer owns the project and the
+ * draft, and the press writes only that draft's suggestions.
  */
 export async function handlePressRequest(
   deps: BranchRouteServices,
@@ -281,12 +266,12 @@ export async function handlePressRequest(
 ): Promise<PressResult> {
   const { presses } = deps.documentSync;
   const request = parseBody(PressBody, input.request, "press");
-  const owner = await requireListedOwner(deps, { ...input, owner: request.owner });
+  await requireDraft(deps, { ...input, draft: request.draft });
   const envelope = pressEnvelope(input, "press", request.commandId, input.request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
   const recorded = storedAnswer<PressResult>(first, request.commandId);
   if (recorded) return recorded;
-  return callDraftReview(presses.press({ envelope, owner, request }));
+  return callDraftReview(presses.press({ envelope, request }));
 }
 
 /** Take back one press, both halves: the press's own records say what it did. */

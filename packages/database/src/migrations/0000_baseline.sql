@@ -239,6 +239,7 @@ CREATE TABLE "threads" (
 	"initial_prompt_bake_id" uuid,
 	"parent_thread_id" uuid,
 	"root_thread_id" uuid NOT NULL,
+	"draft_id" text,
 	"origin_turn_id" uuid,
 	"origin_type" text,
 	"spawn_status" text,
@@ -258,8 +259,10 @@ CREATE TABLE "threads" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"deleted_at" timestamp with time zone,
 	"deleted_by_work_id" uuid,
+	CONSTRAINT "threads_draft_id" UNIQUE("draft_id"),
 	CONSTRAINT "threads_project_id_unique" UNIQUE("project_id","id"),
 	CONSTRAINT "threads_no_self_parent" CHECK ("threads"."id" != "threads"."parent_thread_id"),
+	CONSTRAINT "threads_draft_on_root" CHECK (("threads"."root_thread_id" = "threads"."id") = ("threads"."draft_id" IS NOT NULL)),
 	CONSTRAINT "threads_spawn_depth_nonneg" CHECK ("threads"."spawn_depth" >= 0),
 	CONSTRAINT "threads_next_seq_nonneg" CHECK ("threads"."next_seq" >= 0),
 	CONSTRAINT "threads_ai_write_mode_valid" CHECK ("threads"."ai_write_mode" IN ('direct', 'draft')),
@@ -385,21 +388,14 @@ CREATE TABLE "credit_transactions" (
 	CONSTRAINT "credit_transactions_consumption_usage_event" CHECK ("credit_transactions"."transaction_type" != 'consumption' OR "credit_transactions"."usage_event_id" IS NOT NULL)
 );
 --> statement-breakpoint
-CREATE TABLE "branches" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+CREATE TABLE "drafts" (
+	"id" text PRIMARY KEY NOT NULL,
 	"project_id" uuid NOT NULL,
-	"status" text DEFAULT 'active' NOT NULL,
-	"origin_thread_id" uuid,
-	"origin_work_id" uuid,
-	"origin_root_thread_id" uuid,
 	"pending_document_count" integer DEFAULT 0 NOT NULL,
 	"pending_folder_count" integer DEFAULT 0 NOT NULL,
 	"created_by" uuid NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"closed_at" timestamp with time zone,
-	CONSTRAINT "branches_one_owner" CHECK (num_nonnulls("branches"."origin_work_id", "branches"."origin_root_thread_id") <= 1 AND ("branches"."status" = 'closed' OR num_nonnulls("branches"."origin_work_id", "branches"."origin_root_thread_id") = 1)),
-	CONSTRAINT "branches_status_valid" CHECK ("branches"."status" IN ('active', 'closed')),
-	CONSTRAINT "branches_closed_shape" CHECK (("branches"."status" = 'closed') = ("branches"."closed_at" IS NOT NULL))
+	CONSTRAINT "drafts_id_shape" CHECK ("drafts"."id" ~ '^[0-9a-z]{12}$')
 );
 --> statement-breakpoint
 CREATE TABLE "context_sources" (
@@ -522,14 +518,17 @@ CREATE TABLE "works" (
 	"archived_at" timestamp with time zone,
 	"default_ai_write_mode" text DEFAULT 'direct' NOT NULL,
 	"entity_revision" bigint DEFAULT 1 NOT NULL,
+	"draft_id" text,
 	"pending_document_count" integer DEFAULT 0 NOT NULL,
 	"pending_folder_count" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"deleted_at" timestamp with time zone,
+	CONSTRAINT "works_draft_id" UNIQUE("draft_id"),
 	CONSTRAINT "works_project_id_unique" UNIQUE("project_id","id"),
 	CONSTRAINT "works_name_nonempty" CHECK (btrim("works"."name") <> ''),
 	CONSTRAINT "works_no_work_handle" CHECK (("works"."is_no_work" AND "works"."handle" IS NULL) OR (NOT "works"."is_no_work" AND "works"."handle" IS NOT NULL)),
+	CONSTRAINT "works_draft_unless_no_work" CHECK ("works"."is_no_work" = ("works"."draft_id" IS NULL)),
 	CONSTRAINT "works_no_work_not_archived" CHECK (NOT "works"."is_no_work" OR "works"."archived_at" IS NULL),
 	CONSTRAINT "works_handle_valid" CHECK ("works"."handle" IS NULL OR "works"."handle" ~ '^w[1-9][0-9]*$'),
 	CONSTRAINT "works_status_length" CHECK ("works"."status" IS NULL OR char_length("works"."status") <= 32),
@@ -591,7 +590,7 @@ CREATE TABLE "tree_edit_receipts" (
 	"op" text NOT NULL,
 	"kind" text DEFAULT 'write' NOT NULL,
 	"reverses" uuid,
-	"draft_branch_id" uuid,
+	"draft_id" text,
 	"shown_at" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "tree_edit_receipts_op_valid" CHECK ("tree_edit_receipts"."op" IN ('create','move','delete','restore')),
@@ -779,8 +778,8 @@ CREATE TABLE "project_action_grants" (
 	CONSTRAINT "project_action_grants_project_action_unique" UNIQUE("project_id","action")
 );
 --> statement-breakpoint
-CREATE TABLE "branch_tree_nodes" (
-	"branch_id" uuid NOT NULL,
+CREATE TABLE "draft_tree_nodes" (
+	"draft_id" text NOT NULL,
 	"id" uuid NOT NULL,
 	"list_id" uuid NOT NULL,
 	"kind" text NOT NULL,
@@ -795,10 +794,10 @@ CREATE TABLE "branch_tree_nodes" (
 	"deleted" boolean NOT NULL,
 	"exists_only_in_draft" boolean NOT NULL,
 	"changed" boolean NOT NULL,
-	CONSTRAINT "branch_tree_nodes_branch_id_id_pk" PRIMARY KEY("branch_id","id"),
-	CONSTRAINT "branch_tree_nodes_kind_valid" CHECK ("branch_tree_nodes"."kind" IN ('folder', 'document')),
-	CONSTRAINT "branch_tree_nodes_file_type_of_document" CHECK (("branch_tree_nodes"."kind" = 'folder') = ("branch_tree_nodes"."file_type" IS NULL)),
-	CONSTRAINT "branch_tree_nodes_rank_present" CHECK ("branch_tree_nodes"."rank" <> '')
+	CONSTRAINT "draft_tree_nodes_draft_id_id_pk" PRIMARY KEY("draft_id","id"),
+	CONSTRAINT "draft_tree_nodes_kind_valid" CHECK ("draft_tree_nodes"."kind" IN ('folder', 'document')),
+	CONSTRAINT "draft_tree_nodes_file_type_of_document" CHECK (("draft_tree_nodes"."kind" = 'folder') = ("draft_tree_nodes"."file_type" IS NULL)),
+	CONSTRAINT "draft_tree_nodes_rank_present" CHECK ("draft_tree_nodes"."rank" <> '')
 );
 --> statement-breakpoint
 CREATE TABLE "tree_node_ids" (
@@ -877,7 +876,7 @@ CREATE TABLE "agent_edit_wid_counters" (
 --> statement-breakpoint
 CREATE TABLE "apply_command_trees" (
 	"command_id" uuid NOT NULL,
-	"branch_id" uuid NOT NULL,
+	"draft_id" text NOT NULL,
 	"scope" text NOT NULL,
 	"mark" "bytea" NOT NULL,
 	"nodes" jsonb NOT NULL,
@@ -1018,6 +1017,7 @@ ALTER TABLE "thread_works" ADD CONSTRAINT "thread_works_project_work_same_projec
 ALTER TABLE "threads" ADD CONSTRAINT "threads_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_initial_prompt_bake_id_prompt_bakes_id_fk" FOREIGN KEY ("initial_prompt_bake_id") REFERENCES "public"."prompt_bakes"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "threads" ADD CONSTRAINT "threads_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_origin_turn_id_turns_id_fk" FOREIGN KEY ("origin_turn_id") REFERENCES "public"."turns"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_deleted_by_work_id_works_id_fk" FOREIGN KEY ("deleted_by_work_id") REFERENCES "public"."works"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_spawn_root_same_project_fk" FOREIGN KEY ("project_id","root_thread_id") REFERENCES "public"."threads"("project_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1030,10 +1030,8 @@ ALTER TABLE "user_turn_admissions" ADD CONSTRAINT "user_turn_admissions_thread_i
 ALTER TABLE "credit_lots" ADD CONSTRAINT "credit_lots_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "credit_transactions" ADD CONSTRAINT "credit_transactions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "credit_transactions" ADD CONSTRAINT "credit_transactions_lot_id_credit_lots_id_fk" FOREIGN KEY ("lot_id") REFERENCES "public"."credit_lots"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "branches" ADD CONSTRAINT "branches_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "branches" ADD CONSTRAINT "branches_origin_thread_id_threads_id_fk" FOREIGN KEY ("origin_thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "branches" ADD CONSTRAINT "branches_origin_work_id_works_id_fk" FOREIGN KEY ("origin_work_id") REFERENCES "public"."works"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "branches" ADD CONSTRAINT "branches_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "drafts" ADD CONSTRAINT "drafts_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "drafts" ADD CONSTRAINT "drafts_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_sources" ADD CONSTRAINT "context_sources_work_id_works_id_fk" FOREIGN KEY ("work_id") REFERENCES "public"."works"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1052,6 +1050,7 @@ ALTER TABLE "upload_intakes" ADD CONSTRAINT "upload_intakes_actor_user_id_users_
 ALTER TABLE "upload_intakes" ADD CONSTRAINT "upload_intakes_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "works" ADD CONSTRAINT "works_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "works" ADD CONSTRAINT "works_created_by_user_id_users_id_fk" FOREIGN KEY ("created_by_user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "works" ADD CONSTRAINT "works_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edit_parts" ADD CONSTRAINT "document_edit_parts_edit_id_document_edits_id_fk" FOREIGN KEY ("edit_id") REFERENCES "public"."document_edits"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_edits" ADD CONSTRAINT "document_edits_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
@@ -1083,9 +1082,9 @@ ALTER TABLE "project_results" ADD CONSTRAINT "project_results_deleted_by_work_id
 ALTER TABLE "asks" ADD CONSTRAINT "asks_thread_id_threads_id_fk" FOREIGN KEY ("thread_id") REFERENCES "public"."threads"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "asks" ADD CONSTRAINT "asks_asking_turn_fk" FOREIGN KEY ("thread_id","asking_turn_id") REFERENCES "public"."turns"("thread_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "project_action_grants" ADD CONSTRAINT "project_action_grants_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "branch_tree_nodes" ADD CONSTRAINT "branch_tree_nodes_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "branch_tree_nodes" ADD CONSTRAINT "branch_tree_nodes_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "branch_tree_nodes" ADD CONSTRAINT "branch_tree_nodes_claimed_by_list" FOREIGN KEY ("id","list_id") REFERENCES "public"."tree_node_ids"("id","list_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "draft_tree_nodes" ADD CONSTRAINT "draft_tree_nodes_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "draft_tree_nodes" ADD CONSTRAINT "draft_tree_nodes_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "draft_tree_nodes" ADD CONSTRAINT "draft_tree_nodes_claimed_by_list" FOREIGN KEY ("id","list_id") REFERENCES "public"."tree_node_ids"("id","list_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tree_node_ids" ADD CONSTRAINT "tree_node_ids_list_id_document_yjs_heads_document_id_fk" FOREIGN KEY ("list_id") REFERENCES "public"."document_yjs_heads"("document_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tree_nodes" ADD CONSTRAINT "tree_nodes_context_source_id_context_sources_id_fk" FOREIGN KEY ("context_source_id") REFERENCES "public"."context_sources"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "tree_nodes" ADD CONSTRAINT "tree_nodes_claimed_by_list" FOREIGN KEY ("id","list_id") REFERENCES "public"."tree_node_ids"("id","list_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1094,7 +1093,7 @@ ALTER TABLE "user_preferences" ADD CONSTRAINT "user_preferences_user_id_users_id
 ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_project_favorites" ADD CONSTRAINT "user_project_favorites_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_command_id_commands_id_fk" FOREIGN KEY ("command_id") REFERENCES "public"."commands"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_branch_id_branches_id_fk" FOREIGN KEY ("branch_id") REFERENCES "public"."branches"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "apply_command_trees" ADD CONSTRAINT "apply_command_trees_draft_id_drafts_id_fk" FOREIGN KEY ("draft_id") REFERENCES "public"."drafts"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "commands" ADD CONSTRAINT "commands_account_id_users_id_fk" FOREIGN KEY ("account_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_block_rooms" ADD CONSTRAINT "document_block_rooms_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "document_blocks" ADD CONSTRAINT "document_blocks_room_id_document_block_rooms_room_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."document_block_rooms"("room_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -1150,9 +1149,7 @@ CREATE INDEX "credit_lots_fifo_spend" ON "credit_lots" USING btree ("user_id","e
 CREATE UNIQUE INDEX "credit_lots_debt_user" ON "credit_lots" USING btree ("user_id") WHERE "credit_lots"."source_type" = 'debt';--> statement-breakpoint
 CREATE INDEX "credit_transactions_user_created" ON "credit_transactions" USING btree ("user_id","created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "credit_transactions_consumption_group" ON "credit_transactions" USING btree ("consumption_group_id") WHERE "credit_transactions"."consumption_group_id" IS NOT NULL;--> statement-breakpoint
-CREATE INDEX "branches_active_origin_work" ON "branches" USING btree ("origin_work_id","created_at") WHERE "branches"."status" = 'active';--> statement-breakpoint
-CREATE INDEX "branches_active_origin_lineage" ON "branches" USING btree ("project_id","origin_root_thread_id","created_at") WHERE "branches"."status" = 'active' AND "branches"."origin_root_thread_id" IS NOT NULL;--> statement-breakpoint
-CREATE INDEX "branches_project" ON "branches" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "drafts_project" ON "drafts" USING btree ("project_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_project_scope_slug" ON "context_sources" USING btree ("project_id","slug") WHERE "context_sources"."work_id" IS NULL AND "context_sources"."root_thread_id" IS NULL AND "context_sources"."chat_thread_id" IS NULL AND "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_work_slug" ON "context_sources" USING btree ("work_id","slug") WHERE "context_sources"."work_id" IS NOT NULL AND "context_sources"."deleted_at" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_sources_lineage_slug" ON "context_sources" USING btree ("root_thread_id","slug") WHERE "context_sources"."root_thread_id" IS NOT NULL;--> statement-breakpoint
@@ -1210,9 +1207,9 @@ CREATE INDEX "asks_open_deadline" ON "asks" USING btree ("deadline_at","id") WHE
 CREATE INDEX "asks_thread_created" ON "asks" USING btree ("thread_id","created_at","id");--> statement-breakpoint
 CREATE INDEX "asks_held_by_thread" ON "asks" USING btree ("thread_id") WHERE "asks"."status" IN ('pending', 'open') OR "asks"."continuation" = 'pending';--> statement-breakpoint
 CREATE UNIQUE INDEX "asks_one_live_per_thread" ON "asks" USING btree ("thread_id") WHERE "asks"."status" IN ('pending', 'open');--> statement-breakpoint
-CREATE INDEX "branch_tree_nodes_list" ON "branch_tree_nodes" USING btree ("list_id","branch_id");--> statement-breakpoint
-CREATE INDEX "branch_tree_nodes_walk" ON "branch_tree_nodes" USING btree ("branch_id","context_source_id","parent_id","segment");--> statement-breakpoint
-CREATE INDEX "branch_tree_nodes_siblings" ON "branch_tree_nodes" USING btree ("branch_id","context_source_id","parent_id","rank" COLLATE "C","id");--> statement-breakpoint
+CREATE INDEX "draft_tree_nodes_list" ON "draft_tree_nodes" USING btree ("list_id","draft_id");--> statement-breakpoint
+CREATE INDEX "draft_tree_nodes_walk" ON "draft_tree_nodes" USING btree ("draft_id","context_source_id","parent_id","segment");--> statement-breakpoint
+CREATE INDEX "draft_tree_nodes_siblings" ON "draft_tree_nodes" USING btree ("draft_id","context_source_id","parent_id","rank" COLLATE "C","id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_walk" ON "tree_nodes" USING btree ("context_source_id","parent_id","segment");--> statement-breakpoint
 CREATE INDEX "tree_nodes_by_name" ON "tree_nodes" USING btree ("name","context_source_id");--> statement-breakpoint
 CREATE INDEX "tree_nodes_by_stem" ON "tree_nodes" USING btree ("stem","context_source_id");--> statement-breakpoint
@@ -1732,3 +1729,42 @@ END;
 $$;
 
 CREATE TRIGGER users_create_account_source AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_account_source();
+
+CREATE FUNCTION public.mint_named_draft() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  names_draft boolean;
+  draft_project uuid;
+BEGIN
+  -- A named Work and a root chat each name their draft, minted with them in the same insert
+  -- (`threads_draft_on_root`, `works_draft_unless_no_work`). The client may send the id it
+  -- minted, so it can type into the draft before the create returns.
+  IF TG_TABLE_NAME = 'works' THEN
+    names_draft := NOT NEW.is_no_work;
+  ELSE
+    names_draft := NEW.root_thread_id = NEW.id;
+  END IF;
+  IF NOT names_draft THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.draft_id IS NULL THEN
+    NEW.draft_id := (
+      SELECT string_agg(substr('0123456789abcdefghijklmnopqrstuvwxyz', 1 + floor(random() * 36)::int, 1), '')
+      FROM generate_series(1, 12)
+    );
+  END IF;
+  INSERT INTO drafts (id, project_id, created_by)
+    VALUES (NEW.draft_id, NEW.project_id, NEW.created_by_user_id)
+    ON CONFLICT (id) DO NOTHING;
+  SELECT project_id INTO draft_project FROM drafts WHERE id = NEW.draft_id;
+  IF draft_project <> NEW.project_id THEN
+    RAISE EXCEPTION 'draft % belongs to another project', NEW.draft_id USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER works_mint_draft BEFORE INSERT ON public.works FOR EACH ROW EXECUTE FUNCTION public.mint_named_draft();
+
+CREATE TRIGGER threads_mint_draft BEFORE INSERT ON public.threads FOR EACH ROW EXECUTE FUNCTION public.mint_named_draft();

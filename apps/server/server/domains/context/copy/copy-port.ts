@@ -161,7 +161,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
             resolveDestination: async (): Promise<Result<CopyDestinationHandoff, ContextError>> => {
               const target = await deps.resolveIdentityDestination(folderParent, {
                 ...(destinationHandoff.branch
-                  ? { view: { kind: "draft" as const, owner: destinationHandoff.branch.owner } }
+                  ? { view: { kind: "draft" as const, draft: destinationHandoff.branch.draftId } }
                   : {}),
                 ...(request.authorizeDestination
                   ? { authorize: request.authorizeDestination }

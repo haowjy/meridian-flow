@@ -6,8 +6,8 @@
  * and deleted id ranges are kept (`press_text_effects`). Undo is `undoApply` or `restoreDiscard`
  * for the tree, and a Yjs undo of those ranges for the text. Pressing again is the Redo.
  *
- * Lock order (`.context/CONTEXT.md`), after the command's claim: the Work and the owners the tree
- * effect changes, the Work's branch, the lists' keys, the documents' keys in id order, then writes.
+ * Lock order (`.context/CONTEXT.md`), after the command's claim: the draft's owner and the owners
+ * the tree effect changes, the draft, the lists' keys, the documents' keys in id order, then writes.
  */
 import {
   type PressRecord,
@@ -15,15 +15,7 @@ import {
   type UpdateJournal,
   undoPressStored,
 } from "@meridian/agent-edit/integration";
-import {
-  type BranchId,
-  type DocumentId,
-  type DraftOwner,
-  draftOwnerFromKey,
-  draftOwnerKey,
-  type ProjectId,
-  type UserId,
-} from "@meridian/contracts";
+import type { DocumentId, DraftId, ProjectId, UserId } from "@meridian/contracts";
 import type {
   PressRequest,
   PressResult,
@@ -45,7 +37,6 @@ import {
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq, isNull } from "drizzle-orm";
 import * as Y from "yjs";
-import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
@@ -71,7 +62,6 @@ const schema = buildDocumentSchema();
 
 export type PressCommand = {
   envelope: CommandEnvelope;
-  owner: DraftOwner;
   request: Omit<PressRequest, "saw" | "seen"> & {
     saw?: TreeCut;
     /** Decoded state vectors of the pressing tab's live rooms with unacknowledged typing. */
@@ -90,7 +80,7 @@ export function createDrizzlePress(
   db: Database,
   deps: {
     workProjection: Pick<WorkProjectionMutation, "mutate">;
-    branches: Pick<Branches, "activeForOwner" | "lockActive" | "ensureActiveForWrite">;
+    branches: Pick<Branches, "lock">;
     live: UpdateJournal;
     liveCoordinator: Pick<LiveDocumentCoordinator, "deliver">;
     arrivals?: Pick<DocumentArrivals, "settle">;
@@ -143,9 +133,8 @@ export function createDrizzlePress(
   async function selection(
     envelope: CommandEnvelope,
     lists: TreeList[],
-    branchId: BranchId | null,
+    branchId: DraftId | null,
     request: PressCommand["request"],
-    work: string,
   ): Promise<{ tree: Set<string>; text: Set<string> }> {
     const { items } = request;
     const picked = await deps.treeLists.read({
@@ -181,7 +170,7 @@ export function createDrizzlePress(
           projectId: (envelope.projectId as ProjectId | null) ?? null,
           userId: envelope.accountId as UserId,
         },
-        [work],
+        [request.draft],
       ))
         picked.text.add(id);
     return { tree: branchId ? picked.tree : new Set(), text: picked.text };
@@ -218,13 +207,13 @@ export function createDrizzlePress(
     envelope: CommandEnvelope,
     documentId: string,
     verdict: PressVerdict,
-    work: string,
+    draft: DraftId,
   ): Promise<boolean> {
     const snapshot = await deps.live.read(documentId as DocumentId);
     const doc = storedDocument(snapshot);
     try {
       const before = Y.encodeStateVector(doc);
-      const record = pressStored(doc, schema, verdict === "apply" ? "accept" : "reject", { work });
+      const record = pressStored(doc, schema, verdict === "apply" ? "accept" : "reject", { draft });
       if (!record || !snapshot.authority) return false;
       await deps.live.append(
         documentId as DocumentId,
@@ -261,14 +250,14 @@ export function createDrizzlePress(
   }
 
   async function press(command: PressCommand): Promise<PressResult> {
-    const { envelope, owner, request } = command;
-    const work = draftOwnerKey(owner);
+    const { envelope, request } = command;
+    const { draft } = request;
     const lists = listsOf(envelope);
     const seen = new Map((request.seen ?? []).map((one) => [one.documentId, one.vector]));
     const answer = (items: PressResult["items"]) => ({
       status: "pressed" as const,
       commandId: envelope.commandId,
-      owner: work,
+      draft,
       verdict: request.verdict,
       items,
     });
@@ -276,22 +265,14 @@ export function createDrizzlePress(
     const run = (owners: TreeOwners) =>
       runDocumentCommand(db, envelope, () =>
         deps.workProjection.mutate(
-          {
-            works: [...(owner.kind === "work" ? [owner.workId] : []), ...owners.works],
-            lineages: [
-              ...(owner.kind === "lineage" ? [owner.rootThreadId] : []),
-              ...owners.lineages,
-            ],
-          },
+          { branches: [draft], works: owners.works, lineages: owners.lineages },
           async (locked): Promise<PressResult> => {
-            // Read under the owner's lock: a branch is made or closed only under it.
-            const branch = await deps.branches.activeForOwner(owner);
-            const active = branch ? await deps.branches.lockActive(branch.id) : null;
-            const branchId = active?.id ?? null;
+            // A purged draft has no records left; its text may still hold suggestions.
+            const branchId = (await deps.branches.lock(draft))?.id ?? null;
             const judge = await owners.judge(locked);
             await deps.treeLists.lock(lists);
             await awaitSeen(seen);
-            const picked = await selection(envelope, lists, branchId, request, work);
+            const picked = await selection(envelope, lists, branchId, request);
             const nodes = [...new Set([...picked.tree, ...picked.text])];
             const tree = new Set<string>();
             const text = new Set<string>();
@@ -317,7 +298,7 @@ export function createDrizzlePress(
               for (const documentId of [...picked.text].sort()) {
                 const one = standing.get(documentId);
                 if (!one?.standsInLive || one.textClosed) continue;
-                if (await pressText(envelope, documentId, "apply", work)) text.add(documentId);
+                if (await pressText(envelope, documentId, "apply", draft)) text.add(documentId);
               }
             } else {
               await lockDocuments(nodes);
@@ -334,7 +315,7 @@ export function createDrizzlePress(
                 if (request.items === "all") await deps.treeLists.resync(lists);
               }
               for (const documentId of [...picked.text].sort())
-                if (await pressText(envelope, documentId, "discard", work)) text.add(documentId);
+                if (await pressText(envelope, documentId, "discard", draft)) text.add(documentId);
             }
             return answer(
               [...new Set([...tree, ...text])].sort().map((node) => ({
@@ -351,17 +332,15 @@ export function createDrizzlePress(
     // The sources the Work's pending records change, and where Live has the nodes they name:
     // their owners are locked with the Work's and judged under the locks. A guess read before
     // the locks, so it can miss; a miss restarts.
-    const sources = async () => {
-      const branch = await deps.branches.activeForOwner(owner);
-      if (!branch) return new Set<string>();
-      return deps.treeLists.read({
+    const sources = () =>
+      deps.treeLists.read({
         lists,
         view: (ends) => {
           const out = new Set<string>();
           for (const { writer } of ends) {
-            const { changes } = writer.view({ draft: branch.id });
+            const { changes } = writer.view({ draft });
             const live = writer.view(LIVE);
-            for (const record of pendingRecords(writer.doc, branch.id)) {
+            for (const record of pendingRecords(writer.doc, draft)) {
               for (const source of changes.get(record.id)?.sources ?? []) out.add(source);
               const node = live.nodes.get(record.node);
               if (node) out.add(node.source);
@@ -370,7 +349,6 @@ export function createDrizzlePress(
           return out;
         },
       });
-    };
     return withTreeOwners(db, sources, run);
   }
 
@@ -400,8 +378,6 @@ export function createDrizzlePress(
     });
     // Another account's press, an unknown id, or one the day-30 purge took: nothing to take back.
     if (!pressed) return runDocumentCommand(db, envelope, async () => answer([], []));
-    const owner = draftOwnerFromKey(pressed.owner, envelope.projectId as ProjectId);
-    if (!owner) throw new Error(`Press ${pressId} names no owner`);
     const lists = listsOf(envelope);
     const trees = await tx()
       .select()
@@ -413,32 +389,20 @@ export function createDrizzlePress(
       runDocumentCommand(db, envelope, () =>
         deps.workProjection.mutate(
           {
-            branches: branchIds,
-            works: [...(owner.kind === "work" ? [owner.workId] : []), ...owners.works],
-            lineages: [
-              ...(owner.kind === "lineage" ? [owner.rootThreadId] : []),
-              ...owners.lineages,
-            ],
+            branches: [pressed.draft, ...branchIds],
+            works: owners.works,
+            lineages: owners.lineages,
           },
           async (locked): Promise<PressUndoResult> => {
             const judge = await owners.judge(locked);
             const by = `user:${envelope.accountId}`;
             const tree = new Set<string>();
             const treeTouched = pressed.items.some((item) => item.tree);
-            // A Discard's records come back as pending copies on the Work's current branch.
-            let target: { id: string } | null = null;
-            if (pressed.verdict === "discard" && treeTouched) {
-              approveBranchWriteJoin();
-              target = await deps.branches.ensureActiveForWrite(
-                {
-                  owner,
-                  projectId: envelope.projectId as ProjectId,
-                  threadId: null,
-                  userId: envelope.accountId as UserId,
-                },
-                { requireActive: false },
-              );
-            }
+            // A Discard's records come back as pending copies on its draft; a purged one takes none.
+            const target =
+              pressed.verdict === "discard" && treeTouched
+                ? await deps.branches.lock(pressed.draft)
+                : null;
             await deps.treeLists.lock(lists);
             const effects = await tx()
               .select()

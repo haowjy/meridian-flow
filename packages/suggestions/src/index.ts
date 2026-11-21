@@ -9,13 +9,13 @@ export {
   accept,
   type Change,
   DECIDED_META,
+  type DraftPending,
   type Filter,
   list,
   pendingChanges,
   pendingTurns,
   reject,
   type Verdict,
-  type WorkPending,
 } from "./resolve.js";
 export {
   CHANGE_META,

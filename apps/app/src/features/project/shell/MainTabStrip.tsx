@@ -380,13 +380,13 @@ function DocumentTabChip({
 }) {
   // The active tab names what main paints: its draft while main reviews one.
   const paint = useDocumentPaint(projectId, active ? document : null);
-  const drafts = useOwnerDrafts(projectId, paint.draft?.ownerKey ?? null);
+  const drafts = useOwnerDrafts(projectId, paint.draft?.draftId ?? null);
   const file = paint.draft ? drafts.fileForDocument(document.documentId) : null;
   const reviewing = active && paint.showing === "draft";
   const drag = useReferenceDrag(
     tabSubject(document, {
       reviewing,
-      view: file && paint.draft ? draftCopyView(file, paint.draft.ownerKey) : null,
+      view: file && paint.draft ? draftCopyView(file, paint.draft.draftId) : null,
     }),
   );
   const heldWidth = useHeldTabWidth();

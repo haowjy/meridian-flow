@@ -9,6 +9,7 @@ import {
   schema,
   THREAD_ID,
   TURN_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./collab-postgres-harness.js";
 export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) {
@@ -32,7 +33,12 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
     turnId: TURN_ID,
     responseIdentity: { modelResponseId: responseId },
     grant: testFileGrant(
-      { kind: "draft", owner: { kind: "work", workId: WORK_ID }, ownerHandle: "atomicity-work" },
+      {
+        kind: "draft",
+        draftId: WORK_DRAFT_ID,
+        owner: { kind: "work", workId: WORK_ID },
+        ownerHandle: "atomicity-work",
+      },
       ALPHA_ID,
     ),
   };

@@ -385,7 +385,7 @@ function ActiveSessionEditorView({
     if (!editor || !suggestionView) return;
     editor.commands.setSuggestionView(
       suggestionView,
-      suggestionView.work ? { chat: null, turn: null, by: `user:${accountId}` } : null,
+      suggestionView.draft ? { chat: null, turn: null, by: `user:${accountId}` } : null,
     );
   }, [editor, suggestionView, accountId]);
   useEffect(() => {

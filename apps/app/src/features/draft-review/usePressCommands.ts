@@ -67,14 +67,14 @@ export type WorkBranchCommands = ReturnType<typeof usePressCommands>;
 export function usePressCommands({
   projectId,
   work,
-  ownerKey,
+  draftId,
   threadId = null,
   surface,
 }: {
   projectId: string;
   work: Work | null;
   /** Whose drafts the commands act on (`work:<id>` or `lineage:<root>`); "" acts on none. */
-  ownerKey: string;
+  draftId: string;
   threadId?: string | null;
   /** Where this surface's notices show: the Changes list, a chat's strip, or a document's band. */
   surface: NoticeSurface["kind"];
@@ -84,10 +84,10 @@ export function usePressCommands({
   const registry = useLiveDocumentSessionRegistry();
   const treeLists = useOptionalTreeLists();
   const queryClient = useQueryClient();
-  const locked = !ownerKey || !driver;
+  const locked = !draftId || !driver;
   return useMemo(() => {
     const { notices } = owner;
-    const rows = () => cachedOwnerDrafts(queryClient, projectId, ownerKey) ?? [];
+    const rows = () => cachedOwnerDrafts(queryClient, projectId, draftId) ?? [];
     const nameOf = (node: string) => {
       const row = rows().find((item) => item.documentId === node);
       return row?.documentName ?? documentBasename(row?.contextLocation?.path) ?? "";
@@ -102,7 +102,7 @@ export function usePressCommands({
     const refresh = async () => {
       refreshTurnCards(queryClient);
       await queryClient.refetchQueries(
-        { queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey) },
+        { queryKey: projectQueryKeys.drafts(projectId, draftId) },
         { cancelRefetch: false },
       );
     };
@@ -114,7 +114,7 @@ export function usePressCommands({
     /** A press's Undo: the server takes back what that press did, and nothing else. */
     const unpress = async (commandId: string): Promise<"done" | Unpressed> => {
       if (!driver) return "failed";
-      const record = await submitPressUndo(driver, ownerKey, {
+      const record = await submitPressUndo(driver, draftId, {
         projectId,
         pressCommandId: commandId,
       });
@@ -132,7 +132,7 @@ export function usePressCommands({
     const placementOf = (nodes: readonly string[]): Placement => {
       if (!treeLists) return [];
       const branchId = queryClient.getQueryData<ThreadDraftListResponse>(
-        projectQueryKeys.ownerDrafts(projectId, ownerKey),
+        projectQueryKeys.drafts(projectId, draftId),
       )?.branchId;
       const view = branchId ? { draft: branchId } : LIVE;
       const project: TreeListRef = { kind: "project", projectId };
@@ -234,7 +234,7 @@ export function usePressCommands({
       live: CommandDriver,
     ): Promise<Pressed | Unpressed> => {
       const listed = queryClient.getQueryData<ThreadDraftListResponse>(
-        projectQueryKeys.ownerDrafts(projectId, ownerKey),
+        projectQueryKeys.drafts(projectId, draftId),
       );
       const nodes =
         items === "all" ? rows().map((item) => item.documentId) : items.map((item) => item.node);
@@ -263,14 +263,14 @@ export function usePressCommands({
         }));
         // A read already out answers from before the press: it must not bring the rows back.
         await queryClient.cancelQueries({
-          queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),
+          queryKey: projectQueryKeys.drafts(projectId, draftId),
         });
-        patchOwnerDrafts(queryClient, projectId, ownerKey, (rowsNow) =>
+        patchOwnerDrafts(queryClient, projectId, draftId, (rowsNow) =>
           rowsNow.filter((item) => !gone(item)),
         );
         const record = await submitPress(live, {
           projectId,
-          owner: ownerKey,
+          draft: draftId,
           verdict,
           items: items === "all" ? "all" : [...items],
           ...(listed?.saw ? { saw: listed.saw } : {}),
@@ -306,14 +306,14 @@ export function usePressCommands({
       input: { documentId: string | null; name?: string | null; folder?: boolean },
     ): CommandStart => {
       if (locked || !driver) return blocked();
-      notices.end(ownerKey);
+      notices.end(draftId);
       // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
       const named = (node: string) => names.get(node) ?? "";
       const outcome = press(verdict, items, driver).then((pressed): CommandOutcome => {
         if (pressed === "failed")
           notifyFailure({
-            key: `press:${ownerKey}`,
+            key: `press:${draftId}`,
             title: verdict === "apply" ? t`Couldn't apply` : t`Couldn't discard`,
             brief: true,
           });
@@ -328,12 +328,12 @@ export function usePressCommands({
         const where = noticeSurface(input.documentId);
         if (verdict === "apply") {
           const step = remember("apply", pressed, () => {
-            if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step === step))
-              notices.end(ownerKey);
+            if (notices.appliedFacts(draftId)?.facts.some((fact) => fact.step === step))
+              notices.end(draftId);
           });
           notices.showApplied({
             projectId,
-            ownerKey,
+            draftId,
             surface: where,
             facts: changed.map((documentId) => ({
               documentId,
@@ -346,7 +346,7 @@ export function usePressCommands({
           let shown: number | null = null;
           const step = remember("discard", pressed, () => {
             // Taken back elsewhere (the sidebar, an editor): the notice's Undo goes with it.
-            const notice = notices.get(ownerKey);
+            const notice = notices.get(draftId);
             if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")
               notice.dismiss();
           });
@@ -365,7 +365,7 @@ export function usePressCommands({
               end: () => {},
             },
           };
-          shown = notices.showDiscard({ projectId, ownerKey, surface: where, parts: [part] });
+          shown = notices.showDiscard({ projectId, draftId, surface: where, parts: [part] });
         }
         return answer;
       });
@@ -410,7 +410,7 @@ export function usePressCommands({
     return {
       projectId,
       work,
-      ownerKey,
+      draftId,
       threadId,
       owner,
       dispositionLocked: locked,
@@ -447,7 +447,7 @@ export function usePressCommands({
     locked,
     projectId,
     work,
-    ownerKey,
+    draftId,
     threadId,
     surface,
   ]);

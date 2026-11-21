@@ -1,5 +1,6 @@
 import type {
   DocumentId,
+  DraftId,
   EventJournalId,
   ModelResponseId,
   ProjectId,
@@ -42,6 +43,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
 import { documents, projects, works } from "./content";
+import { drafts } from "./drafts";
 import { pendingPlaceholderPredicate } from "./pending-placeholder";
 import { users } from "./users";
 
@@ -65,6 +67,14 @@ export const threads = pgTable(
       .references((): PgColumn => promptBakes.id),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     rootThreadId: uuid("root_thread_id").$type<ThreadId>().notNull(),
+    /**
+     * A root chat's lineage draft, minted with the chat: what its No Work chats, forks and
+     * subagents draft into. Set exactly on root chats (`threads_draft_on_root`).
+     */
+    draftId: text("draft_id")
+      .$type<DraftId>()
+      .unique("threads_draft_id")
+      .references((): PgColumn => drafts.id),
     originTurnId: uuid("origin_turn_id")
       .$type<TurnId>()
       .references((): PgColumn => turns.id),
@@ -125,6 +135,10 @@ export const threads = pgTable(
       name: "threads_spawn_root_same_project_fk",
     }).onDelete("cascade"),
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
+    check(
+      "threads_draft_on_root",
+      sql`(${table.rootThreadId} = ${table.id}) = (${table.draftId} IS NOT NULL)`,
+    ),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
     check("threads_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),

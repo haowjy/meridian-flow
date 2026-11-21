@@ -36,9 +36,9 @@ export function useManuscriptState(projectId: string, tab: OpenDocument): Manusc
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
   // On Draft the page is the toggle's Work's draft: this says what other Works do.
   const shell = useShellTreeVersion();
-  const shown = shell?.showing === "draft" ? shell.ownerKey : null;
+  const shown = shell?.showing === "draft" ? shell.draftId : null;
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
-    hint.tree && hint.owner !== shown ? [{ work: hint.label, line: hint.tree }] : [],
+    hint.tree && hint.branchId !== shown ? [{ work: hint.label, line: hint.tree }] : [],
   );
   if (pending.length > 0) {
     const location = tabLocation(tab);

@@ -2,7 +2,8 @@
  * Purpose: Defines JSON-natural thread-document and live-lineage DTOs.
  * Why independent: Chat rail data is shared by server routes and frontend query consumers.
  */
-import type { DraftOwnerKey } from "../branches/owner.js";
+
+import type { DraftId } from "../ids.js";
 
 export type ThreadDocumentRelationship = "editing" | "reading" | "created";
 
@@ -29,8 +30,8 @@ export type TurnLiveLineageDocumentItem = {
   folder?: true;
 } & (
   | { scope: "live" }
-  /** The edit landed in a draft: `owner` names the Work or lineage whose branch held it. */
-  | { scope: "draft"; owner: DraftOwnerKey }
+  /** The edit landed in a draft. */
+  | { scope: "draft"; draft: DraftId }
 );
 
 export type TurnReceiptControl = "undo" | "view_change";

@@ -4,7 +4,7 @@
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - A later turn's edit over an earlier turn's text layers instead of replacing it, and `kindOf`
- *   honours the Work's own deletion inside its own added block (packages/suggestions/.context/CONTEXT.md, "Writing: `rewrite`").
+ *   honours the draft's own deletion inside its own added block (packages/suggestions/.context/CONTEXT.md, "Writing: `rewrite`").
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { Node } from "prosemirror-model";
@@ -13,7 +13,7 @@ import { expect, it } from "vitest";
 import { type Author, recordStarted, reject, rewrite, type View, viewBlock } from "./index.js";
 
 const schema = buildDocumentSchema();
-const view: View = { work: "work-1" };
+const view: View = { draft: "draft-1" };
 const authors = new Map<string, Author>();
 const reply = (turn: string) => ({ chat: "chat-1", turn, by: "agent" });
 const paragraph = (text: string) => schema.nodes.paragraph.create(null, schema.text(text));

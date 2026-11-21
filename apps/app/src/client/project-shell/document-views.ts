@@ -17,7 +17,7 @@ import { cachedOwnerDrafts } from "../query/useOwnerDrafts";
 import { browserRecord, isRecord } from "../storage/browser-record";
 
 /** A draft by its owner key (`work:<id>` or `lineage:<root>`), item, and focused change. */
-export type DraftPin = { ownerKey: string; itemKey: string; changeId?: string };
+export type DraftPin = { draftId: string; itemKey: string; changeId?: string };
 
 export type DocumentView = {
   /**
@@ -48,10 +48,10 @@ const listeners = new Map<string, Set<() => void>>();
 
 function parsePin(value: unknown): DraftPin | undefined {
   if (!isRecord(value)) return undefined;
-  const { ownerKey, itemKey, changeId } = value;
-  if (typeof ownerKey !== "string" || typeof itemKey !== "string") return undefined;
+  const { draftId, itemKey, changeId } = value;
+  if (typeof draftId !== "string" || typeof itemKey !== "string") return undefined;
   if (changeId !== undefined && typeof changeId !== "string") return undefined;
-  return { ownerKey, itemKey, ...(changeId ? { changeId } : {}) };
+  return { draftId, itemKey, ...(changeId ? { changeId } : {}) };
 }
 
 function parseViews(value: unknown): Views | undefined {
@@ -115,7 +115,7 @@ function patched(view: DocumentView, patch: DocumentViewPatch): DocumentView {
 }
 
 function samePin(a: DraftPin | undefined, b: DraftPin | undefined): boolean {
-  return a?.ownerKey === b?.ownerKey && a?.itemKey === b?.itemKey && a?.changeId === b?.changeId;
+  return a?.draftId === b?.draftId && a?.itemKey === b?.itemKey && a?.changeId === b?.changeId;
 }
 
 export function readDocumentView(
@@ -146,7 +146,7 @@ export function setDocumentView(
 }
 
 /**
- * A Work pick: a view on one of the picked Work's drafts (`ownerKey`) stays on it; every other
+ * A Work pick: a view on one of the picked Work's drafts (`draftId`) stays on it; every other
  * view showing a draft returns to Live.
  * Returns whether a page live also has stayed on the Work's draft: the toggle then lands on Draft,
  * because the scope's drafts of such pages show only on Draft (`shownDraft`).
@@ -154,14 +154,14 @@ export function setDocumentView(
 export function pickWorkViews(
   accountId: string,
   projectId: string,
-  ownerKey: string | null,
+  draftId: string | null,
 ): boolean {
   const views = read(accountId, projectId);
   let changed = false;
   let onWorkDraft = false;
   const next: Record<string, DocumentView> = {};
   for (const [documentId, view] of Object.entries(views)) {
-    const onWork = ownerKey !== null && view.pin?.ownerKey === ownerKey;
+    const onWork = draftId !== null && view.pin?.draftId === draftId;
     onWorkDraft ||= onWork;
     if (view.version === "draft" && !onWork) {
       changed = true;
@@ -182,7 +182,7 @@ export function endPin(accountId: string, projectId: string, pin: DraftPin): voi
   const next: Record<string, DocumentView> = {};
   let changed = false;
   for (const [documentId, view] of Object.entries(views)) {
-    if (view.pin?.ownerKey === pin.ownerKey && view.pin.itemKey === pin.itemKey) {
+    if (view.pin?.draftId === pin.draftId && view.pin.itemKey === pin.itemKey) {
       changed = true;
       next[documentId] = { version: view.version, showChanges: view.showChanges };
     } else next[documentId] = view;
@@ -191,8 +191,8 @@ export function endPin(accountId: string, projectId: string, pin: DraftPin): voi
 }
 
 const verifying = new Map<string, Promise<void>>();
-const verifyKey = (projectId: string, ownerKey: string, itemKey: string) =>
-  JSON.stringify([projectId, ownerKey, itemKey]);
+const verifyKey = (projectId: string, draftId: string, itemKey: string) =>
+  JSON.stringify([projectId, draftId, itemKey]);
 
 /**
  * A pin whose item a cached owner list lacks. The list may only be stale (the draft was made a
@@ -209,23 +209,23 @@ export function verifyPin(
   pin: DraftPin,
   created: (itemKey: string) => boolean,
 ): void {
-  const key = verifyKey(projectId, pin.ownerKey, pin.itemKey);
+  const key = verifyKey(projectId, pin.draftId, pin.itemKey);
   if (verifying.has(key)) return;
-  const queryKey = projectQueryKeys.ownerDrafts(projectId, pin.ownerKey);
+  const queryKey = projectQueryKeys.drafts(projectId, pin.draftId);
   const documentId = parseDraftItemKey(pin.itemKey)?.documentId;
   const held = documentId ? tabChangeCounts().get(documentId) : undefined;
   // An editor here holding the document with none of the owner's changes in it has already
   // answered: a read could only bring the server's older word.
   const read =
-    held && !held[pin.ownerKey] ? Promise.resolve() : queryClient.refetchQueries({ queryKey });
+    held && !held[pin.draftId] ? Promise.resolve() : queryClient.refetchQueries({ queryKey });
   const check = read.then(() => {
     // A failed refetch keeps the old rows and sets status "error": it proves nothing.
     if (queryClient.getQueryState(queryKey)?.status !== "success") return;
     if (
       created(pin.itemKey) ||
       withTabChangeCounts(
-        cachedOwnerDrafts(queryClient, projectId, pin.ownerKey) ?? [],
-        pin.ownerKey,
+        cachedOwnerDrafts(queryClient, projectId, pin.draftId) ?? [],
+        pin.draftId,
         tabChangeCounts(),
       ).some((row) => row.itemKey === pin.itemKey)
     )

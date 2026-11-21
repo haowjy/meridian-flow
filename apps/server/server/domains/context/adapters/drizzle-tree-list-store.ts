@@ -1,11 +1,11 @@
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { branches } from "@meridian/database/schema";
+import { drafts } from "@meridian/database/schema";
 import { admit, readRecords, recordsOf, type TreeRecord, TreeWriter } from "@meridian/project-tree";
 import { inArray, sql } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import type { OwnerLocks } from "../../../shared/draft-owner.js";
+import { draftOwnerSql, type OwnerLocks } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   type DrizzleDb,
@@ -112,7 +112,7 @@ export type PgTreeListStore = TreeListStore & {
 };
 
 /** A text document a create in a Work's version made: it needs that Work's text draft. */
-export type DraftedDocument = { documentId: DocumentId; branchId: BranchId };
+export type DraftedDocument = { documentId: DocumentId; branchId: DraftId };
 
 export function createDrizzleTreeListStore(deps: {
   db: Database;
@@ -296,10 +296,11 @@ export function createDrizzleTreeListStore(deps: {
     if (liveChangedUnder.length > 0) deps.liveChangedUnder?.(liveChangedUnder);
     for (const documentId of reassigned) await deps.fileAccessChanges?.publish({ documentId });
     if (changedBranches.length > 0 && deps.recountAfterCommit) {
+      const named = draftOwnerSql(drafts.id);
       const owners = await tx
-        .select({ work: branches.originWorkId, root: branches.originRootThreadId })
-        .from(branches)
-        .where(inArray(branches.id, changedBranches));
+        .select({ work: named.workId, root: named.rootThreadId })
+        .from(drafts)
+        .where(inArray(drafts.id, changedBranches));
       deps.recountAfterCommit({
         workIds: owners.flatMap(({ work }) => (work ? [work] : [])),
         lineageRootIds: owners.flatMap(({ root }) => (root ? [root] : [])),
@@ -308,7 +309,7 @@ export function createDrizzleTreeListStore(deps: {
     await testHook("treeList.afterRows");
     const drafted = made.flatMap((record) =>
       record.kind === "document" && record.draft !== null
-        ? [{ documentId: record.node as DocumentId, branchId: record.draft as BranchId }]
+        ? [{ documentId: record.node as DocumentId, branchId: record.draft as DraftId }]
         : [],
     );
     if (drafted.length > 0) await deps.seedWorkCreates?.(drafted);

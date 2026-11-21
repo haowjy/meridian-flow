@@ -3,7 +3,7 @@
  * (`hold`), the presses this tab can still take back (`presses`) and one notice per draft owner.
  * The press itself is `usePressCommands`.
  */
-import { type BranchId, draftItemKey } from "@meridian/contracts";
+import { type DraftId, draftItemKey } from "@meridian/contracts";
 import { type DiscardTook, DraftNotices } from "./draft-notices";
 import type { PressEntries } from "./press-history";
 
@@ -82,4 +82,4 @@ export class DraftCommandOwner {
 
 /** A folder's item in a Work's branch: the key its commands' state is kept under. */
 export const folderKey = (branchId: string, folderId: string): string =>
-  draftItemKey(branchId as BranchId, folderId);
+  draftItemKey(branchId as DraftId, folderId);

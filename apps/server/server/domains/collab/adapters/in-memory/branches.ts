@@ -1,73 +1,53 @@
-/** In-memory Work branches: the same resolver semantics over a map, for in-memory composition. */
-import { type BranchId, type DraftOwner, draftOwnerKey, type ThreadId } from "@meridian/contracts";
+/**
+ * In-memory drafts: the same resolver semantics over a map, for in-memory composition. There are
+ * no Work or chat rows here to name a draft, so an owner's draft is minted the first time it is
+ * asked for, under the owner's key.
+ */
+import { type DraftId, type DraftOwner, newDraftId } from "@meridian/contracts";
 import type { Branch, BranchStore, BranchWriteBoundary } from "../../domain/ports/branch-store.js";
 
+const ownerKey = (owner: DraftOwner) =>
+  owner.kind === "work" ? `work:${owner.workId}` : `lineage:${owner.rootThreadId}`;
+
 export function createInMemoryBranchStore(): BranchStore {
-  const rows = new Map<BranchId, Branch>();
-  const active = (branchId: BranchId) => {
-    const row = rows.get(branchId);
-    return row?.status === "active" ? row : null;
-  };
-  const ownerKeyOf = (row: Branch) =>
-    row.originWorkId
-      ? draftOwnerKey({ kind: "work", workId: row.originWorkId })
-      : row.originRootThreadId
-        ? draftOwnerKey({ kind: "lineage", rootThreadId: row.originRootThreadId })
-        : null;
-  const byOrigin = (owner: DraftOwner) =>
-    [...rows.values()]
-      .filter((row) => ownerKeyOf(row) === draftOwnerKey(owner))
-      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id));
-  const activeOf = (owner: DraftOwner) =>
-    byOrigin(owner).find((row) => row.status === "active") ?? null;
+  const rows = new Map<DraftId, Branch>();
+  const named = new Map<string, { draftId: DraftId; owner: DraftOwner }>();
+  const ownerOfDraft = (draftId: DraftId) =>
+    [...named.values()].find((entry) => entry.draftId === draftId)?.owner ?? null;
   return {
-    async ownerOf(branchId) {
-      const branch = rows.get(branchId);
-      if (!branch) return null;
-      const owner: DraftOwner | null = branch.originWorkId
-        ? { kind: "work", workId: branch.originWorkId }
-        : branch.originRootThreadId
-          ? {
-              kind: "lineage",
-              projectId: branch.projectId,
-              rootThreadId: branch.originRootThreadId,
-            }
-          : null;
-      return { branch, owner, handle: null };
+    async ownerOf(draftId) {
+      const branch = rows.get(draftId);
+      return branch ? { branch, owner: ownerOfDraft(draftId), handle: null } : null;
     },
-    activeForOwner: async (owner) => activeOf(owner),
-    // Lookup and insert with no await between them: one critical section.
-    async ensureActiveLocked(input) {
-      const existing = activeOf(input.owner);
-      if (existing) return existing;
+    async ofOwner(owner) {
+      const existing = named.get(ownerKey(owner));
+      if (existing) return rows.get(existing.draftId) ?? null;
       const branch: Branch = {
-        id: crypto.randomUUID() as BranchId,
-        projectId: input.projectId,
-        status: "active",
-        originWorkId: input.owner.kind === "work" ? input.owner.workId : null,
-        originRootThreadId: input.owner.kind === "lineage" ? input.owner.rootThreadId : null,
-        originThreadId: input.originThreadId,
-        createdBy: input.createdBy,
+        id: newDraftId(),
+        projectId: owner.kind === "lineage" ? owner.projectId : "",
+        createdBy: "",
         createdAt: new Date(),
       };
       rows.set(branch.id, branch);
+      named.set(ownerKey(owner), { draftId: branch.id, owner });
       return branch;
     },
-    lockActive: async (branchId) => active(branchId),
-    shareActive: async (branchId) => active(branchId),
-    async close(branchId) {
-      const row = rows.get(branchId);
-      if (row) rows.set(branchId, { ...row, status: "closed" });
+    lock: async (draftId) => rows.get(draftId) ?? null,
+    share: async (draftId) => rows.get(draftId) ?? null,
+    byIds: async (draftIds) => draftIds.flatMap((id) => rows.get(id) ?? []),
+    async namedBy({ workId, lineageRootIds }) {
+      return [...named.values()]
+        .filter(({ owner }) =>
+          owner.kind === "work"
+            ? owner.workId === workId
+            : lineageRootIds.includes(owner.rootThreadId),
+        )
+        .map((entry) => entry.draftId);
     },
-    byIds: async (branchIds) => branchIds.flatMap((id) => rows.get(id) ?? []),
-    byOriginWork: async (workId) => byOrigin({ kind: "work", workId }),
-    activeByOriginLineages: async (rootThreadIds: readonly ThreadId[]) =>
-      [...rows.values()].filter(
-        (row) =>
-          row.status === "active" &&
-          row.originRootThreadId !== null &&
-          rootThreadIds.includes(row.originRootThreadId),
-      ),
+    async delete(draftIds) {
+      for (const id of draftIds) rows.delete(id);
+      for (const [key, entry] of named) if (draftIds.includes(entry.draftId)) named.delete(key);
+    },
   };
 }
 
@@ -76,7 +56,7 @@ export function createInMemoryBranchWriteBoundary(): BranchWriteBoundary {
   const tails = new Map<string, Promise<unknown>>();
   return {
     withActiveOwnerLocked(owner, operation) {
-      const key = draftOwnerKey(owner);
+      const key = ownerKey(owner);
       const run = (tails.get(key) ?? Promise.resolve()).then(operation, operation);
       const tail = run.catch(() => undefined);
       tails.set(key, tail);

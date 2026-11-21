@@ -271,3 +271,42 @@ END;
 $$;
 
 CREATE TRIGGER users_create_account_source AFTER INSERT ON public.users FOR EACH ROW EXECUTE FUNCTION public.create_account_source();
+
+CREATE FUNCTION public.mint_named_draft() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  names_draft boolean;
+  draft_project uuid;
+BEGIN
+  -- A named Work and a root chat each name their draft, minted with them in the same insert
+  -- (`threads_draft_on_root`, `works_draft_unless_no_work`). The client may send the id it
+  -- minted, so it can type into the draft before the create returns.
+  IF TG_TABLE_NAME = 'works' THEN
+    names_draft := NOT NEW.is_no_work;
+  ELSE
+    names_draft := NEW.root_thread_id = NEW.id;
+  END IF;
+  IF NOT names_draft THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.draft_id IS NULL THEN
+    NEW.draft_id := (
+      SELECT string_agg(substr('0123456789abcdefghijklmnopqrstuvwxyz', 1 + floor(random() * 36)::int, 1), '')
+      FROM generate_series(1, 12)
+    );
+  END IF;
+  INSERT INTO drafts (id, project_id, created_by)
+    VALUES (NEW.draft_id, NEW.project_id, NEW.created_by_user_id)
+    ON CONFLICT (id) DO NOTHING;
+  SELECT project_id INTO draft_project FROM drafts WHERE id = NEW.draft_id;
+  IF draft_project <> NEW.project_id THEN
+    RAISE EXCEPTION 'draft % belongs to another project', NEW.draft_id USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER works_mint_draft BEFORE INSERT ON public.works FOR EACH ROW EXECUTE FUNCTION public.mint_named_draft();
+
+CREATE TRIGGER threads_mint_draft BEFORE INSERT ON public.threads FOR EACH ROW EXECUTE FUNCTION public.mint_named_draft();

@@ -82,11 +82,11 @@ export function ContextDocumentHost({
   const reviewItemKey = treeOnlyReview ? selectedReviewItemKey : null;
   // The pinned draft's list could not be read: say so here rather than paint Live under the pin.
   const queryClient = useQueryClient();
-  const pinnedOwner = paint?.showing === "failed" ? (paint.view.pin?.ownerKey ?? null) : null;
+  const pinnedOwner = paint?.showing === "failed" ? (paint.view.pin?.draftId ?? null) : null;
   const retryDraftList = pinnedOwner
     ? () =>
         void queryClient.refetchQueries({
-          queryKey: projectQueryKeys.ownerDrafts(projectId, pinnedOwner),
+          queryKey: projectQueryKeys.drafts(projectId, pinnedOwner),
         })
     : null;
   // `readOnly` is the owner's scope (archived or trashed freezes it); the presentation decides whether

@@ -18,7 +18,6 @@ import * as Y from "yjs";
 import { UngrantedAgentWriteError } from "../../shared/edit-confirmation.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
-import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import {
   createDrizzleCollabPersistence,
   createDrizzleJournal,
@@ -63,7 +62,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       agent: {
         projectId: p as never,
         chain,
-        branchOwner: { owner: { kind: "work", workId: w }, handle: null },
+        branchOwner: { owner: { kind: "work", workId: w }, draftId: "fileaccessw1", handle: null },
         writeMode: "direct",
       },
     };
@@ -78,6 +77,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: u,
         name: "Archived scratch probe",
         handle: "w1",
+        draftId: "fileaccessw1",
       });
       await db
         .insert(contextSources)
@@ -87,10 +87,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     const access = () =>
       createFileAccess({
-        facts: createDrizzleFileFacts(
-          database.current,
-          createTestWorkProjectionMutation(database.current),
-        ),
+        facts: createDrizzleFileFacts(database.current),
         grants: createOwnerFileGrants(),
         readAgentChain: async () => chain,
       });

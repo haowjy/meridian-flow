@@ -1,14 +1,13 @@
 /** Immutable edit/placement discovery for the retained turn change-viewer read model. */
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import {
   type Database,
   documents,
   treeEditReceiptNodes,
   treeEditReceipts,
 } from "@meridian/database";
-import { branches } from "@meridian/database/schema";
+import { drafts } from "@meridian/database/schema";
 import { and, eq, sql } from "drizzle-orm";
-import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { loadFolderAddresses, placedNodesSql } from "../../context/tree/tree-addresses.js";
 import { LIVE_TREE, type TreeView } from "../../context/tree/tree-relations.js";
@@ -41,7 +40,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         byView.set(branchId, [...(byView.get(branchId) ?? []), nodeId]);
       for (const [branchId, ids] of byView) {
         const view: TreeView = branchId
-          ? { kind: "branch", branchId: branchId as BranchId }
+          ? { kind: "branch", branchId: branchId as DraftId }
           : LIVE_TREE;
         const [rows, folders] = await Promise.all([
           currentDrizzleDb(db).execute<{ start: string; source: string; path: string[] }>(sql`
@@ -81,8 +80,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           documentId: treeEditReceiptNodes.nodeId,
           // A folder has no `documents` row.
           folder: sql<boolean>`${documents.id} is null`,
-          workId: branches.originWorkId,
-          rootThreadId: branches.originRootThreadId,
+          draft: drafts.id,
           op: treeEditReceipts.op,
           // The node's own address before the change (a create's: where it was made), so a
           // folder's delete or a several-move reads as each node's own line.
@@ -114,8 +112,8 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
         // Folders have no document metadata, but their receipt still carries a tree line.
         .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
-        // A drafted entry's owner: the branch it was drafted in.
-        .leftJoin(branches, eq(branches.id, treeEditReceipts.draftBranchId))
+        // A drafted entry's draft, while it stands.
+        .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftBranchId))
         .where(
           and(
             eq(treeEditReceipts.threadId, threadId),
@@ -126,11 +124,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
           ),
         )
         .orderBy(treeEditReceipts.seq, treeEditReceiptNodes.wId);
-      return rows.map(({ workId, rootThreadId, ...row }) => ({
-        ...row,
-        documentId: row.documentId as DocumentId,
-        ownerKey: ownerKeyOfColumns({ workId, rootThreadId }),
-      }));
+      return rows.map((row) => ({ ...row, documentId: row.documentId as DocumentId }));
     },
   };
 }

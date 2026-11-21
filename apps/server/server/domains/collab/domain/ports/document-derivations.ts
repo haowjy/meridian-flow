@@ -1,6 +1,6 @@
 /** Durable cuts and atomic certification for live-document derived outputs. */
 import type { DocumentId } from "@meridian/contracts/runtime";
-import type { WorkPending } from "@meridian/suggestions";
+import type { DraftPending } from "@meridian/suggestions";
 
 import type { DocumentLinkRow } from "../document-link-rows.js";
 
@@ -32,7 +32,7 @@ export type DocumentDerivationOutputs = {
   blocks: DerivedBlock[];
   wordCount: number;
   /** By Work (`draftOwnerKey`), what its suggestions in the cut are: `blocks` is not its view. */
-  pendingChanges: Record<string, WorkPending>;
+  pendingChanges: Record<string, DraftPending>;
   /** Sum of the blocks' text bytes. */
   documentBytes: number;
   /** Ordered block content hashes plus the link facts: the edit signal behind `updated_at`. */

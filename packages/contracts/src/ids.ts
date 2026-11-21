@@ -8,20 +8,43 @@ export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
-/** A `branches` row: one Work branch, the unit Discard all closes. */
-export type BranchId = string;
-/** `${branchId}:${documentId}`: the client's one review identity for a document of a branch. */
+/**
+ * A `drafts` row: one draft, everything pending in it (its suggestion marks in Live documents and
+ * its tree records). A Work and a root conversation each name theirs; the draft names no owner.
+ */
+export type DraftId = string;
+
+const ID_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+/**
+ * A fresh draft id: 12 base-36 characters (62 random bits), as a change id. It sits on every
+ * changed word in Live history for good, so it is short.
+ */
+export function newDraftId(): DraftId {
+  let id = "";
+  for (const byte of globalThis.crypto.getRandomValues(new Uint8Array(12)))
+    id += ID_DIGITS[byte % 36];
+  return id;
+}
+
+const DRAFT_ID = /^[0-9a-z]{12}$/;
+
+/** Whether a string has a draft id's shape. */
+export function isDraftId(value: unknown): value is DraftId {
+  return typeof value === "string" && DRAFT_ID.test(value);
+}
+/** `${draftId}:${documentId}`: the client's one review identity for a document of a draft. */
 export type DraftItemKey = string;
 
 /** The one builder of a draft item key, for text and binary items alike. */
-export function draftItemKey(branchId: BranchId, documentId: DocumentId): DraftItemKey {
+export function draftItemKey(branchId: DraftId, documentId: DocumentId): DraftItemKey {
   return `${branchId}:${documentId}`;
 }
 
 /** The branch and document a draft item key names; null when the string is not one. */
 export function parseDraftItemKey(
   itemKey: string,
-): { branchId: BranchId; documentId: DocumentId } | null {
+): { branchId: DraftId; documentId: DocumentId } | null {
   const separator = itemKey.indexOf(":");
   if (separator <= 0 || separator === itemKey.length - 1) return null;
   const branchId = itemKey.slice(0, separator);

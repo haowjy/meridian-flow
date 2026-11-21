@@ -14,7 +14,7 @@ of them is [the press](press.md).
 A model's document write is a command (`modelEdits().run` and `.write`,
 [model edits](model-edits.md)); its reads enter through the agent-edit router
 (`domain/agent-edit-router.ts`). A drafted read or write (Draft mode, or a named Work) goes
-through `workView(work, author)`, which reads the Work's view of Live and writes into Live as
+through `draftView(work, author)`, which reads the Work's view of Live and writes into Live as
 that Work's suggestions. Its owner is the chat's Work, or for a chat with no Work its lineage
 (the first chat, its forks and subagents; a handoff starts a new one). `shared/draft-owner.ts`
 is the one reader of a branch's owner and lifecycle (`branchOwnerSql`). A lineage is writable
@@ -143,7 +143,7 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    under the keys they hold).
 5. The sorted document advisory keys (`lockDocumentMutation`, in ID order), each followed by that document's head row `FOR NO KEY UPDATE`, before the command reads. A keystroke takes only the head row.
 6. Writes: a list's journal append and the rows it materializes (`tree_nodes`,
-   `branch_tree_nodes`, `tree_node_ids`, `documents`), then the text. Derivation
+   `draft_tree_nodes`, `tree_node_ids`, `documents`), then the text. Derivation
    certification takes a document key and then locks that document's `tree_nodes` row, so a path
    that holds a document key writes its rows after it, and one that writes first never takes that
    document's key afterwards.
@@ -279,7 +279,7 @@ the same occurrence rules, and failed ahead-ref registration is repaired by
 the derivation sweep.
 
 A copy reads one document's frozen cut (`readEffectiveBlocks`): a Draft view reads the Work's
-view of Live (`workView`), with links spelled in the Draft tree. The cut holds
+view of Live (`draftView`), with links spelled in the Draft tree. The cut holds
 its projected blocks, the
 revision that version reports, the holder its links spell from, its Yjs state vector, and
 where each `ahead:` ref in the cut settles now. `bindCopiedBlocks` turns those blocks into a

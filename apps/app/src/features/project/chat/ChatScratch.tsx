@@ -10,7 +10,6 @@
  * of its tree sources (`SourcesBody`).
  */
 import { t } from "@lingui/core/macro";
-import type { DraftOwnerKey } from "@meridian/contracts";
 import type { ContextOwner } from "@meridian/contracts/protocol";
 import { Folder, FolderOpen } from "lucide-react";
 import { useMemo } from "react";
@@ -61,7 +60,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
                 ? {
                     view: {
                       kind: "draft" as const,
-                      owner: shell.ownerKey as DraftOwnerKey,
+                      draft: shell.draftId,
                     },
                   }
                 : {}),
@@ -79,7 +78,7 @@ function useChatScratch(projectId: string, threadId: string | null) {
                 ? {
                     view: {
                       kind: "draft" as const,
-                      owner: shell.ownerKey as DraftOwnerKey,
+                      draft: shell.draftId,
                     },
                   }
                 : {}),

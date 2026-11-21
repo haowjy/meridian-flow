@@ -84,6 +84,7 @@ function thread(ref: string | null = "c12"): Thread {
     id: THREAD_ID,
     projectId: "project-1",
     workId: null,
+    draftId: "lineagedrft1",
     aiWriteMode: "direct",
     effectiveAiWriteMode: "direct",
     userId: "user-1",

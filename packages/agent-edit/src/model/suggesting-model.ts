@@ -88,7 +88,7 @@ export function suggestingModel(
     applyOps(doc, block, ops) {
       const before = stored(block);
       // Nothing in the block that the view hides or marks: view units are stored units.
-      if (view.work === null && viewBlock(before, view) === before) {
+      if (view.draft === null && viewBlock(before, view) === before) {
         const applied = base.applyOps(doc, block, ops);
         written(unwrapBlock(block));
         return applied;
@@ -104,10 +104,10 @@ export function suggestingModel(
     },
 
     insertBlocks(doc, after, parsed) {
-      if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
+      if (view.draft === null || !author) return base.insertBlocks(doc, after, parsed);
       let sug = after && tails.get(unwrapBlock(after));
       if (!sug) {
-        sug = { id: newChangeId(), work: view.work };
+        sug = { id: newChangeId(), draft: view.draft };
         suggestionAuthors(unwrapDoc(doc)).set(sug.id, author);
       }
       if (after) tails.delete(unwrapBlock(after));
@@ -119,7 +119,7 @@ export function suggestingModel(
 
     deleteBlock(doc, block) {
       const node = stored(block);
-      if (view.work === null || !author) {
+      if (view.draft === null || !author) {
         base.deleteBlock(doc, block);
         return;
       }

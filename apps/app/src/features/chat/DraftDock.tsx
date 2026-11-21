@@ -197,7 +197,7 @@ function DockFileLine({
   const view = useDraftView(
     {
       projectId: dock.projectId,
-      ownerKey: dock.ownerKey,
+      draftId: dock.draftId,
       documentId: file.row.documentId,
       itemKey: file.row.draft.itemKey,
     },
