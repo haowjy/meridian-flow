@@ -263,10 +263,12 @@ export function usePressCommands({
       );
       const release = owner.hold([...rowKeys, ...folders], verdict === "apply");
       try {
-        const open = nodes.flatMap((documentId) => {
-          const vector = registry.openStateVector(documentId as never);
-          return vector ? [{ documentId, vector: btoa(String.fromCharCode(...vector)) }] : [];
-        });
+        // Every room with unsent typing, not only the pressed rows: a press finds documents the
+        // list hasn't.
+        const open = [...registry.unsentStateVectors()].map(([documentId, vector]) => ({
+          documentId,
+          vector: btoa(String.fromCharCode(...vector)),
+        }));
         // A read already out answers from before the press: it must not bring the rows back.
         await queryClient.cancelQueries({
           queryKey: projectQueryKeys.ownerDrafts(projectId, ownerKey),

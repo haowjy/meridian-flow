@@ -8,11 +8,13 @@ export {
 export {
   accept,
   type Change,
+  DECIDED_META,
   type Filter,
   list,
   pendingChanges,
   pendingTurns,
   reject,
+  type Verdict,
   type WorkPending,
 } from "./resolve.js";
 export {

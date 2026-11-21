@@ -2,6 +2,7 @@
  * One document's chronological history across Yjs edits and editor Apply commands. The
  * session owns it, so it outlives the editors that attach to it while mounted.
  */
+import { resolveScope } from "@meridian/agent-edit";
 import type { Editor } from "@tiptap/core";
 import { type EditorState, TextSelection, type Transaction } from "@tiptap/pm/state";
 import { CellSelection } from "@tiptap/pm/tables";
@@ -15,7 +16,6 @@ import {
   yUndoPluginKey,
 } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
-import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 import { markStepDone, touchedSince } from "./touched-since";
 
 type StackItem = Y.UndoManager["undoStack"][number];
@@ -102,7 +102,8 @@ export const DIRECT_WRITE_ORIGIN = Symbol("direct writer edit");
  * undo, so without the filter a peer's text would be left in a paragraph with no id.
  */
 function createDocumentUndoManager(document: Y.Doc): Y.UndoManager {
-  return new Y.UndoManager(document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME), {
+  // The verdicts beside the text too: Ctrl+Z of an Apply or Reject takes its verdict back with it.
+  return new Y.UndoManager(resolveScope(document), {
     trackedOrigins: new Set([ySyncPluginKey, DIRECT_WRITE_ORIGIN]),
     deleteFilter: (item) =>
       item.parentSub !== "id" && defaultDeleteFilter(item, defaultProtectedNodes),

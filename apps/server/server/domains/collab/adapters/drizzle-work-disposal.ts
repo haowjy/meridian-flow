@@ -10,10 +10,10 @@ import { dropWork, type UpdateJournal } from "@meridian/agent-edit/integration";
 import { type BranchId, type DraftOwnerKey, draftOwnerKey, type WorkId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentBlockRooms, documents, works } from "@meridian/database/schema";
+import { works } from "@meridian/database/schema";
 import { newId } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import * as Y from "yjs";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
@@ -22,6 +22,7 @@ import type { WorkBranchDisposal } from "../../projects/index.js";
 import type { Branches } from "../domain/branches.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { storedDocument } from "../domain/stored-document.js";
+import { documentsHolding } from "./drizzle-block-text.js";
 import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
 import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
 
@@ -44,24 +45,6 @@ export function createDrizzleWorkBranchDisposal(
     await deps.branches.close(branchId, new Date());
     // The branch ended and its drafts closed: the rows of its view go.
     await deps.treeLists.resync(await treeListsOfBranch(db, branchId));
-  }
-
-  /**
-   * The documents whose suggestions the pending index lists for the owners. The index lags a
-   * document's derivation by seconds, and an owner purged 30 days after its delete writes nothing
-   * in that time.
-   */
-  async function heldBy(owners: readonly DraftOwnerKey[]) {
-    return currentDrizzleDb(db)
-      .select({ id: documents.id, projectId: documents.projectId, userId: documents.userId })
-      .from(documentBlockRooms)
-      .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
-      .where(
-        sql`${documentBlockRooms.pendingChanges} ?| array[${sql.join(
-          owners.map((owner) => sql`${owner}`),
-          sql`, `,
-        )}]::text[]`,
-      );
   }
 
   /** The owners' suggestions out of one document, appended as nobody's edit. Its key is held. */
@@ -107,11 +90,13 @@ export function createDrizzleWorkBranchDisposal(
     // Every list in one call, after the branches and before the documents (the press's lock
     // order): the branches' lists, the held documents' lists, and the Work's project's list,
     // which the purge writes next.
-    const held = await heldBy(owners);
     const [work] = await currentDrizzleDb(db)
-      .select({ projectId: works.projectId })
+      .select({ projectId: works.projectId, userId: works.createdByUserId })
       .from(works)
       .where(eq(works.id, workId));
+    // The press's enumeration: projects have one owner, so the Work's documents are its project's
+    // and its creator's account's.
+    const held = work ? await documentsHolding(db, work, owners) : [];
     const lists = new Map<string, TreeList>();
     for (const branchId of branchIds)
       for (const list of await treeListsOfBranch(db, branchId)) lists.set(listKey(list), list);

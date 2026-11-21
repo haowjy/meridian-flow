@@ -31,13 +31,7 @@ import type {
   PressVerdict,
 } from "@meridian/contracts/branches";
 import type { Database } from "@meridian/database";
-import {
-  applyCommandTrees,
-  commands,
-  documentBlockRooms,
-  documents,
-  pressTextEffects,
-} from "@meridian/database/schema";
+import { applyCommandTrees, commands, pressTextEffects } from "@meridian/database/schema";
 import {
   appliedCreates,
   descendantsOf,
@@ -49,7 +43,7 @@ import {
   undoApply,
 } from "@meridian/project-tree";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import * as Y from "yjs";
 import { approveBranchWriteJoin } from "../../../shared/branch-write-join.js";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
@@ -71,6 +65,7 @@ import { PressUnsynced, type TreeCut } from "../domain/press.js";
 import { storedDocument } from "../domain/stored-document.js";
 import { closedOwnerBounce } from "./closed-owner-bounce.js";
 import { createApplyTreeOperations, type TreeItemFacts } from "./drizzle-apply-tree.js";
+import { documentsHolding } from "./drizzle-block-text.js";
 import { runDocumentCommand } from "./drizzle-document-commands.js";
 import { discardTreeRecords } from "./drizzle-work-tree-discard.js";
 
@@ -81,7 +76,7 @@ export type PressCommand = {
   owner: DraftOwner;
   request: Omit<PressRequest, "saw" | "seen"> & {
     saw?: TreeCut;
-    /** Decoded state vectors of the documents open in the pressing tab. */
+    /** Decoded state vectors of the pressing tab's live rooms with unacknowledged typing. */
     seen?: { documentId: string; vector: Uint8Array }[];
   };
 };
@@ -121,33 +116,33 @@ export function createDrizzlePress(
   ];
 
   /**
-   * The documents of the Work's lists whose derived cut holds its suggestions: the pending index.
-   * It lags the document's derivation, so it only stands for documents nobody named.
+   * Waits for the pressing tab's typing: a document whose stored state does not hold the vector
+   * the tab sent answers `PressUnsynced` (503, nothing written), and the command driver resends.
+   * Read after the lists' keys and before the selection: a vector held stays held, so the typing
+   * it covers has moved its document's head, and the selection, read next in this transaction,
+   * finds the document stale or holding the Work's change.
    */
-  async function indexed(envelope: CommandEnvelope, work: string): Promise<string[]> {
-    const rows = await currentDrizzleDb(db)
-      .select({ id: documentBlockRooms.documentId })
-      .from(documentBlockRooms)
-      .innerJoin(documents, eq(documents.id, documentBlockRooms.documentId))
-      .where(
-        and(
-          or(
-            envelope.projectId
-              ? eq(documents.projectId, envelope.projectId as ProjectId)
-              : undefined,
-            eq(documents.userId, envelope.accountId as UserId),
-          ),
-          sql`${documentBlockRooms.pendingChanges} ? ${work}`,
-        ),
-      );
-    return rows.map((row) => row.id as string);
+  async function awaitSeen(seen: ReadonlyMap<string, Uint8Array>): Promise<void> {
+    for (const [documentId, vector] of seen) {
+      const snapshot = await deps.live.read(documentId as DocumentId);
+      // A document with no stored authority (purged, never stored) has nothing to wait for.
+      if (!snapshot.authority) continue;
+      const doc = storedDocument(snapshot);
+      try {
+        if (!holds(Y.encodeStateVector(doc), vector)) throw new PressUnsynced();
+      } finally {
+        doc.destroy();
+      }
+    }
   }
 
   /**
    * What a press takes, read under the lists' keys: the nodes whose tree records it settles, and
    * the documents whose text it resolves. A folder takes every node under it in the Work's view,
    * and every document there has its text pressed: resolving a document with no suggestion
-   * changes nothing. "all" takes the indexed documents and the ones the tab has open.
+   * changes nothing. "all" takes every document of the Work's lists that can hold its
+   * suggestions (`documentsHolding`): the pending index where it is current, and every document
+   * it hasn't caught up on.
    */
   async function selection(
     envelope: CommandEnvelope,
@@ -184,10 +179,14 @@ export function createDrizzlePress(
       },
     });
     if (items === "all")
-      for (const id of [
-        ...(await indexed(envelope, work)),
-        ...(request.seen ?? []).map((one) => one.documentId),
-      ])
+      for (const { id } of await documentsHolding(
+        db,
+        {
+          projectId: (envelope.projectId as ProjectId | null) ?? null,
+          userId: envelope.accountId as UserId,
+        },
+        [work],
+      ))
         picked.text.add(id);
     return { tree: branchId ? picked.tree : new Set(), text: picked.text };
   }
@@ -224,13 +223,10 @@ export function createDrizzlePress(
     documentId: string,
     verdict: PressVerdict,
     work: string,
-    seen: Uint8Array | undefined,
   ): Promise<boolean> {
     const snapshot = await deps.live.read(documentId as DocumentId);
     const doc = storedDocument(snapshot);
     try {
-      // The tab typed what the server has not stored yet: the press waits for it (503).
-      if (seen && !holds(Y.encodeStateVector(doc), seen)) throw new PressUnsynced();
       const before = Y.encodeStateVector(doc);
       const record = pressStored(doc, schema, verdict === "apply" ? "accept" : "reject", { work });
       if (!record || !snapshot.authority) return false;
@@ -302,6 +298,7 @@ export function createDrizzlePress(
               const branchId = active?.id ?? null;
               const judge = await owners.judge(locked);
               await deps.treeLists.lock(lists);
+              await awaitSeen(seen);
               const picked = await selection(envelope, lists, branchId, request, work);
               const nodes = [...new Set([...picked.tree, ...picked.text])];
               const tree = new Set<string>();
@@ -329,8 +326,7 @@ export function createDrizzlePress(
                 for (const documentId of [...picked.text].sort()) {
                   const one = standing.get(documentId);
                   if (!one?.standsInLive || one.textClosed) continue;
-                  if (await pressText(envelope, documentId, "apply", work, seen.get(documentId)))
-                    text.add(documentId);
+                  if (await pressText(envelope, documentId, "apply", work)) text.add(documentId);
                 }
               } else {
                 await lockDocuments(nodes);
@@ -347,8 +343,7 @@ export function createDrizzlePress(
                   if (request.items === "all") await deps.treeLists.resync(lists);
                 }
                 for (const documentId of [...picked.text].sort())
-                  if (await pressText(envelope, documentId, "discard", work, seen.get(documentId)))
-                    text.add(documentId);
+                  if (await pressText(envelope, documentId, "discard", work)) text.add(documentId);
               }
               return answer(
                 [...new Set([...tree, ...text])].sort().map((node) => ({

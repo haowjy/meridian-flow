@@ -112,11 +112,11 @@ and listed by its 1-based immutable part ordinal and reason, without quoting old
 or current text. Undo refuses `cant_undo_changed` only when nothing of a text-only
 edit remains to reverse. The model uses ordinary `read` for the passage;
 `read(format: "edits")` reads immutable parts through the host port, and says what became of a
-drafted write's suggestions from the items the write inserted (`writeVerdict`): `applied` (or
-`partly applied`, by parts) when the writer accepted them, `discarded` when rejected, by the
-rule the planning view uses to drop a rejected suggestion (`verdicts` in `withdrawRejected`):
-struck text decides, else whether what the write added is gone, else whether the block holds an
-attribute proposal's values. Model actions
+drafted write's suggestions from the changes the write's items carry and the verdicts their
+resolves recorded (`writeVerdict`, `suggestion_verdicts`): `applied` (or `partly applied`, by
+parts) when the writer accepted them, `discarded` when rejected. A change nobody resolved (an edit
+removed it) or one two resolves decided opposite ways has no verdict, and the line reads from the
+text as for any write (`changed`, `pending` or `live`). Model actions
 cannot use a reconstruction endpoint or reversal table. A
 multi-edit Undo is all-or-nothing on stack availability; a count beyond what is available
 refuses with the available count and changes nothing. User-actuated entries refuse model stack

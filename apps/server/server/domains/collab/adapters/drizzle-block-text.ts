@@ -1,6 +1,6 @@
 /** Reads of the stored block rows, and the freshness rules that decide who may trust them. */
 import { draftOwnerKey } from "@meridian/contracts";
-import type { DocumentId } from "@meridian/contracts/runtime";
+import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   documentBlockRooms,
@@ -56,6 +56,42 @@ export const staleForSweep = or(
     or(...cutBehind, otherExtractor),
   ),
 ) as SQL;
+
+/**
+ * The documents of a project and an account that can hold any of `owners`' suggestions, read in
+ * the caller's transaction: every row whose cut is current and lists one of them in
+ * `pending_changes`, and every row a reader may not trust (`staleForReaders`), which the caller
+ * reads from the room. Exact for every committed write, since each live write moves its
+ * document's head (`allocateAdmission`): what the derivation hasn't caught up on is stale.
+ */
+export async function documentsHolding(
+  db: Database,
+  scope: { projectId: ProjectId | null; userId: UserId },
+  owners: readonly string[],
+): Promise<{ id: DocumentId; projectId: ProjectId | null; userId: UserId | null }[]> {
+  if (owners.length === 0) return [];
+  return currentDrizzleDb(db)
+    .select({ id: documents.id, projectId: documents.projectId, userId: documents.userId })
+    .from(documents)
+    .innerJoin(documentYjsHeads, eq(documentYjsHeads.documentId, documents.id))
+    .leftJoin(documentBlockRooms, eq(documentBlockRooms.documentId, documents.id))
+    .leftJoin(treeNodes, eq(treeNodes.id, documents.id))
+    .where(
+      and(
+        or(
+          scope.projectId ? eq(documents.projectId, scope.projectId) : undefined,
+          eq(documents.userId, scope.userId),
+        ),
+        or(
+          staleForReaders,
+          sql`${documentBlockRooms.pendingChanges} ?| array[${sql.join(
+            owners.map((owner) => sql`${owner}`),
+            sql`, `,
+          )}]::text[]`,
+        ),
+      ),
+    );
+}
 
 export function createDrizzleBlockText(db: Database): BlockText {
   const current = (ids: DocumentId[]) =>
