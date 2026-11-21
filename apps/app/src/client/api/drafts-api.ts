@@ -5,7 +5,7 @@ import { apiProjectDocumentDraftsPath, apiProjectDraftsPath } from "@meridian/co
 import { getJson } from "./http-client";
 
 /**
- * The drafts one owner (`work:<id>` or `lineage:<root>`) has pending, one row per document.
+ * One draft's items, one row per document.
  * `readAt` is when the read started, the time its rows speak for.
  */
 export type OwnerDraftList = DraftItemsResponse & { readAt: number };

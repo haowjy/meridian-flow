@@ -61,7 +61,7 @@ paragraph, and authored newlines become `hardBreak` nodes, as in the composer.
 
 `serializeMessageDoc` reads plain JSON, preserving authored spacing and occurrence order. Image
 capability, upload intake, file type and ownership belong only to document references. Submitted
-identities deduplicate by kind, identity and URI, with document draft-upload metadata taking
+identities deduplicate by kind, identity and URI, with document upload metadata taking
 precedence. Skills activate once per slug but every occurrence stays in the blocks. The walk
 exposes each reference through `onReference`, so the app projects its uploads without walking the
 document again.

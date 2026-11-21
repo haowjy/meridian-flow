@@ -98,9 +98,9 @@ export function useDraftReviewController({
   marks,
 }: {
   projectId: string;
-  /** The Work whose archived state freezes these drafts; null scopes nothing. */
+  /** The Work the draft belongs to, if any. */
   work: Work | null;
-  /** Whose drafts this surface reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
+  /** The draft this surface reviews; "" scopes nothing. */
   draftId: string;
   threadId?: string | null;
   stateOwner: DraftReviewStateOwner;

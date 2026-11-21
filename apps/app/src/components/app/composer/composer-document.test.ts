@@ -72,7 +72,7 @@ it("projects unique owned uploads in occurrence order without changing the submi
       kind: "document",
       documentId: upload.documentId,
       uri: upload.uri,
-      purpose: "draft-upload",
+      purpose: "upload",
       intakeId: upload.intakeId,
     },
   ]);

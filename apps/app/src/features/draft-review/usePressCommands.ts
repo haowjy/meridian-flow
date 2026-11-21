@@ -70,8 +70,9 @@ export function usePressCommands({
   surface,
 }: {
   projectId: string;
+  /** The Work the draft belongs to, if any: the chat strip counts what its Changes list holds. */
   work: Work | null;
-  /** Whose drafts the commands act on (`work:<id>` or `lineage:<root>`); "" acts on none. */
+  /** The draft the commands act on; "" acts on none. */
   draftId: string;
   threadId?: string | null;
   /** Where this surface's notices show: the Changes list, a chat's strip, or a document's band. */

@@ -194,8 +194,9 @@ the new-chat composer, `chats/<chat-id>` a chat) or `editor` (bare, or
 composer. The Work scope is never in the address: it is a stored per-project
 choice (`use-work-scope.ts`). Recognized query keys are `owner`, `item`, `change`,
 `trash` and `settings`. `owner` (`work:<id>` or `lineage:<root-chat-id>`) appears
-only where the path alone does not name the resource: a Scratch document, and a
-draft `item`; a stray one is dropped from the canonical href. Duplicate keys and
+only on a Scratch document, whose path alone does not name its owner; a stray one is
+dropped from the canonical href. `item` (`<draft-id>:<document-id>`) names the draft
+item under review. Duplicate keys and
 malformed encodings are invalid rather than normalized. Uploads belong to a chat
 and have no Editor route. Every older shape (`/works`, `browse`, `?work=`,
 slug-shaped project routes, `/project/<UUID>`, `screen`/`thread`/`scheme`/

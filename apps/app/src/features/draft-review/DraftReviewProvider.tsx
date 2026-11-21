@@ -56,9 +56,9 @@ export function useDraftReviewScopeValue({
   showLive,
 }: {
   projectId: string | null;
-  /** The Work whose archived state freezes these drafts. */
+  /** The Work the draft belongs to, if any. */
   work: Work | null;
-  /** Whose drafts this scope reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
+  /** The draft this scope reviews; "" scopes nothing. */
   draftId: string;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;

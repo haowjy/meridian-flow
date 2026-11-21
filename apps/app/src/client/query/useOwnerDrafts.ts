@@ -1,5 +1,5 @@
 /**
- * useOwnerDrafts — reviewable AI draft list for one draft (one entry per document).
+ * useOwnerDrafts — one draft's review items (one per document).
  *
  * Projects one tree-labelled file per document the draft changes, in stable order.
  */
@@ -73,29 +73,6 @@ export function patchOwnerDrafts(
     projectQueryKeys.drafts(projectId, owner),
     (response) => (response ? { ...response, items: update(response.items) } : response),
   );
-}
-
-/**
- * Waits for the server to list an item again, then caches that list. The list omits a draft
- * until the server re-judges its effect after a write (a short debounce, longer on retry), so a
- * read made sooner would drop the row. Reads go straight to the server, leaving the cached rows
- * alone meanwhile; false when the server still omits the item after the retries.
- */
-export async function relistedOwnerDraft(
-  queryClient: QueryClient,
-  projectId: string,
-  owner: string,
-  itemKey: string,
-): Promise<boolean> {
-  for (const delayMs of [250, 500, 1_000, 2_000, 4_000]) {
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-    // slop-lint: allow swallowed-error a failed read is one more retry, not an answer
-    const response = await listOwnerDrafts(projectId, owner).catch(() => null);
-    if (!response?.items.some((row) => row.itemKey === itemKey)) continue;
-    queryClient.setQueryData(projectQueryKeys.drafts(projectId, owner), response);
-    return true;
-  }
-  return false;
 }
 
 /**

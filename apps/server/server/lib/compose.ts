@@ -44,11 +44,11 @@ import {
   type ContextSources,
   createAgentFilesHints,
   createAgentLevelFiles,
+  createChatUploadVerifier,
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
   createDocumentRevisions,
-  createDraftUploadVerifier,
   createDrizzleChatUploads,
   createDrizzleChatUploadsOwners,
   createDrizzleContextSources,
@@ -1186,7 +1186,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
     },
-    verifyDraftUpload: createDraftUploadVerifier({
+    verifyChatUpload: createChatUploadVerifier({
       identities: ports.uploadIdentity,
       chats: topChats,
     }),
