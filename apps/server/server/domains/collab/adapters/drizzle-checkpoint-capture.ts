@@ -1,4 +1,6 @@
 /** Trusted checkpoint minting: a short locked range snapshot, then unlocked journal replay. */
+
+import { dropUnseenContent } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -56,6 +58,17 @@ export async function captureDrizzleCheckpoint(
       throw new Error("Checkpoint inputs retired during materialization");
     }
   };
+  // The room's latest model read: the chat working on the document now plans on it. Every
+  // chat's last read would keep each discarded rewrite a fresh chat wrote, for good.
+  const frontiers = async () =>
+    (
+      await currentDrizzleDb(db as Database)
+        .select({ snapshot: observationFrontiers.snapshot })
+        .from(observationFrontiers)
+        .where(eq(observationFrontiers.roomKey, liveRoom(docId, authority.generation)))
+        .orderBy(desc(observationFrontiers.recordedSeq))
+        .limit(1)
+    ).map((row) => new Uint8Array(row.snapshot));
   let state: Promise<MaterializedCheckpoint> | undefined;
   const materialize = async () => {
     const readDb = currentDrizzleDb(db as Database) as JournalDb;
@@ -94,17 +107,6 @@ export async function captureDrizzleCheckpoint(
     // Check after reading: a restore or removal since the capture invalidates the read.
     // Persistence repeats this check under the mutation lock.
     await validateInputs();
-    // The room's latest model read: the chat working on the document now plans on it. Every
-    // chat's last read would keep each discarded rewrite a fresh chat wrote, for good.
-    const frontiers = async () =>
-      (
-        await currentDrizzleDb(db as Database)
-          .select({ snapshot: observationFrontiers.snapshot })
-          .from(observationFrontiers)
-          .where(eq(observationFrontiers.roomKey, liveRoom(docId, authority.generation)))
-          .orderBy(desc(observationFrontiers.recordedSeq))
-          .limit(1)
-      ).map((row) => new Uint8Array(row.snapshot));
     return materializeCheckpoint(
       base ? new Uint8Array(base.state) : null,
       rows.map((row) => new Uint8Array(row.update)),
@@ -127,6 +129,9 @@ export async function captureDrizzleCheckpoint(
       state ??= materialize();
       const { state: bytes, structs, contentBytes } = await state;
       return { bytes: bytes.byteLength, structs, contentBytes };
+    },
+    async dropUnseenContent(document) {
+      dropUnseenContent(document, await frontiers());
     },
   });
 }

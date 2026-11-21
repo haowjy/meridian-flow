@@ -3,6 +3,7 @@
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
+  dropUnseenContent,
   type JournalBatchAppendEntry,
   type PersistedUpdate,
   type UpdateJournal,
@@ -103,6 +104,9 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
         state ??= materializeCheckpoint(bytes, suffix, async () => []);
         const { state: stored, structs, contentBytes } = await state;
         return { bytes: stored.byteLength, structs, contentBytes };
+      },
+      async dropUnseenContent(document) {
+        dropUnseenContent(document, []);
       },
     });
   }

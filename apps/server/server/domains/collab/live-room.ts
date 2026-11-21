@@ -103,6 +103,7 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
             if (cut) {
               const state = await cut.materializeState();
               await deps.journal.storeCheckpoint(cut);
+              await cut.dropUnseenContent(document);
               if (deps.eventSink)
                 emitEvent(deps.eventSink, {
                   level: "debug",
