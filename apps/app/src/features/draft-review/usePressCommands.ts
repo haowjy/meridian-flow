@@ -37,6 +37,7 @@ import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
   useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
+  useOptionalContextRemovalCoordinator,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
@@ -83,6 +84,7 @@ export function usePressCommands({
   const driver = useCommandDriver();
   const registry = useLiveDocumentSessionRegistry();
   const treeLists = useOptionalTreeLists();
+  const removal = useOptionalContextRemovalCoordinator();
   const queryClient = useQueryClient();
   const locked = !draftId || !driver;
   return useMemo(() => {
@@ -310,6 +312,14 @@ export function usePressCommands({
       // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
       const named = (node: string) => names.get(node) ?? "";
+      // A document the Work created goes to Trash with its Discard: main leaves it first.
+      if (verdict === "discard") {
+        const taken = items === "all" ? null : new Set(items.map((item) => item.node));
+        const created = rows().flatMap((row) =>
+          row.isNew && (!taken || taken.has(row.documentId)) ? [row.documentId] : [],
+        );
+        if (created.length > 0) removal?.beginOwnRemoval(projectId, created);
+      }
       const outcome = press(verdict, items, driver).then((pressed): CommandOutcome => {
         if (pressed === "failed")
           notifyFailure({
@@ -443,6 +453,7 @@ export function usePressCommands({
     driver,
     registry,
     treeLists,
+    removal,
     queryClient,
     locked,
     projectId,
