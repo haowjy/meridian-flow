@@ -11,8 +11,8 @@ them from the host's Live editor (`host-editor.ts`, `useSuggestionChanges`); the
 - A press Apply sits in each open editor's history (`ApplyEntries`); Ctrl+Z there or a row's
   Undo takes it back, and Redo presses the same items again.
 - A tree line's row presses its tree change alone (`half: "tree"`).
-- Every press Discard is in Trash. Its Restore and its notice's Undo are one restore
-  (`DiscardRestores`, keyed by the Discard's command id).
+- A Discard deletes nothing and is not in Trash. Its notice's Undo and its sidebar step send one
+  `unpress`, once (`undoOf` in `usePressCommands`); a reload ends the offer.
 - A press that fails (Apply, Undo, Redo, Discard, Restore) is a brief pill (`notifyFailure`),
   never a line in the row or bar the writer pressed.
 - Unknown authorship isn't known-empty: show the text without a byline.

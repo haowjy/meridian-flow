@@ -21,7 +21,7 @@ import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
-import { restorePressDiscard, submitPress, submitPressUndo } from "@/client/query/press-commands";
+import { submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import {
   cachedOwnerDrafts,
@@ -185,34 +185,22 @@ export function usePressCommands({
     };
 
     /**
-     * A Discard's Undo, once: the notice, every row that offers it and the sidebar send this. It is
-     * the Restore Trash sends, through the one restore progress per Discard (`DiscardRestores`), so
-     * a Restore from either place ends the other's offer; one that finds the Discard already taken
-     * back (`gone`) is done all the same.
+     * A Discard's Undo, once: the notice and the sidebar step send this, as an Apply's rows and
+     * editors share its `ApplyEntries`. A failed one can be sent again.
      */
     const undoOf = (commandId: string, undone: () => void) => {
       let sent: Promise<boolean> | null = null;
       return () => {
-        sent ??= owner.restores
-          .restore(commandId, async () => {
-            if (!driver) return { answer: "failed" as const };
-            const answer = await restorePressDiscard(driver, {
-              projectId,
-              owner: ownerKey,
-              pressCommandId: commandId,
-            });
-            await refresh();
-            return answer;
-          })
-          .then(({ answer }) => {
-            if (answer !== "failed") {
-              undone();
-              return true;
-            }
+        sent ??= unpress(commandId).then((answer) => {
+          if (answer === "done") {
+            undone();
+            return true;
+          }
+          if (answer === "failed")
             notifyFailure({ key: `unpress:${commandId}`, title: t`Couldn't undo`, brief: true });
-            sent = null;
-            return false;
-          });
+          sent = null;
+          return false;
+        });
         return sent;
       };
     };
@@ -407,7 +395,6 @@ export function usePressCommands({
               }),
               end: () => {},
             },
-            restore: pressed.commandId,
           };
           shown = notices.showDiscard({ projectId, ownerKey, surface: where, parts: [part] });
         }

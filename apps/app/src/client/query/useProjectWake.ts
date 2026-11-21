@@ -69,7 +69,6 @@ export function useProjectWake(projectId: string): void {
       if (all || named.some((owner) => workIdOfDraftOwnerKey(owner)))
         reads.push(repairWorksSnapshot(queryClient, projectId));
       reads.push(
-        queryClient.invalidateQueries({ queryKey: projectQueryKeys.trashDiscards(projectId) }),
         queryClient.invalidateQueries({
           queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
         }),

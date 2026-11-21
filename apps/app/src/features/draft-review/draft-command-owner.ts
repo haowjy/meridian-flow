@@ -1,11 +1,9 @@
 /**
  * Account-lifetime command state for a Work's review items: which items a press has in flight
- * (`hold`), the Applies this tab can still take back (`applied`), each Discard's restore and one
- * notice per draft owner. The press itself is `usePressCommands`.
+ * (`hold`), the Applies this tab can still take back (`applied`) and one notice per draft owner. The press itself is `usePressCommands`.
  */
 import { type BranchId, draftItemKey } from "@meridian/contracts";
 import type { ApplyEntries } from "./apply-history";
-import { DiscardRestores } from "./discard-restores";
 import { type DiscardTook, DraftNotices } from "./draft-notices";
 
 type DraftCommandState = {
@@ -35,10 +33,8 @@ export class DraftCommandOwner {
   private revision = 0;
   /** Every Apply this tab can still take back or apply again. */
   readonly applied = new Set<ApplyEntries>();
-  /** Each Discard's restore, whatever sent it: the one progress every view reads. */
-  readonly restores = new DiscardRestores();
   /** One notice per draft owner, outliving the surface that made it. */
-  readonly notices = new DraftNotices(this.restores);
+  readonly notices = new DraftNotices();
   /** An Apply made before a session of its documents opened joins that session's history. */
   private readonly stopRejoining: () => void;
 

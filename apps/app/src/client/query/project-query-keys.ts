@@ -28,8 +28,6 @@ export const projectQueryKeys = {
   trash: (projectId: string) => ["projects", projectId, "trash"] as const,
   trashedDocument: (projectId: string, documentId: string) =>
     [...projectQueryKeys.trash(projectId), documentId] as const,
-  /** Trash's Discard entries: the drafts each Discard closed, and what it settled in the tree. */
-  trashDiscards: (projectId: string) => ["projects", projectId, "trash-discards"] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,
   works: (projectId: string) => ["projects", projectId, "works"] as const,
   chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,

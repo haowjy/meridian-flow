@@ -6,7 +6,7 @@
  * A change's or a document's ✓ in a list row is jade ink, not a fill: the group's own Apply
  * is the one filled button, and a column of filled squares would drown it.
  *
- * Discard never asks: every Discard's notice has its Undo, and Trash keeps it.
+ * Discard never asks: every Discard's notice has its Undo.
  *
  * Each button has a word on screen and a name: the name ("Discard draft", or the caller's
  * `labels` where the row names more) is the accessible name and the tooltip. A change's and a
