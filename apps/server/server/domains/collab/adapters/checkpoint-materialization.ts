@@ -14,7 +14,7 @@ export type MaterializedCheckpoint = {
 
 /**
  * The state of `base` with `updates` applied, deleted content dropped except what one of
- * `frontiers` (the models' latest reads of the room) shows. A version and the background
+ * `frontiers` (the room's latest model read) shows. A version and the background
  * checkpoint alike: each is the base a later load or capture replays from, so it keeps every
  * item id the journal rows after it may name.
  */

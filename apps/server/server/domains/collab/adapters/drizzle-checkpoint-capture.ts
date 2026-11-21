@@ -94,16 +94,16 @@ export async function captureDrizzleCheckpoint(
     // Check after reading: a restore or removal since the capture invalidates the read.
     // Persistence repeats this check under the mutation lock.
     await validateInputs();
-    // Each chat's latest read of the room is what its next write plans on.
+    // The room's latest model read: the chat working on the document now plans on it. Every
+    // chat's last read would keep each discarded rewrite a fresh chat wrote, for good.
     const frontiers = async () =>
       (
         await currentDrizzleDb(db as Database)
-          .selectDistinctOn([observationFrontiers.threadId], {
-            snapshot: observationFrontiers.snapshot,
-          })
+          .select({ snapshot: observationFrontiers.snapshot })
           .from(observationFrontiers)
           .where(eq(observationFrontiers.roomKey, liveRoom(docId, authority.generation)))
-          .orderBy(observationFrontiers.threadId, desc(observationFrontiers.recordedSeq))
+          .orderBy(desc(observationFrontiers.recordedSeq))
+          .limit(1)
       ).map((row) => new Uint8Array(row.snapshot));
     return materializeCheckpoint(
       base ? new Uint8Array(base.state) : null,
