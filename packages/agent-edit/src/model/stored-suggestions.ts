@@ -263,6 +263,40 @@ export function forgetVerdicts(
   return forgot;
 }
 
+/**
+ * Deletes every mark item, left after `transaction`, of a change some resolve decided. Yjs holds a
+ * mark as an item that opens it and one that closes it, and typing inside a change's text with
+ * other marks re-opens the change's mark after the typing. A peer that typed there before it saw
+ * the change resolved holds such an opening; the resolve deleted the closing item, so once the two
+ * merge, the mark runs on over every word after it to the end of the block: an insertion's mark
+ * hides them from Live. A decided change has no pending text, so every such item is stale. Each
+ * client that edits runs this on every transaction it did not make, as its own write with no
+ * origin (`unsent-edits.ts` counts that as a repair); two clients deleting one item agree.
+ */
+export function dropResolvedMarks(doc: Y.Doc, transaction: Y.Transaction): void {
+  const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
+  const decided = (id: string) => verdicts.has(`${id}:accept`) || verdicts.has(`${id}:reject`);
+  const changed = [...transaction.changed.keys()];
+  // A new verdict can end marks anywhere; otherwise only the texts this transaction changed.
+  const scope = changed.some((type) => Object.is(type, verdicts))
+    ? fragmentOf(doc).createTreeWalker(() => true)
+    : changed;
+  const texts = [...scope].filter((type) => type instanceof Y.XmlText);
+  const stale: Y.Item[] = [];
+  for (const text of texts) {
+    for (let item = text._start; item; item = item.right) {
+      if (item.deleted || !(item.content instanceof Y.ContentFormat)) continue;
+      const { key, value } = item.content;
+      const id = markOf(key) && changeId(value);
+      if (id && decided(id)) stale.push(item);
+    }
+  }
+  if (stale.length === 0) return;
+  doc.transact((tr) => {
+    for (const item of stale) item.delete(tr);
+  }, null);
+}
+
 /** Yjs item ids by client, as `[clock, len]` runs in clock order. */
 type IdRanges = Record<string, [number, number][]>;
 

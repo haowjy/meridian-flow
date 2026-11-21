@@ -24,6 +24,7 @@ export {
 } from "./model/schema-repair.js";
 export {
   dropDraft,
+  dropResolvedMarks,
   forgetVerdicts,
   type PressRecord,
   pressStored,
