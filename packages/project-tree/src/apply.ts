@@ -311,11 +311,11 @@ export function applyDraft(
     }
     // A create of a node live already has standing (a restored Discard of a create applied before)
     // has nothing to make: it is settled superseded with no copy, so no Undo takes the node back.
-    const already = pool
-      .slice(0, count)
-      .filter(
-        (record) => record.type === "create" && liveNow.nodes.get(record.node)?.trashed === false,
-      );
+    // A folder live keeps only for a child (its create undone, rule 3) has no standing of its own.
+    const already = pool.slice(0, count).filter((record) => {
+      const node = record.type === "create" ? liveNow.nodes.get(record.node) : undefined;
+      return node?.trashed === false && !node.keptByChild;
+    });
     const taken = chosenOf(pool.slice(0, count).filter((record) => !already.includes(record)));
     // A record that cannot land and that a later landing record on the same fact overrides is
     // settled as superseded: left pending, it would come back later and undo that later choice.
