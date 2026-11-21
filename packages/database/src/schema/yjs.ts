@@ -297,8 +297,8 @@ export const applyCommandTrees = pgTable(
 /**
  * The text half of a press: what the press's one transaction in this document
  * inserted and deleted, as Yjs id ranges by client (`[clock, len]`), and the authority generation
- * it ran on. The press's Undo is a Yjs undo of these ranges; a restore since (another generation)
- * ends it. Server documents keep deleted items (`gc: false`), which the undo needs.
+ * it ran on. The press's Undo is a Yjs undo of these ranges; an effect from another generation is
+ * closed. Server documents keep deleted items (`gc: false`), which the undo needs.
  */
 export const pressTextEffects = pgTable(
   "press_text_effects",

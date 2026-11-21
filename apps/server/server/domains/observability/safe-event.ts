@@ -159,7 +159,6 @@ const SAFE_MERIDIAN_ERROR_CODES = new Set([
   "auth_failed",
   "authority_head_busy",
   "bad_request",
-  "checkpoint_incomplete",
   "checkpoint_not_found",
   "claimed_write_discarded",
   "conflict",
