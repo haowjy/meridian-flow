@@ -122,41 +122,6 @@ export function captureMutationUpdates(doc: Y.Doc, mutate: () => void): Uint8Arr
   return updates;
 }
 
-/** Index one decoded update without changing first-match lookup on noncanonical frames. */
-export function indexDecodedStructs<T extends { id: Y.ID; length: number }>(
-  structs: readonly T[],
-): (id: Y.ID) => T | undefined {
-  const clients = new Map<number, { values: T[]; ordered: boolean }>();
-  for (const struct of structs) {
-    const entry = clients.get(struct.id.client) ?? { values: [], ordered: true };
-    const last = entry.values.at(-1);
-    if (last && last.id.clock + last.length > struct.id.clock) entry.ordered = false;
-    entry.values.push(struct);
-    clients.set(struct.id.client, entry);
-  }
-  return (id) => {
-    const entry = clients.get(id.client);
-    if (!entry) return undefined;
-    // decodeUpdate also accepts repeated client blocks out of clock order. Keep their
-    // original first-match semantics, including overlaps, rather than changing admission.
-    if (!entry.ordered) {
-      return entry.values.find(
-        (item) => item.id.clock <= id.clock && id.clock < item.id.clock + item.length,
-      );
-    }
-    let lo = 0;
-    let hi = entry.values.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      const item = entry.values[mid];
-      if (id.clock < item.id.clock) hi = mid;
-      else if (id.clock >= item.id.clock + item.length) lo = mid + 1;
-      else return item;
-    }
-    return undefined;
-  };
-}
-
 /** Split existing text boundaries in clock order, before a bulk edit shifts the same struct tail repeatedly. */
 export function splitTextBoundaries(
   transaction: Y.Transaction,

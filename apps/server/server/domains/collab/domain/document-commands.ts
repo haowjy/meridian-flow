@@ -1,5 +1,5 @@
 /** The document side of the command record (`shared/commands`): its port and its statuses. */
-import type { StoredDocumentCommandResult } from "@meridian/contracts/branches";
+import type { StoredDocumentCommandResult } from "@meridian/contracts/drafts";
 import type {
   CommandEnvelope,
   CommandLookup,
@@ -31,6 +31,8 @@ const DONE_STATUSES: ReadonlySet<string> = new Set([
   "returned",
   "reversed",
   "copied",
+  "pressed",
+  "unpressed",
 ]);
 
 /** `done` when the effect committed or answered with the document as it stands; every other answer is a refusal that changed nothing. */

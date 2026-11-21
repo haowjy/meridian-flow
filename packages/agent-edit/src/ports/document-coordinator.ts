@@ -101,14 +101,11 @@ export interface ConcurrentUpdatesInput {
   /** Exclusive observed and inclusive rendered journal bounds. */
   after: number;
   through: number;
-  /** Optional live interval projected into a draft's revision-0 cut. */
-  attributionBridge?: import("../frontier.js").SeedAttributionBridge;
-  access?: DocumentAccess;
 }
 
 export interface DocumentCoordinator {
   /** A private copy of the room's committed state, named by the room it was read from. Rejects with DocumentNotFoundError when the document is missing. */
-  readRoom(docId: string, access?: DocumentAccess): Promise<RoomRead>;
+  readRoom(docId: string): Promise<RoomRead>;
 
   /**
    * One save of a write's entries, prepared without touching the host until `persist`. A
@@ -118,16 +115,9 @@ export interface DocumentCoordinator {
   prepareSave(input: {
     docId: string;
     entries: readonly JournalBatchAppendEntry[];
-    access?: DocumentAccess;
     precondition?: SavePrecondition;
   }): Promise<PreparedSave>;
 
   /** One bounded, origin-aware lookup for the model-facing concurrent-change account. */
   concurrentUpdatesForReport?(input: ConcurrentUpdatesInput): Promise<ConcurrentUpdate[]>;
-}
-
-/** How a caller reaches a host document. */
-export interface DocumentAccess {
-  /** The Work draft a draft call reads and saves, as the host ensured it; live when absent. */
-  workDraftId?: string;
 }

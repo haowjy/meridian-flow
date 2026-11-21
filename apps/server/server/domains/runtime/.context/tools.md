@@ -156,9 +156,9 @@ a name shown in the other view still means its node in this one. The call keeps 
 that takes both back is one command, so a refusal of its text half takes the tree half back
 with it. A command that refuses stores nothing (the effect's savepoint rolls back, and
 `SourceTree.run` drops what `make` wrote). In a draft-mode chat the
-records are the Work's branch's and live is untouched until the user applies them; Scratch
+records are the Work's draft's and live is untouched until the user applies them; Scratch
 and upload content stays live while its placement can be drafted
-(`collab/.context/apply.md`). Skills retain Mars
+(`collab/.context/press.md`). Skills retain Mars
 filenames while `skills://` exposes the document codec's names.
 
 Command details the model sees:

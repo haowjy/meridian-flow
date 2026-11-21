@@ -8,7 +8,7 @@ import { ReviewActions } from "./ReviewActions";
 import { ChangeAuthor } from "./ReviewChangeParts";
 import type { ReviewChange } from "./review-model";
 
-export type ReviewChangeBarProps = {
+type ReviewChangeBarProps = {
   change: ReviewChange;
   disabled: boolean;
   /** False withdraws Apply (another document holds the path); Discard still applies. */

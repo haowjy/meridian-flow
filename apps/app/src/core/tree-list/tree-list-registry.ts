@@ -1,7 +1,7 @@
 /** The account's open tree lists: one session per list however many views hold it. */
 import { type TreeListRef, treeRoomName } from "@meridian/contracts/protocol";
 import type { TreeRecord } from "@meridian/project-tree";
-import { type BounceHost, watchBounces } from "../project-tree/tree-bounces";
+import { watchBounces } from "../project-tree/tree-bounces";
 import { TreeListSession } from "./tree-list-session";
 
 export type TreeListHandle = { readonly session: TreeListSession; release(): void };
@@ -14,7 +14,6 @@ export class TreeListRegistry {
     private readonly accountId: string,
     /** Records a recovered copy could not append again: what a client of this build never writes. */
     private readonly onDropped: (records: readonly TreeRecord[]) => void = () => undefined,
-    private readonly bounceHost: BounceHost = { endCreatedDraftRoom: () => undefined },
   ) {}
 
   /** The list's session, opened if no view holds it. Release the handle when the view goes. */
@@ -24,7 +23,7 @@ export class TreeListRegistry {
     let entry = this.sessions.get(key);
     if (!entry) {
       const session = new TreeListSession(this.accountId, list, undefined, this.onDropped);
-      watchBounces(session, `user:${this.accountId}`, this.bounceHost);
+      watchBounces(session, `user:${this.accountId}`);
       entry = { session, holds: 0 };
       this.sessions.set(key, entry);
     }

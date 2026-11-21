@@ -1,6 +1,5 @@
 /** Branded agent-edit core types and the grant that authorizes and routes each model call. */
 import type { AgentEditCore, WriteContext, WriteOutcome } from "@meridian/agent-edit/integration";
-import { draftOwnerKey } from "@meridian/contracts";
 import type { FileAccessDenied, FileDestination, FileGrant } from "../../file-policy/index.js";
 
 /**
@@ -33,5 +32,5 @@ export function asLiveAgentEditCore(core: AgentEditCore): LiveAgentEditCore {
 
 export function sameDestination(left: FileDestination, right: FileDestination): boolean {
   if (left.kind === "live" || right.kind === "live") return left.kind === right.kind;
-  return draftOwnerKey(left.owner) === draftOwnerKey(right.owner);
+  return left.draftId === right.draftId;
 }

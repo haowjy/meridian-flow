@@ -116,7 +116,7 @@ export type SubmittedReference =
       kind: "document";
       documentId: DocumentId;
       uri: CanonicalContextUri;
-      purpose: "reference" | "draft-upload";
+      purpose: "reference" | "upload";
       intakeId?: string;
     }
   | { kind: "folder"; folderId: FolderId; uri: CanonicalContextUri };

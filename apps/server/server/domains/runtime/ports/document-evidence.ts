@@ -1,6 +1,6 @@
 /**
  * What the model was shown of documents, kept by the document side: the frontier each result
- * block showed (per room: `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`) and
+ * block showed (per room: `live:<documentId>`) and
  * the links it was shown. The runtime never writes the tables. An edit's evidence is recorded by
  * the document side in the edit's own transaction; a read's, and a writer turn's reference
  * blocks', are handed over with `resultStored` once their blocks are stored. Every lookup names the
@@ -10,6 +10,7 @@ import type {
   FrontierLookup,
   ObservationFrontier,
   ReplyMutations,
+  ShownBlock,
   StoredEvidence,
 } from "../../../shared/model-evidence.js";
 
@@ -37,6 +38,8 @@ export type RecordedFrontier = { blockId: string; recordedSeq: number; snapshot:
 export interface FrontierLookups {
   recording: FrontierLookup;
   planning: FrontierLookup;
+  /** What `planning`'s blocks showed of a room in full, oldest first (`shownLookup`). */
+  planningShown(room: string): Promise<readonly ShownBlock[]>;
   credited(): readonly string[];
   reply: ReplyMutations;
 }

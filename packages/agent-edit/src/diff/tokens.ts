@@ -284,7 +284,7 @@ const coarse = <T>(a: T, b: T, empty: (x: T) => boolean): Array<[number, T]> => 
 ];
 
 /** The one diff-match-patch call: a character diff of two strings, with no wall-clock deadline. */
-export function textDiff(a: string, b: string): Array<[number, string]> {
+function textDiff(a: string, b: string): Array<[number, string]> {
   if (a.length + b.length > MAX_DIFF_CHARS) return coarse(a, b, (x) => !x);
   return makeDiff(a, b, NO_DEADLINE) as Array<[number, string]>;
 }

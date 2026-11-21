@@ -31,7 +31,7 @@ are the other two:
   copy this process changed and has not committed is never read: the list is loaded afresh. A
   `make` and a `view` are synchronous, so a copy is never seen half changed.
 - `resync(lists)` brings the rows to the list's replay when something the rows read changed outside
-  the list: a branch ended (a Work purged). It takes the keys, or finds them held. A draft opening changes no row:
+  the list: a draft ended (a Work purged). It takes the keys, or finds them held. A draft opening changes no row:
   the document must show in the Work's view for the draft to open.
 
 Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advisory lock
@@ -39,7 +39,7 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
 
 1. bring this process's copy to the journal's head: the journal keeps every row, so a copy
    behind the head reads only the rows after it;
-2. for `admit`: read `Connection` (`tree-list-facts.ts`: the open branches and the list’s sources, including closed Works; a source with no row is gone) and run the package's `admit`: the guard, which throws `CopyFault` on a copy
+2. for `admit`: read `Connection` (`tree-list-facts.ts`: the open drafts and the list’s sources, including closed Works; a source with no row is gone) and run the package's `admit`: the guard, which throws `CopyFault` on a copy
    that does something an honest client's never does (nothing is stored, the copy reloads, the
    room closes the connection with `COPY_BROKEN`), then the update is applied to the copy and
    each record that changes a closed Work (a create, rename, move, delete or restore in its draft
@@ -53,16 +53,16 @@ Work rows and lifecycle locks (`lockSeamWorks`) come first, then the list's advi
    source that is not the list's project's, so a forged id can't overwrite another's row;
 4. append what the copy gained to the journal through its system path (`origin: "system"`;
    a person's path would read the whole list to record an edit);
-5. `syncRows` (`tree-list-rows.ts`): replay live and every kept Work (a branch that has not
+5. `syncRows` (`tree-list-rows.ts`): replay live and every kept Work (a draft that has not
    ended: open, archived, or deleted and restorable) with pending tree records or pending text, then the `documents` rows of created documents from the
    replay's rows, compare with the rows last written, write the rows that differ, the
-   previous locations and `location_version`. "Kept" is `keptBranches` and "open" is
-   `openBranches` (`tree-list-facts.ts`): only open Works may write, but every kept Work's view is
+   previous locations and `location_version`. "Kept" is `keptDrafts` and "open" is
+   `openDrafts` (`tree-list-facts.ts`): only open Works may write, but every kept Work's view is
    kept, so retention and "living" never lose a Work that can come back;
 6. a text document a new create made in a Work's version gets its Yjs authority and its Work text
    draft (`draftCreatedDocuments`, collab's), still under the list's key. It takes no Work lock:
-   the Work's lock comes before the list key, and a Work's archive or delete and a branch's end
-   take the list key before they change it, so the branch stays open to the commit. A copy of a
+   the Work's lock comes before the list key, and a Work's archive or delete and a draft's end
+   take the list key before they change it, so the draft stays open to the commit. A copy of a
    create (Apply's, a restored Discard's) names a node the list holds already and makes no draft;
 7. after the outermost commit, `onCommitted` listeners get the update (the list's room is one).
 
@@ -114,8 +114,8 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
 The measurement behind the one-table shape (22,110 nodes, three Works with about 200 rows each,
 median of 21 runs, a three-folder path walk): live 0.18 ms; a Work's view as a plain left join
 with `COALESCE` 7.5 ms (72 ms when the walk is written to force index use); as the
-index-friendly union (`tree_nodes` rows with no `branch_tree_nodes` row for the branch, then
-the branch's rows) with each walk step a `LATERAL (... OFFSET 0)` subquery, 0.48 ms. Today's
+index-friendly union (`tree_nodes` rows with no `draft_tree_nodes` row for the draft, then
+the draft's rows) with each walk step a `LATERAL (... OFFSET 0)` subquery, 0.48 ms. Today's
 two-table shape in the same walk costs 3.1 ms. A recursive step that joins the relation without
 the `LATERAL` is planned as a hash join of the whole relation, whatever the form: write
 readers' walks with the `LATERAL`.

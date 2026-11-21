@@ -16,19 +16,23 @@ import {
   PROJECT_ID,
   resetDatabase,
   SOURCE_ID,
-  schema,
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
-import { seedSecondWork, WORK_B_ID } from "./test-support/cross-work-probe-harness.js";
+import {
+  seedSecondWork,
+  WORK_B_DRAFT_ID,
+  WORK_B_ID,
+} from "./test-support/cross-work-probe-harness.js";
 import {
   createResponse,
   responseContext,
   stageDraft,
 } from "./test-support/document-edit-receipt-fixture.js";
-import { reviewDriver } from "./test-support/draft-review-requests.js";
+import { pressDriver } from "./test-support/press-requests.js";
 
 const NEW_ID = "00000000-0000-4000-8000-000000000830";
 const _INVERSE = "an inverse removed the text it edited";
@@ -46,31 +50,40 @@ describe("inverse integration (postgres)", () => {
   afterAll(() => closeDatabase(db));
 
   /** The Work's draft creates the chapter, as ContextFS leaves a model's create in a draft-mode Work. */
-  async function claimCreate(branchId: string, documentId: string) {
+  async function claimCreate(draftId: string, documentId: string) {
     await treeSeeder(db).document(SOURCE_ID, "created", {
       id: documentId,
-      view: { draft: branchId },
+      view: { draft: draftId },
       actor: `agent:${THREAD_ID}/${TURN_ID}`,
     });
   }
 
-  const grantFor = (documentId: string, workId: string = WORK_ID, slug = "atomicity-work") => {
+  const grantFor = (
+    documentId: string,
+    work: { id: string; draft: string } = { id: WORK_ID, draft: WORK_DRAFT_ID },
+    slug = "atomicity-work",
+  ) => {
     const granted = testFileGrant(
-      { kind: "draft", owner: { kind: "work", workId: workId as never }, ownerHandle: slug },
+      {
+        kind: "draft",
+        draftId: work.draft,
+        owner: { kind: "work", workId: work.id as never },
+        ownerHandle: slug,
+      },
       documentId,
     );
     return grantInProject(granted, PROJECT_ID, USER_ID);
   };
 
   it("6.4: model undo after the chat's Work moved lands in the edit's Work", async () => {
-    const { fixture, draftId } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
+    const { fixture } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
     await seedSecondWork(fixture);
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, WORK_B_ID);
     const moved = {
       ...responseContext(await createResponse(db, 2)),
-      grant: grantFor(ALPHA_ID, WORK_B_ID, "work-b"),
+      grant: grantFor(ALPHA_ID, { id: WORK_B_ID, draft: WORK_B_DRAFT_ID }, "work-b"),
     };
     await fixture.collab
       .agentEdit()
@@ -80,12 +93,7 @@ describe("inverse integration (postgres)", () => {
         .agentEdit()
         .write({ command: "undo", file: "alpha.md", documentId: ALPHA_ID }, moved),
     ).toMatchObject({ status: "success" });
-    expect(await fixture.draftMarkdown(draftId)).toBe("red\n\nblue\n\ngreen\n");
-    expect(
-      (await db.select().from(schema.branches)).filter(
-        (branch) => branch.originWorkId === WORK_B_ID,
-      ),
-    ).toEqual([]);
+    expect(await fixture.workMarkdown()).toBe("red\n\nblue\n\ngreen\n");
   });
 
   it("6.2: card Undo of a turn whose draft was discarded takes nothing back", async () => {
@@ -93,8 +101,9 @@ describe("inverse integration (postgres)", () => {
       ["red", "gold"],
       ["blue", "azure"],
     ]);
-    expect(await reviewDriver(fixture.collab.draftReview).discardAll()).toMatchObject({
-      status: "discarded",
+    expect(await pressDriver(fixture.collab.presses).discard(ALPHA_ID)).toMatchObject({
+      status: "pressed",
+      items: [{ node: ALPHA_ID, text: true }],
     });
     const outcome = await fixture.collab.reverseTurn({
       threadId: THREAD_ID,
@@ -108,11 +117,7 @@ describe("inverse integration (postgres)", () => {
     const { fixture } = await stageDraft(db, harness, "red\n\nblue\n\ngreen", "replace", [
       ["red", "gold"],
     ]);
-    const branchId = (
-      await fixture.collab.draftReview.items({ owner: { kind: "work", workId: WORK_ID } })
-    ).branchId;
-    if (!branchId) throw new Error("No active branch");
-    await claimCreate(branchId, NEW_ID);
+    await claimCreate(WORK_DRAFT_ID, NEW_ID);
     await fixture.provisionDraft(NEW_ID as never);
     const reply = await createResponse(db, 2);
     expect(
@@ -124,8 +129,8 @@ describe("inverse integration (postgres)", () => {
         ),
     ).toMatchObject({ status: "success" });
     const item = () =>
-      fixture.collab.draftReview.resolveItemByDocument({
-        owner: { kind: "work", workId: WORK_ID },
+      fixture.collab.draftReview.resolveItemInDraft({
+        draftId: WORK_DRAFT_ID,
         documentId: NEW_ID as never,
       });
     expect(await item()).toMatchObject({ item: { origin: "created" } });
@@ -137,6 +142,6 @@ describe("inverse integration (postgres)", () => {
     expect(turnUndo).toMatchObject({ status: "reversed" });
     const kept = await item();
     expect(kept).toMatchObject({ listed: true, item: { origin: "created", wholeItem: true } });
-    expect((await fixture.draftMarkdown(kept?.draftId as string)).trim()).toBe("");
+    expect((await fixture.workMarkdown(NEW_ID)).trim()).toBe("");
   });
 });

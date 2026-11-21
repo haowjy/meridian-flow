@@ -7,7 +7,7 @@
  */
 import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import { modelResult } from "@meridian/agent-edit/integration";
-import type { BranchId, ThreadId, TurnId } from "@meridian/contracts";
+import type { DraftId, ThreadId, TurnId } from "@meridian/contracts";
 import { addressScheme } from "@meridian/contracts/context-uri";
 import { contextPortForThread } from "../../domains/context/index.js";
 import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
@@ -177,7 +177,7 @@ export async function runTreeToolCommand(
             ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
             ...(scope.view.draft
               ? {
-                  draftBranchId: scope.view.draft as BranchId,
+                  draftId: scope.view.draft as DraftId,
                 }
               : {}),
             shownAt: uriOfWritten(result.shownAt),
@@ -196,19 +196,6 @@ export async function runTreeToolCommand(
     if (!result.ok)
       return { refused: refusalOf(input, result), notMoved: result.notMoved ?? [result.message] };
 
-    // A delete is never refused for its Works: they keep their drafts of what it took.
-    const survivingWorks =
-      input.command === "delete" && !drafted && result.taken.length <= 100
-        ? [
-            ...new Set(
-              (
-                await Promise.all(
-                  result.taken.map((id) => history.survivingDraftWorks(id as never)),
-                )
-              ).flat(),
-            ),
-          ].sort()
-        : [];
     const payload: Parameters<typeof modelResult>[0]["payload"] = {
       ...(result.landed ? { path: result.landed } : {}),
       ...(destination ? { destination: destination.kind } : {}),
@@ -222,8 +209,6 @@ export async function runTreeToolCommand(
         ...(result.placedAtEnd ? { placedAtEnd: result.placedAtEnd } : {}),
         ...(result.already ? { already: result.already } : {}),
         ...(result.leftOut ? { leftOut: result.leftOut } : {}),
-        ...(result.deletedInLive ? { deletedInLive: true as const } : {}),
-        ...(survivingWorks.length > 0 ? { survivingWorks } : {}),
         ...(drafted && firstDrafted && result.made.length > 0
           ? { firstDrafted: true as const }
           : {}),

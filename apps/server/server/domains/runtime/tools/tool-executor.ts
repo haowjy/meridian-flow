@@ -61,7 +61,7 @@
  * back to the model's output item order.
  */
 
-import type { ModelEditKey } from "@meridian/contracts/branches";
+import type { ModelEditKey } from "@meridian/contracts/drafts";
 import {
   type MeridianError,
   meridianErrorFromTool,

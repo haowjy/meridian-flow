@@ -65,7 +65,7 @@ it("debounces preview options, hides stale counts and downloads directly before 
         replies[0]!(
           Response.json({
             outsideLinks: { count: 2, byArea: { scratch: 1, uploads: 1, user: 0, deleted: 0 } },
-            pendingDrafts: 3,
+            pendingDocuments: 3,
           }),
         );
       });
@@ -73,7 +73,7 @@ it("debounces preview options, hides stale counts and downloads directly before 
         "2 links point to Scratch or Uploads, which won't be included.",
       );
       expect(document.body.textContent).toContain(
-        "3 drafts the AI hasn't applied won't be included.",
+        "3 documents have changes waiting for review; the export has their live text.",
       );
       const switches = [...document.querySelectorAll<HTMLButtonElement>('[role="switch"]')];
       await act(async () => {
@@ -91,7 +91,7 @@ it("debounces preview options, hides stale counts and downloads directly before 
         replies[1]!(
           Response.json({
             outsideLinks: { count: 0, byArea: { scratch: 0, uploads: 0, user: 0, deleted: 0 } },
-            pendingDrafts: 0,
+            pendingDocuments: 0,
           }),
         );
       });
@@ -140,7 +140,7 @@ it("ignores a late preview from a retired account and cannot download for it", a
         reply(
           Response.json({
             outsideLinks: { count: 12, byArea: { scratch: 0, uploads: 0, user: 12, deleted: 0 } },
-            pendingDrafts: 3,
+            pendingDocuments: 3,
           }),
         );
       });

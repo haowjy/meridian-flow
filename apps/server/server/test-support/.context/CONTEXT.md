@@ -16,10 +16,10 @@ own work through `collab.lifecycle.dispose`, which a harness awaits before
 resetting rows, so running work cannot deadlock against the reset's locks. See
 [collab's CONTEXT.md](../../domains/collab/.context/CONTEXT.md).
 
-## Branch-tree suites
+## Draft-tree suites
 
-One world per case. `branch-tree-seeds.ts` writes rows the way the product leaves
-them; `branch-tree-commands.ts` drives the composed runtime and has no Apply verb.
+One world per case. `draft-tree-seeds.ts` writes rows the way the product leaves
+them; `draft-tree-commands.ts` drives the composed runtime and has no Apply verb.
 Assert through these verbs (what the writer or a reader sees), not raw tables, and
 seed only states the product can't reach yet. Lock races go through
 `lock-interleave.ts`: `race` names each run, so an order table reads the same

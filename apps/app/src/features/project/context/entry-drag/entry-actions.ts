@@ -23,17 +23,17 @@ export function useEntryActions(projectId: string, version?: TreeVersion): Entry
   const account = useTreeActions({ kind: "account" }, acting);
   const projectList = useTreeList({ kind: "project", projectId });
   const accountList = useTreeList({ kind: "account", userId: accountId });
-  const { view, pendingText } = acting;
+  const { view } = acting;
   return useMemo(
     () => ({
       project,
       account,
       holding: (node) => {
-        const own = accountList.session?.replay(view, pendingText);
+        const own = accountList.session?.replay(view);
         if (own?.nodes.has(node)) return { list: account, replay: own };
-        return { list: project, replay: projectList.session?.replay(view, pendingText) ?? null };
+        return { list: project, replay: projectList.session?.replay(view) ?? null };
       },
     }),
-    [project, account, projectList.session, accountList.session, view, pendingText],
+    [project, account, projectList.session, accountList.session, view],
   );
 }

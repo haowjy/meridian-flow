@@ -1,19 +1,19 @@
-/** GET /api/projects/:projectId/drafts?owner=work:<id>|lineage:<rootId>: an owner's reviewable drafts. */
+/** GET /api/projects/:projectId/drafts?draft=<id>: a draft's reviewable items. */
 import type { ProjectId } from "@meridian/contracts/runtime";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireAppUser } from "../../../../../lib/auth-gate.js";
 import {
-  handleOwnerDraftListRequest,
-  selectBranchRouteServices,
-} from "../../../../../lib/branch-review-route.js";
+  handleDraftListRequest,
+  selectDraftRouteServices,
+} from "../../../../../lib/draft-review-route.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
-  const owner = getQuery(event).owner;
-  if (typeof owner !== "string") throw createError({ statusCode: 400, message: "Missing owner" });
-  return handleOwnerDraftListRequest(selectBranchRouteServices(app), {
+  const draft = getQuery(event).draft;
+  if (typeof draft !== "string") throw createError({ statusCode: 400, message: "Missing draft" });
+  return handleDraftListRequest(selectDraftRouteServices(app), {
     projectId: (getRouterParam(event, "projectId") ?? "") as ProjectId,
-    owner,
+    draft,
     userId: user.userId,
   });
 });

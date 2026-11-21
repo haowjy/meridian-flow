@@ -19,6 +19,7 @@ export function thread(): Thread {
     id: THREAD_ID,
     projectId: PROJECT_ID,
     workId: null,
+    draftId: "wirethread01",
     aiWriteMode: "direct",
     effectiveAiWriteMode: "direct",
     userId: "u1",

@@ -3,8 +3,8 @@ import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 /**
  * Live Yjs connections by the owners (Works and lineages, keyed by `draftOwnerKey`) their file access depends on (file-access
  * §7). A Work's archive, unarchive, delete or restore reaches exactly the rooms
- * of its own files, its scratch and its drafts, and no manuscript, kb or user
- * room. Draft rooms are named by draft id, so room names can't answer this.
+ * of its own files, its scratch and the documents only it has, and no manuscript, kb or user
+ * room. A room is named by document, not by owner, so room names can't answer this.
  */
 
 /** One admitted connection; `revoke` closes it so the client reconnects. */

@@ -1,6 +1,7 @@
 import type {
   ContextSourceId,
   DocumentId,
+  DraftId,
   ProjectId,
   ProjectSettings,
   ThreadId,
@@ -10,6 +11,7 @@ import type {
 import { type AiWriteMode, WORK_STATUS_MAX_LENGTH } from "@meridian/contracts/works";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -24,6 +26,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
+import { drafts } from "./drafts";
 import { users } from "./users";
 
 export const projects = pgTable(
@@ -82,7 +85,12 @@ export const works = pgTable(
       .notNull()
       .default("direct"),
     entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
-    // The Works badge: documents the Work's active branch changes, as the collab pending
+    /** The Work's draft, minted with it; null only on No Work, which owns nothing. */
+    draftId: text("draft_id")
+      .$type<DraftId>()
+      .unique("works_draft_id")
+      .references((): AnyPgColumn => drafts.id),
+    // The Works badge: documents the Work's draft changes, as the collab pending
     // membership rule counts them. Projected, not counted at read time: the Works boundary reconciles
     // every Work it locked at commit and bumps `entity_revision` only when it moved (projects/.context).
     pendingDocumentCount: integer("pending_document_count").notNull().default(0),
@@ -109,6 +117,7 @@ export const works = pgTable(
       "works_no_work_handle",
       sql`(${table.isNoWork} AND ${table.handle} IS NULL) OR (NOT ${table.isNoWork} AND ${table.handle} IS NOT NULL)`,
     ),
+    check("works_draft_unless_no_work", sql`${table.isNoWork} = (${table.draftId} IS NULL)`),
     check("works_no_work_not_archived", sql`NOT ${table.isNoWork} OR ${table.archivedAt} IS NULL`),
     check("works_handle_valid", sql`${table.handle} IS NULL OR ${table.handle} ~ '^w[1-9][0-9]*$'`),
     // Schema SQL needs a literal: interpolating a number generates an unbound $1 in migrations.
@@ -205,7 +214,7 @@ export const contextSources = pgTable(
 
 /**
  * What a document is apart from its name and place: its stored bytes and facts, and its owner: a
- * project, or the account for a home document (the owner of the list its create is in). Its name, type and place are `tree_nodes` / `branch_tree_nodes` rows, written only
+ * project, or the account for a home document (the owner of the list its create is in). Its name, type and place are `tree_nodes` / `draft_tree_nodes` rows, written only
  * by the replay of the project's tree list; a document in no view has a row here and none there.
  * Written only by the transaction that admits the document's `create`.
  */
@@ -230,7 +239,7 @@ export const documents = pgTable(
     /** Content was permanently released after the trash retention window; the row remains a tombstone. */
     contentPurgedAt: timestamp("content_purged_at", { withTimezone: true, mode: "date" }),
     /**
-     * Null while a `tree_nodes` or `branch_tree_nodes` row shows the document; otherwise when the
+     * Null while a `tree_nodes` or `draft_tree_nodes` row shows the document; otherwise when the
      * last row went (a discarded or refused-and-not-kept create). Written only by the row sync;
      * retention purges it on the Trash window.
      */

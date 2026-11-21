@@ -4,6 +4,7 @@
  * transactional ThreadRepositories aggregate. The boundary both adapter sets implement.
  */
 
+import type { DraftId } from "@meridian/contracts";
 import type { ArtifactRef } from "@meridian/contracts/artifacts";
 import type { McpBakedConnection } from "@meridian/contracts/mcp";
 import type { Project } from "@meridian/contracts/projects";
@@ -250,6 +251,8 @@ export type LatestChildExecution = Pick<
 export interface CreateThreadInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: ThreadId;
+  /** The root chat's lineage draft, minted by the client beside `id`; the insert mints one if omitted. */
+  draftId?: DraftId;
   userId: UserId;
   projectId: ProjectId;
   workId?: WorkId | null;

@@ -7,6 +7,8 @@ import type { CreationAgent } from "@/features/agents/creation-agent";
 const OPTIMISTIC_OWNER_ID = "optimistic-local";
 export function makeOptimisticThread(input: {
   id: string;
+  /** The new lineage's draft; a fork shares its source's. */
+  draftId: string;
   projectId: string;
   title: string;
   timestamp: string;
@@ -17,6 +19,7 @@ export function makeOptimisticThread(input: {
 }): Thread {
   return {
     id: input.id,
+    draftId: input.draftId,
     projectId: input.projectId,
     workId: input.workId ?? null,
     aiWriteMode: input.aiWriteMode,

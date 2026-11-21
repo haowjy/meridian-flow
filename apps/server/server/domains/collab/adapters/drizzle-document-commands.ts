@@ -1,6 +1,6 @@
 /** The document commands' door to the shared command record. */
 
-import type { StoredDocumentCommandResult } from "@meridian/contracts/branches";
+import type { StoredDocumentCommandResult } from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
 import type { CommandEnvelope } from "../../../shared/commands/command-record.js";
 import {

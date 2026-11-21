@@ -10,7 +10,6 @@ export {
 export {
   type ApplyResult,
   appliedCreates,
-  appliedNodes,
   applyDraft,
   covers,
   type DiscardedBy,
@@ -20,6 +19,7 @@ export {
   madeBy,
   recordsAdmittedAfter,
   restoreDiscard,
+  trashAgain,
   undoApply,
 } from "./apply.js";
 export { changedFolders, type LandingFault, landingFaults } from "./changes.js";
@@ -68,9 +68,9 @@ export {
   type TreeProjection,
 } from "./replay.js";
 export {
-  type BranchRow,
-  branchRows,
   changedRows,
+  type DraftRow,
+  draftRows,
   type ProjectedRow,
   pendingCreates,
   projectedRows,

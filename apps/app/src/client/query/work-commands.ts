@@ -22,7 +22,8 @@ import { convergeWorkProjection } from "./work-projection-cache";
 import { observeWorksReads, refreshWorksSnapshot } from "./works-projection-acquisition";
 
 export type WorkCommandVariables = {
-  create: { workId: ParsedRequestId; name: string; goal?: string };
+  /** `draftId` is the Work's draft, minted with `workId`. */
+  create: { workId: ParsedRequestId; draftId: string; name: string; goal?: string };
   update: { workId: string; data: UpdateWorkRequest };
   archive: { workId: string };
   unarchive: { workId: string };
@@ -82,10 +83,10 @@ const worksPath = (workId: string, action = "") => `/api/works/${workId}${action
 
 const workCommands = {
   create: {
-    request: ({ projectId, variables: { workId, name, goal } }) => ({
+    request: ({ projectId, variables: { workId, draftId, name, goal } }) => ({
       method: "POST",
       path: apiProjectWorksPath(projectId),
-      body: { id: workId, name, goal },
+      body: { id: workId, draftId, name, goal },
     }),
     // Until the server has it, the Work shows only as a `WorkCreation`.
     project: (work) => work,

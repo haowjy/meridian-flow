@@ -1,14 +1,13 @@
 /**
- * A branch's pending move or delete of a document (its tree line), and the words for it: the
+ * A draft's pending move or delete of a document (its tree line), and the words for it: the
  * review row ("ch12: renaming to ch12-old") and the Work notice on the live document ("Ascension
  * is renaming this to ch12-old."). Live doesn't show either until Apply. Works are named,
  * never by handle (#914).
  */
 import { t } from "@lingui/core/macro";
-import type { DocumentDraftHint, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
+import type { DocumentDraftHint, DraftItem } from "@meridian/contracts/drafts";
 import { describeMove, type ParsedContextLocation } from "@/features/chat/document-display-name";
-import { isDeletedLive } from "./deleted-drafts";
 import type { ReviewChange } from "./review-model";
 
 export type TreeLine =
@@ -18,9 +17,9 @@ export type TreeLine =
 const nameOf = (location: ParsedContextLocation | null | undefined) =>
   (location && documentTitleFromUri(location.path)) || t`Untitled document`;
 
-/** The item's move or delete, if its branch has one; a creation has no tree line. */
+/** The item's move or delete, if its draft has one; a creation has no tree line. */
 export function treeLineOf(
-  item: Pick<ThreadDraftListItem, "tree" | "contextLocation" | "documentName">,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName">,
 ): TreeLine | null {
   const { tree } = item;
   if (tree?.deleted)
@@ -32,46 +31,48 @@ export function treeLineOf(
 
 /** Whether the item's rows include a move or delete line. */
 export function hasTreeLine(
-  item: Pick<ThreadDraftListItem, "tree" | "contextLocation" | "documentName" | "isNew">,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew">,
 ): boolean {
   return !item.isNew && treeLineOf(item) !== null;
 }
 
 /**
- * Whether Apply lands something of the item: its text, its creation, its tree line, or a document
- * live deleted, which Apply brings back with the Work's change to it (a reorder in place has no
- * tree line).
+ * Whether Apply lands something of the item: its text, its creation or its tree line (a reorder
+ * in place has no tree line).
  */
 export function hasApply(
-  item: Pick<
-    ThreadDraftListItem,
-    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft" | "deletedLive"
-  >,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges">,
 ): boolean {
-  return item.hasDraft || item.isNew || hasTreeLine(item) || isDeletedLive(item);
+  return item.textChanges > 0 || item.isNew || hasTreeLine(item);
 }
 
 /**
- * Whether the item's review has no room: a delete, or a move with no text draft. Its review is the
- * live document with the branch's tree line, so no review session ever binds.
+ * Whether the item is only a tree change: a delete, or a move with no suggestions. Its review is
+ * the live document with the draft's tree line.
  */
-export function reviewHasNoRoom(
-  item: Pick<
-    ThreadDraftListItem,
-    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft"
-  >,
+export function isTreeOnly(
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges">,
 ): boolean {
-  return item.tree?.deleted === true || (!item.hasDraft && hasTreeLine(item));
+  return item.tree?.deleted === true || (item.textChanges === 0 && hasTreeLine(item));
 }
 
-/** The tree line as a review row: one change with no text frame, keyed apart from text. */
-export function treeChange(
-  item: Pick<ThreadDraftListItem, "itemKey">,
-  line: TreeLine,
-): ReviewChange {
+/**
+ * Whether the item opens as a document: it holds suggestions, the Work created it (plain Live
+ * text), or it is only a tree change. Otherwise it is a picture the Work added, shown as a preview.
+ */
+export function opensAsDocument(
+  item: Pick<
+    DraftItem,
+    "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges" | "binary"
+  >,
+): boolean {
+  return item.textChanges > 0 || (item.isNew && !item.binary) || isTreeOnly(item);
+}
+
+/** The tree line as a review row: one change with no text, keyed apart from text. */
+export function treeChange(item: Pick<DraftItem, "itemKey">, line: TreeLine): ReviewChange {
   return {
     id: `tree:${item.itemKey}`,
-    kind: "change",
     excerpt:
       line.kind === "delete"
         ? { removed: line.name, inserted: "" }
@@ -80,10 +81,8 @@ export function treeChange(
     chats: [],
     members: [],
     attributed: false,
-    anchor: 0,
-    spans: [],
-    frame: null,
     tree: line,
+    whole: true,
   };
 }
 
@@ -102,7 +101,7 @@ export function treeLineSentence(line: TreeLine): string {
   }
 }
 
-/** One branch's tree change to the live document, in the words of its Work notice. */
+/** One draft's tree change to the live document, in the words of its Work notice. */
 export type PendingTreeChange = {
   work: string | null;
   line: Exclude<DocumentDraftHint["tree"], null>;

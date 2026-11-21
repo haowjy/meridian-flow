@@ -28,6 +28,7 @@ function work(id: WorkId, name: string, projectId = "project-1"): Work {
     name,
     handle: testWorkHandle(`w${++handleCounter}`),
     isNoWork: false,
+    draftId: `workdraft${String(handleCounter).padStart(3, "0")}`,
     goal: null,
     status: null,
     archivedAt: null,

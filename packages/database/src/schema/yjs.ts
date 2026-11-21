@@ -1,5 +1,4 @@
 import type {
-  BranchId,
   CommandId,
   DocumentAuthorityId,
   DocumentId,
@@ -28,111 +27,12 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { byteaColumn, createdAt, updatedAt } from "./_shared";
+import { byteaColumn, createdAt } from "./_shared";
 import { threads, turns } from "./agent-threads";
-import { branches } from "./branches";
 import { documents, projects } from "./content";
-import { documentEdits, type EditDeltaJson } from "./document-edits";
+import { documentEdits } from "./document-edits";
+import { draftIdColumn } from "./drafts";
 import { users } from "./users";
-
-type DocumentDraftKind = "work_draft";
-type DraftWriteJournalSource = "agent" | "writer" | "server";
-
-export const documentDrafts = pgTable(
-  "document_drafts",
-  {
-    id: text("id").primaryKey(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<DocumentDraftKind>().notNull(),
-    /** The branch this document draft belongs to. */
-    branchId: uuid("branch_id")
-      .$type<BranchId>()
-      .notNull()
-      .references(() => branches.id, { onDelete: "cascade" }),
-    state: byteaColumn("state").notNull(),
-    stateVector: byteaColumn("state_vector").notNull(),
-    /** Immutable live→draft block addresses captured when a Work draft is seeded. */
-    seedOrigins: jsonb("seed_origins").$type<Record<string, string>>(),
-    seedLiveRoom: text("seed_live_room"),
-    seedLiveSnapshot: byteaColumn("seed_live_snapshot"),
-    seedDraftSnapshot: byteaColumn("seed_draft_snapshot"),
-    seedLiveState: byteaColumn("seed_live_state"),
-    seedLivePosition: bigint("seed_live_position", { mode: "number" }),
-    /** Current visible effect against the review base in the retained text. */
-    hasEffect: boolean("has_effect").notNull().default(true),
-    /** The review groups of that effect, judged with it: the text changes a Work's Changes counts. */
-    textChanges: integer("text_changes").notNull().default(0),
-    /**
-     * The `revision` `has_effect` was judged at: equal is fresh, lower is stale and re-judged by
-     * the projection sweep. `-1` (the default) is stale whatever the revision.
-     */
-    hasEffectRevision: bigint("has_effect_revision", { mode: "number" }).notNull().default(-1),
-    schemaVersion: integer("schema_version")
-      .notNull()
-      .default(packCollabSchemaVersion(COLLAB_SCHEMA_VERSION)),
-    /**
-     * Bumped by every committed write to the draft: appends, checkpoint rewrites and holds. Rewrites are fenced by it; appends bump it without checking it, and
-     * the projection job writes `has_effect` at it without bumping it. Never reaches the client.
-     */
-    revision: bigint("revision", { mode: "number" }).notNull().default(0),
-    /** The `revision` the checkpoint (`state`, `state_vector`) was written at. */
-    checkpointRevision: bigint("checkpoint_revision", { mode: "number" }).notNull().default(0),
-    /** Highest `draft_write_journal.id` folded into the checkpoint; the tail is every later row. */
-    checkpointSeq: bigint("checkpoint_seq", { mode: "number" }).notNull().default(0),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    uniqueIndex("document_drafts_branch_document")
-      .on(table.documentId, table.branchId)
-      .where(sql`${table.kind} = 'work_draft'`),
-    index("document_drafts_work_draft_by_branch")
-      .on(table.branchId, table.id)
-      .where(sql`${table.kind} = 'work_draft'`),
-    check("document_drafts_kind_valid", sql`${table.kind} = 'work_draft'`),
-    check(
-      "document_drafts_seed_record_shape",
-      sql`((${table.seedOrigins} IS NULL AND ${table.seedLiveRoom} IS NULL AND ${table.seedLiveSnapshot} IS NULL AND ${table.seedDraftSnapshot} IS NULL) OR (${table.kind} = 'work_draft' AND ${table.seedOrigins} IS NOT NULL AND ${table.seedLiveRoom} IS NOT NULL AND ${table.seedLiveSnapshot} IS NOT NULL AND ${table.seedDraftSnapshot} IS NOT NULL)) AND ((${table.seedLiveState} IS NULL AND ${table.seedLivePosition} IS NULL) OR (${table.seedLiveState} IS NOT NULL AND ${table.seedLivePosition} IS NOT NULL))`,
-    ),
-  ],
-);
-
-export const draftWriteJournal = pgTable(
-  "draft_write_journal",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    draftId: text("draft_id")
-      .notNull()
-      .references(() => documentDrafts.id, { onDelete: "cascade" }),
-    wId: integer("w_id"),
-    /** The model's tool call that made this write; the chat transcript row to jump to. */
-    toolCallId: text("tool_call_id"),
-    source: text("source").$type<DraftWriteJournalSource>().notNull().default("agent"),
-    threadId: uuid("thread_id")
-      .$type<ThreadId>()
-      .references(() => threads.id, { onDelete: "cascade" }),
-    turnId: uuid("turn_id")
-      .$type<TurnId>()
-      .references(() => turns.id, { onDelete: "set null" }),
-    actorUserId: uuid("actor_user_id")
-      .$type<UserId>()
-      .references(() => users.id, { onDelete: "set null" }),
-    updateData: byteaColumn("update_data").notNull(),
-    updateMeta: jsonb("update_meta"),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    index("draft_write_journal_draft").on(table.draftId, table.id),
-    index("draft_write_journal_thread_turn").on(table.draftId, table.threadId, table.turnId),
-    check(
-      "draft_write_journal_source_valid",
-      sql`${table.source} IN ('agent', 'writer', 'server')`,
-    ),
-  ],
-);
 
 export const documentYjsCheckpoints = pgTable(
   "document_yjs_checkpoints",
@@ -143,7 +43,6 @@ export const documentYjsCheckpoints = pgTable(
       .notNull()
       .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
     authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
-    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     attributionManifest: jsonb("attribution_manifest").$type<unknown>().notNull(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
@@ -174,7 +73,6 @@ export const documentYjsUpdates = pgTable(
       .notNull()
       .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
     authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
-    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
     batchOrdinal: integer("batch_ordinal").notNull().default(0),
     updateData: byteaColumn("update_data").notNull(),
@@ -197,7 +95,6 @@ export const documentYjsUpdates = pgTable(
     index("document_yjs_updates_document_id").on(table.documentId, table.id),
     uniqueIndex("document_yjs_updates_authority_admission").on(
       table.authorityId,
-      table.authorityGeneration,
       table.admissionSequence,
       table.batchOrdinal,
     ),
@@ -255,9 +152,6 @@ export const documentYjsHeads = pgTable(
       .$type<DocumentAuthorityId>()
       .notNull()
       .default(sql`gen_random_uuid()`),
-    authorityGeneration: bigint("authority_generation", { mode: "bigint" })
-      .notNull()
-      .default(sql`1`),
     nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
       .notNull()
       .default(sql`1`),
@@ -297,14 +191,26 @@ export const documentBlockRooms = pgTable(
     /** Block ids ("<clientID>:<clock>" of the top-level element) in document order. */
     blockOrder: text("block_order").array().notNull(),
     wordCount: integer("word_count").notNull(),
+    /**
+     * By draft id, what it has pending in the cut: its review's change count, the chats that
+     * wrote them, and whether one is no chat's. The blocks hold Live's text, so a reader in one
+     * of these drafts' views reads the document itself.
+     */
+    pendingChanges: jsonb("pending_changes")
+      .$type<Record<string, { changes: number; chats: string[]; writer: boolean }>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
-    cutGeneration: bigint("cut_generation", { mode: "bigint" }).notNull(),
     cutAdmissionSeq: bigint("cut_admission_seq", { mode: "bigint" }).notNull(),
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),
   },
-  (table) => [uniqueIndex("document_block_rooms_document").on(table.documentId)],
+  (table) => [
+    uniqueIndex("document_block_rooms_document").on(table.documentId),
+    // A draft's documents with suggestions: `pending_changes ? <draft id>`.
+    index("document_block_rooms_pending_changes").using("gin", table.pendingChanges),
+  ],
 );
 
 /** One row per top-level block of a room, keyed by its Yjs item id. */
@@ -353,21 +259,16 @@ export const commands = pgTable(
   },
   (table) => [
     index("commands_thread").on(table.threadId),
-    // Trash lists a project's reopenable commands (a Discard, a Restore, an Un-Apply that swapped a
-    // draft out), and a restore looks for an earlier one of the same Discard.
-    index("commands_discard_project")
-      .on(table.projectId, table.createdAt)
-      .where(sql`${table.kind} IN ('discard', 'undo_discard', 'unapply')`),
     check(
       "commands_kind_valid",
-      sql`${table.kind} IN ('apply', 'unapply', 'discard', 'undo_discard', 'model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides')`,
+      sql`${table.kind} IN ('model_edit', 'reverse_turn', 'copy', 'work_create', 'work_update', 'work_archive', 'work_unarchive', 'work_delete', 'work_restore', 'project_create', 'thread_set_overrides', 'press', 'unpress')`,
     ),
   ],
 );
 
 /**
- * The tree half of an Apply: one row per list the command settled records in, with the list's
- * state vector right after (Un-Apply is allowed only while the list still has it).
+ * The tree half of a press Apply: one row per list the command settled records in, with the
+ * list's state vector right after (its Undo is allowed only while the list still has it).
  */
 export const applyCommandTrees = pgTable(
   "apply_command_trees",
@@ -376,36 +277,26 @@ export const applyCommandTrees = pgTable(
       .$type<CommandId>()
       .notNull()
       .references(() => commands.id, { onDelete: "cascade" }),
-    branchId: uuid("branch_id")
-      .$type<BranchId>()
-      .notNull()
-      .references(() => branches.id, { onDelete: "cascade" }),
+    draftId: draftIdColumn("draft_id").notNull(),
     /** The project's list, or its owner's account list (`user://`). */
     scope: text("scope").$type<"project" | "account">().notNull(),
     mark: byteaColumn("mark").notNull(),
-    /**
-     * The documents the Apply created in this list, each with the highest live journal row and
-     * draft journal row it had once the command committed: text written past either since is
-     * what an Un-Apply of a created document must not cut off.
-     */
-    createdHeads: jsonb("created_heads")
-      .$type<Record<string, { live: number; draft: number }>>()
-      .notNull(),
-    /** The live restore records the Apply appended before its copies, which Un-Apply takes back. */
-    restored: jsonb("restored").$type<string[]>().notNull(),
-    /** The nodes whose live copies or restores this Apply made in this list: what Un-Apply writes. */
+    /** The nodes whose live copies this Apply made in this list: what its Undo writes. */
     nodes: jsonb("nodes").$type<string[]>().notNull(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.scope] })],
 );
 
 /**
- * What a Discard took out of one draft: the blocks it changed, before and after, with one block
- * either side (the shape of `document_edit_parts.delta`). It is the only copy of the discarded
- * text, so Restore merges it back from here and the day-30 purge deletes it with the command.
+ * The text half of a press: what the press's one transaction did to this document, by content
+ * (the blocks it changed, before and after, as ProseMirror JSON) and the verdict entries it wrote
+ * (`suggestion_verdicts` keys, each with the id of the map item that holds it). Its Undo takes
+ * each change that still stands back out by content and forgets the verdicts of the changes that
+ * are pending again and that no other client has since resolved, so it reads no deleted item: a
+ * checkpoint has dropped their content.
  */
-export const discardCommandEffects = pgTable(
-  "discard_command_effects",
+export const pressTextEffects = pgTable(
+  "press_text_effects",
   {
     commandId: uuid("command_id")
       .$type<CommandId>()
@@ -415,55 +306,12 @@ export const discardCommandEffects = pgTable(
       .$type<DocumentId>()
       .notNull()
       .references(() => documents.id, { onDelete: "cascade" }),
-    draftId: text("draft_id").notNull(),
-    delta: jsonb("delta").$type<EditDeltaJson>().notNull(),
-    /** The Restore that ended this entry: it brought every change back, or none that could come. */
-    endedBy: uuid("ended_by").$type<CommandId>(),
+    delta: jsonb("delta")
+      .$type<{ before: Record<string, unknown>[]; after: Record<string, unknown>[] }>()
+      .notNull(),
+    verdicts: jsonb("verdicts").$type<{ key: string; client: number; clock: number }[]>().notNull(),
+    /** The Undo that took it back: a press is taken back once. */
+    undoneBy: uuid("undone_by").$type<CommandId>(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.documentId] })],
-);
-
-/** The actual text effect of each frozen Apply group, independent of compactable journals. */
-export const applyCommandEffects = pgTable(
-  "apply_command_effects",
-  {
-    commandId: uuid("command_id")
-      .$type<CommandId>()
-      .notNull()
-      .references(() => commands.id, { onDelete: "cascade" }),
-    ordinal: integer("ordinal").notNull(),
-    groupId: text("group_id").notNull(),
-    documentId: uuid("document_id")
-      .$type<DocumentId>()
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    draftId: text("draft_id").notNull(),
-    /**
-     * What this group changed in the manuscript: the blocks before and after, with one unchanged
-     * block either side. Null means live already held the group's text, so Un-Apply removes no live
-     * or base text.
-     */
-    liveDelta: jsonb("live_delta").$type<EditDeltaJson | null>(),
-    /**
-     * The changes of AI edits this group took, as `[partId, index]`: the part of a
-     * `document_edit_parts` row and the index of the change in the part's delta. Written with the
-     * effect, so the card reads "applied" for them whatever the text does later.
-     */
-    carried: jsonb("carried").$type<[number, number][]>().notNull(),
-    /**
-     * Where the group sat, as its change's hash and the id of its first block: how a Redo finds a
-     * change only the writer made (`carried` finds an AI edit's), which an equal change elsewhere
-     * cannot take over.
-     */
-    place: text("place").notNull(),
-    /** The command's base before its first group; stored once rather than once per group. */
-    baseStart: jsonb("base_start").$type<unknown[]>(),
-    /** This group's bounded change to the preceding committed base. */
-    baseDelta: jsonb("base_delta").$type<unknown[]>().notNull(),
-    unappliedBy: uuid("unapplied_by").$type<CommandId>(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.commandId, table.ordinal] }),
-    uniqueIndex("apply_command_effects_group").on(table.commandId, table.documentId, table.groupId),
-  ],
 );

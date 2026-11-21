@@ -6,14 +6,14 @@ an `await` rechecks durable authority synchronously before applying or broadcast
 Concurrent-change reporting may degrade without affecting apply authority.
 
 A live-room writer frame is judged in the room's memory, in `admitLiveWriterUpdate`: contained
-(acknowledged, nothing stored), a reserved client id or server-owned root (the socket closes), a
+(acknowledged, nothing stored), a
 gap (the frame starts past the room's clock for one of its clients: `1013`, and the reconnect's
 handshake carries the prefix), or new, trimmed to what the room lacks. A new frame is stored by
 `LiveWriterJournal.appendWriterUpdate` before Hocuspocus applies, broadcasts and acknowledges it,
 in one short transaction: the head row's counter bump and one insert. The head row's lock is the
 whole lock a keystroke takes; it keeps journal order equal to commit order. The head it returns is
-compared with the room's generation before the insert (the insert stamps what the bump returned);
-a room bound to an older generation stores nothing and is retired. Two sockets relaying one new
+compared with the room's authority before the insert (the insert stamps what the bump returned);
+a room bound to another authority stores nothing and is retired. Two sockets relaying one new
 update can both pass the room's judgement and store it twice: Yjs ignores the copy, and the cost
 is a redundant row.
 
@@ -22,13 +22,9 @@ head row `FOR UPDATE`, before the command reads anything, so a keystroke cannot 
 command's read and its rows, below the command's own ids and outside its recorded cut. Typing
 holds only the row; commands hold both, always the key first.
 
-A draft room's frame is judged and stored the same way (`admitDraftWriterUpdate`, then
-`DraftStore.appendWriterRow`): the draft row's revision bump, which carries the Work-is-active
-predicate and holds the row to the commit, and one insert. The draft's committed replica is not
-touched; commands catch it up from the tail. A frame that finds the draft closed or its Work
-inactive closes the socket `4409`; any other failure closes `1013`.
-
 Access is decided when the socket opens and ends when the gateway closes it: a frame takes
 no edit grant and locks no Work. Document sockets register under their Work and lineage owners,
 their project and their document (`accessKeys` in `yjs-ws-handler.ts`), so an archive, a project's
-deletion or a document's move to another source closes them (`4409`).
+deletion, a document's move to another source, or its coming into Live from a Work's draft (an
+applied create, whose socket was admitted as the Work's) closes them (`4409`), and the client
+reconnects at the new access (`writeLive` in `context/adapters/tree-list-rows.ts` names both).

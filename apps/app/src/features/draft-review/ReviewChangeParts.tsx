@@ -18,7 +18,6 @@ import { useOpenChatThread } from "@/features/chat/ChatThreadNavigation";
 import { useRequestConversationReveal } from "@/features/chat/conversation-reveal";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
-import { writerIn } from "./review-attribution";
 import { type ChatRef, changeTone, type ReviewChange } from "./review-model";
 
 /** A dot in the change's colour: green for text it wrote, red for text it only removed. */
@@ -63,7 +62,8 @@ export function ChangeAuthor({
   const openThread = useOpenChatThread();
   const reveal = useRequestConversationReveal();
   const open = openThread ? (chat: ChatRef) => openChat(chat, openThread, reveal) : null;
-  const writer = writerIn(change);
+  // The writer (the project's one user) made some of the change; drawn as "You".
+  const writer = change.byline.some((author) => author.kind === "user");
   const links = open ? change.chats : [];
   if (!writer && links.length === 0) return null;
   return (

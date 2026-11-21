@@ -8,7 +8,6 @@
  * picking the Work's draft or Live there, or opening one of the Work's drafts anywhere
  * (`review-launch`, a review address), sets the toggle.
  */
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type Work, type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE, pendingRecords } from "@meridian/project-tree";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
@@ -16,27 +15,26 @@ import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-s
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
 import { useWorks } from "@/client/query/useWorks";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import {
   draftTreeVersion,
   LIVE_VERSION,
   type TreeVersion,
   TreeVersionContext,
 } from "@/core/project-tree/tree-version";
-import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { type WorkTreeChanges, workTreeChanges } from "@/features/draft-review/tree-groups";
 import { useAccountId } from "./context/account-feature-context";
 import { useScopeDraftOwner } from "./use-work-scope";
 
 export type ShellTreeVersion = {
   version: TreeVersion;
-  /** The Work's tree whichever way the toggle stands, for review; null with no branch. */
+  /** The Work's tree whichever way the toggle stands, for review; null with no draft. */
   draftVersion: TreeVersion | null;
   showing: "live" | "draft";
   /** The Work has pending changes: the toggle is offered. */
   offered: boolean;
   /** Whose drafts the toggle shows. */
-  ownerKey: string;
+  draftId: string;
   /** The Work whose drafts these are, for `WorkName`; null for a chat's own drafts. */
   work: Work | null;
   /** The Work's name (`nameOf`), for the words on a page; null for a chat's own drafts. */
@@ -45,7 +43,7 @@ export type ShellTreeVersion = {
   changed: ReadonlySet<string>;
   /** What the Work's review count says: its changed documents and folders, the Changes list's items. */
   changeCount: number;
-  /** The Work's tree changes, when its list is open; null with no branch. */
+  /** The Work's tree changes, when its list is open; null with no draft. */
   tree: WorkTreeChanges | null;
   /** The Work's draft of a document, which a click on Draft opens. */
   draftOf: (documentId: string) => ReviewFileTarget | null;
@@ -65,7 +63,7 @@ export function useShellTreeVersion(): ShellTreeVersion | null {
  * count the Works list carries, which the open list agrees with once it syncs.
  */
 export function reviewCount(shell: ShellTreeVersion | null, work: Work): number {
-  return shell?.ownerKey === workOwnerKey(work)
+  return shell && shell.draftId === work.draftId
     ? shell.changeCount
     : work.pendingDocumentCount + work.pendingFolderCount;
 }
@@ -75,14 +73,10 @@ export function useWorkReviewCount(work: Work): number {
 }
 
 export function useDraftTreeVersion(
-  branchId: string | null,
-  rows: readonly ThreadDraftListItem[] | null,
+  draftId: string | null,
   lifecycle: WorkLifecycleState = "active",
 ): TreeVersion | null {
-  return useMemo(
-    () => (branchId ? draftTreeVersion(branchId, rows, lifecycle) : null),
-    [branchId, rows, lifecycle],
-  );
+  return draftId ? draftTreeVersion(draftId, lifecycle) : null;
 }
 
 export function TreeVersionProvider({
@@ -95,18 +89,14 @@ export function TreeVersionProvider({
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const { ownerKey, work } = useScopeDraftOwner(projectId, chatThreadId);
-  const drafts = useOwnerDrafts(projectId, ownerKey);
-  const { branchId, fileForDocument } = drafts;
+  const { draftId, work } = useScopeDraftOwner(projectId, chatThreadId);
+  const drafts = useOwnerDrafts(projectId, draftId);
+  const { draftId: listedDraft, fileForDocument } = drafts;
   const project = useTreeList({ kind: "project", projectId });
   const account = useTreeList({ kind: "account", userId: accountId });
-  const { drafts: rows } = drafts;
-  const draftVersion = useDraftTreeVersion(
-    branchId,
-    rows,
-    work ? workLifecycleState(work) : "active",
-  );
-  // The Work's tree changes, from the browser's replay of its view in each list its branch
+  const { data: rows } = drafts;
+  const draftVersion = useDraftTreeVersion(listedDraft, work ? workLifecycleState(work) : "active");
+  // The Work's tree changes, from the browser's replay of its view in each list its draft
   // spans: what the Changes list builds its folder groups from, including a change not yet
   // admitted (made offline or in flight).
   const tree = useMemo(() => {
@@ -118,7 +108,7 @@ export function TreeVersionProvider({
           ? [
               {
                 live: session.replay(LIVE),
-                work: session.replay(draftVersion.view, draftVersion.pendingText),
+                work: session.replay(draftVersion.view),
                 pending: pendingRecords(snapshot.doc, draft),
               },
             ]
@@ -133,7 +123,7 @@ export function TreeVersionProvider({
     () => new Set([...(rows ?? []).map((row) => row.documentId), ...(tree?.folders ?? [])]),
     [rows, tree],
   );
-  const offered = branchId !== null && changeCount > 0;
+  const offered = listedDraft !== null && changeCount > 0;
   const choice = useTreeVersionChoice(accountId, projectId);
   const showing = offered && choice === "draft" ? "draft" : "live";
   const version = showing === "draft" && draftVersion ? draftVersion : LIVE_VERSION;
@@ -153,7 +143,7 @@ export function TreeVersionProvider({
       draftVersion,
       showing,
       offered,
-      ownerKey,
+      draftId,
       work: named,
       name,
       changed,
@@ -167,7 +157,7 @@ export function TreeVersionProvider({
       draftVersion,
       showing,
       offered,
-      ownerKey,
+      draftId,
       named,
       name,
       changed,

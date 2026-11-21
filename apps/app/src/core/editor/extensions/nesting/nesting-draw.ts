@@ -10,9 +10,15 @@ import {
   nestNodes,
   type StepFacts,
 } from "@meridian/prosemirror-schema";
+import { blockKind, type View } from "@meridian/suggestions";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import {
+  shownBlock,
+  suggestionView,
+  suggestionViewAfter,
+} from "../suggestion-mode/SuggestionModeExtension";
 
 /** The inline offset where `steps` end, in the step widths `editor.css` defines. */
 function offset(steps: readonly StepFacts[]): string {
@@ -51,13 +57,21 @@ function quoteBars(
   return `background-image: ${images.join(", ")}; background-position: ${positions.join(", ")}; background-size: ${sizes.join(", ")};`;
 }
 
-function drawContainer(container: ProseMirrorNode, start: number, out: Decoration[]) {
+/**
+ * Draws the blocks the editor's suggestion view shows, with the attributes it shows them with: a
+ * block another Work suggests takes no number, and a pending list change draws as proposed.
+ */
+function drawContainer(container: ProseMirrorNode, start: number, view: View, out: Decoration[]) {
   const blocks: ProseMirrorNode[] = [];
   const positions: number[] = [];
+  const sizes: number[] = [];
   let at = start;
   container.forEach((child) => {
-    blocks.push(child);
-    positions.push(at);
+    if (!("sug" in child.attrs) || blockKind(child, view) !== "hidden") {
+      blocks.push(shownBlock(view, child));
+      positions.push(at);
+      sizes.push(child.nodeSize);
+    }
     at += child.nodeSize;
   });
   const all = nestNodes(blocks);
@@ -95,7 +109,7 @@ function drawContainer(container: ProseMirrorNode, start: number, out: Decoratio
       if (own.number !== null) attrs["data-number"] = String(own.number);
     }
     out.push(
-      Decoration.node(positions[index], positions[index] + blocks[index].nodeSize, {
+      Decoration.node(positions[index], positions[index] + sizes[index], {
         ...attrs,
         class: classes.join(" "),
         style,
@@ -104,12 +118,13 @@ function drawContainer(container: ProseMirrorNode, start: number, out: Decoratio
   });
 }
 
-function draw(doc: ProseMirrorNode): DecorationSet {
+function draw(doc: ProseMirrorNode, view: View): DecorationSet {
   const decorations: Decoration[] = [];
-  drawContainer(doc, 0, decorations);
+  drawContainer(doc, 0, view, decorations);
   doc.descendants((node, pos) => {
     if (node.isTextblock || node.isLeaf) return false;
-    if (node.firstChild?.type.spec.group === "block") drawContainer(node, pos + 1, decorations);
+    if (node.firstChild?.type.spec.group === "block")
+      drawContainer(node, pos + 1, view, decorations);
     return true;
   });
   return DecorationSet.create(doc, decorations);
@@ -119,8 +134,11 @@ export function nestingDrawPlugin(): Plugin<DecorationSet> {
   return new Plugin<DecorationSet>({
     key: new PluginKey("meridianNestingDraw"),
     state: {
-      init: (_config, state) => draw(state.doc),
-      apply: (tr, drawn) => (tr.docChanged ? draw(tr.doc) : drawn),
+      init: (_config, state) => draw(state.doc, suggestionView(state)),
+      apply: (tr, drawn, before) => {
+        const view = suggestionViewAfter(tr, before);
+        return view ? draw(tr.doc, view) : drawn;
+      },
     },
     props: {
       decorations(state) {

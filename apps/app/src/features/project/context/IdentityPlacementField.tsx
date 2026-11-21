@@ -31,7 +31,7 @@ import {
 import { IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { WRITABLE_IDENTITY_DESTINATIONS } from "./identity-destinations";
 import { identityDestination, type TabLocation } from "./identity-location";
-import { suggestedNameFromFragment } from "./untitled-document-name";
+import { suggestedNameFromDocument } from "./untitled-document-name";
 import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity-commit";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 import { ValidationNote } from "./validation-note";
@@ -362,9 +362,7 @@ function suggestionForSession(
   tab: OpenDocument,
   session: import("@/core/editor/document-session").DocumentSession,
 ): string {
-  const suggestion = suggestedNameFromFragment(
-    session.document.getXmlFragment(session.fragmentName),
-  );
+  const suggestion = suggestedNameFromDocument(session.document);
   if (!suggestion || tab.kind === "new") return suggestion;
   // The suggestion carries the file's visible extension (`.json`); a prose name has none.
   const extension = tab.name.slice(entryNameStemEnd(tab.name, documentRow(tab.name)));

@@ -33,6 +33,7 @@ import { uploads } from "@/core/uploads/upload-store";
 
 import { anchorRange, type EditorAnchor, resolveAnchorIn } from "../anchors";
 import { getEditorChrome, hoverOwner, pastSlop } from "../chrome";
+import { shownText } from "../extensions/suggestion-mode";
 import { linkClipboardPlugin } from "./link-clipboard";
 import {
   anchorLinkRange,
@@ -379,7 +380,7 @@ function selectedLinkEntry(
   const link = linkAt(view.state, from + 1) ?? linkAt(view.state, from);
   if (!link || link.from > from || link.to < to) return null;
   const ref = parseLinkRef(linkKeyOfMark(link.attributes).ref);
-  const name = view.state.doc.textBetween(link.from, link.to);
+  const name = shownText(view.state, link.from, link.to).text;
   if (ref?.kind === "doc") return { entry: { kind: "file", id: ref.documentId }, name };
   if (ref?.kind === "folder") return { entry: { kind: "folder", id: ref.folderId }, name };
   return null;

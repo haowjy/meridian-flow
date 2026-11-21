@@ -27,7 +27,7 @@ import type { JsonValue } from "@meridian/contracts/threads";
 import { type ThreadExecutionContext, workLifecycleState } from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
-  CollabBranches,
+  CollabDrafts,
   DocumentProjectionRefresher,
   ModelEvidence,
 } from "../../domains/collab/index.js";
@@ -71,7 +71,7 @@ export interface ToolWiringDeps {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /** `threadIds` must be parents first (`parentsFirst`). */
   stopThreads(threadIds: readonly ThreadId[]): Promise<void>;
-  branches: Pick<CollabBranches, "draftReview">;
+  drafts: Pick<CollabDrafts, "draftReview">;
   /** `save_agents` saves through the same path as the writer's Save. */
   agentCatalog: Pick<BoundAgentCatalog, "savePackages">;
   eventSink: EventSink;

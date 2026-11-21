@@ -11,36 +11,29 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
-import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { DocumentSession } from "@/core/editor/document-session";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
+import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {
   type DraftReviewController,
   useDraftReviewController,
   useDraftReviewStateOwner,
 } from "./useDraftReviewController";
-import { useReviewRefresh } from "./useReviewRefresh";
-import { type ReviewRoomOwner, useReviewRoomOwner } from "./useReviewRoomOwner";
 
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
-  roomOwner: ReviewRoomOwner;
   files: ReviewFileTarget[];
-  drafts: OwnerDraftListStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
-  reviewRoomNameForDraft: (documentId: string, itemKey: string) => string | null;
   activeEditorDocumentId: string | null;
   /** Returns the host's document to Live: its view, not the review, decides what paints. */
   showLive: () => void;
-  setActiveEditorDocumentId: (
-    documentId: string | null,
-    session?: DocumentSession | null,
-    inReview?: boolean,
-    owner?: object,
-  ) => void;
+  setActiveEditorDocumentId: (documentId: string | null, owner?: object) => void;
 };
+
+const NO_FILES: ReviewFileTarget[] = [];
 
 const DraftReviewContext = createContext<DraftReviewContextValue | null>(null);
 
@@ -57,16 +50,16 @@ export function DraftReviewBoundary({
 export function useDraftReviewScopeValue({
   projectId,
   work,
-  ownerKey,
+  draftId,
   threadId = null,
   marks,
   showLive,
 }: {
   projectId: string | null;
-  /** The Work whose archived state freezes these drafts. */
+  /** The Work the draft belongs to, if any. */
   work: Work | null;
-  /** Whose drafts this scope reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
-  ownerKey: string;
+  /** The draft this scope reviews; "" scopes nothing. */
+  draftId: string;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
   /** The host document's Show changes. */
@@ -75,48 +68,44 @@ export function useDraftReviewScopeValue({
 }): DraftReviewContextValue {
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
-  const drafts = useOwnerDrafts(projectId, ownerKey || null);
-  const files = drafts.files ?? [];
+  const drafts = useOwnerDrafts(projectId, draftId || null);
+  const files = drafts.files ?? NO_FILES;
   const reviewState = useDraftReviewStateOwner();
-  const scope = useRef({ projectId: effectiveProjectId, ownerKey, queryClient });
+  const scope = useRef({ projectId: effectiveProjectId, draftId, queryClient });
   const scopeChanged =
     scope.current.projectId !== effectiveProjectId ||
-    scope.current.ownerKey !== ownerKey ||
+    scope.current.draftId !== draftId ||
     scope.current.queryClient !== queryClient;
   const controller = useDraftReviewController({
     projectId: effectiveProjectId,
     work,
-    ownerKey,
+    draftId,
     threadId,
     stateOwner: scopeChanged ? { ...reviewState, state: EMPTY_DRAFT_REVIEW_STATE } : reviewState,
     marks,
   });
-  const roomOwner = useReviewRoomOwner({
-    projectId: effectiveProjectId,
-    ownerKey,
-    review: controller.inlineReview,
-    dispatch: reviewState.dispatch,
-  });
+  // A draft a press has in flight leaves the review.
+  const commands = useDraftCommandOwner();
+  const reviewItemKey = controller.inlineReview?.itemKey ?? "";
+  const leaves = () => commands.state(reviewItemKey).hidden;
+  const leaving = useSyncExternalStore(commands.subscribe, leaves, leaves);
+  const { dispatch } = reviewState;
+  useLayoutEffect(() => {
+    if (reviewItemKey && leaving) dispatch({ type: "exitInline" });
+  }, [leaving, reviewItemKey, dispatch]);
 
   // Editor-host concern: this only tells the chat overlay whether the active
   // editor already renders the docked bar for a document. Review-mode truth
   // itself lives in the controller state machine.
   const [activeEditorProjection, setActiveEditorProjection] = useState<{
     documentId: string;
-    session: DocumentSession | null;
-    inReview: boolean;
     owner: object | null;
   } | null>(null);
   const activeEditorDocumentId = activeEditorProjection?.documentId ?? null;
   const setActiveEditorDocumentId = useCallback(
-    (
-      documentId: string | null,
-      session: DocumentSession | null = null,
-      inReview = false,
-      owner: object | null = null,
-    ) => {
+    (documentId: string | null, owner: object | null = null) => {
       setActiveEditorProjection((current) => {
-        if (documentId) return { documentId, session, inReview, owner };
+        if (documentId) return { documentId, owner };
         return owner && current?.owner !== owner ? current : null;
       });
     },
@@ -127,61 +116,27 @@ export function useDraftReviewScopeValue({
   // development re-run) would end a review admission entered since, and admission doesn't retry.
   useLayoutEffect(() => {
     const previous = scope.current;
-    scope.current = { projectId: effectiveProjectId, ownerKey, queryClient };
+    scope.current = { projectId: effectiveProjectId, draftId, queryClient };
     if (
       previous.projectId !== effectiveProjectId ||
-      previous.ownerKey !== ownerKey ||
+      previous.draftId !== draftId ||
       previous.queryClient !== queryClient
     )
       controller.exitReview();
-  }, [effectiveProjectId, ownerKey, queryClient, controller.exitReview]);
+  }, [effectiveProjectId, draftId, queryClient, controller.exitReview]);
 
   const fileForDocument = drafts.fileForDocument;
-
-  const reviewRoomNameForDraft = useCallback(
-    (documentId: string, itemKey: string) =>
-      controller.inlineReview?.documentId === documentId &&
-      controller.inlineReview.itemKey === itemKey
-        ? roomOwner.roomName
-        : null,
-    [controller.inlineReview, roomOwner.roomName],
-  );
-
-  useReviewRefresh({
-    projectId,
-    ownerKey: ownerKey || null,
-    review: controller.inlineReview,
-    runtime: roomOwner.runtime,
-    session: roomOwner.session,
-    liveSession:
-      !activeEditorProjection?.inReview &&
-      activeEditorProjection?.documentId === controller.inlineReview?.documentId
-        ? (activeEditorProjection?.session ?? null)
-        : null,
-  });
 
   const value = useMemo<DraftReviewContextValue>(
     () => ({
       controller,
-      roomOwner,
       files,
-      drafts,
       fileForDocument,
-      reviewRoomNameForDraft,
       activeEditorDocumentId,
       showLive,
       setActiveEditorDocumentId,
     }),
-    [
-      showLive,
-      controller,
-      roomOwner,
-      files,
-      drafts,
-      fileForDocument,
-      reviewRoomNameForDraft,
-      activeEditorDocumentId,
-    ],
+    [showLive, controller, files, fileForDocument, activeEditorDocumentId],
   );
 
   return value;

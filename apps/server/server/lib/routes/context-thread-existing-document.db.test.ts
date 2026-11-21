@@ -124,7 +124,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           id: DRAFT_WORK_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
-          name: "Branch",
+          name: "Draft",
           handle: "w2",
         },
       ]);

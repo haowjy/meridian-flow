@@ -183,7 +183,7 @@ if (!RUN) {
         async threadProject() {
           return PROJECT;
         },
-        async verifyDraftUpload() {
+        async verifyChatUpload() {
           return true;
         },
         producer: createWriterTurnProducer({

@@ -3,6 +3,7 @@
  * Work in place at once, so the dialog opens it before the POST settles.
  */
 
+import { newDraftId } from "@meridian/contracts";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { CreateWorkRequest } from "@meridian/contracts/works";
 import { useCallback } from "react";
@@ -10,7 +11,7 @@ import { useCallback } from "react";
 import { useWorkCommandFailures } from "@/client/query/work-command-selectors";
 import { useWorkMutations } from "@/client/query/work-mutations";
 
-type CreateWorkInput = Omit<CreateWorkRequest, "id">;
+type CreateWorkInput = Omit<CreateWorkRequest, "id" | "draftId">;
 
 /**
  * Create puts the Work in place and resolves to its id once the command is saved, so a
@@ -27,7 +28,7 @@ export function useCreateWork(projectId: string) {
       if (!workId) throw new Error("Could not create Work identity");
       return new Promise((resolve) => {
         void createCommand(
-          { workId, name, goal: input.goal },
+          { workId, draftId: newDraftId(), name, goal: input.goal },
           { saved: () => resolve(workId) },
         ).then(() => resolve(null));
       });

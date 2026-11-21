@@ -160,6 +160,7 @@ it("Edit dissolves every never-created message in order before newer New chat wr
   const creation = {
     title: "Opening",
     workId: null,
+    draftId: "chatdraft001",
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
@@ -245,6 +246,7 @@ it("dissolves this pane without retiring a message recorded after the transfer r
   const creation = {
     title: "Opening",
     workId: null,
+    draftId: "chatdraft001",
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
@@ -293,6 +295,7 @@ it("a delayed observer of creation then acceptance loads the real destination, n
   const creation = {
     title: "Opening",
     workId: null,
+    draftId: "chatdraft001",
     workAiWriteMode: "direct" as const,
     agentName: "General",
     agentSlug: "general",
@@ -405,6 +408,7 @@ it("a chat send during creation hands off its chat draft even if projection thro
     creation: {
       title: "Opening",
       workId: null,
+      draftId: "chatdraft001",
       workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",
@@ -517,6 +521,7 @@ it.each(["projection", "decoding"] as const)(
       creation: {
         title: "Opening",
         workId: null,
+        draftId: "chatdraft001",
         workAiWriteMode: "direct",
         agentName: "General",
         agentSlug: "general",

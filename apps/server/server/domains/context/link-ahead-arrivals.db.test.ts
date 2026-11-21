@@ -44,7 +44,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("ahead-ref arrivals (post
     await db.insert(projects).values({ id: projectId, userId, name: "Arrivals", slug: "arrivals" });
     await db.insert(works).values([
       { projectId, createdByUserId: userId, name: "No Work", isNoWork: true },
-      { id: workId, projectId, createdByUserId: userId, name: "Branch", handle: "w1" },
+      { id: workId, projectId, createdByUserId: userId, name: "Draft", handle: "w1" },
     ]);
     await db.insert(contextSources).values([
       {

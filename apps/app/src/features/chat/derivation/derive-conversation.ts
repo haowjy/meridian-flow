@@ -27,6 +27,8 @@ export type DerivationIntent = {
   kind: DerivationKind;
   /** The destination, minted on the client. */
   threadId: string;
+  /** The destination's draft: a fork's is its source's, a handoff mints its own lineage's. */
+  draftId: string;
   projectId: string;
   sourceThreadId: string;
   sourceTitle: string | null;
@@ -138,6 +140,7 @@ export function readDerivationIntent(accountId: string, threadId: string): Deriv
 function optimisticThread(intent: DerivationIntent, source: Thread | null): Thread {
   const base = makeOptimisticThread({
     id: intent.threadId,
+    draftId: intent.draftId,
     projectId: intent.projectId,
     // The server titles derivations this way; the list shows the same words at once.
     title:
@@ -171,6 +174,7 @@ function request(intent: DerivationIntent): Promise<Thread> {
   if (!intent.agent) return Promise.reject(new Error("A handoff needs an Agent"));
   return handoffThread(intent.sourceThreadId, {
     id: intent.threadId,
+    draftId: intent.draftId,
     originTurnId: intent.originTurnId,
     agentSelection: intent.agent.selection,
     overrides: intent.overrides,

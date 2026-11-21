@@ -14,7 +14,7 @@ Work's draft. "The toggle" below means this state, whichever chip sets it.
 - **choice** (`live` | `draft`): the writer's, kept per (account, project) in this browser tab
   and seeded from the device (`client/project-shell/store.ts`, `tree-version`).
 - **offered**: the picked Work (or, under None, the chat on screen's: its Work's drafts, or its
-  own when it has no Work) has an active branch with something pending: a drafted document in its list, or a pending tree record in the browser's
+  own when it has no Work) has an active draft with something pending: a drafted document in its list, or a pending tree record in the browser's
   copy (a folder change alone lists no document).
 - **showing** = `draft` when offered and choice is `draft`, else `live`, for the sidebar.
   A page reads the choice itself through the one rule below, so a Work whose last change was
@@ -35,8 +35,8 @@ stateDiagram-v2
 ## Rules
 
 - On **Draft** the sidebar's trees are the Work's view, replayed in the browser
-  (`TreeListSession.replay(view, pendingText)`), and every `TreeActions` record carries the
-  Work's branch as `draft`. On **Live** they are live. Trash restore stays live: Trash lists
+  (`TreeListSession.replay(view)`), and every `TreeActions` record carries the
+  Work's draft as `draft`. On **Live** they are live. Trash restore stays live: Trash lists
   live's Trash.
 - **One rule for a page's version** (`shownDraft`, `features/project/views.ts`), read by the
   paint, the address (`use-review-address-sync.ts`) and a tab's activation (`useOpenInMain`):
@@ -46,7 +46,7 @@ stateDiagram-v2
   Work's draft sets the choice to Draft.
 - **Readers behind an action read the view it writes:** the move menus, the destination picker,
   Scratch's trees, the folder menu, the identity bar's commit and a linked document's create read
-  `useTreeVersion()`. The Work's `TreeVersion` is one value per branch (`draftTreeVersion`).
+  `useTreeVersion()`. The Work's `TreeVersion` is one value per draft (`draftTreeVersion`).
 - **The page's version chip is the same state, and the same control.** Picking the Work's draft
   or Live in its menu sets the toggle, and opening any of the Work's drafts (a Changes row, the chat's dock, a
   review link: `review-launch.tsx`) puts it on Draft. The chip on Live is neutral with a jade
@@ -74,7 +74,7 @@ stateDiagram-v2
   "Not deleted"). On a deleted Work's Draft no tree offers a control, New document is not offered
   and the identity bar's placement field doesn't open (`TreeVersion.ended`). Its Scratch on Live reads and
   offers no change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
-  server wakes the Works list with the Work's `draft-owner-hint`.
+  server wakes the Works list with the Work's `draft-hint`.
 - Copy uses the destination tree shown by the toggle: on Draft it creates the copy in the
   Work's draft, and on Live it creates the copy live. A source in Draft reads its draft content
   where it has any, otherwise live content.
@@ -85,15 +85,15 @@ stateDiagram-v2
   a row's Undo is the same step (`undoStep`): whichever runs first, the other finds nothing. The
   notice ends at the next gesture or press, or when the writer opens a document from the tree.
   The stack is record ids per list copy, in memory; a reload empties it. A step `undoChange`
-  refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. An Apply is one step in
-  either view (`ApplyStep`, undone through `ApplyEntries`): the press asks the server's Un-Apply and
-  is spent once the server answered, so it never falls through to an older step; one that didn't
-  reach the server toasts and stays. On the Changes tab a press takes the
-  latest step of any source. The applied rows in Changes carry the same step's Undo. An Apply step
-  has two halves, from its answer: its text ends only by an Un-Apply, and its tree half ends by
-  itself when `appliedNodes` (over the Apply's command and the restores its answer named) reads
-  empty in the list copies (`endWhenTakenBack`). With both ended it ends. It sits on the stack
-  until an Un-Apply took something back or it ended.
+  refuses is dropped, its rows say "Skipped" with why, and the press goes on to the one before it. A change since applied is taken back live. A review's Apply or Discard is
+  one step in either view (`PressStep`): the press sends that press's own Undo, the same one its
+  notice and an open editor's Ctrl+Z send (`PressEntries`), and is spent once the
+  server answered, so it never falls through to an older step; one that didn't reach the server
+  toasts and stays. On the Changes tab a press takes the latest step of any source; in a source's
+  list (the project's or the account's), a step whose documents or folders showed there in the
+  Work's tree when it was pressed. It leaves the stack once the press is taken back in this tab,
+  and an editor's Redo of an Apply puts it back where the new press landed. One taken back in
+  another tab stays, and its Ctrl+Z takes nothing.
 - **A step that waits for a closed owner keeps its place.** A tree step whose every record would
   change such an owner's notes, goes back where it was, and its rows say who it waits for ("The
   move stayed: Notes is archived. Unarchive it to undo this."). A press passes over it while every

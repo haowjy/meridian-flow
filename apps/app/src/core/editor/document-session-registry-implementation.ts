@@ -1,30 +1,20 @@
-/**
- * Account-scoped owner of live document sessions and stable-id draft rooms.
- * Live acquisition is lease-required; draft rooms retain their stable room identity.
- */
-import { type AccountId, parseYjsRoomName } from "@meridian/contracts/protocol";
+/** Account-scoped owner of live document sessions. Acquisition is lease-required. */
+import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
 import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
-import {
-  DocumentSession,
-  type DocumentSessionAccess,
-  type DocumentSessionSnapshot,
-  updatesRefused,
-} from "./document-session";
+import { DocumentSession, type DocumentSessionAccess, updatesRefused } from "./document-session";
 import type {
   LiveDocumentSessionLease,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
-import { DraftRoomPool, type DraftRoomRef } from "./draft-room-pool";
 import type { DocumentHistory } from "./editor-history";
 import type { Ranges } from "./item-ranges";
 import {
   type CopyHold,
   documentSessionPersistenceKey,
-  draftRoomPersistenceKey,
   incarnationName,
   LocalDocumentCopies,
 } from "./local-document-copies";
@@ -33,11 +23,8 @@ import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-
 
 const LIVE_DOC_SOFT_CAP = 50;
 const SESSION_TEARDOWN_GRACE_MS = 3_000;
-/** Draft copies the start sweep handles at once. */
-const SWEEP_LOADS = 4;
 /** Most sessions kept for their undo once no host holds them; the least recently changed goes first. */
 const KEPT_FOR_UNDO_CAP = 8;
-const SWEEP_DELIVERY_MS = 30_000;
 
 type LiveRoomState = {
   session: DocumentSession | null;
@@ -61,22 +48,9 @@ export class DocumentSessionRegistry {
   private accountCloseAttempt: Promise<void> | null = null;
   private readonly copies: LocalDocumentCopies;
   private readonly teardownOwner = new DocumentSessionTeardownOwner(
-    (key) => new Error(`${key.kind === "live" ? "Live" : "Draft"} session teardown is unfinished`),
-    (session) => {
-      // A closed draft drops its unsent typing when its session retires, not at the reset: a session
-      // kept on screen still shows that text, and a restore that restarts it delivers it. The copy
-      // stays: Undo Discard reopens the draft and replays it. A draft the server closed counts
-      // whatever ended the session's socket first. A removed document's copy is dropped by
-      // `clearLocalCopy` alone, when the list purges it, so each copy is told once.
-      if (this.draftRooms.isClosed(session.roomKey) || session.resetDisposition === "closed") {
-        // Read from the copy, which has every write of the session's by now.
-        const copy = this.copyOfSession(session);
-        void this.dropCopy(incarnationName(copy.key, copy.incarnation)).catch(reportError);
-      }
-    },
+    () => new Error("Live session teardown is unfinished"),
   );
   private readonly liveRooms = new Map<DocumentId, LiveRoomState>();
-  private readonly draftRooms: DraftRoomPool;
   private readonly retainedByOwner = new Map<string, Map<DocumentId, RetainedLiveDocument>>();
   private readonly retainedObservers = new Set<
     (snapshot: readonly RetainedLiveDocumentReference[]) => void
@@ -89,10 +63,6 @@ export class DocumentSessionRegistry {
   private undoClock = 0;
   private readonly historyObservers = new Set<() => void>();
   private liveDocCapWarningEmitted = false;
-  private readonly sessionObservers = new Map<
-    string,
-    Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
-  >();
   private readonly droppedTypingObservers = new Set<() => void>();
   /** Each session's copy: the room's key and the incarnation it opened. */
   private readonly copyOf = new WeakMap<DocumentSession, { key: string; incarnation: number }>();
@@ -113,24 +83,11 @@ export class DocumentSessionRegistry {
     copies: LocalDocumentCopies = new LocalDocumentCopies(accountId),
   ) {
     this.copies = copies;
-    this.draftRooms = new DraftRoomPool({
-      open: (roomKey, documentId, replaced) => {
-        const { session, hold } = this.openCopy(
-          roomKey,
-          draftRoomPersistenceKey(accountId, documentId as DocumentId, roomKey),
-          replaced,
-        );
-        this.attachSessionTransport(session);
-        return { session, hold };
-      },
-      teardownOwner: this.teardownOwner,
-      teardownGraceMs,
-    });
   }
 
   admit(projectId: ProjectId, documentId: DocumentId): LiveDocumentSessionLease {
     this.requireAccountRuntimeOpen();
-    this.teardownOwner.assertAvailable({ kind: "live", roomKey: documentId });
+    this.teardownOwner.assertAvailable(documentId);
     const lease = Object.freeze({ accountId: this.accountId, projectId, documentId });
     const state = this.liveRooms.get(documentId);
     if (state) state.lease = lease;
@@ -149,9 +106,9 @@ export class DocumentSessionRegistry {
     const state = this.liveRooms.get(documentId);
     this.liveRooms.delete(documentId);
     if (state?.session) {
-      await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, state.session);
+      await this.teardownOwner.retire(documentId, state.session);
     }
-    await this.teardownOwner.drainRoom({ kind: "live", roomKey: documentId });
+    await this.teardownOwner.drainRoom(documentId);
     (await state?.hold)?.release();
     await this.copies.clear(documentId, ({ update, lacking }) =>
       readCopy(update, (document) => this.dropWords(document, lacking)),
@@ -164,10 +121,9 @@ export class DocumentSessionRegistry {
    * not waited for.
    */
   async settleUnsentEdits(timeoutMs: number): Promise<boolean> {
-    const sessions = [
-      ...[...this.liveRooms.values()].flatMap(({ session }) => (session ? [session] : [])),
-      ...this.draftRooms.sessions(),
-    ];
+    const sessions = [...this.liveRooms.values()].flatMap(({ session }) =>
+      session ? [session] : [],
+    );
     const pending = (session: DocumentSession) =>
       session.hasUnacknowledgedEdits() && session.canDeliverUnsentEdits();
     const settled = sessions.map(
@@ -199,12 +155,17 @@ export class DocumentSessionRegistry {
     return this.getOrCreateLiveSession(lease, state, true);
   }
 
-  openStateVector(documentId: DocumentId, view: "live" | "draft" = "live"): Uint8Array | null {
-    const session =
-      view === "draft"
-        ? this.draftRooms.roomOf(documentId)
-        : this.liveRooms.get(documentId)?.session;
+  openStateVector(documentId: DocumentId): Uint8Array | null {
+    const session = this.liveRooms.get(documentId)?.session;
     return session ? Y.encodeStateVector(session.document) : null;
+  }
+
+  unsentStateVectors(): Map<DocumentId, Uint8Array> {
+    const vectors = new Map<DocumentId, Uint8Array>();
+    for (const [documentId, { session }] of this.liveRooms)
+      if (session?.hasUnacknowledgedEdits())
+        vectors.set(documentId, Y.encodeStateVector(session.document));
+    return vectors;
   }
 
   whenLiveHeld(documentId: DocumentId): Promise<void> {
@@ -214,11 +175,7 @@ export class DocumentSessionRegistry {
   }
 
   history(roomKey: string): DocumentHistory | null {
-    return (
-      this.liveRooms.get(roomKey as DocumentId)?.session?.history ??
-      this.draftRooms.peek(roomKey)?.history ??
-      null
-    );
+    return this.liveRooms.get(roomKey as DocumentId)?.session?.history ?? null;
   }
 
   observeHistories(observer: () => void): () => void {
@@ -285,116 +242,6 @@ export class DocumentSessionRegistry {
     return () => this.retainedObservers.delete(observer);
   }
 
-  retainDraftRooms(ownerId: string, refs: readonly DraftRoomRef[]): void {
-    this.draftRooms.retain(ownerId, refs);
-  }
-
-  releaseDraftRooms(ownerId: string): void {
-    this.draftRooms.release(ownerId);
-  }
-
-  rebuildDraftRoom(roomKey: string): Promise<DocumentSession> {
-    return this.draftRooms.rebuild(roomKey);
-  }
-
-  /**
-   * The server closed the draft (its Work or document went), or it was never made. A session the
-   * pool holds retires as a closed draft's, which drops its unsent typing at the right time: when
-   * nothing shows its text any more. With no session (the room ended earlier, by a
-   * schema reset or a terminal close, or never opened here) the copy's is dropped now. The copy
-   * stays either way.
-   */
-  async closeDraftRoom(roomKey: string): Promise<void> {
-    const documentId = this.draftRooms.documentOf(roomKey);
-    const held = this.draftRooms.peek(roomKey);
-    await this.draftRooms.close(roomKey);
-    if (documentId && !held) {
-      const key = draftRoomPersistenceKey(this.accountId, documentId as DocumentId, roomKey);
-      await this.dropCopy(incarnationName(key, this.copies.current(key)));
-    }
-  }
-
-  /**
-   * Settles the draft copies no room of this tab owns, found at start, by `openOf`: the ids of
-   * the drafts the server still has. A copy of a draft the server no longer has is left as it is.
-   * An open draft's
-   * copy that holds typing beyond its mark has its room opened through the pool, as if the writer
-   * had reopened the draft, and released once the server acknowledges: the typing is delivered to
-   * the draft. A copy another tab has open is left to that tab. Each copy is swept once: it is
-   * then recorded as swept, and a later start skips it without loading it until a session opens
-   * the copy again. A copy with no mark proves nothing undelivered. At most
-   * `SWEEP_LOADS` copies are handled at once.
-   */
-  async sweepDraftCopies(
-    openOf: (draftIds: string[]) => Promise<ReadonlySet<string>>,
-  ): Promise<void> {
-    const copies = (await this.copies.unsweptDraftCopies()).flatMap((copy) => {
-      const room = parseYjsRoomName(copy.roomKey);
-      return room?.kind === "draft" && !this.draftRooms.peek(copy.roomKey)
-        ? [{ ...copy, draftId: room.draftId }]
-        : [];
-    });
-    if (copies.length === 0) return;
-    const open = await openOf([...new Set(copies.map(({ draftId }) => draftId))]);
-    const openRooms = new Map<string, { documentId: DocumentId; names: string[] }>();
-    const todo: (() => Promise<void>)[] = [];
-    for (const { name, roomKey, documentId, draftId } of copies) {
-      if (!open.has(draftId)) continue;
-      const room = openRooms.get(roomKey) ?? { documentId, names: [] };
-      room.names.push(name);
-      openRooms.set(roomKey, room);
-    }
-    for (const [roomKey, { documentId, names }] of openRooms)
-      todo.push(() => this.deliverOpenDraftCopy(roomKey, documentId, names));
-    const sweepOne = async () => {
-      for (let next = todo.shift(); next; next = todo.shift()) {
-        try {
-          await next();
-        } catch (error) {
-          reportError(error);
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: SWEEP_LOADS }, sweepOne));
-  }
-
-  /**
-   * Opens the room of an open draft whose copies (every incarnation) hold typing beyond their
-   * mark, and releases it once acknowledged. The session delivers like any other (the older
-   * incarnations are read against its first handshake); a page that opens the room meanwhile
-   * shares this session, so nothing is sent twice, and the copy is left unswept. A copy version
-   * older than the current one is read, not delivered: its words are dropped. Not acknowledged within
-   * `SWEEP_DELIVERY_MS` (offline), the room is released anyway: the pool keeps draining it, and the
-   * copy is swept again at the next start.
-   */
-  private async deliverOpenDraftCopy(
-    roomKey: string,
-    documentId: DocumentId,
-    names: readonly string[],
-  ): Promise<void> {
-    const key = draftRoomPersistenceKey(this.accountId, documentId, roomKey);
-    if (await this.copies.heldByAnotherTab(incarnationName(key, this.copies.current(key)))) return;
-    let typed = false;
-    for (const name of names) typed ||= (await this.copies.beyondMark(name, true)) !== null;
-    if (typed) {
-      const owner = `sweep:${roomKey}`;
-      this.draftRooms.retain(owner, [{ roomKey, documentId }]);
-      try {
-        if (!(await acknowledged(this.draftRooms.get(roomKey)))) return;
-        // A page that shares this session keeps the copy's mark clear: its `hold` cleared it, and
-        // typing offline there must not be hidden by a mark set now.
-        if (this.draftRooms.isRetained(roomKey, owner)) return;
-      } finally {
-        this.draftRooms.release(owner);
-      }
-    }
-    for (const name of names) this.copies.markSwept(name);
-  }
-
-  getDraftRoom(roomKey: string): DocumentSession {
-    return this.draftRooms.get(roomKey);
-  }
-
   beginCloseAccountRuntime(): void {
     if (this.accountRuntimeState === "open") this.accountRuntimeState = "closing";
   }
@@ -415,17 +262,9 @@ export class DocumentSessionRegistry {
     return attempt;
   }
 
-  observeDraftRoom(
-    roomKey: string,
-    observer: (snapshot: DocumentSessionSnapshot) => void,
-  ): () => void {
-    return this.observeRoom(roomKey, observer);
-  }
-
   invalidateAll(): Promise<void> {
     this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
-    this.draftRooms.invalidate();
     this.liveDocCapWarningEmitted = false;
     for (const timer of this.pendingTeardownTimers.values()) clearTimeout(timer);
     this.pendingTeardownTimers.clear();
@@ -438,7 +277,7 @@ export class DocumentSessionRegistry {
     );
     this.liveRooms.clear();
     const retired = liveSessions.map(async ({ documentId, session, hold }) => {
-      await this.teardownOwner.retire({ kind: "live", roomKey: documentId }, session);
+      await this.teardownOwner.retire(documentId, session);
       (await hold)?.release();
     });
     return Promise.all([...retired, this.teardownOwner.drain()]).then(() => undefined);
@@ -465,7 +304,7 @@ export class DocumentSessionRegistry {
     attach: boolean,
   ): DocumentSession {
     this.cancelPendingTeardown(lease.documentId);
-    this.teardownOwner.assertAvailable({ kind: "live", roomKey: lease.documentId });
+    this.teardownOwner.assertAvailable(lease.documentId);
     if (state.session) {
       if (attach && state.session.getSnapshot().status === "detached") {
         this.attachSessionTransport(state.session);
@@ -511,7 +350,7 @@ export class DocumentSessionRegistry {
     });
     if (replaced) {
       void this.teardownOwner
-        .retireReplaced(replaced.session.room.kind === "live" ? "live" : "draft", replaced.session)
+        .retireReplaced(replaced.session)
         .catch((error: unknown) => reportError(error))
         .then(async () => (await replaced.hold)?.release())
         .then(() => this.dropOlder(session, copyKey, incarnation))
@@ -553,7 +392,6 @@ export class DocumentSessionRegistry {
     access: DocumentSessionAccess | null,
   ): DocumentSession {
     const session = this.constructSession(roomKey, persistence, access);
-    this.publishSession(roomKey, session);
     return session;
   }
 
@@ -591,9 +429,7 @@ export class DocumentSessionRegistry {
   }
 
   private isRoomSession(session: DocumentSession): boolean {
-    return session.room.kind === "live"
-      ? this.liveRooms.get(session.documentId as DocumentId)?.session === session
-      : this.draftRooms.peek(session.roomKey) === session;
+    return this.liveRooms.get(session.documentId as DocumentId)?.session === session;
   }
 
   /**
@@ -623,24 +459,19 @@ export class DocumentSessionRegistry {
     if (refused) await this.dropCopy(incarnationName(copy.key, copy.incarnation));
     await this.copies.advance(copy.key, copy.incarnation);
     if (!this.isRoomSession(old)) return;
-    if (old.room.kind === "live") {
-      const state = this.liveRooms.get(old.documentId as DocumentId);
-      if (!state) return;
-      const { session, hold } = this.openCopy(old.roomKey, copy.key, {
-        session: old,
-        hold: state.hold,
-      });
-      state.session = session;
-      state.hold = hold;
-      this.attachSessionTransport(session);
-      this.notifyReplacement(old.roomKey, session);
-    } else {
-      const session = this.draftRooms.replace(old.roomKey, old);
-      if (session) this.notifyReplacement(old.roomKey, session);
-    }
+    const state = this.liveRooms.get(old.documentId as DocumentId);
+    if (!state) return;
+    const { session, hold } = this.openCopy(old.roomKey, copy.key, {
+      session: old,
+      hold: state.hold,
+    });
+    state.session = session;
+    state.hold = hold;
+    this.attachSessionTransport(session);
+    this.notifyReplacement(old.roomKey, session);
   }
 
-  /** Calls `observer` with the session that replaces a room's, live (by document id) or draft. */
+  /** Calls `observer` with the session that replaces a document's room. */
   observeReplacement(roomKey: string, observer: (session: DocumentSession) => void): () => void {
     const observers = this.replacementObservers.get(roomKey) ?? new Set();
     observers.add(observer);
@@ -791,7 +622,7 @@ export class DocumentSessionRegistry {
   }
 
   /**
-   * A session no host holds. Like draft rooms, one with unsent edits stays until they are
+   * A session no host holds. One with unsent edits stays until they are
    * acknowledged: `settleDrainedRoom` ends the hold when the room can no longer take them, and a
    * room that stays connected without acknowledging ends it at the cap; offline time never counts.
    * Then one whose room still takes writes and whose history has entries is kept for its undo,
@@ -857,7 +688,7 @@ export class DocumentSessionRegistry {
     state.hold = null;
     this.cancelPendingTeardown(roomKey);
     void this.teardownOwner
-      .retire({ kind: "live", roomKey }, session)
+      .retire(roomKey, session)
       .then(async () => (await hold)?.release())
       .catch(() => undefined);
   }
@@ -893,32 +724,6 @@ export class DocumentSessionRegistry {
     return false;
   }
 
-  private publishSession(roomKey: string, session: DocumentSession): void {
-    for (const [observer] of this.sessionObservers.get(roomKey) ?? []) {
-      this.sessionObservers.get(roomKey)?.set(observer, session.subscribe(observer));
-    }
-  }
-
-  private observeRoom(
-    roomKey: string,
-    observer: (snapshot: DocumentSessionSnapshot) => void,
-  ): () => void {
-    let observers = this.sessionObservers.get(roomKey);
-    if (!observers) {
-      observers = new Map();
-      this.sessionObservers.set(roomKey, observers);
-    }
-    observers.set(
-      observer,
-      (this.draftRooms.peek(roomKey) ?? this.liveRooms.get(roomKey)?.session)?.subscribe(observer),
-    );
-    return () => {
-      observers?.get(observer)?.();
-      observers?.delete(observer);
-      if (observers?.size === 0) this.sessionObservers.delete(roomKey);
-    };
-  }
-
   private maybeWarnLiveDocCap(): void {
     const liveCount = [...this.liveRooms.values()].filter(({ session }) => session).length;
     if (this.liveDocCapWarningEmitted || liveCount <= LIVE_DOC_SOFT_CAP) return;
@@ -927,26 +732,4 @@ export class DocumentSessionRegistry {
       `[document-session-registry] live document session count (${liveCount}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
     );
   }
-}
-
-/** Whether the server acknowledges everything the session holds: false when the room cannot, or at the wait's end. */
-function acknowledged(session: DocumentSession): Promise<boolean> {
-  return new Promise((resolve) => {
-    let stop = () => {};
-    let settled = false;
-    const done = (delivered: boolean) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      stop();
-      resolve(delivered);
-    };
-    const timer = setTimeout(() => done(false), SWEEP_DELIVERY_MS);
-    // `subscribe` calls back at once, before `stop` exists.
-    stop = session.subscribe((snapshot) => {
-      if (snapshot.serverHasLocalChanges) done(true);
-      else if (!session.canDeliverUnsentEdits()) done(false);
-    });
-    if (settled) stop();
-  });
 }

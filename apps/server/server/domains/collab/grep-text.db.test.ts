@@ -14,11 +14,11 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { treeSeeder } from "../../test-support/tree-seed.js";
 import { writeMarkdown } from "./test-support/bound-writes.js";
 import {
-  createWorkBranchFixture,
+  createWorkDraftFixture,
   SOURCE_ID,
   THREAD_ID,
   USER_ID,
-} from "./test-support/work-branch-fixture.js";
+} from "./test-support/work-draft-fixture.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -35,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("grep text (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose } = createWorkBranchFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {

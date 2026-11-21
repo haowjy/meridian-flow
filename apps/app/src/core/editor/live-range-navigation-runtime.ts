@@ -3,6 +3,7 @@ import type { Editor } from "@tiptap/core";
 import type * as Y from "yjs";
 import type { DocumentSession } from "./document-session";
 import { relativeRangeToEditorPositions } from "./extensions/LiveRangeNavigationExtension";
+import { suggestionView } from "./extensions/suggestion-mode";
 import { resolvePassage } from "./passage-resolution";
 
 /** The one on-screen editor of a document: a document is mounted in at most one host. */
@@ -103,7 +104,8 @@ export function showPassageInTarget(
     ? relativeRangeToEditorPositions(target.editor, passage.block)
     : null;
   if (passage.block && !blockRange) return null;
-  const resolution = resolvePassage(target.editor.state.doc, blockRange, passage.term);
+  const { state } = target.editor;
+  const resolution = resolvePassage(state.doc, blockRange, passage.term, suggestionView(state));
   if (resolution.kind === "stale") return { outcome: "stale" };
   return target.editor.commands.showPassageMatches(resolution.ranges)
     ? { outcome: "landed" }

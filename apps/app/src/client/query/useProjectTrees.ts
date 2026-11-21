@@ -59,7 +59,7 @@ export function useProjectTrees(
   projectId: string,
   options?: { version?: TreeVersion },
 ): ProjectTrees {
-  const { view, pendingText } = options?.version ?? LIVE_VERSION;
+  const { view } = options?.version ?? LIVE_VERSION;
   const accountId = useAccountId();
   const project = useTreeList(projectId ? { kind: "project", projectId } : null);
   const account = useTreeList({ kind: "account", userId: accountId });
@@ -71,7 +71,7 @@ export function useProjectTrees(
       { list: account, sources: accountSources },
     ].flatMap(({ list: { session, snapshot }, sources }) =>
       session && snapshot && sources
-        ? [{ snapshot, sources, projection: session.replay(view, pendingText) }]
+        ? [{ snapshot, sources, projection: session.replay(view) }]
         : [],
     );
     const [inProject, inAccount] = lists;
@@ -129,6 +129,5 @@ export function useProjectTrees(
     projectSources,
     accountSources,
     view,
-    pendingText,
   ]);
 }

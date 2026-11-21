@@ -53,8 +53,8 @@ export type CreatedDocument = {
   record: string;
   /** The folders the create made on the way, outermost first; its Undo takes them back too. */
   folders: readonly { record: string; node: string }[];
-  /** The Work's branch it was drafted in; absent for a live create. */
-  draftBranchId?: import("@meridian/contracts").BranchId;
+  /** The Work's draft it was drafted in; absent for a live create. */
+  draftId?: import("@meridian/contracts").DraftId;
 };
 
 /** The port's ensure options: the receipt hears the URI the document landed at. */
@@ -176,7 +176,7 @@ export interface ContextTreeAdapter {
   sourceId(): Promise<string>;
   /**
    * One command on this source's tree, in the command transaction: live, or (`drafted`) in the
-   * Work's branch, which the transaction ensures and locks. `make` decides under the list's lock
+   * Work's draft, which the transaction ensures and locks. `make` decides under the list's lock
    * and returns what it made; `afterWrite` runs inside the transaction once the records exist,
    * so the model's receipt commits with them. `arrived` names the documents the command put
    * at a live address, which settle ahead links.

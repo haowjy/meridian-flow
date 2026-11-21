@@ -156,11 +156,12 @@ export function ExportProjectDialog({
                     })}
                   </p>
                 ) : null}
-                {result.pendingDrafts > 0 ? (
+                {result.pendingDocuments > 0 ? (
                   <p>
-                    {plural(result.pendingDrafts, {
-                      one: "# draft the AI hasn't applied won't be included.",
-                      other: "# drafts the AI hasn't applied won't be included.",
+                    {plural(result.pendingDocuments, {
+                      one: "# document has changes waiting for review; the export has its live text.",
+                      other:
+                        "# documents have changes waiting for review; the export has their live text.",
                     })}
                   </p>
                 ) : null}

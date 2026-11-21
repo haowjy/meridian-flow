@@ -27,7 +27,6 @@ import {
   type ContextPassageAnchor,
   type PreparedDoor,
 } from "@/features/chat/ChatContextNavigation";
-import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import type { LinkDocumentRef } from "@/features/links";
 import {
   type ChatLineages,
@@ -60,6 +59,7 @@ export function ProjectChatContextNavigationProvider({
   activeWork,
   availableWorks,
   rootThreadId,
+  draftId,
   chat,
   onOpenContextTarget,
   children,
@@ -69,6 +69,8 @@ export function ProjectChatContextNavigationProvider({
   availableWorks: readonly { id: string; handle: string | null }[];
   /** The displayed chat's lineage: where its bare `scratch://` points while it is on No Work. */
   rootThreadId: string | null;
+  /** The chat's own drafts: its Work's, or under No Work its lineage's. */
+  draftId: string | null;
   /** The chat that owns the displayed thread's uploads: a subagent's top chat. */
   chat: { chatId: string; chatRef: string | null } | null;
   onOpenContextTarget?: OpenContextTarget;
@@ -127,15 +129,8 @@ export function ProjectChatContextNavigationProvider({
       }),
     [openChatDocument],
   );
-  // The chat's own drafts: its Work's, or under No Work its lineage's. A link to a document the
-  // chat drafted opens that draft, the way its draft strip does.
-  const place = useLinkPlacement(
-    projectId,
-    chatOwnerKey(
-      activeWork && { id: activeWork.id, isNoWork: activeWork.id === noWorkId },
-      rootThreadId,
-    ) || null,
-  );
+  // A link to a document the chat drafted opens that draft, the way its draft strip does.
+  const place = useLinkPlacement(projectId, draftId);
   const openFound = useCallback(
     (door: Placement, document: LinkDocumentRef) => {
       const { passage } = door;

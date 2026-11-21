@@ -1,6 +1,6 @@
 /** Notice construction for reversal and writer-awareness events. */
 
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
 import type { DocumentUriResolver } from "../../context/document-uri-resolver.js";
 import type { NoticePort } from "../../notices/index.js";
@@ -49,8 +49,8 @@ export interface TurnInverseNoticePort {
     threadId: string;
     turnId: string;
     docId: string;
-    /** The Work's branch whose draft took the reversal, when it landed in one. */
-    branchId?: BranchId;
+    /** The Work's draft whose draft took the reversal, when it landed in one. */
+    draftId?: DraftId;
     sweptContent: boolean;
     beforeContentRef: number | null;
   }): Promise<void>;
@@ -59,12 +59,12 @@ export interface TurnInverseNoticePort {
 export function createReversalNoticePort(deps: {
   notices: NoticePort;
   /** A trashed document is named where it last was: its notice lands all the same. */
-  resolveLastDocumentUri: (documentId: string, branchId?: BranchId) => Promise<string | null>;
+  resolveLastDocumentUri: (documentId: string, draftId?: DraftId) => Promise<string | null>;
   diagnostics: ReversalNoticeDiagnostics;
 }): TurnInverseNoticePort {
   return {
     async record(input) {
-      const uri = await deps.resolveLastDocumentUri(input.docId, input.branchId);
+      const uri = await deps.resolveLastDocumentUri(input.docId, input.draftId);
       if (!uri) {
         deps.diagnostics.documentUriMissing({
           docId: input.docId,

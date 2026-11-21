@@ -6,7 +6,7 @@
  * reversal is recorded as a receipt in turn, so the model's `undo` and the card's see one order.
  */
 
-import type { BranchId, ThreadId, TurnId, UserId } from "@meridian/contracts";
+import type { DraftId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type { TurnDraftState } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import { documents, treeEditReceipts, treeNodes } from "@meridian/database/schema";
@@ -38,10 +38,10 @@ import {
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { placedNodesSql } from "../../context/tree/tree-addresses.js";
 import type { AgentTreeHistory, TreeReceipt, TreeReceiptInput } from "../contracts.js";
-import { treeListOfNode, treeListsOfNodes } from "./drizzle-branch-tree-lists.js";
+import { treeListOfNode, treeListsOfNodes } from "./drizzle-draft-tree-lists.js";
 
 const viewOf = (receipt: TreeReceipt): View =>
-  receipt.draftBranchId ? { draft: receipt.draftBranchId } : LIVE;
+  receipt.draftId ? { draft: receipt.draftId } : LIVE;
 
 /** What a reversal needs from the locks' step: which lists, Works and documents it will touch. */
 export type TreePlan = {
@@ -61,10 +61,10 @@ export type TreePlan = {
   owners: TreeOwners;
   /** The lists that hold the steps' nodes, to be locked before any document key. */
   lists: TreeList[];
-  /** The Works whose branches a drafted step writes. */
-  branches: BranchId[];
+  /** The Works whose drafts a drafted step writes. */
+  drafts: DraftId[];
   /** The steps' documents, each where it is reversed, for the edit grants (a restore is its own). */
-  documents: { documentId: string; branchId: BranchId | null; restore: boolean }[];
+  documents: { documentId: string; draftId: DraftId | null; restore: boolean }[];
   /**
    * Documents created in this turn: their text stays with the document.
    */
@@ -77,7 +77,7 @@ export const NO_TREE_STEPS: TreePlan = {
   undoneByCard: 0,
   owners: NO_OWNERS,
   lists: [],
-  branches: [],
+  drafts: [],
   documents: [],
   createdDocuments: [],
 };
@@ -109,7 +109,7 @@ export function createTurnTreeInverse(deps: {
           eq(treeEditReceipts.threadId, threadId),
           eq(treeEditReceipts.turnId, turnId),
           eq(treeEditReceipts.kind, "write"),
-          isNotNull(treeEditReceipts.draftBranchId),
+          isNotNull(treeEditReceipts.draftId),
         ),
       );
     const entries = receipts.flatMap((receipt) => receipt.records);
@@ -172,15 +172,15 @@ export function createTurnTreeInverse(deps: {
     const draftedBy = new Map<string, { list: TreeList; steps: TreeReceipt[] }>();
     for (const step of recorded) {
       const list = listOf.get(step.subject);
-      if (!list || !step.draftBranchId) continue;
+      if (!list || !step.draftId) continue;
       const key = JSON.stringify(list);
       const entry = draftedBy.get(key) ?? { list, steps: [] };
       entry.steps.push(step);
       draftedBy.set(key, entry);
     }
-    // A restored Discard put a copy of a drafted change in the Work's branch as it is now, which
+    // A restored Discard put a copy of a drafted change in the Work's draft as it is now, which
     // may be a new one: the change is judged and taken back there.
-    const branchNow = new Map<TreeReceipt, string>();
+    const draftNow = new Map<TreeReceipt, string>();
     for (const { list, steps } of draftedBy.values()) {
       const records = steps.flatMap((step) => step.records.map((entry) => entry.record));
       const read = await deps.treeLists.read({
@@ -191,32 +191,29 @@ export function createTurnTreeInverse(deps: {
             : new Map<string, { draft: string | null }>(),
       });
       for (const step of steps) {
-        const branch = step.records.map((entry) => read.get(entry.record)?.draft).find(Boolean);
-        if (branch) branchNow.set(step, branch);
+        const draft = step.records.map((entry) => read.get(entry.record)?.draft).find(Boolean);
+        if (draft) draftNow.set(step, draft);
       }
     }
     const open = recorded.map((step) => {
-      const draftBranchId = branchNow.get(step) ?? step.draftBranchId;
-      return { ...step, draftBranchId };
+      const draftId = draftNow.get(step) ?? step.draftId;
+      return { ...step, draftId };
     });
-    // A drafted Undo is applicable while its branch still places the node; once a Discard took it
+    // A drafted Undo is applicable while its draft still places the node; once a Discard took it
     // out there is no file to ask a grant about and nothing to reverse.
     const held = new Set<string>();
     const draftedIn = new Map<string, string[]>();
     for (const step of open)
-      if (step.draftBranchId)
-        draftedIn.set(step.draftBranchId, [
-          ...(draftedIn.get(step.draftBranchId) ?? []),
-          step.subject,
-        ]);
-    for (const [branchId, nodes] of draftedIn)
+      if (step.draftId)
+        draftedIn.set(step.draftId, [...(draftedIn.get(step.draftId) ?? []), step.subject]);
+    for (const [draftId, nodes] of draftedIn)
       for (const row of await db().execute<{ id: string }>(sql`
-        SELECT n.id::text AS id FROM ${placedNodesSql({ kind: "branch", branchId: branchId as BranchId })} n
+        SELECT n.id::text AS id FROM ${placedNodesSql({ kind: "draft", draftId: draftId as DraftId })} n
         WHERE n.id IN (${sql.join(
           nodes.map((id) => sql`${id}::uuid`),
           sql`, `,
         )})`))
-        held.add(`${branchId}:${row.id}`);
+        held.add(`${draftId}:${row.id}`);
     const subjects = new Set(
       (
         await db().select({ id: documents.id }).from(documents).where(inArray(documents.id, ids))
@@ -236,8 +233,7 @@ export function createTurnTreeInverse(deps: {
     const byList = new Map<string, { list: TreeList; receipts: TreeReceipt[] }>();
     for (const step of open) {
       const list = listOf.get(step.subject);
-      if (!list || (step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`)))
-        continue;
+      if (!list || (step.draftId && !held.has(`${step.draftId}:${step.subject}`))) continue;
       const key = JSON.stringify(list);
       const entry = byList.get(key) ?? { list, receipts: [] };
       entry.receipts.push(step);
@@ -275,14 +271,14 @@ export function createTurnTreeInverse(deps: {
     const answers = new Map<string, UndoAnswer>(
       [...reports].map(([record, report]) => [record, answerOf(report, judge)]),
     );
-    // A drafted receipt its Work's branch no longer holds was discarded: like discarded text, it
+    // A drafted receipt its Work's draft no longer holds was discarded: like discarded text, it
     // is neither taken back nor a part that stayed.
     const fates = new Map<TreeReceipt, ReturnType<typeof changeUndone> | "discarded">();
     for (const step of open) {
       const own = step.records.map((entry) => answers.get(entry.record));
       fates.set(
         step,
-        step.draftBranchId && !held.has(`${step.draftBranchId}:${step.subject}`)
+        step.draftId && !held.has(`${step.draftId}:${step.subject}`)
           ? "discarded"
           : own.some((answer) => answer === undefined)
             ? "purged"
@@ -307,19 +303,19 @@ export function createTurnTreeInverse(deps: {
       undoneByCard,
       owners,
       lists: [...lists.values()],
-      branches: [
-        ...new Set(steps.flatMap((step) => (step.draftBranchId ? [step.draftBranchId] : []))),
-      ] as BranchId[],
+      drafts: [
+        ...new Set(steps.flatMap((step) => (step.draftId ? [step.draftId] : []))),
+      ] as DraftId[],
       documents: steps.flatMap((step) => {
         const restore = restores(step);
         // A document in Trash takes no edit grant but its own restore.
         const placed = live.has(step.subject) && live.get(step.subject) === null;
         return subjects.has(step.subject) &&
-          (step.draftBranchId || (restore ? undoesSubject(step) : placed))
+          (step.draftId || (restore ? undoesSubject(step) : placed))
           ? [
               {
                 documentId: step.subject,
-                branchId: step.draftBranchId as BranchId | null,
+                draftId: step.draftId as DraftId | null,
                 restore,
               },
             ]
@@ -352,7 +348,7 @@ export function createTurnTreeInverse(deps: {
     const record = (
       receipt: TreeReceipt,
       fields: Pick<TreeReceiptInput, "nodes" | "records"> &
-        Partial<Pick<TreeReceiptInput, "draftBranchId">>,
+        Partial<Pick<TreeReceiptInput, "draftId">>,
     ) =>
       deps.history().recordAgentTreeChange({
         subject: receipt.subject,
@@ -384,7 +380,7 @@ export function createTurnTreeInverse(deps: {
           const taken = receipts.map((receipt) => {
             const made: { record: string; node: string }[] = [];
             const answers: UndoAnswer[] = [];
-            let inLive = receipt.draftBranchId === null;
+            let inLive = receipt.draftId === null;
             for (const entry of receipt.records.toReversed()) {
               const back = walked.get(entry.record) as TakenBack;
               if (typeof back === "string") answers.push(back);
@@ -415,9 +411,7 @@ export function createTurnTreeInverse(deps: {
         await record(receipt, {
           nodes: nodesOf(receipt),
           records: made,
-          ...(receipt.draftBranchId && !inLive
-            ? { draftBranchId: receipt.draftBranchId as BranchId }
-            : {}),
+          ...(receipt.draftId && !inLive ? { draftId: receipt.draftId as DraftId } : {}),
         });
       }
     };

@@ -24,7 +24,7 @@ import {
 } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
-import type { Branches, DocumentLinkScopes } from "../domains/collab/index.js";
+import type { DocumentLinkScopes, Drafts } from "../domains/collab/index.js";
 import type { DocumentLinkResolver } from "../domains/context/index.js";
 import type { DocumentTrash } from "../domains/context/ports/document-trash.js";
 import type { UploadIdentityPort } from "../domains/context/uploads/index.js";
@@ -40,8 +40,8 @@ export interface DocumentLinkRouteDeps {
   linkScopes: DocumentLinkScopes;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   fileAccess: Pick<FileAccess, "listAccess">;
-  /** The selected Work's view: its active branch, or live when it has none (F7). */
-  branches: Pick<Branches, "viewForOwner">;
+  /** The selected Work's view: its active draft, or live when it has none (F7). */
+  drafts: Pick<Drafts, "viewForOwner">;
   /** Project-authorized retained identities for gone links; purged rows are absent. */
   documentTrash: Pick<DocumentTrash, "retained">;
   /** What a chip says of a stored file: its type and size. */
@@ -58,20 +58,20 @@ export async function handleDocumentLinkResolveRequest(
   await requireProjectOwner({ projects: deps.projectRepo }, projectId, userId);
   // A lineage note reads project-document refs through its lineage's own drafts.
   const workId = request.rootThreadId ? null : (request.workId ?? null);
-  // The selected Work must be this project's; a branch view is never provisioned for any other.
+  // The selected Work must be this project's; a draft view is never provisioned for any other.
   if (
     workId &&
     !(await deps.workAuthorityResolver.byId(projectId as ProjectId, workId as WorkId))
   ) {
     throwContextWorkUnavailableHttpError("work_missing");
   }
-  // An owner's branch view is the live tree plus what that branch created.
+  // An owner's draft view is the live tree plus what that draft created.
   const owner: DraftOwner | null = request.rootThreadId
     ? { kind: "lineage", projectId: projectId as ProjectId, rootThreadId: request.rootThreadId }
     : workId
       ? { kind: "work", workId: workId as WorkId }
       : null;
-  const view: LinkView = await deps.branches.viewForOwner(owner);
+  const view: LinkView = await deps.drafts.viewForOwner(owner);
   const answers: DocumentLinkAnswer[] = new Array(request.links.length);
   let holderUri: string | undefined;
   const refResolutions: Array<{
@@ -155,7 +155,7 @@ export async function handleDocumentLinkResolveRequest(
   }
 
   const found: Array<{ index: number; document: DocumentAnswer }> = [];
-  // Address-only links the live tree left unanswered: a Work's branch may have created them.
+  // Address-only links the live tree left unanswered: a Work's draft may have created them.
   const unanswered: Array<{ index: number; uri: string }> = [];
   const byHref = new Map<string, ReturnType<DocumentLinkResolver["resolve"]>>();
   for (const [index, link] of request.links.entries()) {
@@ -206,12 +206,12 @@ export async function handleDocumentLinkResolveRequest(
     );
     for (const { index, document } of found) {
       if (access.has(document.id as DocumentId)) {
-        answers[index] = { state: "document", document, inBranch: false };
+        answers[index] = { state: "document", document, inDraft: false };
       }
     }
   }
   if (unanswered.length > 0) {
-    await answerFromBranchView(deps, { projectId, userId, view, unanswered, answers });
+    await answerFromDraftView(deps, { projectId, userId, view, unanswered, answers });
   }
   await addFileFacts(deps.files, answers);
   return holderUri === undefined ? { answers } : { answers, holderUri };
@@ -241,12 +241,12 @@ async function addFileFacts(
 }
 
 /**
- * Names the document a Work's branch created at an address the live tree leaves empty (the
- * scope's `branchCreatedAt`, as the branch's tree reaches the address). A live occupant
- * keeps winning, since these never reached one; another branch's creation and what the
+ * Names the document a Work's draft created at an address the live tree leaves empty (the
+ * scope's `draftCreatedAt`, as the draft's tree reaches the address). A live occupant
+ * keeps winning, since these never reached one; another draft's creation and what the
  * reader may not read stay missing.
  */
-async function answerFromBranchView(
+async function answerFromDraftView(
   deps: DocumentLinkRouteDeps,
   input: {
     projectId: string;
@@ -257,7 +257,7 @@ async function answerFromBranchView(
   },
 ): Promise<void> {
   const { projectId, userId, view, unanswered, answers } = input;
-  if (view.kind !== "branch") return;
+  if (view.kind !== "draft") return;
   await deps.linkScopes.within({ projectId, viewer: { accountId: userId } }, async () => {
     await deps.linkScopes.prepare({
       holders: [],
@@ -265,9 +265,9 @@ async function answerFromBranchView(
       addresses: unanswered.map(({ uri }) => uri),
     });
     for (const { index, uri } of unanswered) {
-      const document = deps.linkScopes.branchCreatedAt({ view, uri });
+      const document = deps.linkScopes.draftCreatedAt({ view, uri });
       if (!document) continue;
-      answers[index] = answerOf({ kind: "document", document, inBranch: true });
+      answers[index] = answerOf({ kind: "document", document, inDraft: true });
     }
   });
 }
@@ -277,14 +277,14 @@ function answerOf(resolution: LinkResolution, trashedDocumentId?: string): Docum
   // Rule 3: the client keeps the settlement and never answers this ref by address again.
   const marks: AheadMarks = "settled" in resolution ? { settled: true as const } : {};
   if (resolution.kind === "document") {
-    const { document, inBranch } = resolution;
+    const { document, inDraft } = resolution;
     const described = describeDocument(document);
     return described
       ? {
           state: "document",
           document: described,
-          inBranch,
-          ...(document.branch ? { branch: document.branch } : {}),
+          inDraft,
+          ...(document.draft ? { draft: document.draft } : {}),
           ...marks,
         }
       : { state: "gone", ...marks };

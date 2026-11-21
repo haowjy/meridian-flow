@@ -1,6 +1,5 @@
 // Shared admission fixture for durable inverse boundaries.
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
 import { testFileGrant } from "../../../test-support/file-grants.js";
 import {
   ALPHA_ID,
@@ -10,6 +9,7 @@ import {
   schema,
   THREAD_ID,
   TURN_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./collab-postgres-harness.js";
 export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) {
@@ -33,7 +33,12 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
     turnId: TURN_ID,
     responseIdentity: { modelResponseId: responseId },
     grant: testFileGrant(
-      { kind: "draft", owner: { kind: "work", workId: WORK_ID }, ownerHandle: "atomicity-work" },
+      {
+        kind: "draft",
+        draftId: WORK_DRAFT_ID,
+        owner: { kind: "work", workId: WORK_ID },
+        ownerHandle: "atomicity-work",
+      },
       ALPHA_ID,
     ),
   };
@@ -43,22 +48,4 @@ export async function inverseFixture(db: ReturnType<typeof createTestDatabase>) 
     documentId: ALPHA_ID,
   };
   return { harness, view, responseId, context, target };
-}
-
-/** The document's Work draft id: what `view.draftMarkdown` reads. */
-export async function readDraftId(
-  db: ReturnType<typeof createTestDatabase>,
-  documentId: string,
-): Promise<string> {
-  const [documentDraft] = await db
-    .select({ id: schema.documentDrafts.id })
-    .from(schema.documentDrafts)
-    .where(
-      and(
-        eq(schema.documentDrafts.documentId, documentId),
-        eq(schema.documentDrafts.kind, "work_draft"),
-      ),
-    );
-  if (!documentDraft) throw new Error(`No Work draft for ${documentId}`);
-  return documentDraft.id;
 }

@@ -1,119 +1,18 @@
-/** Tests for Hocuspocus room persistence: draft guards and deferred live checkpoints.
+/** Tests for Hocuspocus room persistence: writer frames and deferred live checkpoints.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Draft admission queue and checkpoint coalescing (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#journal-first-then-live)
+ * - Checkpoint coalescing (kb/wiki/architecture/collaboration/durability-and-honest-outcomes.md#journal-first-then-live)
  */
 
-import { Hocuspocus } from "@hocuspocus/server";
-import { APPLY_RECORD_ROOT } from "@meridian/agent-edit/diff";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createInMemoryJournal } from "./adapters/in-memory/agent-edit.js";
-import {
-  bindDocumentAuthority,
-  documentAuthority,
-  RetiredDocumentHandleError,
-} from "./domain/document-handle.js";
-import { DraftStaleUpdateError } from "./domain/draft-store.js";
+import { bindDocumentAuthority } from "./domain/document-handle.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveWriterJournal } from "./domain/ports/live-writer-journal.js";
 import { createHocuspocusPersistenceService } from "./hocuspocus-persistence.js";
 
-const DRAFT_ID = "draft-1";
 const DOCUMENT_ID = "00000000-0000-4000-8000-000000000001" as never;
-
-describe("createHocuspocusPersistenceService draft room storage", () => {
-  it("refuses a room whose load hooks finish after a restore and opens the current generation", async () => {
-    let generation = 1n;
-    let finishLoad!: () => void;
-    let reachedAfterLoad!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      finishLoad = resolve;
-    });
-    const ready = new Promise<void>((resolve) => {
-      reachedAfterLoad = resolve;
-    });
-    const journal = fakeJournal();
-    journal.read = async () => ({
-      authority: { authorityId: DOCUMENT_ID, generation },
-      checkpoint: Y.encodeStateAsUpdate(new Y.Doc()),
-      updates: [],
-    });
-    const hp = new Hocuspocus({
-      async onLoadDocument({ document }) {
-        const state = await persistence.loadHocuspocusDocument(DOCUMENT_ID, document);
-        if (state) Y.applyUpdate(document, state);
-      },
-      async afterLoadDocument({ document }) {
-        if (documentAuthority(document).generation === 1n) {
-          reachedAfterLoad();
-          await gate;
-        }
-        await persistence.validateHocuspocusDocument(DOCUMENT_ID, document);
-      },
-    });
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => hp,
-      readAuthorityHeadGeneration: async () => generation,
-      metaForOrigin: () => ({ origin: "system", seq: 0 }),
-      emitAgentEditInvariantViolation: () => {},
-    });
-    const loading = hp.openDirectConnection(DOCUMENT_ID, {}).catch((cause: unknown) => cause);
-    await ready;
-    expect(hp.documents.has(DOCUMENT_ID)).toBe(false);
-    expect(hp.loadingDocuments.has(DOCUMENT_ID)).toBe(true);
-    generation = 2n;
-    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    finishLoad();
-    expect(await loading).toBeInstanceOf(RetiredDocumentHandleError);
-    expect(hp.documents.has(DOCUMENT_ID)).toBe(false);
-    const current = await hp.openDirectConnection(DOCUMENT_ID, {});
-    if (!current.document) throw new Error("Current room did not load");
-    expect(documentAuthority(current.document).generation).toBe(2n);
-    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    expect(hp.documents.get(DOCUMENT_ID)).toBe(current.document);
-    expect(documentAuthority(current.document).generation).toBe(2n);
-    await current.disconnect();
-  });
-
-  it("registers draft admission before validation so store and shutdown drains wait", async () => {
-    let releaseAdmission: (() => void) | undefined;
-    const admissionBlocked = new Promise<void>((resolve) => {
-      releaseAdmission = resolve;
-    });
-    const appendWriterFrame = vi.fn(async () => {
-      await admissionBlocked;
-    });
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      draftCoordinator: { appendWriterFrame } as never,
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    const admission = persistence.admitDraftWriterUpdate({
-      draftId: DRAFT_ID,
-      update: writerUpdate(),
-      origin: { type: "user", userId: "user-1" as never },
-      document: boundDoc({ gc: false }),
-    });
-    const store = persistence.storeHocuspocusDraft(DRAFT_ID, boundDoc({ gc: false }));
-    const shutdownDrain = persistence.drainHocuspocusPersistence();
-    let drained = false;
-    void Promise.all([store, shutdownDrain]).then(() => {
-      drained = true;
-    });
-    await Promise.resolve();
-    expect(drained).toBe(false);
-
-    releaseAdmission?.();
-    await expect(Promise.all([admission, store, shutdownDrain])).resolves.toBeDefined();
-    expect(appendWriterFrame).toHaveBeenCalledOnce();
-    expect(drained).toBe(true);
-  });
-});
 
 describe("createHocuspocusPersistenceService live checkpoints", () => {
   function liveCheckpointFixture(
@@ -132,7 +31,6 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
       afterCallerCommit: (callback) => {
         queued.push(callback);
       },
-      emitAgentEditInvariantViolation: () => undefined,
     });
     return {
       journal,
@@ -183,84 +81,18 @@ describe("createHocuspocusPersistenceService live checkpoints", () => {
     expect(fixture.journal.captureCheckpoint).toHaveBeenCalledTimes(2);
     expect(fixture.journal.captureCheckpoint).toHaveBeenLastCalledWith(DOCUMENT_ID, {
       authorityId: DOCUMENT_ID,
-      generation: 1n,
     });
     expect(fixture.journal.storeCheckpoint).toHaveBeenLastCalledWith(
       expect.objectContaining({
         documentId: DOCUMENT_ID,
-        authority: { authorityId: DOCUMENT_ID, generation: 1n },
+        authority: { authorityId: DOCUMENT_ID },
         upToSeq: 0,
       }),
     );
   });
 });
 
-describe("createHocuspocusPersistenceService draft frames", () => {
-  it("stores what the room lacks of a writer's frame, and nothing it already holds", async () => {
-    const draftDoc = tombstoneBearingDoc();
-    const room = cloneDoc(draftDoc);
-    const typist = cloneDoc(draftDoc);
-    const before = Y.encodeStateVector(typist);
-    typist.getText("content").insert(typist.getText("content").length, "!");
-    const humanUpdate = Y.encodeStateAsUpdate(typist, before);
-    const appendWriterFrame = vi.fn(async () => undefined);
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      draftCoordinator: { appendWriterFrame } as never,
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    const frame = (document: Y.Doc) =>
-      persistence.admitDraftWriterUpdate({
-        draftId: DRAFT_ID,
-        update: humanUpdate,
-        origin: { type: "user", userId: "user-1" as never },
-        document,
-      });
-
-    await expect(frame(room)).resolves.toBeUndefined();
-    expect(appendWriterFrame).toHaveBeenCalledWith(
-      expect.objectContaining({
-        draftId: DRAFT_ID,
-        updateData: humanUpdate,
-        actorUserId: "user-1",
-      }),
-    );
-
-    // A reconnect resends it once the room holds it: acknowledged, stored nowhere.
-    Y.applyUpdate(room, humanUpdate);
-    await expect(frame(room)).resolves.toBeUndefined();
-    expect(appendWriterFrame).toHaveBeenCalledOnce();
-  });
-
-  it("refuses a draft frame that closes the draft's owner out", async () => {
-    const room = docWithText("seed");
-    const typist = cloneDoc(room);
-    const before = Y.encodeStateVector(typist);
-    typist.getText("content").insert(4, "!");
-    const persistence = createHocuspocusPersistenceService({
-      journal: fakeJournal(),
-      draftCoordinator: {
-        appendWriterFrame: vi.fn(async () => {
-          throw new DraftStaleUpdateError(`Draft ${DRAFT_ID}`);
-        }),
-      } as never,
-      hocuspocus: () => null,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    await expect(
-      persistence.admitDraftWriterUpdate({
-        draftId: DRAFT_ID,
-        update: Y.encodeStateAsUpdate(typist, before),
-        origin: { type: "user", userId: "user-1" as never },
-        document: room,
-      }),
-    ).rejects.toThrow(DraftStaleUpdateError);
-  });
-
+describe("createHocuspocusPersistenceService writer frames", () => {
   it("admits novel insertion and delete-only updates", async () => {
     const liveDocument = tombstoneBearingDoc();
     const journal = fakeJournal();
@@ -268,7 +100,6 @@ describe("createHocuspocusPersistenceService draft frames", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     const insertionClient = cloneDoc(liveDocument);
     const beforeInsertion = Y.encodeStateVector(insertionClient);
@@ -281,7 +112,6 @@ describe("createHocuspocusPersistenceService draft frames", () => {
         document: liveDocument,
         update: insertion,
         origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
       }),
     ).resolves.toEqual({ admitted: true });
 
@@ -297,7 +127,6 @@ describe("createHocuspocusPersistenceService draft frames", () => {
         document: liveDocument,
         update: deletion,
         origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
       }),
     ).resolves.toEqual({ admitted: true });
 
@@ -306,124 +135,25 @@ describe("createHocuspocusPersistenceService draft frames", () => {
       DOCUMENT_ID,
       insertion,
       expect.anything(),
-      { authorityId: DOCUMENT_ID, generation: 1n },
+      { authorityId: DOCUMENT_ID },
     );
     expect(journal.appendWriterUpdate).toHaveBeenNthCalledWith(
       2,
       DOCUMENT_ID,
       deletion,
       expect.anything(),
-      { authorityId: DOCUMENT_ID, generation: 1n },
+      { authorityId: DOCUMENT_ID },
     );
   });
 
-  it("disconnects the retired live generation and rejects its replayed bytes", async () => {
-    const checkpoint = docWithText("checkpoint", 2n);
-    const retired = cloneDoc(checkpoint);
-    const retiredVector = Y.encodeStateVector(retired);
-    retired.getText("content").insert(retired.getText("content").length, " retired");
-    const retiredUpdate = Y.encodeStateAsUpdate(retired, retiredVector);
-    const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
-    const closeConnections = vi.fn();
-    const journal = fakeJournal();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents, closeConnections }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-
-    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    expect(closeConnections).toHaveBeenCalledWith(DOCUMENT_ID);
-    expect(documents.has(DOCUMENT_ID)).toBe(false);
-
-    documents.set(DOCUMENT_ID, checkpoint);
-    await expect(
-      persistence.admitLiveWriterUpdate({
-        documentId: DOCUMENT_ID,
-        document: checkpoint,
-        update: retiredUpdate,
-        origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
-      }),
-    ).rejects.toThrow("stale-durable-authority-generation");
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-  });
-
-  it("rejects a retained-identity delete-only replay without journaling or applying", async () => {
-    const retired = docWithText("retained");
-    const staleClient = cloneDoc(retired);
-    const documents = new Map<string, Y.Doc>([[DOCUMENT_ID, retired]]);
-    const journal = fakeJournal();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents, closeConnections: vi.fn() }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    await persistence.disconnectLiveGeneration(DOCUMENT_ID, 1n);
-    const current = cloneDoc(retired, 2n);
-    documents.set(DOCUMENT_ID, current);
-    const beforeDelete = Y.encodeStateVector(staleClient);
-    staleClient.getText("content").delete(0, staleClient.getText("content").length);
-    const deleteOnly = Y.encodeStateAsUpdate(staleClient, beforeDelete);
-    expect(Y.decodeUpdate(deleteOnly).structs).toHaveLength(0);
-
-    await expect(
-      persistence.admitLiveWriterUpdate({
-        documentId: DOCUMENT_ID,
-        document: current,
-        update: deleteOnly,
-        origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 2n,
-      }),
-    ).rejects.toThrow("retired-durable-authority-generation");
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-    expect(current.getText("content").toString()).toBe("retained");
-  });
-
-  it.each([
-    [
-      "nested insert",
-      (doc: Y.Doc) =>
-        (doc.getMap(APPLY_RECORD_ROOT).get("nested") as Y.Array<unknown>).push(["hostile"]),
-    ],
-    ["delete-only change", (doc: Y.Doc) => doc.getMap(APPLY_RECORD_ROOT).delete("nested")],
-    ["top-level collision", (doc: Y.Doc) => doc.getArray(APPLY_RECORD_ROOT).push([1])],
-  ])("rejects hostile reserved namespace %s before journaling", async (_name, mutate) => {
-    const liveDocument = documentWithReservedFacts();
-    const journal = fakeJournal();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    const client = cloneDoc(liveDocument);
-    const vector = Y.encodeStateVector(client);
-    mutate(client);
-
-    await expect(
-      persistence.admitLiveWriterUpdate({
-        documentId: DOCUMENT_ID,
-        document: liveDocument,
-        update: Y.encodeStateAsUpdate(client, vector),
-        origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
-      }),
-    ).rejects.toThrow();
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-  });
-
   it("rejects a caller-supplied document that is not the bound room liveDocument", async () => {
-    const liveDocument = documentWithReservedFacts();
+    const liveDocument = boundDoc({ gc: false });
     const wrongDocument = boundDoc({ gc: false });
     const journal = fakeJournal();
     const persistence = createHocuspocusPersistenceService({
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
 
     await expect(
@@ -432,33 +162,8 @@ describe("createHocuspocusPersistenceService draft frames", () => {
         document: wrongDocument,
         update: writerUpdate(),
         origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
       }),
     ).rejects.toThrow("live-document-room-mismatch");
-    expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
-  });
-
-  it("rejects reserved-client-ID injection before journaling", async () => {
-    const liveDocument = boundDoc({ gc: false });
-    const journal = fakeJournal();
-    const persistence = createHocuspocusPersistenceService({
-      journal,
-      hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
-      metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
-    });
-    const client = boundDoc();
-    client.clientID = 999;
-    client.getText("content").insert(0, "hostile");
-    await expect(
-      persistence.admitLiveWriterUpdate({
-        documentId: DOCUMENT_ID,
-        document: liveDocument,
-        update: Y.encodeStateAsUpdate(client),
-        origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
-      }),
-    ).rejects.toThrow("reserved-writer-client-id");
     expect(journal.appendWriterUpdate).not.toHaveBeenCalled();
   });
 
@@ -481,7 +186,6 @@ describe("createHocuspocusPersistenceService draft frames", () => {
       journal,
       hocuspocus: () => ({ documents: new Map([[DOCUMENT_ID, liveDocument]]) }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     const update = writerUpdate();
     const admission = persistence
@@ -490,7 +194,6 @@ describe("createHocuspocusPersistenceService draft frames", () => {
         document: liveDocument,
         update,
         origin: { type: "user", userId: "user-1" },
-        expectedGeneration: 1n,
       })
       .then((result) => {
         events.push("apply/broadcast/ack");
@@ -519,7 +222,6 @@ describe("createHocuspocusPersistenceService draft frames", () => {
           getConnectionsCount: () => 0,
         }) as never,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     let appliedOrAcknowledged = false;
 
@@ -530,7 +232,6 @@ describe("createHocuspocusPersistenceService draft frames", () => {
           document: liveDocument,
           update: writerUpdate(),
           origin: { type: "user", userId: "user-1" },
-          expectedGeneration: 1n,
         })
         .then(() => {
           appliedOrAcknowledged = true;
@@ -546,13 +247,6 @@ function writerUpdate(): Uint8Array {
   return Y.encodeStateAsUpdate(doc);
 }
 
-function documentWithReservedFacts(): Y.Doc {
-  const doc = boundDoc({ gc: false });
-  const nested = new Y.Array<unknown>();
-  doc.getMap(APPLY_RECORD_ROOT).set("nested", nested);
-  nested.push(["authority fact"]);
-  return doc;
-}
 function tombstoneBearingDoc(): Y.Doc {
   const doc = docWithText("seed");
   const text = doc.getText("content");
@@ -561,14 +255,14 @@ function tombstoneBearingDoc(): Y.Doc {
   return doc;
 }
 
-function docWithText(text: string, generation = 1n): Y.Doc {
-  const doc = boundDoc({ gc: false }, generation);
+function docWithText(text: string): Y.Doc {
+  const doc = boundDoc({ gc: false });
   doc.getText("content").insert(0, text);
   return doc;
 }
 
-function cloneDoc(doc: Y.Doc, generation = 1n): Y.Doc {
-  const clone = boundDoc({ gc: false }, generation);
+function cloneDoc(doc: Y.Doc): Y.Doc {
+  const clone = boundDoc({ gc: false });
   Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
   return clone;
 }
@@ -590,8 +284,8 @@ function fakeJournal(): CheckpointJournal & LiveWriterJournal {
   };
 }
 
-function boundDoc(options?: ConstructorParameters<typeof Y.Doc>[0], generation = 1n): Y.Doc {
+function boundDoc(options?: ConstructorParameters<typeof Y.Doc>[0]): Y.Doc {
   const doc = new Y.Doc(options);
-  bindDocumentAuthority(doc, { authorityId: DOCUMENT_ID, generation });
+  bindDocumentAuthority(doc, { authorityId: DOCUMENT_ID });
   return doc;
 }

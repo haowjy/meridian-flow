@@ -19,8 +19,8 @@ import { createCommandStore } from "../../shared/commands/drizzle-commands.js";
 import { setTestHook } from "../../shared/test-hooks.js";
 import { waitForPostgresLock } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
-import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
-import { createPostgresWorkBranchDisposal } from "../collab/test-support/work-branch-disposal.js";
+import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-work-draft-pending.js";
+import { createPostgresWorkDraftDisposal } from "../collab/test-support/work-draft-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { loadDocumentAddresses } from "../context/tree/tree-addresses.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
@@ -69,7 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const control = postgres(DATABASE_URL, { max: 1 });
     const projectionMutation = createWorkProjectionMutation({
       db,
-      pendingCounts: createDrizzleWorkBranchPendingStore(db),
+      pendingCounts: createDrizzleWorkDraftPendingStore(db),
       draftOwnerHints: NO_PROJECT_HINTS,
     });
     const fileAccessChanges = createLocalFileAccessChanges();
@@ -607,7 +607,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await nodes()).toEqual(before);
     });
 
-    it("cascade-deletes Work chats, branches, and context from their read surfaces, then restores them", async () => {
+    it("cascade-deletes Work chats, drafts, and context from their read surfaces, then restores them", async () => {
       await works.ensureNoWork(PROJECT_ID);
       const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
       const [source] = await db
@@ -621,19 +621,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await loadDocumentAddresses(db, { ids: [document.id as DocumentId] }))
           .filter((address) => !address.deleted)
           .map((address) => address.documentId);
-      const [branch] = await db
-        .insert(schema.branches)
-        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
-        .returning({ id: schema.branches.id });
-      if (!branch) throw new Error("Expected the Work's branch");
-      await db.insert(schema.documentDrafts).values({
-        id: "work-delete-draft",
-        documentId: document.id,
-        kind: "work_draft",
-        branchId: branch.id,
-        state: Buffer.from([]),
-        stateVector: Buffer.from([]),
-      });
       const resultTurnId = "00000000-0000-4000-8000-000000000848";
       const resultId = "00000000-0000-4000-8000-000000000849";
       await db.insert(schema.threads).values({
@@ -809,13 +796,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { id: childThreadId, deletedByWorkId: work.id },
         ]),
       );
-      await expect(
-        db
-          .select()
-          .from(schema.documentDrafts)
-          .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-        "a cascade deletion leaves its documents' drafts open for the Work's Restore",
-      ).resolves.toMatchObject([{ id: "work-delete-draft" }]);
 
       await works.restore(work.id);
       await expect(
@@ -834,12 +814,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadRepos.threads.findById(separatelyDeletedThreadId as never),
       ).resolves.toBeNull();
       await expect(threadRepos.chatFeed.queryPage(feedInput)).resolves.toHaveLength(1);
-      await expect(
-        db
-          .select()
-          .from(schema.documentDrafts)
-          .where(eq(schema.documentDrafts.id, "work-delete-draft")),
-      ).resolves.toMatchObject([{ id: "work-delete-draft" }]);
       expect(await shown()).toContain(document.id);
       await expect(
         db
@@ -1049,7 +1023,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
-        branches: createPostgresWorkBranchDisposal(db),
+        drafts: createPostgresWorkDraftDisposal(db),
         tree: treeSeeder(db).store,
         works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },
@@ -1088,7 +1062,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore,
         eventSink,
-        branches: createPostgresWorkBranchDisposal(db),
+        drafts: createPostgresWorkDraftDisposal(db),
         tree: treeSeeder(db).store,
         works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },
@@ -1234,19 +1208,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           size: 1,
         }),
       };
-      const [branch] = await db
-        .insert(schema.branches)
-        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
-        .returning({ id: schema.branches.id });
-      if (!branch) throw new Error("Expected the Work's branch");
-      await db.insert(schema.documentDrafts).values({
-        id: "purged-work-draft",
-        documentId: document.id,
-        kind: "work_draft",
-        branchId: branch.id,
-        state: Buffer.from([]),
-        stateVector: Buffer.from([]),
-      });
       await db.insert(schema.projectResults).values({
         id: "00000000-0000-4000-8000-000000000849",
         projectId: PROJECT_ID,
@@ -1340,12 +1301,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .select()
           .from(schema.projectResults)
           .where(eq(schema.projectResults.projectId, PROJECT_ID)),
-      ).resolves.toEqual([]);
-      await expect(
-        db
-          .select()
-          .from(schema.documentDrafts)
-          .where(eq(schema.documentDrafts.id, "purged-work-draft")),
       ).resolves.toEqual([]);
       await expect(
         db.select().from(schema.threads).where(inArray(schema.threads.id, derivedIds)),

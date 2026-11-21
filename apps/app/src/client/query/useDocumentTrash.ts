@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { foldersAbove } from "@/core/tree-list/standing";
 import { useAccountId } from "@/features/project/context/account-feature-context";
-import { getTrash, getTrashDiscards, getTrashedDocument } from "../api/projects-api";
+import { getTrash, getTrashedDocument } from "../api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { useAccountContextSources, useProjectContextSources } from "./useContextSources";
@@ -119,20 +119,6 @@ export function useTrashedDocument(projectId: string, documentId: string | null)
     queryKey: projectQueryKeys.trashedDocument(projectId, documentId ?? ""),
     queryFn: ({ signal }) => getTrashedDocument(projectId, documentId as string, { signal }),
     enabled: projectReadEnabled(documentId !== null),
-    staleTime: 30_000,
-  });
-}
-
-/**
- * Trash's Discard entries: each Discard (or restore that swapped a newer draft out) with the
- * drafts it closed and what it settled in the tree. Read again after a Discard or a restore here,
- * and when a Work's drafts change elsewhere (the Works notice).
- */
-export function useTrashDiscards(projectId: string) {
-  return useQuery({
-    queryKey: projectQueryKeys.trashDiscards(projectId),
-    queryFn: ({ signal }) => getTrashDiscards(projectId, { signal }),
-    enabled: projectReadEnabled(Boolean(projectId)),
     staleTime: 30_000,
   });
 }

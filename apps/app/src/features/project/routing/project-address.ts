@@ -2,13 +2,9 @@
  * Browser project addresses. After `/p/<projectId>` the first segment is the kind of main's item
  * (`chats`, `editor` or `trash`) and the rest names it: a chat by id, or `chats/recent`, the chat
  * lane's Recent chats page. The Work scope is not in the address; the
- * query holds the owner of a Scratch document or of a draft, and overlays.
+ * query holds the owner of a Scratch document, the draft item under review (its key names the
+ * draft), and overlays.
  */
-import {
-  type DraftOwnerKey,
-  draftOwnerKey,
-  parseDraftOwnerKey,
-} from "@meridian/contracts/branches";
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import {
   isProjectContextTreeScheme,
@@ -27,11 +23,11 @@ export type ProjectAddress = {
   projectId: string;
   destination: ProjectDestination;
   /**
-   * Who owns what the address names: a Scratch document's owner (its identity), and the owner of
-   * the draft `itemKey` selects. A plain project document has none: the scope does not belong in a link.
+   * A Scratch document's owner (its identity). A project document has none: the scope does not
+   * belong in a link.
    */
-  owner?: DraftOwnerKey;
-  /** Pending draft projected by the current manuscript Editor address. */
+  owner?: ScratchOwnerKey;
+  /** The draft item under review: `${draftId}:${documentId}`, so it names its draft. */
   itemKey?: string;
   /** Stable selected closure class within the addressed review. */
   changeId?: string;
@@ -48,22 +44,33 @@ function uuid(value: string | undefined): string | null {
   return normalized && UUID.test(normalized) ? normalized : null;
 }
 
+/** Who owns a Scratch document, as its address spells it: `work:<id>` or `lineage:<rootThreadId>`. */
+export type ScratchOwnerKey = `work:${string}` | `lineage:${string}`;
+
 /** The owner key a Scratch document's address carries: its Work, or the chat lineage of a No Work chat. */
-export function scratchOwnerKey(target: { workId: string; rootThreadId?: string }): DraftOwnerKey {
-  return target.rootThreadId
-    ? draftOwnerKey({ kind: "lineage", rootThreadId: target.rootThreadId })
-    : draftOwnerKey({ kind: "work", workId: target.workId });
+export function scratchOwnerKey(target: {
+  workId: string;
+  rootThreadId?: string;
+}): ScratchOwnerKey {
+  return target.rootThreadId ? `lineage:${target.rootThreadId}` : `work:${target.workId}`;
 }
 
-/** The chat lineage the address's owner names, for a Scratch document or a lineage's draft. */
+function parseScratchOwner(key: string): { kind: "work" | "lineage"; id: string } | null {
+  const match = /^(work|lineage):([0-9a-f-]{36})$/i.exec(key);
+  return match
+    ? { kind: match[1] as "work" | "lineage", id: (match[2] as string).toLowerCase() }
+    : null;
+}
+
+/** The chat lineage a Scratch document's address names as its owner. */
 export function addressLineage(address: ProjectAddress): string | undefined {
-  const owner = address.owner ? parseDraftOwnerKey(address.owner) : null;
+  const owner = address.owner ? parseScratchOwner(address.owner) : null;
   return owner?.kind === "lineage" ? owner.id : undefined;
 }
 
 /** The Work a Scratch address names as its owner: the document's identity, whatever the scope. */
 export function addressScratchWorkId(address: ProjectAddress): string | undefined {
-  const owner = address.owner ? parseDraftOwnerKey(address.owner) : null;
+  const owner = address.owner ? parseScratchOwner(address.owner) : null;
   return address.destination.kind === "document" &&
     address.destination.scheme === "scratch" &&
     owner?.kind === "work"
@@ -71,16 +78,9 @@ export function addressScratchWorkId(address: ProjectAddress): string | undefine
     : undefined;
 }
 
-/** The address with its review dropped: a draft's owner leaves with it, a Scratch document's does not. */
+/** The address with its review dropped. */
 export function withoutReview(address: ProjectAddress): ProjectAddress {
-  const scratch =
-    address.destination.kind === "document" && address.destination.scheme === "scratch";
-  return {
-    ...address,
-    itemKey: undefined,
-    changeId: undefined,
-    owner: scratch ? address.owner : undefined,
-  };
+  return { ...address, itemKey: undefined, changeId: undefined };
 }
 
 /** The path names the kind of main's item, then which one. */
@@ -135,20 +135,13 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
   const itemKey = document ? query.get("item") || undefined : undefined;
   const changeId = itemKey ? query.get("change") || undefined : undefined;
   const ownerParam = query.get("owner");
-  const parsedOwner = ownerParam === null ? null : parseDraftOwnerKey(ownerParam);
-  if (ownerParam !== null && !parsedOwner) return { kind: "invalid", reason: "owner" };
-  // The owner is part of the address only where the path alone does not name the resource: Scratch,
-  // and a draft item. Anywhere else a stray one is dropped from the canonical href.
-  const needsOwner = document && (destination.scheme === "scratch" || itemKey !== undefined);
+  const parsedOwner = ownerParam === null ? null : parseScratchOwner(ownerParam);
+  // The owner is part of the address only where the path alone does not name the resource:
+  // Scratch. Anywhere else a stray one is dropped from the canonical href.
+  const needsOwner = document && destination.scheme === "scratch";
   if (needsOwner && !parsedOwner) return { kind: "invalid", reason: "owner" };
-  const owner =
-    needsOwner && parsedOwner
-      ? draftOwnerKey(
-          parsedOwner.kind === "work"
-            ? { kind: "work", workId: parsedOwner.id.toLowerCase() }
-            : { kind: "lineage", rootThreadId: parsedOwner.id.toLowerCase() },
-        )
-      : undefined;
+  const owner: ScratchOwnerKey | undefined =
+    needsOwner && parsedOwner ? `${parsedOwner.kind}:${parsedOwner.id}` : undefined;
   const settings = query.get("settings");
   const address: ProjectAddress = {
     projectId,

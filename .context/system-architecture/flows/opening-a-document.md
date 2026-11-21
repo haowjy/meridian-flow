@@ -35,9 +35,9 @@ sequenceDiagram
 5. **Upgrade.** The provider opens a WebSocket at `/ws/yjs` ([routes](../server.md#routes), `routes/ws/yjs.ts`), sending the `wos-session` cookie and the client's schema version.
 6. **Admit.** The route hands the connection to `lib/yjs-ws-handler.ts` (in [lib](../server.md#lib)), which checks the session and the schema version.
 7. **Ask policy.** `onConnect` calls `fileAccess.authorize` for an `edit` grant on the document; a denied edit with read access gives a read-only connection, anything else is refused ([file-policy](../server-documents.md#file-policy)).
-8. **Load.** `onLoadDocument` calls `loadHocuspocusDocument` on [collab](../server-documents.md#collab) for a live room, or `loadHocuspocusDraftState` for a draft room.
+8. **Load.** `onLoadDocument` calls `loadHocuspocusDocument` on [collab](../server-documents.md#collab).
 9. **Read.** Collab rebuilds the room from the document's checkpoint and journal tail in [postgres](../system.md#postgres).
 10. **Sync.** The state goes to the tab and the editor shows the live text.
-11. **Edit.** The writer's keystrokes go up the same socket as Yjs updates; collab judges each of the writer's frames against the room and journals it with one insert before the room accepts it, in a Live room or a draft's.
+11. **Edit.** The writer's keystrokes go up the same socket as Yjs updates; collab judges each of the writer's frames against the room and journals it with one insert before the room accepts it.
 
 State machines on this path: [editor core](../../../apps/app/src/core/editor/.context/state-machines.md), [editor](../../../apps/app/src/features/editor/.context/state-machines.md), [collab](../../../apps/server/server/domains/collab/.context/state-machines.md), [lib](../../../apps/server/server/lib/.context/state-machines.md).

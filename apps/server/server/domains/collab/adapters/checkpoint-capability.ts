@@ -1,4 +1,5 @@
 /** Identity-backed checkpoint payloads shared by the trusted persistence adapters. */
+import type * as Y from "yjs";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 
@@ -7,6 +8,8 @@ type CheckpointPayload = {
   readonly authority: Readonly<CheckpointAuthority>;
   readonly upToSeq: number;
   materializeState(): Promise<Uint8Array>;
+  history(): Promise<{ bytes: number; structs: number; contentBytes: number }>;
+  dropUnseenContent(document: Y.Doc): Promise<void>;
   validateInputs(): Promise<void>;
 };
 
@@ -18,6 +21,8 @@ export function mintCheckpointCut(payload: CheckpointPayload): CapturedCheckpoin
     authority: payload.authority,
     upToSeq: payload.upToSeq,
     materializeState: () => payload.materializeState(),
+    history: () => payload.history(),
+    dropUnseenContent: (document: Y.Doc) => payload.dropUnseenContent(document),
   }) as CapturedCheckpointCut;
   payloads.set(cut, Object.freeze(payload));
   return cut;

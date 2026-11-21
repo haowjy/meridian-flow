@@ -18,7 +18,7 @@ hasn't acknowledged.
 waits for that prefix, including update delete sets, not later keys. A reconnect moves
 unresolved barriers to the next handshake upload, which contains every pre-click local
 change. Terminal teardown rejects current and future barriers; ordinary disconnects
-leave them pending. `4205` is terminal `closed`, not rebuild. In-band closes carry code
+leave them pending. In-band closes carry code
 1000, so consumers use disposition rather than numeric code.
 
 ## Held Updates
@@ -28,16 +28,16 @@ and the room unacknowledged.
 
 ## Frames the server can't store
 
-A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), in Live
-and draft rooms alike, and the reconnect's handshake resends it; a frame that starts past the
-room's clock closes the same way, and the handshake repairs the gap. Holding Updates until the
-socket's SyncStep2 keeps that from happening on a reconnect: after a server restart the frames
-sent to the old process are gone, and an Update sent ahead of the handshake would start past
-them on every reconnect until the room ends. Three such closes in a row
+A frame the server could not store closes `1013` (`WS_CLOSE.WRITER_ADMISSION_FAILED`), and the
+reconnect's handshake resends it; a frame that starts past the room's clock closes the same way,
+and the handshake repairs the gap. Holding Updates until the socket's SyncStep2 keeps that from
+happening on a reconnect: after a server restart the frames sent to the old process are gone,
+and an Update sent ahead of the handshake would start past them on every reconnect until the
+room ends. Three such closes in a row
 with no acknowledgement between end the room `UPDATES_REFUSED`, whether or not the outbox holds
 anything (typing replayed from the copy goes out in each handshake without passing through it), because a frame
-the server can never store (one authored in the reserved client band) would otherwise resend
-forever. The session then holds undeliverable edits, and the registry replaces the room as it
+the server can never store (a replay of a retired generation, refused in `live-room.ts`) would
+otherwise resend forever. The session then holds undeliverable edits, and the registry replaces the room as it
 does a read admission's (editor context, "Undeliverable edits"): the typing is dropped with one
 "Couldn't save" pill and the editor shows the server's text. Any `1013` counts, whatever its
 reason.
@@ -57,7 +57,7 @@ that catalog when a named scope disagrees with `readOnly`. Its own changes to
 
 A 4409 `access-changed` close never resets the room, whatever is unacknowledged. It marks
 the room read-only at once, the transport reconnects, and the new admission decides: a
-read admission (an archived Work, a trashed chat's draft) sends no Update frame (the socket
+read admission (an archived Work's view, a trashed chat's) sends no Update frame (the socket
 drops them; the server would answer each `false`), and each of its handshakes says what the
 document holds that the server lacks: the server's SyncStep1 and SyncStep2 pair, read by
 `handshake-difference.ts` (the document equals the server when the server's snapshot, state
@@ -70,9 +70,9 @@ admission is that verdict, not `SyncStatus`. An edit admission (an Unarchive) de
 room holds in the handshake. A room no editor holds is retired at the read-only mark, before the
 reconnect: its edits stay in the IndexedDB copy and are delivered the next time the
 document opens (an open while the Work is still closed hands them back). Writer text is never
-dropped for an access change, live room or draft. The
+dropped for an access change. The
 server sends 4409 only when the scope it admitted no longer holds (an archive, an
-Unarchive, a lifecycle change under a draft write), so the reconnect's admission matches
+Unarchive, a lifecycle change under a Work's write), so the reconnect's admission matches
 what the write path accepts. A close because a Work or chat closed carries the cause,
 `access-changed:work_archived`, `work_deleted` or `chat_frozen`: read it with `accessChangedWhy(event)`
 and recognize any 4409 with `isAccessChangedClose(event)` (both in `ws-close.ts`); the transport's
@@ -80,14 +80,14 @@ and recognize any 4409 with `isAccessChangedClose(event)` (both in `ws-close.ts`
 
 ## 4208: the document was removed
 
-Terminal for live and draft rooms alike: nothing rebuilds, replays or drops the room,
-and a draft review keeps the terminal session painted. Only a lookup after the close
+Terminal: nothing rebuilds, replays or drops the room, and a review keeps the terminal
+session painted. Only a lookup after the close
 that proves the document present restarts the room, once per close. See
 `features/project/context/.context/presented-documents-and-editor-lifecycle.md`.
 
 ## Stateless document messages
 
-Live `DocumentSession`s subscribe to `change_event`; draft sessions don't.
+Every `DocumentSession` subscribes to `change_event`.
 
 ## Dev-only wire observation
 

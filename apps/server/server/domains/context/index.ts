@@ -166,10 +166,6 @@ export { createDrizzleContextImportDestinationLookup } from "./tree/import-desti
 export { createDrizzleContextImportRead } from "./tree/import-read.js";
 export { releaseDocumentContent } from "./tree/release-document-content.js";
 export { ownedByRequest } from "./tree/source-owner.js";
-export {
-  type DiscardedTree,
-  discardedTree,
-} from "./tree/trash-entries.js";
 export * from "./tree/tree-view.js";
 export {
   createProductionUnifiedContextPortFactory,

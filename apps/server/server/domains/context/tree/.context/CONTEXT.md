@@ -12,7 +12,7 @@ list in the admitting transaction and written by nothing else:
 - `tree_nodes`: one row per node of the live replay (folder or document), with its name,
   place, rank, location version and, for a node in Trash, the `delete` record that took it
   (`trash_record`) and when the server admitted it (`trashed_at`). A purged node has no row.
-- `branch_tree_nodes`: what a Work's view shows differently from live (a node that differs, a
+- `draft_tree_nodes`: what a Work's view shows differently from live (a node that differs, a
   live node the Work lacks, a node only the Work has).
 - `documents`: a document's content facts (storage, size, metadata, `content_purged_at`) and
   its owner project. Its name, place and type are `tree_nodes`'.
@@ -24,7 +24,7 @@ list in the admitting transaction and written by nothing else:
 ## A node in no view
 
 A document is in no view when it has no `tree_nodes` row (it was purged or never reached live)
-and no `branch_tree_nodes` row. Two kinds:
+and no `draft_tree_nodes` row. Two kinds:
 
 - **In Trash**: a `tree_nodes` row with `trash_record`. Restorable; its text is still in the
   journal. Not in any view, so nothing but the server reads it.

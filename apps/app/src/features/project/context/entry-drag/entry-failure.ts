@@ -235,7 +235,7 @@ function showDeleteNotice(
   }
   const id = notices.showDiscard({
     projectId,
-    ownerKey: deleteNoticeKey(projectId),
+    draftId: deleteNoticeKey(projectId),
     // Leaving main's document, the notice follows main to where it goes back to (`landed`).
     surface,
     parts: [

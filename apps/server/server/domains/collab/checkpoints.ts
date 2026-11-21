@@ -2,13 +2,11 @@
 
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../shared/result.js";
 import type { CheckpointInfo, CollabDomain, SyncError, UpdateOrigin } from "./contracts.js";
 import type { CapturedCheckpointCut } from "./domain/checkpoint-cut.js";
 import { documentAuthority, RetiredDocumentHandleError } from "./domain/document-handle.js";
-import type { AuthorityGenerationReplacement } from "./domain/document-mutation-policy.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
 import type { LiveDocumentCoordinator } from "./domain/ports/live-document-coordinator.js";
 
@@ -42,10 +40,6 @@ type CheckpointServiceDeps = {
   store: CheckpointStore;
   journal: Pick<CheckpointJournal, "captureCheckpoint">;
   markdownDocuments: CheckpointMarkdownDocuments;
-  replaceAuthorityGeneration?(
-    documentId: DocumentId,
-    checkpointId: string,
-  ): ReturnType<AuthorityGenerationReplacement>;
 };
 
 export type CheckpointService = Pick<CollabDomain, "checkpoint" | "restore" | "listCheckpoints">;
@@ -57,12 +51,12 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
         const cut = await deps.coordinator.withDocument(documentId, (doc) =>
           deps.journal.captureCheckpoint(documentId, documentAuthority(doc)),
         );
-        if (!cut) return Err({ code: "stale_generation", documentId });
+        if (!cut) return Err({ code: "stale_document", documentId });
         const id = await deps.store.createCheckpoint(cut, reason);
-        return id === null ? Err({ code: "stale_generation", documentId }) : Ok(id);
+        return id === null ? Err({ code: "stale_document", documentId }) : Ok(id);
       } catch (cause) {
         if (cause instanceof RetiredDocumentHandleError)
-          return Err({ code: "stale_generation", documentId });
+          return Err({ code: "stale_document", documentId });
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
         throw cause;
       }
@@ -73,19 +67,15 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
       if (!checkpoint || checkpoint.documentId !== documentId) {
         return Err({ code: "checkpoint_not_found", checkpointId });
       }
+      const restored = new Y.Doc({ gc: false });
       try {
-        const restored = createCollabYDoc({ gc: false });
         Y.applyUpdate(restored, checkpoint.state);
-        if (deps.replaceAuthorityGeneration) {
-          await deps.replaceAuthorityGeneration(documentId as DocumentId, checkpointId);
-        } else {
-          const result = await deps.markdownDocuments.restoreFromYDoc(
-            documentId as DocumentId,
-            restored,
-            SYSTEM_ORIGIN,
-          );
-          if (!result.ok) return result;
-        }
+        const result = await deps.markdownDocuments.restoreFromYDoc(
+          documentId as DocumentId,
+          restored,
+          SYSTEM_ORIGIN,
+        );
+        if (!result.ok) return result;
         return Ok(undefined);
       } catch (cause) {
         if (isDocumentNotFoundError(cause)) return Err({ code: "not_found", documentId });
@@ -94,6 +84,8 @@ export function createCheckpointService(deps: CheckpointServiceDeps): Checkpoint
           documentId,
           message: cause instanceof Error ? cause.message : String(cause),
         });
+      } finally {
+        restored.destroy();
       }
     },
 

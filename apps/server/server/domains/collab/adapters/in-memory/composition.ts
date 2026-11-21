@@ -5,32 +5,24 @@ import type {
   YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
 import { toDocHandle } from "@meridian/agent-edit/integration";
-import type { BranchId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
-import type {
-  CollabBranches,
-  CollabDomain,
-  CommandOutcome,
-  DraftPeerShadowAccess,
-} from "../../contracts.js";
+import type { CollabDomain, CollabDrafts, EffectiveDocumentReader } from "../../contracts.js";
 import { createAgentEditRouter } from "../../domain/agent-edit-router.js";
 import {
   attributionFromMeta,
   createAgentEditRuntime,
   metaForOrigin,
 } from "../../domain/agent-edit-runtime.js";
-import { createBranches } from "../../domain/branches.js";
 import { createDocumentCreationAggregate } from "../../domain/document-creation.js";
 import { createDocumentWriteHookRunner } from "../../domain/document-projection-refresher.js";
 import { readHashlines, versioned } from "../../domain/document-revision.js";
 import { isCodeDocument } from "../../domain/document-schema-type.js";
-import { DraftNotFoundError } from "../../domain/draft-resolver.js";
+import { createDrafts } from "../../domain/drafts.js";
 import { type DocumentLinkScopes, LIVE_VIEW } from "../../domain/ports/document-link-scope.js";
-import { primeReservedNamespaceIndex } from "../../domain/provenance.js";
 import { createTurnLiveLineageReadModel } from "../../domain/turn-live-lineage.js";
 import { createHocuspocusPersistenceService } from "../../hocuspocus-persistence.js";
 import { createAgentEditObservabilityOptions } from "../agent-edit-observability.js";
@@ -44,13 +36,20 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
-import { createInMemoryBranchStore, createInMemoryBranchWriteBoundary } from "./branches.js";
+import {
+  createInMemoryDraftStore,
+  createInMemoryDraftWriteBoundary,
+  type NamedDraft,
+} from "./drafts.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "./static-document-link-scopes.js";
 
-export function createInMemoryCollabDomain(): CollabDomain {
+/** `namedDraft` reads the draft a Work's or root chat's row names; by default nothing names one. */
+export function createInMemoryCollabDomain(
+  namedDraft: NamedDraft = async () => null,
+): CollabDomain {
   // Nothing in memory carries a filetype: every document is prose.
   const resolveDocumentFiletype = async () => null;
   const journal = createInMemoryJournal();
@@ -88,26 +87,19 @@ export function createInMemoryCollabDomain(): CollabDomain {
     resolveDocumentFiletype,
     observability: createAgentEditObservabilityOptions({}),
   });
-  const branches = createBranches({
-    store: createInMemoryBranchStore(),
-    boundary: createInMemoryBranchWriteBoundary(),
+  const drafts = createDrafts({
+    store: createInMemoryDraftStore(namedDraft),
+    boundary: createInMemoryDraftWriteBoundary(),
   });
-  // No Work branches exist in memory, so the router sends every read to the live core.
   const agentEdit = createAgentEditRouter({
-    branches,
-    drafts: {
-      resolveWorkDraftForThread: (documentId, threadId) =>
-        Promise.reject(new DraftNotFoundError(documentId, threadId)),
-    },
     liveUtilityCore: runtime.liveUtilityCore,
-    threadCore: () => runtime.liveUtilityCore,
+    draftView: runtime.draftView,
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
     journal,
     hocuspocus: hocuspocusBinding.current,
     metaForOrigin,
-    emitAgentEditInvariantViolation() {},
   });
   const lineage = createTurnLiveLineageReadModel({
     store: createInMemoryTurnLiveLineageStore(journal),
@@ -126,28 +118,15 @@ export function createInMemoryCollabDomain(): CollabDomain {
     lifecycle: { dispose: async () => {} },
     transport: {
       bindHocuspocus: hocuspocusBinding.bind,
-      primeReservedNamespaceIndex,
       headSchemaVersion: async () => null,
-      resolveDraftHocuspocusRoom: hocuspocusPersistence.resolveDraftHocuspocusRoom,
-      draftExists: hocuspocusPersistence.draftExists,
-      openDraftIds: hocuspocusPersistence.openDraftIds,
-      openDraftRooms: hocuspocusPersistence.openDraftRooms,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
-      loadHocuspocusDraftState: hocuspocusPersistence.loadHocuspocusDraftState,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
-      currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
       // Nothing is removed in memory.
+      draftsHolding: async () => [],
       roomRemoval: async () => null,
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
-      admitDraftWriterUpdate: hocuspocusPersistence.admitDraftWriterUpdate,
       storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
-      storeHocuspocusDraft: hocuspocusPersistence.storeHocuspocusDraft,
       drainHocuspocusPersistence: hocuspocusPersistence.drainHocuspocusPersistence,
-      drainHocuspocusDraftPersistence: hocuspocusPersistence.drainHocuspocusDraftPersistence,
-      closeHocuspocusDraftRoom: hocuspocusPersistence.closeHocuspocusDraftRoom,
-      catchUpDraftRoom: hocuspocusPersistence.catchUpDraftRoom,
-      connectedHocuspocusDraftRoom: hocuspocusPersistence.connectedHocuspocusDraftRoom,
-      unloadedHocuspocusDraftRoom: hocuspocusPersistence.unloadedHocuspocusDraftRoom,
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     agentEdit: {
@@ -188,7 +167,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     projections: {
       refreshDocumentProjection: projections.refresh,
-      draftEffects: { sweep: async () => 0, flush: async () => {} },
       documentDerivations: {
         derive: async (documentId) => {
           await projections.refresh({ documentId });
@@ -201,11 +179,6 @@ export function createInMemoryCollabDomain(): CollabDomain {
     },
     lineage,
     checkpoints,
-    draftAttribution: {
-      async readDraftProvenance() {
-        return new Map();
-      },
-    },
     attribution: {
       async getLastUpdateAttribution(documentId) {
         const latest = await store.latestUpdate(documentId);
@@ -215,7 +188,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
         return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
       },
     },
-    draftPeers: createInMemoryDraftPeerStub(
+    effectiveReader: createInMemoryEffectiveReaderStub(
       runtime.markdownDocuments,
       coordinator,
       runtime.model,
@@ -223,22 +196,20 @@ export function createInMemoryCollabDomain(): CollabDomain {
       links,
       resolveDocumentFiletype,
     ),
-    branches: createInMemoryBranchStub(),
-    branchResolver: {
-      branches,
-      // No branches in memory: a purged Work has none to dispose of.
-      workBranchDisposal: {
-        withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
+    drafts: createInMemoryDraftStub(),
+    draftResolver: {
+      drafts,
+      // No drafts in memory: a purged Work has none to dispose of.
+      workDraftDisposal: {
+        withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [], draftIds: [] })),
       },
-      documentPurgeDraftDisposal: { settle: async () => "closed" },
-      // No document drafts in memory: nothing to register.
-      draftLinks: { flush: async () => {} },
+      documentPurgeDisposal: { settle: async () => "closed" },
     },
     documentCreation,
   });
 }
 
-function createInMemoryDraftPeerStub(
+function createInMemoryEffectiveReaderStub(
   documents: {
     readVersionedMarkdown(
       documentId: string,
@@ -253,17 +224,16 @@ function createInMemoryDraftPeerStub(
   codec: AgentEditCodecFactory,
   links: DocumentLinkScopes,
   resolveFiletype: (documentId: DocumentId) => Promise<string | null>,
-): DraftPeerShadowAccess {
+): EffectiveDocumentReader {
   return {
     async readEffectiveRevision(input) {
       const read = await documents.readVersionedMarkdown(input.documentId);
       return read.ok ? read.value.revision : null;
     },
-    async catchUpDraft() {},
     // Nothing is derived in memory.
     readStoredGrepTexts: async () => new Map(),
     readStoredWordCounts: async () => new Map(),
-    readOwnerMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
+    readDraftMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveBlocks: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
@@ -284,109 +254,44 @@ function createInMemoryDraftPeerStub(
         const verbatim = await isCodeDocument(resolveFiletype, input.documentId);
         return Ok(readHashlines(doc, scope, model, codec, verbatim));
       }),
-    async writeCreatedDraftContent() {
-      throw new Error("Drafts are not supported in memory");
+    async writeWorkCreatedContent() {
+      throw new Error("Work creates need Postgres; the in-memory collab domain has no drafts");
     },
-    async draftCreatedDocuments() {
-      throw new Error("Branch creates need Postgres; the in-memory collab domain has no branches");
+    async seedWorkCreates() {
+      throw new Error("Draft creates need Postgres; the in-memory collab domain has no drafts");
     },
   };
 }
 
-function createInMemoryBranchStub(): CollabBranches {
-  const gone = async (input: { branchId: string }): Promise<CommandOutcome> => ({
-    kind: "result",
-    result: {
-      status: "discarded",
-      branchId: input.branchId as BranchId,
-      closed: [],
-      whole: false,
-      settled: [{ rule: "already", state: "discarded" }],
-    },
-  });
+function createInMemoryDraftStub(): CollabDrafts {
+  const unsupported = async (): Promise<never> => {
+    throw new Error("The press needs Postgres; the in-memory collab domain has no Works");
+  };
   return {
+    presses: { press: unsupported, undo: unsupported },
     draftReview: {
-      // No branches here: every item's records and drafts are as good as purged.
-      async apply({ request }) {
-        const purged = (node: string) => ({
-          landed: false as const,
-          settled: [{ rule: "left_out" as const, items: [node], why: "purged" as const }],
-        });
-        return {
-          status: "applied",
-          commandId: request.commandId,
-          items: request.items.map((item) => ({
-            node: item.node,
-            ...(item.tree ? { tree: purged(item.node) } : {}),
-            ...(item.text ? { text: purged(item.node) } : {}),
-          })),
-          applied: [],
-        };
-      },
-      async unapplyClick({ request, branchId }) {
-        return {
-          status: "unapplied",
-          commandId: request.commandId,
-          branchId: branchId as BranchId,
-          textUndone: [],
-          treeUndone: [],
-        };
-      },
-      commandDocuments: {
-        async ofApply() {
-          return [];
-        },
-        async ofDiscard() {
-          return [];
-        },
-        async redoItems() {
-          return [];
-        },
-      },
-      async listDiscards() {
-        return [];
-      },
       async purgeDiscards() {
         return 0;
-      },
-      async undoDiscard({ branchId, request }) {
-        return {
-          status: "restored",
-          commandId: request.commandId,
-          discardCommandId: request.discardCommandId,
-          branchId,
-          restored: 0,
-          swapped: 0,
-          leftOut: 0,
-          brought: { text: [], tree: [] },
-          settled: [{ rule: "left_out", items: [], why: "purged" }],
-        };
       },
       async list() {
         return [];
       },
       async listItems() {
-        return { branchId: null, items: [], folders: [], threadTitles: new Map(), saw: {} };
+        return { items: [], folders: [], threadTitles: new Map(), saw: {} };
       },
       async pendingDocumentCount() {
         return 0;
       },
-      async branchesChangingDocument() {
+      async draftsChangingDocument() {
         return [];
       },
-      async items() {
-        return { branchId: null, items: [] };
-      },
-      async branchOwner() {
-        return null;
+      async items({ draft }) {
+        return { draftId: draft, items: [] };
       },
       async resolveItem() {
         return null;
       },
-      async resolveItemInBranch() {
-        return null;
-      },
-      async resolveItemByDocument() {
+      async resolveItemInDraft() {
         return null;
       },
       async lookupCommand() {
@@ -395,7 +300,6 @@ function createInMemoryBranchStub(): CollabBranches {
       async awaitCommand() {
         return { kind: "none" };
       },
-      discardBranch: gone,
     },
   };
 }

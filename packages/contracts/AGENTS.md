@@ -19,4 +19,4 @@ adapters, storage, React or provider behavior.
   access: resolve Work authority before stable serialization.
 
 Cross-package contracts: [`.context/CONTEXT.md`](.context/CONTEXT.md). The review wire:
-[`src/branches/.context/CONTEXT.md`](src/branches/.context/CONTEXT.md).
+[`src/drafts/.context/CONTEXT.md`](src/drafts/.context/CONTEXT.md).

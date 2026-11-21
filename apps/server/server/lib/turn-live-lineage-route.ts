@@ -1,10 +1,6 @@
 /** Route core for authenticated live-lineage document reads for one thread turn. */
 
-import {
-  type ContextUriScheme,
-  draftOwnerKey,
-  PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
-} from "@meridian/contracts";
+import { type ContextUriScheme, PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts";
 import type {
   ListTurnLiveLineageResponse,
   TurnLiveLineageDocumentItem,
@@ -124,8 +120,8 @@ function serializeLiveLineageFolder(folder: TurnTreeFolder): TurnLiveLineageDocu
     path: `/${parsed.value.path}`,
     folder: true,
     ...(folder.tree ? { tree: folder.tree } : {}),
-    ...(folder.ownerKey
-      ? { scope: "draft" as const, owner: folder.ownerKey }
+    ...(folder.draft
+      ? { scope: "draft" as const, draft: folder.draft }
       : { scope: "live" as const }),
   };
 }
@@ -140,7 +136,7 @@ function serializeLiveLineageDocument(document: TurnEditedDocument): TurnLiveLin
     uri: parsed.value.normalized,
     path: `/${parsed.value.path}`,
     ...(document.scope === "draft"
-      ? { scope: "draft" as const, owner: draftOwnerKey(document.owner) }
+      ? { scope: "draft" as const, draft: document.draft }
       : { scope: "live" as const }),
     ...(document.tree ? { tree: document.tree } : {}),
   };

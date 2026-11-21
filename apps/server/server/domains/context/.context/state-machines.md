@@ -23,12 +23,12 @@ stateDiagram-v2
   is refused. A room asked for a document the server does not know yet closes non-terminally
   (`4211`): the browser retries until its create is admitted.
 - **Held** is not a state: it stops either way out of `released`. A document is held while any
-  kept view shows it (a `branch_tree_nodes` row), an unsettled record for a kept Work names it
-  in the list, or a branch that has not ended has an active text draft of it with an effect
+  kept view shows it (a `draft_tree_nodes` row), an unsettled record for a kept Work names it
+  in the list, or a draft that has not ended has an active text draft of it with an effect
   (`tree/retention-holds.ts`). A kept Work is one that can still come back: open, archived, or
-  deleted and restorable; only a branch that ended (a whole Discard, a Work purged for good)
+  deleted and restorable; only a draft that ended (a whole Discard, a Work purged for good)
   stops being kept. Ask before the purge: a purge removes the rows the question reads.
 - **`in_no_view_since`** is written by the rows' sync (`adapters/tree-list-rows.ts`): null while
   any view has a row for the document, the time it left the last view otherwise.
-- **Rows follow inputs outside the list.** A branch ending and a Work's text draft closing change
+- **Rows follow inputs outside the list.** A draft ending and a Work's text draft closing change
   what a view shows without a record, so those paths call the store's `resync`.

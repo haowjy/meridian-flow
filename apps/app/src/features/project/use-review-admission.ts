@@ -8,8 +8,9 @@
 import { useEffect, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
+import type { HostEditor } from "@/features/draft-review/host-editor";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
-import type { AiDraftLaunchTarget } from "./review-launch";
+import type { ItemLaunchTarget } from "./review-launch";
 
 /** The route's verdict on a review the address names, asked of the server by owner and item. */
 export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
@@ -18,12 +19,12 @@ export type ReviewAdmissionPort = {
   /** Records the focused change on the view's pin. */
   write(review: DraftPin): void;
   /** `false`: refused, because the item's known draft is closed and no newer one replaced it. */
-  admit(target: AiDraftLaunchTarget): Promise<boolean>;
+  admit(target: ItemLaunchTarget): Promise<boolean>;
 };
 
 export type ReviewedDocument = {
   documentId: string;
-  scheme: AiDraftLaunchTarget["contextLocation"]["scheme"] | null;
+  scheme: ItemLaunchTarget["contextLocation"]["scheme"] | null;
   path: string | null;
   /** The draft the document paints; null on Live or while the paint is held. */
   review: DraftPin | null;
@@ -36,12 +37,15 @@ export function useReviewAdmission({
   presented,
   admission,
   port,
+  editor,
 }: {
   review: DraftReviewContextValue;
   presented: ReviewedDocument | null;
   /** The route's verdict when the address names this review; "admitted" for every other review. */
   admission: ReviewAddressAdmission;
   port: ReviewAdmissionPort;
+  /** The host's editor, which holds the review in suggestion mode. */
+  editor: HostEditor;
 }) {
   /** The item an admission is in flight for. */
   const restoring = useRef<string | null>(null);
@@ -54,7 +58,7 @@ export function useReviewAdmission({
   const settled = useRef<{ focus?: string; pin?: string }>({});
   /** The first reconcile with the review painted and read: where a restored place gives way, once. */
   const reconciled = useRef(false);
-  const { changes, status } = useOpenReviewChanges(review.controller);
+  const { changes, status } = useOpenReviewChanges(review.controller, { host: editor });
   const requested = presented?.review ?? null;
 
   useEffect(() => {
@@ -66,7 +70,7 @@ export function useReviewAdmission({
       const names =
         requested !== null &&
         presented?.documentId === inline.documentId &&
-        requested.ownerKey === review.controller.ownerKey &&
+        requested.draftId === review.controller.draftId &&
         requested.itemKey === inline.itemKey;
       if (!names) {
         settled.current = {};
@@ -80,7 +84,7 @@ export function useReviewAdmission({
         if (focusId && admission === "admitted" && requested.changeId !== focusId) {
           settled.current.pin = focusId;
           port.write({
-            ownerKey: requested.ownerKey,
+            draftId: requested.draftId,
             itemKey: requested.itemKey,
             changeId: focusId,
           });
@@ -112,7 +116,7 @@ export function useReviewAdmission({
       refused.current = null;
       return;
     }
-    if (admission !== "admitted" || review.controller.ownerKey !== requested.ownerKey) return;
+    if (admission !== "admitted" || review.controller.draftId !== requested.draftId) return;
     const itemKey = requested.itemKey;
     if (
       restoring.current === itemKey ||
@@ -120,11 +124,11 @@ export function useReviewAdmission({
     )
       return;
     // The list, when loaded, supplies labels and whole-item state; it is never an authority.
-    const file = review.files.find((candidate) => candidate.draft.itemKey === itemKey);
+    const file = review.files.find((candidate) => candidate.item.itemKey === itemKey);
     restoring.current = itemKey;
     void port
       .admit({
-        ownerKey: requested.ownerKey,
+        draftId: requested.draftId,
         documentId: presented.documentId,
         itemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },

@@ -7,6 +7,8 @@ import { PROJECT_ID, USER_ID } from "./collab-postgres-harness.js";
 type CrossWorkProbeFixture = ReturnType<ReturnType<typeof createHarness>["crossWorkProbeFixture"]>;
 
 export const WORK_B_ID = "00000000-0000-4000-8000-000000000820" as WorkId;
+/** The draft Work B names. */
+export const WORK_B_DRAFT_ID = "crossworkb01";
 export const THREAD_B_ID = "00000000-0000-4000-8000-000000000821" as ThreadId;
 export const TURN_B_ID = "00000000-0000-4000-8000-000000000822" as TurnId;
 
@@ -21,6 +23,7 @@ export async function seedSecondWork(fixture: CrossWorkProbeFixture): Promise<vo
       createdByUserId: USER_ID,
       name: "Work B",
       handle: "w2",
+      draftId: WORK_B_DRAFT_ID,
     })
     .onConflictDoNothing();
   await db

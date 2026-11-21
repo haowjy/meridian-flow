@@ -299,7 +299,7 @@ function sourceResolution(
         readable: true,
         nameable: true,
       },
-      inBranch: false,
+      inDraft: false,
     };
   }
   if (gone) return { kind: "gone" };

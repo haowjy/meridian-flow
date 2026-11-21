@@ -1,4 +1,3 @@
-import type { DraftOwnerKey } from "@meridian/contracts";
 /** One namespace interaction model for tree, phone and Work Files rows. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -92,7 +91,7 @@ export function useEntryInteraction({
         ? {
             view: {
               kind: "draft" as const,
-              owner: shell.ownerKey as DraftOwnerKey,
+              draft: shell.draftId,
             },
           }
         : {}),

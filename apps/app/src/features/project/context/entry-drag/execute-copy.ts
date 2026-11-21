@@ -58,8 +58,8 @@ const isSourceBehind = (error: unknown) =>
   "reason" in error.details &&
   error.details.reason === "source_behind";
 
-/** A document's open session's vector, in the live room or the draft room, when this tab holds one. */
-export type StateVectorOf = (documentId: string, view: "live" | "draft") => Uint8Array | null;
+/** A document's open session's vector, when this tab holds one. */
+export type StateVectorOf = (documentId: string) => Uint8Array | null;
 
 /**
  * Sends one Copy of the plan's rows. The copies' identities are the browser's, so they come back
@@ -112,12 +112,12 @@ export function copyRows(
   };
 }
 
-/** The open session of the view's room says what this tab holds of the document; a folder has no room. */
+/** The open session says what this tab holds of the document; a folder has no room. */
 function stateVectorField(
   row: ReadyCopy["copies"][number],
   stateVectorOf: StateVectorOf,
 ): { stateVector?: string } {
   if (row.entry.kind !== "file") return {};
-  const vector = stateVectorOf(row.entry.id, row.view.kind);
+  const vector = stateVectorOf(row.entry.id);
   return vector ? { stateVector: btoa(String.fromCharCode(...vector)) } : {};
 }

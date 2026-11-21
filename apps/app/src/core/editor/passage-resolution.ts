@@ -15,8 +15,11 @@
  * The searchable projection is the delicate part. It must find exactly what the
  * server's search would find, and nothing the writer did not write: text either
  * side of a line break or an image is not one word, and case folding is neither
- * length-preserving nor context-free in every language.
+ * length-preserving nor context-free in every language. Only the text the view
+ * reads is there (`@meridian/suggestions`): not another Work's insertion, not
+ * the view's own deletion, not a block it removes.
  */
+import { blockKind, kindOf, removedIn, type View, visible } from "@meridian/suggestions";
 import type { Node as PMNode } from "@tiptap/pm/model";
 
 export type TextRange = { from: number; to: number };
@@ -30,32 +33,46 @@ export type PassageResolution =
   | { kind: "stale" };
 
 /**
- * Resolve a searched passage against live text. `block` is the span the block
- * hash resolved to, or null when the hash no longer names a live block.
+ * Resolve a searched passage against live text, as `view` reads it. `hashed` is
+ * the span the block hash resolved to, or null when the hash no longer names a
+ * live block.
  */
 export function resolvePassage(
   doc: PMNode,
-  block: TextRange | null,
+  hashed: TextRange | null,
   term: string,
+  view: View,
 ): PassageResolution {
+  // A block the view does not read is as good as gone.
+  const block = hashed && shown(doc, hashed, view) ? hashed : null;
   if (block) {
-    const inside = findTerm(doc, term, block);
+    const inside = findTerm(doc, term, block, view);
     if (inside.length > 0) return { kind: "block", ranges: inside };
   }
   // Outline's resilience without its "first duplicate wins": one occurrence is
   // an answer, several are a coin flip about the writer's own prose.
-  const everywhere = findTerm(doc, term, { from: 0, to: doc.content.size });
+  const everywhere = findTerm(doc, term, { from: 0, to: doc.content.size }, view);
   if (everywhere.length === 1) return { kind: "refound", ranges: everywhere };
   // The block is still there but the term isn't found in it: the server's term is the writer's
   // text, which formatting marks can split across nodes. The block is the promise left to keep.
   return block ? { kind: "block", ranges: [block] } : { kind: "stale" };
 }
 
+function shownBlock(node: PMNode, view: View): boolean {
+  return !("sug" in node.attrs) || (blockKind(node, view) !== "hidden" && !removedIn(node, view));
+}
+
+/** Whether the block at `range` is one the view reads. */
+function shown(doc: PMNode, range: TextRange, view: View): boolean {
+  const node = doc.nodeAt(range.from);
+  return !node || shownBlock(node, view);
+}
+
 /**
  * Every occurrence of `term` inside `range`, case-insensitively — the casing
  * the search itself matched with.
  */
-function findTerm(doc: PMNode, term: string, range: TextRange): TextRange[] {
+function findTerm(doc: PMNode, term: string, range: TextRange, view: View): TextRange[] {
   const needle = term.toLowerCase();
   if (needle.length === 0) return [];
   const found: TextRange[] = [];
@@ -64,8 +81,9 @@ function findTerm(doc: PMNode, term: string, range: TextRange): TextRange[] {
   if (from >= to) return found;
 
   doc.nodesBetween(from, to, (node, pos) => {
+    if (!shownBlock(node, view)) return false;
     if (!node.isTextblock) return true;
-    for (const run of textRuns(node, pos + 1)) {
+    for (const run of textRuns(node, pos + 1, view)) {
       let index = run.folded.indexOf(needle);
       while (index >= 0) {
         const start = run.source[index].from;
@@ -110,8 +128,11 @@ type TextRun = { folded: string; source: TextRange[] };
  * length, the run is searched through the text its own map describes rather
  * than reporting a position we cannot justify. Marks also cut text into
  * several nodes, which is why this walks children instead of `textContent`.
+ *
+ * **Text the view does not read is skipped, not a break.** The words either
+ * side of another Work's insertion touch in the text the server searched.
  */
-function textRuns(block: PMNode, start: number): TextRun[] {
+function textRuns(block: PMNode, start: number, view: View): TextRun[] {
   const runs: TextRun[] = [];
   let text = "";
   let perCodePoint = "";
@@ -129,6 +150,10 @@ function textRuns(block: PMNode, start: number): TextRun[] {
   };
 
   block.forEach((child) => {
+    if (!visible(kindOf(child.marks, block, view))) {
+      offset += child.nodeSize;
+      return;
+    }
     if (child.isText && child.text) {
       let index = 0;
       for (const character of child.text) {

@@ -49,7 +49,7 @@ export const threadShownLinks = pgTable(
     ref: text("ref").notNull(),
     address: text("address").notNull(),
     holderUri: text("holder_uri").notNull(),
-    /** `live` or `branch:<branchId>`. */
+    /** `live` or `draft:<draftId>`. */
     view: text("view").notNull(),
     showingDigest: text("showing_digest").notNull(),
     turnId: uuid("turn_id").$type<TurnId>().notNull(),
@@ -71,7 +71,7 @@ export const threadShownLinks = pgTable(
  * materialized read it is sent), per room. `snapshot` is a Yjs snapshot
  * (`encodeSnapshotV2`); `journal_position` is the host journal high-water mark
  * captured with that cut.
- * `room_key` is `draft:<workDraftId>` or `live:<documentId>:<authorityGeneration>`; the room
+ * `room_key` is `live:<documentId>`; the room
  * `tree` holds the names a result showed (`snapshot` is the JSON of what it added to the map of
  * names shown, `domains/context/tree/names-shown.ts`).
  *

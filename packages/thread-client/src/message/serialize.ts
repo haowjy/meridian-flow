@@ -58,7 +58,7 @@ export function serializeMessageDoc(
             kind: "document",
             documentId: value.documentId,
             uri: value.uri,
-            purpose: "draft-upload",
+            purpose: "upload",
             intakeId: value.upload.intakeId,
           }
         : {
@@ -68,7 +68,7 @@ export function serializeMessageDoc(
             purpose: "reference",
           };
       const previous = references.get(key);
-      if (!previous || (proposed.kind === "document" && proposed.purpose === "draft-upload"))
+      if (!previous || (proposed.kind === "document" && proposed.purpose === "upload"))
         references.set(key, proposed);
       return;
     }

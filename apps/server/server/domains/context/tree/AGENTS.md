@@ -3,7 +3,7 @@
 Contract: [local contract](.context/CONTEXT.md). The writer of the tree's rows:
 [the list store](../.context/tree-list-store.md).
 
-- Nothing here writes `tree_nodes`, `branch_tree_nodes` or a document's name or place: the
+- Nothing here writes `tree_nodes`, `draft_tree_nodes` or a document's name or place: the
   store's replay does, in the transaction that admits the records. A change to the tree is a
   record made with `TreeListStore.submit`.
 - Readers take a `TreeView` and compose `visibleDocuments(view)` and `visibleFolders(view)`

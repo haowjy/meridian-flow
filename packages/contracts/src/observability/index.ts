@@ -35,13 +35,8 @@ export interface EventCorrelation {
   errorCode?: string;
   documentId?: string;
   draftId?: string;
-  /** Operational ids of branch-push settlement and draft-lineage diagnostics. */
-  batchId?: string;
-  pushId?: string;
-  branchId?: string;
   /** Comma-joined ids (at most three; see `joinIds`), like `yjsSpans`. */
   folderIds?: string;
-  releasedDraftIds?: string;
   yjsClient?: number;
   /**
    * Canonical Yjs update spans key from `@meridian/yjs-inspect`'s `summarizeUpdate().spansKey`:
@@ -53,7 +48,7 @@ export interface EventCorrelation {
 
 export interface TraceStreamRef {
   /**
-   * Canonical filter key, e.g. `yjs:live:<docId>`, `yjs:draft:<id>`,
+   * Canonical filter key, e.g. `yjs:live:<docId>`, `yjs:tree:<id>`,
    * `thread:<threadId>`, or `gateway:<gatewayCallId>`.
    */
   streamId: string;

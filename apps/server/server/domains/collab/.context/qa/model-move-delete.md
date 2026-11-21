@@ -72,9 +72,9 @@ the text it found or a block hash from that read.
 8. **Scratch crossing.** Script `create` `scratch://@w1/sect-notes`, then `move` it to
    `manuscript://sect-notes`. The result starts "not applied yet", the dock lists sect-notes at
    its manuscript destination, and live still has it in Scratch. Script `undo` by either path:
-   the dock row disappears and the branch sees it in Scratch again. Move it again and Apply it;
+   the dock row disappears and the draft sees it in Scratch again. Move it again and Apply it;
    live now has sect-notes in the manuscript and not in Scratch. Move `manuscript://ch2` to
-   `scratch://@w1/ch2`: the branch sees it in Scratch while live keeps ch2 in the manuscript;
+   `scratch://@w1/ch2`: the draft sees it in Scratch while live keeps ch2 in the manuscript;
    Discard removes the row and leaves live unchanged.
 9. **Undo after Apply.** Apply a drafted text replacement, a drafted move and a drafted delete.
    Script `undo` for
@@ -115,4 +115,4 @@ With more than one file, the dock's Apply asks the same question in its footer
 13. **Draft create is one pending item.** In a draft-mode chat, script a nonempty `create`, then
    an empty `create`. Each turn card counts its created document, and the dock and Work Files list
    both. Undo each card: its row disappears from both lists, while the same active draft and
-   document identity remain hidden by the branch delete fact.
+   document identity remain hidden by the draft delete fact.

@@ -40,7 +40,7 @@ request, and nothing else remembers placement: sidebar, tabs, identity bar, pick
 Recents, folder chips and Trash membership read `useProjectTreeViews` / `useProjectTrees`, which cut
 the session's replay to a source. Those read live unless they name a version; the sidebar names the
 shell's Live/Draft toggle, and `TreeActions` acts in that version, so on Draft a record carries the
-Work's branch as `draft` ([sidebar version](../../.context/tree-version-state-machine.md)). The replay is computed once per change and the writer's
+Work's draft as `draft` ([sidebar version](../../.context/tree-version-state-machine.md)). The replay is computed once per change and the writer's
 failures once per version, however many views read them.
 
 The queries own only what the list cannot say: which sources exist (every source is made in the

@@ -23,6 +23,21 @@ export {
   schemaRepairCounts,
 } from "./model/schema-repair.js";
 export {
+  dropDraft,
+  forgetVerdicts,
+  type PressRecord,
+  pressStored,
+  resolvedElsewhere,
+  resolveScope,
+  resolveStored,
+  storedPendingChanges,
+  storedPendingTurns,
+  suggestionAuthors,
+  suggestionVerdicts,
+  type WrittenVerdict,
+  writeVerdict,
+} from "./model/stored-suggestions.js";
+export {
   markdownSections,
   normalizeRequestedSlug,
   sectionNotFoundMessage,

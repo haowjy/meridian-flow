@@ -14,6 +14,7 @@ import type {
   ProjectContextTreeScheme,
   TrashRetention,
 } from "@meridian/contracts/protocol";
+import { liveView, viewDoc } from "@meridian/suggestions";
 import { ArchiveRestore } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
@@ -28,8 +29,8 @@ import { FileCard } from "@/components/app/FileCard";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { role } from "@/components/ui/roles";
+import { roomContent } from "@/core/editor/room-content";
 import { PROSEMIRROR_FRAGMENT_NAME } from "@/core/editor/schema";
-import { roomContent } from "@/features/draft-review/review-frame";
 import { MainSurface } from "@/features/editor/MainSurface";
 import { cn } from "@/lib/utils";
 import { daysUntilPurge } from "../deletion-retention";
@@ -138,14 +139,14 @@ export function TrashedDocument({
   );
 }
 
-/** The document's text as its session holds it now, offline typing included. */
+/** The document's Live text as its session holds it now, offline typing included. */
 function useSessionText(document: Y.Doc | null): string {
   const [text, setText] = useState("");
   useEffect(() => {
     if (!document) return;
     const fragment = document.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
     const read = () => {
-      const { doc } = roomContent(document);
+      const doc = viewDoc(roomContent(document).doc, liveView);
       setText(doc.textBetween(0, doc.content.size, "\n\n"));
     };
     read();

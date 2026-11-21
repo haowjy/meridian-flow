@@ -42,6 +42,7 @@ it("reads creation synchronously on reload and updates on local writes, storage 
     creation: {
       title: "Unsent words",
       workId: null,
+      draftId: "chatdraft001",
       workAiWriteMode: "direct",
       agentSelection: { slug: "agent", definitionRevisionId: "rev" },
       agentName: "Agent",

@@ -197,7 +197,7 @@ describe("non-editor CLI-shaped message documents", () => {
   });
 });
 
-it("visits every reference once while draft uploads win admission in either order", () => {
+it("visits every reference once while uploads win admission in either order", () => {
   const reference = {
     kind: "document" as const,
     documentId: "01900000-0000-7000-8000-000000000001",
@@ -233,7 +233,7 @@ it("visits every reference once while draft uploads win admission in either orde
         kind: "document",
         documentId: reference.documentId,
         uri: reference.uri,
-        purpose: "draft-upload",
+        purpose: "upload",
         intakeId: "intake-1",
       },
     ]);

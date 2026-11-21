@@ -91,7 +91,7 @@ export function settledRecords(doc: Y.Doc): ReadonlyMap<string, RecordSettled> {
 
 /**
  * The newest drafted copy of each record `ids` names, following its family: a Discard's restore
- * makes a new pending copy, in the Work's branch as it is now, and leaves the original discarded,
+ * makes a new pending copy, in the Work's draft as it is now, and leaves the original discarded,
  * so the copy stands for the family. A live record, or an id the list doesn't hold, is absent.
  */
 export function newestDrafted(doc: Y.Doc, ids: readonly string[]): Map<string, TreeRecord> {

@@ -74,8 +74,8 @@ appended update in the same room; it is not receipt Undo, and the draft stays op
 of its Work retires a draft's identity. Dependency and archived-Work guards still apply.
 
 The card is a record, not a draft control panel. Draft Review/Apply/Discard
-remain exclusively in the composer-attached `DraftDock` and inline review
-surface.
+remain in the composer-attached `DraftDock`, the sidebar's Changes and the document's suggestion
+review.
 
 Work mutation rows consume the shared structured receipt contract. The server
 supplies operation, identity, before/after facts, and a typed inverse; this

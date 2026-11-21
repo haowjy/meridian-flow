@@ -78,7 +78,7 @@ function currentWorkLines(
 
 /**
  * Where this chat's AI writes land: the chat's mode over its Work.
- * An archived Work freezes its own scratch and branch; only an agent
+ * An archived Work freezes its own scratch and draft; only an agent
  * the action policy lets unarchive is offered that, and only a draft-mode chat
  * has auto-apply as a way out. One description, two presentations: the
  * Work context's `writes:` line and the switch notice.

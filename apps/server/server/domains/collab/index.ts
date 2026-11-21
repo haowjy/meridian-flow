@@ -7,14 +7,13 @@ export {
 export { createInMemoryCollabDomain } from "./adapters/in-memory/composition.js";
 export { createCollabDomain } from "./composition.js";
 export * from "./contracts.js";
-export type { Branches } from "./domain/branches.js";
 export {
   type CopyIdentityMap,
   createCopyIdentityMap,
   remapCopiedBlocks,
 } from "./domain/copied-blocks.js";
 export { createDocumentCreationAggregate } from "./domain/document-creation.js";
-export { DraftPrefixMissingError, DraftStaleUpdateError } from "./domain/draft-store.js";
+export type { Drafts } from "./domain/drafts.js";
 export {
   type BindHolder,
   type BindMarkdownInput,
@@ -28,7 +27,7 @@ export {
 } from "./domain/link-binding.js";
 export { ModelEditRefusal } from "./domain/model-edit.js";
 export type { ModelEvidence } from "./domain/model-evidence.js";
-export type { Branch, BranchStatus } from "./domain/ports/branch-store.js";
+export { liveRoom } from "./domain/observation-rooms.js";
 export {
   type DocumentLinkScopes,
   type HolderLinkScope,
@@ -36,6 +35,7 @@ export {
   type LinkScopeKey,
   type ScopePrepareRequest,
 } from "./domain/ports/document-link-scope.js";
+export type { Draft } from "./domain/ports/draft-store.js";
 export {
   DocumentSchemaMajorMismatchError,
   isDocumentSchemaMajorMismatchError,

@@ -189,34 +189,29 @@ describe("document transport server acknowledgement", () => {
   });
 
   // The server refuses an Update that starts past its room's clock, so the handshake upload
-  // (SyncStep2) goes first in every room: after a server restart the queued Updates start past
-  // what the new process holds.
-  it.each([ROOM, "draft:draft-1"])(
-    "is not saved in %s until every offline-queued update is acknowledged",
-    async (roomName) => {
-      harness.destroy();
-      harness = createHarness(roomName);
-      const first = await harness.connect();
-      first.acknowledge(roomName);
-      harness.drop(first);
-      expect(harness.acknowledged).toBe(false);
+  // (SyncStep2) goes first: after a server restart the queued Updates start past what the new
+  // process holds.
+  it("is not saved until every offline-queued update is acknowledged", async () => {
+    const first = await harness.connect();
+    first.acknowledge(ROOM);
+    harness.drop(first);
+    expect(harness.acknowledged).toBe(false);
 
-      harness.edit("one");
-      harness.edit("two");
-      harness.edit("three");
-      await vi.advanceTimersByTimeAsync(1_000);
-      const second = await harness.connect();
+    harness.edit("one");
+    harness.edit("two");
+    harness.edit("three");
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = await harness.connect();
 
-      expect(sentSyncKinds(second)).toEqual(["step2", "update", "update", "update"]);
-      second.acknowledge(roomName);
-      expect(harness.acknowledged).toBe(false);
-      second.acknowledge(roomName);
-      second.acknowledge(roomName);
-      expect(harness.acknowledged).toBe(false);
-      second.acknowledge(roomName);
-      expect(harness.acknowledged).toBe(true);
-    },
-  );
+    expect(sentSyncKinds(second)).toEqual(["step2", "update", "update", "update"]);
+    second.acknowledge(ROOM);
+    expect(harness.acknowledged).toBe(false);
+    second.acknowledge(ROOM);
+    second.acknowledge(ROOM);
+    expect(harness.acknowledged).toBe(false);
+    second.acknowledge(ROOM);
+    expect(harness.acknowledged).toBe(true);
+  });
 
   it("never becomes saved from an acknowledgement that was not applied", async () => {
     const socket = await harness.connect();

@@ -7,13 +7,7 @@ type Direction = "undo" | "revert";
 export function textPlanRefusal(
   uri: string,
   handle: string,
-  failure:
-    | "draft_archived"
-    | "document_deleted"
-    | "applied"
-    | "partly_applied"
-    | "discarded"
-    | "changed",
+  failure: "draft_archived" | "document_deleted" | "changed",
 ): Exclude<DocumentEditResult, { status: "success" }> {
   if (failure === "draft_archived")
     return {
@@ -25,25 +19,10 @@ export function textPlanRefusal(
       status: "document_not_found",
       message: "File not found. Read the project to find the right path.",
     };
-  if (failure === "applied")
-    return {
-      status: `cant_undo_applied`,
-      message: `The user applied ${handle} to the manuscript, and its draft is closed. Nothing was changed in ${uri}.`,
-    };
-  if (failure === "partly_applied")
-    return {
-      status: `cant_undo_applied`,
-      message: `The user applied part of ${handle} to the manuscript and discarded the rest, and its draft is closed. Nothing was changed in ${uri}.`,
-    };
-  return failure === "discarded"
-    ? {
-        status: `cant_undo_discarded`,
-        message: `The user discarded ${handle}; it is already gone. Nothing was changed in ${uri}.`,
-      }
-    : {
-        status: `cant_undo_changed`,
-        message: `Can't undo ${handle}: none of that edit remains unchanged. Nothing was changed in ${uri}.`,
-      };
+  return {
+    status: `cant_undo_changed`,
+    message: `Can't undo ${handle}: none of that edit remains unchanged. Nothing was changed in ${uri}.`,
+  };
 }
 
 export function textOmission(
@@ -51,14 +30,13 @@ export function textOmission(
   direction: Direction,
   omission: {
     ordinal: number;
-    cause: "already_removed" | "edited_since" | "draft_archived" | "discarded";
+    cause: "already_removed" | "edited_since" | "draft_archived";
   },
 ) {
   const words = {
     already_removed: "already removed",
     edited_since: "edited since",
     draft_archived: "draft archived",
-    discarded: "discarded",
   } as const;
   const fact = `part ${omission.ordinal + 1}: ${words[omission.cause]}`;
   return direction === "revert" ? fact : `${handle} ${fact}`;

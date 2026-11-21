@@ -1,29 +1,27 @@
 # Collab — document authority and schema admission
 
 This page defines the durable authority vocabulary and the one schema-aware
-content path. Authority is the durable head and its identity/generation, not a
+content path. Authority is the durable head and its identity, not a
 warm Y.Doc or an operation-specific mutation policy.
 
 ## Authority vocabulary
 
 - The **document authority head** is the durable `document_yjs_heads` row and
   its fenced journal prefix.
-- A **document mutation policy** admits fresh, certified, replicated, or
-  generation-replacement content against a neutral `MutationTarget`.
 - A **live document** is the mutable Y.Doc held by a loaded Hocuspocus room.
 
 Every loaded handle, room, checkpoint, writer frame, Markdown replacement, and
-agent journal batch carries the authority identity and generation that loaded
-it. Persistence revalidates both under the document mutation lock (a writer frame, under the head row
-its counter bump holds) and drops stale bytes instead of relabeling them. Restore retires warm handles and
-rooms; late load and connection completion revalidate before use.
+agent journal batch carries the authority identity that loaded
+it. Persistence revalidates it under the document mutation lock (a writer frame, under the head row
+its counter bump holds) and drops stale bytes instead of relabeling them. Nothing replaces a
+document's history ([why](CONTEXT.md#authority-checkpoints-and-derivation)).
 
 ## Only explicit creation makes a head
 
 `adapters/drizzle-document-authority-head.ts` is the one writer of
-`document_yjs_heads`: `initializeHead`, `allocateAdmission`, `advanceHead`
-(with `checkpointId` when a checkpoint insert moves it), `retireThrough` and
-`replaceGeneration`. Each write that moves a head proves in its own statement that some tree view
+`document_yjs_heads`: `initializeHead`, `insertFreshHeads`, `allocateAdmission` and
+`advanceHead` (with `checkpointId` when a checkpoint insert moves it). Each write that moves a
+head proves in its own statement that some tree view
 shows the document (`livingDocumentSql`, exported by context's `tree/living-document.ts`: a
 live row not in Trash, or a Work's row that is not deleted), so a removal that won the
 document mutation lock refuses it at no extra query; a tree list's head is exempt. The
@@ -40,14 +38,12 @@ and explicit repair of a living document whose authority is absent (the same
 `ensureDocumentAuthority`, seeded as an empty document: it reads first and
 writes only when the document has no state).
 Repair runs on a document text read (Markdown or export), live overwrite, the held
-live lease, and Hocuspocus room admission before its first generation read. A client
+live lease, and Hocuspocus room admission before the room loads. A client
 can create a tree node without ever opening its text room; that document has no
 authority yet and reads as empty. Text reads use the same initialize-only repair
 as room admission, so they neither mistake it for a missing document nor overwrite
 text that arrives concurrently.
-Everything else requires an existing head and creates nothing. Draft creation
-(a Work draft) passes `requireLivingDocument` under the same
-lock. A miss answers `DocumentNotFoundError`, carrying the removal record
+Everything else requires an existing head and creates nothing. A miss answers `DocumentNotFoundError`, carrying the removal record
 (`removal`) when the document was removed.
 
 A bulk create (Copy) installs the first states of documents its own transaction just
@@ -60,25 +56,25 @@ the seed checkpoint refuse a document that already has one. The state is encoded
 transaction commits.
 
 A drafted tree create classifies its documents under sorted mutation keys. Only an ID
-without a head, checkpoint, update, named draft or active draft uses `installSeeds`
-with empty state and a shared empty draft seed. Existing or occupied IDs follow the
-single-document authority and draft paths, so restored creates and pre-seeded content survive.
-The list key fences the branch lifecycle until commit; ownership and liveness still apply.
+without a head, checkpoint or update uses `installSeeds` with empty state. Existing or occupied
+IDs follow the single-document authority path, so restored creates and pre-seeded content
+survive.
+The list key fences the draft lifecycle until commit; ownership and liveness still apply.
 
 `allocateAdmission` is the one live-write boundary (journal): a
 removal that won the mutation lock refuses every later frame, model write
-and Apply member there.
+and press there.
 
 A deleted document keeps its head and history for Restore, so an existing head
 is not a document that may change. Head reads say which they mean:
 `findDocumentAuthorityHead` / `readDocumentAuthorityHead` (nullable / required)
 read a retained head for history; with `{ living: true }`, read under the
 mutation lock, they gate every other door that mutates retained history:
-version replacement and an explicit checkpoint refuse with the record; a
+an explicit checkpoint refuses with the record; a
 background checkpoint store does nothing. `advanceHead`, which
-every checkpoint insert passes, is the backstop. Frozen Apply reads committed
-live through the mutation-locked journal read in `drizzle-apply-click.ts`; no
-live fingerprint or review revision token fences the click. Journal-row edit links (`document_yjs_updates.edit_id`) are written
+every checkpoint insert passes, is the backstop. A press reads committed
+live through the mutation-locked journal read; no live fingerprint or review revision token
+fences it. Journal-row edit links (`document_yjs_updates.edit_id`) are written
 only beside the admission that inserted the row. Reads of a deleted document's
 history stay open; only purge deletes it.
 
@@ -97,14 +93,15 @@ was shown); a write by a path that no longer resolves stays `document_not_found`
 `domain/markdown-document.ts` is the sole read/write and Y.Doc projection
 engine. It resolves persisted filetype before parse or serialization. Markdown
 uses the document codec; code uses the constrained code representation and
-returns raw text without fences. Checkpoint restore installs projected nodes
-directly rather than serializing and reparsing a snapshot.
+returns raw text without fences. Checkpoint restore writes the snapshot's projected nodes
+onto the document as it stands (the whole-document overwrite below), rather than serializing
+and reparsing it.
 
 All whole-document writes enter as a `BoundWrite`, not an unscoped Markdown
 string. The link binder parses, prepares the holder's link scope, assigns or
 preserves refs, registers ahead refs, and certifies the target before the
 caller opens a transaction. A fresh bind is initialize-only: admission refuses
-a non-empty target with `stale_generation`. Context checks the canonical path
+a non-empty target with `stale_document`. Context checks the canonical path
 under the project's list key and returns `stale_target` when its occupant changed.
 
 `agent-edit-runtime.ts` builds the codec once. Every serialization door gets a
@@ -119,23 +116,25 @@ agent-edit, so unchanged items retain identity and concurrent admissions merge
 as peers. Do not lower it with a whole-fragment state-vector diff: that loses
 provenance and can reattribute kept prose. Durable projection actions
 serialize a private scratch document from the committed update, never a warm
-live room that a WebSocket may mutate during serialization. Atomic Apply
-records that committed live projection in its own transaction; see [Apply](apply.md).
+live room that a WebSocket may mutate during serialization. A press
+records that committed live projection in its own transaction; see [the press](press.md).
 
 ## Checkpoints and ingress
 
 Checkpoints are host-minted `CapturedCheckpointCut` values. They cover every
 journal row through their cut; a free state-vector/watermark pair and warm-room
 bytes are not checkpoint authority. Materialize outside the persistence lock,
-then revalidate authority identity, generation, and retention under lock.
-Stale checkpoint requests return `stale_generation`.
+then revalidate authority identity and retention under lock.
+Stale checkpoint requests return `stale_document`.
 
-Every server authority doc and every materialization of one (draft and live
+Every server authority doc and every materialization of one (live
 docs, rooms in `yjs-ws-handler.ts`, clones, scratch docs) is `gc: false`, and a
 rewrite never encodes a gc-on doc. `createDocFromSnapshot` throws on a gc-on
 origin, and a store that has already garbage-collected restores the wrong text
-without an error. The frontier probe pins only the Yjs library behavior; it
-cannot catch a server fold that starts encoding a gc-on doc.
+without an error. A stored checkpoint is collected on purpose, except what the
+models' latest frontiers show ([checkpoints](CONTEXT.md#authority-checkpoints-and-derivation)), so
+every snapshot reader asks `planningSnapshot` first, which refuses a frontier that saw an item
+whose content is gone. The frontier probe pins only the Yjs library behavior.
 
 Under `gc: false`, setting a `Y.Map` key to the value it already holds is not a
 no-op: it writes a new item and a tombstone, a journaled update and eventually a
@@ -150,14 +149,15 @@ writes and seeds at once and writer typing 2 s after typing stops, at most every
 10 s; no reader needs them fresh, because readers read live Yjs.
 
 Seed snapshots use the same mutation lock. A first seed is
-initialize-only, becomes the generation's base checkpoint, and reconciles an
-already open room before success. Writer admission rejects reserved client IDs
-and reserved provenance namespace mutations before append or Yjs apply.
+initialize-only, becomes the document's base checkpoint, and reconciles an
+already open room before success. Writer admission refuses no client ID and no
+Yjs root: nothing on the server writes under a fixed client ID or into a root of
+its own, so a writer frame has nothing it could collide with.
 
-WebSocket admission checks the declared schema major/minor against the specific
-live or Work-draft head for each connection. Patch differences do not gate;
+WebSocket admission checks the declared schema major/minor against the document's
+head for each connection. Patch differences do not gate;
 major incompatibility and a client behind the head use the typed transport
-closures. Head and draft schema stamps are monotonic, so a rolled-back server
+closures. Head schema stamps are monotonic, so a rolled-back server
 never lowers the durable version. Transport close mechanics belong to the
 server transport boundary, not this document engine.
 

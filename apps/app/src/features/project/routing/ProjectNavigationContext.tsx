@@ -15,10 +15,8 @@ export type OpenContextOptions = {
   focus?: true;
   /** Runs only once the navigation committed. */
   afterCommit?: () => void;
-  /** Persist an inline review in this Editor history entry. Omission opens live. */
+  /** Persist an inline review in this Editor history entry; its key names the draft. Omission opens live. */
   itemKey?: string;
-  /** Whose draft `itemKey` reviews (`work:<id>` or `lineage:<root>`); omitted, the Editor's Work. */
-  reviewOwner?: string;
   changeId?: string;
   isCurrent?: () => boolean;
   canCommit?: () => boolean;

@@ -21,7 +21,6 @@ type AppGlobal = typeof globalThis & {
 
 const SYSTEM_UPDATE_SWEEP_MS = 1_000;
 /** A draft badge a crash left stale converges within this, without another key (design §3.5). */
-const DRAFT_EFFECT_SWEEP_MS = 30_000;
 const RETENTION_PURGE_INTERVAL_MS = 60 * 60 * 1_000;
 const WAKE_SWEEP_INTERVAL_MS = resolveWakeSweepIntervalMs(process.env.WAKE_SWEEP_INTERVAL_MS);
 const ASK_EXPIRY_SWEEP_MS = 15_000;
@@ -94,11 +93,6 @@ async function createAppServices(): Promise<AppServices> {
         name: "document-derivations",
         delayMs: 10000,
         run: app.documentSync.documentDerivations.sweep,
-      },
-      {
-        name: "draft-effects",
-        delayMs: DRAFT_EFFECT_SWEEP_MS,
-        run: app.documentSync.draftEffects.sweep,
       },
     ],
     eventSink,

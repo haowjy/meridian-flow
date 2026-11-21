@@ -2,8 +2,7 @@
 
 import { plural, t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
+import { type ReactNode, useRef, useState } from "react";
 import { FoldToggle } from "@/components/ui/fold-toggle";
 import {
   ApplyAllQuestion,
@@ -12,7 +11,7 @@ import {
   noticeAction,
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
-import { DeletedLiveTag, DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
+import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
@@ -26,16 +25,8 @@ import type { DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
-  /** What an Apply of several files deletes or brings back, asked about first. */
-  const [asking, setAsking] = useState<{
-    deleting: readonly DockFile[];
-    restoring: readonly DockFile[];
-  } | null>(null);
-  const troubledFileCount = dock.files.filter((file) => file.status === "error").length;
-  // A preview that did not load opens the strip so the writer sees it.
-  useEffect(() => {
-    if (troubledFileCount > 0) setExpanded(true);
-  }, [troubledFileCount]);
+  /** What an Apply of several files deletes, asked about first. */
+  const [asking, setAsking] = useState<readonly DockFile[] | null>(null);
 
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
@@ -45,24 +36,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const multi = dock.files.length > 1;
   const only = dock.files[0];
   const askingApply = asking !== null && dock.showCommands;
-  // One file's row shows its delete, so its Apply already says to delete or bring it back.
+  // One file's row shows its delete, so its Apply already says to delete it.
   const startApply = () =>
-    multi && (dock.deletedToApply.length > 0 || dock.deletingToApply.length > 0)
-      ? setAsking({ deleting: dock.deletingToApply, restoring: dock.deletedToApply })
-      : dock.apply();
+    multi && dock.deletingToApply.length > 0 ? setAsking(dock.deletingToApply) : dock.apply();
   // One question at a time, in the footer below the files: opening it never moves a row.
   const question: CommandQuestion | null = askingApply
     ? {
         kind: "apply-all",
-        sentence: (
-          <ApplyAllQuestion
-            deleting={asking.deleting.map((file) => file.name)}
-            restoring={asking.restoring.map((file) => ({
-              name: file.name,
-              scheme: file.row.draft.deletedFrom?.scheme,
-            }))}
-          />
-        ),
+        sentence: <ApplyAllQuestion deleting={asking.map((file) => file.name)} />,
         keep: <Trans>Cancel</Trans>,
         confirm: <Trans>Apply</Trans>,
         onKeep: () => setAsking(null),
@@ -95,7 +76,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
 
   // The whole first line folds and unfolds the changes, except its commands. The changes'
   // own rows open the draft.
-  const summary = (trouble: ReactNode = null) => (
+  const summary = () => (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the FoldToggle inside is the keyboard toggle; the row's click is a mouse convenience. slop-lint: allow suppression the reason is stated in this comment
     // biome-ignore lint/a11y/noStaticElementInteractions: same: a mouse convenience over the FoldToggle. slop-lint: allow suppression the reason is stated in this comment
     <div
@@ -121,9 +102,7 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           ) : null}
         </span>
       </FoldToggle>
-      {only && !multi ? <DeletedLiveTag item={only.row.draft} /> : null}
-      {trouble}
-      {trouble || multi || dock.changeCount === null ? null : (
+      {multi || dock.changeCount === null ? null : (
         <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">
           <ChangeCount count={dock.changeCount} />
         </span>
@@ -212,24 +191,18 @@ function DockFileLine({
   dock: DraftDockModel;
   file: DockFile;
   expanded: boolean;
-  summary?: (trouble: ReactNode) => ReactNode;
+  summary?: () => ReactNode;
 }) {
   const touch = useCoarsePointer();
   const view = useDraftView(
-    {
-      projectId: dock.projectId,
-      ownerKey: dock.ownerKey,
-      documentId: file.row.documentId,
-      itemKey: file.row.draft.itemKey,
-    },
-    { controller: dock.controller, enabled: !file.whole, item: file.row.draft },
+    { documentId: file.row.documentId, itemKey: file.row.item.itemKey },
+    { controller: dock.controller, enabled: !file.whole, item: file.row.item },
   );
   const own = new Set(file.changes.map((change) => change.id));
   const items = view.items.filter(({ change }) => own.has(change.id));
-  const wholeDocument = file.status === "ready" && isWholeDocumentChange({ ...view, items });
+  const wholeDocument = isWholeDocumentChange({ ...view, items });
   // A command's progress is the file's status line's (`DraftCommandStatus`), shown once.
-  const trouble = file.status === "error" ? <FileTrouble file={file} row={!summary} /> : null;
-  const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
+  const status = <DraftCommandStatus itemKey={file.row.item.itemKey} />;
   if (!summary && !expanded) return null;
   if (file.whole && !summary)
     return (
@@ -244,7 +217,6 @@ function DockFileLine({
             onClick={() => dock.review(file)}
           >
             <span className="min-w-0 truncate">{fileLabel(file)}</span>
-            <DeletedLiveTag item={file.row.draft} />
             <span className="ml-auto shrink-0 text-muted-foreground">
               <ChangeCount count={file.count} />
             </span>
@@ -271,22 +243,18 @@ function DockFileLine({
       className="border-border-subtle border-b last:border-b-0"
     >
       {summary ? (
-        summary(trouble)
+        summary()
       ) : expanded && !wholeDocument ? (
         <div className="flex min-h-7 items-center gap-1.5 px-2 text-xs text-foreground">
           <span className="min-w-0 truncate">{fileLabel(file)}</span>
-          <DeletedLiveTag item={file.row.draft} />
-          {trouble}
         </div>
       ) : null}
-      {!summary && wholeDocument ? trouble : null}
       {/* A file with no header row keeps its status line under its one row, which it describes. */}
       {wholeDocument && !summary ? null : status}
-      {expanded && file.status !== "error" ? (
+      {expanded ? (
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
-            notice={summary ? undefined : <DeletedLiveTag item={file.row.draft} />}
             view={{ ...view, items, locked: view.locked || dock.generating }}
             touch={touch}
             onSelect={(change) => dock.review(file, change)}
@@ -295,17 +263,6 @@ function DockFileLine({
       ) : null}
       {wholeDocument && !summary ? status : null}
     </div>
-  );
-}
-
-/** A preview that did not load, with Retry beside it. */
-function FileTrouble({ file, row = false }: { file: DockFile; row?: boolean }) {
-  return (
-    <InlineErrorRow
-      message={t`Changes couldn't load.`}
-      onRetry={file.retry ?? undefined}
-      className={cn("min-w-0 p-0", row ? "max-w-[50%]" : "flex-1")}
-    />
   );
 }
 

@@ -3,39 +3,33 @@ import type { DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { DocumentPurgeDraftDisposal } from "../../context/ports/document-trash.js";
+import { currentDrizzleDb, runAfterDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import type { DocumentPurgeDisposal } from "../../context/ports/document-trash.js";
 import { retentionHolds } from "../../context/tree/retention-holds.js";
-import type { DraftClose } from "./drizzle-draft-close.js";
-import { lockDrafts } from "./drizzle-draft-close.js";
 
 /**
- * Draft appends lock only their draft row, so the documents' keys and then every draft row
- * that can write them are taken before the check: "nothing holds the documents" is then stable
- * until the caller commits. The caller holds the tree list's lock, which sorts before both, and
- * asks before it purges: a purge removes the rows the check reads.
+ * Every write to a document takes its key, so the keys are taken before the check: "nothing holds
+ * the documents" is then stable until the caller commits. The caller holds the tree list's lock,
+ * which sorts before them, and asks before it purges: a purge removes the rows the check reads.
  */
 export function createDrizzleDocumentPurgeDisposal(
   db: Database,
-  deps: { close: Pick<DraftClose, "endDrafts" | "registerRemoved"> },
-): DocumentPurgeDraftDisposal {
+  deps: {
+    /** After commit: the documents' live rooms close `4208`, while their removal still stands. */
+    closeRemovedRooms(documentIds: readonly DocumentId[]): Promise<void>;
+  },
+): DocumentPurgeDisposal {
   return {
     async settle(documentIds) {
       if (documentIds.length === 0) return "closed";
       const tx = currentDrizzleDb(db);
-      const sorted = [...new Set(documentIds)].sort();
+      const sorted = [...new Set(documentIds)].sort() as DocumentId[];
       for (const id of sorted) await lockDocumentMutation(tx, id);
-      await lockDrafts(tx, { documentIds: sorted });
       const [held] = await tx.execute<{ held: boolean }>(sql`
-        SELECT EXISTS (SELECT 1 FROM (${retentionHolds(sorted as DocumentId[])}) p) AS held`);
+        SELECT EXISTS (SELECT 1 FROM (${retentionHolds(sorted)}) p) AS held`);
       if (held?.held) return "pending";
-      await deps.close.endDrafts(tx, { documentIds: sorted as DocumentId[] });
       // A document in Trash keeps its room; the purge closes it, once the content is released.
-      deps.close.registerRemoved(sorted as DocumentId[], {
-        reason: "deleted",
-        actor: null,
-        time: new Date().toISOString(),
-      });
+      runAfterDrizzleCommit(() => deps.closeRemovedRooms(sorted));
       return "closed";
     },
   };

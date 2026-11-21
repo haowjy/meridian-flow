@@ -20,7 +20,7 @@ import type {
   CollabDomain,
   DocumentCreationAggregate,
   DocumentLinkScopes,
-  DraftPeerShadowAccess,
+  EffectiveDocumentReader,
   EffectiveReadVersion,
   MarkdownDocumentStore,
   SyncError,
@@ -70,7 +70,7 @@ import { fileRefOf } from "./file-ref.js";
 import { type GrepRead, scanDocuments } from "./grep-scan.js";
 import { LiveCreate } from "./live-create.js";
 import { type ContextPlacement, type CreatePlacement, createPlacement } from "./placement.js";
-import { actorOf, type SourceTree, type TreeWriteTarget, viewOfBranch } from "./tree-writes.js";
+import { actorOf, type SourceTree, type TreeWriteTarget, viewOfDraft } from "./tree-writes.js";
 
 /**
  * A document path's leaf through the name codec: its folders and canonical parts, null for
@@ -99,8 +99,8 @@ export interface ContextFSDeps {
   documentSync: MarkdownDocumentStore &
     Pick<CollabDomain, "refreshDocumentProjection"> &
     Pick<
-      DraftPeerShadowAccess,
-      | "writeCreatedDraftContent"
+      EffectiveDocumentReader,
+      | "writeWorkCreatedContent"
       | "readEffectiveHashlines"
       | "readEffectiveMarkdown"
       | "readStoredGrepTexts"
@@ -127,7 +127,7 @@ export interface ContextFSDeps {
  *
  * Content is Yjs-canonical: the tree is the project's list (read through the store's views,
  * written by records made at the call), and read/write content flows through the collab domain.
- * A create, move or delete runs in one command transaction: the Work and branch locks first,
+ * A create, move or delete runs in one command transaction: the Work and draft locks first,
  * then the list's lock inside `treeListStore.submit`, then the document's own.
  */
 export class ContextFS implements ContextSchemeAdapter {
@@ -167,7 +167,7 @@ export class ContextFS implements ContextSchemeAdapter {
       });
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction: deps.commandTransaction ?? {
-        run: (operation) => deps.store.transaction(() => operation({ branch: null })),
+        run: (operation) => deps.store.transaction(() => operation({ draft: null })),
       },
       serializeThroughCallbacks: true,
       mapThrownError: (error) =>
@@ -232,8 +232,11 @@ export class ContextFS implements ContextSchemeAdapter {
           code: "io_error",
           message: `Yjs document not found: ${error.documentId}`,
         };
-      case "stale_generation":
-        return { code: "io_error", message: `Document generation changed: ${error.documentId}` };
+      case "stale_document":
+        return {
+          code: "io_error",
+          message: `Document changed under the write: ${error.documentId}`,
+        };
       case "checkpoint_not_found":
         return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
       case "corrupt_state":
@@ -242,8 +245,8 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   /**
-   * What reads see: a draft placement's Work's active branch, unless the thread asked for
-   * the live text; live otherwise. Resolved once per command, never creating a branch.
+   * What reads see: a draft placement's Work's active draft, unless the thread asked for
+   * the live text; live otherwise. Resolved once per command, never creating a draft.
    */
   private readTreeView(): Promise<TreeView> {
     return this.placement.readView(this.readView?.version);
@@ -620,9 +623,9 @@ export class ContextFS implements ContextSchemeAdapter {
     const at =
       decided ??
       view.destination ??
-      sourceDestination(view.writeMode, this.scheme, view.branchOwner);
+      sourceDestination(view.writeMode, this.scheme, view.draftOwner);
     return (decided || view.version !== "live") && at.kind === "draft"
-      ? { ...reader, destination: "draft", owner: at.owner }
+      ? { ...reader, destination: "draft", draft: at.draftId }
       : { ...reader, destination: "live" };
   }
 
@@ -668,7 +671,7 @@ export class ContextFS implements ContextSchemeAdapter {
 
   /**
    * A tree command in this source: the records of one command transaction. A drafted one is a
-   * record of the Work's branch, which the transaction makes and locks; a live one is live.
+   * record of the Work's draft, which the transaction makes and locks; a live one is live.
    * `afterWrite` runs inside it once the records are made.
    */
   private async inTreeCommand<T>(
@@ -680,11 +683,11 @@ export class ContextFS implements ContextSchemeAdapter {
       return this.commandExecutor.run(() => write({ view: LIVE, actor }), undefined, {
         sourceIds: [input.fromSourceId],
       });
-    const owner = this.placement.branchOwner;
+    const owner = this.placement.draftOwner;
     if (!owner) return Err({ code: "permission_denied" });
-    return this.commandExecutor.runInBranch(
-      { ...owner, mode: "ensure" },
-      (branch) => write({ view: viewOfBranch(branch.id), actor }),
+    return this.commandExecutor.runInDraft(
+      owner,
+      (draft) => write({ view: viewOfDraft(draft.id), actor }),
       [input.fromSourceId],
     );
   }
@@ -711,10 +714,7 @@ export class ContextFS implements ContextSchemeAdapter {
   private async treeRead<T>(input: TreeReadInput<T>): Promise<Result<T, AdapterFault>> {
     const shown = await this.placement.readView(input.version ?? this.readView?.version);
     return Ok(
-      await this.writes.read(
-        shown.kind === "live" ? LIVE : viewOfBranch(shown.branchId),
-        input.read,
-      ),
+      await this.writes.read(shown.kind === "live" ? LIVE : viewOfDraft(shown.draftId), input.read),
     );
   }
 }

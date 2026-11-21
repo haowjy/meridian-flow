@@ -4,25 +4,36 @@
  * wherever ProseMirror's own key does the right thing, so the base chain runs there.
  */
 import { innermostListStep, isNested, pathOf, readPath } from "@meridian/prosemirror-schema";
+import type { View } from "@meridian/suggestions";
 import type { ResolvedPos } from "@tiptap/pm/model";
 import type { EditorState, Transaction } from "@tiptap/pm/state";
 import { TextSelection } from "@tiptap/pm/state";
+import {
+  shownBlock,
+  suggestionView,
+  transactionView,
+} from "../suggestion-mode/SuggestionModeExtension";
 
 import { NO_LIST, outdent, selectedSequence } from "./nesting-commands";
 import { freshMarker } from "./nesting-landing";
 
 type Dispatch = ((tr: Transaction) => void) | undefined;
 
-/** The text block at `$from` when it carries a path, with its place among its siblings. */
-function nestedBlockAt($from: ResolvedPos) {
-  const block = $from.parent;
+/**
+ * The text block at `$from`, as `view` shows it, when it carries a path, with its place among
+ * its siblings.
+ */
+function nestedBlockAt($from: ResolvedPos, view: View) {
+  const block = shownBlock(view, $from.parent);
   if (!block.isTextblock || !isNested(block.attrs.path)) return null;
-  const sequence = selectedSequence(TextSelection.create($from.doc, $from.pos));
+  const sequence = selectedSequence(TextSelection.create($from.doc, $from.pos), view);
   return { block, pos: $from.before(), facts: sequence.facts[sequence.from], $from };
 }
 
 function caretBlock(state: EditorState) {
-  return state.selection instanceof TextSelection ? nestedBlockAt(state.selection.$from) : null;
+  return state.selection instanceof TextSelection
+    ? nestedBlockAt(state.selection.$from, suggestionView(state))
+    : null;
 }
 
 /**
@@ -31,9 +42,10 @@ function caretBlock(state: EditorState) {
  */
 function lift(tr: Transaction): boolean {
   const { $from } = tr.selection;
-  const block = $from.parent;
+  const view = transactionView(tr);
+  const block = shownBlock(view, $from.parent);
   const steps = readPath(block.attrs.path);
-  const sequence = selectedSequence(tr.selection);
+  const sequence = selectedSequence(tr.selection, view);
   const facts = sequence.facts[sequence.from];
   const level = innermostListStep(facts.steps);
   if (level === steps.length - 1 && facts.steps[level].startsItem) return outdent(tr);
@@ -56,7 +68,7 @@ export function enterInNesting(state: EditorState, dispatch: Dispatch): boolean 
   if (!caretBlock(state)) return false;
   const tr = state.tr;
   if (!state.selection.empty) tr.deleteSelection();
-  const caret = nestedBlockAt(tr.selection.$from);
+  const caret = nestedBlockAt(tr.selection.$from, suggestionView(state));
   if (!caret) return false;
   const { block, $from } = caret;
 
@@ -115,9 +127,11 @@ export function backspaceInNesting(state: EditorState, dispatch: Dispatch): bool
 
 /** Flips the task item at `pos` between open and done. False when `nest` draws no box there. */
 export function toggleTaskAt(tr: Transaction, pos: number): boolean {
-  const node = tr.doc.nodeAt(pos);
-  if (!node) return false;
-  const sequence = selectedSequence(TextSelection.near(tr.doc.resolve(pos + 1)));
+  const view = transactionView(tr);
+  const stored = tr.doc.nodeAt(pos);
+  if (!stored) return false;
+  const node = shownBlock(view, stored);
+  const sequence = selectedSequence(TextSelection.near(tr.doc.resolve(pos + 1)), view);
   const marker = sequence.facts[sequence.from]?.marker;
   if (marker !== "todo" && marker !== "done") return false;
   tr.setNodeMarkup(pos, undefined, { ...node.attrs, marker: marker === "done" ? "todo" : "done" });

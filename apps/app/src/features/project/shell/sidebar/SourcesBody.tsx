@@ -1,5 +1,4 @@
 import { t } from "@lingui/core/macro";
-import type { DraftOwnerKey } from "@meridian/contracts";
 import { agentsLocationOf } from "@meridian/contracts/agents";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { Ellipsis, ListChecks, type LucideIcon, MessageSquare, Trash2 } from "lucide-react";
@@ -32,10 +31,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { LIVE_VERSION } from "@/core/project-tree/tree-version";
 import type { TreeFile as ContextFile } from "@/core/project-tree/tree-view";
 import { DraftSwitcher } from "@/features/draft-review/DraftSwitcher";
-import {
-  useWorkBranchCommands,
-  type WorkBranchCommands,
-} from "@/features/draft-review/useWorkBranchCommands";
+import { usePressCommands, type WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { destinationOf } from "@/features/import/destination";
 import { useOptionalImports } from "@/features/import/ImportProvider";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
@@ -50,7 +46,7 @@ import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree
 import { revealPlaced, subscribePlacedReveal } from "../../context/tree-reveal";
 import { useScopeScratchSource } from "../../context/use-scratch-trees";
 import { useWorkSourceWritable } from "../../context/use-work-source-writable";
-import { useAiDraftLauncher } from "../../review-launch";
+import { useItemLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { useShellTreeVersion } from "../../tree-version";
@@ -99,7 +95,7 @@ type WriteSources = {
   writable: Record<TreeKey, boolean>;
   changes: ChangesScope;
   /** Held here, not in the pane, so a Discard's Undo outlives a look at another tab. */
-  changesCommands: WorkBranchCommands;
+  changesCommands: WorkDraftCommands;
 };
 
 const WriteSourcesContext = createContext<WriteSources | null>(null);
@@ -227,7 +223,7 @@ const SOURCES: Record<SourceKey, Source> = {
       return (
         <ChangesSource
           // A question asked of one Work must not be answered for the next one picked.
-          key={changes.ownerKey}
+          key={changes.draftId}
           projectId={projectId}
           scope={changes}
           controller={changesCommands}
@@ -371,10 +367,10 @@ export function SourcesBody({
   const source =
     tabs.includes(picked) || (foot as readonly SourceKey[]).includes(picked) ? picked : fallback;
   if (source !== picked) setPicked(source);
-  const changesCommands = useWorkBranchCommands({
+  const changesCommands = usePressCommands({
     projectId,
     work: changes.work,
-    ownerKey: changes.ownerKey,
+    draftId: changes.draftId,
     surface: "changes",
   });
 
@@ -412,13 +408,13 @@ export function SourcesBody({
   };
   useEffect(() => subscribePlacedReveal((folderId) => placedIn.current(folderId)), []);
   const undo = useSidebarUndo(projectId, version);
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   // On Draft a document the Work drafts opens on its draft, as its Changes row does.
   const selectFile = useCallback<WriteSources["onSelectFile"]>(
     (scheme, file, options) => {
       const draft = drafting && shell ? shell.draftOf(file.documentId) : null;
       if (!draft || !shell) return onSelectFile(scheme, file, options);
-      openReviewFile(draft, shell.ownerKey);
+      openReviewFile(draft, shell.draftId);
       onPicked?.();
     },
     [drafting, shell, onSelectFile, openReviewFile, onPicked],
@@ -448,7 +444,7 @@ export function SourcesBody({
                   ? {
                       view: {
                         kind: "draft" as const,
-                        owner: shell.ownerKey as DraftOwnerKey,
+                        draft: shell.draftId,
                       },
                     }
                   : {}),
@@ -641,7 +637,7 @@ function TreeVersionChip() {
       showing={shell.showing}
       drafts={[
         {
-          key: shell.ownerKey,
+          key: shell.draftId,
           name: <WorkIdentity work={shell.work} unavailableLabel={t`This chat`} />,
           current: shell.showing === "draft",
           scope: true,

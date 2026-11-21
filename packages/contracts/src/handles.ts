@@ -6,7 +6,7 @@
  * resolve as someone else's handle. Allocation stays with the server's repository adapters.
  */
 
-/** The letter of each handle kind. Edit handles (`e`) and branch handles (`b`) are not owners. */
+/** The letter of each handle kind. Edit handles (`e`) are not owners. */
 export const HANDLE_LETTERS = { chat: "c", subagent: "p", work: "w" } as const;
 export type HandleKind = keyof typeof HANDLE_LETTERS;
 

@@ -3,19 +3,6 @@
  * data (list, detail, threads, works, context tree). Single source of key
  * shapes so reads, writes, and invalidations stay consistent.
  */
-export function isProjectWorkDerivedKey(
-  queryKey: readonly unknown[],
-  projectId: string,
-  workIds?: ReadonlySet<string>,
-): boolean {
-  if (queryKey[0] !== "projects" || queryKey[1] !== projectId || queryKey[2] !== "works") {
-    return false;
-  }
-  const workId = queryKey[3];
-  if (typeof workId !== "string" || (workIds && !workIds.has(workId))) return false;
-  return queryKey[4] === "branches" || (queryKey[4] === "documents" && queryKey.includes("draft"));
-}
-
 export const projectQueryKeys = {
   all: ["projects"] as const,
   list: ["projects", "list"] as const,
@@ -28,8 +15,6 @@ export const projectQueryKeys = {
   trash: (projectId: string) => ["projects", projectId, "trash"] as const,
   trashedDocument: (projectId: string, documentId: string) =>
     [...projectQueryKeys.trash(projectId), documentId] as const,
-  /** Trash's Discard entries: the drafts each Discard closed, and what it settled in the tree. */
-  trashDiscards: (projectId: string) => ["projects", projectId, "trash-discards"] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,
   works: (projectId: string) => ["projects", projectId, "works"] as const,
   chatFeed: (projectId: string) => ["projects", projectId, "chat-feed"] as const,
@@ -45,23 +30,14 @@ export const projectQueryKeys = {
   threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
   /** Client-only: this project's Work Undo windows (`work-mutations`). */
   workCommands: (projectId: string) => ["projects", projectId, "work-commands"] as const,
-  /** One owner's draft list; `owner` is `work:<id>` or `lineage:<root>`. */
-  ownerDrafts: (projectId: string, owner: string) =>
-    ["projects", projectId, "drafts", owner] as const,
-  ownerDraftsOf: (projectId: string) => ["projects", projectId, "drafts"] as const,
-  /** The branches with changes to one document; invalidated with the Work draft lists. */
+  /** One draft's list of changed documents. */
+  drafts: (projectId: string, draft: string) => ["projects", projectId, "drafts", draft] as const,
+  draftsOf: (projectId: string) => ["projects", projectId, "drafts"] as const,
+  /** The drafts with changes to one document; invalidated with the Work draft lists. */
   documentDraftHints: (projectId: string, documentId: string) =>
     ["projects", projectId, "document-draft-hints", documentId] as const,
   documentDraftHintsOf: (projectId: string) =>
     ["projects", projectId, "document-draft-hints"] as const,
-  ownerDraftMetadata: (projectId: string, owner: string, documentId: string, itemKey?: string) =>
-    ["projects", projectId, "draft-metadata", owner, documentId, itemKey ?? null] as const,
-  /** Every item's draft metadata read of one document of an owner. */
-  draftMetadataOf: (projectId: string) => ["projects", projectId, "draft-metadata"] as const,
-  ownerDraftMetadataOfOwner: (projectId: string, owner: string) =>
-    ["projects", projectId, "draft-metadata", owner] as const,
-  ownerDraftMetadataOf: (projectId: string, owner: string, documentId: string) =>
-    ["projects", projectId, "draft-metadata", owner, documentId] as const,
   contextSources: (projectId: string) => ["projects", projectId, "context-sources"] as const,
   /** `fileCount` refetches the facts when an upload arrives or goes. */
   chatUploads: (projectId: string, chatId: string, fileCount: number) =>

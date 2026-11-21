@@ -35,7 +35,7 @@ export async function lockNamespaceKeys(
 
 /**
  * Seam C (file-access §5): Work rows in id order, the lineages' draft-owner locks and the bound
- * edit grants' confirmation, then `afterWorkLocks` (a branch write's branch row, contract §14).
+ * edit grants' confirmation, then `afterWorkLocks` (a draft write's draft row, contract §14).
  * No namespace key: a tree write is a record in the project's list, whose lock a document or
  * namespace key must follow (`context/.context/tree-list-store.md`). An arrival takes the
  * namespace keys it settles ahead refs under after its records (`lockDocumentNamespaces`).

@@ -1,10 +1,10 @@
 /**
  * Sidebar Undo: the writer's tree changes made in this browser, newest last, one stack per list
  * copy, read a source at a time. A step is the record ids one gesture appended and the view it
- * was made in, or an Apply, which the server takes back whole by its command id; nothing else is
- * stored. Whether a tree step can still be taken is read from the list at the press (`takeBackAll`:
- * by the changes in force), and one that no longer fits is skipped for the one before it. An Apply
- * is asked of the server, and its press is spent once the server answers, whatever it took back. A
+ * was made in, or a review's Apply or Discard, which the server takes back whole by its command
+ * id; nothing else is stored. Whether a tree step can still be taken is read from the list at the press (`takeBackAll`:
+ * by the changes in force), and one that no longer fits is skipped for the one before it. An Apply's
+ * or Discard's Undo is asked of the server, and its press is spent once the server answers, whatever it took back. A
  * tree step that waits for a closed owner (an archived or deleted Work, a chat in Trash) keeps its
  * place, and a press passes over it until the owner reopens (`waitsForClosed`). So does a delete that hides
  * nothing now (`rests`: what it took shows again, kept standing by an Apply or a create), until it
@@ -19,7 +19,6 @@
  */
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
-  appliedNodes,
   type DroppedRecord,
   deleteHides,
   deleteStands,
@@ -33,7 +32,7 @@ import {
 } from "@meridian/project-tree";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 
-export type UndoStep = TreeStep | ApplyStep;
+export type UndoStep = TreeStep | PressStep;
 
 /** What the writer did; a create shows no notice (the new row says it). */
 export type TreeGesture = "create" | "rename" | "move" | "delete" | "restore";
@@ -91,18 +90,15 @@ export type ClosedOwners = {
 export const NOTHING_CLOSED: ClosedOwners = { source: () => null };
 
 /**
- * An Apply, one step whichever view is on screen: it changed live and the Work's tree alike. A
- * press sends its Un-Apply (`undo`: false when the request didn't reach the server, which the
- * writer is told; the step stays). It is on the stack from when it landed until an Un-Apply took
- * something back or nothing is left of it, and a Redo that lands puts it back on top. Its tree
- * half also ends when nothing of it stands in live any more (`endWhenTakenBack`).
+ * An Apply or a Discard in a Work's review (its press command), one step whichever view is on
+ * screen. Ctrl+Z on it sends the command's own Undo (`undo`: false when the request didn't reach
+ * the server, which the writer is told; the step stays). Whoever pushed it takes it off the stack
+ * once the command is taken back in this tab (a notice, an editor's Ctrl+Z, the sidebar), and a
+ * Redo that lands puts it back on top. Taken back in another tab, the step stays: its Ctrl+Z is
+ * answered with nothing taken.
  */
-export type ApplyStep = {
-  kind: "apply";
-  /** Some text of it landed. */
-  text: boolean;
-  /** Its tree half, while something of it stands in live: the command and the restores it made. */
-  tree: { command: string; restores: readonly string[] } | null;
+export type PressStep = {
+  kind: "press";
   /** The sources its nodes show in; none known, every source's stack holds it. */
   sources: readonly string[];
   /** The nodes it took, where the focus goes after an Undo. */
@@ -215,7 +211,7 @@ export function shownSourceOf(projection: TreeProjection, node: string): string 
   return null;
 }
 
-/** Takes `step` off the stack, if it is there: an Apply that left it. */
+/** Takes `step` off the stack, if it is there: an Apply or Discard taken back. */
 export function dropUndoStep(session: TreeListSession, step: UndoStep): void {
   const stack = stackOf(session);
   const at = stack.indexOf(step);
@@ -226,7 +222,7 @@ export function pushUndoStep(session: TreeListSession, step: UndoStep): void {
   if (step.kind === "tree" && step.records.length === 0) return;
   stackOf(session).push(step);
   actedIn(session);
-  // A gesture in the list is the writer's next action there; an Apply is made in Changes.
+  // A gesture in the list is the writer's next action there; an Apply or Discard is made in a review.
   if (step.kind === "tree")
     show(session, step.gesture === "create" ? null : { kind: "step", step });
 }
@@ -242,16 +238,16 @@ function waitsForClosed(step: TreeStep, closed: ClosedOwners): boolean {
 
 /** The step is one a press in `view` on `source` (null: any) would take, waiting or not. */
 const fits = (step: UndoStep, source: string | null, view: View) =>
-  (step.kind === "apply" || step.draft === view.draft) &&
+  (step.kind === "press" || step.draft === view.draft) &&
   (source === null || step.sources.length === 0 || step.sources.includes(source));
 
 /**
  * Takes back the latest step of `source` (null: any) made in `view`, by opposite records, or an
- * Apply by the server's Un-Apply. A tree step that can't be taken back any more is dropped and the press
- * goes on to the one before it, as it does past an Apply whose Un-Apply is out. A step whose records or Apply wait for closed owners keeps its place, and a
+ * Apply or Discard by its Undo on the server. A tree step that can't be taken back any more is dropped and the press
+ * goes on to the one before it, as it does past an Apply or Discard whose Undo is out. A step whose records wait for closed owners keeps its place, and a
  * press passes over it while they are closed (`waitsForClosed`). A record whose change was since
  * applied is in force live, so its opposite record is written live. The caller runs one press
- * at a time: while an Un-Apply is asked, steps only join the top of the stack.
+ * at a time: while an Apply's or Discard's Undo is asked, steps only join the top of the stack.
  */
 export async function undoLatest(
   session: TreeListSession,
@@ -259,11 +255,10 @@ export async function undoLatest(
   view: View,
   actor: string,
   closed: ClosedOwners,
-  pendingText?: ReadonlySet<string>,
 ): Promise<UndoOutcome> {
   actedIn(session);
   show(session, null);
-  return takeLatest(session, source, view, actor, closed, pendingText);
+  return takeLatest(session, source, view, actor, closed);
 }
 
 async function takeLatest(
@@ -272,18 +267,17 @@ async function takeLatest(
   view: View,
   actor: string,
   closed: ClosedOwners,
-  pendingText?: ReadonlySet<string>,
 ): Promise<UndoOutcome> {
   const stack = stackOf(session);
   for (let at = stack.length - 1; at >= 0; at -= 1) {
     const step = stack[at] as UndoStep;
     if (!fits(step, source, view)) continue;
-    if (step.kind === "apply") {
+    if (step.kind === "press") {
       return (await step.undo()) ? { kind: "undone", nodes: step.nodes } : { kind: "nothing" };
     }
     if (waitsForClosed(step, closed) || rests(session, step)) continue;
     stack.splice(at, 1);
-    const back = takeBack(session, step, view, actor, closed, pendingText);
+    const back = takeBack(session, step, view, actor, closed);
     if (back === "undone") {
       step.ended?.();
       return { kind: "undone", nodes: step.nodes };
@@ -307,9 +301,8 @@ export async function undoStep(
   step: UndoStep,
   actor: string,
   closed: ClosedOwners,
-  pendingText?: ReadonlySet<string>,
 ): Promise<boolean> {
-  if (step.kind === "apply") return step.undo();
+  if (step.kind === "press") return step.undo();
   const stack = stackOf(session);
   const at = stack.indexOf(step);
   if (at < 0 || rests(session, step)) return false;
@@ -317,7 +310,7 @@ export async function undoStep(
   actedIn(session);
   show(session, null);
   const view = step.draft === null ? LIVE : { draft: step.draft };
-  const back = takeBack(session, step, view, actor, closed, pendingText);
+  const back = takeBack(session, step, view, actor, closed);
   if (back === "undone") {
     step.ended?.();
     show(session, null);
@@ -330,40 +323,6 @@ export async function undoStep(
   }
   step.ended?.();
   return false;
-}
-
-/**
- * Tells the Apply `step` once nothing of its tree half stands in `lists` (`appliedNodes`): a
- * card's Undo, or another tab's Un-Apply, took it back. Only a half seen standing ends, so a list
- * still catching up with the Apply's copies ends nothing. Returns the stop for the watch.
- */
-export function endWhenTakenBack(
-  lists: readonly TreeListSession[],
-  step: ApplyStep,
-  taken: () => void,
-): () => void {
-  const half = step.tree;
-  if (!half) return () => undefined;
-  const stands = () =>
-    lists.some(
-      (list) => appliedNodes(list.getSnapshot().doc, half.command, half.restores).length > 0,
-    );
-  let seen = stands();
-  const stops = lists.map((list) =>
-    list.subscribe(() => {
-      if (stands()) {
-        seen = true;
-        return;
-      }
-      if (!seen) return;
-      stop();
-      taken();
-    }),
-  );
-  const stop = () => {
-    for (const each of stops) each();
-  };
-  return stop;
 }
 
 /**
@@ -410,13 +369,13 @@ export function endWhenRestored(session: TreeListSession, step: TreeStep): () =>
   return stop;
 }
 
-function writerOf(session: TreeListSession, view: View, pendingText?: ReadonlySet<string>) {
+function writerOf(session: TreeListSession, view: View) {
   const { doc } = session.getSnapshot();
   return new TreeWriter(doc, "local", (asked) =>
     asked.draft === null
       ? session.replay(LIVE)
       : asked.draft === view.draft
-        ? session.replay(asked, pendingText)
+        ? session.replay(asked)
         : null,
   );
 }
@@ -431,9 +390,8 @@ function takeBack(
   view: View,
   actor: string,
   closed: ClosedOwners,
-  pendingText?: ReadonlySet<string>,
 ): "undone" | string[] {
-  const writer = writerOf(session, view, pendingText);
+  const writer = writerOf(session, view);
   // One walk: each record is judged against the list the one before it left, and the records that
   // land go into the list as one update. A record into a source the tab reads as closed is not
   // written; admission drops one into a source closed since, when the update reaches the server.
@@ -442,7 +400,6 @@ function takeBack(
     actor,
     [...step.records].reverse().map((id) => ({ id, view })),
     (source) => closed.source(source) !== null,
-    pendingText,
   );
   const answers = [...walked.values()];
   if (answers.some((back) => typeof back !== "string" && !("closed" in back))) return "undone";

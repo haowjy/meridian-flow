@@ -31,7 +31,7 @@ export const CONTEXT_URI_SCHEME_NAMES = {
   agents: ".agents",
 } as const satisfies Record<(typeof CONTEXT_URI_SCHEMES)[number], string>;
 
-/** Sources whose documents receive drafts in a draft-mode Work's branch. */
+/** Sources whose documents receive drafts in a draft-mode Work's draft. */
 export function isDraftedScheme(scheme: ContextUriScheme): boolean {
   return (
     scheme === "manuscript" ||
@@ -282,11 +282,11 @@ export function parseContextUri(
   if (segments.some((segment) => segment.startsWith("@"))) {
     return invalidContextUri(raw, 'Path segments beginning with "@" are reserved');
   }
-  const branchSegmentIndex = segments.findIndex((segment) => segment.startsWith(BRANCH_SIGIL));
-  if (branchSegmentIndex !== -1) {
+  const draftSegmentIndex = segments.findIndex((segment) => segment.startsWith(DRAFT_SIGIL));
+  if (draftSegmentIndex !== -1) {
     return invalidContextUri(
       raw,
-      branchNameRefusal(scheme, authorityResult.value.authority, segments, branchSegmentIndex),
+      draftNameRefusal(scheme, authorityResult.value.authority, segments, draftSegmentIndex),
     );
   }
 
@@ -528,31 +528,31 @@ export function isProjectScopedScheme(
 
 /** The sigil before an owner's handle. */
 export const OWNER_SIGIL = "@";
-/** Reserved for branch qualifiers (#699); refused until branch routing exists. */
-export const BRANCH_SIGIL = "~";
-const BRANCH_NAME_RULE = 'Names cannot start with "~".';
+/** Reserved for draft qualifiers (#699); refused until draft routing exists. */
+export const DRAFT_SIGIL = "~";
+const DRAFT_NAME_RULE = 'Names cannot start with "~".';
 
-function branchNameRefusal(
+function draftNameRefusal(
   scheme: ContextUriScheme,
   authority: ParsedContextAuthority,
   segments: string[],
-  branchSegmentIndex: number,
+  draftSegmentIndex: number,
 ): string {
-  const segment = segments[branchSegmentIndex] ?? "";
-  if (branchSegmentIndex < segments.length - 1) {
+  const segment = segments[draftSegmentIndex] ?? "";
+  if (draftSegmentIndex < segments.length - 1) {
     const repairedPath = [
-      ...segments.slice(0, branchSegmentIndex),
-      ...segments.slice(branchSegmentIndex + 1),
+      ...segments.slice(0, draftSegmentIndex),
+      ...segments.slice(draftSegmentIndex + 1),
     ].join("/");
     const repairedUri = formatParsedContextUri(scheme, repairedPath, authority);
-    return `${BRANCH_NAME_RULE} Use ${repairedUri}, or a name without "~".`;
+    return `${DRAFT_NAME_RULE} Use ${repairedUri}, or a name without "~".`;
   }
 
-  const repairedName = validateContextEntryName(segment.slice(BRANCH_SIGIL.length));
-  if (!repairedName.ok) return BRANCH_NAME_RULE;
-  const repairedPath = [...segments.slice(0, branchSegmentIndex), repairedName.value].join("/");
+  const repairedName = validateContextEntryName(segment.slice(DRAFT_SIGIL.length));
+  if (!repairedName.ok) return DRAFT_NAME_RULE;
+  const repairedPath = [...segments.slice(0, draftSegmentIndex), repairedName.value].join("/");
   const repairedUri = formatParsedContextUri(scheme, repairedPath, { kind: "contextual" });
-  return `${BRANCH_NAME_RULE} Use ${repairedUri}.`;
+  return `${DRAFT_NAME_RULE} Use ${repairedUri}.`;
 }
 
 /** The one serializer for addresses: the canonical identity. Spells parsed syntax; it does not resolve or grant authority. */

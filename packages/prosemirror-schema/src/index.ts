@@ -6,7 +6,7 @@
 import { uint32 } from "lib0/random";
 import { type MarkSpec, type NodeSpec, Schema } from "prosemirror-model";
 import { marks as basicMarks, nodes as basicNodes } from "prosemirror-schema-basic";
-import { Doc, decodeStateVector, encodeStateVector } from "yjs";
+import { type Doc, decodeStateVector, encodeStateVector } from "yjs";
 
 export type { CollabSchemaVersion } from "./collab-schema-version.js";
 export {
@@ -61,17 +61,24 @@ const nestingAttrs = {
   loose: { default: null },
 };
 
-/** The names of the nesting attributes: what moves a block's marker, indent and bar. */
-export const NESTING_ATTRS = Object.keys(nestingAttrs);
-
 /**
  * A block's permanent identity (`block-id.ts`): set once where the block is made, copied with
  * its other attributes everywhere, and never shown in Markdown. Null means none recorded.
  */
 const idAttr = { default: null };
 
-/** The attributes of a node that is a block: its identity and its nesting. */
-const blockAttrs = { id: idAttr, ...nestingAttrs };
+/**
+ * Suggestion mode (`@meridian/suggestions`): `sug` marks a block that exists only as one draft's
+ * suggestion (`{ id, draft }`); `sugAttrs` holds the layers of pending changes to a Live block, by
+ * layer id: each sets attributes or removes the block (`{ id, draft, layer, order, attrs, remove? }`).
+ * Yjs stores each layer as its own element attribute (`layer-key.ts`). Who wrote each change is
+ * kept once per change beside the fragment, not here. The binding drops marks on blocks, so they
+ * are attributes.
+ */
+const suggestionBlockAttrs = { sug: { default: null }, sugAttrs: { default: null } };
+
+/** The attributes of a node that is a block: its identity, its nesting and its suggestions. */
+const blockAttrs = { id: idAttr, ...nestingAttrs, ...suggestionBlockAttrs };
 
 // ─── Nodes from prosemirror-schema-basic (used as-is) ───────────────
 const basicNodeDefaults = {
@@ -240,34 +247,36 @@ const customMarks = {
   },
 
   strike: {},
+
+  // Suggestion mode (`@meridian/suggestions`). `excludes: ""` lets two drafts mark the same text:
+  // the binding then keys each mark `name--<hash>` instead of overwriting one with the other.
+  suggest_ins: suggestionMark(),
+  suggest_del: suggestionMark(),
+  // A comment's anchor; its body lives outside the document.
+  // `markdown: false`: Markdown cannot write it, so a model's write, planned in Markdown, leaves it alone.
+  comment: { attrs: { id: { default: null } }, inclusive: false, excludes: "", markdown: false },
 } satisfies Record<string, MarkSpec>;
+
+// Only what a view reads per run: each changed word carries it, kept in history for good.
+function suggestionMark(): MarkSpec {
+  return {
+    attrs: {
+      id: { default: null },
+      draft: { default: null },
+    },
+    inclusive: false,
+    excludes: "",
+  };
+}
 
 // ─── Exports ────────────────────────────────────────────────────────
 
 export * from "./block-id.js";
 export * from "./empty-document.js";
+export * from "./layer-key.js";
+export * from "./mark-key.js";
 export * from "./nesting.js";
 export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";
-
-/**
- * Reserved clientID band [0, RESERVED_CLIENT_ID_MAX] is owned by server-authored
- * Yjs writer streams. Human/agent docs must never draw a
- * clientID in this band, and inbound updates carrying structs from it are rejected at
- * ingest. This is a Meridian convention — Yjs has no native reserved-range concept; the
- * Yjs invariant we rely on is that one clientID is owned by exactly one live writer.
- */
-export const RESERVED_CLIENT_ID_MAX = 999;
-/** Whether a client belongs to the server-reserved ingest band. */
-export const isReservedClientId = (clientId: number): boolean => clientId <= RESERVED_CLIENT_ID_MAX;
-
-/** Construct a collab Y.Doc whose clientID is guaranteed outside the reserved band. */
-export function createCollabYDoc(options?: ConstructorParameters<typeof Doc>[0]): Doc {
-  const doc = new Doc(options);
-  while (isReservedClientId(doc.clientID)) {
-    doc.clientID = uint32();
-  }
-  return doc;
-}
 
 export const documentNodes = {
   ...basicNodeDefaults,
@@ -293,11 +302,6 @@ export function allocateDocumentClient(
   let client: number;
   do {
     client = uint32();
-  } while (
-    isReservedClientId(client) ||
-    client === doc.clientID ||
-    used.has(client) ||
-    excluded.has(client)
-  );
+  } while (client === doc.clientID || used.has(client) || excluded.has(client));
   return client;
 }

@@ -71,7 +71,6 @@ done < <(
     'blockOwner|block_owner|lastEditor|last_editor|Item\.redone|Y\.Snapshot|RelativePosition|diff-match-patch|diff_match_patch|textEquality|text_equality|textSimilarity|text_similarity' \
     -- \
     'apps/server/server/domains/collab/domain/document-mutation-policy.ts' \
-    'apps/server/server/domains/collab/domain/branch-push-transition.ts' \
     'apps/server/server/domains/collab/domain/provenance.ts' \
     'apps/server/server/domains/collab/adapters/drizzle-provenance.ts' \
     2>/dev/null || true

@@ -2,7 +2,6 @@
  * One lifecycle owner for lineage Scratch provisioning and for trash reconciliation of the
  * sources a thread owns: its lineage's Scratch and its own chat's uploads.
  */
-import { draftOwnerKey } from "@meridian/contracts/branches";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { contextSources, threads } from "@meridian/database/schema";
@@ -124,13 +123,13 @@ export function createDrizzleLineageScratchLifecycle(
             closed: root?.live ? undefined : "chat_frozen",
           });
         }
-        liveness?.hints.publishDraftOwnerHints(
-          [...new Map(roots.map((root) => [root.id, root.projectId]))].map(
-            ([rootThreadId, projectId]) => ({
-              type: "draft-owner-hint" as const,
-              projectId,
-              owner: draftOwnerKey({ kind: "lineage", rootThreadId }),
-            }),
+        const named = await currentDrizzleDb(db)
+          .select({ draft: threads.draftId, projectId: threads.projectId })
+          .from(threads)
+          .where(inArray(threads.id, rootIds));
+        liveness?.hints.publishDraftHints(
+          named.flatMap(({ draft, projectId }) =>
+            draft ? [{ type: "draft-hint" as const, projectId, draft }] : [],
           ),
         );
         // A chat's uploads follow that chat's own trash state, not its lineage's.
@@ -162,7 +161,7 @@ export function createDrizzleLineageScratchLifecycle(
       (source) => source.deletedAt === null && hidden.some((row) => row.id === source.id),
     );
     if (arrivals && restored.length) {
-      // Arrivals are live: a branch's hidden documents in a restored source settle nothing.
+      // Arrivals are live: a draft's hidden documents in a restored source settle nothing.
       const liveTree = visibleDocuments(LIVE_TREE);
       const content = await currentDrizzleDb(db)
         .select({ id: liveTree.id })

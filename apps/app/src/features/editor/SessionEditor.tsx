@@ -2,8 +2,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { parseContextUri } from "@meridian/contracts";
-import { parseDraftOwnerKey } from "@meridian/contracts/branches";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
+import type { View } from "@meridian/suggestions";
 import type { Editor, EditorOptions } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
 import {
@@ -80,20 +80,15 @@ type SessionEditorProps = {
   focusKey?: string;
   /** Main's document: the caret main gives (`joinMain`) goes here, never to a side or a sheet. */
   inMain?: boolean;
+  /** Suggestion mode: the view this Live editor shows, and whether its changes are marked. */
+  suggestion?: { view: View; marks: boolean };
 };
-
-/** The Work an owner key names; a lineage names none. */
-function workOfOwner(ownerKey: string): string | null {
-  const owner = parseDraftOwnerKey(ownerKey);
-  return owner?.kind === "work" ? owner.id : null;
-}
 
 export function SessionEditor(props: SessionEditorProps) {
   const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
   const [bindHorizon, setBindHorizon] = useState<EditorBindHorizonResult | null>(null);
   const requiresFirstServerSync = !(
-    props.identity.surface === "live" &&
-    (props.identity.detached || props.surfaceOptions.localContentReady)
+    props.identity.detached || props.surfaceOptions.localContentReady
   );
 
   useEffect(() => props.session.subscribe(setSnapshot), [props.session]);
@@ -148,6 +143,7 @@ function ActiveSessionEditorView({
   holderUri: reviewHolderUri,
   snapshot,
   evidenceDegraded,
+  suggestion,
 }: ActiveSessionEditorViewProps) {
   const {
     editable = true,
@@ -160,7 +156,6 @@ function ActiveSessionEditorView({
   const accountId = useAccountId();
   const accountEpoch = useAccountEpochSignal();
   const { documentId, projectId } = identity;
-  const inReview = identity.surface === "review";
   // A room the server closed as removed (4208) says why while its tab stays open.
   const removed =
     snapshot.connectionState?.kind === "reset" &&
@@ -172,7 +167,7 @@ function ActiveSessionEditorView({
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
-  const agentNames = useAgentNames(projectId, { enabled: !inReview });
+  const agentNames = useAgentNames(projectId);
   const effectiveEditable = editable && !snapshot.schemaFence && snapshot.access !== "read";
   effectiveEditableRef.current = effectiveEditable;
 
@@ -182,9 +177,7 @@ function ActiveSessionEditorView({
   const holderOwner = holder?.source.owner;
   const linkRootThreadId = holderOwner?.kind === "lineage" ? holderOwner.rootThreadId : null;
   const linkWorkId = !holderOwner
-    ? identity.surface === "review"
-      ? (workOfOwner(identity.ownerKey) ?? noWork?.id ?? null)
-      : null
+    ? null
     : linkRootThreadId
       ? (noWork?.id ?? null)
       : holderOwner.kind === "work"
@@ -337,7 +330,7 @@ function ActiveSessionEditorView({
   // The cover can lift after the editor is gone (the work outlives the effect), so the deferred
   // work checks `isDestroyed`.
   useEffect(() => {
-    if (!editor || inReview) return;
+    if (!editor) return;
     const dom = editor.view.dom;
     const onFocusOut = (event: FocusEvent) => {
       if (
@@ -354,7 +347,7 @@ function ActiveSessionEditorView({
     };
     dom.addEventListener("focusout", onFocusOut);
     return () => dom.removeEventListener("focusout", onFocusOut);
-  }, [afterPaintRelease, editor, inReview]);
+  }, [afterPaintRelease, editor]);
 
   // A document the writer just made takes the caret at its start, and main's editor, editable
   // or not, joins what main shows (the page load's caret, an open from a sidebar over main),
@@ -374,16 +367,30 @@ function ActiveSessionEditorView({
       mounted = false;
       release?.();
     };
-  }, [afterPaintRelease, active, inMain, editor, effectiveEditable, focusKey, inReview]);
+  }, [afterPaintRelease, active, inMain, editor, effectiveEditable, focusKey]);
 
   useEffect(() => {
-    if (!editor || inReview || !active) return;
+    if (!editor || !active) return;
     return registerLiveRangeEditor(documentId, {
       editor,
       session,
       localContentReady: surfaceOptions.localContentReady === true,
     });
-  }, [active, documentId, editor, inReview, session, surfaceOptions.localContentReady]);
+  }, [active, documentId, editor, session, surfaceOptions.localContentReady]);
+
+  // The view's author is this tab's writer: what they type in a Work's view is their suggestion.
+  const suggestionView = suggestion?.view ?? null;
+  const suggestionMarks = suggestion?.marks ?? true;
+  useEffect(() => {
+    if (!editor || !suggestionView) return;
+    editor.commands.setSuggestionView(
+      suggestionView,
+      suggestionView.draft ? { chat: null, turn: null, by: `user:${accountId}` } : null,
+    );
+  }, [editor, suggestionView, accountId]);
+  useEffect(() => {
+    if (editor && suggestionView) editor.commands.setSuggestionReview({ marks: suggestionMarks });
+  }, [editor, suggestionView, suggestionMarks]);
 
   const constructionCallback = useRef(onConstructed);
   constructionCallback.current = onConstructed;
@@ -406,7 +413,6 @@ function ActiveSessionEditorView({
     accountId,
     documentId,
     active,
-    inReview,
     session,
     signal: accountEpoch,
   });

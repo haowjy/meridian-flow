@@ -1,6 +1,8 @@
 /** Suggests a stable filename slug from an untitled document's first line. */
+import { liveView, viewDoc } from "@meridian/suggestions";
 import type { JSONContent } from "@tiptap/core";
-import * as Y from "yjs";
+import type * as Y from "yjs";
+import { roomContent } from "@/core/editor/room-content";
 
 export function suggestedUntitledDocumentName(content: JSONContent): string {
   const firstBlock = content.type === "doc" ? content.content?.[0] : content;
@@ -22,26 +24,12 @@ function collectText(content: JSONContent | undefined): string {
   return (content.content ?? []).map(collectText).join("");
 }
 
-/** Same suggestion, read straight from a live Yjs fragment's first block. */
-export function suggestedNameFromFragment(fragment: Y.XmlFragment): string {
-  const text = firstXmlBlockText(fragment);
+/** Same suggestion, from a document's first block as Live reads it. */
+export function suggestedNameFromDocument(document: Y.Doc): string {
+  const text = viewDoc(roomContent(document).doc, liveView).firstChild?.textContent.trim() ?? "";
   if (!text) return "";
   return suggestedUntitledDocumentName({
     type: "doc",
     content: [{ type: "paragraph", content: [{ type: "text", text }] }],
   });
-}
-
-function firstXmlBlockText(fragment: Y.XmlFragment): string {
-  const firstElement = fragment.toArray().find((child) => child instanceof Y.XmlElement);
-  return firstElement instanceof Y.XmlElement ? xmlTextContent(firstElement).trim() : "";
-}
-
-function xmlTextContent(node: Y.XmlElement): string {
-  let text = "";
-  for (const child of node.toArray()) {
-    if (child instanceof Y.XmlText) text += child.toString();
-    if (child instanceof Y.XmlElement) text += xmlTextContent(child);
-  }
-  return text;
 }

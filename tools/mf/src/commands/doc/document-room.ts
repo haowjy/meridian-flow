@@ -10,7 +10,8 @@ import {
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import * as Y from "yjs";
 import { CliError } from "../../core/cli-error";
 import type { Session } from "../../core/session";
 import { yjsSocketOptions } from "../../core/yjs-socket";
@@ -32,7 +33,7 @@ export async function writeMarkdown(
 ): Promise<void> {
   const schema = buildDocumentSchema();
   const codec = createAgentEditCodecFactory(mdxCodec({ schema }));
-  const doc = createCollabYDoc({ gc: false });
+  const doc = new Y.Doc({ gc: false });
   const socket = new HocuspocusProviderWebsocket({
     ...yjsSocketOptions(session),
     autoConnect: false,

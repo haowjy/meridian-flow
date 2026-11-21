@@ -286,7 +286,7 @@ Live and then the draft.
 Every document host (main, the side, the phone) has its own review (`DocumentReview.tsx`);
 `useReviewAdmission` makes it enter, keep or leave the draft its paint names. Only a host on screen
 reviews: a host that is not showing (the kept document, a closed side) paints no draft, admits
-nothing, holds no draft room and writes no pin. That keeps one review per document, and Discard
+nothing and writes no pin. That keeps one review per document, and Discard
 writes into the issuing host's own editor, whose Undo takes it back.
 
 Main's address and main's view stay in step (`use-review-address-sync.ts`): an address arriving by

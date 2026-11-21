@@ -1,21 +1,28 @@
 // Per-document model stacks over immutable edits, with all-or-nothing action planning.
 
 import { randomUUID } from "node:crypto";
-import type { DocumentEditResult, ModelInverseCommand } from "@meridian/agent-edit/integration";
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import {
+  type DocumentEditResult,
+  type ModelInverseCommand,
+  storedPendingTurns,
+  writeVerdict,
+} from "@meridian/agent-edit/integration";
+import type { DocumentId } from "@meridian/contracts";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { FileEditRefusedError } from "../../file-policy/index.js";
 import { partKey as key } from "./inverse-actions.js";
-import type { InverseDestination } from "./inverse-draft-destination.js";
 import type { InverseStep } from "./inverse-stream.js";
+import { deltaExcerpt } from "./inverse-text.js";
 import { textOmission, textPlanRefusal } from "./model-inverse-presentation.js";
 import { type Entry, entries, inspectionActions } from "./model-inverse-selection.js";
 import { createCapturedReversalPlanner, type ModelInverseQuery } from "./model-reversal-planner.js";
-import { draftRoom } from "./observation-rooms.js";
 import type {
   InverseDocument,
   StoredInversePart,
   TurnInverseStore,
 } from "./turn-inverse-service.js";
+
+const schema = buildDocumentSchema();
 
 export function createModelInversePolicy(store: TurnInverseStore) {
   type ModelPlanPreview = { status: "planned" };
@@ -55,30 +62,21 @@ export function createModelInversePolicy(store: TurnInverseStore) {
      */
     const stepAction = (kind: "undo" | "revert") =>
       kind === "undo" && steps.length ? randomUUID() : actionId;
-    const apply = (
-      entry: Entry,
-      selection: StoredInversePart[],
-      kind: "undo" | "revert",
-      destination = policy.queryDestination,
-    ) => {
-      if (destination.kind === "draft" && destination.state === "gone")
-        throw new Error("Gone destination selected");
-      const stepActionId = stepAction(kind);
+    const apply = (entry: Entry, selection: StoredInversePart[], kind: "undo" | "revert") => {
       stepEntries.push({ kind, handle: entry.handle });
-      const at = Math.max(...entry.parts.map((part) => part.id));
-      const step = { destination, actionId: stepActionId, actionKind: kind, at };
-      steps.push(
-        destination.kind === "draft"
-          ? { ...step, kind: "content", parts: selection, destination }
-          : { ...step, kind: "manuscript", parts: selection.map((part) => ({ part })) },
-      );
-      policy.planTakeOut(destination, selection);
+      steps.push({
+        destination: document.destination,
+        actionId: stepAction(kind),
+        actionKind: kind,
+        at: Math.max(...entry.parts.map((part) => part.id)),
+        parts: selection,
+      });
+      policy.planTakeOut(selection);
     };
     const modelTextPlan = (entry: Entry, direction: "undo" | "revert") => {
       const planned = policy.textPlan(entry, direction);
       if (planned.failure) return textPlanRefusal(document.uri, entry.handle, planned.failure);
       return {
-        destination: planned.destination,
         selection: planned.selection,
         actionKind: planned.actionKind as "undo" | "revert",
         omissions: planned.omissions.map((omission) =>
@@ -101,7 +99,7 @@ export function createModelInversePolicy(store: TurnInverseStore) {
           status: "nothing_to_revert",
           message: `Nothing was reverted: none of ${entry.handle} remains to revert in ${document.uri}.\nnot reverted: ${skipped.join("\nnot reverted: ")}`,
         };
-      apply(entry, textPlan.selection, "revert", textPlan.destination);
+      apply(entry, textPlan.selection, "revert");
     } else
       for (let n = 0; n < count; n++) {
         const entry = undoEntries[n];
@@ -114,29 +112,14 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             status: "cant_undo_changed",
             message: `Can't undo ${entry.handle}: none of that edit remains unchanged. Nothing was changed.`,
           };
-        apply(entry, textPlan.selection, textPlan.actionKind, textPlan.destination);
+        apply(entry, textPlan.selection, textPlan.actionKind);
       }
     if (!steps.length)
       return {
         status: "nothing_to_revert",
         message: `Nothing is left to reverse in ${document.uri}. Nothing was changed.`,
       };
-    const textDestinations = new Set(steps.map((step) => step.destination));
-    const plannedDestinations = new Map<
-      BranchId | "live",
-      { branchId: BranchId | null; draftId: string | null; destination: InverseDestination }
-    >();
-    for (const step of steps) {
-      const { destination } = step;
-      const branchId = destination.kind === "draft" ? destination.branchId : null;
-      const previous = plannedDestinations.get(branchId ?? "live");
-      plannedDestinations.set(branchId ?? "live", {
-        branchId,
-        draftId: policy.draftIdOf(destination) ?? previous?.draftId ?? null,
-        destination,
-      });
-    }
-    const inversePlan = { document, steps, skips: [] };
+    const inversePlan = { document, steps };
     if (preview) return { status: "planned" };
     const committed = await store.commit({
       query,
@@ -164,44 +147,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
     const performed = (kind: "undo" | "revert") => [
       ...new Set(took.filter((entry) => entry.kind === kind).map((entry) => entry.handle)),
     ];
-    const destinations = new Map(
-      committed.outcomes.map((outcome) => [outcome.branchId ?? "live", outcome]),
-    );
-    const [destination] = destinations.values();
-    const committedDraftIds = new Set(
-      committed.outcomes.flatMap((outcome) => (outcome.draftId ? [outcome.draftId] : [])),
-    );
     return {
       status: "success",
       actionId,
-      room:
-        textDestinations.size === 1
-          ? committedDraftIds.size === 1
-            ? draftRoom([...committedDraftIds][0] as string)
-            : document.liveRoom
-          : null,
-      ...(committed.cut && textDestinations.size === 1 ? committed.cut : {}),
+      room: document.liveRoom,
+      ...(committed.cut ?? {}),
       updates: committed.updates,
-      ...(destinations.size === 1
-        ? destination?.branchId
-          ? {
-              destination: "draft" as const,
-              ...(destination.draftId
-                ? {
-                    draftWork:
-                      plannedDestinations.get(destination.branchId)?.destination.kind === "draft"
-                        ? (document.drafts.get(
-                            policy.draftIdOf(
-                              plannedDestinations.get(destination.branchId)
-                                ?.destination as InverseDestination,
-                            ) as string,
-                          )?.name ?? "/")
-                        : "/",
-                  }
-                : {}),
-            }
-          : { destination: "live" as const }
-        : {}),
+      destination: "live" as const,
       ...(command.command === "revert" ? { writeId: committed.handles[0] } : {}),
       message: [
         command.command === "revert"
@@ -216,22 +168,6 @@ export function createModelInversePolicy(store: TurnInverseStore) {
               ? ` (${parts} of ${planned + partial.length} parts)`
               : ""),
         ...partial.map((reason) => `not undone: ${reason}`),
-        ...(destinations.size > 1
-          ? [
-              `versions: ${[...destinations.values()]
-                .map((destination) =>
-                  destination.draftId
-                    ? policy.version(
-                        plannedDestinations.get(destination.branchId ?? "live")?.destination ??
-                          policy.queryDestination,
-                      )
-                    : destination.branchId
-                      ? "draft"
-                      : "live",
-                )
-                .join(", ")}`,
-            ]
-          : []),
       ].join("\n"),
     };
   }
@@ -296,6 +232,12 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             )
           : null;
         const index = policy.actions.actions;
+        // A write whose turn still has suggestions here is pending, not Live.
+        const pending = storedPendingTurns(document.live, schema);
+        const suggesting = (turnId: string | null | undefined) => !!turnId && pending.has(turnId);
+        const updates = await store.partUpdates(
+          page.flatMap((entry) => entry.parts.map((part) => part.id)),
+        );
         const lines = await Promise.all(
           page.map(async (entry) => {
             const undos = index.actions.filter((action) =>
@@ -303,10 +245,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             );
             const popped = index.byPart;
             const fullyUndone = entry.parts.every((part) => popped.has(key(part)));
-
-            const applied = entry.parts.filter(
-              (part) => part.origin.kind === "pending" && part.disposition === "applied",
-            ).length;
+            // What the writer did with the suggestions each part left: the model reads Apply and
+            // Discard apart from an edit of its text.
+            const verdicts = entry.parts.map((part) => {
+              const update = updates.get(part.id);
+              return update ? writeVerdict(document.live, update) : null;
+            });
+            const applied = verdicts.filter((verdict) => verdict === "applied").length;
             const state = fullyUndone
               ? undos.some((undo) =>
                   undo.parts.some(
@@ -319,11 +264,11 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 ? applied === entry.parts.length
                   ? "applied"
                   : `partly applied (${applied} of ${entry.parts.length})`
-                : entry.parts.every((part) => part.disposition === "discarded")
+                : verdicts.every((verdict) => verdict === "discarded")
                   ? "discarded"
                   : entry.parts.some((part) => policy.changed(part))
                     ? "changed"
-                    : entry.parts.some((part) => part.origin.kind === "pending")
+                    : entry.parts.some((part) => suggesting(part.turnId))
                       ? "pending"
                       : "live";
             let command = "none";
@@ -334,12 +279,8 @@ export function createModelInversePolicy(store: TurnInverseStore) {
                 revert === entry.parts.length
                   ? "revert"
                   : `revert ${revert} of ${entry.parts.length}`;
-            const appliedOrigin = entry.parts.some(
-              (part) => part.origin.kind === "pending" && part.disposition === "applied",
-            );
-            if (entry.id === topEntry?.id && undo?.status === "planned" && !appliedOrigin)
-              command = "undo";
-            const excerpt = await store.describePart(document, entry.parts[0]);
+            if (entry.id === topEntry?.id && undo?.status === "planned") command = "undo";
+            const excerpt = deltaExcerpt(entry.parts[0].delta);
             const summary =
               excerpt.before && excerpt.after
                 ? `${JSON.stringify(excerpt.before)} → ${JSON.stringify(excerpt.after)}`
@@ -349,15 +290,13 @@ export function createModelInversePolicy(store: TurnInverseStore) {
             return `${entry.handle}  ${entry.parts[0].turnId === query.turnId ? "this turn" : "earlier turn"}  ${state}  ${summary}${entry.parts.length > 1 ? ` and ${entry.parts.length - 1} more` : ""}  ${command}`;
           }),
         );
-        const shownDestination = topEntry?.parts[0]
-          ? document.destinationOf(topEntry.parts[0].origin)
-          : policy.queryDestination;
+        const shownVersion = suggesting(topEntry?.parts[0]?.turnId) ? "draft" : "live";
         return {
           status: "success",
           actionId: randomUUID(),
           room: null,
           message: [
-            `your edits to ${document.uri}, newest first (version: ${policy.version(shownDestination)})`,
+            `your edits to ${document.uri}, newest first (version: ${shownVersion})`,
             ...lines,
             ...(older.length > 20 ? [`more: before ${page.at(-1)?.handle}`] : []),
           ].join("\n"),

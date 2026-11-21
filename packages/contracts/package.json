@@ -23,7 +23,7 @@
     "./runtime": "./src/runtime/index.ts",
     "./agents": "./src/agents/index.ts",
     "./preferences": "./src/preferences/index.ts",
-    "./branches": "./src/branches/index.ts",
+    "./drafts": "./src/drafts/index.ts",
     "./commands": "./src/commands/index.ts",
     "./release": "./src/release/index.ts",
     "./failures": "./src/failures/index.ts",

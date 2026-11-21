@@ -15,7 +15,7 @@ import {
 } from "@meridian/project-tree";
 
 /** What the Work does to a folder it changes. */
-export type FolderChange =
+type FolderChange =
   | { kind: "new" }
   | { kind: "deleted" }
   /** `was`: the name before a rename. `moved`: into a folder by name, or `top` of its source. */
@@ -29,8 +29,6 @@ export type ChangeGroup<T> = {
     name: string;
     change: FolderChange;
     fault: LandingFault | null;
-    /** The source it is in, when live deleted it and the Work's change to it stands: Apply restores it first. */
-    deletedLive: string | null;
     /** Every changed folder the group takes: this one and the changed folders inside it. */
     folders: string[];
   } | null;
@@ -51,7 +49,7 @@ export function groupsOf<T>(groups: readonly ChangeGroup<T>[]): ChangeGroup<T>[]
 }
 
 /**
- * A Work's tree changes across the lists its branch spans (its project's and its owner's
+ * A Work's tree changes across the lists its draft spans (its project's and its owner's
  * account list): the nodes of its views, its pending records, what cannot land, and the folders
  * it changes.
  */
@@ -65,7 +63,7 @@ export type WorkTreeChanges = {
 };
 
 /** One list's replays: live, the Work's view of it, and the Work's pending records in it. */
-export type ListChanges = {
+type ListChanges = {
   live: TreeProjection;
   work: TreeProjection;
   pending: readonly TreeRecord[];
@@ -165,9 +163,6 @@ export function groupByChangedFolder<T extends { documentId: string }>(
         name: work.nodes.get(id)?.name ?? "",
         change: folderChange({ work, live }, records),
         fault: faults.get(id) ?? null,
-        deletedLive: work.nodes.get(id)?.keptByPending
-          ? (work.nodes.get(id)?.source ?? null)
-          : null,
         folders: [id],
       },
       files: [],

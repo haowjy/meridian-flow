@@ -41,8 +41,8 @@ export const isDoneWriteStatus = (status: string): status is DoneWriteStatus =>
 export interface DocumentReversalResult {
   documentId: string;
   uri: string;
-  /** Where it was reversed: live, or a branch's proposal (its text draft or its moves and deletes). */
-  destination?: { kind: "live" } | { kind: "draft"; branchId: string };
+  /** Where it was reversed: live, or a draft's proposal (its text draft or its moves and deletes). */
+  destination?: { kind: "live" } | { kind: "draft"; draftId: string };
   status: WriteStatus;
   text?: string;
 }

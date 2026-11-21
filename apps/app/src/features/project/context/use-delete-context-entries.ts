@@ -37,7 +37,7 @@ export function useDeleteContextEntries(
           id: ref.id,
           name,
           actions:
-            view.kind === "draft" && shell?.draftVersion && view.owner === shell.ownerKey
+            view.kind === "draft" && shell?.draftVersion && view.draft === shell.draftId
               ? drafted
               : listed,
         })),

@@ -3,7 +3,7 @@ import type {
   ModelEditCommandResult,
   ModelEditKey,
   ModelEditOutcome,
-} from "@meridian/contracts/branches";
+} from "@meridian/contracts/drafts";
 import type { Database } from "@meridian/database";
 import { CommandExistsError } from "../../../shared/commands/command-record.js";
 import { lookupCommand, resolveCommand } from "../../../shared/commands/drizzle-commands.js";
@@ -17,7 +17,7 @@ import { runDocumentCommand } from "./drizzle-document-commands.js";
 
 export function createDrizzleModelEdits(
   db: Database,
-  seams: Pick<ModelEdits, "write" | "read" | "catchUp">,
+  seams: Pick<ModelEdits, "write" | "read">,
   evidence: Pick<ModelEvidence, "resultStored">,
 ): ModelEdits {
   async function stored(key: ModelEditKey): Promise<ModelEditOutcome> {

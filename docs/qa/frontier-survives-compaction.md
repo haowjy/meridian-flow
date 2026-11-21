@@ -4,9 +4,10 @@ A frontier is a Yjs snapshot (`Y.encodeSnapshotV2(Y.snapshot(room))`) recorded n
 model's tool result. This probe pins the Yjs behaviour the store's gc-off contract depends on:
 a snapshot restores from the fold of a `gc: false` doc, and fails or restores wrong text
 otherwise. It builds its own `Y.Doc`s and imports nothing from the repo, so it does not
-exercise the server. It cannot catch a fold that starts encoding a gc-on doc; the contract
-holds by construction (every server doc is `gc: false`). It needs no database, dev stack or
-browser.
+exercise the server. Stored checkpoints are collected on purpose (deleted content dropped, ids
+kept), so the server's guard is `planningSnapshot` in agent-edit's `frontier.ts`: it refuses a
+frontier that saw an item whose content is gone, the "once-collected" case below. It needs no
+database, dev stack or browser.
 
 ```bash
 pnpm exec tsx tools/qa/probes/frontier-survives-compaction/run.mts

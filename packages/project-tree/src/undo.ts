@@ -159,8 +159,7 @@ const notTaken = (reason: SkipReason): NotUndone =>
  * its records taken one call at a time. An id given twice is walked once, at its first step.
  *
  * A Work's view is live and then its pending records, so a record landed in live is not at the
- * end of it: the Work's replay is started again when live has grown under it. `pendingText` is
- * the text the Work's view holds pending, which its replay cannot see in the list.
+ * end of it: the Work's replay is started again when live has grown under it.
  */
 function takeBack(
   writer: TreeWriter,
@@ -168,7 +167,6 @@ function takeBack(
   steps: readonly UndoStep[],
   closed: (source: string) => boolean,
   write: boolean,
-  pendingText?: ReadonlySet<string>,
 ): Map<string, { back: TakenBack; sources: readonly string[] }> {
   const doc = writer.doc;
   const byId = new Map(listRecords(doc).map((record) => [record.id, record]));
@@ -196,7 +194,6 @@ function takeBack(
     const mine = view.draft === null ? [] : landed.filter((each) => each.draft === view.draft);
     const replay = startReplay([...live, ...landedLive, ...pendingOf(view), ...mine], {
       draft: view.draft,
-      ...(view.draft === null ? {} : { pendingText }),
     });
     open.set(view.draft, { replay, liveSeen: landedLive.length });
     return replay;
@@ -272,9 +269,8 @@ export function undoChange(
   actor: Actor,
   recordId: string,
   closed: (source: string) => boolean,
-  pendingText?: ReadonlySet<string>,
 ): TreeRecord | NotUndone | ClosedUndo {
-  return takeBackAll(writer, actor, [{ id: recordId, view: asked }], closed, pendingText).get(
+  return takeBackAll(writer, actor, [{ id: recordId, view: asked }], closed).get(
     recordId,
   ) as TakenBack;
 }
@@ -288,15 +284,12 @@ export function undoReports(
   writer: TreeWriter,
   steps: readonly UndoStep[],
   closed: (source: string) => boolean = () => false,
-  pendingText?: ReadonlySet<string>,
 ): Map<string, UndoReport> {
   return new Map(
-    [...takeBack(writer, "system", steps, closed, false, pendingText)].map(
-      ([id, { back, sources }]) => [
-        id,
-        typeof back === "string" ? { answer: back, sources: [] } : { answer: "undoes", sources },
-      ],
-    ),
+    [...takeBack(writer, "system", steps, closed, false)].map(([id, { back, sources }]) => [
+      id,
+      typeof back === "string" ? { answer: back, sources: [] } : { answer: "undoes", sources },
+    ]),
   );
 }
 
@@ -306,13 +299,9 @@ export function takeBackAll(
   actor: Actor,
   steps: readonly UndoStep[],
   closed: (source: string) => boolean = () => false,
-  pendingText?: ReadonlySet<string>,
 ): Map<string, TakenBack> {
   return new Map(
-    [...takeBack(writer, actor, steps, closed, true, pendingText)].map(([id, { back }]) => [
-      id,
-      back,
-    ]),
+    [...takeBack(writer, actor, steps, closed, true)].map(([id, { back }]) => [id, back]),
   );
 }
 

@@ -1,57 +1,44 @@
-/** Listed text rows retain their room without an editor; document-only rows need no room. */
+/** A strip row's own changes: a move or delete is its tree line; text is pressed whole. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
-import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import type { DraftChangesView } from "./draft-changes";
-import type { DraftRef } from "./review-command-types";
+import type { DraftItemRef } from "./draft-review-session";
 import { listedItemChanges, targetOfChanges } from "./review-model";
 import { hasTreeLine, treeChange, treeLineOf } from "./tree-line";
-import { useRoomReview } from "./useRoomReview";
-import type { WorkBranchCommands } from "./useWorkBranchCommands";
+import type { WorkDraftCommands } from "./usePressCommands";
+
 export function useDraftView(
-  draft: DraftRef,
+  ref: DraftItemRef,
   {
     controller,
     enabled = true,
     item,
   }: {
-    controller: Pick<WorkBranchCommands, "commandChange" | "changesLocked">;
+    controller: Pick<WorkDraftCommands, "commandChange" | "dispositionLocked">;
     enabled?: boolean;
-    item?: ThreadDraftListItem;
+    item?: DraftItem;
   },
 ): DraftChangesView {
-  const owner = useDraftCommandOwner();
-  const discarding = Boolean(owner.state(draft.itemKey).discarding);
-  // A delete's text projection is deliberately not part of review. Its tree
-  // command can run without opening the room, just like any other tree-only row.
-  const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
-  const read = useRoomReview(enabled && !withoutText ? draft : null);
-  const status = !enabled ? "idle" : withoutText ? "ready" : read.status;
   const deleteLine = item?.tree?.deleted && !item.isNew ? treeLineOf(item) : null;
   const changes =
     item && enabled
       ? deleteLine
         ? [treeChange(item, deleteLine)]
-        : listedItemChanges(item, read.listedChanges)
-      : read.listedChanges;
-  const treeLine = !!item && hasTreeLine(item);
-  const items = changes.map((change) => ({ change }));
+        : listedItemChanges(item, [])
+      : [];
   return {
-    documentId: draft.documentId,
-    itemKey: draft.itemKey,
-    status,
-    items,
-
-    retry: read.retry,
+    documentId: ref.documentId,
+    itemKey: ref.itemKey,
+    status: enabled ? "ready" : "idle",
+    items: changes.map((change) => ({ change })),
     focused: null,
-    canApply:
-      treeLine || (withoutText ? item?.isNew === true : (read.frame?.groups.length ?? 0) > 0),
-    locked: controller.changesLocked || discarding || status !== "ready",
+    canApply: (!!item && hasTreeLine(item)) || item?.isNew === true,
+    locked: controller.dispositionLocked || !enabled,
     apply: async (change) => {
-      await controller.commandChange("apply", draft, targetOfChanges([change]));
+      await controller.commandChange("apply", ref, targetOfChanges([change]));
     },
     discard: async (change) => {
-      await controller.commandChange("discard", draft, targetOfChanges([change]));
+      await controller.commandChange("discard", ref, targetOfChanges([change]));
     },
   };
 }

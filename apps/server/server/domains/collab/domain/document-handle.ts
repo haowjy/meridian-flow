@@ -4,7 +4,7 @@ import type { CheckpointAuthority } from "./ports/checkpoint-authority.js";
 
 export class RetiredDocumentHandleError extends Error {
   constructor() {
-    super("Document handle belongs to a retired authority generation");
+    super("Document handle belongs to a retired authority");
   }
 }
 
@@ -16,12 +16,8 @@ const handles = new WeakMap<
 export function bindDocumentAuthority(doc: Y.Doc, authority: CheckpointAuthority): void {
   const existing = handles.get(doc);
   if (existing) {
-    if (
-      existing.authority.authorityId !== authority.authorityId ||
-      existing.authority.generation !== authority.generation
-    ) {
+    if (existing.authority.authorityId !== authority.authorityId)
       throw new RetiredDocumentHandleError();
-    }
     return;
   }
   handles.set(doc, { authority: Object.freeze({ ...authority }), retired: false });

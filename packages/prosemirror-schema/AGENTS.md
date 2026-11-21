@@ -5,8 +5,6 @@ collab code. DOM and editor runtime behavior live outside it.
 
 - The app builds its TipTap schema separately: a node, mark or attr change here is also
   a change there ([core/editor](../../apps/app/src/core/editor/AGENTS.md)).
-- Random authoring docs use `createCollabYDoc()`, which avoids the reserved
-  server-authored client-ID band.
 
 Compatibility seams: [`.context/CONTEXT.md`](.context/CONTEXT.md).
 

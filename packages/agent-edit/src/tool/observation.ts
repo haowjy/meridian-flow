@@ -8,7 +8,6 @@ import {
   frontierDelta,
   type ObservationFrontier,
   planningSnapshot,
-  type ResolvedObservationFrontier,
   recordedFrontier,
   writtenOnlyBy,
 } from "../frontier.js";
@@ -41,7 +40,6 @@ export interface ListingSource {
     baseline: Y.Doc;
     after: number;
     through: number;
-    attributionBridge?: ResolvedObservationFrontier["attributionBridge"];
   }) => Promise<readonly ConcurrentUpdate[]>;
 }
 
@@ -76,7 +74,7 @@ export async function recordObservation(
 
 export async function loadConcurrent(
   source: ListingSource,
-  prev: ResolvedObservationFrontier | null,
+  prev: ObservationFrontier | null,
 ): Promise<readonly ConcurrentUpdate[] | undefined> {
   const at = prev && planningSnapshot(source.doc, prev.room, prev);
   if (
@@ -88,15 +86,13 @@ export async function loadConcurrent(
   )
     return source.concurrent;
   // Snapshot equality includes delete sets, so this skips both insert-only and delete-only no-ops.
-  if (!prev.attributionBridge && Y.equalSnapshots(Y.snapshot(source.doc), at))
-    return source.concurrent;
+  if (Y.equalSnapshots(Y.snapshot(source.doc), at)) return source.concurrent;
   const baseline = YDocFromSnapshot(source.doc, at);
   try {
     return await source.loadConcurrent({
       baseline,
       after: prev.position,
       through: source.position,
-      ...(prev.attributionBridge ? { attributionBridge: prev.attributionBridge } : {}),
     });
   } finally {
     baseline.destroy();
@@ -106,7 +102,7 @@ export async function loadConcurrent(
 export function observeRendered(
   source: ListingSource,
   room: string,
-  prev: ResolvedObservationFrontier | null,
+  prev: ObservationFrontier | null,
   models: readonly (AgentEditModelPayload | undefined)[],
 ): { frontier: ObservationFrontier; concurrent?: AgentEditConcurrentListing } {
   const { doc } = source;
@@ -164,7 +160,7 @@ type AuthorChanges = { changed: Set<string>; removed: Set<string>; overwritten: 
 
 function changeAuthors(
   source: ListingSource,
-  prev: ResolvedObservationFrontier | null,
+  prev: ObservationFrontier | null,
   changed: readonly string[],
   removed: readonly { clientID: number; clock: number }[],
 ): Map<string, AuthorChanges> {

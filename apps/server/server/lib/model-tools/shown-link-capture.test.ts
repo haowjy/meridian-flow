@@ -53,8 +53,8 @@ const USER = crypto.randomUUID() as UserId;
 const SOURCE = crypto.randomUUID();
 const TARGET = crypto.randomUUID();
 const HIDDEN = crypto.randomUUID();
-const BRANCH_ID = crypto.randomUUID();
-const BRANCH: LinkView = { kind: "branch", branchId: BRANCH_ID };
+const DRAFT_ID = crypto.randomUUID();
+const DRAFT: LinkView = { kind: "draft", draftId: DRAFT_ID };
 const TARGET_URI = "user://target";
 
 const call: { context?: ResolvedModelContextPort } = {};
@@ -197,12 +197,12 @@ async function harness(
   let plainReads = 0;
   const agentEdit = {
     // A copy's source read asks for nodes; a plain read shows facts spelled
-    // in a reply's pinned branch view, not the live grant it was routed with.
+    // in a reply's pinned draft view, not the live grant it was routed with.
     read: async (_command: unknown, context: { includeNodes?: boolean }) => {
       if (context.includeNodes) return { ...success("read", [fact(90)]), nodes: [] };
       const n = plainReads++;
       await options.read?.();
-      return success("read", [fact(91 + 10 * n)], BRANCH);
+      return success("read", [fact(91 + 10 * n)], DRAFT);
     },
     write: async (
       _command: unknown,
@@ -233,7 +233,7 @@ async function harness(
       },
     }),
     refreshDocumentProjection: async () => {},
-    branches: { viewForWork: async () => ({ kind: "live" }) },
+    drafts: { viewForWork: async () => ({ kind: "live" }) },
     agentEdit: () => agentEdit,
     // Every `write` is a command; this fake runs its effect and answers its result as the outcome.
     modelEdits: () => ({
@@ -466,7 +466,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId,
-        shown: { [SOURCE]: expected([fact(91)], `branch:${BRANCH_ID}`), [TARGET]: [] },
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`), [TARGET]: [] },
       };
     },
   },
@@ -751,7 +751,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [SOURCE]: expected([fact(91)], `branch:${BRANCH_ID}`) },
+        shown: { [SOURCE]: expected([fact(91)], `draft:${DRAFT_ID}`) },
       };
     },
   },
@@ -842,7 +842,7 @@ const rows: Array<{
       return {
         store: h.store,
         threadId: run.threadId,
-        shown: { [TARGET]: expected([fact(101)], `branch:${BRANCH_ID}`) },
+        shown: { [TARGET]: expected([fact(101)], `draft:${DRAFT_ID}`) },
       };
     },
   },

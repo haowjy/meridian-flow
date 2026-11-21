@@ -1,8 +1,8 @@
 export * from "./agent-definition-revisions";
 export * from "./agent-threads";
 export * from "./billing";
-export * from "./branches";
 export * from "./content";
+export * from "./drafts";
 export * from "./imports";
 export * from "./mcp";
 export * from "./model-evidence";
@@ -18,9 +18,9 @@ export * from "./yjs";
 import * as agentDefinitionRevisions from "./agent-definition-revisions";
 import * as agentThreads from "./agent-threads";
 import * as billing from "./billing";
-import * as branches from "./branches";
 import * as content from "./content";
 import * as documentEdits from "./document-edits";
+import * as drafts from "./drafts";
 import * as imports from "./imports";
 import * as mcp from "./mcp";
 import * as modelEvidence from "./model-evidence";
@@ -40,7 +40,7 @@ export const schema = {
   ...content,
   ...imports,
   ...mcp,
-  ...branches,
+  ...drafts,
   ...agentThreads,
   ...threadAsks,
   ...treeNodes,

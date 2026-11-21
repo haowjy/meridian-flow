@@ -52,14 +52,7 @@ export function useSidebarUndo(projectId: string, version: TreeVersion) {
         pressing.current = true;
         const from = document.activeElement;
         const follow = from ? followFocusFrom(from) : null;
-        void undoLatest(
-          session,
-          source,
-          version.view,
-          `user:${accountId}`,
-          closed,
-          version.pendingText,
-        )
+        void undoLatest(session, source, version.view, `user:${accountId}`, closed)
           .then((outcome) => {
             const [node] = outcome.kind === "undone" ? outcome.nodes : [];
             if (node && follow) follow(() => entryRowOf(node));

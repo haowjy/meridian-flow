@@ -3,6 +3,7 @@
  * destination without asking the policy, and `createAllowAllFileAccess` confirms every grant; tests of
  * access use the real `createFileAccess`.
  */
+import type { DraftOwner } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -14,22 +15,34 @@ import {
   type FileGrant,
 } from "../domains/file-policy/index.js";
 import { runWithEditConfirmation } from "../shared/edit-confirmation.js";
-import { createTestWorkProjectionMutation } from "./work-projection.js";
+
+/** A draft destination with the owner naming the draft, which an agent's principal carries. */
+export type TestDestination =
+  | { kind: "live" }
+  | (Extract<FileDestination, { kind: "draft" }> & { owner: DraftOwner });
 
 export function testFileGrant(
-  destination: FileDestination = { kind: "live" },
+  given: TestDestination = { kind: "live" },
   documentId = "00000000-0000-4000-8000-0000000000f1",
 ): FileGrant<"edit"> {
+  const destination: FileDestination =
+    given.kind === "draft"
+      ? { kind: "draft", draftId: given.draftId, ownerHandle: given.ownerHandle }
+      : given;
   const target = { kind: "document", documentId: documentId as DocumentId } as const;
   return {
     principal: {
       accountId: "test-user" as UserId,
-      ...(destination.kind === "draft"
+      ...(given.kind === "draft"
         ? {
             agent: {
               projectId: "test-project" as ProjectId,
               chain: [],
-              branchOwner: { owner: destination.owner, handle: destination.ownerHandle },
+              draftOwner: {
+                owner: given.owner,
+                draftId: given.draftId,
+                handle: given.ownerHandle,
+              },
               writeMode: "draft" as const,
             },
           }
@@ -45,11 +58,12 @@ export function testFileGrant(
       scheme: "manuscript",
       self: { kind: "document", id: documentId as DocumentId },
       ancestors: [],
-      ...(destination.kind === "draft"
+      ...(given.kind === "draft"
         ? {
-            branchOwner: {
-              owner: destination.owner,
-              handle: destination.ownerHandle,
+            draftOwner: {
+              draftId: given.draftId,
+              owner: given.owner,
+              handle: given.ownerHandle,
               isNoWork: false,
               archived: false,
               deleted: false,
@@ -67,7 +81,7 @@ export function testFileGrant(
 /** The real policy over Postgres facts, for routes and readers whose access is under test. */
 export function drizzleFileAccess(db: Database): FileAccess {
   return createFileAccess({
-    facts: createDrizzleFileFacts(db, createTestWorkProjectionMutation(db)),
+    facts: createDrizzleFileFacts(db),
     grants: createOwnerFileGrants(),
     readAgentChain: async () => {
       throw new Error("This test's file access has no agent chains");

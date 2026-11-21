@@ -15,7 +15,7 @@ built-ins take the default `edit`.
 
 A deleted Work's files read until its purge, and a write to one is limited by `work_deleted`. The
 term order hides existence: a person who can't read the file meets the person term first, so they
-get `not_found`. Transports read `reason` and nothing else: HTTP answers 404 `work_deleted`, branch
+get `not_found`. Transports read `reason` and nothing else: HTTP answers 404 `work_deleted`, draft
 review names it, and to the model the file reads as gone (`isPermissionDenial` leaves it out, and a
 text edit is returned with `work_deleted`).
 
@@ -27,17 +27,17 @@ first, never from a draft's view, or a draft move of a file out of a `deny` fold
 the source's fixed rule (`FIXED_AI_ACCESS`, empty), then `auto-apply`. `ask` on a source that can't
 hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the review it asks for.
 
-- **Destination.** `Principal.agent` always has `branchOwner` and `writeMode`. A write goes to a draft
+- **Destination.** `Principal.agent` always has `draftOwner` and `writeMode`. A write goes to a draft
   when the chat's mode is draft or the place asks, and the source is drafted; otherwise live.
   `destinationFor` decides it per document from facts; `sourceDestination` decides it per source for
   creates and tree views, from the fixed rule alone. Everything that has a document (revisions,
   reads, lists) reads the destination from its decision or grant, never from the chat's mode. A stored per-folder setting needs creates to ask per path, and `placementFor`
   (context) must change before then.
 - **Facts follow the destination.** An auto-apply chat loads live facts. Only a place whose
-  destination is a draft loads the branch's view, `branchOwner` lifecycle and locks (`loadFor`,
-  `loadListFor` in `file-access.ts`), and a document only the branch holds is found there. Once live facts say draft, the branch's
-  facts are the answer, null included: a document the branch dropped is `not_found`. Draft mode
-  loads the branch's view for every document, as before.
+  destination is a draft loads the draft's view, `draftOwner` lifecycle and locks (`loadFor`,
+  `loadListFor` in `file-access.ts`), and a document only the draft holds is found there. Once live facts say draft, the draft's
+  facts are the answer, null included: a document the draft dropped is `not_found`. Draft mode
+  loads the draft's view for every document, as before.
 - **Deny.** A `deny` place caps an agent at `read` with `ai_access_denied`, a `permission_denied`
   refusal that no retry or re-read helps. A person never meets it.
 - **Agents levels (`agents://`, `user://.agents/`)** are ordinary places: no term in the policy
@@ -50,7 +50,7 @@ hold a draft (`isDrafted`) reads as `deny`, since landing it live would skip the
   destination: that waits for the executor's rerun of a failed effect).
 
 **A moved owner restarts the write; it never refuses.** The seam passes `confirmEdit` what it locked.
-A document whose owner (or branch owner) is outside that set, because it moved after the grants were
+A document whose owner (or draft owner) is outside that set, because it moved after the grants were
 minted, throws `TreeOwnersMoved` naming the owners. The restart belongs to whoever owns the transaction
 (`untilOwnersHold`, the one restart rule): `runCommand` wraps its whole transaction in it, so the
 attempt rolls back, releasing every lock it took, before the next one starts with the learned owners
@@ -61,7 +61,7 @@ runs again. `runWithEditGrants` restarts only when it has no transaction around 
 seam opens its own). Each restart adds an owner and a project has finitely many, so it ends.
 A missing document or a denied level still answers `not_found` or the denial.
 
-A branch move changes the document's presented `scheme`, not its physical
+A draft move changes the document's presented `scheme`, not its physical
 `contentScheme`. File policy routes content writes from the physical scheme
 until Apply moves the live identity: Scratch content stays live behind a
 proposed project path, while project content stays drafted behind a proposed
@@ -76,8 +76,8 @@ unchanged, so words stay read-only.
 
 A `restore` target reads through Trash, so an undo by an old path is authorized where the
 document actually returns, not at the path it was shown at. A document in no view has no
-source and no facts: a restore of a discarded create is refused here, and the server's own
-Undo restores it.
+source and no facts: a restore of one (a purged Work's create) is refused here. A press's
+Discard puts the Work's created documents in live's Trash, so they restore as any other.
 
 Facts come from the view's relations (`TreeReader.lineages`): the source and folders the view
 places the document in, and `deleted` from live's Trash or the source. `survivingDraft` is a
@@ -102,7 +102,7 @@ remaining exceptions are tracked in [collab TODO](../../collab/.context/TODO.md)
 
 Measure statement count and peak connection usage with the current fixtures
 before narrowing confirmation, adding a cache, or changing lock ownership. A
-cache must not hide Work switches or branch-view changes.
+cache must not hide Work switches or draft-view changes.
 
 [file-policy]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/access.md
 [agent-permission]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/documents/access.md#agent-permission-is-separate-from-tools

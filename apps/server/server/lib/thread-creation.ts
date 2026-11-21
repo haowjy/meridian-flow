@@ -3,6 +3,7 @@
  * asserting ownership and resolving its work attachment. App-layer glue tying
  * the projects + threads + packages domains together.
  */
+import type { DraftId } from "@meridian/contracts";
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
@@ -61,6 +62,8 @@ export interface CreateThreadForProjectArgs {
   userId: string;
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
+  /** The lineage's draft, minted by the client beside `id`; the insert mints one if omitted. */
+  draftId?: DraftId;
   title?: string | null;
   agentSelection: AgentSelection;
   /** Explicit work assignment from the request, if any. */
@@ -126,6 +129,7 @@ export async function createThreadForProject(
         );
         return deps.threads.create({
           id: args.id,
+          ...(args.draftId ? { draftId: args.draftId } : {}),
           userId: args.userId,
           projectId: args.projectId,
           title: args.title ?? null,

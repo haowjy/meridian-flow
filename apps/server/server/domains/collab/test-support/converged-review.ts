@@ -1,7 +1,7 @@
 /**
- * Review reads that first wait for the draft-effect projection to catch up. In production a
- * draft's review membership follows an append within a second (design §3); a test that
- * asserts membership right after a write reads through this instead of sleeping.
+ * Review reads that first run the document derivations, which count each Work's suggestions. In
+ * production they follow a write within seconds; a test that asserts membership right after a
+ * write reads through this instead of sleeping.
  */
 import type { CollabDomain } from "../contracts.js";
 
@@ -20,7 +20,9 @@ export function settleBefore<T extends object>(target: T, flush: () => Promise<v
 }
 
 export function convergedReview<C extends CollabDomain>(collab: C): C {
-  const flush = () => collab.draftEffects.flush();
+  const flush = async () => {
+    await collab.documentDerivations.sweep();
+  };
   settleBefore(collab.draftReview, flush);
   return collab;
 }

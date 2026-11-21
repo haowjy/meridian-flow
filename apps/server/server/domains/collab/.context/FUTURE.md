@@ -1,15 +1,7 @@
 # collab FUTURE
 
-These are deferred improvements, not current contracts. Preserve the existing
-draft row ordering and live authority fences while pursuing them.
-
-## Intent-aware manifest command
-
-Unify manifest reconciliation and mutation behind one intent-aware command in
-`composition.ts` and `adapters/drizzle-drafts.ts`. The command must
-distinguish a legacy raw row from a not-yet-recorded draft create without
-using caller ordering as domain semantics. `domain/ports/work-branch-pending-store.ts`
-remains the independent pending-review authority.
+These are deferred improvements, not current contracts. Preserve the live authority fences
+while pursuing them.
 
 ## Restoring an earlier version
 
@@ -20,9 +12,10 @@ feature's history: each one deletes the one it supersedes (a 10,000-word chapter
 rewritten ten times kept 21 full states, 120 MiB). A version the writer can go back
 to is an explicit checkpoint (`createCheckpoint`, whatever its reason), which no
 retention touches; the journal keeps every row, so any earlier state can also be
-rebuilt from the seed and the rows. Restore from an explicit checkpoint: a
-background one can be deleted between `getCheckpoint` and `replaceGeneration`,
-which then refuses with `checkpoint_incomplete`.
+rebuilt from the seed and the rows. Restore writes the version's Live text onto the
+document as it stands, aligned so unchanged text keeps its items: open tabs, offline
+copies and the AI merge into it like any edit. Each draft's pending suggestions stay, except
+inside a block the version lacks: Live deleting a block takes them with it, as in the editor.
 `seed_live_snapshot` can't reuse a checkpoint yet: nothing resolves one by exact
 position with attribution.
 
@@ -32,9 +25,6 @@ position with attribution.
 exists) would delete those rows, and undo, revert and Apply need the bytes afterwards. Dropping
 the column first needs a retention floor for every receipted origin, one resolver
 for all its readers, and a failure path for a missing origin.
-
-Folded `draft_write_journal` rows can't be pruned either:
-`listConcurrentJournalRows` feeds attribution and reads from `after: 0`.
 
 ## Large-history recovery
 
@@ -53,7 +43,7 @@ which persistence or lock boundary dominates.
 `domain/provenance.ts` now indexes incoming structs for both admission walks
 (#975). Measure ordinary typing with the memoized general walk alone; if it
 is sufficient, delete `isPlainProseFastPath` and its duplicate root/anchor and
-delete checks. Preserve committed-prefix validation under the draft row hold.
+delete checks.
 
 ## Turn tree lines: a move out and back reads as a position change
 

@@ -60,7 +60,7 @@ export async function handleCommandResolve(
   return { commandId, outcome: found.outcome };
 }
 
-function throwCommandConflict(): never {
+export function throwCommandConflict(): never {
   return throwHttpInterrupt(
     meridianErrorFromSystem(
       COMMAND_CONFLICT_CODE,

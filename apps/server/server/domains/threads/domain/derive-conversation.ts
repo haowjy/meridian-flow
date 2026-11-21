@@ -1,4 +1,5 @@
 /** Domain operations for explicit agent handoff/fork into a new primary thread. */
+import type { DraftId } from "@meridian/contracts";
 import type { AgentSelection } from "@meridian/contracts/agents";
 import { formatParsedContextUri } from "@meridian/contracts/context-uri";
 import type { Thread } from "@meridian/contracts/protocol";
@@ -106,6 +107,8 @@ export async function handoffThreadAgent(
   deps: ThreadAgentSwapDeps & { handoffBriefs: HandoffBriefLauncher },
   input: {
     id: string;
+    /** The new lineage's draft, minted by the client beside `id`. */
+    draftId?: DraftId;
     threadId: string;
     userId: string;
     originTurnId: string;
@@ -158,6 +161,7 @@ export async function handoffThreadAgent(
         source: owner,
         initialPromptBakeId: inheritedBake?.id ?? null,
         originType: "handoff",
+        ...(input.draftId ? { draftId: input.draftId } : {}),
         overrides: input.overrides,
         originTurnId: cutoff.turn.id as TurnId,
         title: `Handoff from ${lockedSource.title ?? "thread"}`,

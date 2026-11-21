@@ -3,13 +3,13 @@
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
+  dropUnseenContent,
   type JournalBatchAppendEntry,
   type PersistedUpdate,
   type UpdateJournal,
   type UpdateMeta,
 } from "@meridian/agent-edit/integration";
 import { InMemoryAgentEditJournal } from "@meridian/agent-edit/test-support";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import * as Y from "yjs";
 import { KeyedMutex } from "../../../../shared/keyed-mutex.js";
 import type { CapturedCheckpointCut } from "../../domain/checkpoint-cut.js";
@@ -68,7 +68,7 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   override async read(docId: string, opts?: Parameters<UpdateJournal["read"]>[1]) {
     return {
       ...(await super.read(docId, opts)),
-      authority: { authorityId: docId, generation: 1n },
+      authority: { authorityId: docId },
     };
   }
 
@@ -83,22 +83,30 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   }
 
   async captureCheckpoint(docId: string, authority: CheckpointAuthority) {
-    if (authority.authorityId !== docId || authority.generation !== 1n) return null;
+    if (authority.authorityId !== docId) return null;
     // Copy synchronously so later writers cannot change this captured range.
     const entry = this.debugEntry(docId);
     const base = entry?.checkpoint;
     const updates = (entry?.updates ?? []).filter((row) => row.seq > (base?.upToSeq ?? 0));
     const bytes = base?.state.slice() ?? null;
     const suffix = updates.map((row) => row.update.slice());
-    let state: Promise<Uint8Array> | undefined;
+    let state: ReturnType<typeof materializeCheckpoint> | undefined;
     return mintCheckpointCut({
       documentId: docId,
       authority: Object.freeze({ ...authority }),
       upToSeq: updates.at(-1)?.seq ?? base?.upToSeq ?? 0,
       validateInputs: async () => {},
       async materializeState() {
-        state ??= materializeCheckpoint(bytes, suffix);
-        return (await state).slice();
+        state ??= materializeCheckpoint(bytes, suffix, async () => []);
+        return (await state).state.slice();
+      },
+      async history() {
+        state ??= materializeCheckpoint(bytes, suffix, async () => []);
+        const { state: stored, structs, contentBytes } = await state;
+        return { bytes: stored.byteLength, structs, contentBytes };
+      },
+      async dropUnseenContent(document) {
+        dropUnseenContent(document, []);
       },
     });
   }
@@ -182,8 +190,8 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
   function ensureEmpty(docId: string): Y.Doc {
     const existing = docs.get(docId);
     if (existing) return existing;
-    const doc = createCollabYDoc({ gc: false });
-    bindDocumentAuthority(doc, { authorityId: docId as never, generation: 1n });
+    const doc = new Y.Doc({ gc: false });
+    bindDocumentAuthority(doc, { authorityId: docId as never });
     docs.set(docId, doc);
     return doc;
   }
@@ -202,10 +210,10 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
   }
 
   async function roomCopy(docId: string): Promise<{ doc: Y.Doc; room: string | null }> {
-    const copy = createCollabYDoc({ gc: false });
+    const copy = new Y.Doc({ gc: false });
     Y.applyUpdate(copy, Y.encodeStateAsUpdate(requireDoc(docId)));
     await applyPersisted(docId, copy);
-    bindDocumentAuthority(copy, { authorityId: docId as never, generation: 1n });
+    bindDocumentAuthority(copy, { authorityId: docId as never });
     return { doc: copy, room: liveRoomFor(docId, copy) };
   }
 

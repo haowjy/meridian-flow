@@ -1,14 +1,14 @@
 /**
  * Hunks: what changed between two token sides, as the writer reads it.
  *
- * `align` finds token-level hunks; this file adds whitespace-only differences, classifies hunks, and
- * runs the semantic cleanup that turns word salad into one replacement. Review uses the cleaned
- * hunks; the rebase merge uses `align`'s uncleaned ones to keep word precision.
+ * `align` finds token-level hunks; this file adds whitespace-only differences and runs the semantic
+ * cleanup that turns word salad into one replacement. Composing an edit's changes uses the cleaned
+ * hunks; the merge uses `align`'s uncleaned ones to keep word precision.
  */
 import type { Node as PMNode } from "prosemirror-model";
 import { type Alignment, align } from "./align.js";
 import { correspond } from "./correspond.js";
-import { buildSide, coreKey, type Side, type Tok } from "./tokens.js";
+import { buildSide, type Side, type Tok } from "./tokens.js";
 
 export interface Hunk {
   from: number; // base token range replaced
@@ -18,9 +18,6 @@ export interface Hunk {
   ins: Tok[]; // the payload: all of sfrom..sto, or what a filter kept of it
   sidx?: number[]; // side index of each payload token once filtered (merge only)
 }
-
-/** "format" changes marks or a block's type or attributes, "whitespace" only spacing, "text" anything else. */
-export type HunkKind = "text" | "format" | "whitespace";
 
 /** Base token -> side token outside hunks, else -1. */
 export function posMap(n: number, hunks: readonly Hunk[]): Int32Array {
@@ -63,29 +60,6 @@ function whitespaceHunks(B: Side, S: Side, al: Alignment): Hunk[] {
     }
   }
   return out;
-}
-
-export function hunkKind(bt: readonly Tok[], h: Hunk): HunkKind {
-  const n = h.to - h.from;
-  if (!n || n !== h.ins.length) return "text";
-  let differs = false;
-  for (let k = 0; k < n; k++) {
-    const x = bt[h.from + k];
-    const y = h.ins[k];
-    if (x.kind === "block" && y.kind === "block") {
-      differs ||= x.key !== y.key;
-      continue;
-    }
-    // A rule, figure or table that kept its content and changed its attributes is a format change.
-    if (x.kind === "atom" && y.kind === "atom" && x.node.type === y.node.type) {
-      if (!x.node.content.eq(y.node.content)) return "text";
-      differs ||= x.key !== y.key;
-      continue;
-    }
-    if (coreKey(x) !== coreKey(y) || x.kind !== y.kind) return "text";
-    differs ||= x.key !== y.key;
-  }
-  return differs ? "format" : "whitespace";
 }
 
 /**

@@ -51,7 +51,7 @@ tree's own drag is [Row selection and drag](../../../../../../../../docs/qa/row-
    too. Then rebind the chat to another Work (`./mf api PUT /api/threads/<chat>/work --data
    '{"workId":"<other>"}'`) and copy all three again: each still holds the first Work's draft, never the
    chat's current Work's or the live text. With the ask menu open on the change row, Discard the Work's
-   draft (`POST …/works/<w>/branches/discard`) and choose Copy: the live text is copied, with no
+   draft (a Discard press, `POST …/press`) and choose Copy: the live text is copied, with no
    refusal and no note.
 8. **Uploads.** Open the chat's Files menu and drag `notes` to a folder: it asks; Copy leaves the upload in
    the menu. Drag it onto the Uploads heading: no drop, and the hint says files move or copy out of Uploads,

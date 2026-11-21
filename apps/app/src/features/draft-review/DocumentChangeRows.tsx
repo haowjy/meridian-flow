@@ -1,18 +1,4 @@
-/**
- * DocumentChangeRows — one draft's changes as rows, from any `DraftChangesView`:
- * the open review's (`useReviewChanges`) or an unopened draft's
- * (`useDraftView`). Loading shows a skeleton, an unreadable room shows
- * Retry (never "no changes"), a ready draft shows its rows in document order
- * and pulses a change that arrived while the writer was looking.
- *
- * Presentational: the rows never decide what a click means. `onSelect` is the
- * caller's (focus the change in the manuscript, or open the draft's review at
- * it). The rows stay mounted while commands run, so a change that arrives
- * meanwhile still pulses. `touch` raises the rows and buttons to 44px.
- */
-import { t } from "@lingui/core/macro";
 import { type ReactNode, useMemo } from "react";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type DraftChangesView, isWholeDocumentChange } from "./draft-changes";
 import { ReviewChangeRow } from "./ReviewChangeRow";
@@ -50,15 +36,6 @@ export function DocumentChangeRows({
         <Skeleton className="h-4 w-full" />
         <Skeleton className="h-4 w-4/5" />
       </div>
-    );
-  }
-  if (view.status === "error") {
-    return (
-      <InlineErrorRow
-        message={t`Changes couldn’t load`}
-        onRetry={view.retry}
-        actionLabel={t`Retry changes`}
-      />
     );
   }
   return (

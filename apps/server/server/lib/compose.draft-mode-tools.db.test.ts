@@ -467,9 +467,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(copied.isError).toBeFalsy();
       const [copy] = await db
         .select({ metadata: schema.documents.metadata })
-        .from(schema.branchTreeNodes)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.branchTreeNodes.id))
-        .where(eq(schema.branchTreeNodes.name, "gate-copy"));
+        .from(schema.draftTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.draftTreeNodes.id))
+        .where(eq(schema.draftTreeNodes.name, "gate-copy"));
       expect(copy?.metadata).toMatchObject({
         properties,
         aliases: ["Gate"],
@@ -500,8 +500,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     // a binary copy duplicates the stored object; in a draft-mode Work it
-    // is the branch's own hidden row, never shared and not live.
-    it("copies a binary file into the branch as its own stored object", async () => {
+    // is the draft's own hidden row, never shared and not live.
+    it("copies a binary file into the draft as its own stored object", async () => {
       const runtime = await runtimes.compose();
       const bytes = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55]);
       const put = await runtime.ports.objectStore.put(
@@ -532,12 +532,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         destination: "draft",
         draftWork: "w1",
       });
-      // A drafted copy is a record of the Work's branch with its own stored object.
+      // A drafted copy is a record of the Work's draft with its own stored object.
       const [copy] = await db
         .select({ storageUrl: schema.documents.storageUrl })
-        .from(schema.branchTreeNodes)
-        .innerJoin(schema.documents, eq(schema.documents.id, schema.branchTreeNodes.id))
-        .where(eq(schema.branchTreeNodes.name, "scan-copy.pdf"));
+        .from(schema.draftTreeNodes)
+        .innerJoin(schema.documents, eq(schema.documents.id, schema.draftTreeNodes.id))
+        .where(eq(schema.draftTreeNodes.name, "scan-copy.pdf"));
       expect(copy?.storageUrl).not.toBe(put.value.storageUrl);
       await expect(
         runtime.ports.contextPorts

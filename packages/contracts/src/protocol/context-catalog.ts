@@ -1,7 +1,14 @@
 /** The server's listing of a project's sources and files (what availability answers with), and the hints on a project's subscription. */
-import type { DraftOwnerKey } from "../branches/owner.js";
 import type { CanonicalContextUri } from "../context-uri.js";
-import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
+import type {
+  ContextSourceId,
+  DocumentId,
+  DraftId,
+  FolderId,
+  ProjectId,
+  UserId,
+  WorkId,
+} from "../ids.js";
 import type { ContextSourcesHint } from "./context-sources.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 import type { DocumentFileType } from "./http-types.js";
@@ -92,15 +99,14 @@ export type CatalogFileClassification = { extension: string } & (
 export type CatalogFileEntry = CatalogFileEntryBase & CatalogFileClassification;
 
 /**
- * A draft owner's list is stale: its pending draft count moved, or the owner's lifecycle changed
- * (a Work archived, unarchived, deleted, restored or purged; a lineage that lost or regained its
- * last live chat). For a Work, its row in the Works list is stale with it. Truth-free: it says to
+ * A draft's list is stale: its pending count or records moved. The Work naming it shows its
+ * count, so its row in the Works list is stale with it. Truth-free: it says to
  * ask again, never what the answer is. It rides the per-project subscription.
  */
-export type DraftOwnerHint = {
-  type: "draft-owner-hint";
+export type DraftHint = {
+  type: "draft-hint";
   projectId: ProjectId;
-  owner: DraftOwnerKey;
+  draft: DraftId;
 };
 
 /**
@@ -132,7 +138,7 @@ export type McpConnectionsHint = { type: "mcp-connections-hint"; projectId: Proj
 
 /** What a project's subscription receives. */
 export type CatalogChannelMessage =
-  | DraftOwnerHint
+  | DraftHint
   | ProjectChatsHint
   | ContextSourcesHint
   | AgentFilesHint

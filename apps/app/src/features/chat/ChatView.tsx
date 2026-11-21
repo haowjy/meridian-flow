@@ -17,7 +17,7 @@
  */
 
 import { t } from "@lingui/core/macro";
-import type { ProjectId, UserId } from "@meridian/contracts";
+import { newDraftId, type ProjectId, type UserId } from "@meridian/contracts";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import {
   answeredControlIds,
@@ -579,6 +579,7 @@ export function ChatView({
       {
         ...base,
         kind: "fork",
+        draftId: activeThread.draftId,
         originTurnId,
         agent: null,
         agentName: activeThread.agentName,
@@ -611,6 +612,7 @@ export function ChatView({
       {
         ...base,
         kind: "handoff",
+        draftId: newDraftId(),
         originTurnId,
         agent: choice.agent,
         agentName: choice.agent.name,

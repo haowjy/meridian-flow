@@ -62,6 +62,11 @@ export const threadSchema = z.object({
    * `runs/<rootThreadId>/input/…`.
    */
   rootThreadId: z.string().min(1),
+  /**
+   * The lineage's draft, named by the root chat: what this chat drafts into while it has no
+   * named Work (a named Work's chats draft into the Work's `draftId`).
+   */
+  draftId: z.string().min(1),
   spawnDepth: z.number().int().nonnegative(),
   spawnStatus: z.enum(["running", "succeeded", "failed", "cancelled"]).nullable(),
   totalCostUsd: z.string(),

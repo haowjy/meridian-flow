@@ -1,0 +1,90 @@
+/* Text the view does not contain stays in the document but takes no space. */
+.meridian-editor .sug-hidden {
+  display: none;
+}
+
+/* The view's own deletions read as the draft review's removed text (inline-review.css), but they
+   are the document's text, not a widget: the writer can select and edit them. */
+.meridian-editor .ProseMirror .sug-del {
+  color: var(--color-destructive);
+  background: color-mix(in oklab, var(--color-destructive) 12%, transparent);
+  border-radius: var(--radius-sm);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: color-mix(in oklab, currentColor 70%, transparent);
+}
+.meridian-editor .ProseMirror .sug-del.sug-focused {
+  background: color-mix(in oklab, var(--color-destructive) 22%, transparent);
+}
+
+/* A Live block the view removes: its text is struck; the bar marks the break that goes too. */
+.meridian-editor .sug-del-block {
+  box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--color-destructive) 50%, transparent);
+}
+.meridian-editor .sug-del-block.sug-focused {
+  box-shadow: inset 3px 0 0 0 var(--color-destructive);
+}
+
+.meridian-editor .meridian-comment {
+  box-shadow: inset 0 -2px 0 0 color-mix(in oklab, var(--color-warning) 60%, transparent);
+}
+
+/* A pending change to a block's attributes: the element is Live's, so its proposed heading level
+   is drawn here, from `data-view-level` (0 is body text); its proposed alignment is the
+   decoration's inline style. */
+.meridian-editor .sug-attrs {
+  box-shadow: inset 3px 0 0 0 color-mix(in oklab, var(--color-primary) 40%, transparent);
+}
+.meridian-editor [data-view-level] {
+  font-weight: 600;
+}
+.meridian-editor [data-view-level="0"] {
+  font-size: 1em;
+  font-weight: inherit;
+}
+.meridian-editor [data-view-level="1"] {
+  font-size: 1.875em;
+  line-height: 1.25;
+}
+.meridian-editor [data-view-level="2"] {
+  font-size: 1.375em;
+  line-height: 1.3;
+}
+.meridian-editor [data-view-level="3"] {
+  font-size: 1.25em;
+}
+.meridian-editor [data-view-level="4"] {
+  font-size: 1.125em;
+}
+.meridian-editor :is([data-view-level="5"], [data-view-level="6"]) {
+  font-size: 1.0625em;
+}
+
+/* Changes not marked (`data-suggestion-marks="off"`): the view reads as if applied. Its additions
+   lose their tint, its deletions and the blocks it removes leave the page. One attribute, so
+   turning marks off and on redraws no decoration. */
+.meridian-editor .ProseMirror[data-suggestion-marks="off"] .meridian-review-added {
+  --review-tint: transparent;
+  --review-border: transparent;
+  --review-emphasis: transparent;
+  --review-ring: transparent;
+}
+.meridian-editor .ProseMirror[data-suggestion-marks="off"] :is(.sug-del, .sug-del-block) {
+  display: none;
+}
+.meridian-editor .ProseMirror[data-suggestion-marks="off"] .sug-attrs {
+  box-shadow: none;
+}
+@media (forced-colors: active) {
+  /* The second selector only lifts this rule above inline-review.css's frame of an emphasized
+     added block, which loads later. */
+  .meridian-editor
+    .ProseMirror[data-suggestion-marks="off"]
+    :is(
+      .meridian-review-added,
+      .meridian-review-block.meridian-review-added.meridian-review-emphasized
+    ) {
+    text-decoration: none;
+    outline: none;
+  }
+}

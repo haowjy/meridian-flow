@@ -153,8 +153,8 @@ it("keeps a review address out of the live view and repairs only its review addr
       // A review address never admits the live document.
       expect(onAdmission).not.toHaveBeenCalled();
       expect(replaceEntry).toHaveBeenCalledOnce();
-      // A review address names its draft's owner itself, so a copy opens the same draft.
-      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?owner=work%3A${noWorkId}&item=draft-1`);
+      // The review's item names its draft, so a copy of the address opens the same draft.
+      expect(replaceEntry.mock.calls[0]?.[0]).toBe(`${href}?item=draft-1`);
     },
   );
   navigation.dispose();

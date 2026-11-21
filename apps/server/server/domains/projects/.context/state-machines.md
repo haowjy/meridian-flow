@@ -21,9 +21,9 @@ stateDiagram-v2
 
 - **Every lifecycle write locks the Work row and publishes `{ workId }` through
   `FileAccessChanges` in the same transaction.** That publication is what makes the Work's
-  notes, uploads and draft rooms reconnect at their new access level; without it an archived Work
+  notes, uploads and the documents only it has reconnect at their new access level; without it an archived Work
   stays writable in tabs that are already open. Purge included, each also wakes the project's
-  browsers with the Work's `draft-owner-hint` after commit (`WorkProjectionMutation.lifecycleChanged`),
+  browsers with the Work's `draft-hint` after commit (`WorkProjectionMutation.lifecycleChanged`),
   the hint a moved pending count sends, so another device's Works list and picker follow at once.
 - **Delete marks what it took.** The Work's primary chats and results get `deletedByWorkId`, and
   restore clears exactly the rows carrying that mark. The Work's sources are not marked: a deleted
@@ -53,7 +53,8 @@ stateDiagram-v2
   handle, and a name that matches two Works resolves to neither in the model's lookups
   (`context/owner-lookup.ts`), which answer with every handle (the lookup caps at 5 and says "5 or
   more" when full). Turn Undo/Redo checks handles only, never names.
-- **Branches and drafts outlive the delete** until purge, so restore finds them.
+- **Drafts and suggestions outlive the delete** until purge, so restore finds them; purge
+  discards the tree records and rejects the suggestions for good.
 - No Work, the project's Work for chats outside any task, is never archived (the
   `works_no_work_not_archived` check), and the repository refuses to change it
   (`WorkLockedError`, answered 400 `work_locked`).

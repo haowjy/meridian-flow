@@ -9,7 +9,7 @@ import { ProvenanceMaterializationError } from "../domain/provenance.js";
 
 export function parseAttributionManifest(
   value: unknown,
-  identity: Pick<AttributionManifestV1, "authorityId" | "generation" | "checkpointId">,
+  identity: Pick<AttributionManifestV1, "authorityId" | "checkpointId">,
 ): AttributionManifestV1 {
   if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.attributions)) {
     throw new ProvenanceMaterializationError("Checkpoint attribution manifest is unavailable");

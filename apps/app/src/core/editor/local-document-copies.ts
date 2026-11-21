@@ -1,15 +1,12 @@
 /**
- * This browser's local copies of one account's documents, live and draft: the IndexedDB databases
+ * This browser's local copies of one account's documents: the IndexedDB databases
  * a session persists a document into, named by the account and the document id. The registry
  * holds one inventory per account, whoever has a view of the document: a copy is found and
  * deleted by its document id.
  *
  * A copy is deleted only on a fact that is final (`list-removal-observer`: the node's purge, its
  * Work or chat purged, the account removed from the project) or when the account signs out here.
- * A session closing, a draft's Discard or an access the account lost for now never deletes one: a
- * closed draft's copy is dropped with one pill when its draft closes and kept, because Undo Discard reopens the same draft and replays the copy into it; an open
- * draft's copy is delivered to the draft by opening its room. A copy with no mark is not swept,
- * since it proves nothing undelivered.
+ * A session closing or an access the account lost for now never deletes one.
  *
  * One Web Lock per database keeps a tab from deleting a database another tab has open: a session
  * holds it shared while it lives, a deletion takes it exclusive. A deletion that finds a hold
@@ -38,7 +35,6 @@ import type { Ranges } from "./item-ranges";
 import { beyondMark, SERVER_MARK_KEY } from "./server-mark";
 
 const LIVE_PREFIX = `meridian:document:${collabSchemaKeyTag()}:live/`;
-const DRAFT_PREFIX = `meridian:document:${collabSchemaKeyTag()}:draft/`;
 const HOLD_WAIT_MS = 10_000;
 
 /** `#` is always encoded in the parts of a key, so it only ever starts an incarnation number. */
@@ -58,18 +54,7 @@ export function documentSessionPersistenceKey(accountId: AccountId, documentId: 
   return `${LIVE_PREFIX}${encodeURIComponent(accountId)}/${encodeURIComponent(documentId)}`;
 }
 
-/** A draft room's copy key: under its account and the document it drafts, so a purge of the document finds it. */
-export function draftRoomPersistenceKey(
-  accountId: AccountId,
-  documentId: DocumentId,
-  roomKey: string,
-) {
-  return `${DRAFT_PREFIX}${encodeURIComponent(accountId)}/${encodeURIComponent(documentId)}/${encodeURIComponent(roomKey)}`;
-}
-
 const POINTER_PREFIX = "meridian:copy-incarnation:";
-/** Set once the start sweep has settled a draft's copy; a session opening the copy clears it. */
-const SWEPT_PREFIX = "meridian:copy-swept:";
 /** Opens the database `name` if it exists; null when it does not, and none is created. */
 function openExisting(idb: IDBFactory, name: string): Promise<IDBDatabase | null> {
   return new Promise((resolve, reject) => {
@@ -102,14 +87,10 @@ export type CopyHold = { release(): void };
 
 /** The document a database name belongs to, for one account; null for another account's or another kind of database. */
 function documentOf(name: string, accountId: AccountId): DocumentId | null {
-  for (const prefix of [LIVE_PREFIX, DRAFT_PREFIX]) {
-    const head = `${prefix}${encodeURIComponent(accountId)}/`;
-    if (name.startsWith(head))
-      return decodeURIComponent(
-        name.slice(head.length).split("/")[0]?.split("#")[0] ?? "",
-      ) as DocumentId;
-  }
-  return null;
+  const head = `${LIVE_PREFIX}${encodeURIComponent(accountId)}/`;
+  return name.startsWith(head)
+    ? (decodeURIComponent(name.slice(head.length).split("/")[0]?.split("#")[0] ?? "") as DocumentId)
+    : null;
 }
 
 const NO_MARK = Y.encodeStateVector(new Map());
@@ -256,17 +237,8 @@ export class LocalDocumentCopies {
     return () => this.observers.delete(observer);
   }
 
-  /**
-   * Shared hold while a session has the database `name` open; release it once the session is
-   * destroyed. A session may write to the copy again (a restore reopened its draft), so it is no
-   * longer swept.
-   */
+  /** Shared hold while a session has the database `name` open; release it once the session is destroyed. */
   async hold(name: string): Promise<CopyHold> {
-    this.pointers.removeItem(`${SWEPT_PREFIX}${name}`);
-    return this.acquire(name);
-  }
-
-  private async acquire(name: string): Promise<CopyHold> {
     const documentId = documentOf(name, this.accountId);
     if (documentId) {
       this.known = new Set([...(this.known ?? []), documentId]);
@@ -309,40 +281,12 @@ export class LocalDocumentCopies {
   async beyondMark(name: string, requireMark = false): Promise<BeyondMark | null> {
     const idb = this.idb;
     if (!idb) return null;
-    const hold = await this.acquire(name);
+    const hold = await this.hold(name);
     try {
       return markedBeyond(await load(idb, name), requireMark);
     } finally {
       hold.release();
     }
-  }
-
-  /** Records that the start sweep is done with the copy `name`; the next start skips it until a session opens it. */
-  markSwept(name: string): void {
-    this.pointers.setItem(`${SWEPT_PREFIX}${name}`, "1");
-  }
-
-  /** Whether another tab has the database `name` open: its session holds the lock shared while it lives. */
-  async heldByAnotherTab(name: string): Promise<boolean> {
-    if (!this.locks) return false;
-    return this.locks.request(
-      this.lockName(name),
-      { mode: "exclusive", ifAvailable: true },
-      (lock) => lock === null,
-    );
-  }
-
-  /** The names of this account's draft copies (every incarnation) the start sweep has not handled, with the draft room and document each belongs to. */
-  async unsweptDraftCopies(): Promise<{ name: string; roomKey: string; documentId: DocumentId }[]> {
-    const head = `${DRAFT_PREFIX}${encodeURIComponent(this.accountId)}/`;
-    return (await this.names()).flatMap((name) => {
-      if (!name.startsWith(head) || this.pointers.getItem(`${SWEPT_PREFIX}${name}`)) return [];
-      const [, , roomKey] = parseName(name).key.slice(DRAFT_PREFIX.length).split("/");
-      const documentId = documentOf(name, this.accountId);
-      return roomKey && documentId
-        ? [{ name, roomKey: decodeURIComponent(roomKey), documentId }]
-        : [];
-    });
   }
 
   /**
@@ -359,8 +303,7 @@ export class LocalDocumentCopies {
       await Promise.all(
         names.map(async (name) => {
           const beyond = this.idb && markedBeyond(await load(this.idb, name));
-          // A draft copy was told when its draft closed.
-          if (beyond && !name.startsWith(DRAFT_PREFIX)) await drop(beyond);
+          if (beyond) await drop(beyond);
         }),
       );
       await this.deleteCopies(documentId, names);
@@ -418,7 +361,6 @@ export class LocalDocumentCopies {
   /** No copy of the document is left, so its pointers and its place in `known` go too. */
   private async deleteCopies(documentId: DocumentId, names: readonly string[]) {
     await Promise.all(names.map((name) => this.deleteDatabase(name)));
-    for (const name of names) this.pointers.removeItem(`${SWEPT_PREFIX}${name}`);
     for (const { key } of names.map(parseName)) this.pointers.removeItem(`${POINTER_PREFIX}${key}`);
     if (this.known?.delete(documentId)) this.publish();
   }
@@ -444,9 +386,8 @@ async function accountsWithCopies(idb: IDBFactory): Promise<AccountId[]> {
   const names = (await idb.databases?.()) ?? [];
   const accounts = new Set<AccountId>();
   for (const { name } of names) {
-    const prefix = [LIVE_PREFIX, DRAFT_PREFIX].find((each) => name?.startsWith(each));
-    if (!name || !prefix) continue;
-    const account = name.slice(prefix.length).split("/")[0];
+    if (!name?.startsWith(LIVE_PREFIX)) continue;
+    const account = name.slice(LIVE_PREFIX.length).split("/")[0];
     if (account) accounts.add(decodeURIComponent(account) as AccountId);
   }
   return [...accounts];

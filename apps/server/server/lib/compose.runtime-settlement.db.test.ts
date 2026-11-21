@@ -6,7 +6,7 @@
  */
 
 import { toolContentText } from "@meridian/contracts/threads";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { treeSeeder } from "../test-support/tree-seed.js";
@@ -15,9 +15,9 @@ const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TEST
 const DATABASE_URL = process.env.DATABASE_URL;
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
-  describe.skip("production-composed branch settlement (postgres)", () => {});
+  describe.skip("production-composed draft settlement (postgres)", () => {});
 } else {
-  describe("production-composed branch settlement (postgres)", async () => {
+  describe("production-composed draft settlement (postgres)", async () => {
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
@@ -62,10 +62,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         handle: "w1",
         defaultAiWriteMode: "direct",
       });
-      // The Work already has its branch, as if an earlier write ensured it (contract §2.5).
-      await db
-        .insert(schema.branches)
-        .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
       await db.insert(schema.contextSources).values({
         id: SOURCE_ID,
         projectId: PROJECT_ID,
@@ -132,7 +128,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("writes a No Work draft onto a branch keyed by the chat's lineage", async () => {
+    it("writes a No Work draft onto a draft keyed by the chat's lineage", async () => {
       await db.insert(schema.works).values({
         id: NO_WORK_ID,
         projectId: PROJECT_ID,
@@ -202,22 +198,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
       expect(live.ok && live.value.trim()).toBe("Writer live content.");
-      const drafts = await db
-        .select({
-          documentId: schema.documentDrafts.documentId,
-          workId: schema.branches.originWorkId,
-          rootThreadId: schema.branches.originRootThreadId,
-        })
-        .from(schema.documentDrafts)
-        .innerJoin(schema.branches, eq(schema.branches.id, schema.documentDrafts.branchId))
-        .where(
-          and(
-            eq(schema.documentDrafts.kind, "work_draft"),
-            eq(schema.documentDrafts.documentId, DOC_ID),
-          ),
-        );
-      // A chat with no Work drafts per lineage, not on the shared No Work row.
-      expect(drafts).toEqual([{ documentId: DOC_ID, workId: null, rootThreadId: THREAD_ID }]);
+      // A chat with no Work drafts into its lineage's draft; the shared No Work names none.
+      const [chat] = await db
+        .select({ draftId: schema.threads.draftId })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, THREAD_ID));
+      if (!chat) throw new Error("The chat names no draft");
+      const drafted = await runtime.ports.documentSync.readDraftMarkdown({
+        documentId: DOC_ID,
+        draft: chat.draftId as string,
+      });
+      expect(drafted.ok && drafted.value.content.trim()).toBe("Model draft content.");
       expect(await db.select().from(schema.threadWorks)).toEqual([
         expect.objectContaining({
           threadId: THREAD_ID,

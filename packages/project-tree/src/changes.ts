@@ -1,6 +1,6 @@
 import type { TreeRecord } from "./record.js";
 import type { SkipReason, TreeProjection } from "./replay.js";
-import { branchRows, projectedRows } from "./rows.js";
+import { draftRows, projectedRows } from "./rows.js";
 
 /** Why a pending change cannot land: the replay skips it. */
 export type LandingFault = { kind: "inside-itself"; into: string } | { kind: "gone" };
@@ -45,7 +45,7 @@ export function changedFolders(
   pending: readonly TreeRecord[],
   faults: ReadonlyMap<string, LandingFault> = landingFaults(work, pending),
 ): Set<string> {
-  const differing = branchRows(projectedRows(live), projectedRows(work), pending);
+  const differing = draftRows(projectedRows(live), projectedRows(work), pending);
   const folders = new Set<string>();
   for (const { node } of pending) {
     if (work.nodes.get(node)?.kind !== "folder") continue;

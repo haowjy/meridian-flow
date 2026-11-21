@@ -6,6 +6,7 @@
  * - Active-Work authority and owner labels (kb/wiki/architecture/documents/addresses.md#handles-name-owners-names-are-labels)
  */
 import type { Thread } from "@meridian/contracts/threads";
+import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
 import { testWorkHandle } from "../../test-support/work-handle.js";
 import { resolvedWorkAuthority } from "../projects/domain/work-authority.js";
@@ -42,6 +43,7 @@ function thread(): Thread {
     id: THREAD_ID,
     projectId: CUSTOM_PROJECT_ID,
     workId: WORK_ID,
+    draftId: "lineagedrft1",
     aiWriteMode: "direct",
     effectiveAiWriteMode: "direct",
     userId: "user-1",
@@ -72,7 +74,9 @@ describe("thread context-port resolution", () => {
       {
         threads: { findById: async () => thread() },
         threadWorks: { findPrimary: async () => ({ workId: WORK_ID }) },
-        works: { findById: async () => null },
+        works: {
+          findById: async () => ({ id: WORK_ID, isNoWork: false, draftId: "portwork0001" }) as Work,
+        },
         workAuthorityResolver: resolver({ [WORK_ID]: "w1" }),
       },
       THREAD_ID,

@@ -31,7 +31,7 @@ rest of the contracts: [context contracts](.context/CONTEXT.md).
 
 - The project tree's list (`@meridian/project-tree`) is stored by `adapters/drizzle-tree-list-store.ts`
   (port `ports/tree-list-store.ts`): one function admits a client's update or the server's
-  records and writes `tree_nodes` / `branch_tree_nodes` in the same transaction. Nothing else
+  records and writes `tree_nodes` / `draft_tree_nodes` in the same transaction. Nothing else
   writes those rows. Read [the tree list store](.context/tree-list-store.md) before touching it.
 
 See also [tree](tree/AGENTS.md), [upload intake](uploads/.context/CONTEXT.md),

@@ -20,15 +20,11 @@ import {
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, eq, or, sql } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { livingDocumentRefusal, textHeldSql } from "../../context/tree/living-document.js";
 
 type AuthorityHeadDb = Pick<Database, "insert" | "update" | "select">;
 
-export type DocumentAuthorityHeadGeneration = {
-  authorityId: DocumentAuthorityId;
-  generation: bigint;
-};
+export type DocumentAuthorityHead = { authorityId: DocumentAuthorityId };
 
 /**
  * A living document's first head, at birth; an existing head of a document (a head-only anomaly)
@@ -49,8 +45,6 @@ export async function initializeHead(db: AuthorityHeadDb, documentId: DocumentId
     throw new Error(`Document ${documentId} has the id of a ${existing.kind}'s journal`);
 }
 
-/** The generation a head is born with (the column's default). */
-export const FIRST_AUTHORITY_GENERATION = 1n;
 /** Rows per statement: bounds the parameter count, not the atomic operation. */
 const FRESH_HEAD_BATCH = 500;
 
@@ -73,7 +67,6 @@ export async function insertFreshHeads(
       heads.slice(offset, offset + FRESH_HEAD_BATCH).map((head) => ({
         documentId: head.documentId,
         authorityId: head.authorityId,
-        authorityGeneration: FIRST_AUTHORITY_GENERATION,
         schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
         latestUpdateSeq: 0,
         latestStateVector: Buffer.from(head.stateVector),
@@ -87,7 +80,7 @@ export async function insertFreshHeads(
 export async function allocateAdmission(
   db: AuthorityHeadDb,
   documentId: string,
-): Promise<DocumentAuthorityHeadGeneration & { admissionSequence: bigint }> {
+): Promise<DocumentAuthorityHead & { admissionSequence: bigint }> {
   const [row] = await db
     .update(documentYjsHeads)
     .set({
@@ -97,13 +90,11 @@ export async function allocateAdmission(
     .where(holdsText(documentId))
     .returning({
       authorityId: documentYjsHeads.authorityId,
-      generation: documentYjsHeads.authorityGeneration,
       nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
     });
   if (!row) throw await refusedAuthority(db, documentId);
   return {
     authorityId: row.authorityId,
-    generation: row.generation,
     admissionSequence: row.nextAdmissionSequence - 1n,
   };
 }
@@ -136,17 +127,16 @@ export async function advanceHead(
 /**
  * A document's current head without materializing a missing one. `notPurged` reads it only when
  * the document may change: under the caller's lock, every door that changes retained history
- * (checkpoints, version replacement) asks for it.
+ * (checkpoints) asks for it.
  */
 export async function findDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
   options: { notPurged?: boolean } = {},
-): Promise<DocumentAuthorityHeadGeneration | null> {
+): Promise<DocumentAuthorityHead | null> {
   const [row] = await db
     .select({
       authorityId: documentYjsHeads.authorityId,
-      generation: documentYjsHeads.authorityGeneration,
     })
     .from(documentYjsHeads)
     .where(
@@ -163,7 +153,7 @@ export async function readDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
   options: { notPurged?: boolean } = {},
-): Promise<DocumentAuthorityHeadGeneration> {
+): Promise<DocumentAuthorityHead> {
   const row = await findDocumentAuthorityHead(db, documentId, options);
   if (!row) throw await refusedAuthority(db, documentId);
   return row;
@@ -198,104 +188,4 @@ function holdsText(documentId: string) {
     eq(documentYjsHeads.documentId, documentId as DocumentId),
     or(eq(documentYjsHeads.kind, "tree_list"), textHeldSql(documentYjsHeads.documentId)),
   );
-}
-
-/**
- * Reads through the caller's transaction, like the journal snapshot it validates.
- * A room loaded inside a transaction that already admitted to this head would
- * otherwise wait on its own row lock from a second connection.
- */
-export function createDrizzleAuthorityGenerationReader(db: Database) {
-  return async (documentId: DocumentId): Promise<bigint> =>
-    (await readDocumentAuthorityHead(currentDrizzleDb(db), documentId)).generation;
-}
-
-/**
- * Atomically installs a retained checkpoint as a new fenced durable authority generation.
- * The source checkpoint is copied rather than applied to the current Y.Doc: Yjs apply
- * would merge the checkpoint and current live-document state instead of replacing it.
- */
-export async function replaceGeneration(
-  db: Database,
-  input: { documentId: DocumentId; checkpointId: number; expectedGeneration: bigint },
-): Promise<
-  | { ok: true; generation: bigint; checkpointId: number }
-  | { ok: false; code: "checkpoint_incomplete" | "stale_generation" }
-> {
-  const { documentYjsCheckpoints } = await import("@meridian/database");
-  const { lockDocumentMutation } = await import("../../../shared/document-mutation-lock.js");
-
-  return db.transaction(async (tx) => {
-    const txDb = tx as unknown as Database;
-    await lockDocumentMutation(txDb, input.documentId);
-    const head = await readDocumentAuthorityHead(txDb, input.documentId, { notPurged: true });
-    if (head.generation !== input.expectedGeneration) {
-      return { ok: false as const, code: "stale_generation" as const };
-    }
-    const [checkpoint] = await txDb
-      .select()
-      .from(documentYjsCheckpoints)
-      .where(
-        and(
-          eq(documentYjsCheckpoints.id, input.checkpointId),
-          eq(documentYjsCheckpoints.documentId, input.documentId),
-        ),
-      )
-      .limit(1);
-    if (!checkpoint?.attributionManifest || checkpoint.state.length === 0) {
-      return { ok: false as const, code: "checkpoint_incomplete" as const };
-    }
-
-    const generation = head.generation + 1n;
-    const [installed] = await txDb
-      .insert(documentYjsCheckpoints)
-      .values({
-        documentId: input.documentId,
-        authorityId: head.authorityId,
-        authorityGeneration: generation,
-        // The checkpoint carries old-generation birth attribution, but the new
-        // generation has no admitted journal prefix yet. Keeping the old floor
-        // would make its first admission look like a replay gap.
-        attributionManifest: rebaseCheckpointManifest(checkpoint.attributionManifest),
-        state: checkpoint.state,
-        stateVector: checkpoint.stateVector,
-        upToSeq: checkpoint.upToSeq,
-        reason: `authority-replacement:${checkpoint.id}`,
-      })
-      .returning({ id: documentYjsCheckpoints.id });
-    if (!installed) throw new Error("Failed to install the durable authority checkpoint");
-    const [updated] = await txDb
-      .update(documentYjsHeads)
-      .set({
-        authorityGeneration: generation,
-        nextAdmissionSequence: 1n,
-        latestUpdateSeq: checkpoint.upToSeq,
-        latestStateVector: checkpoint.stateVector,
-        latestCheckpointId: installed.id,
-        updatedAt: sql`now()`,
-      })
-      .where(
-        and(
-          eq(documentYjsHeads.documentId, input.documentId),
-          eq(documentYjsHeads.authorityGeneration, input.expectedGeneration),
-        ),
-      )
-      .returning({ generation: documentYjsHeads.authorityGeneration });
-    if (!updated) return { ok: false as const, code: "stale_generation" as const };
-    return { ok: true as const, generation, checkpointId: installed.id };
-  });
-}
-
-function rebaseCheckpointManifest(manifest: unknown): unknown {
-  if (
-    typeof manifest !== "object" ||
-    manifest === null ||
-    !("version" in manifest) ||
-    manifest.version !== 1 ||
-    !("attributions" in manifest) ||
-    !Array.isArray(manifest.attributions)
-  ) {
-    return manifest;
-  }
-  return { ...manifest, floor: null };
 }

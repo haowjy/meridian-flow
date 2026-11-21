@@ -7,18 +7,14 @@
  *   pnpm exec tsx tools/qa/probes/model-edit-locks/run.mts
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - a closed draft in a document's history puts its Work in an inverse's Work locks
  * - a card Undo reverses the turn's Work receipts after the documents' command commits
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { gate, Y } from "../drafts-lock-free/harness.mts";
 import {
   type Child,
-  drafts,
   insertCall,
   type ModelEditCase,
-  namePath,
   runCases,
   seedCase,
   seedWorkWithChats,
@@ -26,6 +22,7 @@ import {
   state,
   waitForAssistantTurn,
 } from "../model-edit-harness/harness.mts";
+import { gate, Y } from "../model-edit-harness/scratch.mts";
 
 type Harness = Parameters<typeof state>[0];
 
@@ -69,7 +66,7 @@ async function lockWaiters(h: Harness, child: Child, count: number, timeoutMs = 
  * `promise`, or a failure once `ms` pass naming `what` and the state of the child's connections:
  * a hang on a process mutex shows as one idle in transaction and one waiting on a lock.
  */
-async function within<T>(
+async function _within<T>(
   h: Harness,
   child: Child,
   promise: Promise<T>,
@@ -128,66 +125,6 @@ async function writerTypes(h: Harness, documentId: string, index: number, suffix
 }
 
 const cases: ModelEditCase[] = [
-  {
-    name: "a draft-mode chat's first write while an Undo waits on its Work",
-    expected:
-      "the Undo takes the Work before the document, so the first write makes its draft and both finish",
-    async run({ h, start }) {
-      // Two chats in the Work: the second never saw the draft the Discard emptied.
-      const drafting = await seedWorkWithChats(h, "first-write-x", "draft", 2);
-      const direct = await seedWorkWithChats(h, "first-write-y", "direct");
-      const { documentId } = await h.seedDocument("first-write", "Live seed.");
-      const path = await namePath(h, documentId);
-      const [x, x2] = drafting.threadIds as [string, string];
-      const y = direct.threadIds[0] as string;
-      // Two commands at once in one process, beside the run's session connection.
-      const child = await start(4);
-      await child.script([
-        { toolCalls: [insertCall("call-x1", path, "Drafted.")] },
-        reply,
-        { toolCalls: [insertCall("call-y1", path, "Agent paragraph.")] },
-        reply,
-        { toolCalls: [insertCall("call-x2", path, "Again.")] },
-        reply,
-      ]);
-      await send(child, h, x);
-      await waitForAssistantTurn(h, x);
-      // The draft reads as its base; its part stays in the document's history, so an Undo locks its Work.
-      await child.call({
-        op: "discard",
-        projectId: h.ids.project,
-        branchId: drafting.branchId,
-        userId: h.ids.user,
-        commandId: randomUUID(),
-      });
-      await send(child, h, y);
-      await waitForAssistantTurn(h, y);
-      // The edit claims, then waits on the Work the probe holds; the Undo queues behind it.
-      await child.arm("command.afterClaim", "hold");
-      await send(child, h, x2);
-      await child.at("command.afterClaim");
-      const work = await holdLock(
-        h,
-        (sql) => sql`select id from works where id=${drafting.workId} for no key update`,
-      );
-      let undo: Promise<unknown>;
-      try {
-        await child.release("command.afterClaim");
-        await lockWaiters(h, child, 1);
-        undo = child.call(undoOf(h, y, await lastTurn(h, y)), 60_000);
-        await lockWaiters(h, child, 2);
-      } finally {
-        work.release();
-        await work.done;
-      }
-      const answer = (await within(h, child, undo, 15_000, "the Undo")) as { status: string };
-      await within(h, child, waitForAssistantTurn(h, x2), 15_000, "the first write");
-      assert.equal(answer.status, "reversed");
-      assert.deepEqual((await state(h, y, documentId)).doc, ["Live seed."]);
-      assert.deepEqual((await state(h, x2, documentId)).results, ["call-x2:committed"]);
-      assert.equal((await drafts(h, documentId)).length, 1);
-    },
-  },
   {
     name: "the writer types into the model's paragraph while its Undo captures the document",
     expected: "the writer's typing is inside the model's paragraph: the Undo leaves it whole",

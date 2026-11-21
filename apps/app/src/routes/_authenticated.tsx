@@ -13,6 +13,7 @@ import { readLastShownChat } from "@/client/project-shell/store";
 import { ConnectivityProvider } from "@/client/providers/ConnectivityProvider";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
+import { pressDomain } from "@/client/query/press-commands";
 import { projectDomain } from "@/client/query/project-commands";
 import { threadOverridesDomain } from "@/client/query/thread-overrides-command";
 import { useMcpConnectionsAtOpen } from "@/client/query/useMcpConnections";
@@ -139,7 +140,12 @@ function AuthenticatedAccountProviderTree({
     <AccountFeatureComposition accountId={user.userId}>
       <CommandDriverProvider
         domains={(client) =>
-          combineDomains(workDomain(client), projectDomain(client), threadOverridesDomain(client))
+          combineDomains(
+            workDomain(client),
+            projectDomain(client),
+            threadOverridesDomain(client),
+            pressDomain(client),
+          )
         }
       >
         <AccountSettingsProvider

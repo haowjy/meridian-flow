@@ -66,7 +66,7 @@ export function createAccountDocumentSessionRuntime(
     get(target, property, receiver) {
       const value = Reflect.get(target, property, receiver);
       if (typeof value !== "function") return value;
-      if (property === "release" || property === "releaseDraftRooms") {
+      if (property === "release") {
         return value.bind(target);
       }
       return (...args: unknown[]) => {

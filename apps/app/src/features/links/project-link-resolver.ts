@@ -173,9 +173,7 @@ function serverAnswer(answer: DocumentLinkAnswer): LinkAnswer | null {
       });
       if (found && document.file) found.document.file = document.file;
       // A hidden document is "in a draft": keep the destination the server named.
-      return found && answer.inBranch && answer.branch
-        ? { ...found, branch: answer.branch }
-        : found;
+      return found && answer.inDraft && answer.draft ? { ...found, draft: answer.draft } : found;
     }
     case "folder":
       return {

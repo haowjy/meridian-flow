@@ -5,7 +5,7 @@
  */
 
 import type { ProjectId, UserId } from "@meridian/contracts";
-import type { CopyCommandResult } from "@meridian/contracts/branches";
+import type { CopyCommandResult } from "@meridian/contracts/drafts";
 import type {
   ContextOperationCommand,
   ContextOperationReceipt,

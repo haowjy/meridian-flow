@@ -117,14 +117,13 @@ export function linkFolderId(
   return ref?.kind === "folder" ? ref.folderId : null;
 }
 
-/** The branch a hidden document lives in: what the server says a link to it opens. */
-/** The branch a link opens in review, and who owns it (`work:<id>` or `lineage:<root>`). */
-export type LinkBranchDestination = { branchId: string; owner: string };
+/** The draft a hidden document lives in: what the server says a link to it opens in review. */
+export type LinkDraftDestination = { draftId: string };
 
 export type LinkResolutionEntry =
   | { state: "pending"; document: null }
-  /** `branch` is present iff the document is hidden ("in a draft"); only its review opens it. */
-  | { state: "document"; document: ResolvedDocumentLink; branch?: LinkBranchDestination }
+  /** `draft` is present iff the document is hidden ("in a draft"); only its review opens it. */
+  | { state: "document"; document: ResolvedDocumentLink; draft?: LinkDraftDestination }
   /** A folder: drawn with the folder icon, and a click opens its menu instead of following. */
   | { state: "folder"; document: null; folder: ResolvedFolderLink }
   | { state: "missing"; document: null }

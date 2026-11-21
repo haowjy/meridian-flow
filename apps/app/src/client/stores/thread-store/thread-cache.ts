@@ -72,7 +72,6 @@ export function createThreadCache(
             threadId,
             projectId,
             refreshLists: true,
-            workIds: "all",
             skipSnapshot,
           });
         } else {

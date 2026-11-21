@@ -27,7 +27,7 @@ export function openDocumentInEditor(
       { replace: false, document: tab, ...routeOptions },
     );
   return open(
-    // The owner is a Scratch note's alone; a draft's owner travels as `reviewOwner`.
+    // The owner is a Scratch note's alone; a draft's item key names its draft.
     contextRouteRequest({ ...target, documentId: tab?.documentId }),
     {
       replace: false,
@@ -40,9 +40,7 @@ export function openDocumentInEditor(
 
 /** The route options that open a document on its view's draft; none for Live. */
 export function reviewRouteOptions(review: DraftPin | null | undefined) {
-  return review
-    ? { itemKey: review.itemKey, reviewOwner: review.ownerKey, changeId: review.changeId }
-    : {};
+  return review ? { itemKey: review.itemKey, changeId: review.changeId } : {};
 }
 
 export function useOpenDocumentInEditor() {

@@ -17,7 +17,6 @@ import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener
 import type { ProjectStandings } from "./project-standings";
 
 const DraftCommandsContext = createContext<AccountFeatureLifetime["draftCommands"] | null>(null);
-const DraftOnlyContext = createContext<AccountFeatureLifetime["draftOnly"] | null>(null);
 const PresentedContext = createContext<AccountFeatureLifetime["presented"] | null>(null);
 
 const TreeListsAccountContext = createContext<TreeListRegistry | null>(null);
@@ -115,11 +114,9 @@ function AccountFeatureProviders({
                   <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
                     <LinkSettlementsProvider value={lifetime.linkSettlements}>
                       <DraftCommandsContext.Provider value={lifetime.draftCommands}>
-                        <DraftOnlyContext.Provider value={lifetime.draftOnly}>
-                          <PresentedContext.Provider value={lifetime.presented}>
-                            {children}
-                          </PresentedContext.Provider>
-                        </DraftOnlyContext.Provider>
+                        <PresentedContext.Provider value={lifetime.presented}>
+                          {children}
+                        </PresentedContext.Provider>
                       </DraftCommandsContext.Provider>
                     </LinkSettlementsProvider>
                   </ProjectDocumentLiveOpenerContext.Provider>
@@ -190,10 +187,6 @@ export function useAccountId(): string {
   return accountId;
 }
 
-export function useOptionalAccountId(): string | null {
-  return useContext(AccountIdContext);
-}
-
 /**
  * Account epoch for command owners that also render outside the authenticated
  * shell (tests, SSR). `null` means there is no account lifetime to fence yet.
@@ -208,32 +201,12 @@ export function useDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] 
   return owner;
 }
 
-/** The draft command owner; null outside the authenticated shell. */
-export function useOptionalDraftCommandOwner(): AccountFeatureLifetime["draftCommands"] | null {
-  return useContext(DraftCommandsContext);
-}
-
-/** The draft-only documents mounted hosts present; null outside the authenticated shell. */
-export function useOptionalDraftOnlyPresentations(): AccountFeatureLifetime["draftOnly"] | null {
-  return useContext(DraftOnlyContext);
-}
-
 /** The documents this browser tab's hosts mount and present; null outside the authenticated shell. */
 export function useOptionalPresentedDocuments(): AccountFeatureLifetime["presented"] | null {
   return useContext(PresentedContext);
 }
 
 const NOTHING_PRESENTED: readonly OpenDocument[] = [];
-
-/** The documents this browser tab's hosts present in a project, main's first. */
-export function usePresentedDocuments(projectId: string): readonly OpenDocument[] {
-  const presented = useContext(PresentedContext);
-  return useSyncExternalStore(
-    presented?.subscribe ?? noSubscription,
-    () => presented?.documents(projectId) ?? NOTHING_PRESENTED,
-    () => NOTHING_PRESENTED,
-  );
-}
 
 /** The documents mounted in a project, newest on screen first (`PresentedDocuments.shown`). */
 export function useShownDocuments(projectId: string): readonly OpenDocument[] {

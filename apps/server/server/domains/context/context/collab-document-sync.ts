@@ -35,8 +35,8 @@ function syncFault(error: SyncError): AdapterFault {
         code: "io_error",
         message: `Yjs document not found: ${error.documentId}`,
       };
-    case "stale_generation":
-      return { code: "io_error", message: `Document generation changed: ${error.documentId}` };
+    case "stale_document":
+      return { code: "io_error", message: `Document changed under the write: ${error.documentId}` };
     case "checkpoint_not_found":
       return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
     case "corrupt_state":
@@ -83,7 +83,7 @@ function thrownFault(error: unknown): AdapterFault {
   if (error instanceof DocumentMutationRejectedError) {
     return { code: "invalid_operation" };
   }
-  if (error instanceof DocumentSyncError && error.code === "stale_generation") {
+  if (error instanceof DocumentSyncError && error.code === "stale_document") {
     return { code: "stale_target" };
   }
   return {

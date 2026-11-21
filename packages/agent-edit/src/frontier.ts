@@ -11,6 +11,8 @@ import {
   getTopLevelXmlBlocks,
 } from "./model/block-hash.js";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./model/prosemirror-fragment.js";
+import { withdrawRejected } from "./model/stored-suggestions.js";
+import type { ShownBlock } from "./tool/read-view.js";
 
 export interface ObservationFrontier {
   /** The host's opaque label for the room the document belongs to; carried, never read. */
@@ -21,80 +23,11 @@ export interface ObservationFrontier {
   position?: number;
 }
 
-/** A lookup-resolved cut may carry a one-call bridge from a live observation into its draft seed. */
-export interface ResolvedObservationFrontier extends ObservationFrontier {
-  attributionBridge?: SeedAttributionBridge;
-}
-
-export interface SeedAttributionBridge {
-  sourceRoom: string;
-  sourceSnapshot: Uint8Array;
-  /** Available for seeds created after this feature; absent legacy seeds report conservatively. */
-  sourceCut?: { state: Uint8Array; after: number; through: number };
-  /** Source canonical item id -> target canonical item id. */
-  targetBySource: Readonly<Record<string, string>>;
-  /** Every revision-0 target when a legacy seed cannot explain the live-to-seed gap. */
-  unattributedTargets?: readonly string[];
-}
-
-interface SeedFrontierProjection {
-  sourceRoom: string;
-  sourceSnapshot: Uint8Array;
-  sourceAttribution?: { state: Uint8Array; position: number };
-  targetRoom: string;
-  targetSnapshot: Uint8Array;
-  targetPosition: number;
-  /** Target canonical item id -> source canonical item id. */
-  origins: ReadonlyMap<string, string>;
-}
-
-/**
- * Project a live observation onto a Work draft's revision-0 seed. An exact source cut maps
- * directly. When live advanced before seeding, revision 0 is still the planning base and the
- * projected frontier carries the bounded source interval needed to attribute that gap.
- */
-export function projectSeedFrontier(
-  frontier: ObservationFrontier | null,
-  seed: SeedFrontierProjection,
-): ResolvedObservationFrontier | null {
-  if (!frontier || frontier.room !== seed.sourceRoom) return null;
-  const observed = decodeSnapshot(frontier.snapshot);
-  const source = decodeSnapshot(seed.sourceSnapshot);
-  if (!observed || !source || !containsSnapshot(source, observed)) return null;
-  const targetBySource = new Map([...seed.origins].map(([target, origin]) => [origin, target]));
-  const exact = Y.equalSnapshots(observed, source);
-  const sourceCut =
-    frontier.position !== undefined &&
-    seed.sourceAttribution &&
-    frontier.position <= seed.sourceAttribution.position
-      ? {
-          state: seed.sourceAttribution.state,
-          after: frontier.position,
-          through: seed.sourceAttribution.position,
-        }
-      : null;
-  return {
-    room: seed.targetRoom,
-    snapshot: seed.targetSnapshot,
-    position: seed.targetPosition,
-    ...(!exact
-      ? {
-          attributionBridge: {
-            sourceRoom: seed.sourceRoom,
-            sourceSnapshot: frontier.snapshot,
-            targetBySource: Object.fromEntries(targetBySource),
-            ...(sourceCut ? { sourceCut } : { unattributedTargets: [...seed.origins.keys()] }),
-          },
-        }
-      : {}),
-  };
-}
-
 /**
  * A host's lookup of the model's latest frontier for a room. Never throws: an
  * unavailable frontier is `null`, the empty one.
  */
-export type FrontierLookup = (room: string) => Promise<ResolvedObservationFrontier | null>;
+export type FrontierLookup = (room: string) => Promise<ObservationFrontier | null>;
 
 /**
  * A call's lookups. `recording` chains what a result records (a sibling call's
@@ -106,6 +39,11 @@ export interface FrontierLookups {
   recording: FrontierLookup;
   /** Required for a model reply's write; a read plans nothing. */
   planning?: FrontierLookup;
+  /**
+   * The blocks the planning frontier's results showed in full in `room`, oldest first: what a
+   * write plans on when the frontier saw content a checkpoint has dropped (`readMergedContent`).
+   */
+  planningShown?: (room: string) => Promise<readonly ShownBlock[]>;
   reply?: ReplyMutations;
 }
 
@@ -393,30 +331,117 @@ function below(ranges: readonly Range[], limit: number): Range[] {
 }
 
 /**
- * `doc` as the frontier saw it: the document a Work draft seeds from, so a write the model
- * planned on that view lands in a draft that lacks what the writer typed since. Null when
- * the history behind the cut is gone.
+ * A planning frontier's snapshot when it names this room and `doc` holds every item visible at
+ * it. `collected` when a checkpoint has since dropped the content of one of them
+ * (`dropUnseenContent`): a view rebuilt from that snapshot reads the wrong text with no error,
+ * so the write plans on the text the model read instead (`readMergedContent`).
  */
-export function docAtFrontier(doc: Y.Doc, frontier: ObservationFrontier): Y.Doc | null {
-  const observed = decodeSnapshot(frontier.snapshot);
-  if (!observed || !containsSnapshot(Y.snapshot(doc), observed)) return null;
-  return Y.createDocFromSnapshot(doc, observed, new Y.Doc({ gc: false }));
+export function frontierSnapshot(
+  doc: Y.Doc,
+  room: string,
+  frontier: ObservationFrontier | null,
+): { snapshot: Y.Snapshot; collected: boolean } | null {
+  if (!frontier || frontier.room !== room) return null;
+  const snapshot = decodeSnapshot(frontier.snapshot);
+  if (!snapshot) return null;
+  const current = Y.snapshot(doc);
+  if (!containsSnapshot(current, snapshot)) return null;
+  return { snapshot, collected: !contentSurvives(doc, snapshot, current) };
 }
 
-/** A planning frontier is usable only in its room and when all its history survives. */
+/** A frontier's snapshot when every item visible at it still has its content in `doc`. */
 export function planningSnapshot(
   doc: Y.Doc,
   room: string,
   frontier: ObservationFrontier | null,
 ): Y.Snapshot | null {
-  if (!frontier || frontier.room !== room) return null;
-  const snapshot = decodeSnapshot(frontier.snapshot);
-  return snapshot && containsSnapshot(Y.snapshot(doc), snapshot) ? snapshot : null;
+  const at = frontierSnapshot(doc, room, frontier);
+  return at && !at.collected ? at.snapshot : null;
+}
+
+/** No item visible at `previous` and deleted by `current` has lost its content in `doc`. */
+function contentSurvives(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot): boolean {
+  for (const [client, deleted] of current.ds.clients) {
+    const seen = previous.sv.get(client) ?? 0;
+    if (seen === 0) continue;
+    const deletedSince = below(
+      subtract(deleteRanges(deleted), deleteRanges(previous.ds.clients.get(client) ?? [])),
+      seen,
+    );
+    const structs = doc.store.clients.get(client) ?? [];
+    for (const [start, end] of deletedSince)
+      for (let index = Y.findIndexSS(structs, start); index < structs.length; index += 1) {
+        const struct = structs[index];
+        if (struct.id.clock >= end) break;
+        if (!(struct instanceof Y.Item) || struct.content instanceof Y.ContentDeleted) return false;
+      }
+  }
+  return true;
 }
 
 /**
- * A disposable offline peer of the request's cut plus kept staged and settled reply updates.
- * A save is not permanent membership: Discard can retire its structs or deletions later.
+ * Drops the content of every deleted item that none of `frontiers` (encoded snapshots) shows,
+ * keeping its id: an edit anchored on it still integrates, but its text, marks and subtree are
+ * gone. A stored document's checkpoint runs it, so text the writer deleted, a rejected suggestion
+ * included, leaves only item headers in the history every later load reads. Keeping what a
+ * frontier shows lets a model that read before the deletion still plan on what it read
+ * (`planningSnapshot` refuses one that can't). Returns the shape of the history it leaves: its
+ * structs, deleted ones included (what every load and copy walks), and the UTF-8 bytes of the
+ * text the document shows (what that history is a multiple of).
+ */
+export function dropUnseenContent(
+  doc: Y.Doc,
+  frontiers: readonly Uint8Array[],
+): { structs: number; contentBytes: number } {
+  const shown = frontiers.flatMap((bytes) => {
+    const snapshot = decodeSnapshot(bytes);
+    return snapshot ? [visibleAt(snapshot)] : [];
+  });
+  Y.tryGc(
+    Y.createDeleteSetFromStructStore(doc.store),
+    doc.store,
+    (item) => item.content instanceof Y.ContentDeleted || !shown.some((visible) => visible(item)),
+  );
+  const utf8 = new TextEncoder();
+  let structs = 0;
+  let contentBytes = 0;
+  for (const clientStructs of doc.store.clients.values()) {
+    structs += clientStructs.length;
+    for (const struct of clientStructs)
+      if (struct instanceof Y.Item && !struct.deleted && struct.content instanceof Y.ContentString)
+        contentBytes += utf8.encode(struct.content.str).length;
+  }
+  return { structs, contentBytes };
+}
+
+/** Whether some clock of an item is visible at `snapshot`: born before it and not deleted in it. */
+function visibleAt(snapshot: Y.Snapshot): (item: Y.Item) => boolean {
+  const deleted = new Map<number, Range[]>();
+  return (item) => {
+    const { client, clock } = item.id;
+    const end = Math.min(clock + item.length, snapshot.sv.get(client) ?? 0);
+    if (end <= clock) return false;
+    let ranges = deleted.get(client);
+    if (!ranges) {
+      ranges = deleteRanges(snapshot.ds.clients.get(client) ?? []);
+      deleted.set(client, ranges);
+    }
+    // The last deleted range starting at or before `clock`: the only one that could cover it.
+    let low = 0;
+    let high = ranges.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (ranges[middle][0] <= clock) low = middle + 1;
+      else high = middle;
+    }
+    const range = ranges[low - 1];
+    return !range || range[1] < end;
+  };
+}
+
+/**
+ * A disposable offline peer of the request's cut plus kept staged and settled reply updates, less
+ * the suggestions the room has rejected since (`withdrawRejected`).
  */
 export function createPlanningView(
   room: Y.Doc,
@@ -424,6 +449,7 @@ export function createPlanningView(
   ownUpdates: readonly Uint8Array[],
 ): Y.Doc | null {
   const view = new Y.Doc({ gc: false });
+  let usable = false;
   try {
     const roomCut = Y.snapshot(room);
     Y.createDocFromSnapshot(room, snapshot, view);
@@ -431,15 +457,17 @@ export function createPlanningView(
     for (const update of ownUpdates) {
       if (Y.snapshotContainsUpdate(roomCut, update)) Y.applyUpdate(view, update);
     }
-    if (
+    usable =
       !view.store.pendingStructs &&
       !view.store.pendingDs &&
-      containsSnapshot(roomCut, Y.snapshot(view))
-    )
-      return view;
+      containsSnapshot(roomCut, Y.snapshot(view));
   } catch {
     // An unavailable retained cut is not a usable planning view.
   }
-  view.destroy();
-  return null;
+  if (!usable) {
+    view.destroy();
+    return null;
+  }
+  withdrawRejected(view, room);
+  return view;
 }

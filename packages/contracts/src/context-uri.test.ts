@@ -96,7 +96,7 @@ describe("parseContextUri", () => {
     }
   });
 
-  it("reserves the branch qualifier ~ and gives a concrete legal repair", () => {
+  it("reserves the draft qualifier ~ and gives a concrete legal repair", () => {
     const refusals = [
       [
         "manuscript://~b7/Chapter 1",

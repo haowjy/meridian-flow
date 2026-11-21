@@ -9,16 +9,18 @@
  * (`setReviewBarSlot`), which pushes the text below it down when it opens;
  * a failure arriving later takes the bar's own row there rather than growing it.
  *
- * The change is a decoration, and the plugin rebuilds every decoration on each
- * refetch and remote write, so its element (and the slot) is looked up again
- * after each transaction rather than held.
+ * The change is a decoration, and any edit or focus move can paint its block
+ * again, so its element (and the slot) is looked up again after each
+ * transaction rather than held.
  */
 import type { Editor } from "@tiptap/core";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { BAR_SLOT_ATTR, getInlineReviewPluginState } from "@/core/editor/extensions/inline-review";
+import { suggestionView } from "@/core/editor/extensions/suggestion-mode";
+import { BAR_SLOT_ATTR } from "@/core/editor/extensions/suggestion-mode/bar-slot";
 import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
 import { ReviewChangeBar } from "@/features/draft-review/ReviewChangeBar";
+import type { ReviewChange } from "@/features/draft-review/review-model";
 import { useReviewChanges } from "@/features/draft-review/useReviewChanges";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
@@ -31,7 +33,7 @@ import { useManuscriptColumn } from "./useManuscriptColumn";
 
 export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
   const { controller } = useDraftReview();
-  const reviewing = !editor.isDestroyed && getInlineReviewPluginState(editor.state) !== null;
+  const reviewing = !editor.isDestroyed && reviewsIn(editor);
   const view = useReviewChanges(controller, { enabled: reviewing });
   const focusedItem = view.items.find((item) => item.change.id === view.focused?.id);
   const anchor = useChangeElement(editor, reviewing ? (focusedItem?.change.id ?? null) : null);
@@ -56,14 +58,20 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
 
   if (!focusedItem || !placement) return null;
 
+  // The press is an edit in the document: the editor takes the keys back, so the writer's next
+  // key, Ctrl+Z among them, acts there, as after any other edit. Without scrolling to the caret.
+  const press = (run: (change: ReviewChange) => unknown) => () => {
+    void run(focusedItem.change);
+    if (!editor.isDestroyed) editor.view.focus();
+  };
   const bar = (
     <ReviewChangeBar
       change={focusedItem.change}
       disabled={view.locked}
       touch={touch}
       canApply
-      onApply={() => void view.apply(focusedItem.change)}
-      onDiscard={() => void view.discard(focusedItem.change)}
+      onApply={press(view.apply)}
+      onDiscard={press(view.discard)}
     />
   );
 
@@ -79,6 +87,9 @@ export function ReviewChangeBarSurface({ editor }: EditorChromeSurfaceProps) {
     overlay,
   );
 }
+
+/** The editor shows a review: a Work's view of Live. */
+const reviewsIn = (editor: Editor) => suggestionView(editor.state).draft !== null;
 
 /**
  * Open the editor's bar block while `wanted`, and return its element. The block

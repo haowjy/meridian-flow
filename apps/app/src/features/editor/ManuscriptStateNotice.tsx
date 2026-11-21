@@ -1,8 +1,6 @@
 /**
- * ManuscriptStateNotice — what live did to the document this draft holds: deleted from its
- * area (Apply brings it back). With none of that, it says what a Work's pending move or delete
- * will do to the document, which live doesn't show until Apply: "Ascension is renaming this to
- * ch12-old."
+ * ManuscriptStateNotice — what a Work's pending move or delete will do to the document, which
+ * live doesn't show until Apply: "Ascension is renaming this to ch12-old."
  *
  * It lives in the free end of a header row the document already has (the identity row, the
  * phone's review row), never in a strip of its own: a delete lands while the writer reads, and
@@ -10,49 +8,37 @@
  * the row leaves and adds nothing to the row's size, so its arrival never wraps or grows the
  * row. A narrow slot shows the short label; a state with a longer sentence opens it from a button.
  */
-import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { Info } from "lucide-react";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import type { OpenDocument } from "@/client/stores";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useDraftReview } from "@/features/draft-review/DraftReviewProvider";
-import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import {
   type PendingTreeChange,
   treeNoticeLabel,
   treeNoticeSentence,
 } from "@/features/draft-review/tree-line";
-import { schemeLabel } from "@/features/project/context/context-schemes";
 import { tabLocation } from "@/features/project/context/identity-location";
 import { useShellTreeVersion } from "@/features/project/tree-version";
 import { cn } from "@/lib/utils";
 
 export type ManuscriptState = {
-  kind: "deleted" | "pending-tree";
+  kind: "pending-tree";
   label: string;
   /** What the chip's button opens when the label doesn't say it all. */
   sentence?: string;
 };
 
-/** The document's manuscript state, or null when live did nothing to it. */
+/** The document's manuscript state, or null when no other Work moves or deletes it. */
 export function useManuscriptState(projectId: string, tab: OpenDocument): ManuscriptState | null {
   useLingui();
   const { documentId } = tab;
-  const { files } = useDraftReview();
-  const item = files.find((file) => file.documentId === documentId)?.draft;
-  const deleted = isDeletedLive(item);
   const hints = useDocumentDraftHints(projectId, documentId, { enabled: tab.kind !== "new" });
   // On Draft the page is the toggle's Work's draft: this says what other Works do.
   const shell = useShellTreeVersion();
-  const shown = shell?.showing === "draft" ? shell.ownerKey : null;
-  if (deleted) {
-    const from = schemeLabel(item?.deletedFrom?.scheme);
-    const label = from ? t`Deleted from ${from}` : t`Deleted`;
-    return { kind: "deleted", label };
-  }
+  const shown = shell?.showing === "draft" ? shell.draftId : null;
   const pending = hints.flatMap((hint): PendingTreeChange[] =>
-    hint.tree && hint.owner !== shown ? [{ work: hint.label, line: hint.tree }] : [],
+    hint.tree && hint.draftId !== shown ? [{ work: hint.label, line: hint.tree }] : [],
   );
   if (pending.length > 0) {
     const location = tabLocation(tab);

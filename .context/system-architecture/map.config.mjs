@@ -13,7 +13,7 @@ export default {
 
   // Where "on GitHub" links go.
   repo: "haowjy/meridian-flow",
-  branch: "main",
+  draft: "main",
 
   // The directory holding README.md (which lists the top-level pages), the level pages,
   // flows/, journeys/ and dependencies.md.

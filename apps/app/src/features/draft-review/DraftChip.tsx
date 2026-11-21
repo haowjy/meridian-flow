@@ -13,7 +13,7 @@ import { Chip } from "@/components/ui/chip";
 import { ChooserMark } from "@/components/ui/marks";
 import { cn } from "@/lib/utils";
 
-export type DraftChipState = "live" | "pending" | "reviewing" | "failed";
+type DraftChipState = "live" | "pending" | "reviewing" | "failed";
 
 const TONE = {
   live: "neutral",

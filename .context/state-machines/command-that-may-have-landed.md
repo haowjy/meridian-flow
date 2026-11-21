@@ -42,12 +42,11 @@ No instance follows every rule. Before copying one, check what it does:
 | Chat submission | Yes, in the account's journal | Yes, the driver replays | New submission id |
 | Creation record | No, memory only | No; one lookup, then `failed` | Same id |
 | Import creation | No, memory only | No | Same import id |
-| Apply click command | No, memory only | Yes: 1, 2, 4 seconds, then `stalled` | None: a final refusal settles it |
 | Queued control | No, memory only | No | Same id; a refusal and no answer are both `failed` |
 | Hand-back and Stop | Yes, in the host's command store | No; Retry or resume | None: a refusal drops the command |
 | Package Save word | No, memory only | No; Retry | None: a failed check is a result, not a refusal |
 
-Five keep the command in memory only, so a reload forgets it while the server may keep its
+Four keep the command in memory only, so a reload forgets it while the server may keep its
 effect. Two also break the second rule. A creation record that gets no answer and whose one
 lookup finds nothing becomes `failed`, although the create may still land. A queued control
 does not tell a refusal from no answer; both are `failed`, and Retry resends under the same
@@ -60,7 +59,6 @@ id.
 | [Command driver](../../packages/command-driver/.context/state-machines.md) | package | `sending`, delivered until the server's stored outcome is known |
 | [Chat submission](../../apps/app/src/client/chat-submissions/.context/state-machines.md) | App | `posted`, with no answer |
 | [Import creation](../../apps/app/src/features/import/.context/state-machines.md) | App | `uncertain` |
-| [Apply click command](../../apps/app/src/features/draft-review/.context/state-machines.md) | App | `retrying`, then `stalled` |
 | [Queued control](../../apps/app/src/features/chat/.context/state-machines.md) | App | `failed`, retried under the same id |
 | [Hand-back and Stop](../../packages/thread-client/.context/state-machines.md) | thread-client | `ambiguous` |
 | [Package Save word](../../apps/app/src/features/agents/.context/state-machines.md) | App | `unreached`; a resent Save or Undo is matched by content or `saveId`, not an id |

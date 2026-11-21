@@ -44,12 +44,12 @@
  */
 
 import type { Thread, Work } from "@meridian/contracts/protocol";
+import { draftOf } from "@meridian/contracts/works";
 import { type ComponentProps, useCallback, useMemo, useState } from "react";
 
 import { useTopChat } from "@/client/query/useTopChat";
 import { useWorks } from "@/client/query/useWorks";
 import { createLinkAnswerCache, createLinkRequester } from "@/core/editor/links";
-import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   type LinkDestination,
   type LinkDocumentRef,
@@ -171,7 +171,7 @@ export function useChatLinkFollowing({
   // A page this chat drafted opens on its draft.
   const place = useLinkPlacement(
     projectId,
-    chatOwnerKey(activeWork, activeThread?.rootThreadId ?? null) || null,
+    activeWork && activeThread ? draftOf(activeThread, activeWork) : null,
   );
   const linkWorkId = activeWork?.id ?? null;
   const open = useCallback<LinkDestination>(

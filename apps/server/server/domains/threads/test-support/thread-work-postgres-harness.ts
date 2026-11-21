@@ -14,8 +14,7 @@ export const THREAD_WORK_RACE = {
   contextId: "00000000-0000-4000-8000-000000000476",
   documentId: "00000000-0000-4000-8000-000000000477",
   noWorkId: "00000000-0000-4000-8000-000000000478",
-  branchId: "00000000-0000-4000-8000-000000000479",
-  draftId: "draft_work_lifecycle_race",
+  draftId: "racetarget01",
 } as const;
 
 export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
@@ -43,6 +42,7 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
       createdByUserId: ids.userId,
       name: "Race target",
       handle: "w2",
+      draftId: ids.draftId,
     },
     {
       id: ids.targetWorkId,
@@ -67,19 +67,5 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     projectId: ids.projectId,
     slug: "project-context",
   });
-  await treeSeeder(db).document(ids.contextId, "Branch target", { id: ids.documentId });
-  await db.insert(schema.branches).values({
-    id: ids.branchId,
-    projectId: ids.projectId,
-    originWorkId: ids.workId,
-    createdBy: ids.userId,
-  });
-  await db.insert(schema.documentDrafts).values({
-    id: ids.draftId,
-    documentId: ids.documentId,
-    kind: "work_draft",
-    branchId: ids.branchId,
-    state: Buffer.from([0, 0]),
-    stateVector: Buffer.from([0]),
-  });
+  await treeSeeder(db).document(ids.contextId, "Draft target", { id: ids.documentId });
 }

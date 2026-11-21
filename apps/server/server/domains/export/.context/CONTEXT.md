@@ -21,8 +21,8 @@ sizes in the snapshot add up to near 4 GiB, rather than send a corrupt zip.
 ## Preview
 
 GET `/api/projects/:id/export/preview` returns advisory current-state outside-link
-and unapplied-draft counts. It runs the same `ExportLinkScope` pass the ZIP uses
-over current collab content rather than `document_links`: those rows are a lagging
+and pending-document counts (documents with draft changes waiting for review). It
+runs the same `ExportLinkScope` pass the ZIP uses over current collab content rather than `document_links`: those rows are a lagging
 certified-cut hint, omit ref-less internal hrefs, and would need a second
 outside-link classifier (settlements, ahead paths, contextual hrefs) that could
 drift from the export. The request's abort signal stops the pass between

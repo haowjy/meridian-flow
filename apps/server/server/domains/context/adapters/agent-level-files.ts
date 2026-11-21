@@ -33,15 +33,12 @@ export function createAgentLevelFiles(
       .select({
         id: documentYjsHeads.documentId,
         authority: documentYjsHeads.authorityId,
-        generation: documentYjsHeads.authorityGeneration,
         // Every admitted update moves this; `latestUpdateSeq` waits for the next checkpoint.
         admitted: documentYjsHeads.nextAdmissionSequence,
       })
       .from(documentYjsHeads)
       .where(inArray(documentYjsHeads.documentId, ids));
-    return new Map(
-      heads.map((head) => [head.id, `${head.authority}:${head.generation}:${head.admitted}`]),
-    );
+    return new Map(heads.map((head) => [head.id, `${head.authority}:${head.admitted}`]));
   }
 
   /** The text the journal holds, which a snapshot reads as of its own cut, never a warm room. */

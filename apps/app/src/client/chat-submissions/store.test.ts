@@ -159,6 +159,7 @@ it("rewrites a reminted submission in its stable key, retaining the draft and cr
     creation: {
       title: "Hello",
       workId: null,
+      draftId: "chatdraft001",
       workAiWriteMode: "direct",
       agentSelection: { slug: "agent", definitionRevisionId: "rev" },
       agentName: "Agent",

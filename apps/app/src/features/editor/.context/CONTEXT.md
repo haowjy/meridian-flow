@@ -64,10 +64,9 @@ index rather than a second document list.
 
 ## Review and paint continuity
 
-Review projects the mounted draft text against its server-owned `review_base`, the live text used for comparison. Removed base
-text is red and struck; inserted draft text is green, including writer edits.
-Attribution supplies bylines without partitioning changes. Removed-text widgets
-are not manuscript content. Desktop review is editable; phone review is
+Review paints the Work's suggestions in the Live editor (`SuggestionModeExtension`): a
+deletion is red and struck, an insertion green, the writer's own typing in the Work's view
+included. Attribution supplies bylines without partitioning changes. Desktop review is editable; phone review is
 read-only. Projection, commands and history belong to the
 [draft-review runtime](../../draft-review/.context/draft-review.md).
 
@@ -82,15 +81,15 @@ Live, as the text does. On desktop the review's controls live in the identity
 bar (`DraftReviewBand`), with no separate header above it. The focused
 change's bar (`surfaces/review`) never covers manuscript text: it sits in the
 right margin beside the change when there is room, else in a block slot after
-the change's last paragraph. Draft room lifecycle, frozen commands and Discard history belong
-to [`draft-review`](../../draft-review/.context/draft-review.md).
+the change's last paragraph. Commands and Discard history belong to
+[`draft-review`](../../draft-review/.context/draft-review.md).
 
-`PaintHold` retains finished paint across lifecycle handoffs. Ordinary text
-Discard edits the same draft Y.Doc in place, without replacing the editor,
-selection or undo manager. An empty review stays in the same draft room.
+`PaintHold` retains finished paint across lifecycle handoffs. Apply and Discard
+resolve the Work's marks in the same Live Y.Doc, without replacing the editor,
+selection or undo manager.
 
-`useInlineReviewFocus` registers the mounted editor for controller-owned jumps
-and releases only its own claim on unmount. Same-entry URL replacements
+`useSuggestionReviewFocus` registers the mounted editor as the review's, so the
+review's focus commands reach it, and keeps its emphasized change the review's. Same-entry URL replacements
 disable router scroll restoration so editor anchor navigation owns scrolling. Side/Work rows and their notice paint before
 the atomic write-back; editor marks remain derived from actual text.
 

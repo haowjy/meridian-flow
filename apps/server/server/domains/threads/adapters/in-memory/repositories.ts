@@ -3,6 +3,7 @@
  * repositories implementing the full repository ports (incl. the transaction
  * aggregate). For tests/local dev; shares creation semantics via thread-create.
  */
+import { newDraftId } from "@meridian/contracts";
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { PromptBakeId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
@@ -134,6 +135,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     activeLeafTurnId: null,
     parentThreadId: normalized.parentThreadId,
     rootThreadId: id,
+    draftId: input.draftId ?? newDraftId(),
     spawnDepth: normalized.spawnDepth,
     spawnStatus: normalized.spawnStatus,
     totalCostUsd: "0",
@@ -303,7 +305,9 @@ export function createInMemoryRepositories(
       return insertThread(defaultThread(input));
     },
     async createSubagent(input) {
-      return insertThread(buildSubagentThreadRow(input));
+      const root = threads.get(input.rootThreadId);
+      if (!root) throw new Error(`Thread ${input.rootThreadId} not found`);
+      return insertThread({ ...buildSubagentThreadRow(input), draftId: root.draftId });
     },
     async createDerivedPrimary(input) {
       const existing = threads.get(input.id);

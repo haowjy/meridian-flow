@@ -44,19 +44,14 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    names as twins (`Sheet~…`, `Vault~…`), still holding the draft's text. The same copy where
    the name is held by a live document lands as its twin, `Sheet~…`, and the entry says so.
 3. **Draft source.** The same chat overwrites `manuscript://Outside/Sheet` in its
-   draft. Copy it with `--draft-work w1`: the copy holds the draft text and
-   `metadata.copiedFrom.version` is `draft`. Copy without the flag: the live text,
-   `live`. A folder with a draft view copies each document as the Work shows it: the draft text
-   where the Work holds a draft, otherwise the live text. The draft is the
-   Work's, whichever chat wrote it: rebind the chat to another Work, and `--draft-work w1`
-   still copies Work w1's draft. Close the draft with a Discard all that ends it
-   (`./mf api POST /api/projects/<id>/branches/<branchId>/discard --data
-   '{"commandId":"<uuid>","all":true}'`; the branch id is in `GET .../drafts?owner=work:<workId>`)
-   and copy again with the draft view: the closed draft's text, not the live one, also for a
-   folder's documents. A Work that never drafted the document reads the live text (its draft
-   view showed live). The strip's Discard in a browser tab is not this case: for a live chat it
-   reverts the text in the room and leaves the draft open and equal to live, so the copy is the
-   live text, which is what Draft view shows.
+   draft (suggestions in the Live document). Copy it with `--draft-work w1`: the copy holds the
+   text as Work w1 shows it, suggestions taken, and `metadata.copiedFrom.version` is `draft`
+   with a revision ending in `:work:<key>`. Copy without the flag: the live text, `live`. A
+   folder with a draft view copies each document as the Work shows it. The draft is the Work's,
+   whichever chat wrote it: rebind the chat to another Work, and `--draft-work w1` still copies
+   Work w1's view. Discard the Work's suggestions (`./mf api POST /api/projects/<id>/press`
+   with `verdict: "discard"`) and copy again with the draft view: the live text. A document only
+   w1 created copies too, from its plain text.
 4. **Fifty documents.** Copy a folder of 50 documents linking in a ring. All 50 land
    in one transaction (about 4 s here, most of it reading the sources before any
    lock), the ring closes inside the copy, and concurrent copies into one folder get
@@ -75,7 +70,7 @@ server only). The browser's Copy has its own recipe, [Copy in the tree](../../..
    vector: it copies and the row appears. A vector that arrives within the wait (a
    client reconnecting 800 ms after the request) copies on the first send, with the
    typing in the copy. With
-   `view: draft` the vector is compared with the draft room. A `stateVector` on a folder
+   `view: draft` the vector is compared with the same Live room. A `stateVector` on a folder
    source and one that does not decode (`////////`) are `bad_request`.
 8. **Position and order.** Copy two roots with `--position after:<P1>` into a
    parent holding `P1 P2 P3`: the order is `P1 root-1 root-2 P2 P3` and the parent

@@ -1,4 +1,5 @@
 /** In-memory WorkRepository for tests; Work child cascades are DB-only and are not modeled here. */
+import { newDraftId } from "@meridian/contracts";
 import type { ProjectId, WorkId } from "@meridian/contracts/runtime";
 import {
   type AiWriteMode,
@@ -58,6 +59,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
       projectId: input.projectId,
       createdByUserId: input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
       name: input.name,
+      draftId: input.draftId ?? newDraftId(),
       handle: nextHandle(input.projectId),
       isNoWork: false,
       goal: input.goal ?? null,
@@ -135,6 +137,7 @@ export function createInMemoryWorkRepository(options: { now?: () => Date } = {})
         name: NO_WORK_NAME,
         handle: null,
         isNoWork: true,
+        draftId: null,
         goal: null,
         status: null,
         archivedAt: null,

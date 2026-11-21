@@ -25,7 +25,7 @@ flowchart LR
   client -->|"4. posts it, subscribes to the thread socket"| server
   server -->|"5. streams the reply events"| client
   conversation -->|"6. draws the events from the thread store"| client
-  server -->|"7. sends the draft edit over the Yjs socket"| core
+  server -->|"7. sends the model's edit over the Yjs socket"| core
   documents -->|"8. shows the change from the editor session"| core
   project -->|"opens documents in main's tabs or beside a chat"| documents
   routes -->|"mounts the project list and the pages around it"| library

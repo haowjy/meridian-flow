@@ -645,7 +645,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
           );
         }
         // A binary copy lands where a create would: in a draft-mode chat, a hidden row
-        // holding the branch's own object (12b-Q2).
+        // holding the draft's own object (12b-Q2).
         return settle(() =>
           inContainer(deps, principal, parsed.command, target, () =>
             copyBinary(deps, context, parsed, binary, sourceGrant, ctx),
@@ -672,15 +672,11 @@ export function createWriteHandler(deps: ToolWiringDeps) {
       copied = read;
     }
 
-    // A write to an existing document finds it before the command claims its id. A drafted write
-    // plans on a draft caught up with live, and the pull opens a connection of its own.
+    // A write to an existing document finds it before the command claims its id.
     let existing: ResolvedDocumentAddress | undefined;
     if (!isInverse && !creates) {
       const found = await resolveDocumentAddress(context, parsed.command, parsed.path);
       if (isToolError(found)) return found;
-      await deps.documentSync
-        .modelEdits()
-        .catchUp(found.documentId as DocumentId, ctx.threadId as ThreadId);
       existing = found;
     }
 
@@ -736,7 +732,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
             ...(creates && reached?.node?.kind === "folder" ? { into: reached.node.id } : {}),
             ...(creates
               ? {
-                  recordCreate: async ({ documentId, record, folders, draftBranchId, uri }) => {
+                  recordCreate: async ({ documentId, record, folders, draftId, uri }) => {
                     await deps.documentSync.treeHistory().recordAgentTreeChange({
                       subject: documentId,
                       nodes: [{ nodeId: documentId, beforeAt: null, afterAt: uri }],
@@ -748,7 +744,7 @@ export function createWriteHandler(deps: ToolWiringDeps) {
                       ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),
                       ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
                       op: "create",
-                      ...(draftBranchId ? { draftBranchId } : {}),
+                      ...(draftId ? { draftId } : {}),
                       shownAt: uri,
                     });
                   },

@@ -69,14 +69,23 @@ const pendingWriteMode = sql<AiWriteMode | null>`(
   LIMIT 1
 )`;
 
+// The lineage's draft: the root chat names it (`threads.draft_id`, set only on roots). A root's own
+// column first: an insert's RETURNING can't see the row it inserts through a subquery.
+const lineageDraftId = sql<string>`COALESCE(${schema.threads}.${sql.identifier("draft_id")}, (
+  SELECT root.draft_id FROM ${schema.threads} root
+  WHERE root.id = ${schema.threads}.${sql.identifier("root_thread_id")}
+))`;
+
 const threadColumns = {
   ...getTableColumns(schema.threads),
   agentDefinitionRevisionId,
   agentName,
   pendingWriteMode,
+  lineageDraftId,
 };
 
 type ThreadListRow = typeof schema.threads.$inferSelect & {
+  lineageDraftId: string;
   workId: string | null;
   workTitle: string | null;
   actionRequired: boolean;
@@ -177,6 +186,8 @@ export function createDrizzleThreadRepository(
       const threadId = input.id ?? crypto.randomUUID();
       const row = await insertThreadRow(db, {
         id: threadId,
+        // A root chat mints its lineage's draft with it; the client may have minted the id.
+        draftId: input.draftId ?? null,
         projectId: input.projectId as ProjectId,
         createdByUserId: input.userId as string,
         kind: normalized.kind,
@@ -226,6 +237,8 @@ export function createDrizzleThreadRepository(
           initialPromptBakeId: thread.initialPromptBakeId ?? null,
           parentThreadId: thread.parentThreadId,
           rootThreadId: thread.rootThreadId,
+          // A handoff is a new root and names its own draft; a fork shares its root's.
+          draftId: thread.rootThreadId === thread.id ? thread.draftId : null,
           originTurnId: thread.originTurnId,
           originType: thread.originType,
           spawnDepth: thread.spawnDepth,

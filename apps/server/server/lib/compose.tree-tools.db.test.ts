@@ -2,19 +2,18 @@
  * The AI's tree commands (`move`, `delete`, `restore`, folders) through the production-composed
  * `write` tool: a path resolves through the names the model was shown, each call is its own
  * command, and the receipt it keeps is what `undo` names, live, drafted, applied or discarded.
- * In a draft-mode chat they are records of the Work's branch and live is untouched.
+ * In a draft-mode chat they are records of the Work's draft and live is untouched.
  */
 
 import { randomUUID } from "node:crypto";
 import type { ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
-import { LIVE, listRecords, type TreeWriter } from "@meridian/project-tree";
-import { and, eq } from "drizzle-orm";
+import { LIVE, type TreeWriter } from "@meridian/project-tree";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
-import { discardedTree } from "../domains/context/tree/trash-entries.js";
 import { runWorkLifecycleCommand } from "../domains/projects/index.js";
 import { createDrizzleThreadLock } from "../domains/runtime/adapters/drizzle-thread-lock.js";
 import { setTestHook } from "../shared/test-hooks.js";
@@ -36,13 +35,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
-    const {
-      handleApplyClickRequest,
-      handleApplyItemsRequest,
-      handleDiscardBranchRequest,
-      handleOwnerDraftListRequest,
-      selectBranchRouteServices,
-    } = await import("./branch-review-route.js");
+    const { handleDraftListRequest, handlePressRequest, selectDraftRouteServices } = await import(
+      "./draft-review-route.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000d01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000d02";
@@ -184,12 +179,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(schema.treeNodes)
           .where(eq(schema.treeNodes.id, id))
       )[0];
-    const branchOf = async (workId: string) => {
+    const draftOf = async (workId: string) => {
       const [row] = await db
-        .select({ id: schema.branches.id })
-        .from(schema.branches)
-        .where(and(eq(schema.branches.originWorkId, workId), eq(schema.branches.status, "active")));
-      if (!row) throw new Error(`Work ${workId} has no active branch`);
+        .select({ id: schema.works.draftId })
+        .from(schema.works)
+        .where(eq(schema.works.id, workId));
+      if (!row?.id) throw new Error(`Work ${workId} names no draft`);
       return row.id as never;
     };
     it("a path that names a folder beside the document it renders as reaches the folder", async () => {
@@ -224,47 +219,35 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     function review(script: Awaited<ReturnType<typeof start>>) {
-      const routes = selectBranchRouteServices(script.runtime.app);
+      const routes = selectDraftRouteServices(script.runtime.app);
       const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
       const item = async (documentId: string) =>
         (
-          await handleOwnerDraftListRequest(routes, {
+          await handleDraftListRequest(routes, {
             ...scope,
-            owner: `work:${OTHER_WORK_ID}`,
+            draft: await draftOf(OTHER_WORK_ID),
           } as never)
         ).items.find((row) => row.documentId === documentId);
+      // The writer's press on one document: its tree change only, or (`ends: "item"`) its text too.
+      const press = async (
+        verdict: "apply" | "discard",
+        documentId: string,
+        ends: "tree" | "item",
+      ) =>
+        handlePressRequest(routes, {
+          ...scope,
+          request: {
+            commandId: randomUUID(),
+            draft: await draftOf(OTHER_WORK_ID),
+            verdict,
+            items: [{ node: documentId, ...(ends === "tree" ? { half: "tree" } : {}) }],
+          },
+        } as never);
       return {
         item,
-        apply: async (documentId: string, extra: Record<string, unknown> = {}) =>
-          handleApplyClickRequest(routes, {
-            ...scope,
-            branchId: await branchOf(OTHER_WORK_ID),
-            documentId: documentId as never,
-            request: {
-              commandId: randomUUID(),
-              groupIds: [],
-              baseViewDelta: [],
-              tree: true,
-              ...extra,
-            },
-          } as never),
-        discard: async (documentId: string, ends: { ends: "tree" | "item" } = { ends: "tree" }) => {
-          const row = await item(documentId);
-          return handleDiscardBranchRequest(routes, {
-            ...scope,
-            branchId: row?.branchId,
-            request: {
-              commandId: randomUUID(),
-              items: [
-                {
-                  node: documentId,
-                  tree: true,
-                  ...(ends.ends === "item" ? { text: "all" } : {}),
-                },
-              ],
-            },
-          } as never);
-        },
+        apply: (documentId: string) => press("apply", documentId, "tree"),
+        discard: (documentId: string, ends: { ends: "tree" | "item" } = { ends: "tree" }) =>
+          press("discard", documentId, ends.ends),
       };
     }
     it("drafts a Scratch move into the manuscript and applies it", async () => {
@@ -289,7 +272,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         contextLocation: { scheme: "manuscript", path: "/sect-notes" },
       });
 
-      expect(await review(script).apply(SCRATCH_NOTE)).toMatchObject({ status: "applied" });
+      expect(await review(script).apply(SCRATCH_NOTE)).toMatchObject({ status: "pressed" });
       expect(await placement(SCRATCH_NOTE)).toMatchObject({
         name: "sect-notes",
         sourceId: SOURCE_ID,
@@ -306,27 +289,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1-moved" });
       });
       const seen = await writer.item(CH1);
-      expect(seen).toMatchObject({ hasDraft: true, tree: { movedFrom: { path: "/ch1" } } });
-      const textDrafts = () =>
-        db
-          .select({ id: schema.documentDrafts.id })
-          .from(schema.documentDrafts)
-          .where(
-            and(
-              eq(schema.documentDrafts.documentId, CH1),
-              eq(schema.documentDrafts.kind, "work_draft"),
-            ),
-          );
-
+      expect(seen).toMatchObject({ tree: { movedFrom: { path: "/ch1" } } });
       expect(await writer.discard(CH1, { ends: "item" })).toMatchObject({
-        body: { status: "discarded", closed: [CH1] },
+        status: "pressed",
+        items: [{ node: CH1, tree: true, text: true }],
       });
       expect(await writer.item(CH1)).toBeUndefined();
-      expect(await textDrafts()).toHaveLength(1);
       expect(await placement(CH1)).toMatchObject({ name: "ch1", deletedAt: null });
     });
 
-    it("Apply restores a moved document at the Work's place; Discard drops a move and keeps its text", async () => {
+    it("a move of a document live deleted waits for its restore; Discard drops a move and keeps its text", async () => {
       const script = await start();
       const drafting = runtimes.script(script.runtime, OTHER);
       const draft = (args: Record<string, unknown>) =>
@@ -335,17 +307,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
       const writer = review(script);
 
-      // Deleted live, another document at its old path: restored where the Work moved it.
+      // Deleted live, another document at its old path: Apply leaves the move waiting, and once
+      // the document is restored the move lands at the Work's place.
       await draft({ command: "move", from: { path: "ch1" }, path: "part1/ch1-moved" });
       await script.reply(async (edit) => {
         await edit("write", { command: "delete", path: "ch1" });
         await edit("write", { command: "create", path: "ch1", content: "New." });
       });
+      expect(await writer.item(CH1)).toBeUndefined();
+      expect(await writer.apply(CH1)).toMatchObject({ status: "pressed", items: [] });
+      expect((await placement(CH1))?.deletedAt).not.toBeNull();
+      await script.reply(async (edit) => {
+        await edit("write", { command: "restore", path: "ch1" });
+      });
       expect(await writer.apply(CH1)).toMatchObject({
-        status: "applied",
-        items: [
-          { node: CH1, tree: { landed: true, settled: [{ rule: "restored", documentId: CH1 }] } },
-        ],
+        status: "pressed",
+        items: [{ node: CH1, tree: true }],
       });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-moved", deletedAt: null });
 
@@ -362,13 +339,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await draft({ command: "replace", path: "part1/ch1-moved", find: "one", content: "ONE" });
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-final" });
       expect(await writer.discard(CH1)).toMatchObject({
-        body: { status: "discarded", closed: [] },
+        status: "pressed",
+        items: [{ node: CH1, tree: true }],
       });
-      expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
+      expect(await writer.item(CH1)).toMatchObject({ tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");
 
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-c" });
-      expect(await writer.apply(CH1)).toMatchObject({ status: "applied" });
+      expect(await writer.apply(CH1)).toMatchObject({ status: "pressed" });
       expect(await placement(CH1)).toMatchObject({ name: "ch1-c", deletedAt: null });
     });
 
@@ -466,7 +444,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           position: { kind: "start" },
         });
       });
-      const branch = await branchOf(OTHER_WORK_ID);
+      const draft = await draftOf(OTHER_WORK_ID);
       const live = await store().read({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         view: ([{ writer }]) => [...writer.view(LIVE).nodes.values()].map((n) => n.name),
@@ -474,7 +452,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const work = await store().read({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         view: ([{ writer }]) =>
-          [...writer.view({ draft: branch }).nodes.values()].map((n) => n.name),
+          [...writer.view({ draft: draft }).nodes.values()].map((n) => n.name),
       });
       expect(live).not.toContain("Part Three");
       expect(work).toContain("Part Three");
@@ -500,7 +478,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await drafting(script).reply(async (edit) => {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
         });
-        expect(await review(script).apply(CH1)).toMatchObject({ status: "applied" });
+        expect(await review(script).apply(CH1)).toMatchObject({ status: "pressed" });
         const { call } = await drafting(script).begin();
         const undone = await call("write", { command: "undo", path: "part1/ch1" });
         expect(text(undone), text(undone)).toContain("status: reversed");
@@ -528,27 +506,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
           await edit("write", { command: "create", path: "part1/fresh", content: "Fresh." });
         });
-        const routes = selectBranchRouteServices(script.runtime.app);
+        const routes = selectDraftRouteServices(script.runtime.app);
         const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
-        const owner = `work:${OTHER_WORK_ID}`;
-        const { items } = await handleOwnerDraftListRequest(routes, { ...scope, owner } as never);
+        const draft = await draftOf(OTHER_WORK_ID);
+        const { items } = await handleDraftListRequest(routes, { ...scope, draft } as never);
         const created = items.find((item) => item.documentId !== CH1);
         await review(script).discard(created?.documentId as string, { ends: "item" });
-        const { items: left } = await handleOwnerDraftListRequest(routes, {
+        const { items: left } = await handleDraftListRequest(routes, {
           ...scope,
-          owner,
+          draft,
         } as never);
-        const branchId = await branchOf(OTHER_WORK_ID);
-        const applyCommandId = randomUUID();
-        await handleApplyItemsRequest(routes, {
+        await handlePressRequest(routes, {
           ...scope,
-          branchId,
           request: {
-            commandId: applyCommandId,
-            items: left.map((item) => ({
-              node: item.documentId,
-              tree: true as const,
-            })),
+            commandId: randomUUID(),
+            draft,
+            verdict: "apply",
+            items: left.map((item) => ({ node: item.documentId, half: "tree" })),
           },
         } as never);
         const [part1] = await placementsNamed("part1");
@@ -556,7 +530,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         // The Apply landed the move; the card's own Undo takes it back, as it takes back any reply's move.
         await cardUndo();
         expect((await placement(CH1))?.parentId).toBeNull();
-        expect(await placementsNamed("fresh")).toEqual([]);
+        // The discarded created document is in Trash, and the card's Undo leaves it there.
+        expect(await placementsNamed("fresh")).toEqual([
+          { id: created?.documentId, deletedAt: expect.any(Date) },
+        ]);
       });
 
       it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {
@@ -700,29 +677,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await placementsNamed("private")).every((row) => row.deletedAt === null)).toBe(
           true,
         );
-      });
-
-      it("a Discard entry names the folders it discarded from the discarded history", async () => {
-        const script = await start();
-        await drafting(script).reply(async (edit) => {
-          await edit("write", { command: "create", path: "part1/inner/" });
-        });
-        const list = await treeListOfSource(db, SOURCE_ID);
-        const command = randomUUID();
-        await store().submit({
-          lists: [list],
-          make: ([{ writer }]) => {
-            const ids = listRecords(writer.doc)
-              .filter((record) => record.draft !== null && record.type === "create")
-              .map((record) => record.id);
-            writer.transact(() => writer.settle(WRITER, ids, "discarded", { command }));
-          },
-        });
-        const [entry] = await discardedTree(store(), list, [command]);
-        if (!entry) throw new Error("no entry");
-        expect(entry.created).toMatchObject([
-          { kind: "folder", name: "inner", path: ["part1", "inner"] },
-        ]);
       });
 
       it("a move into a folder deleted since is made and the folder stands: kept, with who deleted it", async () => {
@@ -1052,38 +1006,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(await ch1(script)).toContain("one");
       });
 
-      it("a draft that joins the document between declare and commit reruns the command with its Work", async () => {
+      it("another Work's write racing the card Undo lands beside it", async () => {
         const script = await madeWorkAndEdited();
         const other = runtimes.script(script.runtime, OTHER);
-        let claimed = 0;
-        const count = setTestHook("inverse.beforeCommitScope", async () => {
-          claimed += 1;
-        });
-        try {
-          const raced = await race<"undo" | "draft">(
-            db,
-            {
-              undo: () => card(script),
-              draft: () =>
-                other.reply(async (edit) => {
-                  await edit("write", {
-                    command: "replace",
-                    path: "ch1",
-                    find: "Chapter",
-                    content: "Part",
-                  });
-                }),
-            },
-            "undo",
-            "inverse.afterCaptureRead",
-          );
-          expect(raced.by.undo, JSON.stringify(raced.by.undo)).toMatchObject({ ok: true });
-          expect(raced.by.draft).toMatchObject({ ok: true });
-        } finally {
-          count();
-        }
-        // The first attempt declared no draft Work; its commit found one, and the command ran again.
-        expect(claimed).toBe(2);
+        const raced = await race<"undo" | "draft">(
+          db,
+          {
+            undo: () => card(script),
+            draft: () =>
+              other.reply(async (edit) => {
+                await edit("write", {
+                  command: "replace",
+                  path: "ch1",
+                  find: "Chapter",
+                  content: "Part",
+                });
+              }),
+          },
+          "undo",
+          "inverse.afterCaptureRead",
+        );
+        expect(raced.by.undo, JSON.stringify(raced.by.undo)).toMatchObject({ ok: true });
+        expect(raced.by.draft).toMatchObject({ ok: true });
         expect(await claims()).toBe(1);
         expect(await workDeleted()).toBe(true);
       });

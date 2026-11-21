@@ -5,8 +5,8 @@
  * `historySummary` reads the typed value.
  */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import { formatUtc } from "./ls-result.js";
 
@@ -30,7 +30,7 @@ export interface WorkShowResult {
   recentThreads: { title: string | null; updatedAt: string | Date }[];
   drafts: {
     documentName: string | null;
-    contextLocation: ThreadDraftListItem["contextLocation"];
+    contextLocation: DraftItem["contextLocation"];
     createdDocument?: boolean;
   }[];
 }

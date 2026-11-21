@@ -8,37 +8,49 @@ export type FolderId = string;
 export const asFolderId = (s: string) => s as FolderId;
 export type DocumentId = string;
 export const asDocumentId = (s: string) => s as DocumentId;
-/** A `branches` row: one Work branch, the unit Discard all closes. */
-export type BranchId = string;
-/** One document's pending `work_draft` version inside a branch. */
+/**
+ * A `drafts` row: one draft, everything pending in it (its suggestion marks in Live documents and
+ * its tree records). A Work and a root conversation each name theirs; the draft names no owner.
+ */
 export type DraftId = string;
-/** `${branchId}:${documentId}`: the client's one review identity for a document of a branch. */
-export type DraftItemKey = string;
+
+const ID_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";
 
 /**
- * The draft a document's `create` in a Work makes, named by the document: the client that wrote
- * the create opens its room before the server has admitted it, as a live document's room is
- * named by its id. A node is created once, so its create makes at most one such draft.
+ * A fresh draft id: 12 base-36 characters (62 random bits), as a change id. It sits on every
+ * changed word in Live history for good, so it is short.
  */
-export function createdDraftId(documentId: DocumentId): DraftId {
-  return `draft_${documentId}`;
+export function newDraftId(): DraftId {
+  let id = "";
+  for (const byte of globalThis.crypto.getRandomValues(new Uint8Array(12)))
+    id += ID_DIGITS[byte % 36];
+  return id;
 }
+
+const DRAFT_ID = /^[0-9a-z]{12}$/;
+
+/** Whether a string has a draft id's shape. */
+export function isDraftId(value: unknown): value is DraftId {
+  return typeof value === "string" && DRAFT_ID.test(value);
+}
+/** `${draftId}:${documentId}`: the client's one review identity for a document of a draft. */
+export type DraftItemKey = string;
 
 /** The one builder of a draft item key, for text and binary items alike. */
-export function draftItemKey(branchId: BranchId, documentId: DocumentId): DraftItemKey {
-  return `${branchId}:${documentId}`;
+export function draftItemKey(draftId: DraftId, documentId: DocumentId): DraftItemKey {
+  return `${draftId}:${documentId}`;
 }
 
-/** The branch and document a draft item key names; null when the string is not one. */
+/** The draft and document a draft item key names; null when the string is not one. */
 export function parseDraftItemKey(
   itemKey: string,
-): { branchId: BranchId; documentId: DocumentId } | null {
+): { draftId: DraftId; documentId: DocumentId } | null {
   const separator = itemKey.indexOf(":");
   if (separator <= 0 || separator === itemKey.length - 1) return null;
-  const branchId = itemKey.slice(0, separator);
+  const draftId = itemKey.slice(0, separator);
   const documentId = itemKey.slice(separator + 1) as DocumentId;
-  return draftItemKey(branchId, documentId) === itemKey && !documentId.includes(":")
-    ? { branchId, documentId }
+  return draftItemKey(draftId, documentId) === itemKey && !documentId.includes(":")
+    ? { draftId, documentId }
     : null;
 }
 /** A client-generated UUID naming one document command; resends reuse it. */
@@ -65,7 +77,7 @@ export type DocumentRestorePointId = string;
 export const asDocumentRestorePointId = (s: string) => s as DocumentRestorePointId;
 export type EventJournalId = string;
 export const asEventJournalId = (s: string) => s as EventJournalId;
-/** Identity held by one durable document authority head across its fenced generations. */
+/** Identity of one durable document authority head; a handle bound to another id is retired. */
 export type DocumentAuthorityId = string;
 export const asDocumentAuthorityId = (s: string) => s as DocumentAuthorityId;
 export type DocumentRevision = string;

@@ -37,7 +37,6 @@ import { classifyFiletype, type YjsTrackedSchemaType } from "@meridian/contracts
 import type { DocumentId } from "@meridian/contracts/runtime";
 import { codeFileBlock, type MarkupCodec, type PMNode } from "@meridian/markup";
 import { walkLinkOccurrences, writtenAddresses } from "@meridian/markup/links";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import { type CopyIdentityMap, remapCopiedBlocks } from "./copied-blocks.js";
@@ -200,7 +199,7 @@ export function createLinkBinder(deps: LinkBinderDeps): LinkBinder {
       if (isDocumentNotFoundError(cause)) return null;
       throw cause;
     }
-    const clone = createCollabYDoc({ gc: false });
+    const clone = new Y.Doc({ gc: false });
     try {
       Y.applyUpdate(clone, state);
       return deps.model.projectBlocks(toDocHandle(clone)).map((block) => block.node);

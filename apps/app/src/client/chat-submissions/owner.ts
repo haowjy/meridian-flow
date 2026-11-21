@@ -124,6 +124,7 @@ export function recordAndProjectSubmission(
       actions.ensureThread(
         makeOptimisticThread({
           id: entry.threadId,
+          draftId: entry.creation.draftId,
           projectId: entry.projectId,
           title: entry.creation.title,
           timestamp: entry.createdAt,
@@ -260,6 +261,7 @@ export class ChatSubmissionOwner {
           entry.projectId,
           {
             id: threadId,
+            draftId: entry.creation.draftId,
             title: entry.creation.title,
             workId: entry.creation.workId,
             ...(entry.creation.aiWriteMode ? { aiWriteMode: entry.creation.aiWriteMode } : {}),

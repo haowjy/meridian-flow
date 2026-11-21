@@ -11,14 +11,19 @@ import { snapshotBlocks, snapshotProjected } from "../apply/echo.js";
 import { resolveOverwrite } from "../apply/overwrite.js";
 import type { ResolvedEdit } from "../apply/types.js";
 import type { Block } from "../codec-types.js";
-import { createPlanningView, planningSnapshot } from "../frontier.js";
+import { createPlanningView, frontierSnapshot } from "../frontier.js";
 import { toDocHandle } from "../handles.js";
 import { createWriteLinkAssigner, type WriteLinkAssigner } from "../links/assign-refs.js";
 import type { ActorSession } from "../ports/actor-session-store.js";
 import type { ProjectedBlock } from "../ports/model.js";
 import { editHandle } from "../ports/update-journal.js";
 import { landCopies } from "../resolver/land-copies.js";
-import { documentRevision, planWrite, type ResolveWriteResult } from "../resolver/resolve.js";
+import {
+  documentRevision,
+  planWrite,
+  type ResolveWriteParams,
+  type ResolveWriteResult,
+} from "../resolver/resolve.js";
 import { type SemanticEditIRV1, validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { type CommandLinks, openCommandLinks } from "./command-links.js";
 import { copySummary } from "./copy-receipt.js";
@@ -27,6 +32,7 @@ import type { DocumentSave } from "./document-save.js";
 import type { InternalWriteResult } from "./internal-result.js";
 import { isInternalWriteResult } from "./internal-result.js";
 import { type ListingSource, recordObservation } from "./observation.js";
+import { readMergedContent } from "./read-view.js";
 import { renderReceipt, returnedWriteResult } from "./receipt.js";
 import { formatApplySuccess, formatUnchangedSuccess, status } from "./response-format.js";
 import { openRoom, type RoomCallInput, type RoomCopy } from "./room.js";
@@ -85,14 +91,10 @@ export function createWriteCommands(deps: {
 
   /** The call's room copy, disposed when `use` settles; a door that can't read answers its result. */
   async function withRoom(
-    input: Omit<RoomCallInput, "workDraftId"> & { context: WriteContext },
+    input: RoomCallInput,
     use: (room: RoomCopy) => Promise<InternalWriteResult>,
   ): Promise<InternalWriteResult> {
-    const { context, ...call } = input;
-    const room = await openRoom(options.coordinator, {
-      ...call,
-      ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
-    });
+    const room = await openRoom(options.coordinator, input);
     if (isInternalWriteResult(room)) return room;
     try {
       return await use(room);
@@ -108,7 +110,7 @@ export function createWriteCommands(deps: {
   ): Promise<InternalWriteResult> {
     const address = parseFileAddress(command);
     if (!address.ok) return status("invalid_write", address.message);
-    return withRoom({ docId: address.documentId, commandName: "read", context }, async (room) => {
+    return withRoom({ docId: address.documentId, commandName: "read" }, async (room) => {
       const links = await openCommandLinks(options, {
         documentId: address.documentId,
         docs: [room.doc],
@@ -148,14 +150,15 @@ export function createWriteCommands(deps: {
    * frontier, then the reply's own surviving updates), or the current room when no usable
    * frontier exists. A document this reply created plans from the empty snapshot instead,
    * since the model knows it began empty. Utility, seed and import writes carry no frontiers
-   * and plan on the room copy.
+   * and plan on the room copy. `collected` is the frontier's snapshot when a checkpoint dropped
+   * content it saw: the room is the plan doc, and a replace plans on what the model read.
    */
   async function withPlanDoc(
     room: RoomCopy,
     docId: string,
     context: WriteContext,
     actor: MutationActor,
-    use: (planDoc: Y.Doc) => Promise<InternalWriteResult>,
+    use: (planDoc: Y.Doc, collected: Y.Snapshot | null) => Promise<InternalWriteResult>,
   ): Promise<InternalWriteResult> {
     const lookups = context.frontiers;
     const reply = Boolean(context.responseIdentity) && actor.kind === "agent";
@@ -163,17 +166,19 @@ export function createWriteCommands(deps: {
       // Lookups without planning lost it: the write would plan on text the model never saw.
       if (lookups && reply)
         throw new Error(`A reply's write to ${docId} carries no planning frontier`);
-      return use(room.doc);
+      return use(room.doc, null);
     }
     const frontier = room.room ? await lookups.planning(room.room) : null;
-    const usable = room.room ? planningSnapshot(room.doc, room.room, frontier) : null;
+    const at = room.room ? frontierSnapshot(room.doc, room.room, frontier) : null;
+    const usable = at && !at.collected ? at.snapshot : null;
+    const collected = at?.collected ? at.snapshot : null;
     const created = !usable && Boolean(lookups.reply?.created(docId));
     const snapshot = usable ?? (created ? Y.emptySnapshot : null);
     const view =
       snapshot &&
       createPlanningView(room.doc, snapshot, [...(lookups.reply?.updates(docId) ?? [])]);
     try {
-      return await use(view ?? room.doc);
+      return await use(view ?? room.doc, collected);
     } finally {
       view?.destroy();
     }
@@ -233,7 +238,6 @@ export function createWriteCommands(deps: {
       {
         docId: address.documentId,
         commandName: command.command,
-        context,
       },
       async (room) => {
         const overwriting = command.overwrite === true;
@@ -318,7 +322,8 @@ export function createWriteCommands(deps: {
           documentBlocksDetail(resolved.error.details),
         );
       }
-      if (resolved.edits.length === 0) return formatUnchangedSuccess();
+      if (resolved.edits.length === 0)
+        return withEvidence(links, room, address.documentId, context, formatUnchangedSuccess());
       overwrite = resolved;
     }
     // Copies and bound nodes carry what they name; written content into an empty document is
@@ -361,8 +366,8 @@ export function createWriteCommands(deps: {
     }
     const { from: _from, ...selectors } = command as typeof command & { from?: unknown };
     const actor = mutationActor(session, address.documentId, context);
-    return withRoom({ docId: address.documentId, commandName: command.command, context }, (room) =>
-      withPlanDoc(room, address.documentId, context, actor, async (planDoc) => {
+    return withRoom({ docId: address.documentId, commandName: command.command }, (room) =>
+      withPlanDoc(room, address.documentId, context, actor, async (planDoc, collected) => {
         const shown = copiedNodes ? [] : await shownLinksFor(address.documentId, context);
         const links = await openCommandLinks(options, {
           documentId: address.documentId,
@@ -371,6 +376,58 @@ export function createWriteCommands(deps: {
           shown,
           context,
         });
+        let params: ResolveWriteParams = {
+          ...selectors,
+          documentAddress: address,
+          ...(copiedNodes ? { blocks: copiedNodes } : {}),
+        };
+        if (
+          collected &&
+          room.room &&
+          command.command === "replace" &&
+          !copiedNodes &&
+          command.find === undefined &&
+          command.content !== undefined
+        ) {
+          const view = context.linkView?.kind === "draft" ? "draft" : "live";
+          const shownBlocks = (await context.frontiers?.planningShown?.(room.room)) ?? [];
+          const asWritten = params;
+          const merged = readMergedContent({
+            room: room.doc,
+            snapshot: collected,
+            shown: shownBlocks.filter((block) => block.view === view),
+            model: options.model,
+            codec: links.codec,
+            plan: (doc) => {
+              const onRead = planWrite(
+                { doc, model: options.model, codec: links.codec },
+                asWritten,
+              );
+              const resolved = onRead.ok
+                ? onRead.assign(
+                    linkAssigner(address.documentId, links.scope, shown, context.uploadsChat),
+                  )
+                : onRead;
+              return resolved.ok ? resolved.edits : null;
+            },
+          });
+          if (merged === "gone")
+            return withCurrentText(
+              returnedWriteResult("block_gone"),
+              room,
+              links,
+              address,
+              context,
+            );
+          if (merged !== null)
+            params = {
+              ...params,
+              in: undefined,
+              around: undefined,
+              content: merged,
+              wholeDocument: true,
+            };
+        }
         // Planning fixes scope, matches and a find's reconstructed groups; what
         // ref assignment will see is only known then, so it loads before assignment runs.
         const plan = planWrite(
@@ -379,11 +436,7 @@ export function createWriteCommands(deps: {
             model: options.model,
             codec: links.codec,
           },
-          {
-            ...selectors,
-            documentAddress: address,
-            ...(copiedNodes ? { blocks: copiedNodes } : {}),
-          },
+          params,
         );
         if (plan.ok && plan.written.length > 0) {
           await options.links.prepare({
@@ -429,7 +482,8 @@ export function createWriteCommands(deps: {
             : failed;
         }
         validateResolvedIr(resolved.ir, address.documentId, appliedPlanDoc);
-        if (resolved.edits.length === 0) return formatUnchangedSuccess();
+        if (resolved.edits.length === 0)
+          return withEvidence(links, room, address.documentId, context, formatUnchangedSuccess());
         return finishPreparedEdit({
           command,
           session,
@@ -548,7 +602,6 @@ export function createWriteCommands(deps: {
         },
       },
       ifOccupied: edit.ifOccupied,
-      ...(context.workDraftId ? { workDraftId: context.workDraftId } : {}),
     });
     if (isInternalWriteResult(saved)) return saved;
     // The echo and frontier show the room as the save left it.
@@ -626,15 +679,13 @@ export function createWriteCommands(deps: {
         ...(context.turnId ? { ownActorTurnIds: new Set([context.turnId]) } : {}),
         ...(options.coordinator.concurrentUpdatesForReport
           ? {
-              loadConcurrent: ({ baseline, after, through, attributionBridge }) =>
+              loadConcurrent: ({ baseline, after, through }) =>
                 options.coordinator.concurrentUpdatesForReport?.({
                   docId: documentId,
                   doc: room.doc,
                   baselineDoc: baseline,
                   after,
                   through,
-                  ...(attributionBridge ? { attributionBridge } : {}),
-                  ...(context.workDraftId ? { access: { workDraftId: context.workDraftId } } : {}),
                 }) ?? Promise.resolve([]),
             }
           : {}),

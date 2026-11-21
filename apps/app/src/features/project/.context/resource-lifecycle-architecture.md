@@ -9,8 +9,8 @@ a copy is not.
 ## Views close on what can come back; copies go on what cannot
 
 `list-removal-observer.ts` reads the project's list, the sources queries and the browser's copy
-inventory (`LocalDocumentCopies`, one per account: live and draft-room copies of a document are
-found and deleted by its id). It runs when one of them changes; nothing polls.
+inventory (`LocalDocumentCopies`, one per account: a document's copies are found and deleted by its
+id). It runs when one of them changes; nothing polls.
 
 | What the observer reads | Views | Copy and session |
 |---|---|---|

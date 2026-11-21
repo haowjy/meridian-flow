@@ -1,11 +1,7 @@
 // Shared in-memory harness for write-tool module integration tests.
 
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  PROSEMIRROR_FRAGMENT_NAME,
-  RESERVED_CLIENT_ID_MAX,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
 import { prosemirrorToYXmlFragment } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import { createAgentEditCodecFactory } from "../../codec-adapter.js";
@@ -32,7 +28,7 @@ export const codec = codecFactory.forScope(UNSCOPED_DOCUMENT_LINKS);
 export const model = yProsemirrorModel(schema);
 export const THREAD_ID = "thread-a";
 export const context = { sessionId: "session-a", threadId: THREAD_ID };
-const FIRST_FAKE_LIVE_CLIENT_ID = RESERVED_CLIENT_ID_MAX + 1;
+const FIRST_FAKE_LIVE_CLIENT_ID = 1000;
 
 export function harness(
   initialDocs: Record<string, string> = {},
