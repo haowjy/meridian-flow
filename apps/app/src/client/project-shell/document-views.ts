@@ -15,6 +15,7 @@ import { projectQueryKeys } from "../query/project-query-keys";
 import { tabChangeCounts, withTabChangeCounts } from "../query/tab-change-counts";
 import { cachedOwnerDrafts } from "../query/useOwnerDrafts";
 import { browserRecord, isRecord } from "../storage/browser-record";
+import { writeTreeVersionChoice } from "./store";
 
 /** A draft by its id, item, and focused change. */
 export type DraftPin = { draftId: string; itemKey: string; changeId?: string };
@@ -146,27 +147,26 @@ export function setDocumentView(
 }
 
 /**
- * The scope's draft owner became `draftId` (a Work pick, or under No Work another chat on
- * screen): a view on one of its drafts stays on it, and so does a view on a document only its
- * draft holds (Live has no version of it to return to); every other view showing a draft returns
- * to Live, so no page keeps a draft, or a change focused in one, from the scope before.
- * Returns whether a page stayed on the new owner's draft: a Work pick then puts the toggle on
- * Draft, because the scope's drafts of such pages show only on Draft (`shownDraft`).
+ * The scope's draft owner became `draftId` (a Work pick, another chat on screen under No Work,
+ * a new chat's composer): the toggle goes to Draft, so every page shows the new scope's draft
+ * where it has one and Live where it has none (`shownDraft`). A view on one of the new owner's
+ * drafts keeps its pin, and so does a view on a document only its draft holds (Live has no
+ * version of it to return to); every other pin ends, so no page keeps a draft, or a change
+ * focused in one, from the scope before.
  */
 export function enterScope(
   queryClient: QueryClient,
   accountId: string,
   projectId: string,
   draftId: string | null,
-): boolean {
+): void {
+  writeTreeVersionChoice(accountId, projectId, "draft");
   const views = read(accountId, projectId);
   let changed = false;
-  let onScopeDraft = false;
   const next: Record<string, DocumentView> = {};
   for (const [documentId, view] of Object.entries(views)) {
     const { pin } = view;
     const onScope = draftId !== null && pin?.draftId === draftId;
-    onScopeDraft ||= onScope;
     const created =
       pin !== undefined &&
       (cachedOwnerDrafts(queryClient, projectId, pin.draftId) ?? []).some(
@@ -178,7 +178,6 @@ export function enterScope(
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
-  return onScopeDraft;
 }
 
 /**
