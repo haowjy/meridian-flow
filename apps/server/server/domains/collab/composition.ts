@@ -86,7 +86,7 @@ import { createDocumentCreationAggregate } from "./domain/document-creation.js";
 import { createCutReader, createDocumentDerivationService } from "./domain/document-derivations.js";
 import {
   scopeAgentEdit,
-  scopeDraftPeer,
+  scopeEffectiveReader,
   scopeModelEditWrite,
 } from "./domain/document-link-scope-doors.js";
 import {
@@ -358,7 +358,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     treeCut: (draftId) => treeCutOf(deps.db, deps.treeLists, draftId),
     pending: workDraftPendingStore,
   });
-  const draftPeers = scopeDraftPeer(
+  const effectiveReader = scopeEffectiveReader(
     createEffectiveDocumentReader({
       blockText: createDrizzleBlockText(deps.db),
       agentEdit,
@@ -481,7 +481,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     lineage,
     checkpoints,
     attribution: createDocumentAttribution({ latestUpdate: persistence.store.latestUpdate }),
-    draftPeers,
+    effectiveReader,
     drafts: {
       ...drafts,
       presses: createDrizzlePress(deps.db, {

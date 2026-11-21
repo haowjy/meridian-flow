@@ -23,7 +23,7 @@ import {
   type CollabDomain,
   createCopyIdentityMap,
   type DocumentCreationAggregate,
-  type DraftPeerShadowAccess,
+  type EffectiveDocumentReader,
 } from "../../../collab/index.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
@@ -110,7 +110,7 @@ export async function insertPlannedTrees(
   position?: ContextSiblingPosition,
   draft?: {
     draftId: DraftId;
-    documentSync: Pick<DraftPeerShadowAccess, "writeWorkCreatedContent">;
+    documentSync: Pick<EffectiveDocumentReader, "writeWorkCreatedContent">;
   },
 ): Promise<Result<CopyOutcome, AdapterFault>> {
   if (draft) {

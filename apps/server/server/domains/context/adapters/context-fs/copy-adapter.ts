@@ -6,7 +6,7 @@
 
 import { compareCatalogSiblings } from "@meridian/project-tree";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
-import type { DraftPeerShadowAccess } from "../../../collab/index.js";
+import type { EffectiveDocumentReader } from "../../../collab/index.js";
 import { joinPath, renderFilename } from "../../context/paths.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
@@ -28,7 +28,7 @@ import { type CopyTreeDeps, insertPlannedTrees, planCopyTree } from "./copy-tree
 type ContextFsCopyDeps = CopyTreeDeps & {
   store: ContextDocumentStore;
   documentSync: CopyTreeDeps["documentSync"] &
-    Pick<DraftPeerShadowAccess, "writeWorkCreatedContent">;
+    Pick<EffectiveDocumentReader, "writeWorkCreatedContent">;
 };
 
 export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopyAdapter {

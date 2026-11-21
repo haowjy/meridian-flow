@@ -11,7 +11,7 @@
  */
 
 import type { FileGrant } from "../../file-policy/index.js";
-import type { DraftPeerShadowAccess } from "../contracts.js";
+import type { EffectiveDocumentReader } from "../contracts.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ModelEdits } from "./model-edit.js";
@@ -118,15 +118,15 @@ export function scopeModelEditWrite(
 }
 
 /**
- * Draft-aware reads, in the reader's thread: its manifest peer and reply's
+ * Draft-aware reads, in the reader's thread: its draft and its reply's
  * staged creates decide what a draft view holds. The revision depends on the
  * tree, so it is scoped like the text.
  */
-export function scopeDraftPeer(
-  access: Omit<DraftPeerShadowAccess, "seedWorkCreates" | "writeWorkCreatedContent">,
+export function scopeEffectiveReader(
+  access: Omit<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent">,
   scopes: DocumentLinkScopes,
-  created: Pick<DraftPeerShadowAccess, "seedWorkCreates" | "writeWorkCreatedContent">,
-): DraftPeerShadowAccess {
+  created: Pick<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent">,
+): EffectiveDocumentReader {
   const by = (command: { documentId: string; threadId?: string | null }) => ({
     documentId: command.documentId,
     ...(command.threadId ? { viewer: { threadId: command.threadId } } : {}),

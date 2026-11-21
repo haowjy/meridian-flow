@@ -13,8 +13,8 @@ import { settledAheads } from "@meridian/markup/links";
 import * as Y from "yjs";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
-  DraftPeerShadowAccess,
   EffectiveBlocksRead,
+  EffectiveDocumentReader,
   EffectiveReadVersion,
   HashlineRead,
   SyncError,
@@ -43,7 +43,7 @@ export function createEffectiveDocumentReader(input: {
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
-}): Omit<DraftPeerShadowAccess, "seedWorkCreates" | "writeWorkCreatedContent"> {
+}): Omit<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent"> {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"

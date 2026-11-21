@@ -20,7 +20,7 @@ import type {
   CollabDomain,
   DocumentCreationAggregate,
   DocumentLinkScopes,
-  DraftPeerShadowAccess,
+  EffectiveDocumentReader,
   EffectiveReadVersion,
   MarkdownDocumentStore,
   SyncError,
@@ -99,7 +99,7 @@ export interface ContextFSDeps {
   documentSync: MarkdownDocumentStore &
     Pick<CollabDomain, "refreshDocumentProjection"> &
     Pick<
-      DraftPeerShadowAccess,
+      EffectiveDocumentReader,
       | "writeWorkCreatedContent"
       | "readEffectiveHashlines"
       | "readEffectiveMarkdown"

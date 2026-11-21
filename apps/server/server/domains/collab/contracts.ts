@@ -478,11 +478,12 @@ export type EffectiveBlocksRead = VersionedDocumentRead<
   aheadSettlements: ReadonlyMap<string, string>;
 };
 
-export type DraftPeerShadowAccess = {
+/** Reads a document as one reader sees it: Live, or a draft's view with its suggestions applied. */
+export type EffectiveDocumentReader = {
   readEffectiveRevision(
     input: {
       documentId: DocumentId;
-      /** The reading thread: its peer and its reply's staged writes count. */
+      /** The reading thread: its draft and its reply's staged writes count. */
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
@@ -573,7 +574,7 @@ export type CollabDomain = CollabTransport &
   TurnLiveLineageAccess &
   DocumentCheckpoints &
   DocumentAttribution &
-  DraftPeerShadowAccess &
+  EffectiveDocumentReader &
   CollabDrafts &
   CollabDraftResolver &
   DocumentCreationAggregate & { importBinder: ImportLinkBinder };

@@ -162,10 +162,10 @@ export async function lockLineagesOfThreads(
   await lockLineageOwners(db, [...roots.map((row) => row.root), ...rootThreadIds]);
 }
 
-/** A lineage's drafts can't be written: no chat in it is live. */
+/** A lineage's draft takes no new writes: no chat in it is live. */
 export class LineageDraftsUnavailableError extends Error {
   constructor(readonly rootThreadId: string) {
-    super("Chat drafts are unavailable because no chat in their lineage is live");
+    super("No chat in this lineage is live, so its draft takes no new writes");
     this.name = "LineageDraftsUnavailableError";
   }
 }

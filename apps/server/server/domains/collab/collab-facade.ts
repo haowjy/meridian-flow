@@ -9,7 +9,7 @@ import type {
   DocumentAttribution,
   DocumentCheckpoints,
   DocumentProjectionRefresher,
-  DraftPeerShadowAccess,
+  EffectiveDocumentReader,
   MarkdownDocumentStore,
   TurnLiveLineageAccess,
   TurnReversalAccess,
@@ -27,7 +27,7 @@ export type CollabFacadeServices = {
   lineage: TurnLiveLineageAccess;
   checkpoints: DocumentCheckpoints;
   attribution: DocumentAttribution;
-  draftPeers: DraftPeerShadowAccess;
+  effectiveReader: EffectiveDocumentReader;
   drafts: CollabDrafts;
   draftResolver: CollabDraftResolver;
   documentCreation: DocumentCreationAggregate;
@@ -45,7 +45,7 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.lineage,
     ...services.checkpoints,
     ...services.attribution,
-    ...services.draftPeers,
+    ...services.effectiveReader,
     ...services.drafts,
     ...services.draftResolver,
     ...services.documentCreation,
