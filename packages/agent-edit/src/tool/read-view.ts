@@ -29,7 +29,8 @@ export interface ShownBlock {
 /**
  * The content of a whole-document replace that writes `plan`'s edit onto the room as a merge
  * with what the model read (base: each block as last shown in full, else Live; ours: base plus
- * the edit; theirs: the room), or null when the transcript can't stand in for the read: no block
+ * the edit; theirs: the room). `gone` when the edit rewrites a block the room has deleted since,
+ * which the merge would bring back: the write answers `block_gone`, as on a usable frontier. Null when the transcript can't stand in for the read: no block
  * of the frontier was shown in full, a body doesn't parse as one block, or the edit doesn't
  * resolve on the read.
  */
@@ -41,7 +42,7 @@ export function readMergedContent(input: {
   codec: AgentEditCodec;
   /** The model's command, resolved on a document: its edits, or null when it doesn't resolve. */
   plan: (doc: DocHandle) => readonly ResolvedEdit[] | null;
-}): string | null {
+}): string | "gone" | null {
   const { room, model, codec } = input;
   const seen = blocksAt(room, input.snapshot);
   const bodies = shownBodies(seen, input.shown);
@@ -90,6 +91,15 @@ export function readMergedContent(input: {
     const handle = toDocHandle(read);
     const edits = input.plan(handle);
     if (!edits) return null;
+    const rewritesGone = edits.some(
+      (edit) =>
+        edit.kind !== "insert" &&
+        edit.block !== undefined &&
+        !now.has(
+          blockItemIdKey(blockIdentityForItem(read, model.getCanonicalBlockIdentity(edit.block))),
+        ),
+    );
+    if (rewritesGone) return "gone";
     if (!applyEdits(handle, model, edits, "read-view").ok) return null;
     const ours = model
       .projectBlocks(handle)

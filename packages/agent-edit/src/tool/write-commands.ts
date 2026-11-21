@@ -411,6 +411,14 @@ export function createWriteCommands(deps: {
               return resolved.ok ? resolved.edits : null;
             },
           });
+          if (merged === "gone")
+            return withCurrentText(
+              returnedWriteResult("block_gone"),
+              room,
+              links,
+              address,
+              context,
+            );
           if (merged !== null)
             params = {
               ...params,
