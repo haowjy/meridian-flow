@@ -89,8 +89,8 @@ export function ContextDocumentHost({
           queryKey: projectQueryKeys.drafts(projectId, pinnedOwner),
         })
     : null;
-  // `readOnly` is the owner's scope (archived or trashed freezes it); the presentation decides whether
-  // this view ever types. Only the first is compared with the room's access.
+  // `readOnly` is the Work's scope (an archived or deleted Work's Scratch); the presentation decides
+  // whether this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
@@ -211,11 +211,10 @@ function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]
 }
 
 /**
- * A room's scope follows its owner: an archived Work's drafts and scratch, and a trashed
- * chat's drafts, are read-only. The front editor already follows its room; when the server
- * names a scope that `readOnly` doesn't show, this tab's Works catalog or the review owner's
- * draft list is behind (another tab archived the Work or trashed the chat), and the notice,
- * its way back and `readOnly` all come from them. Asked on activation and on each named
+ * A room's scope follows its owner: an archived or deleted Work's Scratch is read-only. The
+ * front editor already follows its room; when the server names a scope that `readOnly` doesn't
+ * show, this tab's Works catalog is behind (another tab archived the Work), and the notice, its
+ * way back and `readOnly` all come from it. Asked on activation and on each named
  * scope; this tab's own commands never ask, because the room's next scope confirms them.
  */
 function RoomScopeCatalogCheck({
