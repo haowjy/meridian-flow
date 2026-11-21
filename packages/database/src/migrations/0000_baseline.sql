@@ -976,9 +976,8 @@ CREATE TABLE "pending_notices" (
 CREATE TABLE "press_text_effects" (
 	"command_id" uuid NOT NULL,
 	"document_id" uuid NOT NULL,
-	"authority_generation" bigint NOT NULL,
-	"insertions" jsonb NOT NULL,
-	"deletions" jsonb NOT NULL,
+	"delta" jsonb NOT NULL,
+	"verdicts" jsonb NOT NULL,
 	"undone_by" uuid,
 	CONSTRAINT "press_text_effects_command_id_document_id_pk" PRIMARY KEY("command_id","document_id")
 );

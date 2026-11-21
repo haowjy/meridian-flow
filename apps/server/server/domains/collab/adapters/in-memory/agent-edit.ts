@@ -3,6 +3,7 @@
 import {
   type DocumentCoordinator,
   DocumentNotFoundError,
+  dropUnseenContent,
   type JournalBatchAppendEntry,
   type PersistedUpdate,
   type UpdateJournal,
@@ -89,15 +90,23 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
     const updates = (entry?.updates ?? []).filter((row) => row.seq > (base?.upToSeq ?? 0));
     const bytes = base?.state.slice() ?? null;
     const suffix = updates.map((row) => row.update.slice());
-    let state: Promise<Uint8Array> | undefined;
+    let state: ReturnType<typeof materializeCheckpoint> | undefined;
     return mintCheckpointCut({
       documentId: docId,
       authority: Object.freeze({ ...authority }),
       upToSeq: updates.at(-1)?.seq ?? base?.upToSeq ?? 0,
       validateInputs: async () => {},
       async materializeState() {
-        state ??= materializeCheckpoint(bytes, suffix);
-        return (await state).slice();
+        state ??= materializeCheckpoint(bytes, suffix, async () => []);
+        return (await state).state.slice();
+      },
+      async history() {
+        state ??= materializeCheckpoint(bytes, suffix, async () => []);
+        const { state: stored, structs, contentBytes } = await state;
+        return { bytes: stored.byteLength, structs, contentBytes };
+      },
+      async dropUnseenContent(document) {
+        dropUnseenContent(document, []);
       },
     });
   }

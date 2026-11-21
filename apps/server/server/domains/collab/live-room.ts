@@ -99,6 +99,7 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
             if (cut) {
               const state = await cut.materializeState();
               await deps.journal.storeCheckpoint(cut);
+              await cut.dropUnseenContent(document);
               if (deps.eventSink)
                 emitEvent(deps.eventSink, {
                   level: "debug",
@@ -107,6 +108,8 @@ export function createLiveRoom(deps: LiveRoomDeps): LiveRoom {
                   payload: {
                     documentId,
                     clientCount: Y.decodeStateVector(Y.encodeStateVectorFromUpdate(state)).size,
+                    // The growth curve of a document's stored history against its text.
+                    ...(await cut.history()),
                   },
                 });
             }

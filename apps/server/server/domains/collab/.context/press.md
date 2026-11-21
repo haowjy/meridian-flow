@@ -29,9 +29,10 @@ chat has its draft from its creation, so a press never makes one.
   `apply_command_trees` rows as an Apply click). Discard is `discardTreeRecords`.
 - **Text half.** For each selected document that stands in Live after the tree half,
   `pressStored` (agent-edit) runs `accept` or `reject({ draft })` as one Yjs transaction, appends
-  it to the Live journal as `human:<account>`, and stores its inserted and deleted id ranges in
-  `press_text_effects` with the authority generation. The ranges hold the verdicts the resolve
-  recorded (`suggestion_verdicts`), so its Undo takes them back with the text. A document the press leaves out of Live
+  it to the Live journal as `human:<account>`, and stores in `press_text_effects` the blocks it
+  changed, before and after (ProseMirror JSON, as an AI write's receipt stores its `delta`), and
+  the verdict entries the resolve wrote (`suggestion_verdicts` keys, each with the id of the map
+  item holding it), so its Undo takes them back with the text. A document the press leaves out of Live
   (a discarded create) keeps its text untouched.
 - **`seen`.** The pressing tab's state vector of every live room with typing the server hasn't
   acknowledged (`unsentStateVectors`), checked first, after the lists' keys and before the selection is read:
@@ -78,13 +79,19 @@ below.
 ## Undo and Redo
 
 `unpress` takes a press back once, in the press's own project. The tree half is `undoApply`
-(Apply) or `restoreDiscard` (Discard). The text half is a `Y.UndoManager` undo built from the
-stored ranges: it restores what the press removed and removes what it made Live, and keeps
-anything typed since where it was typed: the press writes only the text it deletes and the marks
-it removes (`resolveStored`), so text typed inside a resolved word sits in items the press kept.
-The tab's Apply and Reject inside the text are the same resolve, undone by Ctrl+Z. An effect whose
-document's authority generation changed (nothing moves one today; a version restore is an
-ordinary edit), or whose notes are closed, is marked taken back without changing its text. A document the press created stays in Live on
+(Apply) or `restoreDiscard` (Discard). The text half is by content, the card Undo's rule
+(`takeBack` in `domain/inverse-text.ts`): each change of the stored blocks that still stands in
+the document is taken back out, written through `writeBlocks` so every item it leaves alone
+keeps its identity, and the verdicts of the changes now pending again are forgotten
+(`forgetVerdicts`). A change the writer typed inside since stands no more: its text and its
+verdict stay as they are. A change another client resolved the same way since, whose entry now
+holds that client's write (`resolvedElsewhere`), is left out of the take-back, text and verdict:
+undoing one of two identical resolves would otherwise show a change pending under a verdict that
+says it was resolved. It reads no deleted item: a checkpoint drops their content
+([checkpoints](CONTEXT.md#authority-checkpoints-and-derivation)), and the content of an effect
+outlives a version restore too. The tab's Apply and Reject inside the text are a resolve on the
+editor's Y.Doc, undone by Ctrl+Z from the editor's own history. An effect whose notes are closed
+is marked taken back without changing its text. A document the press created stays in Live on
 Undo of Apply. There is no Redo command: pressing again is the Redo. Press and unpress rows are
 purged with discards after 30 days.
 

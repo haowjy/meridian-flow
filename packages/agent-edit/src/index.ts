@@ -24,16 +24,17 @@ export {
 } from "./model/schema-repair.js";
 export {
   dropDraft,
-  type IdRanges,
+  forgetVerdicts,
   type PressRecord,
   pressStored,
+  resolvedElsewhere,
   resolveScope,
   resolveStored,
   storedPendingChanges,
   storedPendingTurns,
   suggestionAuthors,
   suggestionVerdicts,
-  undoPressStored,
+  type WrittenVerdict,
   writeVerdict,
 } from "./model/stored-suggestions.js";
 export {

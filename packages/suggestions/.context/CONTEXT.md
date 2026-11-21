@@ -112,7 +112,8 @@ where Live text separates its pieces; `pending` the turns and the Works
   removed after the model's read does. `suggestionItems` there is the item-level twin of
   `pendingBy`: a change to how marks, `sug` or attribute layers are stored updates both.
 - Edit list: `read(format: "edits")` says `applied` or `discarded` from the verdicts of the
-  changes a write's items carry (`writeVerdict`); with none, or both, it reads the text.
+  changes a write's own receipt bytes carry (`writeVerdict`), not the document's items, whose
+  content a checkpoint drops once deleted; with none, or both, it reads the text.
 - Resolving, everywhere: agent-edit's `resolveStored(doc, schema, verdict, filter)`
   (`model/stored-suggestions.ts`) runs `accept` or `reject` on the stored document, lowers the
   whole transaction from the root with `lowerResolved`, and writes the staged verdicts into
@@ -125,16 +126,19 @@ where Live text separates its pieces; `pending` the turns and the Works
   tab's Apply and Reject (`acceptSuggestions`, `rejectSuggestions`) run it on the editor's
   Y.Doc as one writer edit (origin `DIRECT_WRITE_ORIGIN`, which the Undo history tracks), so Ctrl+Z takes back
   only it; the binding then redraws the editor. Card Undo runs it with `{ turn }`.
-- **A verdict is undone with its text.** Every `Y.UndoManager` that records or takes back a
-  resolve holds `resolveScope(doc)`, the fragment and the verdicts map: the press's recorder
-  (`pressStored`), its Undo (`undoPressStored`) and the tab's history
-  (`apps/app/src/core/editor/editor-history.ts`). So an entry exists exactly while its resolve
-  stands. A manager over the fragment alone would leave an undone resolve's verdict standing,
-  and the planning view would withdraw a suggestion that is pending again.
+- **A verdict is undone with its text.** The tab's history
+  (`apps/app/src/core/editor/editor-history.ts`) holds `resolveScope(doc)`, the fragment and the
+  verdicts map, and the press's Undo forgets the entries its press wrote whose changes it made
+  pending again (`forgetVerdicts`), never another client's entry. So an entry exists exactly while
+  its resolve stands. An Undo that left an
+  undone resolve's verdict standing would have the planning view withdraw a suggestion that is
+  pending again.
 - Press: Apply or Discard on documents, folders or a Work is a server command
   (`domains/collab/adapters/drizzle-press.ts`). `pressStored` runs `resolveStored` as one Yjs
-  transaction and returns its inserted and deleted id ranges; `undoPressStored` takes those
-  ranges back as a Yjs undo, the same undo Ctrl+Z is in the tab. A whole-Work press finds its
+  transaction and returns the blocks it changed, before and after, and the verdict entries it
+  wrote. Its Undo is by content, as the card's is: each change that still stands is taken back
+  out (`takeBack` in collab's `inverse-text.ts`), so a change the writer typed inside since stays
+  as they left it. It reads no deleted item, whose content a checkpoint drops. A whole-Work press finds its
   documents among its project's and account's: those `pending_changes` lists for it where the
   derivation is current, and every one it hasn't caught up on
   (`apps/server/server/domains/collab/.context/press.md`).

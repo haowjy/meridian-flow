@@ -20,6 +20,6 @@ stateDiagram-v2
 
 - **An Undo runs once.** `undone_by` is set in the unpress's transaction; a second unpress of
   the same press finds nothing to take back.
-- **An effect whose generation differs from the document's** is marked taken back with its
-  text left as it is, as is an effect in a closed owner's notes. Nothing moves a generation
-  today: a version restore is an ordinary edit, so a press before it keeps its Undo.
+- **The effect is content**, so it outlives a version restore and a checkpoint that dropped the
+  deleted text: an unpress takes back each change that still stands in the document as it is now.
+  An unpress of an effect in a closed owner's notes marks it taken back and leaves the text.

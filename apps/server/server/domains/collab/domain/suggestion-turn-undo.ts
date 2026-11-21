@@ -21,6 +21,9 @@ import {
 import type { DocumentWriteOrigin, HeldLiveDocument } from "../contracts.js";
 import type { TurnInverseQuery } from "./turn-inverse-service.js";
 
+/** A document's Undo outcomes that changed its text. */
+const CHANGED = new Set<string>(["reversed", "reconciled", "partial"]);
+
 type Query = TurnInverseQuery & { actor: { type: "user"; userId: string } | { type: "agent" } };
 
 export function createSuggestionTurnUndo(deps: {
@@ -46,6 +49,8 @@ export function createSuggestionTurnUndo(deps: {
     operation: (held: HeldLiveDocument) => Promise<T>,
   ): Promise<T>;
   liveTurnChip(threadId: ThreadId, turnId: TurnId): Promise<TurnReceiptChip | null>;
+  /** Told of each card Undo that changed something. */
+  turnUndone?(input: { threadId: ThreadId; turnId: TurnId; documentIds: string[] }): void;
 }) {
   const holds = (documentId: DocumentId, turn: TurnId) =>
     deps.withLiveDocument(documentId, async ({ doc }) =>
@@ -67,6 +72,19 @@ export function createSuggestionTurnUndo(deps: {
   }
 
   const reverseTurn = async (query: Query): Promise<ReversalOutcome> => {
+    const outcome = await reverse(query);
+    if (outcome.status === "reversed" && query.turnId && query.actor.type === "user")
+      deps.turnUndone?.({
+        threadId: query.threadId,
+        turnId: query.turnId,
+        documentIds: outcome.documents
+          .filter((document) => CHANGED.has(document.status))
+          .map((document) => document.documentId),
+      });
+    return outcome;
+  };
+
+  const reverse = async (query: Query): Promise<ReversalOutcome> => {
     const turn = query.turnId;
     if (!turn) return { status: "nothing_to_undo", documents: [] };
     const documentIds = await documentsOf(query.threadId, turn);

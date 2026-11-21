@@ -75,6 +75,7 @@ import {
   createDeferredLiveProjectionCoordinator,
   createHocuspocusCoordinator,
 } from "./adapters/hocuspocus-coordinator.js";
+import { createUsageEvents } from "./adapters/usage-events.js";
 import { createCheckpointService } from "./checkpoints.js";
 import { createCollabFacade } from "./collab-facade.js";
 import type { CollabDomain } from "./contracts.js";
@@ -379,6 +380,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     markdownDocuments: runtime.markdownDocuments,
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
+  const usage = createUsageEvents(deps.db, deps.eventSink);
   // A card's Undo rejects the turn's suggestions; the Live inverse takes the rest.
   const suggestionTurnUndo = createSuggestionTurnUndo({
     schema: buildDocumentSchema(),
@@ -393,6 +395,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     },
     withLiveDocument: runtime.markdownDocuments.withLiveDocument,
     liveTurnChip: turnInverse.getDocumentAndTreeChip,
+    turnUndone: usage.turnUndone,
   });
   const turnUndo = {
     ...turnInverse,
@@ -491,6 +494,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
         onCommitted: async (documentId) => {
           await runDocumentWriteHook({ documentId }, "collab.press");
         },
+        usage,
       }),
     },
     draftResolver: {

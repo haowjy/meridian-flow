@@ -36,7 +36,8 @@ A `drafts` row is one draft. A Work names it (`works.draft_id`) or a root chat d
 `drafts.pending_document_count` and `pending_folder_count` are its own counts;
 `works` carries the sums over its drafts.
 A draft's text is suggestion marks in the Live document; `press_text_effects` keeps each
-press's text change for its Undo. `commands` holds one row
+press's text change for its Undo, by content (the changed blocks before and after, and the
+verdict keys it wrote). `commands` holds one row
 per command sent as a request, of any kind (documents, Work, project), inserted first in the
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
 its project and chat, so a resend of a create cannot create twice.

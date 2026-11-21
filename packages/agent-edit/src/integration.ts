@@ -18,6 +18,7 @@ export type {
 export {
   createReplyMutations,
   decodeSnapshot,
+  dropUnseenContent,
   frontierBlockId,
   frontierDelta,
 } from "./frontier.js";

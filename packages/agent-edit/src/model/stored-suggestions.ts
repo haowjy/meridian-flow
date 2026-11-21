@@ -22,9 +22,9 @@ import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
+import { captureDelta, type StoredDelta } from "../content-merge/stands.js";
+import { readBlocks } from "../diff/fragments.js";
 import { lowerResolved } from "../resolver/lower-block.js";
-import type { EditRange } from "../undo/receipt.js";
-import { itemsInRange } from "../yjs-mutation.js";
 import { applyOps as applyRawOps, fragmentOf } from "./y-prosemirror.js";
 
 /** The map beside the fragment that holds each change's author, by change id. */
@@ -84,8 +84,8 @@ export function resolveScope(doc: Y.Doc): [Y.XmlFragment, Y.Map<unknown>] {
  * Accept or reject a stored document's suggestions, as a client of the document would. The verdict
  * only deletes text and blocks and removes marks and attributes, and it is lowered to exactly that
  * (`lowerResolved`): every Yjs item that survives stays, so text typed inside a resolved word, a
- * comment's anchor and a cursor keep their place, and a Yjs undo of it (the press's Undo, Ctrl+Z in
- * the tab) takes back only what it did, its verdicts included. Call inside one transaction;
+ * comment's anchor and a cursor keep their place, and Ctrl+Z in the tab (a Yjs undo of it) takes
+ * back only what it did, its verdicts included. Call inside one transaction;
  * returns how it decided each change it changed (empty: nothing changed).
  */
 export function resolveStored(
@@ -152,30 +152,25 @@ export function dropDraft(doc: Y.Doc, schema: Schema, draft: string): boolean {
 }
 
 /**
- * What the writer did with the suggestions one write left, read from the changes its own items
- * carry (`EditEffect.inserted`) and their recorded verdicts: `applied` when every one was
- * accepted, `discarded` when every one was rejected, null otherwise (one is pending, an edit
- * removed it, or two resolves decided it opposite ways).
+ * What the writer did with the suggestions one write left, read from the changes the write's own
+ * update bytes (its receipt's) carry and the document's recorded verdicts: `applied` when every
+ * one was accepted, `discarded` when every one was rejected, null otherwise (one is pending, or two
+ * resolves decided it opposite ways). The bytes, not the document's items: a checkpoint drops the
+ * content of the items a resolve deleted.
  */
-export function writeVerdict(
-  doc: Y.Doc,
-  inserted: readonly EditRange[],
-): "applied" | "discarded" | null {
+export function writeVerdict(doc: Y.Doc, update: Uint8Array): "applied" | "discarded" | null {
   const ids = new Set<string>();
-  for (const range of inserted)
-    for (const { item } of itemsInRange(doc, range)) {
-      const { content } = item;
-      if (content instanceof Y.ContentFormat) {
-        const id = markOf(content.key) ? changeId(content.value) : null;
-        if (id) ids.add(id);
-      } else if (item.parentSub === "sug") {
-        const id = changeId(content.getContent()[0]);
-        if (id) ids.add(id);
-      } else if (item.parentSub && isLayerKey(item.parentSub)) {
-        const id = changeId(content.getContent()[0]);
-        if (id) ids.add(id);
-      }
+  for (const item of Y.decodeUpdate(update).structs) {
+    if (!(item instanceof Y.Item)) continue;
+    const { content } = item;
+    if (content instanceof Y.ContentFormat) {
+      const id = markOf(content.key) ? changeId(content.value) : null;
+      if (id) ids.add(id);
+    } else if (item.parentSub === "sug" || (item.parentSub && isLayerKey(item.parentSub))) {
+      const id = changeId(content.getContent()[0]);
+      if (id) ids.add(id);
     }
+  }
   if (ids.size === 0) return null;
   const verdicts = suggestionVerdicts(doc);
   const decided = new Set<Verdict>();
@@ -188,15 +183,16 @@ export function writeVerdict(
   return decided.has("accept") ? "applied" : "discarded";
 }
 
-/** Yjs item ids by client, as `[clock, len]` runs in clock order. */
-export type IdRanges = Record<string, [number, number][]>;
+/** A verdict entry a press wrote: its key and the id of the map item that holds it. */
+export type WrittenVerdict = { key: string; client: number; clock: number };
 
-/** What a press's one transaction did to a stored document: all a Yjs undo of it needs. */
-export type PressRecord = { insertions: IdRanges; deletions: IdRanges };
+/** What a press's one transaction did to a stored document: all its Undo needs, by content. */
+export type PressRecord = { delta: StoredDelta; verdicts: WrittenVerdict[] };
 
 /**
- * A press's text half: `resolveStored` as one transaction of its own, and the ids that transaction
- * inserted and deleted. Null when nothing changed.
+ * A press's text half: `resolveStored` as one transaction of its own, the blocks it changed before
+ * and after, and the verdict keys it wrote. Null when nothing changed. Its Undo
+ * (`takeBack` over the delta, then `forgetVerdicts`) reads content, never a deleted item.
  */
 export function pressStored(
   doc: Y.Doc,
@@ -204,41 +200,83 @@ export function pressStored(
   verdict: Verdict,
   filter: Filter,
 ): PressRecord | null {
-  const origin = Symbol("press");
-  const recorder = new Y.UndoManager(resolveScope(doc), {
-    trackedOrigins: new Set([origin]),
-    captureTimeout: Number.POSITIVE_INFINITY,
+  const fragment = fragmentOf(doc);
+  const before = readBlocks(fragment, schema);
+  let decided = NONE;
+  doc.transact(() => {
+    decided = resolveStored(doc, schema, verdict, filter);
   });
-  try {
-    let changed = false;
-    doc.transact(() => {
-      changed = resolveStored(doc, schema, verdict, filter).size > 0;
-    }, origin);
-    const item = recorder.undoStack[0];
-    return changed && item
-      ? { insertions: rangesOf(item.insertions), deletions: rangesOf(item.deletions) }
-      : null;
-  } finally {
-    recorder.destroy();
+  const delta = decided.size ? captureDelta(before, readBlocks(fragment, schema)) : null;
+  if (!delta) return null;
+  const verdicts: WrittenVerdict[] = [];
+  for (const [id, fate] of decided) {
+    const key = `${id}:${fate}`;
+    const written = standingItem(doc, key);
+    if (written) verdicts.push({ key, client: written.client, clock: written.clock });
   }
+  return { delta, verdicts };
+}
+
+/** The id of the map item whose value `key` reads now. */
+function standingItem(doc: Y.Doc, key: string): Y.ID | undefined {
+  // Y.Map keeps each key's winning item in `_map`; its public API hides which client wrote it.
+  const item = doc.getMap<unknown>(VERDICTS_ROOT)._map.get(key);
+  return item && !item.deleted ? item.id : undefined;
 }
 
 /**
- * Takes a press back from its record: the Yjs undo the tab's own `UndoManager` would run. Text
- * written since stays where it was written; a change whose text was removed since does not come
- * back. The document must keep deleted items (`gc: false`) and be the authority generation the
- * press ran on. Returns whether anything changed.
+ * The changes of `written` that another client has resolved the same way since, and whose entry
+ * is now that client's: a press's Undo leaves their text and verdict as they stand.
  */
-export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
+export function resolvedElsewhere(doc: Y.Doc, written: readonly WrittenVerdict[]): Set<string> {
+  const out = new Set<string>();
+  for (const { key, client, clock } of written) {
+    const standing = standingItem(doc, key);
+    if (standing && (standing.client !== client || standing.clock !== clock))
+      out.add(changeOf(key));
+  }
+  return out;
+}
+
+const changeOf = (key: string) => key.slice(0, key.lastIndexOf(":"));
+
+/**
+ * Deletes each of `written` whose change is pending again (`pending`, by change id) and whose entry
+ * still holds the press's own write: another client's resolve of the same change keeps its verdict,
+ * and so does a change the Undo left standing. Inside a transaction a write joins it. Whether any
+ * was deleted.
+ */
+export function forgetVerdicts(
+  doc: Y.Doc,
+  written: readonly WrittenVerdict[],
+  pending: (changeId: string) => boolean,
+): boolean {
+  const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
+  let forgot = false;
+  for (const { key, client, clock } of written) {
+    const standing = standingItem(doc, key);
+    if (standing?.client !== client || standing.clock !== clock) continue;
+    if (!pending(changeOf(key))) continue;
+    verdicts.delete(key);
+    forgot = true;
+  }
+  return forgot;
+}
+
+/** Yjs item ids by client, as `[clock, len]` runs in clock order. */
+type IdRanges = Record<string, [number, number][]>;
+
+/** Deletes the items `ranges` names, through a Yjs undo of their insertion. */
+function deleteItems(doc: Y.Doc, ranges: IdRanges): void {
   const undo = new Y.UndoManager(resolveScope(doc), { trackedOrigins: new Set() });
   try {
     // Yjs 13 does not export its stack item; `undo` reads only these three fields.
     undo.undoStack.push({
-      insertions: deleteSetOf(record.insertions),
-      deletions: deleteSetOf(record.deletions),
+      insertions: deleteSetOf(ranges),
+      deletions: Y.createDeleteSet(),
       meta: new Map(),
     } as unknown as (typeof undo.undoStack)[number]);
-    return undo.undo() !== null;
+    undo.undo();
   } finally {
     undo.destroy();
   }
@@ -270,8 +308,7 @@ export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
     parts?.layers.forEach(take);
   }
   for (const runs of Object.values(out)) runs.sort((a, b) => a[0] - b[0]);
-  // Undoing an insertion deletes its items: the press's Undo does the deleting.
-  undoPressStored(view, { insertions: out, deletions: {} });
+  deleteItems(view, out);
 }
 
 type ItemRun = { id: Y.ID; len: number };
@@ -361,13 +398,6 @@ function changeId(value: unknown): string | null {
 }
 
 type DeleteSet = ReturnType<typeof Y.createDeleteSet>;
-
-function rangesOf(set: DeleteSet): IdRanges {
-  const out: IdRanges = {};
-  for (const [client, items] of set.clients)
-    out[client] = items.map((item): [number, number] => [item.clock, item.len]);
-  return out;
-}
 
 function deleteSetOf(ranges: IdRanges): DeleteSet {
   const set = Y.createDeleteSet();

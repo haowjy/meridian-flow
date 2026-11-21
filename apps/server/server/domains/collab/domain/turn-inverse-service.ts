@@ -28,7 +28,7 @@ import { inverseSchema, takeBack } from "./inverse-text.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
 
-/** A stored edit part without its update bytes: `describePart` reads those for the few it shows. */
+/** A stored edit part without its update bytes: `partUpdates` reads those for the few it lists. */
 export type StoredInversePart = Omit<CapturedPart, "update"> & {
   id: number;
   editId: string;
@@ -83,8 +83,6 @@ export type InverseDocument = {
   /** The card's Undo deletes this created document, leaving its text intact. */
   createdInTurn: boolean;
   history: StoredInversePart[];
-  /** A scratch copy of Live, made once while this capture describes history. */
-  excerptView: Y.Doc | null;
   /** Where every step of this document writes, as the capture found it. */
   destination: InverseDestination;
 };
@@ -137,10 +135,8 @@ export interface TurnInverseStore {
     /** Live around a lone document's model Undo, for the model's echo. */
     cut?: { before: Uint8Array; after: Uint8Array };
   }>;
-  describePart(
-    document: InverseDocument,
-    part: StoredInversePart,
-  ): Promise<{ before: string; after: string }>;
+  /** The stored update bytes of the parts `ids` names. */
+  partUpdates(ids: readonly number[]): Promise<ReadonlyMap<number, Uint8Array>>;
 }
 type TurnRow = Pick<StoredInversePart, "kind" | "threadId" | "turnId">;
 const targetsTurn = (part: TurnRow, query: TurnInverseQuery) =>

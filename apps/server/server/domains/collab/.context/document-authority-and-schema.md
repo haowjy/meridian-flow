@@ -131,8 +131,10 @@ Every server authority doc and every materialization of one (live
 docs, rooms in `yjs-ws-handler.ts`, clones, scratch docs) is `gc: false`, and a
 rewrite never encodes a gc-on doc. `createDocFromSnapshot` throws on a gc-on
 origin, and a store that has already garbage-collected restores the wrong text
-without an error. The frontier probe pins only the Yjs library behavior; it
-cannot catch a server fold that starts encoding a gc-on doc.
+without an error. A stored checkpoint is collected on purpose, except what the
+models' latest frontiers show ([checkpoints](CONTEXT.md#authority-checkpoints-and-derivation)), so
+every snapshot reader asks `planningSnapshot` first, which refuses a frontier that saw an item
+whose content is gone. The frontier probe pins only the Yjs library behavior.
 
 Under `gc: false`, setting a `Y.Map` key to the value it already holds is not a
 no-op: it writes a new item and a tombstone, a journaled update and eventually a
