@@ -4,7 +4,7 @@
  * needs of each list (`apply_command_trees`). It reports facts, per item, read from the lists
  * under their keys; the caller (`drizzle-apply-click.ts`) decides every answer and the text half.
  *
- * Lock order, as `collab/.context/CONTEXT.md` has it: the caller holds the Work and the branch;
+ * Lock order, as `collab/.context/CONTEXT.md` has it: the caller holds the Work and the draft;
  * the lists' keys come next (`lockItems`), then the documents', and only then the writes.
  */
 
@@ -26,7 +26,7 @@ import type { SourceFate, TreeJudge } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { PressUnsynced, type TreeCut } from "../domain/press.js";
-import { treeListOfNode } from "./drizzle-branch-tree-lists.js";
+import { treeListOfNode } from "./drizzle-draft-tree-lists.js";
 
 /** One item of an Apply as the tree half reads it. */
 export type TreeApplyItem = {
@@ -85,7 +85,7 @@ export function createApplyTreeOperations(input: {
    * there: its text takes no Apply until the writer restores it.
    */
   async function apply(click: {
-    branchId: DraftId;
+    draftId: DraftId;
     userId: UserId;
     commandId: CommandId;
     saw: TreeCut | undefined;
@@ -93,7 +93,7 @@ export function createApplyTreeOperations(input: {
     /** Under the owners' locks: what each source takes. */
     judge: TreeJudge;
   }): Promise<Map<string, TreeItemFacts>> {
-    const { branchId, items } = click;
+    const { draftId, items } = click;
     const lists: TreeList[] = [];
     for (const { list } of items) if (list && !lists.includes(list)) lists.push(list);
     const facts = new Map<string, TreeItemFacts>();
@@ -119,8 +119,8 @@ export function createApplyTreeOperations(input: {
           const saw = cutOf(click.saw, list.kind, end);
           // A press that saw records this copy lacks is not yet a cut of it: wait for the sync.
           if (saw && !covers(writer.doc, saw)) throw new PressUnsynced();
-          const pending = pendingRecords(writer.doc, branchId);
-          const draft = writer.view({ draft: branchId });
+          const pending = pendingRecords(writer.doc, draftId);
+          const draft = writer.view({ draft: draftId });
           const mine = items.filter((it) => it.list === list);
           // The item's records: the click asked for its tree records, or it has a pending create.
           const recordsOf = new Map<string, TreeRecord[]>();
@@ -145,7 +145,7 @@ export function createApplyTreeOperations(input: {
           const applied = chosen.length
             ? applyDraft(
                 writer,
-                branchId,
+                draftId,
                 actor,
                 click.commandId,
                 [...new Set(chosen.map((record) => record.id))],
@@ -183,7 +183,7 @@ export function createApplyTreeOperations(input: {
       await tx.insert(applyCommandTrees).values(
         perList.map((row) => ({
           commandId: click.commandId,
-          branchId,
+          draftId,
           scope: row.scope,
           mark: Buffer.from(row.mark),
           nodes: row.nodes,

@@ -13,7 +13,7 @@ import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import { modelWrite } from "./test-support/model-write.js";
 import {
-  createWorkBranchFixture,
+  createWorkDraftFixture,
   DOC_ID,
   DRAFT_DESTINATION,
   PROJECT_ID,
@@ -22,7 +22,7 @@ import {
   TURN_2_ID,
   TURN_ID,
   USER_ID,
-} from "./test-support/work-branch-fixture.js";
+} from "./test-support/work-draft-fixture.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -35,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { documentBlockRooms, documentBlocks, documentEdits, documents, modelResponses } =
       await import("@meridian/database/schema");
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose } = createWorkBranchFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     afterEach(dispose);
 
     beforeEach(reset);

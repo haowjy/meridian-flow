@@ -9,7 +9,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { DocumentDraftHint } from "@meridian/contracts/branches";
+import type { DocumentDraftHint } from "@meridian/contracts/drafts";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useDocumentDraftHints } from "@/client/query/useDocumentDraftHints";
 import { useWorks } from "@/client/query/useWorks";
@@ -58,9 +58,9 @@ export function DocumentVersionMenu({
   };
   const listed: DocumentDraftHint[] = [...hints];
   // A draft on screen that the hints have not caught up with is still a version of the document.
-  if (shown && !hints.some((hint) => hint.branchId === shown.draftId))
+  if (shown && !hints.some((hint) => hint.draftId === shown.draftId))
     listed.push({
-      branchId: shown.draftId,
+      draftId: shown.draftId,
       itemKey: shown.itemKey as DocumentDraftHint["itemKey"],
       label: null,
       tree: null,
@@ -71,7 +71,7 @@ export function DocumentVersionMenu({
     key: hint.itemKey,
     name: (
       <WorkIdentity
-        work={draftWork(hint.branchId)}
+        work={draftWork(hint.draftId)}
         unavailableLabel={hint.label || t`Unnamed draft`}
       />
     ),
@@ -82,14 +82,14 @@ export function DocumentVersionMenu({
         <Trans>Moves it to {hint.tree.movedTo.path}</Trans>
       )
     ) : undefined,
-    current: shown?.draftId === hint.branchId,
-    scope: hint.branchId === scopeDraft,
+    current: shown?.draftId === hint.draftId,
+    scope: hint.draftId === scopeDraft,
     onSelect: () => {
       // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft.
-      if (hint.branchId === shell?.draftId) shell.show("draft");
+      if (hint.draftId === shell?.draftId) shell.show("draft");
       else
         setDocumentView(accountId, projectId, documentId, {
-          pin: { draftId: hint.branchId, itemKey: hint.itemKey },
+          pin: { draftId: hint.draftId, itemKey: hint.itemKey },
         });
       followToChip(documentId);
     },
@@ -98,7 +98,7 @@ export function DocumentVersionMenu({
   // while the document has a version besides the one on screen, or its review needs the menu.
   const showing = paint && paint.showing !== "live" ? "draft" : "live";
   if (showing === "live" && drafts.length === 0 && !review) return null;
-  const shownLabel = listed.find((hint) => hint.branchId === shown?.draftId)?.label ?? null;
+  const shownLabel = listed.find((hint) => hint.draftId === shown?.draftId)?.label ?? null;
   const outOfScope =
     shown && paint?.outOfScope ? (draftName(shown.draftId, shownLabel) ?? t`Unnamed draft`) : null;
 

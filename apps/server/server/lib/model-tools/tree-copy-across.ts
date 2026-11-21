@@ -18,7 +18,7 @@ import type { ContextPort } from "../../domains/context/ports/context-port.js";
 import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
 import { movesInto, reachPath } from "../../domains/context/tree/tree-commands.js";
 import {
-  agentBranchOwner,
+  agentDraftOwner,
   type FileGrant,
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
@@ -119,8 +119,8 @@ export async function copyAcross(
       destinationUri: joinContextUri(to.area, into),
       ...(destination?.kind === "draft"
         ? {
-            destinationBranch: {
-              owner: agentBranchOwner(call.principal).owner,
+            destinationDraft: {
+              owner: agentDraftOwner(call.principal).owner,
               draftId: destination.draftId,
               threadId: ctx.threadId as ThreadId,
               userId: call.principal.accountId,
@@ -199,7 +199,7 @@ export async function recordCopies(
         const shown = scope.writer.view(scope.view).nodes.get(entry.id);
         return shown && segmentOf(shown);
       });
-      return { result: { records, names, draftBranchId: scope.view.draft } };
+      return { result: { records, names, draftId: scope.view.draft } };
     },
   });
   if (!made.ok) throw new Error(`The copy's tree did not write: ${made.error.code}`);
@@ -226,7 +226,7 @@ export async function recordCopies(
         })),
         records: made.value.records,
         op: "create",
-        ...(made.value.draftBranchId ? { draftBranchId: made.value.draftBranchId as DraftId } : {}),
+        ...(made.value.draftId ? { draftId: made.value.draftId as DraftId } : {}),
         threadId: ctx.threadId as ThreadId,
         ...(ctx.turnId ? { turnId: ctx.turnId as TurnId } : {}),
         ...(ctx.responseIdentity ? { responseIdentity: ctx.responseIdentity } : {}),

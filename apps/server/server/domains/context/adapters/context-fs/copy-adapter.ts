@@ -125,9 +125,7 @@ export function createContextFsCopyAdapter(deps: ContextFsCopyDeps): ContextCopy
             deps,
             [input],
             input.position,
-            input.branchId
-              ? { branchId: input.branchId, documentSync: deps.documentSync }
-              : undefined,
+            input.draftId ? { draftId: input.draftId, documentSync: deps.documentSync } : undefined,
           ),
   };
 }

@@ -7,7 +7,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { discardDraft, pendingRecords, recordsOfItem } from "@meridian/project-tree";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
-import { treeListsOfBranch } from "./drizzle-branch-tree-lists.js";
+import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
 /**
  * Settles the Work's pending tree records discarded, in every list it spans. With `documents`,
@@ -18,7 +18,7 @@ export async function discardTreeRecords(
   db: Database,
   deps: { treeLists: Pick<TreeListStore, "submit"> },
   input: {
-    branchId: DraftId;
+    draftId: DraftId;
     userId?: UserId;
     commandId: string;
     documents?: readonly DocumentId[];
@@ -28,11 +28,11 @@ export async function discardTreeRecords(
   const created = new Set<DocumentId>();
   const by = input.userId ? `user:${input.userId}` : "system";
   const { result } = await deps.treeLists.submit({
-    lists: await treeListsOfBranch(db, input.branchId),
+    lists: await treeListsOfDraft(db, input.draftId),
     make: (copies) =>
       copies.flatMap(({ writer }) => {
-        const pending = pendingRecords(writer.doc, input.branchId);
-        const draft = writer.view({ draft: input.branchId });
+        const pending = pendingRecords(writer.doc, input.draftId);
+        const draft = writer.view({ draft: input.draftId });
         const items = input.documents;
         const only = items
           ? [...new Set(items.flatMap((id) => recordsOfItem(draft, pending, id)))]
@@ -40,7 +40,7 @@ export async function discardTreeRecords(
         const discarded = new Set(
           discardDraft(
             writer,
-            input.branchId,
+            input.draftId,
             by,
             input.commandId,
             items ? only.map((r) => r.id) : undefined,

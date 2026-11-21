@@ -92,7 +92,7 @@ export function createDrizzleTreeHistory(
           op: input.op,
           kind: input.reverses?.kind ?? "write",
           reverses: input.reverses?.receipt ?? null,
-          draftBranchId: input.draftBranchId ?? null,
+          draftId: input.draftId ?? null,
           shownAt: input.shownAt,
         })
         .returning({ id: treeEditReceipts.id });
@@ -128,7 +128,7 @@ export function createDrizzleTreeHistory(
       const [row] = await tx()
         .select({ id: treeEditReceipts.id })
         .from(treeEditReceipts)
-        .where(and(eq(treeEditReceipts.turnId, turnId), isNotNull(treeEditReceipts.draftBranchId)))
+        .where(and(eq(treeEditReceipts.turnId, turnId), isNotNull(treeEditReceipts.draftId)))
         .limit(1);
       return row !== undefined;
     },
@@ -292,7 +292,7 @@ function receiptOf(
     op: row.op,
     kind: row.kind,
     reverses: row.reverses,
-    draftBranchId: row.draftBranchId,
+    draftId: row.draftId,
     turnId: row.turnId,
     commandId: row.commandId,
     shownAt: row.shownAt,

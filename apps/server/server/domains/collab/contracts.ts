@@ -24,16 +24,16 @@ import type {
 } from "../../shared/commands/command-record.js";
 import type { Result } from "../../shared/result.js";
 import type { DocumentPurgeDisposal } from "../context/ports/document-trash.js";
-import type { WorkBranchDisposal } from "../projects/index.js";
+import type { WorkDraftDisposal } from "../projects/index.js";
 import type { AgentEditRouter } from "./domain/agent-edit-router.js";
-import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
-import type { DraftReviewItem } from "./domain/branch-review-items.js";
-import type { Branches } from "./domain/branches.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
+import type { ResolvedReviewItem } from "./domain/draft-review-identity.js";
+import type { DraftReviewItem } from "./domain/draft-review-items.js";
+import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
 import type { ModelEdits } from "./domain/model-edit.js";
 import type { ModelEvidence } from "./domain/model-evidence.js";
-import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
+import type { DocumentDraftOrigin } from "./domain/ports/work-draft-pending-store.js";
 import type {
   LiveLineageDocument,
   TurnEditedDocument,
@@ -167,8 +167,8 @@ export type TreeReceiptInput = {
   turnId?: TurnId;
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
-  /** The Work's branch the record was drafted in; absent when it is live. */
-  draftBranchId?: DraftId;
+  /** The Work's draft the record was drafted in; absent when it is live. */
+  draftId?: DraftId;
   /** The path the model gave. */
   shownAt: string;
   /** An undo or redo names the receipt it reverses. */
@@ -182,7 +182,7 @@ export type TreeReceipt = {
   op: TreeReceiptInput["op"];
   kind: "write" | "undo" | "redo";
   reverses: string | null;
-  draftBranchId: string | null;
+  draftId: string | null;
   turnId: string | null;
   /** The path the model gave for it. */
   shownAt: string | null;
@@ -392,7 +392,7 @@ export type DocumentCheckpoints = {
 export type ModelDraftRow = {
   documentId: DocumentId;
   documentName: string | null;
-  contextLocation: import("@meridian/contracts/branches").ThreadDraftListItem["contextLocation"];
+  contextLocation: import("@meridian/contracts/drafts").ThreadDraftListItem["contextLocation"];
   createdDocument?: boolean;
 };
 
@@ -402,28 +402,27 @@ export type DraftReviewApi = {
   list(input: { draft: DraftId }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the draft's listed items with live text tokens. */
   listItems(input: { draft: DraftId }): Promise<{
-    branchId: DraftId;
     items: DraftReviewItem[];
-    /** The folders the branch has a row on. */
+    /** The folders the draft has a row on. */
     folders: { id: string }[];
     threadTitles: ReadonlyMap<string, string>;
     /** Each list's cut, read before the items. */
-    saw: import("@meridian/contracts/branches").TreeSaw;
+    saw: import("@meridian/contracts/drafts").TreeSaw;
   }>;
   /** Pending documents summed over the project's drafts. */
   pendingDocumentCount(projectId: ProjectId): Promise<number>;
   /** Every draft in the project with changes to the document, oldest first. */
-  branchesChangingDocument(input: {
+  draftsChangingDocument(input: {
     projectId: ProjectId;
     documentId: DocumentId;
-  }): Promise<DocumentBranchOrigin[]>;
+  }): Promise<DocumentDraftOrigin[]>;
   /** The draft's listed items, live text tokens unread: what Apply authorizes. */
-  items(input: { draft: DraftId }): Promise<{ branchId: DraftId; items: DraftReviewItem[] }>;
+  items(input: { draft: DraftId }): Promise<{ draftId: DraftId; items: DraftReviewItem[] }>;
   /** The item a key names, when its draft exists. */
   resolveItem(input: { itemKey: string }): Promise<ResolvedReviewItem | null>;
   /** One document of a draft. */
-  resolveItemInBranch(input: {
-    branchId: DraftId;
+  resolveItemInDraft(input: {
+    draftId: DraftId;
     documentId: DocumentId;
   }): Promise<ResolvedReviewItem | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
@@ -431,17 +430,17 @@ export type DraftReviewApi = {
   awaitCommand(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
 };
 
-export type CollabBranches = {
+export type CollabDrafts = {
   draftReview: DraftReviewApi;
   /** Apply and Discard on documents, folders or a Work, and their Undo. */
   presses: import("./adapters/drizzle-press.js").PressStore;
 };
 
-/** The one branch resolver (Work → active branch, made only at the write boundary). */
-export type CollabBranchResolver = {
-  branches: Branches;
-  /** Work purge's disposal of the purged Work's branches through the locked Discard kernel (§2.6). */
-  workBranchDisposal: WorkBranchDisposal;
+/** The one draft resolver (Work → active draft, made only at the write boundary). */
+export type CollabDraftResolver = {
+  drafts: Drafts;
+  /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */
+  workDraftDisposal: WorkDraftDisposal;
   /** Document trash purge's check that nothing holds the documents, and their rooms' close. */
   documentPurgeDisposal: DocumentPurgeDisposal;
 };
@@ -535,12 +534,12 @@ export type DraftPeerShadowAccess = {
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
   /**
-   * Each text document a branch's admitted create just made gets its Live authority, empty, in
+   * Each text document a draft's admitted create just made gets its Live authority, empty, in
    * the admitting transaction under the list's key: the tree list store calls it for every create
    * in a Work's version, the writer's and the AI's alike. Its text is plain Live text; the
    * pending create is its whole pending state.
    */
-  seedWorkCreates(created: readonly { documentId: DocumentId; branchId: DraftId }[]): Promise<void>;
+  seedWorkCreates(created: readonly { documentId: DocumentId; draftId: DraftId }[]): Promise<void>;
   /** A Work's copy's documents' first text, written into Live after `seedWorkCreates`. */
   writeWorkCreatedContent(
     created: readonly { documentId: DocumentId; content: BoundWrite }[],
@@ -575,8 +574,8 @@ export type CollabDomain = CollabTransport &
   DocumentCheckpoints &
   DocumentAttribution &
   DraftPeerShadowAccess &
-  CollabBranches &
-  CollabBranchResolver &
+  CollabDrafts &
+  CollabDraftResolver &
   DocumentCreationAggregate & { importBinder: ImportLinkBinder };
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";

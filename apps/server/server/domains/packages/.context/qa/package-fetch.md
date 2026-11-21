@@ -13,5 +13,5 @@ GitHub (the adapter's `fetch` option), fetches it once with no limit, then four 
 lowered, and asserts the `FetchBudgetError` names that budget before the whole archive is read. It
 makes no network calls, so CI runs it with the other probes (`pnpm test:probes`).
 
-The URL forms (root, `tree/<branch>`, `tree/<tag>/<path>`, a branch containing `/`, an annotated tag,
+The URL forms (root, `tree/<draft>`, `tree/<tag>/<path>`, a draft containing `/`, an annotated tag,
 a missing ref) are read with `./mf package fetch <url>` on a running stack.

@@ -6,7 +6,7 @@
  */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
+import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-work-draft-pending.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createProjectRepositoryForTest as createDrizzleProjectRepository } from "./test-support/project-repository.js";
@@ -29,7 +29,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const db = createDb(DATABASE_URL, { max: 4 });
     const projectionMutation = createWorkProjectionMutation({
       db,
-      pendingCounts: createDrizzleWorkBranchPendingStore(db),
+      pendingCounts: createDrizzleWorkDraftPendingStore(db),
       draftOwnerHints: NO_PROJECT_HINTS,
     });
     const workRepository = () =>

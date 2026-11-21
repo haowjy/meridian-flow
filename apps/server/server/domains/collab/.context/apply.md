@@ -25,19 +25,19 @@ runs for any item with a pending create, which lands whole.
 ## Owners
 
 **A tree command is judged by every owner its effect touches.** A press's Apply and its Undo change
-notes that may be another Work's or a chat lineage's, not the branch's. One thing says which
+notes that may be another Work's or a chat lineage's, not the draft's. One thing says which
 sources a record changes: the replay that places it (`Change.sources`, `packages/project-tree`).
 The server never works it out from parent chains. `closed` is asked of that answer three ways:
 which owners to lock (an estimate), which records may commit (the judge, under the locks), and what
 stayed and why (the answer).
 
 *Estimate, before the locks* (`withTreeOwners`, `shared/tree-owners.ts`). Apply: the `sources` of
-each pending record of the branch in the Work's view, and where live has each node those records and
+each pending record of the draft in the Work's view, and where live has each node those records and
 the items name. Undo of an Apply: the `sources` of each copy the Apply made (`madeBy`), where live has each
 of those nodes, and where each document with an applied text effect stands. It is a guess and can
 miss without any race: an Apply that moved six notes out of six folders, whose folders live then
 moved into six other sources, returns each note to a source the estimate never saw. Its owners are
-locked with the branch's in the same `mutate` call (Works sorted by id, then lineages, before lists
+locked with the draft's in the same `mutate` call (Works sorted by id, then lineages, before lists
 and documents). Never take a missed owner's lock inside a running attempt.
 
 *Judge, under the locks* (`TreeOwners.judge`). It reads which of the estimate's `context_sources`

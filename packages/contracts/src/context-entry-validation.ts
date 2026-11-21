@@ -27,7 +27,7 @@ const withoutControls = (text: string) =>
     .map((char) => ((char.codePointAt(0) as number) <= 0x1f || char === "\u007f" ? " " : char))
     .join("");
 // Look-alikes for what a path cannot carry: the slash is the separator, a leading `@` or `~`
-// opens an owner or branch qualifier, and `.` / `..` are navigation.
+// opens an owner or draft qualifier, and `.` / `..` are navigation.
 const LOOK_ALIKE: Record<string, string> = { "/": "\u2215", "@": "\uff20", "~": "\uff5e" };
 
 /**

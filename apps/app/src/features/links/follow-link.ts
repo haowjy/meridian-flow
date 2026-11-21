@@ -168,13 +168,13 @@ export async function followProjectLink({
 }
 
 function documentRef(found: DocumentEntry): LinkDocumentRef {
-  const { document, branch } = found;
-  if (!branch) return { documentId: document.documentId };
+  const { document, draft } = found;
+  if (!draft) return { documentId: document.documentId };
   return {
     documentId: document.documentId,
     review: {
-      draftId: branch.branchId,
-      itemKey: draftItemKey(branch.branchId, document.documentId),
+      draftId: draft.draftId,
+      itemKey: draftItemKey(draft.draftId, document.documentId),
       // Draft list rows and review launches spell the path with a leading slash.
       contextLocation: {
         scheme: document.scheme,

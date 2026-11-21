@@ -6,7 +6,7 @@
  * owner's list.
  */
 import { t } from "@lingui/core/macro";
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { type Change, list, sameValue } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";

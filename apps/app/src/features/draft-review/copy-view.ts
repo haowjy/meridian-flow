@@ -3,7 +3,7 @@
  * so no chat is named and none can be the wrong one.
  */
 import type { CopyContextEntryView } from "@meridian/contracts/protocol";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 
 /**
  * The draft of `draftId` for this change, or null when it has no text to copy: a document the

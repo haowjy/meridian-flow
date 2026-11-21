@@ -35,10 +35,6 @@ export interface EventCorrelation {
   errorCode?: string;
   documentId?: string;
   draftId?: string;
-  /** Operational ids of branch-push settlement and draft-lineage diagnostics. */
-  batchId?: string;
-  pushId?: string;
-  branchId?: string;
   /** Comma-joined ids (at most three; see `joinIds`), like `yjsSpans`. */
   folderIds?: string;
   yjsClient?: number;

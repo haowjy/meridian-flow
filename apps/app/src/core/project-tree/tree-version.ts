@@ -17,18 +17,18 @@ export const TreeVersionContext = createContext<TreeVersion>(LIVE_VERSION);
 export const useTreeVersion = (): TreeVersion => useContext(TreeVersionContext);
 
 /**
- * A Work's tree: live, then the branch's pending records. One value per branch and lifecycle,
+ * A Work's tree: live, then the draft's pending records. One value per draft and lifecycle,
  * whoever reads it (the shell, a review's route, an Apply's Undo step).
  */
 export function draftTreeVersion(
-  branchId: string,
+  draftId: string,
   lifecycle: WorkLifecycleState = "active",
 ): TreeVersion {
   const ended = lifecycle !== "active" ? lifecycle : undefined;
-  const held = draftVersions.get(branchId);
+  const held = draftVersions.get(draftId);
   if (held && held.ended === ended) return held;
-  const version: TreeVersion = { view: { draft: branchId }, ...(ended ? { ended } : {}) };
-  draftVersions.set(branchId, version);
+  const version: TreeVersion = { view: { draft: draftId }, ...(ended ? { ended } : {}) };
+  draftVersions.set(draftId, version);
   return version;
 }
 const draftVersions = new Map<string, TreeVersion>();

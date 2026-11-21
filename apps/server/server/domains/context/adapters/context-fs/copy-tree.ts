@@ -37,7 +37,7 @@ import type {
 } from "../../ports/context-copy.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { NodeIdRefusedError } from "../tree-list-rows.js";
-import { type NewNode, type SourceTree, viewOfBranch } from "./tree-writes.js";
+import { type NewNode, type SourceTree, viewOfDraft } from "./tree-writes.js";
 
 export interface CopyTreeDeps {
   writes: SourceTree;
@@ -109,18 +109,18 @@ export async function insertPlannedTrees(
   }[],
   position?: ContextSiblingPosition,
   draft?: {
-    branchId: DraftId;
+    draftId: DraftId;
     documentSync: Pick<DraftPeerShadowAccess, "writeWorkCreatedContent">;
   },
 ): Promise<Result<CopyOutcome, AdapterFault>> {
   if (draft) {
-    const { branchId } = draft;
+    const { draftId } = draft;
     const { plan, contents, parent } = inputs[0];
     const tree = toNewTree(plan.roots, contents);
     if (!tree.ok) return tree;
     try {
       const inserted = await deps.writes.insertTree(
-        { view: viewOfBranch(branchId), actor: deps.actor },
+        { view: viewOfDraft(draftId), actor: deps.actor },
         {
           trees: [{ dir: plan.dir, ...(parent ? { parent } : {}), roots: tree.value.roots }],
           ...(position ? { position: position } : {}),

@@ -70,7 +70,7 @@ export interface WorkRef {
  * The draft an agent's drafts land in, the owner naming it (its chat's Work, or its lineage),
  * whose lifecycle stops new AI writes, and the handle refusal copy names it by.
  */
-export interface BranchOwnerRef {
+export interface DraftOwnerRef {
   owner: DraftOwner;
   draftId: DraftId;
   handle: string | null;
@@ -78,19 +78,19 @@ export interface BranchOwnerRef {
 
 /**
  * Who is asking. A person acts alone; an agent acts for the person, under its
- * delegation chain. Its drafts go to `branchOwner` in either mode; `writeMode` says whether
+ * delegation chain. Its drafts go to `draftOwner` in either mode; `writeMode` says whether
  * every drafted source drafts (`draft`), or only the places that ask for review do.
  */
 export interface Principal {
   accountId: UserId;
   agent?: {
     /**
-     * The project the agent's thread runs in: where its branch is and what its links read in.
+     * The project the agent's thread runs in: where its draft is and what its links read in.
      * Never the file's project (`FileFacts.owner`), which for a home document is none.
      */
     projectId: ProjectId;
     chain: AgentChain;
-    branchOwner: BranchOwnerRef;
+    draftOwner: DraftOwnerRef;
     writeMode: AiWriteMode;
   };
 }
@@ -170,7 +170,7 @@ export interface FileWorkFacts {
  * The lifecycle of whoever names a draft: a Work as `FileWorkFacts` reads it, or a lineage, which
  * is `frozen` while no chat in it is live.
  */
-export interface FileBranchOwnerFacts {
+export interface FileDraftOwnerFacts {
   draftId: DraftId;
   /** The Work or lineage naming the draft; null when the draft or its owner is gone. */
   owner: DraftOwner | null;
@@ -200,13 +200,13 @@ export interface FileFacts {
   /** The document, a folder above it, or its source is deleted. */
   deleted: boolean;
   /**
-   * `deleted` is the document's own delete or its folder's, and `branchOwner`'s branch has an
+   * `deleted` is the document's own delete or its folder's, and `draftOwner`'s draft has an
    * active Work draft of it, which outlived that delete: a draft destination in that
-   * branch stays open. Never set from the draft's pending effect.
+   * draft stays open. Never set from the draft's pending effect.
    */
   survivingDraft?: boolean;
   scheme: ContextUriScheme;
-  /** The durable content source; branch moves change `scheme`, never this routing fact. */
+  /** The durable content source; draft moves change `scheme`, never this routing fact. */
   contentScheme: ContextUriScheme;
   /** The document itself; null for a container. */
   self: FileNode | null;
@@ -219,14 +219,14 @@ export interface FileFacts {
    */
   aiAccessSettings?: readonly AiAccessSetting[];
   /** The draft this access goes through and its owner, when one was asked about. */
-  branchOwner?: FileBranchOwnerFacts;
+  draftOwner?: FileDraftOwnerFacts;
 }
 
 // ---------------------------------------------------------------------------
 // Decisions
 // ---------------------------------------------------------------------------
 
-/** Where a write lands: the live document, or an owner's branch. */
+/** Where a write lands: the live document, or an owner's draft. */
 export type FileDestination =
   | { kind: "live" }
   | { kind: "draft"; draftId: DraftId; ownerHandle: string | null };
@@ -299,17 +299,17 @@ export function targetDocumentId(target: FileTarget): DocumentId {
 }
 
 /**
- * The named Works and the lineages a write to this file locks (§5): its owner and its branch's
+ * The named Works and the lineages a write to this file locks (§5): its owner and its draft's
  * owner. The project and No Work can't be archived, so they lock nothing.
  */
 export function grantOwnerLocks(facts: FileFacts): OwnerLocks {
   const workIds: string[] = [];
   const lineageRootIds: string[] = [];
   if (facts.ownerWork && !facts.ownerWork.isNoWork) workIds.push(facts.ownerWork.id);
-  const branchOwner = facts.branchOwner;
-  if (branchOwner?.owner && !branchOwner.isNoWork) {
-    if (branchOwner.owner.kind === "work") workIds.push(branchOwner.owner.workId);
-    else lineageRootIds.push(branchOwner.owner.rootThreadId);
+  const draftOwner = facts.draftOwner;
+  if (draftOwner?.owner && !draftOwner.isNoWork) {
+    if (draftOwner.owner.kind === "work") workIds.push(draftOwner.owner.workId);
+    else lineageRootIds.push(draftOwner.owner.rootThreadId);
   }
   return { workIds, lineageRootIds };
 }
@@ -324,8 +324,8 @@ export function agentProject(grant: Pick<FileGrant, "principal">): ProjectId {
 }
 
 /** The draft an agent's drafted writes land in, with its owner. */
-export function agentBranchOwner(principal: Principal): BranchOwnerRef {
-  const ref = principal.agent?.branchOwner;
+export function agentDraftOwner(principal: Principal): DraftOwnerRef {
+  const ref = principal.agent?.draftOwner;
   if (!ref) throw new Error("The principal is not an agent");
   return ref;
 }

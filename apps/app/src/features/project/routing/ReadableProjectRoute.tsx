@@ -270,7 +270,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     projectId,
     documentDestination ? (reviewOwner ?? scopeDraft) : null,
   );
-  // A review is read in its Work's tree: the branch the item's own row names, so a page the
+  // A review is read in its Work's tree: the draft the item's own row names, so a page the
   // draft created, moved or renamed is found by its id wherever the Work puts it. A drafted
   // delete is absent from that tree, so its review opens the live document. Null once the read
   // list lacks the item.
@@ -279,7 +279,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     address.itemKey && listRead
       ? (listedDrafts.files?.find((file) => file.draft.itemKey === address.itemKey)?.draft ?? null)
       : undefined;
-  const reviewVersion = useDraftTreeVersion(reviewedItem?.branchId ?? null);
+  const reviewVersion = useDraftTreeVersion(reviewedItem?.draftId ?? null);
   const reviewsDelete = reviewedItem?.tree?.deleted === true;
   const reviewTrees = useProjectTrees(reviewVersion && !reviewsDelete ? projectId : "", {
     version: reviewVersion ?? undefined,

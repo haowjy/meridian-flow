@@ -14,7 +14,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
 import {

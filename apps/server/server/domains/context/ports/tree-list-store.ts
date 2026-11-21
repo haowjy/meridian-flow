@@ -100,7 +100,7 @@ export interface TreeListStore {
   lock(lists: readonly TreeList[]): Promise<void>;
   /**
    * Brings the rows of the lists to their replay when something the rows read changes outside
-   * the list: a Work's branch ends, or a draft gains its first text or loses its last. Call it
+   * the list: a Work's draft ends, or a draft gains its first text or loses its last. Call it
    * in the transaction that changed it. It takes no key: the transaction must hold the lists'
    * keys already (`lock`, `submit`), and throws when it does not, since a key taken after a
    * document key can deadlock.

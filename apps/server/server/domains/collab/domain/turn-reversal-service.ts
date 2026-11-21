@@ -1,6 +1,6 @@
 /** Admits the user's whole turn-card inverse at its resolved destinations. */
 
-import type { ReverseTurnCommandResult } from "@meridian/contracts/branches";
+import type { ReverseTurnCommandResult } from "@meridian/contracts/drafts";
 import type { ReversalOutcome } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import {

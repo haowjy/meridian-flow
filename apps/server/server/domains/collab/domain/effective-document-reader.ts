@@ -47,7 +47,7 @@ export function createEffectiveDocumentReader(input: {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
-      ? { kind: "branch", branchId: command.draft }
+      ? { kind: "draft", draftId: command.draft }
       : { kind: "live" };
   }
 

@@ -112,7 +112,7 @@ export type PgTreeListStore = TreeListStore & {
 };
 
 /** A text document a create in a Work's version made: it needs that Work's text draft. */
-export type DraftedDocument = { documentId: DocumentId; branchId: DraftId };
+export type DraftedDocument = { documentId: DocumentId; draftId: DraftId };
 
 export function createDrizzleTreeListStore(deps: {
   db: Database;
@@ -123,12 +123,12 @@ export function createDrizzleTreeListStore(deps: {
    */
   seedWorkCreates?: (created: readonly DraftedDocument[]) => Promise<void>;
   /**
-   * A Work's or lineage's review count follows its branch's rows, which a tree commit may change
+   * A Work's or lineage's review count follows its draft's rows, which a tree commit may change
    * outside any Work lock: the Works boundary recounts them once the commit lands.
    */
   recountAfterCommit?: (owners: OwnerLocks) => void;
-  /** Branches with rows on nodes live changed: their owners' lists are read again after commit. */
-  liveChangedUnder?: (branchIds: readonly string[]) => void;
+  /** Drafts with rows on nodes live changed: their owners' lists are read again after commit. */
+  liveChangedUnder?: (draftIds: readonly string[]) => void;
   /** Open document sockets of a document that changed source close, to be admitted again. */
   fileAccessChanges?: Pick<FileAccessChanges, "publish">;
 }): PgTreeListStore {
@@ -289,18 +289,18 @@ export function createDrizzleTreeListStore(deps: {
     await testHook("treeList.afterAppend");
     const {
       created: made,
-      changedBranches,
+      changedDrafts,
       liveChangedUnder,
       reassigned,
     } = await syncRows(tx, list, listId, copy.doc, created);
     if (liveChangedUnder.length > 0) deps.liveChangedUnder?.(liveChangedUnder);
     for (const documentId of reassigned) await deps.fileAccessChanges?.publish({ documentId });
-    if (changedBranches.length > 0 && deps.recountAfterCommit) {
+    if (changedDrafts.length > 0 && deps.recountAfterCommit) {
       const named = draftOwnerSql();
       const owners = await tx
         .select({ work: named.workId, root: named.rootThreadId })
         .from(drafts)
-        .where(inArray(drafts.id, changedBranches));
+        .where(inArray(drafts.id, changedDrafts));
       deps.recountAfterCommit({
         workIds: owners.flatMap(({ work }) => (work ? [work] : [])),
         lineageRootIds: owners.flatMap(({ root }) => (root ? [root] : [])),
@@ -309,7 +309,7 @@ export function createDrizzleTreeListStore(deps: {
     await testHook("treeList.afterRows");
     const drafted = made.flatMap((record) =>
       record.kind === "document" && record.draft !== null
-        ? [{ documentId: record.node as DocumentId, branchId: record.draft as DraftId }]
+        ? [{ documentId: record.node as DocumentId, draftId: record.draft as DraftId }]
         : [],
     );
     if (drafted.length > 0) await deps.seedWorkCreates?.(drafted);

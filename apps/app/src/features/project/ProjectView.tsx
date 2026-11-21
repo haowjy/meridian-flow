@@ -21,10 +21,7 @@ import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { patchAccountRecentsFromDocuments } from "@/client/recents";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
-import {
-  usePressCommands,
-  type WorkBranchCommands,
-} from "@/features/draft-review/usePressCommands";
+import { usePressCommands, type WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { ImportProvider } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import {
@@ -211,7 +208,7 @@ export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
     /** The chat on screen's Work (main's chat, or the side's beside a document). */
     chatWork: Work | null;
-    chatCommands: WorkBranchCommands;
+    chatCommands: WorkDraftCommands;
     /** Main keeps its previous document painted while the new address loads. */
     retainEditorWhileLoading?: boolean;
   };

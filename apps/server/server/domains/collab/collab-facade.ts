@@ -1,9 +1,9 @@
 /** Wiring-only assembly of collab application services into the public domain. */
 import type {
   AgentEditAccess,
-  CollabBranches,
-  CollabBranchResolver,
   CollabDomain,
+  CollabDraftResolver,
+  CollabDrafts,
   CollabLifecycle,
   CollabTransport,
   DocumentAttribution,
@@ -28,8 +28,8 @@ export type CollabFacadeServices = {
   checkpoints: DocumentCheckpoints;
   attribution: DocumentAttribution;
   draftPeers: DraftPeerShadowAccess;
-  branches: CollabBranches;
-  branchResolver: CollabBranchResolver;
+  drafts: CollabDrafts;
+  draftResolver: CollabDraftResolver;
   documentCreation: DocumentCreationAggregate;
   importBinder: ImportLinkBinder;
 };
@@ -46,8 +46,8 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.checkpoints,
     ...services.attribution,
     ...services.draftPeers,
-    ...services.branches,
-    ...services.branchResolver,
+    ...services.drafts,
+    ...services.draftResolver,
     ...services.documentCreation,
     importBinder: services.importBinder,
   };

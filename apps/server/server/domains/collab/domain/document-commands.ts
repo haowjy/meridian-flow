@@ -1,5 +1,5 @@
 /** The document side of the command record (`shared/commands`): its port and its statuses. */
-import type { StoredDocumentCommandResult } from "@meridian/contracts/branches";
+import type { StoredDocumentCommandResult } from "@meridian/contracts/drafts";
 import type {
   CommandEnvelope,
   CommandLookup,

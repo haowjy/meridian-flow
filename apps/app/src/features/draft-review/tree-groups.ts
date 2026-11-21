@@ -49,7 +49,7 @@ export function groupsOf<T>(groups: readonly ChangeGroup<T>[]): ChangeGroup<T>[]
 }
 
 /**
- * A Work's tree changes across the lists its branch spans (its project's and its owner's
+ * A Work's tree changes across the lists its draft spans (its project's and its owner's
  * account list): the nodes of its views, its pending records, what cannot land, and the folders
  * it changes.
  */

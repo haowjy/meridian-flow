@@ -23,8 +23,8 @@ import { parseLinkRef } from "./document-ref.js";
 import type { DraftId } from "./ids.js";
 import type { ResolvedContextOwner } from "./protocol/context-owner.js";
 
-/** The tree a link is read in: live, or one branch's view (the live tree plus what it created). */
-export type LinkView = { kind: "live" } | { kind: "branch"; branchId: string };
+/** The tree a link is read in: live, or one draft's view (the live tree plus what it created). */
+export type LinkView = { kind: "live" } | { kind: "draft"; draftId: string };
 
 export interface LinkHolder {
   /** Canonical URI of the holder in this view; null for chat (no holder). */
@@ -42,15 +42,15 @@ export interface CatalogDocument {
   /** Decoded canonical absolute URI in the catalog's view, with extension. */
   uri: string;
   /**
-   * live: in the live tree; branch: a hidden document in a pending file tree;
+   * live: in the live tree; draft: a hidden document in a pending file tree;
    * deleted: soft-deleted, at its last address.
    */
-  presence: "live" | "branch" | "deleted";
+  presence: "live" | "draft" | "deleted";
   /**
-   * Present iff presence is "branch": the branch holding the document, the reader's own
-   * if it uses the document, otherwise the oldest active branch that does.
+   * Present iff presence is "draft": the draft holding the document, the reader's own
+   * if it uses the document, otherwise the oldest active draft that does.
    */
-  branch?: { branchId: DraftId };
+  draft?: { draftId: DraftId };
   /** The reader may read it (file policy). False is answered exactly like a missing row. */
   readable: boolean;
   /** Nameable from the holder: same project, or the reader's own home folder (`user://`). */
@@ -84,7 +84,7 @@ export type LinkResolution =
    * rule 3, an ahead ref answered through its settlement, which never again
    * answers by address.
    */
-  | { kind: "document"; document: CatalogDocument; inBranch: boolean; settled?: true }
+  | { kind: "document"; document: CatalogDocument; inDraft: boolean; settled?: true }
   | { kind: "folder"; folder: CatalogFolder }
   /** Rule 2 (and 3, `settled`, when the settled document is gone). */
   | { kind: "gone"; settled?: true; documentId?: string }
@@ -175,7 +175,7 @@ function nameableLive(document: CatalogDocument): boolean {
 function documentResolution(
   document: CatalogDocument,
 ): Extract<LinkResolution, { kind: "document" }> {
-  return { kind: "document", document, inBranch: document.presence === "branch" };
+  return { kind: "document", document, inDraft: document.presence === "draft" };
 }
 
 export type WrittenLinkClass =

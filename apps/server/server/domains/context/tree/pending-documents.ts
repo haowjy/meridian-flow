@@ -21,25 +21,25 @@ import type { DocumentId } from "@meridian/contracts";
 import { type SQL, sql } from "drizzle-orm";
 
 /** The rows of a Work's differing nodes of `kind` that count, as `(draft_id, node_id)`. */
-function treeChanges(branches: SQL, kind: "document" | "folder"): SQL {
+function treeChanges(drafts: SQL, kind: "document" | "folder"): SQL {
   return sql`SELECT b.draft_id, b.id AS document_id
     FROM draft_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
-    WHERE b.kind = ${kind} AND b.draft_id IN (${branches}) AND b.changed AND (
+    WHERE b.kind = ${kind} AND b.draft_id IN (${drafts}) AND b.changed AND (
       (b.exists_only_in_draft AND NOT b.deleted)
       OR (NOT b.exists_only_in_draft AND b.deleted AND t.trash_record IS NULL)
       OR (NOT b.exists_only_in_draft AND NOT b.deleted))`;
 }
 
 /**
- * Every `(draft_id, document_id)` the predicate holds for, among the branches `branches`
- * selects (a SQL list of branch ids), narrowed to one document when given.
+ * Every `(draft_id, document_id)` the predicate holds for, among the drafts `drafts`
+ * selects (a SQL list of draft ids), narrowed to one document when given.
  */
-export function pendingDocuments(branches: SQL, documentId?: DocumentId): SQL {
+export function pendingDocuments(drafts: SQL, documentId?: DocumentId): SQL {
   const one = documentId ? sql` AND candidate.document_id = ${documentId}::uuid` : sql``;
   return sql`SELECT candidate.draft_id, candidate.document_id FROM (
-      ${treeChanges(branches, "document")}
+      ${treeChanges(drafts, "document")}
       UNION
-      SELECT text.draft_id, text.document_id FROM (${pendingText(branches)}) text
+      SELECT text.draft_id, text.document_id FROM (${pendingText(drafts)}) text
       WHERE EXISTS (SELECT 1 FROM draft_tree_nodes x
           WHERE x.draft_id = text.draft_id AND x.id = text.document_id AND NOT x.deleted)
         OR (NOT EXISTS (SELECT 1 FROM draft_tree_nodes x
@@ -56,10 +56,10 @@ export function pendingDocuments(branches: SQL, documentId?: DocumentId): SQL {
  * in the Live document, counted by the document's derivation in
  * `document_block_rooms.pending_changes`.
  */
-export function pendingText(branches: SQL): SQL {
+export function pendingText(drafts: SQL): SQL {
   return sql`SELECT b.id AS draft_id, r.document_id FROM drafts b
       JOIN document_block_rooms r ON r.pending_changes ? b.id
-      WHERE b.id IN (${branches})
+      WHERE b.id IN (${drafts})
         AND (r.pending_changes -> b.id ->> 'changes')::int > 0`;
 }
 
@@ -68,6 +68,6 @@ export function pendingText(branches: SQL): SQL {
  * `(draft_id, folder_id)`: every changed folder is one item of the Changes list and one of the
  * count.
  */
-export function pendingFolders(branches: SQL): SQL {
-  return sql`SELECT c.draft_id, c.document_id AS folder_id FROM (${treeChanges(branches, "folder")}) c`;
+export function pendingFolders(drafts: SQL): SQL {
+  return sql`SELECT c.draft_id, c.document_id AS folder_id FROM (${treeChanges(drafts, "folder")}) c`;
 }

@@ -3,11 +3,11 @@
  *
  * Projects one tree-labelled file per document the draft changes, in stable order.
  */
-import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/drafts";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
-import { listOwnerDrafts } from "@/client/api/branches-api";
+import { listOwnerDrafts } from "@/client/api/drafts-api";
 import { useCreatedDrafts } from "./created-drafts";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
@@ -16,15 +16,15 @@ import { useTabChangeCounts, withTabChangeCounts } from "./tab-change-counts";
 import { useProjectThreads } from "./useProjectThreads";
 import { useProjectTreeViews } from "./useProjectTree";
 import { useWorks } from "./useWorks";
-import { projectWorkBranchFiles, type ReviewFileTarget } from "./work-branch-files";
+import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 
 export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
   /** Raw query rows for generation evidence and command fences. */
   drafts: ThreadDraftListItem[] | null;
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
-  /** The owner's active branch: the `draft` of its tree records. */
-  branchId: string | null;
+  /** The owner's active draft: the `draft` of its tree records. */
+  draftId: string | null;
 };
 
 /** The tree owner whose Scratch names this draft's documents: the Work or root chat naming it. */
@@ -113,7 +113,7 @@ export function useOwnerDraftList(projectId: string, owner: string, enabled: boo
   });
   const created = useCreatedDrafts(
     projectId,
-    enabled ? (query.data?.branchId ?? null) : null,
+    enabled && query.data ? owner : null,
     query.data?.items,
   );
   const tab = useTabChangeCounts();
@@ -156,7 +156,7 @@ export function useOwnerDrafts(
   const files = useMemo(
     () =>
       enabled && visible
-        ? projectWorkBranchFiles(visible, {
+        ? projectWorkDraftFiles(visible, {
             findDocument: (id) =>
               Object.values(trees)
                 .flatMap(({ tree }) => tree?.findDocument(id) ?? [])
@@ -180,7 +180,7 @@ export function useOwnerDrafts(
       drafts: null,
       files: null,
       fileForDocument,
-      branchId: null,
+      draftId: null,
     };
   }
 
@@ -196,6 +196,6 @@ export function useOwnerDrafts(
     drafts: result.data,
     files,
     fileForDocument,
-    branchId: query.data?.branchId ?? null,
+    draftId: query.data ? owner : null,
   };
 }

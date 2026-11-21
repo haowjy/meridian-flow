@@ -125,10 +125,10 @@ export const treeNodes = pgTable(
  * each live node the Work's tree lacks (`deleted`), and each node that exists only in the Work.
  * Written only by the replay of that Work's tree, in the same transaction as `tree_nodes`.
  */
-export const branchTreeNodes = pgTable(
+export const draftTreeNodes = pgTable(
   "draft_tree_nodes",
   {
-    branchId: draftIdColumn("draft_id").notNull(),
+    draftId: draftIdColumn("draft_id").notNull(),
     id: uuid("id").$type<DocumentId>().notNull(),
     /** The tree list the node is in; a Work's tree spans a project's list and the account's. */
     listId: uuid("list_id").$type<DocumentId>().notNull(),
@@ -154,7 +154,7 @@ export const branchTreeNodes = pgTable(
     changed: boolean("changed").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.branchId, table.id] }),
+    primaryKey({ columns: [table.draftId, table.id] }),
     foreignKey({
       name: "draft_tree_nodes_claimed_by_list",
       columns: [table.id, table.listId],
@@ -166,15 +166,15 @@ export const branchTreeNodes = pgTable(
       sql`(${table.kind} = 'folder') = (${table.fileType} IS NULL)`,
     ),
     check("draft_tree_nodes_rank_present", sql`${table.rank} <> ''`),
-    index("draft_tree_nodes_list").on(table.listId, table.branchId),
+    index("draft_tree_nodes_list").on(table.listId, table.draftId),
     index("draft_tree_nodes_walk").on(
-      table.branchId,
+      table.draftId,
       table.contextSourceId,
       table.parentId,
       table.segment,
     ),
     index("draft_tree_nodes_siblings").on(
-      table.branchId,
+      table.draftId,
       table.contextSourceId,
       table.parentId,
       sql`${table.rank} COLLATE "C"`,

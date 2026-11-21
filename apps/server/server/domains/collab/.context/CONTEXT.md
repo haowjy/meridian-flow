@@ -8,7 +8,7 @@ their shared rules.
 
 `CollabDomain` supplies Postgres/Hocuspocus adapters around `@meridian/agent-edit`. There is one
 Y.Doc per document, its Live room. A Work's draft is that Work's suggestion marks in it
-(`packages/suggestions`), plus the Work's pending tree records on its branch; Apply and Discard
+(`packages/suggestions`), plus the Work's pending tree records on its draft; Apply and Discard
 of them is [the press](press.md).
 
 A model's document write is a command (`modelEdits().run` and `.write`,
@@ -17,7 +17,7 @@ A model's document write is a command (`modelEdits().run` and `.write`,
 through `draftView(work, author)`, which reads the Work's view of Live and writes into Live as
 that Work's suggestions. Its owner is the chat's Work, or for a chat with no Work its lineage
 (the first chat, its forks and subagents; a handoff starts a new one). `shared/draft-owner.ts`
-is the one reader of a branch's owner and lifecycle (`branchOwnerSql`). A lineage is writable
+is the one reader of a draft's owner and lifecycle (`draftOwnerSql`). A lineage is writable
 while some chat in it is live. Scratch and upload content is always live.
 
 Nothing holds a write: each lands in its command's transaction, so a read always shows the
@@ -91,12 +91,12 @@ clients and journal their own transaction deltas.
 
 Work-first order has one owner: the Works mutation boundary
 (`projects/adapters/work-projection-mutation.ts`), a required dependency of
-every collab store that writes branch rows. It locks the Works a write names, directly or
-through its branches,
-`FOR NO KEY UPDATE` in id order, in the caller's transaction, before any branch,
-inverse or document lock, so every write enters Work, branch, document, the order the
+every collab store that writes draft rows. It locks the Works a write names, directly or
+through its drafts,
+`FOR NO KEY UPDATE` in id order, in the caller's transaction, before any draft,
+inverse or document lock, so every write enters Work, draft, document, the order the
 transitions take. A caller hands it its whole write set
-once, through `lockWorks` (opening a branch, a press, a model edit's grants) or `mutate`, which is `lockWorks` then the write. Every Work locked
+once, through `lockWorks` (opening a draft, a press, a model edit's grants) or `mutate`, which is `lockWorks` then the write. Every Work locked
 either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
@@ -148,7 +148,7 @@ The lock order is one list, and every path takes a prefix-ordered subset of it:
    that holds a document key writes its rows after it, and one that writes first never takes that
    document's key afterwards.
 
-- **Press and unpress** take the order of [the press](press.md): Works, branch, lists, documents
+- **Press and unpress** take the order of [the press](press.md): Works, draft, lists, documents
   in ID order, then writes.
 
 `submit` and `resync` take the list keys themselves when a path holds no document key, as the

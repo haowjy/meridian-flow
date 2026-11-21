@@ -28,7 +28,7 @@ export type ProjectedRow = {
  * it is a change the Work made, which review lists and the count counts: a row that differs from
  * live only in a twin's suffix is not one (its sibling was renamed, moved or deleted).
  */
-export type BranchRow = ProjectedRow & { existsOnlyInDraft: boolean; changed: boolean };
+export type DraftRow = ProjectedRow & { existsOnlyInDraft: boolean; changed: boolean };
 
 function extensionOf(node: TreeNode): string {
   if (node.kind === "folder") return "";
@@ -71,12 +71,12 @@ function sameFacts(a: ProjectedRow, b: ProjectedRow): boolean {
 }
 
 function same(a: ProjectedRow, b: ProjectedRow): boolean {
-  const branch = (row: ProjectedRow) => row as Partial<BranchRow>;
+  const draft = (row: ProjectedRow) => row as Partial<DraftRow>;
   return (
     sameFacts(a, b) &&
     a.suffix === b.suffix &&
-    branch(a).existsOnlyInDraft === branch(b).existsOnlyInDraft &&
-    branch(a).changed === branch(b).changed
+    draft(a).existsOnlyInDraft === draft(b).existsOnlyInDraft &&
+    draft(a).changed === draft(b).changed
   );
 }
 
@@ -97,13 +97,13 @@ export function pendingCreates(
  * the node in Trash, and an Undo of that create leaves it in Trash in both, which is no change.
  * A node in Trash in both is no change whatever the Work drafted for it: that waits for a restore.
  */
-export function branchRows(
+export function draftRows(
   live: ReadonlyMap<string, ProjectedRow>,
   draft: ReadonlyMap<string, ProjectedRow>,
   pending: readonly TreeRecord[],
-): Map<string, BranchRow> {
+): Map<string, DraftRow> {
   const created = pendingCreates(pending);
-  const out = new Map<string, BranchRow>();
+  const out = new Map<string, DraftRow>();
   for (const row of draft.values()) {
     const base = live.get(row.id);
     if (!base || (created.has(row.id) && !row.deleted))

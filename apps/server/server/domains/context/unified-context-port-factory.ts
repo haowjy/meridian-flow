@@ -13,9 +13,9 @@ import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import type { Database } from "@meridian/database";
-import { approveBranchWriteJoin } from "../../shared/branch-write-join.js";
+import { approveDraftWriteJoin } from "../../shared/draft-write-join.js";
 import { runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
-import type { Branches } from "../collab/domain/branches.js";
+import type { Drafts } from "../collab/domain/drafts.js";
 import type { DocumentCreationAggregate } from "../collab/index.js";
 import { sourceDestination } from "../file-policy/index.js";
 import { createDrizzleTopPrimaryChatResolver } from "../threads/adapters/drizzle/top-primary-chat.js";
@@ -123,23 +123,23 @@ interface AdapterAssembly {
 /**
  * Where an adapter's creates land (contract §2.3): a drafted source whose writes draft is a
  * draft placement, exactly as `sourceDestination` decides; people and the places an auto-apply
- * chat writes live are live. A draft-mode chat's live source still reads its branch's tree, where
+ * chat writes live are live. A draft-mode chat's live source still reads its draft's tree, where
  * a draft moved a file in.
  */
 function placementFor(assembly: AdapterAssembly, scheme: ContextScheme): ContextPlacement {
   const { thread } = assembly;
   if (!thread) return { kind: "live" };
   const destination =
-    thread.destination ?? sourceDestination(thread.writeMode, scheme, thread.branchOwner);
-  const branch = {
-    owner: thread.branchOwner.owner,
-    draftId: thread.branchOwner.draftId,
+    thread.destination ?? sourceDestination(thread.writeMode, scheme, thread.draftOwner);
+  const draft = {
+    owner: thread.draftOwner.owner,
+    draftId: thread.draftOwner.draftId,
     threadId: thread.threadId as ThreadId,
     userId: assembly.owner.userId as UserId,
   };
-  if (destination.kind === "draft") return { kind: "draft", ...branch };
+  if (destination.kind === "draft") return { kind: "draft", ...draft };
   return thread.writeMode === "draft" && !thread.destination
-    ? { kind: "live", branch }
+    ? { kind: "live", draft }
     : { kind: "live" };
 }
 
@@ -403,16 +403,16 @@ export function createProductionUnifiedContextPortFactory(options: {
   sourceHints: Pick<ProjectHintPort, "publishSourcesHint">;
   /** Ahead-ref settlement for uploads and move-ins (contract §9.3). */
   arrivals?: DocumentArrivals;
-  /** The one branches resolver: draft placements read and write through it (§2.3). */
-  branches: Branches;
+  /** The one drafts resolver: draft placements read and write through it (§2.3). */
+  drafts: Drafts;
   /** Copy's collab cut/bind and the object store its binaries duplicate into. */
   copy?: ContextCopyCommandDeps;
   /**
-   * The Work mutation boundary: a branch command locks its branch's Work first
+   * The Work mutation boundary: a draft command locks its draft's Work first
    * and touches the Work's projection after it (§13.2, S3).
    */
-  pendingBranch: {
-    mutate<T>(set: { branches: readonly DraftId[] }, operation: () => Promise<T>): Promise<T>;
+  pendingDraft: {
+    mutate<T>(set: { drafts: readonly DraftId[] }, operation: () => Promise<T>): Promise<T>;
   };
 }): UnifiedContextPortFactory {
   const topPrimaryChats =
@@ -426,31 +426,31 @@ export function createProductionUnifiedContextPortFactory(options: {
   storeResolvers.chatFiles = chatFiles;
 
   /**
-   * One command transaction (§2.3, §14): Works (a branch write's Work among them), then the
-   * branch row; nothing above it holds a Work row. The tree writes inside it take the list's
+   * One command transaction (§2.3, §14): Works (a draft write's Work among them), then the
+   * draft row; nothing above it holds a Work row. The tree writes inside it take the list's
    * lock, which sorts before any document or namespace key.
    */
   function commandTransaction(): ContextCommandTransaction {
     return {
       run: (operation, scopes = [], commandOptions = {}) =>
         runInDrizzleTransaction(options.db, async () => {
-          const branchWrite = commandOptions.branch;
-          const command: ContextCommandContext = { branch: null };
+          const draftWrite = commandOptions.draft;
+          const command: ContextCommandContext = { draft: null };
           const lockedScopes = typeof scopes === "function" ? await scopes() : scopes;
           await lockContextNamespaces(options.db, lockedScopes, {
-            workIds: branchWrite?.owner.kind === "work" ? [branchWrite.owner.workId] : [],
+            workIds: draftWrite?.owner.kind === "work" ? [draftWrite.owner.workId] : [],
             lineageRootIds:
-              branchWrite?.owner.kind === "lineage" ? [branchWrite.owner.rootThreadId] : [],
+              draftWrite?.owner.kind === "lineage" ? [draftWrite.owner.rootThreadId] : [],
             sourceIds: commandOptions.sourceIds ?? [],
             afterWorkLocks: async () => {
-              if (!branchWrite) return;
-              approveBranchWriteJoin();
-              command.branch = await options.branches.lockForWrite(branchWrite.owner);
+              if (!draftWrite) return;
+              approveDraftWriteJoin();
+              command.draft = await options.drafts.lockForWrite(draftWrite.owner);
             },
           });
-          const branch = command.branch;
-          return branch
-            ? options.pendingBranch.mutate({ branches: [branch.id] }, () => operation(command))
+          const draft = command.draft;
+          return draft
+            ? options.pendingDraft.mutate({ drafts: [draft.id] }, () => operation(command))
             : operation(command);
         }),
     };
@@ -474,7 +474,7 @@ export function createProductionUnifiedContextPortFactory(options: {
             projectId,
             userId,
             id,
-            view?.kind === "draft" ? { kind: "branch" as const, branchId: view.draft } : undefined,
+            view?.kind === "draft" ? { kind: "draft" as const, draftId: view.draft } : undefined,
           ),
         copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(),
@@ -497,7 +497,7 @@ export function createProductionUnifiedContextPortFactory(options: {
             projectId,
             userId,
             id,
-            view?.kind === "draft" ? { kind: "branch" as const, branchId: view.draft } : undefined,
+            view?.kind === "draft" ? { kind: "draft" as const, draftId: view.draft } : undefined,
           ),
         copyCommands: createCopyCommands(options.db, { userId, projectId }),
         commandTransaction: commandTransaction(),

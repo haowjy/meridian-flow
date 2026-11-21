@@ -30,7 +30,7 @@ export type LinkScopeKey = (
    * Who reads. `accountId` is the file-policy principal whose readability the
    * snapshot answers (default: the thread's account, else the project owner);
    * `threadId` the reading thread. Presence uses the selected SQL tree view; hidden creates
-   * are visible only in a branch using them. A door never joins a snapshot read for
+   * are visible only in a draft using them. A door never joins a snapshot read for
    * another account or thread.
    */
   viewer?: { accountId?: string; threadId?: string };
@@ -77,11 +77,11 @@ export interface DocumentLinkScopes {
    */
   reader(input: { uri: string | null; view: LinkView }): HolderLinkScope;
   /**
-   * The document a branch view created at an address, as the view's tree reaches it, once `prepare` has loaded that address. Typed links never bind to a branch's
+   * The document a draft view created at an address, as the view's tree reaches it, once `prepare` has loaded that address. Typed links never bind to a draft's
    * hidden document; this is how an address names one. Null for the live view, another
-   * branch's creation, or what the reader may not read.
+   * draft's creation, or what the reader may not read.
    */
-  branchCreatedAt(input: { view: LinkView; uri: string }): CatalogDocument | null;
+  draftCreatedAt(input: { view: LinkView; uri: string }): CatalogDocument | null;
   /**
    * Pins the holder a reader door reads bindings for, in `view`: an explicit id when that
    * document is visible there (wherever it now sits), else the one document at `uri`.

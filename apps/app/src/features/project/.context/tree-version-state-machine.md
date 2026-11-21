@@ -14,7 +14,7 @@ Work's draft. "The toggle" below means this state, whichever chip sets it.
 - **choice** (`live` | `draft`): the writer's, kept per (account, project) in this browser tab
   and seeded from the device (`client/project-shell/store.ts`, `tree-version`).
 - **offered**: the picked Work (or, under None, the chat on screen's: its Work's drafts, or its
-  own when it has no Work) has an active branch with something pending: a drafted document in its list, or a pending tree record in the browser's
+  own when it has no Work) has an active draft with something pending: a drafted document in its list, or a pending tree record in the browser's
   copy (a folder change alone lists no document).
 - **showing** = `draft` when offered and choice is `draft`, else `live`, for the sidebar.
   A page reads the choice itself through the one rule below, so a Work whose last change was
@@ -36,7 +36,7 @@ stateDiagram-v2
 
 - On **Draft** the sidebar's trees are the Work's view, replayed in the browser
   (`TreeListSession.replay(view)`), and every `TreeActions` record carries the
-  Work's branch as `draft`. On **Live** they are live. Trash restore stays live: Trash lists
+  Work's draft as `draft`. On **Live** they are live. Trash restore stays live: Trash lists
   live's Trash.
 - **One rule for a page's version** (`shownDraft`, `features/project/views.ts`), read by the
   paint, the address (`use-review-address-sync.ts`) and a tab's activation (`useOpenInMain`):
@@ -46,7 +46,7 @@ stateDiagram-v2
   Work's draft sets the choice to Draft.
 - **Readers behind an action read the view it writes:** the move menus, the destination picker,
   Scratch's trees, the folder menu, the identity bar's commit and a linked document's create read
-  `useTreeVersion()`. The Work's `TreeVersion` is one value per branch (`draftTreeVersion`).
+  `useTreeVersion()`. The Work's `TreeVersion` is one value per draft (`draftTreeVersion`).
 - **The page's version chip is the same state, and the same control.** Picking the Work's draft
   or Live in its menu sets the toggle, and opening any of the Work's drafts (a Changes row, the chat's dock, a
   review link: `review-launch.tsx`) puts it on Draft. The chip on Live is neutral with a jade

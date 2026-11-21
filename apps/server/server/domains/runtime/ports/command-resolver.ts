@@ -1,5 +1,5 @@
 /** The runtime's door to the document commands a model's tool calls make effects through. */
-import type { ModelEditKey, ModelEditOutcome } from "@meridian/contracts/branches";
+import type { ModelEditKey, ModelEditOutcome } from "@meridian/contracts/drafts";
 
 export interface CommandResolver {
   /**

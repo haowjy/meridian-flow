@@ -5,12 +5,12 @@
  */
 
 import type { ReadCommand, WriteCommand, WriteOutcome } from "@meridian/agent-edit/integration";
+import type { Settlement } from "@meridian/contracts/commands";
 import type {
   ModelEditKey,
   ModelEditOutcome,
   ModelEditToolResult,
-} from "@meridian/contracts/branches";
-import type { Settlement } from "@meridian/contracts/commands";
+} from "@meridian/contracts/drafts";
 import type { ResultEvidence } from "../../../shared/model-evidence.js";
 import type {
   RoutedReadContext,

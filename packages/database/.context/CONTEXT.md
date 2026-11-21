@@ -31,13 +31,12 @@ remains its restore marker. Restore clears all removal fields. A draft has no st
 deleted with its Work or its document's content, never closed. `content_purged_at` marks a tombstone whose document bytes and content history have
 been released after the retention window; placement and the removal record remain.
 
-A `branches` row is one owner's pending file tree. Its active owner is either
-a Work (`origin_work_id`) or a conversation lineage (`origin_root_thread_id`,
-no foreign key), enforced by `branches_one_owner`.
-`branches.pending_document_count` and `pending_folder_count` are its own counts;
-`works` carries the sums over its active branches.
-A Work's text draft is suggestion marks in the Live document; `press_text_effects` keeps each
-press's text change for its Undo. `branch_tree_changes` belongs to the whole branch. `commands` holds one row
+A `drafts` row is one draft. A Work names it (`works.draft_id`) or a root chat does
+(`threads.draft_id`), minted in the same insert; the draft names no owner.
+`drafts.pending_document_count` and `pending_folder_count` are its own counts;
+`works` carries the sums over its drafts.
+A draft's text is suggestion marks in the Live document; `press_text_effects` keeps each
+press's text change for its Undo. `commands` holds one row
 per command sent as a request, of any kind (documents, Work, project), inserted first in the
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
 its project and chat, so a resend of a create cannot create twice.
@@ -75,7 +74,7 @@ Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
 owned rows identify exactly what a restore revives; their FKs are `ON DELETE
 SET NULL` so a stale marker never deletes, and purge deletes marked rows
-explicitly. Branches and their drafts carry no marker: soft delete leaves them alone and
+explicitly. Drafts carry no marker: soft delete leaves them alone and
 purge disposes of them. Each project has a locked Work row for the UI's
 “None” selection; it cannot be archived or deleted.
 
@@ -91,7 +90,7 @@ list is written with no document. So no document's or node's id is ever a list's
 `latest_checkpoint_id` has no FK: checkpoints reference their head, and a cycle gives the
 focused resets no delete order.
 `tree_node_ids` holds the claim on every node id any list has made: its primary key is the
-claim, taken by one insert in the admitting transaction, and `tree_nodes` / `branch_tree_nodes`
+claim, taken by one insert in the admitting transaction, and `tree_nodes` / `draft_tree_nodes`
 reference `(id, list_id)` in it, so a row cannot be written for another list's id. They are the
 project tree's rows, written only by the tree list store (domains/context). Live journal rows are deleted only by a
 purge; a generation replacement keeps the old generation's rows unread. A checkpoint row with `background` set (a room store, or an empty

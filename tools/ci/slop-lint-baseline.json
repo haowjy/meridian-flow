@@ -203,7 +203,7 @@
         "count": 2
       },
       {
-        "path": "apps/server/server/domains/collab/adapters/in-memory/branches.ts",
+        "path": "apps/server/server/domains/collab/adapters/in-memory/drafts.ts",
         "line": "const tail = run.catch(() => undefined);",
         "count": 1
       },
@@ -420,7 +420,7 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/collab/adapters/drizzle-branches.db.test.ts",
+        "path": "apps/server/server/domains/collab/adapters/drizzle-drafts.db.test.ts",
         "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
         "count": 1
       },

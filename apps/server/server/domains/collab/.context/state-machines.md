@@ -1,20 +1,7 @@
 # Collab state machines
 
-The status columns collab owns. A branch holds one owner's pending tree records; a Work's text
-draft is its suggestion marks in Live, which have no status of their own.
-
-## Branch
-
-`branches.status` (`packages/database/src/schema/branches.ts`).
-
-```mermaid
-stateDiagram-v2
-  [*] --> active: ensureActiveLocked
-  active --> closed: close, guarded on active
-  closed --> [*]
-```
-
-- A branch never reopens. A closed branch has `closedAt`.
+The status columns collab owns. A draft's tree records are rows; its text changes are suggestion
+marks in Live, which have no status of their own.
 
 ## Press text effect
 

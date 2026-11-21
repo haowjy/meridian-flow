@@ -62,7 +62,7 @@ Answers who may read or write a document, and why not. A route asks `requireFile
 - Kind: domain
 - Paths: `apps/server/server/domains/file-policy`
 - Docs: [CONTEXT](../../apps/server/server/domains/file-policy/.context/CONTEXT.md)
-- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also imports `collab/adapters/drizzle-branches.ts`.
+- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also imports `collab/adapters/drizzle-drafts.ts`.
 
 ## conversation
 

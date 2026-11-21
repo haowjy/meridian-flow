@@ -3,7 +3,7 @@ import type {
   ModelEditKey,
   ModelEditOutcome,
   ModelEditToolResult,
-} from "@meridian/contracts/branches";
+} from "@meridian/contracts/drafts";
 import type { McpScriptCall } from "@meridian/contracts/mcp";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {

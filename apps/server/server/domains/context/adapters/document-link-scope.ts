@@ -86,7 +86,7 @@ type Place = { uri: string; contextSourceId: ContextSourceId | null; path: strin
 type ViewIndex = {
   statuses: ReadonlyMap<DocumentId, IdentityStatus>;
   /** The draft, for a draft's view: what "in a draft" names. */
-  branch?: { branchId: DraftId };
+  draft?: { draftId: DraftId };
 };
 
 type Snapshot = {
@@ -126,10 +126,10 @@ const memberKey = (key: LinkScopeKey) =>
       : `document:${key.documentId}`;
 
 /** One key per tree view: a reply sees what its view sees. */
-const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `branch:${view.branchId}`);
+const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `draft:${view.draftId}`);
 
 const treeViewOf = (view: LinkView): TreeView =>
-  view.kind === "live" ? LIVE_TREE : { kind: "branch", branchId: view.branchId as DraftId };
+  view.kind === "live" ? LIVE_TREE : { kind: "draft", draftId: view.draftId as DraftId };
 
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
@@ -346,7 +346,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
 
   /**
    * Rows whose own name matches each address (exact and extension-omitted), plus, in a
-   * branch view, whatever that branch has at the exact address (its location may not be
+   * draft view, whatever that draft has at the exact address (its location may not be
    * its row's).
    */
   async function loadAddresses(
@@ -371,11 +371,11 @@ export function createDrizzleDocumentLinkScopes(deps: {
     );
     for (const row of rows) if (!snapshot.rows.get(row.id)) remember(snapshot, row);
 
-    const branches = views.filter((view) => view.kind === "branch");
-    if (branches.length > 0 && snapshot.projectId) {
+    const drafts = views.filter((view) => view.kind === "draft");
+    if (drafts.length > 0 && snapshot.projectId) {
       const coordinates = await coordinatesOf(snapshot.projectId as ProjectId, uris);
       const occupants = new Set<string>();
-      for (const view of branches) {
+      for (const view of drafts) {
         for (const ids of (await tree.occupantsAt(treeViewOf(view), coordinates)).values()) {
           for (const id of ids) occupants.add(id);
         }
@@ -513,12 +513,12 @@ export function createDrizzleDocumentLinkScopes(deps: {
     );
     if (unknown.length === 0) return;
     // A document that exists only in a Work's draft has its facts from that Work's view.
-    const branchViews = new Map<DocumentId, TreeView>();
-    for (const { statuses, branch } of snapshot.views.values()) {
-      if (!branch) continue;
+    const draftViews = new Map<DocumentId, TreeView>();
+    for (const { statuses, draft } of snapshot.views.values()) {
+      if (!draft) continue;
       for (const [id, status] of statuses) {
-        if (status.kind === "visible" && status.existsOnlyInDraft && !branchViews.has(id)) {
-          branchViews.set(id, { kind: "branch", branchId: branch.branchId as DraftId });
+        if (status.kind === "visible" && status.existsOnlyInDraft && !draftViews.has(id)) {
+          draftViews.set(id, { kind: "draft", draftId: draft.draftId as DraftId });
         }
       }
     }
@@ -526,7 +526,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       ? await deps.fileAccess.listAccess(
           { accountId: snapshot.viewer as UserId },
           unknown.map((row) => row.id as DocumentId),
-          { branchViews },
+          { draftViews },
         )
       : new Map();
     for (const row of unknown) snapshot.readable.set(row.id, access.has(row.id as DocumentId));
@@ -539,7 +539,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       const statuses = await tree.identityStatus(treeViewOf(view), ids);
       const index: ViewIndex = {
         statuses,
-        ...(view.kind === "branch" ? { branch: { branchId: view.branchId } } : {}),
+        ...(view.kind === "draft" ? { draft: { draftId: view.draftId } } : {}),
       };
       for (const [id, status] of statuses) {
         const row = snapshot.rows.get(id);
@@ -646,9 +646,9 @@ export function createDrizzleDocumentLinkScopes(deps: {
         miss,
       );
     },
-    branchCreatedAt({ view, uri }) {
+    draftCreatedAt({ view, uri }) {
       const snapshot = storage.getStore();
-      return snapshot?.open ? snapshotCatalog(snapshot, view, () => {}).branchCreatedAt(uri) : null;
+      return snapshot?.open ? snapshotCatalog(snapshot, view, () => {}).draftCreatedAt(uri) : null;
     },
     async pinHolder({ view, documentId, uri }) {
       // Pinning answers for the snapshot's reader: no open snapshot, no authority to pin in.
@@ -726,7 +726,7 @@ function snapshotCatalog(
   snapshot: Snapshot,
   view: LinkView,
   miss: (key: string) => void,
-): HolderCatalog & { branchCreatedAt(uri: string): CatalogDocument | null } {
+): HolderCatalog & { draftCreatedAt(uri: string): CatalogDocument | null } {
   const key = viewKey(view);
   const owned = (row: Row) =>
     ownedByRequest(row.list, { projectId: snapshot.projectId, accountId: snapshot.viewer });
@@ -748,17 +748,17 @@ function snapshotCatalog(
           ? status.address
           : null;
     // "In a draft": it exists only in the Work whose view this is.
-    const branch =
+    const draft =
       status.kind === "visible" && status.existsOnlyInDraft
-        ? snapshot.views.get(key)?.branch
+        ? snapshot.views.get(key)?.draft
         : undefined;
     return {
       documentId: row.id,
       owner: row.owner,
       projectId: projectOf(row),
       uri: address?.uri ?? row.uri,
-      presence: status.kind === "deleted" ? "deleted" : branch ? "branch" : "live",
-      ...(branch ? { branch } : {}),
+      presence: status.kind === "deleted" ? "deleted" : draft ? "draft" : "live",
+      ...(draft ? { draft } : {}),
       readable: snapshot.readable.get(row.id) ?? false,
       nameable: owned(row),
     };
@@ -803,11 +803,11 @@ function snapshotCatalog(
   };
   return {
     /**
-     * What this branch view created at an address a typed link names, as the tree reaches it. Only the view's own branch counts (`documentAt` shows
-     * an ahead ref any branch's creation), and only a document the reader may name and read.
+     * What this draft view created at an address a typed link names, as the tree reaches it. Only the view's own draft counts (`documentAt` shows
+     * an ahead ref any draft's creation), and only a document the reader may name and read.
      */
-    branchCreatedAt(uri) {
-      if (view.kind !== "branch" || !snapshot.addresses.has(uri)) return null;
+    draftCreatedAt(uri) {
+      if (view.kind !== "draft" || !snapshot.addresses.has(uri)) return null;
       const id = snapshot.resolved.get(key)?.get(uri);
       const status = id ? snapshot.views.get(key)?.statuses.get(id) : undefined;
       const row = id ? snapshot.rows.get(id) : undefined;

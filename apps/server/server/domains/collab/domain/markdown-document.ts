@@ -119,10 +119,10 @@ type DraftMutation = (
 ) => Result<void, SyncError> | Promise<Result<void, SyncError>>;
 
 export type MarkdownDocumentEngine = {
-  /** `view` is the version `doc` is: a Work draft's links spell in its branch's view. */
+  /** `view` is the version `doc` is: a Work draft's links spell in its draft's view. */
   serializeDocument(documentId: DocumentId, doc: Y.Doc, view: LinkView): Promise<string>;
   /**
-   * `view` is the version `doc` is: a Work draft's links spell in its branch's view. `model` reads
+   * `view` is the version `doc` is: a Work draft's links spell in its draft's view. `model` reads
    * the content (in suggestion mode, a Work's view of Live); the engine's own model by default.
    */
   serializeVersionedDocument(

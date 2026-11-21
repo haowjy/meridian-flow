@@ -251,7 +251,7 @@ export function createDrizzleDocumentDerivationStore(
   const pendingMoved = workProjection
     ? async (drafts: readonly DraftId[]) => {
         workProjection.liveChangedUnder(drafts);
-        workProjection.recountAfterCommit(await workProjection.ownersOf({ branches: drafts }));
+        workProjection.recountAfterCommit(await workProjection.ownersOf({ drafts: drafts }));
       }
     : undefined;
   const page = async (

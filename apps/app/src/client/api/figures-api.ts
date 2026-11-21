@@ -25,7 +25,7 @@ export function documentDownloadUrl(documentId: string): string {
 
 export type GetFigureSignedUrlInput = AssetRouteInput & {
   /**
-   * The Work the viewer is in. A picture still in a Work's branch is readable
+   * The Work the viewer is in. A picture still in a Work's draft is readable
    * only through that Work, so the request names it.
    */
   owner?: string;
