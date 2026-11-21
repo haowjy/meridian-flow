@@ -1,0 +1,25 @@
+{
+  "name": "@meridian/gate-binding",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@meridian/loro-prosemirror": "workspace:*",
+    "@meridian/prosemirror-schema": "workspace:*",
+    "loro-crdt": "1.18.0",
+    "prosemirror-model": "^1.25.13",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-transform": "^1.12.5",
+    "prosemirror-view": "1.42.9",
+    "prosemirror-keymap": "^1.2.3",
+    "prosemirror-commands": "^1.7.2"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

@@ -2,6 +2,7 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'tools/mf'
+  - 'tools/gate-binding'
 verifyDepsBeforeRun: false
 allowBuilds:
   nx: true

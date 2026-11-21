@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Loro binding gate</title>
+    <style>
+      body { font: 16px/1.5 Georgia, serif; margin: 0; padding: 16px; }
+      #editors { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      .editor { border: 1px solid; padding: 8px 12px; max-height: 85vh; overflow: auto; }
+      .editor::before { content: "Peer " attr(data-peer); font: 12px system-ui, sans-serif; opacity: 0.6; }
+      .ProseMirror { outline: none; white-space: pre-wrap; word-wrap: break-word; }
+      .ProseMirror p, .ProseMirror h1 { margin: 0 0 0.6em; }
+      .comment { text-decoration: underline dotted; }
+    </style>
+  </head>
+  <body>
+    <div id="editors"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
