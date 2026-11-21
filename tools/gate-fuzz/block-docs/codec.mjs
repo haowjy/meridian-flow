@@ -25,16 +25,16 @@ function storedMarks(marks) {
     out[key]=m.type.name==='comment'?true:m.attrs;
   } return out;
 }
-function readMarks(attrs) {
-  const keys=Object.keys(attrs??{}).filter(k=>k!=='inline');
+function readMarks(attrs,structure) {
+  const keys=Object.keys(attrs??{}).filter(k=>k!=='inline'&&(!k.startsWith('comment_')||value(structure,'comments',k.slice(8))!==undefined));
   const normalized=keys.includes('code')?['code']:keys.sort((a,b)=>{const am=a.startsWith('comment_')?'comment':a,bm=b.startsWith('comment_')?'comment':b;const ar=schema.marks[am]?.rank??0,br=schema.marks[bm]?.rank??0;return ar-br||(a<b?-1:a>b?1:0);});
   return normalized.map(k=>k.startsWith('comment_')?schema.marks.comment.create({id:k.slice(8)}):schema.mark(k,attrs[k]));
 }
-function textNodes(doc,type) {
+function textNodes(doc,type,structure) {
   if (!doc) return [];
   const nodes=[];
   for(const part of doc.getText('t').toDelta()) {
-    const marks=readMarks(part.attributes).filter(m=>type.allowsMarkType(m.type));
+    const marks=readMarks(part.attributes,structure).filter(m=>type.allowsMarkType(m.type));
     if (part.attributes?.inline) {
       // An inline style is attached only to a sentinel, at insertion.
       for(const c of part.insert) {
@@ -50,7 +50,7 @@ export function read(doc) {
   function one(id) {
     const type=value(s,'node',id), a={...attributes(s,id),id};
     const spec=schema.nodes[type]; if(!spec) throw Error(`unknown node ${type}`);
-    let content=spec.isTextblock?textNodes(doc.texts.get(id),spec):children(s,id,shown).map(one).filter(Boolean);
+    let content=spec.isTextblock?textNodes(doc.texts.get(id),spec,s):children(s,id,shown).map(one).filter(Boolean);
     if((type==='table'||type==='table_row')&&!content.length)return null;
     if((type==='table_cell'||type==='table_header'||type==='jsx_container')&&!content.length)content=[schema.nodes.paragraph.create({id:id+'/empty'})];
     return spec.create(a,content);
@@ -123,7 +123,7 @@ export function write(doc,pm,{rng=Math.random,message='edit'}={}) {
   for(const [id,b] of flat.map) {
     set('parent',id,b.parent);set('node',id,b.node);const existing=attributes(s,id);for(const k of new Set([...Object.keys(existing),...Object.keys(b.attrs)]))set('attrs',id+'/'+k,b.attrs[k]??null);
     if(b.textblock) {
-      let t=doc.texts.get(id);const needs=!t||!b.pm.content.eq(Fragment.fromArray(textNodes(t,b.pm.type)));
+      let t=doc.texts.get(id);const needs=!t||!b.pm.content.eq(Fragment.fromArray(textNodes(t,b.pm.type,s)));
       if(!t){t=makeDoc(doc.peer);doc.texts.set(id,t);doc.ownedTexts?.add(t);}
       else if(needs&&doc.lazyParent&&t===doc.lazyParent.texts.get(id)){const original=t;t=configure(original.fork());t.setPeerId(doc.peer);doc.texts.set(id,t);doc.ownedTexts.add(t);doc.forkTimes.set(id,original.frontiers());}
       if(needs){const b0=t.frontiers();updateText(t.getText('t'),b.delta,b.node);t.commit({message});const b1=t.frontiers();if(!same(b0,b1))changed.push({id,doc:t,before:b0,after:b1});}
@@ -146,7 +146,7 @@ export function fixBlockIds(tr,rng=Math.random,skip=()=>false){
   const seen=new Set(),A='0123456789abcdefghijklmnopqrstuvwxyz';
   tr.doc.descendants((node,pos)=>{
     if(node.type.spec.attrs?.id===undefined||skip(node,pos))return !node.isTextblock;
-    if(node.attrs.id==null||node.attrs.id.endsWith('/empty')||seen.has(node.attrs.id)){let id='';for(let i=0;i<10;i++)id+=A[Math.floor(rng()*36)];tr.setNodeAttribute(pos,'id',id+(idCounter++).toString(36));}
+    if(node.attrs.id==null||seen.has(node.attrs.id)){let id='';for(let i=0;i<10;i++)id+=A[Math.floor(rng()*36)];tr.setNodeAttribute(pos,'id',id+(idCounter++).toString(36));}
     else seen.add(node.attrs.id);return !node.isTextblock;
   });
 }

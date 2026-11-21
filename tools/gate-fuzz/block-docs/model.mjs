@@ -1,16 +1,18 @@
+import { simpleDiff } from 'lib0/diff';
 import { attributes, children, ids, value, visible } from './structure.mjs';
 const sorted=v=>Array.isArray(v)?v.map(sorted):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,sorted(v[k])])):v;
 export const same=(a,b)=>JSON.stringify(sorted(a))===JSON.stringify(sorted(b));
 const update=(source,target)=>target.import(source.export({mode:'update',from:target.oplogVersion()}));
 const clone=(doc,peer,configure)=>{const d=doc.fork();d.setPeerId(peer);if(configure)configure(d);else d.configDefaultTextStyle({expand:'none'});return d;};
 export function forward(source,target){update(source.structure,target.structure);for(const [id,d] of source.texts){if(!target.texts.has(id)){target.texts.set(id,clone(d,target.peer,target.configure));if(!source.draft)for(const snapshot of target._frontierSnapshots??[])if(!snapshot.texts.has(id))snapshot.texts.set(id,d.frontiers());}else if(d!==target.texts.get(id))update(d,target.texts.get(id));}}
-export function carried(d,id){const out=new Set(),name=value(d.structure,'node',id);if(name==='code_block')return out;for(const x of d.texts.get(id)?.getText('t').toDelta()??[]){const a=x.attributes??{};if(a.code)continue;if(name==='jsx_leaf'&&a.inline&&[...x.insert].every(ch=>ch==='\ufffc'))continue;for(const k of Object.keys(a))if(k.startsWith('comment_'))out.add(k.slice(8));}return out;}
+export function carried(d,id){const out=new Set(),name=value(d.structure,'node',id);if(name==='code_block')return out;for(const x of d.texts.get(id)?.getText('t').toDelta()??[]){const a=x.attributes??{};if(a.code)continue;if(name==='jsx_leaf'&&a.inline&&[...x.insert].every(ch=>ch==='\ufffc'))continue;for(const k of Object.keys(a))if(k.startsWith('comment_')&&value(d.structure,'comments',k.slice(8))!==undefined)out.add(k.slice(8));}return out;}
 function ordered(d){const out=[],seen=new Set(),shown=visible(d.structure);function visit(parent){for(const id of children(d.structure,parent,shown)){if(seen.has(id))continue;seen.add(id);out.push(id);visit(id);}}visit(null);return out;}
-function delta(d,id){const name=value(d.structure,'node',id),out=[];for(const run of d.texts.get(id)?.getText('t').toDelta()??[]){for(const ch of run.insert){let a={...(run.attributes??{})};if(name==='code_block'){if(ch==='\ufffc'&&a.inline)continue;a={};}else if(name==='jsx_leaf'){if(ch==='\ufffc'&&a.inline)continue;if(a.code)a={code:a.code};}else{if(ch!=='\ufffc')delete a.inline;if(a.code)a={code:a.code,...(a.inline?{inline:a.inline}:{})};}out.push([ch,sorted(a)]);}}return out;}
+function delta(d,id){const name=value(d.structure,'node',id),out=[];for(const run of d.texts.get(id)?.getText('t').toDelta()??[]){for(const ch of run.insert){let a={...(run.attributes??{})};for(const k of Object.keys(a))if(k.startsWith('comment_')&&value(d.structure,'comments',k.slice(8))===undefined)delete a[k];if(name==='code_block'){if(ch==='\ufffc'&&a.inline)continue;a={};}else if(name==='jsx_leaf'){if(ch==='\ufffc'&&a.inline)continue;if(a.code)a={code:a.code};}else{if(ch!=='\ufffc')delete a.inline;if(a.code)a={code:a.code,...(a.inline?{inline:a.inline}:{})};}out.push([ch,sorted(a)]);}}return out;}
 function moved(sourceBefore,sourceAfter,destBefore,destAfter){
- const runs=text=>{const words=text.match(/[\p{L}\p{N}_]+/gu)??[],out=new Set();for(let i=0;i+1<=words.length;i++)out.add(words.slice(i,i+1).join('\0'));return out;};
- const old=runs(sourceBefore),remaining=runs(sourceAfter),prior=runs(destBefore),now=runs(destAfter);
- for(const run of old)if(!remaining.has(run)&&!prior.has(run)&&now.has(run))return true;return false;
+ const lostDiff=simpleDiff(sourceBefore,sourceAfter),gainDiff=simpleDiff(destBefore,destAfter);
+ const lost=sourceBefore.slice(lostDiff.index,lostDiff.index+lostDiff.remove),gain=gainDiff.insert;
+ for(let i=0;i+3<=lost.length;i++)if(gain.includes(lost.slice(i,i+3)))return true;
+ return false;
 }
 
 export function groups(live,fork){

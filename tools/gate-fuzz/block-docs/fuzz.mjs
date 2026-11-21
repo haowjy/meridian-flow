@@ -30,20 +30,22 @@ export function runScript(seed,{verbose=false}={}) {
   const forkOf=(d,peer,draft=d.draft)=>{const f=C.forkDocument(d,peer,draft);all.push(f);return f};
   let peer=100;const next=()=>String(++peer);
   const live=make('1');let tab,fork,liveTab;const deleted=new Set(),touched=new Set(),liveTokenBlock=new Map(),liveTokenIds=new Map(),draftDeletedChars=new Set(),splitMoved=new Set(),resetRestored=new Map(),inverseCopies=new Map();
+  const origins=new Map();
+  function recordOrigins(d){for(const id of visible(d.structure)){const td=d.texts.get(id);if(!td)continue;const text=td.getText('t').toString(),cs=charIds(td);for(const m of text.matchAll(new RegExp(TOKEN.source,'g')))for(const c of cs.slice(m.index,m.index+m[0].length))if(c&&!origins.has(c))origins.set(c,m[0]);}}
   const activeTurns=[];function fwdLive(){const missing=[...live.texts.keys()].filter(id=>!fork.texts.has(id));M.forward(live,fork);for(const t of activeTurns)for(const id of missing)if(!t.before.texts.has(id))t.before.texts.set(id,live.texts.get(id).frontiers());}
   function sync(a,b){M.forward(a,b);M.forward(b,a);}
   function syncLive(){sync(liveTab,live);if(fork)fwdLive();}
   function syncTab(){if(fork){M.forward(tab,fork);fwdLive();M.forward(fork,tab);}}
   function ensure(){if(fork)return;syncLive();fork=forkOf(live,'10',true);tab=forkOf(fork,next());note('fork created');}
   function userEdit(d,origin,opts={}) {
-    const pm=C.read(d), e=randomEdit(g,pm,origin,{commentsHere:[...comments(d)],...opts});if(!e)return null;
+    recordOrigins(d);const pm=C.read(d), e=randomEdit(g,pm,origin,{commentsHere:[...comments(d)],...opts});if(!e)return null;
     const old=blockValues(d),before=tokens(d),oldIds=new Map([...d.texts].map(([id,td])=>[id,charIds(td)])),tb0=e.kind==='split'||e.kind==='join'?tokenBlocks(d):null;
     const b0=d.structure.frontiers();for(const [id,v] of e.comments??[]){const map=d.structure.getMap(d.draft?'d.comments':'comments');if(d.draft&&M.same(d.structure.getMap('comments').get(id),v))map.delete(id);else map.set(id,v);}
     let built=null;const result=e.build?C.edit(d,(tr,pm)=>{built=e.build(tr,pm);return built;},{rng:g.rng,message:opts.message}):{changed:[]};
     if(built?.docChanged)check(built.doc.eq(C.read(d)),'binding',`codec failed round trip for ${e.kind}: expected ${JSON.stringify(built.doc.toJSON())}; got ${JSON.stringify(C.read(d).toJSON())}`);
     d.structure.commit({message:opts.message});const b1=d.structure.frontiers();
     if(!M.same(b0,b1)){const r=result.changed.find(x=>x.id===null);if(r){r.before=b0;r.after=b1;}else result.changed.unshift({id:null,doc:d.structure,before:b0,after:b1});}
-    const after=tokens(d),now=new Set(after),fresh=blockValues(d),modified=new Set([...new Set([...old.keys(),...fresh.keys()])].filter(id=>old.get(id)!==fresh.get(id)));matching(d,modified,new Set((e.comments??[]).map(([id])=>id)));
+    recordOrigins(d);const after=tokens(d),now=new Set(after),fresh=blockValues(d),modified=new Set([...new Set([...old.keys(),...fresh.keys()])].filter(id=>old.get(id)!==fresh.get(id)));matching(d,modified,new Set((e.comments??[]).map(([id])=>id)));
     for(const t of before)if(!now.has(t))deleted.add(t);
     if(d===liveTab){const bs=tokenBlocks(d);for(const token of after)if(!before.includes(token)&&token.startsWith('l')){const id=bs.get(token),td=d.texts.get(id),pos=td?.getText('t').toString().indexOf(token)??-1;liveTokenBlock.set(token,id);if(pos>=0)liveTokenIds.set(token,charIds(td).slice(pos,pos+token.length));}}
     else {for(const [id,beforeIds] of oldIds){const afterIds=new Set(charIds(d.texts.get(id)));for(const charId of beforeIds)if(charId&&!afterIds.has(charId))draftDeletedChars.add(charId);}for(const id of new Set([...old.keys(),...fresh.keys()]))if(old.get(id)!==fresh.get(id))touched.add(id);if(e.comments){const changedComments=new Set(e.comments.map(([id])=>`comment_${id}`));for(const [id,td] of d.texts)if(td.getText('t').toDelta().some(p=>Object.keys(p.attributes??{}).some(k=>changedComments.has(k))))touched.add(id);}}
@@ -93,7 +95,7 @@ export function runScript(seed,{verbose=false}={}) {
   try {
     C.write(live,C.withIds(g.initialDoc(),g.rng),{rng:g.rng,message:'init'});
     if(g.chance(.6)){const e=randomEdit(g,C.read(live),'s',{structure:false});if(e?.kind==='comment'||e?.kind==='comment2'){for(const [id,b] of e.comments)live.structure.getMap('comments').set(id,b);C.edit(live,e.build,{rng:g.rng});live.structure.commit();}}
-    liveTab=forkOf(live,'2');
+    recordOrigins(live);liveTab=forkOf(live,'2');
     const count=1+g.int(8);let made=0,turn=null;
     while(made<count){if(g.chance(.25))liveEdit();if(g.chance(.6)){writerEdit();made++;}else{const n=Math.min(count-made,1+g.int(2)),t=aiTurn(n);made+=n;if(!turn&&g.chance(.35))turn=t;}}
     if(g.chance(.4))liveEdit();if(turn&&g.chance(.6))restore(turn);
@@ -116,7 +118,7 @@ export function runScript(seed,{verbose=false}={}) {
     M.applyBlocks(live,fork,'all');syncTab();syncLive();check(render(live)===render(fork),'converge','Live and fork differ after Apply-all');
     check(!M.changedBlocks(live,fork).length,'pending','pending after Apply-all');check(render(tab)===render(fork),'tab','Draft tab differs');check(render(liveTab)===render(live),'live-tab','Live tab differs');
     M.prune(live);live.structure.commit();const bodies=live.structure.getMap('comments');for(const k of comments(live)){check(bodies.get(k)!==undefined,'bodies',`missing ${k}, Live ${JSON.stringify(C.read(live).toJSON())}, fork bodies ${JSON.stringify(fork.structure.getMap('comments').toJSON())}`);check(M.same(bodies.get(k),value(fork.structure,'comments',k)),'bodies',`body ${k} differs`);}
-    const final=tokens(live);check(final.every((t,i)=>final.indexOf(t)===i||splitMoved.has(t)),'duplicate-text',`duplicate tokens ${final.filter((t,i)=>final.indexOf(t)!==i&&!splitMoved.has(t)).join(',')}; Live ${render(live)}`);
+    const final=tokens(live),collisions=new Set();for(const id of visible(live.structure)){const td=live.texts.get(id);if(!td)continue;const text=td.getText('t').toString(),cs=charIds(td);for(const m of text.matchAll(new RegExp(TOKEN.source,'g')))if(cs.slice(m.index,m.index+m[0].length).some(c=>origins.has(c)&&origins.get(c)!==m[0]))collisions.add(m[0]);}check(final.every((t,i)=>final.indexOf(t)===i||splitMoved.has(t)||collisions.has(t)),'duplicate-text',`duplicate tokens ${final.filter((t,i)=>final.indexOf(t)!==i&&!splitMoved.has(t)&&!collisions.has(t)).join(',')}; Live ${render(live)}`);
     const allIds=[];C.read(live).descendants(n=>{if(n.type.spec.attrs?.id!==undefined)allIds.push(n.attrs.id)});check(!allIds.includes(null)&&new Set(allIds).size===allIds.length,'block-ids','missing or duplicate block ids');
     C.read(live).check();return {ok:true,stats,outcomes,log};
   } catch(e){return {ok:false,cls:e.cls??'throw',msg:e.stack??String(e),stats,outcomes,log};}

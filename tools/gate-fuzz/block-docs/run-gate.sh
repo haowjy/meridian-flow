@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 cd "$(dirname "$0")"
-OUT=${OUT:-/tmp/p18921-block-docs-gate}
+OUT=${OUT:-/tmp/p18924-block-docs-gate}
 N=${N:-10000}
 mkdir -p "$OUT"
 FIRST=$((N / 2))
