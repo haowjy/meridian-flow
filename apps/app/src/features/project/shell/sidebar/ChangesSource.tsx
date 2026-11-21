@@ -48,7 +48,7 @@ import { schemeLabel } from "../../context/context-schemes";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "../../context/open-project-document";
 import { type NoticePlace, useTreeNoticeWords } from "../../context/use-tree-notice-words";
-import { useAiDraftLauncher } from "../../review-launch";
+import { useItemLauncher } from "../../review-launch";
 import { reviewCount, useShellTreeVersion } from "../../tree-version";
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
 import { SourcePane } from "./SourcePane";
@@ -558,7 +558,7 @@ function ChangeRow({
   touch: boolean;
   onPicked?: () => void;
 }) {
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const [previewing, setPreviewing] = useState(false);
   const discard = () => {
     onCommand();

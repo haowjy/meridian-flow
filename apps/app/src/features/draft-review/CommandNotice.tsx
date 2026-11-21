@@ -19,7 +19,7 @@ import {
   useOptionalPresentedDocuments,
 } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useAiDraftLauncher } from "@/features/project/review-launch";
+import { useItemLauncher } from "@/features/project/review-launch";
 import type { AppliedFact, DraftNotice } from "./draft-notices";
 
 /** Apply all's question: the sentence, a way out, and the command itself. */
@@ -187,7 +187,7 @@ type Discarded = Extract<DraftNotice, { kind: "discarded" }>;
 function useNoticeUndo() {
   const presented = useOptionalPresentedDocuments();
   const accountId = useAccountId();
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   return (notice: Discarded) => {
     const { review, left, projectId, draftId } = notice;
     // Where main was when the notice showed (null: Recently opened); the view follows only

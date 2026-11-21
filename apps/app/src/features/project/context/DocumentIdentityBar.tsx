@@ -20,7 +20,7 @@ import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
-import { useAiDraftLauncher } from "../review-launch";
+import { useItemLauncher } from "../review-launch";
 import { useAccountId } from "./account-feature-context";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -76,7 +76,7 @@ export function DocumentIdentityBar({
   });
 
   const { controller } = useDraftReview();
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const review = controller.inlineReview;
   const reviewItemKey =
     review?.documentId === document.documentId && review.shown ? review.itemKey : null;

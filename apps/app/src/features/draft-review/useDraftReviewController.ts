@@ -1,4 +1,4 @@
-/** useDraftReviewController — shared state machine for reviewing AI document drafts. */
+/** useDraftReviewController — the shared state machine for reviewing a draft's items. */
 
 import type { Work } from "@meridian/contracts/works";
 import type { Editor } from "@tiptap/core";

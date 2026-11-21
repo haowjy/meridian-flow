@@ -14,7 +14,7 @@ import {
 } from "@/features/draft-review/review-model";
 import { hasApply, hasTreeLine, opensAsDocument } from "@/features/draft-review/tree-line";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/usePressCommands";
-import { useAiDraftLauncher } from "@/features/project/review-launch";
+import { useItemLauncher } from "@/features/project/review-launch";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
 import { useWorkScope } from "@/features/project/use-work-scope";
@@ -51,7 +51,7 @@ export function useDraftDock({
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
   const notice = useNoticeLine(here);
   const listedFiles = useOwnerDrafts(controller.projectId, controller.draftId).files ?? [];
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const runner = controller;
   const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
   const { projectId, draftId } = controller;
