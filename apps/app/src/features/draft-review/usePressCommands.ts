@@ -44,10 +44,10 @@ import {
   useLiveDocumentSessionRegistry,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
-import { ApplyEntries, type ApplyPort, type Seat } from "./apply-history";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "./draft-notices";
 import type { DraftReviewSelection } from "./draft-review-session";
+import { PressEntries, type PressPort, type Seat } from "./press-history";
 import type { ChangeTarget } from "./review-model";
 
 type Verdict = "apply" | "discard";
@@ -185,32 +185,11 @@ export function usePressCommands({
     };
 
     /**
-     * A Discard's Undo, once: the notice and the sidebar step send this, as an Apply's rows and
-     * editors share its `ApplyEntries`. A failed one can be sent again.
+     * A press in the history of every editor open on its documents and on the sidebar's stack
+     * (`PressEntries`): Ctrl+Z in either, or its notice's Undo, takes back the press once; an
+     * editor's Redo presses again. `dropped`: it was taken back, and its notice goes with it.
      */
-    const undoOf = (commandId: string, undone: () => void) => {
-      let sent: Promise<boolean> | null = null;
-      return () => {
-        sent ??= unpress(commandId).then((answer) => {
-          if (answer === "done") {
-            undone();
-            return true;
-          }
-          if (answer === "failed")
-            notifyFailure({ key: `unpress:${commandId}`, title: t`Couldn't undo`, brief: true });
-          sent = null;
-          return false;
-        });
-        return sent;
-      };
-    };
-
-    /**
-     * An Apply in the history of every editor open on its documents and on the sidebar's stack
-     * (`ApplyEntries`): Ctrl+Z in either, or a row's Undo, takes back the press; an editor's Redo
-     * presses again.
-     */
-    const remember = (pressed: Pressed): ApplyEntries => {
+    const remember = (verdict: Verdict, pressed: Pressed, dropped: () => void): PressEntries => {
       const taken: PressItem[] = pressed.result.items.map((item) =>
         item.text ? { node: item.node } : { node: item.node, half: "tree" },
       );
@@ -219,37 +198,35 @@ export function usePressCommands({
         async () => (await entries.undo(null)).kind !== "failed",
       );
       place(pressed.placement);
-      const port: ApplyPort = {
-        unapply: async (commandId) => {
+      const port: PressPort = {
+        unpress: async (commandId) => {
           const answer = await unpress(commandId);
-          if (answer === "done") return { kind: "answered", unapplyId: commandId, took: true };
+          if (answer === "done") return { kind: "answered", unpressId: commandId, took: true };
           return answer === "told" ? { kind: "failed", told: true } : { kind: "failed" };
         },
         redo: async () => {
           if (!driver) return "failed";
-          const again = await press("apply", taken, driver);
+          const again = await press(verdict, taken, driver);
           if (again === "told") return null;
           if (again === "failed") return "failed";
           place(again.placement);
           return { commandId: again.commandId };
         },
       };
-      const entries: ApplyEntries = new ApplyEntries(
+      const entries: PressEntries = new PressEntries(
         pressed.commandId,
         port,
         () => taken.map(({ node }) => registry.history(node)),
         {
           push: seat.push,
-          // Taken back: its rows' Undo goes with it.
           drop: () => {
             seat.drop();
-            if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step === entries))
-              notices.end(ownerKey);
+            dropped();
           },
         },
-        () => owner.applied.delete(entries),
+        () => owner.presses.delete(entries),
       );
-      owner.applied.add(entries);
+      owner.presses.add(entries);
       return entries;
     };
 
@@ -357,7 +334,10 @@ export function usePressCommands({
         const changed = pressed.result.items.map((item) => item.node);
         const where = noticeSurface(input.documentId);
         if (verdict === "apply") {
-          const step = remember(pressed);
+          const step = remember("apply", pressed, () => {
+            if (notices.appliedFacts(ownerKey)?.facts.some((fact) => fact.step === step))
+              notices.end(ownerKey);
+          });
           notices.showApplied({
             projectId,
             ownerKey,
@@ -370,17 +350,13 @@ export function usePressCommands({
             })),
           });
         } else {
-          const { seat, place } = seatOf(changed, () => undo());
-          place(pressed.placement);
           let shown: number | null = null;
-          const undo = undoOf(pressed.commandId, () => {
-            seat.drop();
-            // Taken back from the sidebar: the notice's Undo goes with it. Its own Undo ends it.
+          const step = remember("discard", pressed, () => {
+            // Taken back elsewhere (the sidebar, an editor): the notice's Undo goes with it.
             const notice = notices.get(ownerKey);
             if (notice?.id === shown && notice.kind === "discarded" && notice.status === "ready")
               notice.dismiss();
           });
-          seat.push();
           const [first] = changed;
           const part: DiscardPart = {
             documentId: input.documentId ?? first ?? "",
@@ -390,7 +366,7 @@ export function usePressCommands({
             covers: changed,
             handle: {
               undo: async () => ({
-                answer: (await undo()) ? "ok" : "failed",
+                answer: (await step.undo(null)).kind === "failed" ? "failed" : "ok",
                 landed: Promise.resolve(),
               }),
               end: () => {},

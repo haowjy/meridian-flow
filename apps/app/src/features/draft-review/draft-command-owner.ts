@@ -1,10 +1,11 @@
 /**
  * Account-lifetime command state for a Work's review items: which items a press has in flight
- * (`hold`), the Applies this tab can still take back (`applied`) and one notice per draft owner. The press itself is `usePressCommands`.
+ * (`hold`), the presses this tab can still take back (`presses`) and one notice per draft owner.
+ * The press itself is `usePressCommands`.
  */
 import { type BranchId, draftItemKey } from "@meridian/contracts";
-import type { ApplyEntries } from "./apply-history";
 import { type DiscardTook, DraftNotices } from "./draft-notices";
+import type { PressEntries } from "./press-history";
 
 type DraftCommandState = {
   applying: boolean;
@@ -31,8 +32,8 @@ export class DraftCommandOwner {
   private readonly records = new Map<string, DraftCommandState>();
   private readonly listeners = new Set<() => void>();
   private revision = 0;
-  /** Every Apply this tab can still take back or apply again. */
-  readonly applied = new Set<ApplyEntries>();
+  /** Every press this tab can still take back or press again. */
+  readonly presses = new Set<PressEntries>();
   /** One notice per draft owner, outliving the surface that made it. */
   readonly notices = new DraftNotices();
   /** An Apply made before a session of its documents opened joins that session's history. */
@@ -40,7 +41,7 @@ export class DraftCommandOwner {
 
   constructor(registry: { observeHistories(observer: () => void): () => void }) {
     this.stopRejoining = registry.observeHistories(() => {
-      for (const applied of this.applied) applied.enter();
+      for (const press of this.presses) press.enter();
     });
   }
 
@@ -77,7 +78,7 @@ export class DraftCommandOwner {
     this.stopRejoining();
     this.notices.close();
     // Their entries sit on sessions that outlive this owner.
-    for (const applied of this.applied.values()) applied.end();
+    for (const press of this.presses.values()) press.end();
   }
 }
 

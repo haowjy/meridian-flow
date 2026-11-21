@@ -1,6 +1,6 @@
 /**
  * Wire contracts for draft review: the list of a Work's drafts, the hints on an open document,
- * Trash's Discard entries, and the stored results of document commands.
+ * and the stored results of document commands.
  *
  * Vocabulary: `branchId` is a `branches` row (the Work's whole branch), and `itemKey`
  * (`${branchId}:${documentId}`) is the client's identity for one reviewed document. A command's

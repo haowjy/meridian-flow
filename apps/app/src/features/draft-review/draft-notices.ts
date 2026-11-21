@@ -6,7 +6,7 @@
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
-import type { ApplyEntries } from "./apply-history";
+import type { PressEntries } from "./press-history";
 
 export type NoticeSurface =
   | { kind: "changes" }
@@ -98,7 +98,7 @@ export type DraftNotice =
  * only its row's Undo shows), or landed somewhere new (`uri`). `step`: the Apply's Undo, while it
  * can be taken back.
  */
-export type AppliedFact = { documentId: string; step?: ApplyEntries } & (
+export type AppliedFact = { documentId: string; step?: PressEntries } & (
   | { kind: "applied"; name: string }
   | { kind: "landed"; uri: string; name: string }
 );
@@ -225,39 +225,6 @@ export class DraftNotices {
     });
     this.publish();
     return id;
-  }
-
-  /**
-   * What a Discard's answer says it took (`DiscardTook`): the share's rows it didn't take leave
-   * the notice, and a notice left with nothing to bring back ends.
-   */
-  answered(handle: DiscardUndo, took: DiscardTook) {
-    const untaken = new Set(took.untaken);
-    for (const [id, parts] of this.parts) {
-      const index = parts.findIndex((part) => part.handle === handle);
-      const part = parts[index];
-      if (!part) continue;
-      const notice = [...this.notices.values()].find((candidate) => candidate.id === id);
-      // An Undo in flight owns the notice until it answers, as `partEnded` leaves it.
-      if (notice?.kind !== "discarded" || notice.status === "undoing") return;
-      const covers = (part.covers ?? [part.documentId]).filter((node) => !untaken.has(node));
-      if (covers.length === 0) {
-        parts.splice(index, 1);
-        part.handle.end();
-      } else
-        parts[index] = {
-          ...part,
-          covers,
-          ...(part.count !== undefined ? { count: covers.length } : {}),
-        };
-      if (parts.length === 0) this.forget(notice);
-      else {
-        this.notices.set(notice.ownerKey, { ...notice, ...this.subjectOf(parts) });
-        this.settle(notice.ownerKey, id);
-      }
-      this.publish();
-      return;
-    }
   }
 
   /**

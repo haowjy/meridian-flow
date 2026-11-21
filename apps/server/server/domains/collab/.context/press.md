@@ -39,11 +39,13 @@ has no branch row.
 
 ## Discard is not in Trash
 
-A Discard rejects suggestions as Apply accepts them, and deletes nothing, so Trash has no entry
-for it. Its only Undo is the press's `unpress`, as Apply's is, sent from the tab that pressed it:
-the notice's Undo and the sidebar's Undo step share one send. After a reload nothing offers it, and
-what a Discard all rejected, the writer's own typing in the Work's view included, is gone. That is
-the chosen cost: keeping it would need a store of its own.
+A Discard rejects suggestions as Apply accepts them, and settles the Work's tree records
+discarded; Trash has no entry for it. Its only Undo is the press's `unpress`, as Apply's is, sent
+from the tab that pressed it: the notice's Undo, the sidebar's Undo step and Ctrl+Z in an open
+editor share one send. After a reload nothing offers it, and what it took is gone: the writer's own
+typing in the Work's view, and a document the Work created (no view shows it, and
+`purgeUnviewed` releases its content). That is the chosen cost: keeping it would need a store of
+its own.
 
 ## Work purge
 
