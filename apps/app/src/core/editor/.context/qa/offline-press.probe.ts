@@ -5,7 +5,7 @@
  * character keeps each mark as one side left it (both sides' changes stand), and no mark of a
  * resolved change survives. Run it by hand: see offline-press.md beside this file.
  */
-import { dropResolvedMarks, pressStored } from "@meridian/agent-edit";
+import { dropDraft, dropResolvedMarks, pressStored } from "@meridian/agent-edit";
 import { suggestRewrite } from "@meridian/agent-edit/test-support";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import type { View } from "@meridian/suggestions";
@@ -136,9 +136,8 @@ const copy = (doc: Y.Doc) => {
 const sync = (from: Y.Doc, to: Y.Doc) =>
   Y.applyUpdate(to, Y.encodeStateAsUpdate(from, Y.encodeStateVector(to)), "net");
 
-function run(seed: number): string[] {
-  rng = seed >>> 0;
-  for (const e of editors.splice(0)) if (!e.isDestroyed) e.destroy();
+/** The server's chapter, with up to four drafted rewrites over its two paragraphs. */
+function seeded(): Y.Doc {
   const server = new Y.Doc({ gc: false });
   server.clientID = 1;
   prosemirrorJSONToYXmlFragment(
@@ -161,6 +160,13 @@ function run(seed: number): string[] {
       return words.join(" ");
     });
   }
+  return server;
+}
+
+function run(seed: number): string[] {
+  rng = seed >>> 0;
+  for (const e of editors.splice(0)) if (!e.isDestroyed) e.destroy();
+  const server = seeded();
   const views: View[] = [{ draft: null }, ...DRAFTS.map((draft) => ({ draft }))];
   const pressed = DRAFTS[rnd(3)]!;
   const desk = tab(2, views[rnd(4)]!);
@@ -177,8 +183,13 @@ function run(seed: number): string[] {
   for (let k = 1 + rnd(4); k > 0; k--) writerEdit(desk.editor);
   dump("DESK", desk.doc);
   const verdict = rnd(2) ? "accept" : "reject";
-  if (rnd(2)) {
+  const by = rnd(3);
+  if (by === 0) {
     pressStored(server, schema, verdict, { draft: pressed });
+    sync(server, phone.doc);
+  } else if (by === 1) {
+    // The draft's owner ended: its suggestions go for good.
+    dropDraft(server, schema, pressed);
     sync(server, phone.doc);
   } else {
     if (verdict === "accept") phone.editor.commands.acceptSuggestions({ draft: pressed });
@@ -239,6 +250,54 @@ it(`no mark spreads when an offline tab reconnects after a press (seeds from ${s
   const failed: string[] = [];
   for (let i = 0; i < runs; i++) {
     const problems = run(seed0 + i);
+    if (problems.length > 0) failed.push(`seed ${seed0 + i}: ${problems.slice(0, 3).join("; ")}`);
+  }
+  expect(failed).toEqual([]);
+}, 600_000);
+
+/**
+ * A tab's Ctrl+Z of its own inline Apply or Discard, after another open tab received it, brings
+ * every mark back as it was: the other tab deleted nothing of the resolve's.
+ */
+function undoRun(seed: number): string[] {
+  rng = seed >>> 0;
+  for (const e of editors.splice(0)) if (!e.isDestroyed) e.destroy();
+  const server = seeded();
+  const pressed = DRAFTS[rnd(3)]!;
+  const views: View[] = [{ draft: null }, ...DRAFTS.map((draft) => ({ draft }))];
+  const desk = tab(2, rnd(2) ? { draft: pressed } : { draft: null });
+  const other = tab(3, views[rnd(4)]!);
+  sync(server, desk.doc);
+  sync(server, other.doc);
+  const base = marked(server);
+  if (rnd(2)) desk.editor.commands.acceptSuggestions({ draft: pressed });
+  else desk.editor.commands.rejectSuggestions({ draft: pressed });
+  sync(desk.doc, server);
+  sync(server, other.doc);
+  sync(other.doc, server);
+  sync(server, desk.doc);
+  desk.editor.commands.undo();
+  for (const doc of [desk.doc, other.doc]) {
+    sync(doc, server);
+    sync(server, doc);
+  }
+  // Undo brings deleted text back as new items, so the check reads content, not item ids.
+  const after = marked(server);
+  return after === base ? [] : [`after Undo ${after}, before ${base}`];
+}
+
+/** Each text's runs with their attributes. */
+const marked = (doc: Y.Doc) =>
+  JSON.stringify(
+    [...doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).createTreeWalker(() => true)]
+      .filter((node) => node instanceof Y.XmlText)
+      .map((text) => (text as Y.XmlText).toDelta()),
+  );
+
+it(`Undo of an inline resolve restores every mark while another tab is open (seeds from ${seed0}, ${runs} runs)`, () => {
+  const failed: string[] = [];
+  for (let i = 0; i < runs; i++) {
+    const problems = undoRun(seed0 + i);
     if (problems.length > 0) failed.push(`seed ${seed0 + i}: ${problems.slice(0, 3).join("; ")}`);
   }
   expect(failed).toEqual([]);

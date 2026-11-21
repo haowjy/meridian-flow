@@ -79,10 +79,12 @@ A Work purged for good (`drizzle-work-disposal.ts`, inside the purge's transacti
 drafts' tree records discarded, and its suggestions, and those of the lineages the purge
 deletes, rejected in every document the press's enumeration finds for them (`documentsHolding`,
 over the Work's project and its creator's account: a project has one owner), with their
-`suggestion_authors` and `suggestion_verdicts` entries deleted (`dropDraft`). The reject reports
+`suggestion_authors` entries deleted (`dropDraft`). Their verdicts stay: a tab offline through
+the purge may bring back a mark of one of those changes, and a tab deletes it only while the
+change has a verdict (`dropResolvedMarks`). The reject reports
 every change it decided, a proposal Live has since matched included, which no review lists.
 Nothing records it: nothing can take it back. Changes the writer applied or discarded earlier
-keep their entries: nothing reads them for a purged Work.
+keep their author entries: nothing reads them for a purged Work.
 Archive, delete and Trash leave the suggestions in place and open: the press, the editor and card
 Undo take an archived Work's or a trashed chat's suggestions as they take any. What archive and
 Trash stop is new AI writes, at the model's write (`lockForWrite` in `model-edit-write.ts`

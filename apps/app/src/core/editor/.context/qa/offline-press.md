@@ -3,8 +3,8 @@
 `offline-press.probe.ts` builds a two-paragraph chapter, has the AI rewrite it in up to three
 drafts (agent-edit's drafted write), and mounts two real TipTap editors on their own `Y.Doc`s: a
 desk tab in a random view (Live or a draft) and a phone tab. The desk types and deletes at random
-offline. Meanwhile one draft is applied or discarded, by the server's press or by the phone's
-inline Apply/Reject. Then the desk reconnects and moves its caret (the binding writes on every view
+offline. Meanwhile one draft is applied or discarded, by the server's press, by the phone's
+inline Apply/Reject, or by the purge of its Work (`dropDraft`). Then the desk reconnects and moves its caret (the binding writes on every view
 update). Per character, each mark must end as one side left it: a side that changed the mark
 wins, two that changed it may either win, and with neither it is as before. No live mark may
 belong to a change some resolve decided.
@@ -20,10 +20,14 @@ that under concurrency and hid words from Live (the final prober's p18878 run, `
   patch turns both cleanups off.
 - Typing inside a change's text re-opens its mark after the typing; a concurrent resolve of that
   change deletes the closing item. `dropResolvedMarks` (agent-edit), run by each tab on what it
-  receives, deletes every mark item of a decided change.
+  receives, deletes every item that opens a decided change's mark.
+
+A second test guards the Undo of an inline Apply or Discard while another tab is open: Ctrl+Z
+must bring every mark back as it was. It fails when another tab's `dropResolvedMarks` deletes
+openings the resolve left, which Undo cannot restore; `resolveStored` deletes them itself.
 
 On the commit before the fix, about 10% of runs fail. No database, dev stack or browser. Run it
-when the y-tiptap or yjs patch, `rewrite`, the resolve or `dropResolvedMarks` changes:
+when the y-tiptap or yjs patch, `rewrite`, the resolve, `dropDraft` or `dropResolvedMarks` changes:
 
 ```bash
 cd apps/app

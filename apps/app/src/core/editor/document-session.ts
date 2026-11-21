@@ -725,7 +725,7 @@ export class DocumentSession {
    * inside a change resolved since: that mark goes, or it runs on over the words after it.
    */
   private readonly onAfterTransaction = (transaction: Y.Transaction): void => {
-    if (!transaction.local && this.access !== "read") dropResolvedMarks(this.document, transaction);
+    if (!transaction.local && this.access === "edit") dropResolvedMarks(this.document, transaction);
   };
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {
