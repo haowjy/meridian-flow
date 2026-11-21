@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@meridian/contracts": "workspace:*",
+    "@meridian/document-model": "workspace:*",
     "@meridian/markup": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "@meridian/suggestions": "workspace:*",
