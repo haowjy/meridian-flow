@@ -29,7 +29,7 @@ is in the [knowledge base](https://github.com/haowjy/meridian-flow-docs/blob/mai
   its own row (`drafts`, a 12-character id), minted with the Work or the first chat of a lineage
   and named by it (`works.draft_id`, the root chat's `threads.draft_id`); the draft names no
   owner. The writer reviews it against Live, and nothing reaches Live until the writer applies
-  it. Code that predates the rename still says **branch** for the same thing.
+  it.
 - **Apply, Discard, Undo.** **Apply** lands a draft's changes on live. **Discard** drops them.
   **Undo** reverses what one reply wrote, wherever that text now is.
 - **Write mode.** A chat's setting for where the model's writes go: **Draft** (into a draft, for

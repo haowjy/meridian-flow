@@ -16,7 +16,7 @@ import {
   readTurnEditTargets,
   readTurnFolderTargets,
   readTurnTreeTargets,
-  receiptBranchExists,
+  receiptDraftExists,
 } from "./drizzle-turn-edit-targets.js";
 
 export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineageDocumentStore {
@@ -36,12 +36,10 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
     async placesOf(nodes) {
       const out = new Map<string, TreePlace>();
       const byView = new Map<string | null, string[]>();
-      for (const { nodeId, branchId } of nodes)
-        byView.set(branchId, [...(byView.get(branchId) ?? []), nodeId]);
-      for (const [branchId, ids] of byView) {
-        const view: TreeView = branchId
-          ? { kind: "branch", branchId: branchId as DraftId }
-          : LIVE_TREE;
+      for (const { nodeId, draftId } of nodes)
+        byView.set(draftId, [...(byView.get(draftId) ?? []), nodeId]);
+      for (const [draftId, ids] of byView) {
+        const view: TreeView = draftId ? { kind: "draft", draftId: draftId as DraftId } : LIVE_TREE;
         const [rows, folders] = await Promise.all([
           currentDrizzleDb(db).execute<{ start: string; source: string; path: string[] }>(sql`
             WITH RECURSIVE placed AS ${placedNodesSql(view)},
@@ -64,7 +62,7 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         const uris = new Map(folders.map((folder) => [folder.folderId as string, folder.uri]));
         for (const row of rows) {
           const uri = uris.get(row.start);
-          out.set(`${row.start}:${branchId}`, {
+          out.set(`${row.start}:${draftId}`, {
             placement: [row.source, ...row.path],
             ...(uri ? { uri } : {}),
           });
@@ -113,14 +111,14 @@ export function createDrizzleTurnLiveLineageStore(db: Database): TurnLiveLineage
         // Folders have no document metadata, but their receipt still carries a tree line.
         .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
         // A drafted entry's draft, while it stands.
-        .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftBranchId))
+        .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftId))
         .where(
           and(
             eq(treeEditReceipts.threadId, threadId),
             eq(treeEditReceipts.turnId, turnId),
             // What the reply wrote: a Redo repeats it, and an Undo is the card's, not the reply's.
             eq(treeEditReceipts.kind, "write"),
-            receiptBranchExists,
+            receiptDraftExists,
           ),
         )
         .orderBy(treeEditReceipts.seq, treeEditReceiptNodes.wId);

@@ -82,7 +82,7 @@ with Undo. Focus stays on the surface pressed: each surface wraps its notice and
 
 ## Tree lines
 
-An item with a branch tree record (a creation, move or delete) is pressed with its tree half: a
+An item with a draft tree record (a creation, move or delete) is pressed with its tree half: a
 row's ✓ or × on a tree line alone sends `half: "tree"` and leaves the text. A delete supersedes
 the text rows. A document that exists only in the Work is pending as its drafted create; its
 text is plain Live text, so Apply makes the create live and Discard removes it.

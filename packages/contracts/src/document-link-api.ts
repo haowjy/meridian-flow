@@ -46,9 +46,9 @@ export type DocumentLinkAnswer =
         /** A stored file (not a tracked document): what a chip says of it. */
         file?: { fileType: string; mimeType: string | null; sizeBytes: number | null };
       };
-      inBranch: boolean;
-      /** Present iff `inBranch`: the branch containing the draft the chip opens (the reader's own if it uses it, else the oldest). */
-      branch?: { branchId: DraftId };
+      inDraft: boolean;
+      /** Present iff `inDraft`: the draft containing the draft the chip opens (the reader's own if it uses it, else the oldest). */
+      draft?: { draftId: DraftId };
       /** An ahead ref answered through its settlement: it never answers by address again. */
       settled?: true;
     }

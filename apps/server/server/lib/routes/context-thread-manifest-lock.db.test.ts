@@ -91,12 +91,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       fixtures.push({ collab, hocuspocus });
       const contextPorts = createProductionUnifiedContextPortFactory({
         sourceHints: NO_PROJECT_HINTS,
-        pendingBranch: createTestWorkProjectionMutation(db),
+        pendingDraft: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         treeLists: createTestRemovalDeps(db).treeLists,
         documentSync: collab,
-        branches: collab.branches,
+        drafts: collab.drafts,
       });
       const routeDeps = {
         contextPorts,

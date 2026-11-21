@@ -15,7 +15,7 @@
  */
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";

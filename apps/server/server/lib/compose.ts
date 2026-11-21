@@ -24,7 +24,7 @@ import {
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
-import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
+import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-work-draft-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
@@ -542,7 +542,7 @@ export async function createProductionAppPorts(input: {
   const workProjectionMutation = createWorkProjectionMutation({
     db,
     draftOwnerHints: projectHints,
-    pendingCounts: createDrizzleWorkBranchPendingStore(db),
+    pendingCounts: createDrizzleWorkDraftPendingStore(db),
     eventSink,
   });
   const runClaim = createDrizzleRunClaim(db, {
@@ -668,7 +668,7 @@ export async function createProductionAppPorts(input: {
     // Collab is composed below, before anything can submit or admit a record.
     seedWorkCreates: (created) => documentSync.seedWorkCreates(created),
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
-    liveChangedUnder: (branchIds) => workProjectionMutation.liveChangedUnder(branchIds),
+    liveChangedUnder: (draftIds) => workProjectionMutation.liveChangedUnder(draftIds),
     fileAccessChanges,
   });
   const documentLinks = createDrizzleDocumentLinkScopes({
@@ -716,8 +716,8 @@ export async function createProductionAppPorts(input: {
     documentSync,
     treeLists,
     arrivals,
-    branches: documentSync.branches,
-    pendingBranch: workProjectionMutation,
+    drafts: documentSync.drafts,
+    pendingDraft: workProjectionMutation,
     sourceHints: projectHints,
     copy: { documentSync, objectStore, release: objectRelease },
   });
@@ -1020,7 +1020,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     works: ports.workRepo,
     permissionGrants,
     workAuthorityResolver: ports.workAuthorityResolver,
-    branches: ports.documentSync,
+    drafts: ports.documentSync,
     workContextNotices,
     notices: ports.notices,
     controls: delivery,
@@ -1113,7 +1113,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
-    branches: ports.documentSync.workBranchDisposal,
+    drafts: ports.documentSync.workDraftDisposal,
     tree: ports.treeLists,
     works: ports.workProjectionMutation,
     evidence: ports.documentSync.modelEvidence(),

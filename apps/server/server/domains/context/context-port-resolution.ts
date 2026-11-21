@@ -104,7 +104,7 @@ export function contextPortForThread(
       scratchOwner: scratchOwnerFor(resolution.thread, owner),
       ...(resolution.uploadsOwner ? { uploadsOwner: resolution.uploadsOwner } : {}),
       threadId: resolution.thread.id,
-      branchOwner: {
+      draftOwner: {
         owner: chatOwner(resolution.thread, owner),
         draftId: draftOf(resolution.thread, owner),
         handle: authority.workHandle,

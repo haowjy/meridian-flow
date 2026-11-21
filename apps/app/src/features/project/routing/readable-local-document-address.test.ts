@@ -3,7 +3,7 @@
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import type { TreeViewResult } from "@/client/query/useProjectTree";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 import { draftOnlyTarget, resolveReplayAddress } from "./local-document-address";
 

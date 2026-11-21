@@ -25,7 +25,7 @@ import {
   type DocumentLinkRouteDeps,
   handleDocumentLinkResolveRequest,
 } from "../../lib/document-link-route.js";
-import { accountUserSource } from "../../test-support/branch-tree-seeds.js";
+import { accountUserSource } from "../../test-support/draft-tree-seeds.js";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createLinkScopeObserver } from "../collab/index.js";
@@ -91,7 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: b, projectId: p, createdByUserId: u, name: "B", handle: "w3" },
       ]);
     });
-    it("views No Work's branch when its lineage root has rebound to another Work", async () => {
+    it("views No Work's draft when its lineage root has rebound to another Work", async () => {
       const db = database.current;
       const root = crypto.randomUUID();
       const fork = crypto.randomUUID();
@@ -127,7 +127,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        branches: {
+        drafts: {
           viewForOwner: async (owner) => {
             viewed.push(owner);
             return { kind: "live" };
@@ -158,7 +158,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           { state: "folder", folder: { id: act, name: "Act 1", uri: "manuscript://Act 1" } },
           { state: "folder", folder: { id: act, name: "Act 1", uri: "manuscript://Act 1" } },
         ]);
-        // A chat with no Work reads its own lineage's branch view.
+        // A chat with no Work reads its own lineage's draft view.
         expect(viewed).toEqual([{ kind: "lineage", projectId: p, rootThreadId: root }]);
       }
       await change(source, (writer) => writer.delete(LIVE, "system", act));
@@ -354,7 +354,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        branches: { viewForOwner: async () => ({ kind: "live" }) },
+        drafts: { viewForOwner: async () => ({ kind: "live" }) },
         documentTrash: { retained: async () => new Set() },
         files: { lookupDocuments: async () => [] },
       };
@@ -424,7 +424,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        branches: { viewForOwner: async () => ({ kind: "live" }) },
+        drafts: { viewForOwner: async () => ({ kind: "live" }) },
         documentTrash: { retained: async () => new Set() },
         files: { lookupDocuments: async () => [] },
       };
@@ -444,14 +444,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("answers an address-only link from the request's own Work branch, live first", async () => {
+    it("answers an address-only link from the request's own Work draft, live first", async () => {
       const db = database.current;
       const live = await add("manuscript", "live");
       const contextSourceId = sourceOf.get(live) as string;
       // A document that exists only in a Work's draft.
-      const hidden = async (name: string, branchId: string) => {
+      const hidden = async (name: string, draftId: string) => {
         const id = crypto.randomUUID();
-        await treeSeeder(db).document(contextSourceId, name, { id, view: { draft: branchId } });
+        await treeSeeder(db).document(contextSourceId, name, { id, view: { draft: draftId } });
         return id;
       };
       const draftOf = async (workId: string) => {
@@ -462,11 +462,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         if (!row?.draftId) throw new Error(`Work ${workId} names no draft`);
         return row.draftId;
       };
-      const branchA = await draftOf(a);
-      const branchB = await draftOf(b);
-      const created = await hidden("created", branchA);
-      await hidden("live", branchA);
-      await hidden("elsewhere", branchB);
+      const draftA = await draftOf(a);
+      const draftB = await draftOf(b);
+      const created = await hidden("created", draftA);
+      await hidden("live", draftA);
+      await hidden("elsewhere", draftB);
       const fileAccess: DocumentLinkRouteDeps["fileAccess"] = {
         listAccess: async (_principal, ids) => new Map(ids.map((id) => [id, {} as never])),
       };
@@ -480,12 +480,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           fileAccess,
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        branches: {
+        drafts: {
           viewForOwner: async (owner) =>
             owner?.kind === "work" && owner.workId === a
-              ? { kind: "branch", branchId: branchA }
+              ? { kind: "draft", draftId: draftA }
               : owner?.kind === "work" && owner.workId === b
-                ? { kind: "branch", branchId: branchB }
+                ? { kind: "draft", draftId: draftB }
                 : { kind: "live" },
         },
         documentTrash: { retained: async () => new Set() },
@@ -507,18 +507,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect((await resolveIn(a)).answers).toMatchObject([
         {
           state: "document",
-          inBranch: true,
-          branch: { branchId: branchA },
+          inDraft: true,
+          draft: { draftId: draftA },
           document: { id: created },
         },
-        { state: "document", inBranch: false, document: { id: live } },
+        { state: "document", inDraft: false, document: { id: live } },
         { state: "missing" },
       ]);
-      // Work B's branch created only "elsewhere"; A's creates stay hidden from it.
+      // Work B's draft created only "elsewhere"; A's creates stay hidden from it.
       expect((await resolveIn(b)).answers).toMatchObject([
         { state: "missing" },
-        { state: "document", inBranch: false, document: { id: live } },
-        { state: "document", inBranch: true, branch: { branchId: branchB } },
+        { state: "document", inDraft: false, document: { id: live } },
+        { state: "document", inDraft: true, draft: { draftId: draftB } },
       ]);
     });
     it("answers ref links through the route core: gone never carries a location", async () => {
@@ -529,7 +529,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       // The holder the request's base names: pinned, so its ahead answers read its bindings.
       await sibling("holder");
       const deleted = await sibling("deleted");
-      // A discarded branch create is in no view: a row, and nowhere to read it.
+      // A discarded draft create is in no view: a row, and nowhere to read it.
       const discarded = crypto.randomUUID();
       await db.insert(documents).values({ id: discarded, projectId: p });
       const secret = await sibling("secret");
@@ -583,7 +583,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           observer: createLinkScopeObserver(createNoopEventSink()),
         }),
-        branches: {
+        drafts: {
           viewForOwner: async (owner) => {
             provisioned.push(owner);
             return { kind: "live" };
@@ -622,7 +622,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const liveDocument = {
         state: "document",
         document: { id: live, title: "live", scheme: "manuscript", path: "live" },
-        inBranch: false,
+        inDraft: false,
       };
       expect(response.answers).toMatchObject([
         liveDocument,
@@ -656,13 +656,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       for (const answer of response.answers)
         if (answer.state === "gone")
           expect(Object.keys(answer).filter((key) => key !== "settled")).toEqual(["state"]);
-      // A chat's lineage owns its drafts, so its links read the lineage's branch view.
+      // A chat's lineage owns its drafts, so its links read the lineage's draft view.
       const root = crypto.randomUUID();
       await db
         .insert(threads)
         .values({ id: root, projectId: p, rootThreadId: root, createdByUserId: u, ref: "c1" });
       provisioned.length = 0;
-      const noWorkBranch = await handleDocumentLinkResolveRequest(deps, {
+      const noWorkDraft = await handleDocumentLinkResolveRequest(deps, {
         projectId: p,
         userId: u as never,
         request: {
@@ -671,10 +671,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           links: [{ ref: `doc:${discarded}`, href: "manuscript://discarded" }],
         },
       });
-      // The tombstone stays gone; the chat's links read its lineage's branch view.
-      expect(noWorkBranch.answers).toMatchObject([{ state: "gone" }]);
+      // The tombstone stays gone; the chat's links read its lineage's draft view.
+      expect(noWorkDraft.answers).toMatchObject([{ state: "gone" }]);
       expect(provisioned).toEqual([{ kind: "lineage", projectId: p, rootThreadId: root }]);
-      // A Work of another project never reaches branch membership provisioning.
+      // A Work of another project never reaches draft membership provisioning.
       const foreignWork = crypto.randomUUID();
       await db.insert(works).values({
         id: foreignWork,

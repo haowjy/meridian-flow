@@ -26,7 +26,7 @@ import type { TurnEditedDocumentId, TurnFolderTarget } from "../domain/turn-live
  * A receipt drafted in a draft a Work purge deleted has nothing left to show: reading its missing
  * draft as none would list the edit as live.
  */
-export const receiptBranchExists = or(isNull(treeEditReceipts.draftBranchId), isNotNull(drafts.id));
+export const receiptDraftExists = or(isNull(treeEditReceipts.draftId), isNotNull(drafts.id));
 
 export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
@@ -55,7 +55,7 @@ export async function readTurnEditTargets(
 }
 
 /**
- * The folders the turn's tree receipts changed, live or in the branch the change was drafted in,
+ * The folders the turn's tree receipts changed, live or in the draft the change was drafted in,
  * whether or not the card's Undo has since taken them back: a folder has no document, and the
  * reply's card lists it all the same. Each is named by the path the receipt recorded. Only the
  * turn's own writes say where it wrote: a Redo of an applied draft lands live, and read as a
@@ -77,14 +77,14 @@ export async function readTurnFolderTargets(
     .from(treeEditReceipts)
     .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
     .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
-    .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftBranchId))
+    .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftId))
     .where(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
         eq(treeEditReceipts.kind, "write"),
         isNull(documents.id),
-        receiptBranchExists,
+        receiptDraftExists,
       ),
     )
     .orderBy(treeEditReceiptNodes.nodeId);
@@ -101,7 +101,7 @@ export async function readTurnFolderTargets(
 
 /**
  * The documents the turn's tree receipts changed (a folder has no document), live or in the
- * branch the change was drafted in, whether or not the card's Undo has since taken them back.
+ * draft the change was drafted in, whether or not the card's Undo has since taken them back.
  * Merged into `known` where a text edit already lists the same destination.
  */
 export async function readTurnTreeTargets(
@@ -122,14 +122,14 @@ export async function readTurnTreeTargets(
     .from(treeEditReceipts)
     .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
     .innerJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
-    .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftBranchId))
+    .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftId))
     .where(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
         // Write receipts only: a Redo's names where it landed (live after an Apply), not where the turn wrote.
         eq(treeEditReceipts.kind, "write"),
-        receiptBranchExists,
+        receiptDraftExists,
       ),
     );
   const targets = new Map<string, TurnEditedDocumentId>();

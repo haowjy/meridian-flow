@@ -68,7 +68,7 @@ export type TurnTreeFolder = {
 export type TurnFolderTarget = { nodeId: string; draft: DraftId | null; shownAt: string };
 
 /**
- * Where a row's node sits in the tree that shows it (live, or a Work's branch): its source, then
+ * Where a row's node sits in the tree that shows it (live, or a Work's draft): its source, then
  * the rank and id of each node on its path from the top of the source down. Compared in order
  * after the source's section, it is the file tree's own order. Absent for a node that view
  * doesn't place.
@@ -89,9 +89,9 @@ export type TurnLiveLineageDocumentStore = {
   listLiveDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<DocumentId[]>;
   listEditedDocumentIdsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnEditedDocumentId[]>;
   listFolderTargetsForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnFolderTarget[]>;
-  /** Each node's place in the view `branchId` names (null: live), keyed `node:branch`. */
+  /** Each node's place in the view `draftId` names (null: live), keyed `node:draft`. */
   placesOf(
-    nodes: readonly { nodeId: string; branchId: string | null }[],
+    nodes: readonly { nodeId: string; draftId: string | null }[],
   ): Promise<Map<string, TreePlace>>;
   /** The turn's tree entries, live and drafted, ordered by `seq`. */
   listTreeEntriesForTurn(threadId: ThreadId, turnId: TurnId): Promise<TurnTreeEntry[]>;
@@ -109,7 +109,7 @@ export function createTurnLiveLineageReadModel(deps: {
   receiptStore?: TurnReceiptStateStore;
   resolveDocumentUri(documentId: DocumentId): Promise<string | null>;
   /** The address a document holds or was deleted at: a surviving draft's location. */
-  resolveLastDocumentUri(documentId: DocumentId, branchId?: DraftId): Promise<string | null>;
+  resolveLastDocumentUri(documentId: DocumentId, draftId?: DraftId): Promise<string | null>;
 }): TurnLiveLineageReadModel {
   return {
     async listLiveDocumentsForTurn(threadId, turnId) {
@@ -134,17 +134,17 @@ export function createTurnLiveLineageReadModel(deps: {
       ]);
       const lines = treeLines(entries);
       const documents = await resolveDocuments(targets, lines, createAddresses(entries));
-      const branchOf = (document: TurnEditedDocument) =>
+      const draftOf = (document: TurnEditedDocument) =>
         document.scope === "draft" ? document.draft : null;
       const places = await deps.store.placesOf(
         documents.map((document) => ({
           nodeId: document.documentId,
-          branchId: branchOf(document),
+          draftId: draftOf(document),
         })),
       );
       return documents.map((document) => {
         const tree = lines.get(treeLineKey(document));
-        const placement = places.get(`${document.documentId}:${branchOf(document)}`)?.placement;
+        const placement = places.get(`${document.documentId}:${draftOf(document)}`)?.placement;
         return {
           ...document,
           ...(tree ? { tree } : {}),
@@ -161,7 +161,7 @@ export function createTurnLiveLineageReadModel(deps: {
       const lines = treeLines(entries);
       const made = createAddresses(entries);
       const places = await deps.store.placesOf(
-        folders.map((folder) => ({ nodeId: folder.nodeId, branchId: folder.draft })),
+        folders.map((folder) => ({ nodeId: folder.nodeId, draftId: folder.draft })),
       );
       return folders.map(({ shownAt, ...folder }) => {
         const key = treeLineKey({ documentId: folder.nodeId, draft: folder.draft });

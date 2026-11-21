@@ -80,6 +80,6 @@ export class DraftCommandOwner {
   }
 }
 
-/** A folder's item in a Work's branch: the key its commands' state is kept under. */
-export const folderKey = (branchId: string, folderId: string): string =>
-  draftItemKey(branchId as DraftId, folderId);
+/** A folder's item in a Work's draft: the key its commands' state is kept under. */
+export const folderKey = (draftId: string, folderId: string): string =>
+  draftItemKey(draftId as DraftId, folderId);

@@ -66,14 +66,14 @@ export async function requireLivingDocument(
   if (refusal) throw refusal;
 }
 
-/** The ids of `documentIds` that this Work branch's tree shows. */
-export async function shownInBranch(
+/** The ids of `documentIds` that this Work draft's tree shows. */
+export async function shownInDraft(
   db: DrizzleDb,
-  branchId: DraftId,
+  draftId: DraftId,
   documentIds: readonly DocumentId[],
 ): Promise<ReadonlySet<DocumentId>> {
   if (documentIds.length === 0) return new Set();
-  const shown = visibleDocuments({ kind: "branch", branchId });
+  const shown = visibleDocuments({ kind: "draft", draftId });
   const rows = await currentDrizzleDb(db)
     .select({ id: shown.id })
     .from(shown)
@@ -85,8 +85,8 @@ export async function shownInBranch(
 export async function requireDraftableDocument(
   db: DrizzleDb,
   documentId: DocumentId,
-  branchId: DraftId,
+  draftId: DraftId,
 ): Promise<void> {
-  if ((await shownInBranch(db, branchId, [documentId])).has(documentId)) return;
+  if ((await shownInDraft(db, draftId, [documentId])).has(documentId)) return;
   await requireLivingDocument(currentDrizzleDb(db), documentId);
 }

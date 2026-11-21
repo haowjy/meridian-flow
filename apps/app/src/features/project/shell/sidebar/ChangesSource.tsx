@@ -8,7 +8,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalSt
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useWorks } from "@/client/query/useWorks";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { type GoneRow, withGone } from "@/components/app/RowWord";
 import { WorkName } from "@/components/app/WorkName";
@@ -38,7 +38,7 @@ import {
   landingFaultSentence,
 } from "@/features/draft-review/tree-groups";
 import { hasApply, opensAsDocument, treeLineOf } from "@/features/draft-review/tree-line";
-import type { WorkBranchCommands } from "@/features/draft-review/usePressCommands";
+import type { WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { useFocusSuccession } from "@/lib/focus-follow";
@@ -147,7 +147,7 @@ export function ChangesSource({
   projectId: string;
   scope: ChangesScope;
   /** The scope's commands, held by the sidebar so their notice outlives this pane. */
-  controller: WorkBranchCommands;
+  controller: WorkDraftCommands;
   /** Whether the file is the document open in the editor. */
   isOpen: (file: ReviewFileTarget) => boolean;
   onPicked?: () => void;
@@ -173,7 +173,7 @@ export function ChangesSource({
       return next;
     });
   const folderInFlight = (id: string) =>
-    drafts.branchId !== null && inFlight(folderKey(drafts.branchId, id));
+    drafts.draftId !== null && inFlight(folderKey(drafts.draftId, id));
   // A folder whose own cut is in flight hides as a document does, once nothing under it shows.
   const shownGroups = (list: ChangeGroup<ReviewFileTarget>[]): ChangeGroup<ReviewFileTarget>[] =>
     list.flatMap((group) => {
@@ -189,10 +189,10 @@ export function ChangesSource({
     inFlight(itemKey) && controller.owner.state(itemKey).applying;
   const applying =
     (drafts.files ?? []).some((file) => applyingKey(file.draft.itemKey)) ||
-    (drafts.branchId !== null &&
+    (drafts.draftId !== null &&
       (grouped ?? []).some((group) =>
         (group.folder?.folders ?? []).some((id) =>
-          applyingKey(folderKey(drafts.branchId as string, id)),
+          applyingKey(folderKey(drafts.draftId as string, id)),
         ),
       ));
   // Grouped, the list's order is the groups' order: every index below reads this one.
@@ -441,7 +441,7 @@ export function ChangesSource({
                 return (
                   <FolderGroupRow
                     key={`folder:${folder.id}`}
-                    branchId={drafts.branchId}
+                    draftId={drafts.draftId}
                     folder={folder}
                     depth={item.depth}
                     open={!folded.has(folder.id)}
@@ -554,7 +554,7 @@ function ChangeRow({
   fault: LandingFault | null;
   active: boolean;
   canApply: boolean;
-  controller: WorkBranchCommands;
+  controller: WorkDraftCommands;
   touch: boolean;
   onPicked?: () => void;
 }) {
@@ -683,7 +683,7 @@ function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>)
  * does under its row.
  */
 function FolderGroupRow({
-  branchId,
+  draftId,
   folder,
   depth,
   open,
@@ -705,16 +705,16 @@ function FolderGroupRow({
   open: boolean;
   onToggle: () => void;
   files: readonly ReviewFileTarget[];
-  controller: WorkBranchCommands;
+  controller: WorkDraftCommands;
   touch: boolean;
   canApply: boolean;
   onApply: () => void;
   /** `name`: the folder's, for what the Discard's notice says. */
   onDiscard: (name: string) => void;
-  /** The Work's branch, whose folder items hold the folder's command state. */
-  branchId: string | null;
+  /** The Work's draft, whose folder items hold the folder's command state. */
+  draftId: string | null;
 }) {
-  const keys = branchId ? folder.folders.map((id) => folderKey(branchId, id)) : [];
+  const keys = draftId ? folder.folders.map((id) => folderKey(draftId, id)) : [];
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,

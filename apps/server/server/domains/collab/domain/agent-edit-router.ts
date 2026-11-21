@@ -31,7 +31,7 @@ export function createAgentEditRouter(input: {
           })
           .read(command, {
             ...context,
-            linkView: { kind: "branch", branchId: destination.draftId },
+            linkView: { kind: "draft", draftId: destination.draftId },
             ...(command.format === "edits" ? { frontiers: undefined } : {}),
           });
         const read = !outcome.isError ? outcome.result.read : undefined;

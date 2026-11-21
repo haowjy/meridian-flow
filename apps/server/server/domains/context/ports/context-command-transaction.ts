@@ -8,7 +8,7 @@ export type ContextCommandScope = { scheme: ContextScheme; workId: string | null
  * locks that owner with its other Works, then its draft (refusing a closed owner, as for any new
  * AI write), before any namespace lock.
  */
-export type ContextCommandBranch = {
+export type ContextCommandDraft = {
   owner: DraftOwner;
   draftId: DraftId;
   threadId: ThreadId | null;
@@ -16,18 +16,18 @@ export type ContextCommandBranch = {
 };
 
 export type ContextCommandOptions = {
-  branch?: ContextCommandBranch;
+  draft?: ContextCommandDraft;
   /** More sources whose namespaces the command takes with its own, in key order (§6.4). */
   sourceIds?: readonly string[];
 };
 
 /** A locked draft as the transaction resolved it. */
-export type ContextCommandActiveBranch = { id: DraftId };
+export type ContextCommandActiveDraft = { id: DraftId };
 
 /** What the transaction resolved before the command ran. */
 export type ContextCommandContext = {
   /** The locked draft, when the command asked for one. */
-  branch: ContextCommandActiveBranch | null;
+  draft: ContextCommandActiveDraft | null;
 };
 
 /** Scopes known up front, or resolved when the transaction starts (an identity destination's current home). */
@@ -47,6 +47,6 @@ export interface ContextCommandTransaction {
 export const directContextCommandTransaction: ContextCommandTransaction = {
   async run(operation, scopes) {
     if (typeof scopes === "function") await scopes();
-    return operation({ branch: null });
+    return operation({ draft: null });
   },
 };

@@ -177,7 +177,7 @@ export async function runTreeToolCommand(
             ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
             ...(scope.view.draft
               ? {
-                  draftBranchId: scope.view.draft as DraftId,
+                  draftId: scope.view.draft as DraftId,
                 }
               : {}),
             shownAt: uriOfWritten(result.shownAt),

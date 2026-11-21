@@ -92,12 +92,12 @@ export function apiProjectWorksPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/works`;
 }
 
-/** The active branches with changes to one document, from any view. */
-export function apiProjectDocumentBranchesPath(projectId: string, documentId: string): string {
-  return `${apiProjectPath(projectId)}/documents/${documentId}/branches`;
+/** The active drafts with changes to one document, from any view. */
+export function apiProjectDocumentDraftsPath(projectId: string, documentId: string): string {
+  return `${apiProjectPath(projectId)}/documents/${documentId}/drafts`;
 }
 
-/** An owner's active branch's reviewable drafts: `owner` is `work:<id>` or `lineage:<rootThreadId>`. */
+/** One draft's reviewable items, by its id. */
 export function apiProjectDraftsPath(projectId: string, draft: string): string {
   return `${apiProjectPath(projectId)}/drafts?draft=${encodeURIComponent(draft)}`;
 }

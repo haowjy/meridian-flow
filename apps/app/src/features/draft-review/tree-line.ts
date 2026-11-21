@@ -1,12 +1,12 @@
 /**
- * A branch's pending move or delete of a document (its tree line), and the words for it: the
+ * A draft's pending move or delete of a document (its tree line), and the words for it: the
  * review row ("ch12: renaming to ch12-old") and the Work notice on the live document ("Ascension
  * is renaming this to ch12-old."). Live doesn't show either until Apply. Works are named,
  * never by handle (#914).
  */
 import { t } from "@lingui/core/macro";
-import type { DocumentDraftHint, ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
+import type { DocumentDraftHint, ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { describeMove, type ParsedContextLocation } from "@/features/chat/document-display-name";
 import type { ReviewChange } from "./review-model";
 
@@ -17,7 +17,7 @@ export type TreeLine =
 const nameOf = (location: ParsedContextLocation | null | undefined) =>
   (location && documentTitleFromUri(location.path)) || t`Untitled document`;
 
-/** The item's move or delete, if its branch has one; a creation has no tree line. */
+/** The item's move or delete, if its draft has one; a creation has no tree line. */
 export function treeLineOf(
   item: Pick<ThreadDraftListItem, "tree" | "contextLocation" | "documentName">,
 ): TreeLine | null {
@@ -51,7 +51,7 @@ export function hasApply(
 
 /**
  * Whether the item is only a tree change: a delete, or a move with no suggestions. Its review is
- * the live document with the branch's tree line.
+ * the live document with the draft's tree line.
  */
 export function isTreeOnly(
   item: Pick<
@@ -110,7 +110,7 @@ export function treeLineSentence(line: TreeLine): string {
   }
 }
 
-/** One branch's tree change to the live document, in the words of its Work notice. */
+/** One draft's tree change to the live document, in the words of its Work notice. */
 export type PendingTreeChange = {
   work: string | null;
   line: Exclude<DocumentDraftHint["tree"], null>;

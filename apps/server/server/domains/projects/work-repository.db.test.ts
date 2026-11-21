@@ -19,8 +19,8 @@ import { createCommandStore } from "../../shared/commands/drizzle-commands.js";
 import { setTestHook } from "../../shared/test-hooks.js";
 import { waitForPostgresLock } from "../../test-support/lock-interleave.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
-import { createDrizzleWorkBranchPendingStore } from "../collab/adapters/drizzle-work-branch-pending.js";
-import { createPostgresWorkBranchDisposal } from "../collab/test-support/work-branch-disposal.js";
+import { createDrizzleWorkDraftPendingStore } from "../collab/adapters/drizzle-work-draft-pending.js";
+import { createPostgresWorkDraftDisposal } from "../collab/test-support/work-draft-disposal.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { loadDocumentAddresses } from "../context/tree/tree-addresses.js";
 import { createLocalFileAccessChanges, type FileAccessChange } from "../file-policy/index.js";
@@ -69,7 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const control = postgres(DATABASE_URL, { max: 1 });
     const projectionMutation = createWorkProjectionMutation({
       db,
-      pendingCounts: createDrizzleWorkBranchPendingStore(db),
+      pendingCounts: createDrizzleWorkDraftPendingStore(db),
       draftOwnerHints: NO_PROJECT_HINTS,
     });
     const fileAccessChanges = createLocalFileAccessChanges();
@@ -607,7 +607,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await nodes()).toEqual(before);
     });
 
-    it("cascade-deletes Work chats, branches, and context from their read surfaces, then restores them", async () => {
+    it("cascade-deletes Work chats, drafts, and context from their read surfaces, then restores them", async () => {
       await works.ensureNoWork(PROJECT_ID);
       const work = await works.create({ projectId: PROJECT_ID, name: "Hidden Work" });
       const [source] = await db
@@ -1023,7 +1023,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore: createInMemoryObjectStore(),
         eventSink: createInMemoryEventSink(),
-        branches: createPostgresWorkBranchDisposal(db),
+        drafts: createPostgresWorkDraftDisposal(db),
         tree: treeSeeder(db).store,
         works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },
@@ -1062,7 +1062,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db,
         objectStore,
         eventSink,
-        branches: createPostgresWorkBranchDisposal(db),
+        drafts: createPostgresWorkDraftDisposal(db),
         tree: treeSeeder(db).store,
         works: { lifecycleChanged: () => {} },
         evidence: { forgetThreads: async () => {} },

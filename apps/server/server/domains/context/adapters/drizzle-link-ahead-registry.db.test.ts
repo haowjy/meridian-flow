@@ -21,8 +21,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
+import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
@@ -245,9 +245,9 @@ if (!RUN) {
 
       async function start() {
         const runtime = await runtimes.compose();
-        const scenario = await branchTreeScenario(db, { runtime, runtimes });
+        const scenario = await draftTreeScenario(db, { runtime, runtimes });
         const work = await scenario.work("Ascension", "draft");
-        // The model's create is a hidden row in the Work's branch.
+        // The model's create is a hidden row in the Work's draft.
         const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");
         return { runtime, scenario, work, kael };
       }
@@ -261,18 +261,18 @@ if (!RUN) {
         return { registered: ref !== undefined, live: ref?.settled ?? null };
       }
 
-      it("registers a branch's ref globally and leaves it unbound until a live document arrives (12a)", async () => {
+      it("registers a draft's ref globally and leaves it unbound until a live document arrives (12a)", async () => {
         const { scenario, kael } = await start();
         const registry = createTestLinkAheadRegistry(db);
         const at = { holderProjectId: scenario.project.id, address: KAEL };
-        // The branch's hidden document at the path binds nothing, for any holder or mint.
+        // The draft's hidden document at the path binds nothing, for any holder or mint.
         const typed = crypto.randomUUID();
         await registry.register([{ ...at, aheadId: typed }]);
         await registry.register([{ ...at, aheadId: typed }]);
         expect
-          .soft(await registryRow(typed), "registered once, not bound to the branch's document")
+          .soft(await registryRow(typed), "registered once, not bound to the draft's document")
           .toEqual({ registered: true, live: null });
-        // A model's mint in the branch's view registers the same way.
+        // A model's mint in the draft's view registers the same way.
         const links = createScopedDocumentLinks({
           scopes: createTestDocumentLinkScopes(db),
           registrar: registry,

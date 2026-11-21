@@ -14,7 +14,7 @@ import type {
   PressResult,
   ThreadDraftListItem,
   ThreadDraftListResponse,
-} from "@meridian/contracts/branches";
+} from "@meridian/contracts/drafts";
 import type { TreeListRef } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { LIVE } from "@meridian/project-tree";
@@ -25,7 +25,7 @@ import { submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { cachedOwnerDrafts, patchOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
-import { documentBasename } from "@/client/query/work-branch-files";
+import { documentBasename } from "@/client/query/work-draft-files";
 import { notifyFailure } from "@/components/app/failure-toast";
 import {
   dropUndoStep,
@@ -62,7 +62,7 @@ type PressItem = { node: string; half?: "tree" };
 const whole = (nodes: readonly string[]): PressItem[] => nodes.map((node) => ({ node }));
 
 export type CommandStart = { sent: boolean; outcome: Promise<CommandOutcome> };
-export type WorkBranchCommands = ReturnType<typeof usePressCommands>;
+export type WorkDraftCommands = ReturnType<typeof usePressCommands>;
 
 export function usePressCommands({
   projectId,
@@ -131,10 +131,10 @@ export function usePressCommands({
      */
     const placementOf = (nodes: readonly string[]): Placement => {
       if (!treeLists) return [];
-      const branchId = queryClient.getQueryData<ThreadDraftListResponse>(
+      const listedDraft = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.drafts(projectId, draftId),
-      )?.branchId;
-      const view = branchId ? { draft: branchId } : LIVE;
+      )?.draftId;
+      const view = listedDraft ? { draft: listedDraft } : LIVE;
       const project: TreeListRef = { kind: "project", projectId };
       const placement = [project, treeLists.account].flatMap((list) => {
         const handle = treeLists.acquire(list);
@@ -244,10 +244,10 @@ export function usePressCommands({
       const rowKeys = rows().flatMap((item) =>
         nodes.includes(item.documentId) ? [item.itemKey] : [],
       );
-      const folders = listed?.branchId
+      const folders = listed?.draftId
         ? nodes
             .filter((node) => !rows().some((item) => item.documentId === node))
-            .map((node) => folderKey(listed.branchId as string, node))
+            .map((node) => folderKey(listed.draftId as string, node))
         : [];
       // Discard all takes folders with only a tree change too: they have no row.
       const placement = placementOf(
@@ -453,11 +453,11 @@ export function usePressCommands({
   ]);
 }
 
-const WorkBranchCommandsContext = createContext<WorkBranchCommands | null>(null);
-/** One surface's commands for the surfaces under it (`useBoundWorkBranchCommands`). */
-export const WorkBranchCommandsBoundary = WorkBranchCommandsContext.Provider;
-export function useBoundWorkBranchCommands(): WorkBranchCommands {
-  const commands = useContext(WorkBranchCommandsContext);
-  if (!commands) throw new Error("Work commands require a WorkBranchCommandsBoundary");
+const WorkDraftCommandsContext = createContext<WorkDraftCommands | null>(null);
+/** One surface's commands for the surfaces under it (`useBoundWorkDraftCommands`). */
+export const WorkDraftCommandsBoundary = WorkDraftCommandsContext.Provider;
+export function useBoundWorkDraftCommands(): WorkDraftCommands {
+  const commands = useContext(WorkDraftCommandsContext);
+  if (!commands) throw new Error("Work commands require a WorkDraftCommandsBoundary");
   return commands;
 }

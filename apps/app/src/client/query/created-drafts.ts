@@ -6,8 +6,8 @@
  * this one. A create the server dropped, discarded or applied is no longer pending, and leaves.
  */
 import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { pendingCreates, pendingRecords, replayView } from "@meridian/project-tree";
 import { useCallback, useMemo } from "react";
 import type * as Y from "yjs";
@@ -20,35 +20,35 @@ import { parseContextUri } from "@/lib/context-uri";
 import { useTreeList } from "./useProjectTree";
 import { useProjectTrees } from "./useProjectTrees";
 
-/** The branch's pending document creates the server has not listed, as list rows. */
+/** The draft's pending document creates the server has not listed, as list rows. */
 export function useCreatedDrafts(
   projectId: string,
-  branchId: string | null,
+  draftId: string | null,
   listed: readonly ThreadDraftListItem[] | undefined,
 ): readonly ThreadDraftListItem[] {
   const accountId = useAccountId();
   const project = useTreeList(projectId ? { kind: "project", projectId } : null);
   const account = useTreeList(projectId ? { kind: "account", userId: accountId } : null);
   const candidates = useMemo(() => {
-    if (!branchId) return [];
+    if (!draftId) return [];
     const known = new Set(listed?.map((row) => row.documentId));
     return [project.snapshot, account.snapshot].flatMap((snapshot) =>
       snapshot
-        ? createdDocuments(snapshot.doc, branchId).filter((documentId) => !known.has(documentId))
+        ? createdDocuments(snapshot.doc, draftId).filter((documentId) => !known.has(documentId))
         : [],
     );
-  }, [branchId, listed, project.snapshot, account.snapshot]);
-  const version = branchId && candidates.length > 0 ? draftTreeVersion(branchId) : undefined;
+  }, [draftId, listed, project.snapshot, account.snapshot]);
+  const version = draftId && candidates.length > 0 ? draftTreeVersion(draftId) : undefined;
   const trees = useProjectTrees(projectId, { version });
   return useMemo(() => {
-    if (!branchId || !version) return NONE;
+    if (!draftId || !version) return NONE;
     return candidates.map((documentId): ThreadDraftListItem => {
       // The row is the record's: a place the trees have not drawn yet is no address, not no row.
       const uri = trees.find(documentId)?.file.uri;
       const location = uri ? parseContextUri(uri) : null;
       return {
-        branchId,
-        itemKey: draftItemKey(branchId, documentId),
+        draftId,
+        itemKey: draftItemKey(draftId, documentId),
         documentId,
         hasDraft: true,
         textChanges: 0,
@@ -64,16 +64,16 @@ export function useCreatedDrafts(
         updatedAt: new Date(0).toISOString(),
       };
     });
-  }, [branchId, version, candidates, trees]);
+  }, [draftId, version, candidates, trees]);
 }
 
 const NONE: readonly ThreadDraftListItem[] = [];
 
 /** The documents the Work's pending creates make and its view still shows: an Undo trashes one. */
-function createdDocuments(doc: Y.Doc, branchId: string): string[] {
-  const created = pendingCreates(pendingRecords(doc, branchId), "document");
+function createdDocuments(doc: Y.Doc, draftId: string): string[] {
+  const created = pendingCreates(pendingRecords(doc, draftId), "document");
   if (created.size === 0) return [];
-  const { nodes } = replayView(doc, { draft: branchId });
+  const { nodes } = replayView(doc, { draft: draftId });
   return [...created].filter((id) => nodes.get(id)?.trashed === false);
 }
 
@@ -96,7 +96,7 @@ export function useCreatesDraft(projectId: string): (itemKey: string) => boolean
         const handle = lists.acquire(ref);
         try {
           const doc = handle.session.getSnapshot().doc;
-          return createdDocuments(doc, item.branchId).includes(item.documentId);
+          return createdDocuments(doc, item.draftId).includes(item.documentId);
         } finally {
           handle.release();
         }

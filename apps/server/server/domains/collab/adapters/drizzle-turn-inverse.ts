@@ -64,7 +64,7 @@ type Dependencies = {
   coordinator: LiveDocumentCoordinator;
   resolveDocumentUri(documentId: string): Promise<string | null>;
   /** Where a document in Trash last stood, which names it while a Redo brings it back. */
-  resolveLastDocumentUri(documentId: string, branchId?: DraftId): Promise<string | null>;
+  resolveLastDocumentUri(documentId: string, draftId?: DraftId): Promise<string | null>;
   refreshDocument(documentId: DocumentId): Promise<void>;
   notices: import("../domain/reversal-notices.js").TurnInverseNoticePort;
   /** A revert changes pending membership, so it reconciles the Works' counts through it. */
@@ -232,11 +232,11 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const ids = await selectedDocuments(query);
       const tree = await treePlanOf(query);
       let owners = mergeOwnerLocks(
-        await input.workProjection.ownersOf({ branches: tree.branches }),
+        await input.workProjection.ownersOf({ drafts: tree.drafts }),
         // The Works and chats whose notes the tree steps change.
         { workIds: tree.owners.works, lineageRootIds: tree.owners.lineages },
       );
-      // Each document's own Work, which its write grant locks with the branch's.
+      // Each document's own Work, which its write grant locks with the draft's.
       const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
       if (principal)
         for (const documentId of new Set([...ids, ...tree.documents.map((d) => d.documentId)])) {
@@ -304,7 +304,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       const admission = await admitInverse(sequence, query, userId, tree.documents);
       const { grants } = admission;
       const works = {
-        branches: tree.branches,
+        drafts: tree.drafts,
         works: tree.owners.works,
         lineages: tree.owners.lineages,
       };
@@ -387,7 +387,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     sequence: readonly { plan: PreparedDocumentInverse; step: InverseStep }[],
     query: TurnInverseQuery,
     userId: UserId | undefined,
-    treeDocuments: readonly { documentId: string; branchId: DraftId | null; restore: boolean }[],
+    treeDocuments: readonly { documentId: string; draftId: DraftId | null; restore: boolean }[],
   ): Promise<{ grants: FileGrant<"edit">[] | null }> {
     const principal = query.principal ?? (userId ? { accountId: userId } : undefined);
     // Every inverse supplies its principal explicitly; an absent one here means a composition
@@ -395,41 +395,41 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     if (!principal) return { grants: null };
     const requirements = new Map<
       string,
-      { documentId: DocumentId; branchId: DraftId | null; restore: boolean }
+      { documentId: DocumentId; draftId: DraftId | null; restore: boolean }
     >();
     for (const { plan } of sequence) {
       const documentId = plan.document.documentId;
       requirements.set(`${documentId}:live:content`, {
         documentId,
-        branchId: null,
+        draftId: null,
         restore: false,
       });
     }
     // A tree change is taken back where it was made, by the one who may edit that document; a
     // live document in Trash may only be restored.
-    for (const { documentId, branchId, restore } of treeDocuments)
-      requirements.set(`${documentId}:${branchId ?? "live"}:${restore ? "restore" : "content"}`, {
+    for (const { documentId, draftId, restore } of treeDocuments)
+      requirements.set(`${documentId}:${draftId ?? "live"}:${restore ? "restore" : "content"}`, {
         documentId: documentId as DocumentId,
-        branchId,
+        draftId,
         restore,
       });
     const admittedRequirements = [...requirements.values()];
-    const branchIds = [
-      ...new Set(admittedRequirements.flatMap((r) => (r.branchId ? [r.branchId] : []))),
+    const draftIds = [
+      ...new Set(admittedRequirements.flatMap((r) => (r.draftId ? [r.draftId] : []))),
     ];
     const owner = draftOwnerSql();
-    const holders = branchIds.length
+    const holders = draftIds.length
       ? await db()
           .select({ draftId: drafts.id, handle: owner.handle })
           .from(drafts)
-          .where(inArray(drafts.id, branchIds))
+          .where(inArray(drafts.id, draftIds))
       : [];
     const byDraft = new Map(holders.map((holder) => [holder.draftId, holder]));
     const grants: FileGrant<"edit">[] = [];
     for (const requirement of admittedRequirements) {
-      const holder = requirement.branchId ? byDraft.get(requirement.branchId) : undefined;
+      const holder = requirement.draftId ? byDraft.get(requirement.draftId) : undefined;
       // A tree change's draft purged since restarts the command.
-      if (requirement.branchId && !holder) throw new TreeOwnersMoved();
+      if (requirement.draftId && !holder) throw new TreeOwnersMoved();
       const grant = await input.fileAccess.authorizeAt(
         principal,
         holder

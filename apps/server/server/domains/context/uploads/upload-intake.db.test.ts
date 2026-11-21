@@ -101,11 +101,11 @@ if (!RUN) {
       const contextPorts = createProductionUnifiedContextPortFactory({
         sourceHints: NO_PROJECT_HINTS,
         treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
-        pendingBranch: createTestWorkProjectionMutation(db),
+        pendingDraft: createTestWorkProjectionMutation(db),
         links: createTestDocumentLinkScopes(db),
         db,
         documentSync: collab,
-        branches: collab.branches,
+        drafts: collab.drafts,
       });
       return createUploadIntake({
         repository: createDrizzleUploadIntakeRepository(db, NO_PROJECT_HINTS),
@@ -272,11 +272,11 @@ if (!RUN) {
         const contextPorts = createProductionUnifiedContextPortFactory({
           sourceHints: NO_PROJECT_HINTS,
           treeLists: createDrizzleTreeListStore({ db: db, journal: createDrizzleJournal(db) }),
-          pendingBranch: createTestWorkProjectionMutation(db),
+          pendingDraft: createTestWorkProjectionMutation(db),
           links: createTestDocumentLinkScopes(db),
           db: db,
           documentSync: collab,
-          branches: collab.branches,
+          drafts: collab.drafts,
         });
         const intakeStore = createInMemoryObjectStore();
         const service = createUploadIntake({
@@ -360,11 +360,11 @@ if (!RUN) {
           db: database.current,
           journal: createDrizzleJournal(database.current),
         }),
-        pendingBranch: createTestWorkProjectionMutation(database.current),
+        pendingDraft: createTestWorkProjectionMutation(database.current),
         links: createTestDocumentLinkScopes(database.current),
         db: database.current,
         documentSync: collab,
-        branches: collab.branches,
+        drafts: collab.drafts,
       });
       const unusedStore = createInMemoryObjectStore();
       const service = createUploadIntake({

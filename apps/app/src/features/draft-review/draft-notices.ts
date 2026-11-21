@@ -5,7 +5,7 @@
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds
  * them, so a notice outlives the surface that made it; a reload starts with none.
  */
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { PressEntries } from "./press-history";
 
 export type NoticeSurface =
@@ -55,7 +55,7 @@ export type DiscardPart = {
   documentId: string;
   name: string;
   scope: "draft" | "change" | "folder" | "deleted";
-  /** What it stands for: a whole branch's Discard is one share for all its drafts, a delete for all it took. */
+  /** What it stands for: a whole draft's Discard is one share for all its drafts, a delete for all it took. */
   count?: number;
   /** Every document and folder the share brings back, when more than `documentId`. */
   covers?: readonly string[];

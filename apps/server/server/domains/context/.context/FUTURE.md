@@ -38,7 +38,7 @@ query or adding a held-candidate cursor.
 The browser sends a Copy under its own operation id with each root's `copyId` (a UUID the
 command takes and mints descendants around), from a live view: a drop across systems and
 Copy to… in the tree. Copy still refuses a draft placement destination (`invalid_operation`): a
-draft-mode chat's copy would need a branch create, which is E2's replica intent work.
+draft-mode chat's copy would need a draft create, which is E2's replica intent work.
 
 ## Copy: preparation cost
 

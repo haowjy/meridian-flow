@@ -119,7 +119,7 @@ export function scopeModelEditWrite(
 
 /**
  * Draft-aware reads, in the reader's thread: its manifest peer and reply's
- * staged creates decide what a branch view holds. The revision depends on the
+ * staged creates decide what a draft view holds. The revision depends on the
  * tree, so it is scoped like the text.
  */
 export function scopeDraftPeer(

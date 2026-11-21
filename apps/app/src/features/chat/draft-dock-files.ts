@@ -1,5 +1,5 @@
 /** The strip's files: a document with text is pressed whole; a move or delete is its tree line. */
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { listedItemChanges, type ReviewChange } from "@/features/draft-review/review-model";
 export type DockFile = {
   row: ReviewFileTarget;

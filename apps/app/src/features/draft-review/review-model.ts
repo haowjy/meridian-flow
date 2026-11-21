@@ -1,5 +1,5 @@
 /** The review's changes shared by rows, editor focus, counts and commands. Attribution only overlays them. */
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { type TreeLine, treeChange, treeLineOf } from "./tree-line";
 
 export type ReviewFocus = { id: string };
@@ -26,7 +26,7 @@ export interface ReviewChange extends ChangeAttribution {
   excerpt: { removed: string; inserted: string };
   /** Unknown membership must not be read as a known-empty chat. B3c supplies the overlay. */
   attributed: boolean;
-  /** The branch's move or delete of the document: a row of its own, with no text frame. */
+  /** The draft's move or delete of the document: a row of its own, with no text frame. */
   tree?: TreeLine;
   /** The change is the item itself (a creation, a picture, a move or a delete), not some of its text. */
   whole?: true;

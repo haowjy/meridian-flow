@@ -5,7 +5,7 @@
  * write. The tab's own Apply, Discard, Undo and typing are in its editor first, so while the
  * document is open the rows on screen follow the editor: their counts, and whether they are listed.
  */
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import { useSyncExternalStore } from "react";
 
 type Counts = ReadonlyMap<string, Readonly<Record<string, number>>>;

@@ -3,19 +3,6 @@
  * data (list, detail, threads, works, context tree). Single source of key
  * shapes so reads, writes, and invalidations stay consistent.
  */
-export function isProjectWorkDerivedKey(
-  queryKey: readonly unknown[],
-  projectId: string,
-  workIds?: ReadonlySet<string>,
-): boolean {
-  if (queryKey[0] !== "projects" || queryKey[1] !== projectId || queryKey[2] !== "works") {
-    return false;
-  }
-  const workId = queryKey[3];
-  if (typeof workId !== "string" || (workIds && !workIds.has(workId))) return false;
-  return queryKey[4] === "branches" || (queryKey[4] === "documents" && queryKey.includes("draft"));
-}
-
 export const projectQueryKeys = {
   all: ["projects"] as const,
   list: ["projects", "list"] as const,
@@ -46,7 +33,7 @@ export const projectQueryKeys = {
   /** One draft's list of changed documents. */
   drafts: (projectId: string, draft: string) => ["projects", projectId, "drafts", draft] as const,
   draftsOf: (projectId: string) => ["projects", projectId, "drafts"] as const,
-  /** The branches with changes to one document; invalidated with the Work draft lists. */
+  /** The drafts with changes to one document; invalidated with the Work draft lists. */
   documentDraftHints: (projectId: string, documentId: string) =>
     ["projects", projectId, "document-draft-hints", documentId] as const,
   documentDraftHintsOf: (projectId: string) =>

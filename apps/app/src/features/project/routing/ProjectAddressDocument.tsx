@@ -1,7 +1,7 @@
 /** An authorized address, made canonical; the document host owns live-session binding. */
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 import { openDocumentFromDraftGroup } from "../context/open-document-from-draft";
 import { openDocumentFromFile, treeFileFromCatalogEntry } from "../context/open-document-from-file";

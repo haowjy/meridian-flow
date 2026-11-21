@@ -18,7 +18,7 @@ import { useLiveTabs } from "@/client/project-shell/live-tabs";
 import { mainTabKey } from "@/client/project-shell/main-tabs";
 import type { OpenDocument } from "@/client/stores";
 import { ignoreFieldEscape } from "@/components/ui/field-escape";
-import { WorkBranchCommandsBoundary } from "@/features/draft-review/usePressCommands";
+import { WorkDraftCommandsBoundary } from "@/features/draft-review/usePressCommands";
 import { focusMain } from "@/features/editor/focus-on-open";
 import { cn } from "@/lib/utils";
 import { ChatPaneController } from "./ChatPaneController";
@@ -203,7 +203,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         destinationKey={props.routeLocationKey}
         issue={chatInMain ? props.routeIssues?.main : undefined}
       >
-        <WorkBranchCommandsBoundary value={props.chatCommands}>
+        <WorkDraftCommandsBoundary value={props.chatCommands}>
           <ChatSurface
             projectId={projectId}
             threadId={chatThread}
@@ -236,7 +236,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               )
             }
           />
-        </WorkBranchCommandsBoundary>
+        </WorkDraftCommandsBoundary>
       </ProjectRouteBoundary>
     ),
   };

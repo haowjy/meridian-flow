@@ -55,7 +55,7 @@ async function fixture() {
     id: crypto.randomUUID(),
     projectId: project.id,
     userId: "owner",
-    title: "Branch a scene",
+    title: "Draft a scene",
     workId: null,
     agentSelection: general.selection,
     overrides: NO_OVERRIDES,

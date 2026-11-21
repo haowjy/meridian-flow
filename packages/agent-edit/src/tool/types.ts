@@ -127,7 +127,7 @@ export interface WriteContext {
    */
   frontiers?: FrontierLookups;
   /**
-   * The link view the host routed this command to: the Work branch or live
+   * The link view the host routed this command to: the Work draft or live
    * version its destination names. A host that routes between versions sets
    * it on every command; links, sources and the revision spell in it.
    */

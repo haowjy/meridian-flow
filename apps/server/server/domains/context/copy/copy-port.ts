@@ -51,7 +51,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
   const handoff = (
     end: CopyEnd,
     folder: { folderId: string; createFolders?: readonly string[] } | null,
-    branch?: ContextCopyRequest["destinationBranch"],
+    draft?: ContextCopyRequest["destinationDraft"],
   ): CopyDestinationHandoff | null => {
     const copy = end.adapter.copy;
     return copy
@@ -64,7 +64,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
           workScopeId: isWorkScopedScheme(end.adapter.name as ContextScheme)
             ? end.workScopeId
             : null,
-          branch: isDraftedScheme(end.adapter.name as ContextScheme) ? (branch ?? null) : null,
+          draft: isDraftedScheme(end.adapter.name as ContextScheme) ? (draft ?? null) : null,
           ...(folder
             ? { parent: { folderId: folder.folderId, createFolders: folder.createFolders ?? [] } }
             : {}),
@@ -142,7 +142,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
     if (!destination.ok) return destination;
     const parent = request.destinationParent;
     const folderParent = parent?.kind === "folder" ? parent : null;
-    const destinationHandoff = handoff(destination.value, folderParent, request.destinationBranch);
+    const destinationHandoff = handoff(destination.value, folderParent, request.destinationDraft);
     if (!destinationHandoff) {
       return Err({
         code: "invalid_operation",
@@ -160,15 +160,15 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
         ? {
             resolveDestination: async (): Promise<Result<CopyDestinationHandoff, ContextError>> => {
               const target = await deps.resolveIdentityDestination(folderParent, {
-                ...(destinationHandoff.branch
-                  ? { view: { kind: "draft" as const, draft: destinationHandoff.branch.draftId } }
+                ...(destinationHandoff.draft
+                  ? { view: { kind: "draft" as const, draft: destinationHandoff.draft.draftId } }
                   : {}),
                 ...(request.authorizeDestination
                   ? { authorize: request.authorizeDestination }
                   : {}),
               });
               if (!target.ok) return target;
-              const current = handoff(target.value, folderParent, request.destinationBranch);
+              const current = handoff(target.value, folderParent, request.destinationDraft);
               return current
                 ? Ok(current)
                 : Err({

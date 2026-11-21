@@ -1,11 +1,11 @@
 /** A strip row's own changes: a move or delete is its tree line; text is pressed whole. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
+import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
 import type { DraftChangesView } from "./draft-changes";
 import type { DraftRef } from "./review-command-types";
 import { listedItemChanges, targetOfChanges } from "./review-model";
 import { hasTreeLine, treeChange, treeLineOf } from "./tree-line";
-import type { WorkBranchCommands } from "./usePressCommands";
+import type { WorkDraftCommands } from "./usePressCommands";
 
 export function useDraftView(
   draft: DraftRef,
@@ -14,7 +14,7 @@ export function useDraftView(
     enabled = true,
     item,
   }: {
-    controller: Pick<WorkBranchCommands, "commandChange" | "dispositionLocked">;
+    controller: Pick<WorkDraftCommands, "commandChange" | "dispositionLocked">;
     enabled?: boolean;
     item?: ThreadDraftListItem;
   },

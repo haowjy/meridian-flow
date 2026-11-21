@@ -53,11 +53,11 @@ describe("review launch navigation", () => {
     const { open, history } = setup();
     const result = await open(
       { scheme: "manuscript", path: "/chapters/new.md", documentId: "doc-1" },
-      { replaceIfSameDocument: true, itemKey: "branch-1:doc-1" },
+      { replaceIfSameDocument: true, itemKey: "draft-1:doc-1" },
     );
     expect(result.kind).toBe("applied");
     expect(history.location.href).toContain("/editor/manuscript/chapters/new.md");
-    expect(history.location.href).toContain("branch-1");
+    expect(history.location.href).toContain("draft-1");
   });
 
   it("a live answer opened with its prepared tab never carries a parked hidden sibling's item key", async () => {
@@ -72,7 +72,7 @@ describe("review launch navigation", () => {
       schemaType: "document" as const,
     } as never;
     const { open, history } = setup(
-      `/p/${projectId}/editor/manuscript/Scene.md?owner=work:${workId}&item=branch-hidden:doc-hidden`,
+      `/p/${projectId}/editor/manuscript/Scene.md?owner=work:${workId}&item=draft-hidden:doc-hidden`,
       "doc-hidden",
       [hidden],
     );

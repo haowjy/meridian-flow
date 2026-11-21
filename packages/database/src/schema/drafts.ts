@@ -1,6 +1,6 @@
 /**
  * Drafts: everything pending in one draft, its suggestion marks in Live documents and its tree
- * records (`branch_tree_nodes`, tree-nodes.ts). A draft names no owner: a Work names its draft
+ * records (`draft_tree_nodes`, tree-nodes.ts). A draft names no owner: a Work names its draft
  * (`works.draft_id`) and a root conversation names its lineage's (`threads.draft_id`), each minted
  * with the row that names it.
  */
@@ -41,5 +41,5 @@ export const draftIdColumn = (name: string) =>
     .$type<DraftId>()
     .references(() => drafts.id, { onDelete: "cascade" });
 
-export type BranchTreeNodeKind = "document" | "folder";
-export type BranchTreeParentKind = "source" | "folder";
+export type DraftTreeNodeKind = "document" | "folder";
+export type DraftTreeParentKind = "source" | "folder";

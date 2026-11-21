@@ -8,7 +8,7 @@ import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { AgentFileState } from "@/features/agents/AgentFileState";

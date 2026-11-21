@@ -24,7 +24,7 @@ import type { LockedOwners } from "./work-lifecycle-lock.js";
 export interface EditConfirmation {
   /** Named Works the grants lock, so a seam sorts them with its own Work locks. */
   readonly workIds: readonly string[];
-  /** Lineages whose drafts the grants write into: locked after the Works, before the seam's branch and namespace locks. */
+  /** Lineages whose drafts the grants write into: locked after the Works, before the seam's draft and namespace locks. */
   readonly lineageRootIds: readonly string[];
   /**
    * Re-checks the grants under the seam's Work locks, in its transaction; throws on a refusal, or

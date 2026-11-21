@@ -2,7 +2,7 @@
  * The AI's tree commands (`move`, `delete`, `restore`, folders) through the production-composed
  * `write` tool: a path resolves through the names the model was shown, each call is its own
  * command, and the receipt it keeps is what `undo` names, live, drafted, applied or discarded.
- * In a draft-mode chat they are records of the Work's branch and live is untouched.
+ * In a draft-mode chat they are records of the Work's draft and live is untouched.
  */
 
 import { randomUUID } from "node:crypto";
@@ -35,8 +35,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
-    const { handleDraftListRequest, handlePressRequest, selectBranchRouteServices } = await import(
-      "./branch-review-route.js"
+    const { handleDraftListRequest, handlePressRequest, selectDraftRouteServices } = await import(
+      "./draft-review-route.js"
     );
 
     const USER_ID = "00000000-0000-4000-8000-000000000d01";
@@ -179,7 +179,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .from(schema.treeNodes)
           .where(eq(schema.treeNodes.id, id))
       )[0];
-    const branchOf = async (workId: string) => {
+    const draftOf = async (workId: string) => {
       const [row] = await db
         .select({ id: schema.works.draftId })
         .from(schema.works)
@@ -219,13 +219,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     function review(script: Awaited<ReturnType<typeof start>>) {
-      const routes = selectBranchRouteServices(script.runtime.app);
+      const routes = selectDraftRouteServices(script.runtime.app);
       const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
       const item = async (documentId: string) =>
         (
           await handleDraftListRequest(routes, {
             ...scope,
-            draft: await branchOf(OTHER_WORK_ID),
+            draft: await draftOf(OTHER_WORK_ID),
           } as never)
         ).items.find((row) => row.documentId === documentId);
       // The writer's press on one document: its tree change only, or (`ends: "item"`) its text too.
@@ -238,7 +238,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ...scope,
           request: {
             commandId: randomUUID(),
-            draft: await branchOf(OTHER_WORK_ID),
+            draft: await draftOf(OTHER_WORK_ID),
             verdict,
             items: [{ node: documentId, ...(ends === "tree" ? { half: "tree" } : {}) }],
           },
@@ -444,7 +444,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           position: { kind: "start" },
         });
       });
-      const branch = await branchOf(OTHER_WORK_ID);
+      const draft = await draftOf(OTHER_WORK_ID);
       const live = await store().read({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         view: ([{ writer }]) => [...writer.view(LIVE).nodes.values()].map((n) => n.name),
@@ -452,7 +452,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const work = await store().read({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         view: ([{ writer }]) =>
-          [...writer.view({ draft: branch }).nodes.values()].map((n) => n.name),
+          [...writer.view({ draft: draft }).nodes.values()].map((n) => n.name),
       });
       expect(live).not.toContain("Part Three");
       expect(work).toContain("Part Three");
@@ -506,9 +506,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1" });
           await edit("write", { command: "create", path: "part1/fresh", content: "Fresh." });
         });
-        const routes = selectBranchRouteServices(script.runtime.app);
+        const routes = selectDraftRouteServices(script.runtime.app);
         const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
-        const draft = await branchOf(OTHER_WORK_ID);
+        const draft = await draftOf(OTHER_WORK_ID);
         const { items } = await handleDraftListRequest(routes, { ...scope, draft } as never);
         const created = items.find((item) => item.documentId !== CH1);
         await review(script).discard(created?.documentId as string, { ends: "item" });

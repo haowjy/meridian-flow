@@ -61,7 +61,7 @@ A drafted tree create classifies its documents under sorted mutation keys. Only 
 without a head, checkpoint or update uses `installSeeds` with empty state. Existing or occupied
 IDs follow the single-document authority path, so restored creates and pre-seeded content
 survive.
-The list key fences the branch lifecycle until commit; ownership and liveness still apply.
+The list key fences the draft lifecycle until commit; ownership and liveness still apply.
 
 `allocateAdmission` is the one live-write boundary (journal): a
 removal that won the mutation lock refuses every later frame, model write

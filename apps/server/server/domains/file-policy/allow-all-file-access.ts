@@ -12,7 +12,7 @@ const OPEN_PROJECT = "00000000-0000-4000-8000-00000000a11a" as ProjectId;
 
 function openFacts(request: FileFactsRequest): FileFacts {
   const { target } = request;
-  const draftId = target.kind === "draft" ? target.draftId : request.branchOwner;
+  const draftId = target.kind === "draft" ? target.draftId : request.draftOwner;
   const scheme = target.kind === "container" ? target.scheme : "manuscript";
   return {
     target,
@@ -27,7 +27,7 @@ function openFacts(request: FileFactsRequest): FileFacts {
     ancestors: [{ kind: "project", id: OPEN_PROJECT }],
     ...(draftId
       ? {
-          branchOwner: {
+          draftOwner: {
             draftId,
             owner: null,
             handle: null,
@@ -48,13 +48,13 @@ export function createAllowAllFileAccess(): FileAccess {
       async load(request) {
         return openFacts(request);
       },
-      async loadList(documentIds, branchOwner) {
+      async loadList(documentIds, draftOwner) {
         return new Map(
           documentIds.map((documentId: DocumentId) => [
             documentId,
             openFacts({
               target: { kind: "document", documentId },
-              ...(branchOwner ? { branchOwner } : {}),
+              ...(draftOwner ? { draftOwner } : {}),
             }),
           ]),
         );
