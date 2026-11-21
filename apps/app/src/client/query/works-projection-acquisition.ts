@@ -41,7 +41,10 @@ export function observeWorksReads(client: QueryClient, driver: CommandDriver): (
 type RequestWorksSnapshot = () => Promise<WorksSnapshot>;
 type ProjectState = {
   installedStart: number;
+  /** When the installed snapshot's read began, by the clock. */
+  installedAt: number;
   inFlight: Promise<WorksSnapshot> | null;
+  inFlightAt: number;
 };
 
 const states = new WeakMap<QueryClient, Map<string, ProjectState>>();
@@ -65,7 +68,7 @@ function stateFor(client: QueryClient, projectId: string): ProjectState {
   }
   let state = byProject.get(projectId);
   if (!state) {
-    state = { installedStart: 0, inFlight: null };
+    state = { installedStart: 0, installedAt: 0, inFlight: null, inFlightAt: 0 };
     byProject.set(projectId, state);
   }
   return state;
@@ -103,6 +106,7 @@ function installSnapshot(
   if (ordering > 0 || (ordering === 0 && start.order >= state.installedStart)) {
     client.setQueryData(projectQueryKeys.works(projectId), response);
     state.installedStart = start.order;
+    state.installedAt = start.at;
     readObservers.get(client)?.(projectId, start.at);
     return response;
   }
@@ -122,6 +126,7 @@ function startAcquisition(
     installSnapshot(client, projectId, response, start),
   );
   state.inFlight = acquisition;
+  state.inFlightAt = start.at;
   void acquisition
     .finally(() => {
       if (state.inFlight === acquisition) state.inFlight = null;
@@ -149,13 +154,40 @@ export function refreshWorksSnapshot(
 }
 
 /** Repair after an already-committed write without turning acquisition failure into command failure. */
-export async function repairWorksSnapshot(
+export function repairWorksSnapshot(
   client: QueryClient,
   projectId: string,
   request?: RequestWorksSnapshot,
 ): Promise<void> {
+  return settleRepair(client, projectId, refreshWorksSnapshot(client, projectId, request));
+}
+
+/**
+ * After a change that committed at `since`: reads the Works again unless a read that began at or
+ * after it is installed or out, so one read covers every change before it. A project whose Works
+ * this tab holds no read of has nothing to repair.
+ */
+export function refreshWorksSnapshotSince(
+  client: QueryClient,
+  projectId: string,
+  since: number,
+): Promise<void> {
+  const state = stateFor(client, projectId);
+  if (state.inFlight && state.inFlightAt >= since)
+    return settleRepair(client, projectId, state.inFlight);
+  if (state.installedAt >= since || (!currentSnapshot(client, projectId) && !state.inFlight))
+    return Promise.resolve();
+  return repairWorksSnapshot(client, projectId);
+}
+
+/** A failed repair leaves the Works stale, so the next reader reads them again. */
+async function settleRepair(
+  client: QueryClient,
+  projectId: string,
+  read: Promise<WorksSnapshot>,
+): Promise<void> {
   try {
-    await refreshWorksSnapshot(client, projectId, request);
+    await read;
   } catch {
     await client.invalidateQueries({
       queryKey: projectQueryKeys.works(projectId),

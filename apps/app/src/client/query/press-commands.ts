@@ -3,14 +3,15 @@
  * as commands the driver delivers (resent under one id until the server stores an answer). The
  * server runs both halves; an open document's text changes when its update arrives on the socket.
  */
-import type { CommandDriver, CommandKind } from "@meridian/command-driver";
+import type { CommandDriver, CommandKind, CommandRecord } from "@meridian/command-driver";
 import type { PressRequest } from "@meridian/contracts/drafts";
 import { apiProjectPath } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { CommandDomain } from "@/client/commands/driver-context";
 import { submitCommand } from "@/client/commands/submit";
-import { projectQueryKeys } from "./project-query-keys";
+import { refreshDraftReads } from "./useOwnerDrafts";
+import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
 export const PRESS_KIND = "press";
 export const PRESS_UNDO_KIND = "unpress";
@@ -22,11 +23,23 @@ export type PressUndoBody = { projectId: string; pressCommandId: string };
 const pressLane = (draft: string) => `press:${draft}`;
 
 export function pressDomain(client: QueryClient): CommandDomain {
-  // The Changes list and the counts read the server: a settled press shows there on the next read.
-  const refresh = (projectId: string) =>
-    void client.invalidateQueries({ queryKey: [...projectQueryKeys.all, projectId] });
+  // The driver hands every settled press in the journal to `onSettled` on each load. The tab's
+  // own reads of drafts all begin after it opened, so a press settled before then is in them;
+  // only the Works the server read for the page may predate it. A turn card follows its chat's
+  // waiting drafts (`useDraftDock`).
+  const opened = Date.now();
   let bound: CommandDriver | null = null;
-  const observed = (id: string) => void bound?.observe((record) => record.id === id);
+  const settled = (record: CommandRecord) => {
+    const observed = () => void bound?.observe((each) => each.id === record.id);
+    const { projectId } = record.body as PressBody | PressUndoBody;
+    const since = record.settledAt ?? Date.now();
+    // A press can change any draft's list: two Works on one passage, the first applied wins.
+    void (
+      since <= opened
+        ? refreshWorksSnapshotSince(client, projectId, since)
+        : refreshDraftReads(client, projectId, new Set([undefined]), since)
+    ).then(observed);
+  };
   const kinds: Record<string, CommandKind> = {
     [PRESS_KIND]: {
       version: 1,
@@ -35,10 +48,7 @@ export function pressDomain(client: QueryClient): CommandDomain {
         const { projectId, ...request } = body as PressBody;
         return { method: "POST", path: `${apiProjectPath(projectId)}/press`, body: request };
       },
-      onSettled: (record) => {
-        refresh((record.body as PressBody).projectId);
-        observed(record.id);
-      },
+      onSettled: settled,
     },
     [PRESS_UNDO_KIND]: {
       version: 1,
@@ -51,10 +61,7 @@ export function pressDomain(client: QueryClient): CommandDomain {
           body: { pressCommandId },
         };
       },
-      onSettled: (record) => {
-        refresh((record.body as PressUndoBody).projectId);
-        observed(record.id);
-      },
+      onSettled: settled,
     },
   };
   return {

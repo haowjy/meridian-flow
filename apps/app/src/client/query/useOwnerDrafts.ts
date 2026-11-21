@@ -4,11 +4,13 @@
  * Projects one tree-labelled file per document the draft changes, in stable order.
  */
 import type { DraftItem, DraftItemsResponse } from "@meridian/contracts/drafts";
+import type { WorksSnapshot } from "@meridian/contracts/works";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import { listOwnerDrafts } from "@/client/api/drafts-api";
 import { useCreatedDrafts } from "./created-drafts";
+import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
@@ -17,6 +19,7 @@ import { useProjectThreads } from "./useProjectThreads";
 import { useProjectTreeViews } from "./useProjectTree";
 import { useWorks } from "./useWorks";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
+import { refreshWorksSnapshotSince } from "./works-projection-acquisition";
 
 export type OwnerDraftListStatus = ListQueryStatus<DraftItem> & {
   files: ReviewFileTarget[] | null;
@@ -50,6 +53,38 @@ export function ownerDraftsQueryOptions(projectId: string, owner: string) {
     queryFn: () => listOwnerDrafts(projectId, owner),
     staleTime: 15_000,
   };
+}
+
+/**
+ * Reads again what shows drafts' state after a change that committed at `since`: their lists
+ * (every draft's when `drafts` holds `undefined`), a Work's row in the Works list (its count and
+ * lifecycle), the documents' draft hints and link resolution. A list's read already out is
+ * restarted: it may predate the change.
+ */
+export function refreshDraftReads(
+  queryClient: QueryClient,
+  projectId: string,
+  drafts: ReadonlySet<string | undefined>,
+  since = Date.now(),
+): Promise<unknown> {
+  const all = drafts.has(undefined);
+  const named = [...drafts].filter((draft): draft is string => draft !== undefined);
+  const reads: Promise<unknown>[] = (all ? [undefined] : named).map((draft) =>
+    queryClient.invalidateQueries({
+      queryKey:
+        draft === undefined
+          ? projectQueryKeys.draftsOf(projectId)
+          : projectQueryKeys.drafts(projectId, draft),
+    }),
+  );
+  const works = queryClient.getQueryData<WorksSnapshot>(projectQueryKeys.works(projectId));
+  if (all || named.some((draft) => works?.works.some((work) => work.draftId === draft)))
+    reads.push(refreshWorksSnapshotSince(queryClient, projectId, since));
+  reads.push(
+    queryClient.invalidateQueries({ queryKey: projectQueryKeys.documentDraftHintsOf(projectId) }),
+  );
+  bumpLinkResolutionEpoch(projectId);
+  return Promise.allSettled(reads);
 }
 
 /** The owner's cached draft rows, without fetching. */

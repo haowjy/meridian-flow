@@ -20,7 +20,6 @@ import { useCommandDriver } from "@/client/commands/driver-context";
 import { submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { cachedOwnerDrafts, patchOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename, projectWorkDraftFiles } from "@/client/query/work-draft-files";
 import { notifyFailure } from "@/components/app/failure-toast";
 import {
@@ -103,7 +102,6 @@ export function usePressCommands({
           : { kind: "changes" };
     /** Reads the list again; a row a press took or gave back shows once this lands. */
     const refresh = async () => {
-      refreshTurnCards(queryClient);
       await queryClient.refetchQueries(
         { queryKey: projectQueryKeys.drafts(projectId, draftId) },
         { cancelRefetch: false },

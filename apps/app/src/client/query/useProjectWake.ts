@@ -6,7 +6,6 @@
  * what Mars reads of the Agent files, and the writer's connections.
  * Hints sent while the socket was down are lost, so a reconnect makes every one of those stale.
  */
-import type { WorksSnapshot } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
@@ -15,7 +14,7 @@ import { bumpLinkResolutionEpoch } from "./link-resolution-epoch";
 import { projectQueryKeys } from "./project-query-keys";
 import { invalidateAgentReads } from "./useAgentFiles";
 import { invalidateMcpConnections } from "./useMcpConnections";
-import { repairWorksSnapshot } from "./works-projection-acquisition";
+import { refreshDraftReads } from "./useOwnerDrafts";
 
 export function useProjectWake(projectId: string): void {
   const queryClient = useQueryClient();
@@ -55,27 +54,7 @@ export function useProjectWake(projectId: string): void {
     let draftsTrailing: Set<string | undefined> | null = null;
     const readDrafts = (drafts: ReadonlySet<string | undefined>) => {
       draftsRefreshing = true;
-      const all = drafts.has(undefined);
-      const named = [...drafts].filter((draft): draft is string => draft !== undefined);
-      const reads = (all ? [undefined] : named).map((draft) =>
-        queryClient.invalidateQueries({
-          queryKey:
-            draft === undefined
-              ? projectQueryKeys.draftsOf(projectId)
-              : projectQueryKeys.drafts(projectId, draft),
-        }),
-      );
-      // A Work's count and lifecycle are the Works list's: the picker and Changes read them there.
-      const works = queryClient.getQueryData<WorksSnapshot>(projectQueryKeys.works(projectId));
-      if (all || named.some((draft) => works?.works.some((work) => work.draftId === draft)))
-        reads.push(repairWorksSnapshot(queryClient, projectId));
-      reads.push(
-        queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.documentDraftHintsOf(projectId),
-        }),
-      );
-      bumpLinkResolutionEpoch(projectId);
-      void Promise.allSettled(reads).finally(() => {
+      void refreshDraftReads(queryClient, projectId, drafts).finally(() => {
         draftsRefreshing = false;
         const next = draftsTrailing;
         draftsTrailing = null;
