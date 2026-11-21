@@ -154,20 +154,12 @@ export function refreshWorksSnapshot(
 }
 
 /** Repair after an already-committed write without turning acquisition failure into command failure. */
-export async function repairWorksSnapshot(
+export function repairWorksSnapshot(
   client: QueryClient,
   projectId: string,
   request?: RequestWorksSnapshot,
 ): Promise<void> {
-  try {
-    await refreshWorksSnapshot(client, projectId, request);
-  } catch {
-    await client.invalidateQueries({
-      queryKey: projectQueryKeys.works(projectId),
-      exact: true,
-      refetchType: "none",
-    });
-  }
+  return settleRepair(client, projectId, refreshWorksSnapshot(client, projectId, request));
 }
 
 /**
@@ -175,19 +167,34 @@ export async function repairWorksSnapshot(
  * after it is installed or out, so one read covers every change before it. A project whose Works
  * this tab holds no read of has nothing to repair.
  */
-export async function refreshWorksSnapshotSince(
+export function refreshWorksSnapshotSince(
   client: QueryClient,
   projectId: string,
   since: number,
 ): Promise<void> {
   const state = stateFor(client, projectId);
-  if (state.inFlight && state.inFlightAt >= since) {
-    await state.inFlight.catch(() => undefined);
-    return;
+  if (state.inFlight && state.inFlightAt >= since)
+    return settleRepair(client, projectId, state.inFlight);
+  if (state.installedAt >= since || (!currentSnapshot(client, projectId) && !state.inFlight))
+    return Promise.resolve();
+  return repairWorksSnapshot(client, projectId);
+}
+
+/** A failed repair leaves the Works stale, so the next reader reads them again. */
+async function settleRepair(
+  client: QueryClient,
+  projectId: string,
+  read: Promise<WorksSnapshot>,
+): Promise<void> {
+  try {
+    await read;
+  } catch {
+    await client.invalidateQueries({
+      queryKey: projectQueryKeys.works(projectId),
+      exact: true,
+      refetchType: "none",
+    });
   }
-  if (!currentSnapshot(client, projectId) && !state.inFlight) return;
-  if (state.installedAt >= since) return;
-  await repairWorksSnapshot(client, projectId);
 }
 
 /** Route data is hydration only and may never replace an equal or newer live snapshot. */
