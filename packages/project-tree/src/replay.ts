@@ -264,13 +264,14 @@ export function startReplay(
   const rescued: string[] = [];
   const gone = new Set<string>();
   const reads = values.map(readStored);
-  // The view's own drafted records: a live delete that takes one back (Un-Apply of a create) is
-  // the Work's own, so the record, pending again, lifts it in the Work's view.
+  // The view's own drafted records, by family root as `undoes` names them: a live delete that
+  // takes one back (Un-Apply of a create) is the Work's own, so the record, pending again, lifts
+  // it in the Work's view.
   const drafted = new Set(
     of.draft == null
       ? []
       : reads.flatMap((read) =>
-          read.ok && read.record.draft === of.draft ? [read.record.id] : [],
+          read.ok && read.record.draft === of.draft ? [read.record.carries ?? read.record.id] : [],
         ),
   );
   const ownDelete = (record: TreeRecord) =>

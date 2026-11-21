@@ -618,7 +618,7 @@ export async function syncRows(
   );
   // A live change to a document a Work has suggestions in changes the Work's list (a move's place),
   // and a trash or restore its count, though the Work has no row there.
-  const holding = await branchesWithText(tx, [...liveIds].filter(isUuid));
+  const holding = await branchesWithText(tx, kept, [...liveIds].filter(isUuid));
   const changedBranches: string[] = [...holding];
   liveChangedUnder.push(...holding.filter((branchId) => !liveChangedUnder.includes(branchId)));
   for (const branchId of new Set([...prev.keys(), ...next.keys()])) {
@@ -636,15 +636,21 @@ export async function syncRows(
   return { created, changedBranches: [...new Set(changedBranches)], liveChangedUnder, reassigned };
 }
 
-/** The active branches whose Work has suggestions in one of `documentIds`. */
-async function branchesWithText(tx: DrizzleDb, documentIds: readonly string[]): Promise<string[]> {
-  if (documentIds.length === 0) return [];
+/** The list's branches (`kept`) whose Work has suggestions in one of `documentIds`. */
+async function branchesWithText(
+  tx: DrizzleDb,
+  kept: readonly string[],
+  documentIds: readonly string[],
+): Promise<string[]> {
+  if (kept.length === 0 || documentIds.length === 0) return [];
+  const list = (ids: readonly string[]) =>
+    sql.join(
+      ids.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
   const rows = await tx.execute<{ branch_id: string }>(sql`
     SELECT DISTINCT text.branch_id::text AS branch_id
-    FROM (${pendingText(sql`SELECT id FROM branches WHERE status = 'active'`)}) text
-    WHERE text.document_id IN (${sql.join(
-      documentIds.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    )})`);
+    FROM (${pendingText(list(kept))}) text
+    WHERE text.document_id IN (${list(documentIds)})`);
   return rows.map((row) => row.branch_id);
 }

@@ -217,7 +217,10 @@ the replay uses them (package `AGENTS.md`).
   on the same fact; every other pending change stays pending. When landing that would change what
   the Work's tree showed, it widens to the drafted prefix it stands on, and
   returns `{ command, copies, left, superseded }`: `left` is each record it did not
-  land with `would_loop` or `purged`. A move or rename that waits on a restore (rule 7) is in none.
+  land with `would_loop` or `purged`. A move or rename that waits on a restore (rule 7) is in none, and
+  is in no plan: the view after Apply must hold both with it and, for what stands, without it, as
+  live will show it (a waiting move can put a node inside a delete's cascade). A Discard all takes
+  waiting records with the rest.
   `covers(doc, saw)` says whether a copy holds the state the writer saw.
 - **Undo of an Apply goes per fact**: `undoApply(writer, applied, by, command, { writtenSince,
   closed })` writes each landed copy's opposite record through `takeBackAll` (a create's

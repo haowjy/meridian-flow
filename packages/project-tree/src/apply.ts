@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { assertNewCommand } from "./list-index.js";
 import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
-import { lifts, placeIn, replay, type SkipReason } from "./replay.js";
+import { lifts, placeIn, replay, type SkipReason, type TreeProjection } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { type NotUndone, takeBackAll } from "./undo.js";
 import { readStored, writable } from "./validate.js";
@@ -163,26 +163,40 @@ export function dependents(pending: readonly TreeRecord[], only: readonly string
  * Whether applying `chosen` lands what the Work's tree showed: the view of live plus the pending
  * records, against the view after the chosen ones have become live copies. Both are read without
  * the records that cannot land (`without`): one of those may start to take effect once the rest
- * has landed, which is the writer's cue that it can now be applied.
+ * has landed, which is the writer's cue that it can now be applied. A waiting record stays
+ * pending and never lands, so the view after must also hold without it, as live will show it:
+ * there only what stands is compared, since it acts only on a node in Trash.
  */
 function keepsView(
   live: readonly TreeRecord[],
   pending: readonly TreeRecord[],
   chosen: ReadonlySet<string>,
   without: ReadonlySet<string>,
+  waiting: ReadonlySet<string>,
 ): boolean {
   const draft = pending[0]?.draft ?? null;
   const rest = pending.filter((record) => !without.has(record.id));
-  const before = fingerprint(replay([...live, ...rest], { draft }), false);
-  const after = [
-    ...live,
-    ...rest
-      .filter((record) => chosen.has(record.id))
-      .map((record) => ({ ...record, draft: null, fromDraft: draft ?? undefined }) as TreeRecord),
-    ...rest.filter((record) => !chosen.has(record.id)),
-  ];
-  return fingerprint(replay(after, { draft }), false) === before;
+  const view = replay([...live, ...rest], { draft });
+  const copies = rest
+    .filter((record) => chosen.has(record.id))
+    .map((record) => ({ ...record, draft: null, fromDraft: draft ?? undefined }) as TreeRecord);
+  const unchosen = rest.filter((record) => !chosen.has(record.id));
+  const after = (records: readonly TreeRecord[]) =>
+    replay([...live, ...copies, ...records], { draft });
+  if (fingerprint(after(unchosen), false) !== fingerprint(view, false)) return false;
+  if (waiting.size === 0) return true;
+  return (
+    standingShape(after(unchosen.filter((record) => !waiting.has(record.id)))) ===
+    standingShape(view)
+  );
 }
+
+/** The fingerprint's lines for the nodes that stand: what the writer sees. */
+const standingShape = (projection: TreeProjection) =>
+  fingerprint(projection, false)
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("~"))
+    .join("\n");
 
 /**
  * The ids of the records in the structs of the list a copy at state `saw` lacks: what was
@@ -265,7 +279,11 @@ export function applyDraft(
   const plan = () => {
     const leftIds = dependents(pending, [...roots.keys()]);
     const heldIds = dependents(pending, [...closedBy.keys()]);
-    const candidates = pending.filter((record) => wanted.has(record.id) && !leftIds.has(record.id));
+    // Neither lands: a left record is reported, a waiting one stays silently pending.
+    const unplanned = new Set([...leftIds, ...waiting]);
+    const candidates = pending.filter(
+      (record) => wanted.has(record.id) && !unplanned.has(record.id),
+    );
     const chosenOf = (records: readonly TreeRecord[]) =>
       new Set(records.map((record) => record.id));
 
@@ -274,12 +292,12 @@ export function applyDraft(
     // them that does (the empty one always does), so nothing is ever turned away whole.
     const pool = (() => {
       if (candidates.length === 0) return [];
-      if (keepsView(live, pending, chosenOf(candidates), leftIds)) return candidates;
+      if (keepsView(live, pending, chosenOf(candidates), leftIds, waiting)) return candidates;
       const last = pending.indexOf(candidates[candidates.length - 1] as TreeRecord);
-      return pending.slice(0, last + 1).filter((record) => !leftIds.has(record.id));
+      return pending.slice(0, last + 1).filter((record) => !unplanned.has(record.id));
     })();
     const holds = (count: number) =>
-      keepsView(live, pending, chosenOf(pool.slice(0, count)), leftIds);
+      keepsView(live, pending, chosenOf(pool.slice(0, count)), leftIds, waiting);
     let count = pool.length;
     if (count > 0 && pool !== candidates && !holds(count)) {
       let good = 0;
