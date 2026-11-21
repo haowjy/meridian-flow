@@ -1,0 +1,15 @@
+{
+  "name": "gate-server",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "loro-crdt": "1.18.0",
+    "loro-prosemirror": "0.4.4",
+    "loro-protocol": "0.3.0",
+    "postgres": "4.1.1",
+    "prosemirror-model": "^1.25.13",
+    "prosemirror-state": "^1.4.4",
+    "prosemirror-view": "^1.43.0",
+    "ws": "^8.18.0"
+  }
+}
