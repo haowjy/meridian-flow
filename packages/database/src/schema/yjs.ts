@@ -43,7 +43,6 @@ export const documentYjsCheckpoints = pgTable(
       .notNull()
       .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
     authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
-    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     attributionManifest: jsonb("attribution_manifest").$type<unknown>().notNull(),
     state: byteaColumn("state").notNull(),
     stateVector: byteaColumn("state_vector").notNull(),
@@ -74,7 +73,6 @@ export const documentYjsUpdates = pgTable(
       .notNull()
       .references((): AnyPgColumn => documentYjsHeads.documentId, { onDelete: "cascade" }),
     authorityId: uuid("authority_id").$type<DocumentAuthorityId>().notNull(),
-    authorityGeneration: bigint("authority_generation", { mode: "bigint" }).notNull(),
     admissionSequence: bigint("admission_sequence", { mode: "bigint" }).notNull(),
     batchOrdinal: integer("batch_ordinal").notNull().default(0),
     updateData: byteaColumn("update_data").notNull(),
@@ -97,7 +95,6 @@ export const documentYjsUpdates = pgTable(
     index("document_yjs_updates_document_id").on(table.documentId, table.id),
     uniqueIndex("document_yjs_updates_authority_admission").on(
       table.authorityId,
-      table.authorityGeneration,
       table.admissionSequence,
       table.batchOrdinal,
     ),
@@ -155,9 +152,6 @@ export const documentYjsHeads = pgTable(
       .$type<DocumentAuthorityId>()
       .notNull()
       .default(sql`gen_random_uuid()`),
-    authorityGeneration: bigint("authority_generation", { mode: "bigint" })
-      .notNull()
-      .default(sql`1`),
     nextAdmissionSequence: bigint("next_admission_sequence", { mode: "bigint" })
       .notNull()
       .default(sql`1`),
@@ -208,7 +202,6 @@ export const documentBlockRooms = pgTable(
       .default(sql`'{}'::jsonb`),
     /** Ordered block content hashes plus the certified link facts: `updated_at` moves with it. */
     documentHash: byteaColumn("document_hash").notNull(),
-    cutGeneration: bigint("cut_generation", { mode: "bigint" }).notNull(),
     cutAdmissionSeq: bigint("cut_admission_seq", { mode: "bigint" }).notNull(),
     cutLocationVersion: bigint("cut_location_version", { mode: "bigint" }).notNull(),
     extractorVersion: integer("extractor_version").notNull(),

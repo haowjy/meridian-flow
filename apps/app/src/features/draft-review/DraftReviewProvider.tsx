@@ -13,7 +13,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { type OwnerDraftListStatus, useOwnerDrafts } from "@/client/query/useOwnerDrafts";
+import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import { EMPTY_DRAFT_REVIEW_STATE } from "./draft-review-session";
@@ -26,13 +26,14 @@ import {
 export type DraftReviewContextValue = {
   controller: DraftReviewController;
   files: ReviewFileTarget[];
-  drafts: OwnerDraftListStatus;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   activeEditorDocumentId: string | null;
   /** Returns the host's document to Live: its view, not the review, decides what paints. */
   showLive: () => void;
   setActiveEditorDocumentId: (documentId: string | null, owner?: object) => void;
 };
+
+const NO_FILES: ReviewFileTarget[] = [];
 
 const DraftReviewContext = createContext<DraftReviewContextValue | null>(null);
 
@@ -55,9 +56,9 @@ export function useDraftReviewScopeValue({
   showLive,
 }: {
   projectId: string | null;
-  /** The Work whose archived state freezes these drafts. */
+  /** The Work the draft belongs to, if any. */
   work: Work | null;
-  /** Whose drafts this scope reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
+  /** The draft this scope reviews; "" scopes nothing. */
   draftId: string;
   /** Focused thread, when this review surface is thread-owned; threads cache invalidation. */
   threadId?: string | null;
@@ -68,7 +69,7 @@ export function useDraftReviewScopeValue({
   const queryClient = useQueryClient();
   const effectiveProjectId = projectId ?? "";
   const drafts = useOwnerDrafts(projectId, draftId || null);
-  const files = drafts.files ?? [];
+  const files = drafts.files ?? NO_FILES;
   const reviewState = useDraftReviewStateOwner();
   const scope = useRef({ projectId: effectiveProjectId, draftId, queryClient });
   const scopeChanged =
@@ -130,13 +131,12 @@ export function useDraftReviewScopeValue({
     () => ({
       controller,
       files,
-      drafts,
       fileForDocument,
       activeEditorDocumentId,
       showLive,
       setActiveEditorDocumentId,
     }),
-    [showLive, controller, files, drafts, fileForDocument, activeEditorDocumentId],
+    [showLive, controller, files, fileForDocument, activeEditorDocumentId],
   );
 
   return value;

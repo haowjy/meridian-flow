@@ -113,6 +113,11 @@ msgstr ""
 msgid "{0, plural, one {# call} other {# calls}}"
 msgstr "{0, plural, other {# 次调用}}"
 
+#. placeholder {0}: result.pendingDocuments
+#: src/features/export/ExportProjectDialog.tsx
+msgid "{0, plural, one {# document has changes waiting for review; the export has its live text.} other {# documents have changes waiting for review; the export has their live text.}}"
+msgstr ""
+
 #. placeholder {0}: entry.documents
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "{0, plural, one {# document, deleted from {location}} other {# documents, deleted from {location}}}"
@@ -123,11 +128,6 @@ msgstr ""
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "{0, plural, one {# document} other {# documents}}"
-msgstr ""
-
-#. placeholder {0}: result.pendingDrafts
-#: src/features/export/ExportProjectDialog.tsx
-msgid "{0, plural, one {# draft the AI hasn't applied won't be included.} other {# drafts the AI hasn't applied won't be included.}}"
 msgstr ""
 
 #. placeholder {0}: changes.length
@@ -1065,14 +1065,6 @@ msgstr ""
 #: src/features/draft-review/ReviewCompletion.tsx
 msgid "Applying"
 msgstr ""
-
-#: src/features/draft-review/CommandNotice.tsx
-#~ msgid "Applying brings back {names}"
-#~ msgstr ""
-
-#: src/features/draft-review/CommandNotice.tsx
-#~ msgid "Applying brings back {names}, deleted from {area}"
-#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applying deletes {deletes}."
@@ -2033,10 +2025,6 @@ msgstr ""
 msgid "Couldn't load this document."
 msgstr ""
 
-#: src/features/project/context/ContextDocumentHost.tsx
-msgid "Couldn't load this draft."
-msgstr ""
-
 #: src/features/agents/AgentFileDialog.tsx
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/project/context/ContextViewerHost.tsx
@@ -2163,10 +2151,6 @@ msgstr ""
 #: src/features/project/shell/sidebar/chat-deletes.ts
 msgid "Couldn't restore {title}"
 msgstr ""
-
-#: src/features/draft-review/TrashedChatNotice.tsx
-#~ msgid "Couldn't restore the chat"
-#~ msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -2445,14 +2429,6 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Deleted a Work"
 msgstr ""
-
-#: src/features/draft-review/DraftCommandStatus.tsx
-#~ msgid "Deleted from {area}"
-#~ msgstr ""
-
-#: src/features/editor/ManuscriptStateNotice.tsx
-#~ msgid "Deleted from {from}"
-#~ msgstr ""
 
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Deleted from {location}"
@@ -3926,7 +3902,7 @@ msgid "Next change"
 msgstr ""
 
 #: src/features/draft-review/ReviewCompletion.tsx
-msgid "Next draft"
+msgid "Next document"
 msgstr ""
 
 #: src/features/project/context/DocumentPropertyValue.tsx
@@ -4409,11 +4385,11 @@ msgid "Opening checkout…"
 msgstr ""
 
 #: src/features/project/context/DocumentHost.tsx
-msgid "Opening document…"
+msgid "Opening document"
 msgstr ""
 
 #: src/features/project/context/DocumentHost.tsx
-msgid "Opening draft"
+msgid "Opening document…"
 msgstr ""
 
 #: src/features/links/FollowOutcomeContent.tsx
@@ -5845,11 +5821,6 @@ msgstr ""
 #: src/features/chat/derivation/HandoffBriefCard.tsx
 msgid "This chat continues without a brief."
 msgstr ""
-
-#: src/features/draft-review/TrashedChatNotice.tsx
-#: src/features/project/shell/sidebar/ChangesSource.tsx
-#~ msgid "This chat is in Trash"
-#~ msgstr ""
 
 #. placeholder {0}: naming.current(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts

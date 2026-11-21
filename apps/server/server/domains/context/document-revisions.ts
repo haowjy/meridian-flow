@@ -2,7 +2,7 @@
 
 import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import { chatOwner } from "../../shared/draft-owner.js";
-import type { DocumentLinkScopes, DraftPeerShadowAccess } from "../collab/index.js";
+import type { DocumentLinkScopes, EffectiveDocumentReader } from "../collab/index.js";
 import type { AgentChain, FileAccess, Principal } from "../file-policy/index.js";
 import type { WorkRepository } from "../projects/index.js";
 import {
@@ -13,7 +13,7 @@ import {
 import type { DocumentRevisions } from "./ports/document-revisions.js";
 
 export function createDocumentRevisions(deps: {
-  documents: Pick<DraftPeerShadowAccess, "readEffectiveRevision">;
+  documents: Pick<EffectiveDocumentReader, "readEffectiveRevision">;
   /** One snapshot serves every document asked about together. */
   links: Pick<DocumentLinkScopes, "within">;
   threads: Pick<ThreadRepository, "findById">;

@@ -61,7 +61,7 @@ usable frontier plans on that offline view, less the suggestions the writer reje
 A write that changes nothing still reports the changes since the frontier and records its own.
 Every model call reads its room fresh through agent-edit's `readRoom`; the live adapter
 (`adapters/hocuspocus-coordinator.ts` `liveRoomCopy`) reads the journal and the room without the
-document mutex. A room is named `live:<documentId>:<authorityGeneration>` from the copy's bound
+document mutex. A room is named `live:<documentId>` when the copy has a bound
 authority (`domain/observation-rooms.ts`).
 
 A call whose caller passes `frontiers` (the read and write tools, and reference reads, which
@@ -183,22 +183,22 @@ reported and not retried: the next Live commit or the next connection to the roo
 
 ## Authority, checkpoints, and derivation
 
-A live document's authority identity and generation bind its loaded Y.Doc,
-room, checkpoint, writer frame, Markdown replacement, and agent journal batch.
-Persistence validates the binding under the document mutation lock (a writer frame, under the
-head row it bumps) and drops stale bytes rather than relabeling them; room load and connection
-revalidate the binding against the head. Nothing moves a document's generation: version restore
-is a forward write (`restoreFromYDoc`, below), because a browser's copy can't tell generations
-apart (neither its room name nor its IndexedDB copy carries one). A copy that predates a new
-generation would merge the old history into it on reconnect, showing the text twice, and would
-upload it to a server that has no record of the old one. Whatever needs a new generation (a
-history rebuild) has to give copies a way to tell first, and a way for their unsent typing to land.
+A live document's authority identity binds its loaded Y.Doc, room, checkpoint, writer frame,
+Markdown replacement, and agent journal batch. Persistence validates the binding under the
+document mutation lock (a writer frame, under the head row it bumps) and drops stale bytes rather
+than relabeling them; a retired handle's room is closed. A document's history is never replaced:
+version restore is a forward write (`restoreFromYDoc`, below), because a browser's copy can't tell
+one history from another (neither its room name nor its IndexedDB copy carries one). A copy that
+predates a replaced history would merge the old one into it on reconnect, showing the text twice,
+and would upload it to a server that has no record of the old one. Whatever needs to replace
+history (a rebuild) has to give copies a way to tell first, and a way for their unsent typing to
+land.
 
 A checkpoint is a host-minted `CapturedCheckpointCut`, not a free state-vector
 and watermark pair and not warm-room bytes. It covers every journal row at or
 below its cut. Materialize outside the persistence lock, then revalidate
-identity and generation under lock. A stale checkpoint returns
-`stale_generation`; it does not manufacture a successful checkpoint ID.
+identity under lock. A stale checkpoint returns
+`stale_document`; it does not manufacture a successful checkpoint ID.
 Live journal rows are deleted only by a purge:
 the model's report of what changed since its last read attributes each
 change from the rows after its frontier, however old. A background checkpoint

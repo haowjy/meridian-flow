@@ -49,7 +49,7 @@ export function EditorView(props: EditorViewProps) {
       : null;
   const file = fileForDocument(props.documentId);
   // As the host opens its room (`ContextDocumentHost`): the Work's row says the Work made it.
-  const workOnly = file?.draft.isNew === true;
+  const workOnly = file?.item.isNew === true;
   const draft = requestedItemKey && !workOnly ? controller.draftId : "";
   // The phone reviews without typing; it types again once the review closes.
   const reviewReadOnly = props.reviewReadOnly === true && requestedItemKey !== null;

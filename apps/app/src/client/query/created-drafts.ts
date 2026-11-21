@@ -7,7 +7,7 @@
  */
 import { draftItemKey, parseDraftItemKey } from "@meridian/contracts";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import { pendingCreates, pendingRecords, replayView } from "@meridian/project-tree";
 import { useCallback, useMemo } from "react";
 import type * as Y from "yjs";
@@ -24,8 +24,8 @@ import { useProjectTrees } from "./useProjectTrees";
 export function useCreatedDrafts(
   projectId: string,
   draftId: string | null,
-  listed: readonly ThreadDraftListItem[] | undefined,
-): readonly ThreadDraftListItem[] {
+  listed: readonly DraftItem[] | undefined,
+): readonly DraftItem[] {
   const accountId = useAccountId();
   const project = useTreeList(projectId ? { kind: "project", projectId } : null);
   const account = useTreeList(projectId ? { kind: "account", userId: accountId } : null);
@@ -42,7 +42,7 @@ export function useCreatedDrafts(
   const trees = useProjectTrees(projectId, { version });
   return useMemo(() => {
     if (!draftId || !version) return NONE;
-    return candidates.map((documentId): ThreadDraftListItem => {
+    return candidates.map((documentId): DraftItem => {
       // The row is the record's: a place the trees have not drawn yet is no address, not no row.
       const uri = trees.find(documentId)?.file.uri;
       const location = uri ? parseContextUri(uri) : null;
@@ -50,7 +50,6 @@ export function useCreatedDrafts(
         draftId,
         itemKey: draftItemKey(draftId, documentId),
         documentId,
-        hasDraft: true,
         textChanges: 0,
         origin: "created",
         isNew: true,
@@ -67,7 +66,7 @@ export function useCreatedDrafts(
   }, [draftId, version, candidates, trees]);
 }
 
-const NONE: readonly ThreadDraftListItem[] = [];
+const NONE: readonly DraftItem[] = [];
 
 /** The documents the Work's pending creates make and its view still shows: an Undo trashes one. */
 function createdDocuments(doc: Y.Doc, draftId: string): string[] {

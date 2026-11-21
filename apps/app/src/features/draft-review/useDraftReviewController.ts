@@ -1,4 +1,4 @@
-/** useDraftReviewController — shared state machine for reviewing AI document drafts. */
+/** useDraftReviewController — the shared state machine for reviewing a draft's items. */
 
 import type { Work } from "@meridian/contracts/works";
 import type { Editor } from "@tiptap/core";
@@ -6,7 +6,7 @@ import { type Dispatch, useCallback, useMemo, useReducer, useRef } from "react";
 import { keepsRestoredPlace } from "@/core/editor/reading-position-navigation";
 import type { CommandOutcome } from "./draft-command-owner";
 import {
-  type DraftReviewSelection,
+  type DraftItemRef,
   draftReviewReducer,
   EMPTY_DRAFT_REVIEW_STATE,
   type InlineDraftReview,
@@ -15,7 +15,7 @@ import {
 import type { ReviewFocus } from "./review-model";
 import { type CommandStart, usePressCommands, type WorkDraftCommands } from "./usePressCommands";
 
-export type { DraftReviewSelection, InlineDraftReview };
+export type { DraftItemRef, InlineDraftReview };
 
 /** What the controller needs to know of a change: its identity and where to focus it. */
 type ReviewChangeTarget = ReviewFocus;
@@ -64,7 +64,7 @@ export type DraftReviewController = {
    * editor reporting a click, and the review keeping the focus current when the
    * server regroups the change. Ignored unless `review` is the open review.
    */
-  reportFocusedChange: (review: DraftReviewSelection, change: ReviewFocus) => void;
+  reportFocusedChange: (review: DraftItemRef, change: ReviewFocus) => void;
   /**
    * Focus one change: in the manuscript and in every list. `scroll` brings it
    * into view. `review` is the review the caller meant: a caller that waited
@@ -72,7 +72,7 @@ export type DraftReviewController = {
    * `keepRestoredPlace`: an editor that reopened at the writer's place stays there.
    */
   focusReviewChange: (
-    review: DraftReviewSelection,
+    review: DraftItemRef,
     change: ReviewChangeTarget,
     options?: { scroll?: boolean; instant?: boolean; keepRestoredPlace?: boolean },
   ) => void;
@@ -84,7 +84,7 @@ export type DraftReviewController = {
   /** Claim/release the single review-runtime slot. */
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
-  startDraft: (mode: "apply" | "discard", draft: DraftReviewSelection) => CommandStart;
+  startItem: (mode: "apply" | "discard", item: DraftItemRef) => CommandStart;
   apply: (documentId: string, itemKey: string) => Promise<CommandOutcome>;
   discard: (documentId: string, itemKey: string) => Promise<CommandOutcome>;
 };
@@ -98,9 +98,9 @@ export function useDraftReviewController({
   marks,
 }: {
   projectId: string;
-  /** The Work whose archived state freezes these drafts; null scopes nothing. */
+  /** The Work the draft belongs to, if any. */
   work: Work | null;
-  /** Whose drafts this surface reviews: `work:<id>` or `lineage:<root>`; "" scopes nothing. */
+  /** The draft this surface reviews; "" scopes nothing. */
   draftId: string;
   threadId?: string | null;
   stateOwner: DraftReviewStateOwner;
@@ -158,7 +158,7 @@ export function useDraftReviewController({
     }
   }, []);
 
-  const reportFocusedChange = useCallback((review: DraftReviewSelection, change: ReviewFocus) => {
+  const reportFocusedChange = useCallback((review: DraftItemRef, change: ReviewFocus) => {
     dispatch({
       type: "changeFocused",
       documentId: review.documentId,
@@ -169,7 +169,7 @@ export function useDraftReviewController({
 
   const focusReviewChange = useCallback(
     (
-      review: DraftReviewSelection,
+      review: DraftItemRef,
       change: ReviewChangeTarget,
       options?: { scroll?: boolean; instant?: boolean; keepRestoredPlace?: boolean },
     ) => {
@@ -195,7 +195,7 @@ export function useDraftReviewController({
     [reportFocusedChange],
   );
 
-  const { startDraft, apply, discard } = commands;
+  const { startItem, apply, discard } = commands;
 
   return useMemo(
     () => ({
@@ -216,7 +216,7 @@ export function useDraftReviewController({
       setInlineReviewShown,
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
-      startDraft,
+      startItem,
       apply,
       discard,
     }),
@@ -238,7 +238,7 @@ export function useDraftReviewController({
       setInlineReviewShown,
       registerInlineReviewRuntime,
       releaseInlineReviewRuntime,
-      startDraft,
+      startItem,
       apply,
       discard,
     ],

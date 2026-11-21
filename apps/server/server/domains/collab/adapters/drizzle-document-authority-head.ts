@@ -20,15 +20,11 @@ import {
   unpackCollabSchemaVersion,
 } from "@meridian/prosemirror-schema";
 import { and, eq, or, sql } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { livingDocumentRefusal, textHeldSql } from "../../context/tree/living-document.js";
 
 type AuthorityHeadDb = Pick<Database, "insert" | "update" | "select">;
 
-export type DocumentAuthorityHeadGeneration = {
-  authorityId: DocumentAuthorityId;
-  generation: bigint;
-};
+export type DocumentAuthorityHead = { authorityId: DocumentAuthorityId };
 
 /**
  * A living document's first head, at birth; an existing head of a document (a head-only anomaly)
@@ -49,8 +45,6 @@ export async function initializeHead(db: AuthorityHeadDb, documentId: DocumentId
     throw new Error(`Document ${documentId} has the id of a ${existing.kind}'s journal`);
 }
 
-/** The generation a head is born with (the column's default). */
-export const FIRST_AUTHORITY_GENERATION = 1n;
 /** Rows per statement: bounds the parameter count, not the atomic operation. */
 const FRESH_HEAD_BATCH = 500;
 
@@ -73,7 +67,6 @@ export async function insertFreshHeads(
       heads.slice(offset, offset + FRESH_HEAD_BATCH).map((head) => ({
         documentId: head.documentId,
         authorityId: head.authorityId,
-        authorityGeneration: FIRST_AUTHORITY_GENERATION,
         schemaVersion: packCollabSchemaVersion(COLLAB_SCHEMA_VERSION),
         latestUpdateSeq: 0,
         latestStateVector: Buffer.from(head.stateVector),
@@ -87,7 +80,7 @@ export async function insertFreshHeads(
 export async function allocateAdmission(
   db: AuthorityHeadDb,
   documentId: string,
-): Promise<DocumentAuthorityHeadGeneration & { admissionSequence: bigint }> {
+): Promise<DocumentAuthorityHead & { admissionSequence: bigint }> {
   const [row] = await db
     .update(documentYjsHeads)
     .set({
@@ -97,13 +90,11 @@ export async function allocateAdmission(
     .where(holdsText(documentId))
     .returning({
       authorityId: documentYjsHeads.authorityId,
-      generation: documentYjsHeads.authorityGeneration,
       nextAdmissionSequence: documentYjsHeads.nextAdmissionSequence,
     });
   if (!row) throw await refusedAuthority(db, documentId);
   return {
     authorityId: row.authorityId,
-    generation: row.generation,
     admissionSequence: row.nextAdmissionSequence - 1n,
   };
 }
@@ -142,11 +133,10 @@ export async function findDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
   options: { notPurged?: boolean } = {},
-): Promise<DocumentAuthorityHeadGeneration | null> {
+): Promise<DocumentAuthorityHead | null> {
   const [row] = await db
     .select({
       authorityId: documentYjsHeads.authorityId,
-      generation: documentYjsHeads.authorityGeneration,
     })
     .from(documentYjsHeads)
     .where(
@@ -163,7 +153,7 @@ export async function readDocumentAuthorityHead(
   db: AuthorityHeadDb,
   documentId: string,
   options: { notPurged?: boolean } = {},
-): Promise<DocumentAuthorityHeadGeneration> {
+): Promise<DocumentAuthorityHead> {
   const row = await findDocumentAuthorityHead(db, documentId, options);
   if (!row) throw await refusedAuthority(db, documentId);
   return row;
@@ -198,14 +188,4 @@ function holdsText(documentId: string) {
     eq(documentYjsHeads.documentId, documentId as DocumentId),
     or(eq(documentYjsHeads.kind, "tree_list"), textHeldSql(documentYjsHeads.documentId)),
   );
-}
-
-/**
- * Reads through the caller's transaction, like the journal snapshot it validates.
- * A room loaded inside a transaction that already admitted to this head would
- * otherwise wait on its own row lock from a second connection.
- */
-export function createDrizzleAuthorityGenerationReader(db: Database) {
-  return async (documentId: DocumentId): Promise<bigint> =>
-    (await readDocumentAuthorityHead(currentDrizzleDb(db), documentId)).generation;
 }

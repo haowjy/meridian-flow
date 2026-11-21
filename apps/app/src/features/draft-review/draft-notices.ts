@@ -1,5 +1,5 @@
 /**
- * One notice per draft owner (`work:<id>`, `lineage:<root>`): the owner's latest Discard with its
+ * One notice per draft (by its id): the draft's latest Discard with its
  * Undo, or the facts its latest Apply brought; and per project the writer's latest delete
  * (`deleteNoticeKey`), whose Undo is the sidebar's Undo step, for main's band or Recently opened
  * (the sidebar's rows say it themselves, `TreeNotice`). The account command owner holds

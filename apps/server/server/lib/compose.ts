@@ -44,11 +44,11 @@ import {
   type ContextSources,
   createAgentFilesHints,
   createAgentLevelFiles,
+  createChatUploadVerifier,
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
   createDocumentRevisions,
-  createDraftUploadVerifier,
   createDrizzleChatUploads,
   createDrizzleChatUploadsOwners,
   createDrizzleContextSources,
@@ -1186,7 +1186,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
     },
-    verifyDraftUpload: createDraftUploadVerifier({
+    verifyChatUpload: createChatUploadVerifier({
       identities: ports.uploadIdentity,
       chats: topChats,
     }),
@@ -1334,7 +1334,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   return {
     projectExport: createProjectExport({
       snapshot: ports.exportSnapshot,
-      pendingDrafts: {
+      pendingDocuments: {
         count: (projectId) => ports.documentSync.draftReview.pendingDocumentCount(projectId),
       },
       documents: exportDocumentsFrom(ports.documentSync),
@@ -1807,7 +1807,7 @@ export function createInMemoryAppServices(
       workAuthorityResolver,
     }),
     projectExport: createProjectExport({
-      pendingDrafts: {
+      pendingDocuments: {
         async count() {
           return 0;
         },

@@ -132,7 +132,6 @@ describe("Yjs live writer admission", () => {
       syncType: messageYjsUpdate,
       payload,
       userId: "user-1" as never,
-      expectedGeneration: 1n,
     };
 
     await expect(admitWriterSync(input)).rejects.toMatchObject({
@@ -152,7 +151,6 @@ describe("Yjs room access", () => {
       ensureDocumentAuthority: vi.fn(async () => {}),
       bindHocuspocus: vi.fn(),
       headSchemaVersion: vi.fn(async () => null),
-      currentLiveGeneration: vi.fn(async () => 1n),
       admitLiveWriterUpdate: vi.fn(async () => ({ admitted: true })),
     };
     return {

@@ -1,9 +1,9 @@
 /**
- * useOwnerDrafts — reviewable AI draft list for one draft (one entry per document).
+ * useOwnerDrafts — one draft's review items (one per document).
  *
  * Projects one tree-labelled file per document the draft changes, in stable order.
  */
-import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/drafts";
+import type { DraftItem, DraftItemsResponse } from "@meridian/contracts/drafts";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
@@ -18,9 +18,7 @@ import { useProjectTreeViews } from "./useProjectTree";
 import { useWorks } from "./useWorks";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 
-export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
-  /** Raw query rows for generation evidence and command fences. */
-  drafts: ThreadDraftListItem[] | null;
+export type OwnerDraftListStatus = ListQueryStatus<DraftItem> & {
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   /** The owner's active draft: the `draft` of its tree records. */
@@ -59,10 +57,9 @@ export function cachedOwnerDrafts(
   queryClient: QueryClient,
   projectId: string,
   owner: string,
-): ThreadDraftListItem[] | undefined {
-  return queryClient.getQueryData<ThreadDraftListResponse>(
-    projectQueryKeys.drafts(projectId, owner),
-  )?.items;
+): DraftItem[] | undefined {
+  return queryClient.getQueryData<DraftItemsResponse>(projectQueryKeys.drafts(projectId, owner))
+    ?.items;
 }
 
 /** Rewrites the owner's cached draft rows until the next read replaces them. */
@@ -70,35 +67,12 @@ export function patchOwnerDrafts(
   queryClient: QueryClient,
   projectId: string,
   owner: string,
-  update: (items: ThreadDraftListItem[]) => ThreadDraftListItem[],
+  update: (items: DraftItem[]) => DraftItem[],
 ): void {
-  queryClient.setQueryData<ThreadDraftListResponse>(
+  queryClient.setQueryData<DraftItemsResponse>(
     projectQueryKeys.drafts(projectId, owner),
     (response) => (response ? { ...response, items: update(response.items) } : response),
   );
-}
-
-/**
- * Waits for the server to list an item again, then caches that list. The list omits a draft
- * until the server re-judges its effect after a write (a short debounce, longer on retry), so a
- * read made sooner would drop the row. Reads go straight to the server, leaving the cached rows
- * alone meanwhile; false when the server still omits the item after the retries.
- */
-export async function relistedOwnerDraft(
-  queryClient: QueryClient,
-  projectId: string,
-  owner: string,
-  itemKey: string,
-): Promise<boolean> {
-  for (const delayMs of [250, 500, 1_000, 2_000, 4_000]) {
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
-    // slop-lint: allow swallowed-error a failed read is one more retry, not an answer
-    const response = await listOwnerDrafts(projectId, owner).catch(() => null);
-    if (!response?.items.some((row) => row.itemKey === itemKey)) continue;
-    queryClient.setQueryData(projectQueryKeys.drafts(projectId, owner), response);
-    return true;
-  }
-  return false;
 }
 
 /**
@@ -177,7 +151,6 @@ export function useOwnerDrafts(
       ...result,
       data: null,
       status: "disabled",
-      drafts: null,
       files: null,
       fileForDocument,
       draftId: null,
@@ -193,7 +166,6 @@ export function useOwnerDrafts(
           ? "ready"
           : "empty"
         : result.status,
-    drafts: result.data,
     files,
     fileForDocument,
     draftId: query.data ? owner : null,

@@ -195,19 +195,14 @@ function DockFileLine({
 }) {
   const touch = useCoarsePointer();
   const view = useDraftView(
-    {
-      projectId: dock.projectId,
-      draftId: dock.draftId,
-      documentId: file.row.documentId,
-      itemKey: file.row.draft.itemKey,
-    },
-    { controller: dock.controller, enabled: !file.whole, item: file.row.draft },
+    { documentId: file.row.documentId, itemKey: file.row.item.itemKey },
+    { controller: dock.controller, enabled: !file.whole, item: file.row.item },
   );
   const own = new Set(file.changes.map((change) => change.id));
   const items = view.items.filter(({ change }) => own.has(change.id));
   const wholeDocument = isWholeDocumentChange({ ...view, items });
   // A command's progress is the file's status line's (`DraftCommandStatus`), shown once.
-  const status = <DraftCommandStatus itemKey={file.row.draft.itemKey} />;
+  const status = <DraftCommandStatus itemKey={file.row.item.itemKey} />;
   if (!summary && !expanded) return null;
   if (file.whole && !summary)
     return (

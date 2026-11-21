@@ -49,7 +49,7 @@ export type UpdateOrigin =
 export type DocumentSeedOrigin = Extract<UpdateOrigin, { type: "import" | "system" }>;
 
 export type SyncError =
-  | { code: "stale_generation"; documentId: string }
+  | { code: "stale_document"; documentId: string }
   | { code: "not_found"; documentId: string }
   | { code: "checkpoint_not_found"; checkpointId: string }
   | { code: "corrupt_state"; documentId: string; message: string };
@@ -113,9 +113,7 @@ export type CollabTransport = {
     document: Y.Doc;
     update: Uint8Array;
     origin: Extract<UpdateOrigin, { type: "user" | "system" }>;
-    expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
-  currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
   /**
    * The drafts that alone hold the document (its create is pending there): its Live room serves
    * their view of it. Unauthorized, like `roomRemoval`.
@@ -392,7 +390,7 @@ export type DocumentCheckpoints = {
 export type ModelDraftRow = {
   documentId: DocumentId;
   documentName: string | null;
-  contextLocation: import("@meridian/contracts/drafts").ThreadDraftListItem["contextLocation"];
+  contextLocation: import("@meridian/contracts/drafts").DraftItem["contextLocation"];
   createdDocument?: boolean;
 };
 
@@ -478,11 +476,12 @@ export type EffectiveBlocksRead = VersionedDocumentRead<
   aheadSettlements: ReadonlyMap<string, string>;
 };
 
-export type DraftPeerShadowAccess = {
+/** Reads a document as one reader sees it: Live, or a draft's view with its suggestions applied. */
+export type EffectiveDocumentReader = {
   readEffectiveRevision(
     input: {
       documentId: DocumentId;
-      /** The reading thread: its peer and its reply's staged writes count. */
+      /** The reading thread: its draft and its reply's staged writes count. */
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
@@ -573,7 +572,7 @@ export type CollabDomain = CollabTransport &
   TurnLiveLineageAccess &
   DocumentCheckpoints &
   DocumentAttribution &
-  DraftPeerShadowAccess &
+  EffectiveDocumentReader &
   CollabDrafts &
   CollabDraftResolver &
   DocumentCreationAggregate & { importBinder: ImportLinkBinder };

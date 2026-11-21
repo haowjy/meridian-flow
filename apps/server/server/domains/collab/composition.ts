@@ -42,7 +42,6 @@ import { createDrizzleBlockText } from "./adapters/drizzle-block-text.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
 import { createDrizzleDocumentProjectionEffects } from "./adapters/drizzle-document-activity.js";
-import { createDrizzleAuthorityGenerationReader } from "./adapters/drizzle-document-authority-head.js";
 import { createDrizzleDocumentCommands } from "./adapters/drizzle-document-commands.js";
 import {
   type AheadRegistrationRecovery,
@@ -86,7 +85,7 @@ import { createDocumentCreationAggregate } from "./domain/document-creation.js";
 import { createCutReader, createDocumentDerivationService } from "./domain/document-derivations.js";
 import {
   scopeAgentEdit,
-  scopeDraftPeer,
+  scopeEffectiveReader,
   scopeModelEditWrite,
 } from "./domain/document-link-scope-doors.js";
 import {
@@ -260,7 +259,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const projectionRefresher = { refresh: runDocumentWriteHook };
 
-  const readAuthorityGeneration = createDrizzleAuthorityGenerationReader(deps.db);
   const workDraftPendingStore = createDrizzleWorkDraftPendingStore(deps.db);
   const agentEditRouter = createAgentEditRouter({
     liveUtilityCore: runtime.liveUtilityCore,
@@ -307,7 +305,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     afterCallerCommit: (callback) => {
       runAfterDrizzleCommit(callback);
     },
-    readAuthorityHeadGeneration: readAuthorityGeneration,
   });
 
   const treeHistory = createDrizzleTreeHistory(
@@ -358,7 +355,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     treeCut: (draftId) => treeCutOf(deps.db, deps.treeLists, draftId),
     pending: workDraftPendingStore,
   });
-  const draftPeers = scopeDraftPeer(
+  const effectiveReader = scopeEffectiveReader(
     createEffectiveDocumentReader({
       blockText: createDrizzleBlockText(deps.db),
       agentEdit,
@@ -430,7 +427,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       headSchemaVersion: persistence.journal.headSchemaVersion,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
-      currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
       async draftsHolding(documentId) {
         const rows = await currentDrizzleDb(deps.db)
           .select({ draft: draftTreeNodes.draftId })
@@ -481,7 +477,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     lineage,
     checkpoints,
     attribution: createDocumentAttribution({ latestUpdate: persistence.store.latestUpdate }),
-    draftPeers,
+    effectiveReader,
     drafts: {
       ...drafts,
       presses: createDrizzlePress(deps.db, {

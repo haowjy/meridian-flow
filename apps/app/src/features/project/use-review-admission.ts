@@ -10,7 +10,7 @@ import type { DraftPin } from "@/client/project-shell/document-views";
 import type { DraftReviewContextValue } from "@/features/draft-review/DraftReviewProvider";
 import type { HostEditor } from "@/features/draft-review/host-editor";
 import { useOpenReviewChanges } from "@/features/draft-review/useOpenReviewChanges";
-import type { AiDraftLaunchTarget } from "./review-launch";
+import type { ItemLaunchTarget } from "./review-launch";
 
 /** The route's verdict on a review the address names, asked of the server by owner and item. */
 export type ReviewAddressAdmission = "pending" | "admitted" | "unavailable" | "failed";
@@ -19,12 +19,12 @@ export type ReviewAdmissionPort = {
   /** Records the focused change on the view's pin. */
   write(review: DraftPin): void;
   /** `false`: refused, because the item's known draft is closed and no newer one replaced it. */
-  admit(target: AiDraftLaunchTarget): Promise<boolean>;
+  admit(target: ItemLaunchTarget): Promise<boolean>;
 };
 
 export type ReviewedDocument = {
   documentId: string;
-  scheme: AiDraftLaunchTarget["contextLocation"]["scheme"] | null;
+  scheme: ItemLaunchTarget["contextLocation"]["scheme"] | null;
   path: string | null;
   /** The draft the document paints; null on Live or while the paint is held. */
   review: DraftPin | null;
@@ -124,7 +124,7 @@ export function useReviewAdmission({
     )
       return;
     // The list, when loaded, supplies labels and whole-item state; it is never an authority.
-    const file = review.files.find((candidate) => candidate.draft.itemKey === itemKey);
+    const file = review.files.find((candidate) => candidate.item.itemKey === itemKey);
     restoring.current = itemKey;
     void port
       .admit({

@@ -27,7 +27,6 @@ export const liveLocationVersion = sql<bigint>`coalesce(${treeNodes.locationVers
  * `treeNodes`. `cutBehind`: the room's cut differs from the document's head or location.
  */
 const cutBehind = [
-  ne(documentBlockRooms.cutGeneration, documentYjsHeads.authorityGeneration),
   ne(documentBlockRooms.cutAdmissionSeq, documentYjsHeads.nextAdmissionSequence),
   sql`${documentBlockRooms.cutLocationVersion} <> coalesce(${treeNodes.locationVersion}, 0)`,
 ];

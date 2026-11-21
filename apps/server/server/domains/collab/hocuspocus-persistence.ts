@@ -1,7 +1,6 @@
 /** The collab domain's room transport: the live rooms behind one service. */
 import type { Hocuspocus } from "@hocuspocus/server";
 import type { UpdateMeta } from "@meridian/agent-edit/integration";
-import type { DocumentId } from "@meridian/contracts/runtime";
 import type { EventSink } from "../observability/index.js";
 import type { CollabTransport, UpdateOrigin } from "./contracts.js";
 import type { CheckpointJournal } from "./domain/ports/checkpoint-authority.js";
@@ -20,14 +19,12 @@ type HocuspocusPersistenceDeps = {
    * Defaults to running now, for adapters without transactions.
    */
   afterCallerCommit?(callback: () => void): void;
-  readAuthorityHeadGeneration?(documentId: DocumentId): Promise<bigint>;
 };
 
 export type HocuspocusPersistenceService = Pick<
   CollabTransport,
   | "loadHocuspocusDocument"
   | "admitLiveWriterUpdate"
-  | "currentLiveGeneration"
   | "validateHocuspocusDocument"
   | "storeHocuspocusDocument"
   | "drainHocuspocusPersistence"

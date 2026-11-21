@@ -14,7 +14,7 @@ import {
 } from "@/features/draft-review/review-model";
 import { hasApply, hasTreeLine, opensAsDocument } from "@/features/draft-review/tree-line";
 import { useBoundWorkDraftCommands } from "@/features/draft-review/usePressCommands";
-import { useAiDraftLauncher } from "@/features/project/review-launch";
+import { useItemLauncher } from "@/features/project/review-launch";
 import { useSidebarTabs } from "@/features/project/shell/sidebar/sidebar-tabs-store";
 import { reviewCount, useShellTreeVersion } from "@/features/project/tree-version";
 import { useWorkScope } from "@/features/project/use-work-scope";
@@ -22,7 +22,7 @@ import {
   type DockFile,
   dockFile,
   isOnStrip,
-  isSharedDraft,
+  isSharedItem,
   totalChanges,
   wholeDockFile,
 } from "./draft-dock-files";
@@ -51,7 +51,7 @@ export function useDraftDock({
     active && owned?.surface.kind === "strip" && owned.surface.threadId === threadId ? owned : null;
   const notice = useNoticeLine(here);
   const listedFiles = useOwnerDrafts(controller.projectId, controller.draftId).files ?? [];
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const runner = controller;
   const [imagePreview, setImagePreview] = useState<DraftImagePreviewTarget | null>(null);
   const { projectId, draftId } = controller;
@@ -59,16 +59,14 @@ export function useDraftDock({
 
   const candidates = useMemo(
     () =>
-      listedFiles.filter((row) =>
-        row.draft.actorThreads.some((chat) => chat.threadId === threadId),
-      ),
+      listedFiles.filter((row) => row.item.actorThreads.some((chat) => chat.threadId === threadId)),
     [listedFiles, threadId],
   );
   // A peer's Apply or Discard reaches this chat only as a change in which drafts wait here.
   const queryClient = useQueryClient();
   const waiting = candidates
-    .filter((row) => row.draft.hasDraft)
-    .map((row) => row.draft.itemKey)
+    .filter((row) => row.item.textChanges > 0)
+    .map((row) => row.item.itemKey)
     .join();
   const seenWaiting = useRef(waiting);
   useEffect(() => {
@@ -80,9 +78,9 @@ export function useDraftDock({
   const drafted = candidates.map((row) => {
     // A document with text is pressed whole; one another chat drafted too is reviewed in the
     // Changes list, not pressed from here as this chat's.
-    if (row.draft.hasDraft && row.draft.tree?.deleted !== true) {
+    if (row.item.textChanges > 0 && row.item.tree?.deleted !== true) {
       const file = wholeDockFile(row, reviewFileTargetName(row, untitled));
-      return isSharedDraft(row.draft, threadId)
+      return isSharedItem(row.item, threadId)
         ? { ...file, count: 0, actionable: [], alone: false }
         : file;
     }
@@ -90,13 +88,13 @@ export function useDraftDock({
     return dockFile(
       row,
       reviewFileTargetName(row, untitled),
-      listedItemChanges(row.draft, []),
+      listedItemChanges(row.item, []),
       threadId,
     );
   });
   // A press in flight hides its rows.
   const files = drafted.filter(
-    (file) => !controller.owner.state(file.row.draft.itemKey).hidden && isOnStrip(file),
+    (file) => !controller.owner.state(file.row.item.itemKey).hidden && isOnStrip(file),
   );
   // What the Changes list holds beyond this chat's: its items (documents and folders), less the
   // documents the strip's Apply would empty. Counted over the listed drafts, not the rows on
@@ -118,8 +116,8 @@ export function useDraftDock({
   const review = useCallback(
     (file: DockFile, change?: ReviewChange) => {
       // A draft-only picture opens as a preview; a created document opens like any other.
-      if (!opensAsDocument(file.row.draft)) {
-        if (file.row.draft.binary)
+      if (!opensAsDocument(file.row.item)) {
+        if (file.row.item.binary)
           setImagePreview({
             projectId,
             draftId,
@@ -133,11 +131,11 @@ export function useDraftDock({
     [openReviewFile, projectId, draftId],
   );
 
-  const applicable = actionableFiles.filter((file) => hasApply(file.row.draft));
+  const applicable = actionableFiles.filter((file) => hasApply(file.row.item));
 
   const discardItems = (files: readonly DockFile[]) => {
     return files.map((file) => ({
-      draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
+      item: { documentId: file.row.documentId, itemKey: file.row.item.itemKey },
       target: file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
     }));
   };
@@ -149,7 +147,7 @@ export function useDraftDock({
         mode === "discard"
           ? discardItems(files)
           : files.map((file) => ({
-              draft: { documentId: file.row.documentId, itemKey: file.row.draft.itemKey },
+              item: { documentId: file.row.documentId, itemKey: file.row.item.itemKey },
               target: file.whole ? ({ kind: "draft" } as const) : targetOfChanges(file.actionable),
             }));
       if (items.length === 0) return;
@@ -178,9 +176,9 @@ export function useDraftDock({
     showCommands: actionableFiles.length > 0,
     canApply: applicable.some(
       (file) =>
-        (!file.row.draft.hasDraft && file.row.draft.isNew) ||
-        hasTreeLine(file.row.draft) ||
-        (file.whole && file.row.draft.textChanges > 0),
+        (file.row.item.textChanges === 0 && file.row.item.isNew) ||
+        hasTreeLine(file.row.item) ||
+        (file.whole && file.row.item.textChanges > 0),
     ),
     canCommand: actionableFiles.length > 0 && !generating && !controller.dispositionLocked,
     projectId,
@@ -189,7 +187,7 @@ export function useDraftDock({
     imagePreview,
     closeImagePreview: () => setImagePreview(null),
     /** The files Apply would delete; more than one file asks first. */
-    deletingToApply: applicable.filter((file) => file.row.draft.tree?.deleted === true),
+    deletingToApply: applicable.filter((file) => file.row.item.tree?.deleted === true),
     apply: () => send("apply"),
     discard: () => send("discard"),
     /** A listed (`whole`) row's own commands: its whole draft, as the row has no changes to pick. */

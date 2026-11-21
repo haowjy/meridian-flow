@@ -1,13 +1,13 @@
-/** Admission's check that a draft upload is the sending chat's own, named by identity not spelling. */
+/** Admission's check that an upload is the sending chat's own, named by identity not spelling. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { TopPrimaryChatResolver } from "../../threads/ports/top-primary-chat.js";
 import type { UploadIdentityPort } from "./upload-identity.js";
 
-export function createDraftUploadVerifier(deps: {
+export function createChatUploadVerifier(deps: {
   identities: Pick<UploadIdentityPort, "lookupUpload">;
   chats: TopPrimaryChatResolver;
 }) {
-  return async function verifyDraftUpload(
+  return async function verifyChatUpload(
     reference: { documentId: string; intakeId: string },
     threadId: string,
   ): Promise<boolean> {

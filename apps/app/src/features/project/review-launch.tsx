@@ -1,6 +1,6 @@
 /**
  * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
- * the Work page, the version menu, the phone) calls `openAiDraft`: it sets the document's view to
+ * the Work page, the version menu, the phone) calls `openItem`: it sets the document's view to
  * that draft, with the clicked change as the pin's change, and opens the document in the pane
  * `place` picks. In main, the route command opens it and writes the address; beside, `place` shows it. That pane's host then paints the draft and focuses the change. Latest launch wins.
  */
@@ -25,7 +25,7 @@ import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
 import { useShellTreeVersion } from "./tree-version";
 
-export type AiDraftLaunchTarget = {
+export type ItemLaunchTarget = {
   draftId: string;
   documentId: string;
   itemKey: string;
@@ -39,11 +39,11 @@ export type AiDraftLaunchTarget = {
   made?: true;
 };
 
-type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
+type EditorReviewCommand = (target: ItemLaunchTarget) => Promise<void>;
 
 function reportRouteSettlement(
   projectId: string,
-  target: AiDraftLaunchTarget,
+  target: ItemLaunchTarget,
   kind: "applied" | "cancelled" | "superseded" | "failed",
   attempt: number,
 ): void {
@@ -144,8 +144,8 @@ function useOptionalOpenEditorReview(): EditorReviewCommand | null {
 
 const committed = (documentId: string): OpenDocumentOutcome => ({ kind: "committed", documentId });
 
-/** Opens a document on a draft, in the pane `place` picks. */
-function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOutcome> {
+/** Opens a draft item's document in review, in the pane `place` picks. */
+function useOpenItem(): (target: ItemLaunchTarget) => Promise<OpenDocumentOutcome> {
   const openEditorReview = useOptionalOpenEditorReview();
   const place = useOptionalPlaceHere();
   const shell = useShellTreeVersion();
@@ -176,32 +176,32 @@ function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOu
   );
 }
 
-export function useAiDraftLauncher() {
-  const openDraft = useOpenDraft();
-  const openAiDraft = useCallback(
-    (target: AiDraftLaunchTarget) => {
-      void openDraft(target);
+export function useItemLauncher() {
+  const open = useOpenItem();
+  const openItem = useCallback(
+    (target: ItemLaunchTarget) => {
+      void open(target);
     },
-    [openDraft],
+    [open],
   );
 
-  /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
+  /** Opens a listed item in review. An item with no address yet (still being written) has nothing to open. */
   const openReviewFile = useCallback(
     (row: ReviewFileTarget, draftId: string, focus?: ReviewFocus) =>
       row.contextLocation &&
-      openAiDraft({
+      openItem({
         draftId,
         documentId: row.documentId,
-        itemKey: row.draft.itemKey,
+        itemKey: row.item.itemKey,
         contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
         draftOnly: row.draftOnly,
         ...(focus ? { focus } : {}),
       }),
-    [openAiDraft],
+    [openItem],
   );
 
-  return { openAiDraft, openReviewFile };
+  return { openItem, openReviewFile };
 }
 
 /** A document the writer just made: where the version it was made in puts it. */
@@ -224,12 +224,12 @@ export function useOpenCreatedDocument(): (
   opened?: () => void,
 ) => Promise<void> {
   const shell = useShellTreeVersion();
-  const { openAiDraft } = useAiDraftLauncher();
+  const { openItem } = useItemLauncher();
   const shown = shell?.version.view.draft ?? null;
   return useCallback(
     async (document, live, opened) => {
       if (!shown) return live();
-      openAiDraft({
+      openItem({
         draftId: shown,
         documentId: document.documentId,
         itemKey: draftItemKey(shown as DraftId, document.documentId as DocumentId),
@@ -240,7 +240,7 @@ export function useOpenCreatedDocument(): (
       });
       opened?.();
     },
-    [shown, openAiDraft],
+    [shown, openItem],
   );
 }
 
@@ -265,12 +265,12 @@ export type LinkPlacement = (
  */
 export function useLinkPlacement(projectId: string | null, draftId: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, draftId);
-  const openDraft = useOpenDraft();
+  const openItem = useOpenItem();
   const place = useOptionalPlaceHere();
   return useCallback(
     (document, live, workId) => {
       if (document.review)
-        return openDraft({
+        return openItem({
           documentId: document.documentId,
           ...document.review,
           draftOnly: true,
@@ -278,10 +278,10 @@ export function useLinkPlacement(projectId: string | null, draftId: string | nul
       if (document.trashed) return live(document);
       const drafted = draftId ? fileForDocument(document.documentId) : null;
       if (draftId && drafted?.contextLocation)
-        return openDraft({
+        return openItem({
           draftId,
           documentId: document.documentId,
-          itemKey: drafted.draft.itemKey,
+          itemKey: drafted.item.itemKey,
           contextLocation: drafted.contextLocation,
           documentName: drafted.documentName ?? undefined,
           draftOnly: drafted.draftOnly,
@@ -293,7 +293,7 @@ export function useLinkPlacement(projectId: string | null, draftId: string | nul
       } as const;
       return live(document, place ? () => place(placed) === "side" : undefined);
     },
-    [fileForDocument, draftId, openDraft, place],
+    [fileForDocument, draftId, openItem, place],
   );
 }
 

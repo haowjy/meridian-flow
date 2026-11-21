@@ -8,8 +8,8 @@ import { useContext, useSyncExternalStore } from "react";
 import { useOwnerDraftList } from "@/client/query/useOwnerDrafts";
 import type { DraftChangesData } from "./draft-changes";
 import { useDraftCommandState } from "./draft-changes";
+import type { DraftItemRef } from "./draft-review-session";
 import { type HostEditor, HostEditorContext } from "./host-editor";
-import type { DraftRef } from "./review-command-types";
 import { itemChange, type ReviewChange } from "./review-model";
 import { treeChange, treeLineOf } from "./tree-line";
 import type { DraftReviewController } from "./useDraftReviewController";
@@ -23,7 +23,10 @@ type ReviewRead = {
 /**
  * The open review's changes are the Work's suggestions in the host's editor. `host` serves the one caller above the host's boundary (its address admission).
  */
-function useSuggestionRead(draft: DraftRef | null, host: HostEditor | null): ReviewRead {
+function useSuggestionRead(
+  draft: (DraftItemRef & { projectId: string; draftId: string }) | null,
+  host: HostEditor | null,
+): ReviewRead {
   const fromBoundary = useContext(HostEditorContext);
   const store = fromBoundary ?? host;
   const editor = useSyncExternalStore(
@@ -57,7 +60,7 @@ export function useOpenReviewChanges(
   const command = useDraftCommandState(draft?.itemKey ?? "");
   const listed = useOwnerDraftList(controller.projectId, controller.draftId, Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
-  const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
+  const withoutText = item?.textChanges === 0 || item?.tree?.deleted === true;
   const read = useSuggestionRead(draft, options?.host ?? null);
   const line = item && !item.isNew ? treeLineOf(item) : null;
   const changes = line?.kind === "delete" ? [] : read.changes;

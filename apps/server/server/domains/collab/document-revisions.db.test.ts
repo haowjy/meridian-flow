@@ -28,7 +28,7 @@ import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
 import { createDrizzleWorkCreates } from "./adapters/drizzle-work-creates.js";
-import { scopeDraftPeer } from "./domain/document-link-scope-doors.js";
+import { scopeEffectiveReader } from "./domain/document-link-scope-doors.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import {
@@ -95,7 +95,7 @@ async function fixture(
   });
   // The reads spell from the harness's scope, so their revisions compare with these.
   const links = f.links;
-  const effective = scopeDraftPeer(
+  const effective = scopeEffectiveReader(
     createEffectiveDocumentReader({
       blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
       resolveFiletype: async () => null,

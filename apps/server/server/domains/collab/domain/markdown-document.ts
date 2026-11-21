@@ -153,7 +153,7 @@ export type MarkdownDocumentEngine = {
    * caller's transaction (contract §6.2); none of them parses Markdown. Each
    * applies only to the holder it was bound for, as the whole-document
    * overwrite of what the document holds. A fresh write that finds content
-   * it never saw is `stale_generation`.
+   * it never saw is `stale_document`.
    */
   setMarkdown(input: {
     documentId: DocumentId;
@@ -336,7 +336,7 @@ export function createMarkdownDocumentEngine(
     yjsOrigin: TransactionOrigin,
   ): Promise<Result<void, SyncError>> {
     if (content.fresh && deps.model.getBlocks(toDocHandle(draft)).length > 0) {
-      return Err({ code: "stale_generation", documentId });
+      return Err({ code: "stale_document", documentId });
     }
     const links = await spelling(documentId, [draft], LIVE_VIEW, [...content.blocks]);
     const written = overwriteWithAssigned({
@@ -929,8 +929,8 @@ export function syncErrorMessage(error: SyncError): string {
   switch (error.code) {
     case "not_found":
       return `Document not found: ${error.documentId}`;
-    case "stale_generation":
-      return `Document generation changed: ${error.documentId}`;
+    case "stale_document":
+      return `Document changed under the write: ${error.documentId}`;
     case "checkpoint_not_found":
       return `Checkpoint not found: ${error.checkpointId}`;
     case "corrupt_state":

@@ -11,10 +11,10 @@ import { CommandIdSchema } from "@meridian/contracts/commands";
 import type {
   DocumentDraftHint,
   DocumentDraftHintsResponse,
+  DraftItem,
+  DraftItemsResponse,
   PressResult,
   PressUndoResult,
-  ThreadDraftListItem,
-  ThreadDraftListResponse,
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
@@ -132,7 +132,7 @@ function parseBody<S extends z.ZodTypeAny>(schema: S, body: unknown, what: strin
 export async function handleDraftListRequest(
   deps: DraftRouteServices,
   input: { projectId: ProjectId; draft: string; userId: UserId },
-): Promise<ThreadDraftListResponse> {
+): Promise<DraftItemsResponse> {
   const { draft, stored } = await draftOfProject(deps, input);
   if (!stored) return { items: [], folders: [], saw: {} };
   const listed = await deps.documentSync.draftReview.listItems({ draft });
@@ -215,12 +215,11 @@ async function pendingTreeChange(
 export function toWireItem(
   item: DraftReviewItem,
   threadTitles: ReadonlyMap<string, string>,
-): ThreadDraftListItem {
+): DraftItem {
   return {
     draftId: item.draftId,
     itemKey: item.itemKey,
     documentId: item.documentId,
-    hasDraft: item.hasDraft,
     textChanges: item.textChanges,
     origin: item.origin,
     isNew: item.isNew,

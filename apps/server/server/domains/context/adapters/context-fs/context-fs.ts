@@ -20,7 +20,7 @@ import type {
   CollabDomain,
   DocumentCreationAggregate,
   DocumentLinkScopes,
-  DraftPeerShadowAccess,
+  EffectiveDocumentReader,
   EffectiveReadVersion,
   MarkdownDocumentStore,
   SyncError,
@@ -99,7 +99,7 @@ export interface ContextFSDeps {
   documentSync: MarkdownDocumentStore &
     Pick<CollabDomain, "refreshDocumentProjection"> &
     Pick<
-      DraftPeerShadowAccess,
+      EffectiveDocumentReader,
       | "writeWorkCreatedContent"
       | "readEffectiveHashlines"
       | "readEffectiveMarkdown"
@@ -232,8 +232,11 @@ export class ContextFS implements ContextSchemeAdapter {
           code: "io_error",
           message: `Yjs document not found: ${error.documentId}`,
         };
-      case "stale_generation":
-        return { code: "io_error", message: `Document generation changed: ${error.documentId}` };
+      case "stale_document":
+        return {
+          code: "io_error",
+          message: `Document changed under the write: ${error.documentId}`,
+        };
       case "checkpoint_not_found":
         return { code: "io_error", message: `Yjs checkpoint not found: ${error.checkpointId}` };
       case "corrupt_state":

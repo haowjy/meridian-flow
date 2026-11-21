@@ -51,7 +51,6 @@ import { captureDrizzleCheckpoint } from "./drizzle-checkpoint-capture.js";
 import {
   advanceHead,
   allocateAdmission,
-  FIRST_AUTHORITY_GENERATION,
   findDocumentAuthorityHead,
   findHeadSchemaVersion,
   initializeHead,
@@ -256,7 +255,6 @@ async function latestCheckpoint(
   const conditions = [
     eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
     eq(documentYjsCheckpoints.authorityId, authority.authorityId),
-    eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
   ];
   if (untilSeq !== undefined) conditions.push(lte(documentYjsCheckpoints.upToSeq, untilSeq));
   const [row] = await db
@@ -299,7 +297,6 @@ async function insertCheckpoint(
     .values({
       documentId: asDocumentId(documentId),
       authorityId: authorityHead.authorityId,
-      authorityGeneration: authorityHead.generation,
       attributionManifest,
       state: toBuffer(state),
       stateVector: toBuffer(stateVector),
@@ -359,17 +356,11 @@ async function insertCheckpoint(
 async function validateAppendAuthority(
   db: JournalDb,
   documentId: string,
-  authority?: { authorityId: string; generation: bigint },
+  authority?: { authorityId: string },
 ): Promise<void> {
   if (!authority) return;
   const head = await findDocumentAuthorityHead(db, documentId);
-  if (
-    !head ||
-    head.authorityId !== authority.authorityId ||
-    head.generation !== authority.generation
-  ) {
-    throw new RetiredDocumentHandleError();
-  }
+  if (head?.authorityId !== authority.authorityId) throw new RetiredDocumentHandleError();
 }
 
 type AppendedUpdate = { seq: number };
@@ -392,7 +383,6 @@ async function insertUpdate(
     .values({
       documentId: asDocumentId(documentId),
       authorityId: authorityHead.authorityId,
-      authorityGeneration: authorityHead.generation,
       admissionSequence: authorityHead.admissionSequence,
       batchOrdinal: 0,
       updateData: toBuffer(update),
@@ -410,7 +400,7 @@ async function checkpointAttributionManifest(
   db: JournalDb,
   documentId: string,
   upToSeq: number,
-  authorityHead: { authorityId: DocumentAuthorityId; generation: bigint },
+  authorityHead: { authorityId: DocumentAuthorityId },
 ): Promise<unknown> {
   const [checkpoint] = await db
     .select()
@@ -419,7 +409,6 @@ async function checkpointAttributionManifest(
       and(
         eq(documentYjsCheckpoints.documentId, asDocumentId(documentId)),
         eq(documentYjsCheckpoints.authorityId, authorityHead.authorityId),
-        eq(documentYjsCheckpoints.authorityGeneration, authorityHead.generation),
         lte(documentYjsCheckpoints.upToSeq, upToSeq),
       ),
     )
@@ -428,7 +417,6 @@ async function checkpointAttributionManifest(
   const previousManifest = checkpoint
     ? parseAttributionManifest(checkpoint.attributionManifest, {
         authorityId: checkpoint.authorityId,
-        generation: checkpoint.authorityGeneration,
         checkpointId: String(checkpoint.id),
       })
     : null;
@@ -446,7 +434,6 @@ async function checkpointAttributionManifest(
       and(
         eq(documentYjsUpdates.documentId, asDocumentId(documentId)),
         eq(documentYjsUpdates.authorityId, authorityHead.authorityId),
-        eq(documentYjsUpdates.authorityGeneration, authorityHead.generation),
         // The previous manifest already attributes every row through its checkpoint.
         gt(documentYjsUpdates.id, checkpoint?.upToSeq ?? 0),
         lte(documentYjsUpdates.id, upToSeq),
@@ -571,10 +558,7 @@ async function materializeCurrentCheckpoint(
       currentDrizzleDb(db as Database),
       cut.documentId,
     );
-    return (
-      current?.authorityId === cut.authority.authorityId &&
-      current.generation === cut.authority.generation
-    );
+    return current?.authorityId === cut.authority.authorityId;
   };
   if (!(await isCurrent())) return null;
   try {
@@ -628,8 +612,7 @@ export function createDrizzleJournal(
         // with the room's before anything is inserted, since the insert stamps what the bump
         // returned.
         const head = await allocateAdmission(txDb, docId);
-        if (head.authorityId !== authority.authorityId || head.generation !== authority.generation)
-          throw new RetiredDocumentHandleError();
+        if (head.authorityId !== authority.authorityId) throw new RetiredDocumentHandleError();
         const row = await insertUpdate(txDb, docId, update, meta, head);
         afterCommit([docId]);
         return row;
@@ -676,7 +659,6 @@ export function createDrizzleJournal(
               return {
                 documentId: asDocumentId(entry.docId),
                 authorityId: authorityHead.authorityId,
-                authorityGeneration: authorityHead.generation,
                 admissionSequence: authorityHead.admissionSequence,
                 batchOrdinal,
                 updateData: toBuffer(entry.update),
@@ -747,7 +729,6 @@ export function createDrizzleJournal(
           and(
             eq(documentYjsHeads.documentId, documentYjsUpdates.documentId),
             eq(documentYjsHeads.authorityId, documentYjsUpdates.authorityId),
-            eq(documentYjsHeads.authorityGeneration, documentYjsUpdates.authorityGeneration),
           ),
         )
         .leftJoin(turns, eq(turns.id, documentYjsUpdates.actorTurnId))
@@ -776,7 +757,6 @@ export function createDrizzleJournal(
           and(
             eq(documentYjsCheckpoints.documentId, documentYjsHeads.documentId),
             eq(documentYjsCheckpoints.authorityId, documentYjsHeads.authorityId),
-            eq(documentYjsCheckpoints.authorityGeneration, documentYjsHeads.authorityGeneration),
             checkpointBound === undefined
               ? undefined
               : lte(documentYjsCheckpoints.upToSeq, checkpointBound),
@@ -785,12 +765,10 @@ export function createDrizzleJournal(
         .orderBy(desc(documentYjsCheckpoints.upToSeq), desc(documentYjsCheckpoints.id))
         .limit(1)
         .as("checkpoint");
-      // One statement observes authority, checkpoint and tail together. A restore may replace
-      // the authority between separate reads.
+      // One statement observes authority, checkpoint and tail together.
       const rows = await readDb
         .select({
           authorityId: documentYjsHeads.authorityId,
-          generation: documentYjsHeads.authorityGeneration,
           schemaVersion: documentYjsHeads.schemaVersion,
           checkpoint: {
             // A large checkpoint is transferred once, not once for every retained tail row.
@@ -809,7 +787,6 @@ export function createDrizzleJournal(
           and(
             eq(documentYjsUpdates.documentId, documentYjsHeads.documentId),
             eq(documentYjsUpdates.authorityId, documentYjsHeads.authorityId),
-            eq(documentYjsUpdates.authorityGeneration, documentYjsHeads.authorityGeneration),
             gt(documentYjsUpdates.id, sql`coalesce(${checkpoint.upToSeq}, 0)`),
             opts.since === undefined ? undefined : gte(documentYjsUpdates.id, opts.since),
             opts.until === undefined ? undefined : lte(documentYjsUpdates.id, opts.until),
@@ -826,7 +803,7 @@ export function createDrizzleJournal(
         row.update ? [mapUpdate(row.update, "journal", row.authorHandle)] : [],
       );
       return {
-        authority: { authorityId: head.authorityId, generation: head.generation },
+        authority: { authorityId: head.authorityId },
         checkpoint: head.checkpoint?.state ? toBytes(head.checkpoint.state) : null,
         updates,
         persistenceWatermark: Math.max(head.checkpoint?.upToSeq ?? 0, updates.at(-1)?.seq ?? 0),
@@ -847,12 +824,7 @@ export function createDrizzleJournal(
         await lockDocumentMutation(txDb, docId);
         // A checkpoint captured before a removal stores nothing after it.
         const current = await findDocumentAuthorityHead(txDb, docId, { notPurged: true });
-        if (
-          !current ||
-          current.authorityId !== captured.authorityId ||
-          current.generation !== captured.generation
-        )
-          return;
+        if (current?.authorityId !== captured.authorityId) return;
         await testHook("checkpoint.afterAuthorityRead");
         await payload.validateInputs();
         const existing = await latestCheckpoint(txDb, docId, captured);
@@ -934,7 +906,6 @@ function createServerInitialDocumentSeeds(db: JournalDb): InitialDocumentSeeds {
             batch.map((seed) => ({
               documentId: asDocumentId(seed.documentId),
               authorityId: seed.authorityId,
-              authorityGeneration: FIRST_AUTHORITY_GENERATION,
               attributionManifest: manifest,
               state: toBuffer(seed.state),
               stateVector: toBuffer(seed.stateVector),
@@ -986,11 +957,7 @@ export function createDrizzleCollabFacadeStore(db: JournalDb): CollabFacadeStore
         const tx = currentDrizzleDb(db as Database) as JournalDb;
         await lockDocumentMutation(tx, docId);
         const current = await readDocumentAuthorityHead(tx, docId, { notPurged: true });
-        if (
-          current.authorityId !== captured.authorityId ||
-          current.generation !== captured.generation
-        )
-          return null;
+        if (current.authorityId !== captured.authorityId) return null;
         await payload.validateInputs();
         const checkpointId = await insertCheckpoint(
           tx as JournalDb,

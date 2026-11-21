@@ -72,7 +72,7 @@ export type DocumentHostProps = {
   editorWorkId: string | null;
   /**
    * The draft whose review controls take the focus when they show (desktop): the draft an Apply
-   * or Next draft from another draft's controls opens. Held above the hosts, since each
+   * or Next document from another document's review opens. Held above the hosts, since each
    * document has its own.
    */
   focusReview?: string | null;
@@ -333,7 +333,7 @@ function PhoneDocumentFrame({
   const name = document.name;
   return (
     <PaintHold
-      status={name ? t`Opening ${name}` : t`Opening draft`}
+      status={name ? t`Opening ${name}` : t`Opening document`}
       className="paper relative h-full min-h-0"
     >
       <PaintCapture surface={document.documentId} />

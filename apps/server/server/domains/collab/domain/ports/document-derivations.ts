@@ -7,7 +7,6 @@ import type { DocumentLinkRow } from "../document-link-rows.js";
 // Changing the extractor must bump this version to invalidate older output.
 export const DOCUMENT_EXTRACTOR_VERSION = 7;
 export type DerivationWatermark = {
-  generation: bigint;
   admissionSequence: bigint;
   locationVersion: bigint;
   extractorVersion: number;

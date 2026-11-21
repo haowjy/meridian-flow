@@ -41,7 +41,6 @@ describe("live document text convergence", () => {
     const documentSync = {
       ...persistence,
       bindHocuspocus: () => undefined,
-      currentLiveGeneration: async () => 1n,
       roomRemoval: async () => null,
     };
     const services = {
@@ -99,7 +98,6 @@ describe("live document text convergence", () => {
           syncType: messageYjsUpdate,
           payload: delivery.update,
           userId: USER_ID,
-          expectedGeneration: 1n,
         });
         if (index === 0) {
           let acknowledged = false;

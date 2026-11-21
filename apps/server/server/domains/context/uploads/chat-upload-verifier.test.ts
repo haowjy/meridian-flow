@@ -1,9 +1,9 @@
 /** A chat cannot attach another chat's pending upload by id. */
 import { expect, it } from "vitest";
-import { createDraftUploadVerifier } from "./draft-upload-verifier.js";
+import { createChatUploadVerifier } from "./chat-upload-verifier.js";
 
 it("admits only the sending thread's top chat as the upload's owner", async () => {
-  const verify = createDraftUploadVerifier({
+  const verify = createChatUploadVerifier({
     identities: {
       lookupUpload: async () => ({ intakeId: "intake", ownerChatId: "chat-a" }) as never,
     },

@@ -1,7 +1,7 @@
 /** A draft's review list, its counts and the commands it is read under. */
 import type { DraftId } from "@meridian/contracts";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import type { ThreadDraftListItem, TreeSaw } from "@meridian/contracts/drafts";
+import type { DraftItem, TreeSaw } from "@meridian/contracts/drafts";
 import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { CollabDrafts, ModelDraftRow } from "../contracts.js";
 import type { DocumentCommands } from "./document-commands.js";
@@ -63,7 +63,7 @@ export function createWorkDraftReviewService(input: {
   };
 }
 
-export function reviewContextLocation(uri: string | null): ThreadDraftListItem["contextLocation"] {
+export function reviewContextLocation(uri: string | null): DraftItem["contextLocation"] {
   if (!uri) return null;
   const parsed = parseUnifiedContextUri(uri);
   return parsed.ok && isProjectContextTreeScheme(parsed.value.scheme)

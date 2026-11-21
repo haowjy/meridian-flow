@@ -77,8 +77,8 @@ export function ContextDocumentHost({
       ? fileForDocument(document.documentId)
       : null;
   const treeOnlyReview =
-    selectedReviewFile?.draft.itemKey === selectedReviewItemKey &&
-    isTreeOnly(selectedReviewFile.draft);
+    selectedReviewFile?.item.itemKey === selectedReviewItemKey &&
+    isTreeOnly(selectedReviewFile.item);
   const reviewItemKey = treeOnlyReview ? selectedReviewItemKey : null;
   // The pinned draft's list could not be read: say so here rather than paint Live under the pin.
   const queryClient = useQueryClient();
@@ -89,8 +89,8 @@ export function ContextDocumentHost({
           queryKey: projectQueryKeys.drafts(projectId, pinnedOwner),
         })
     : null;
-  // `readOnly` is the owner's scope (archived or trashed freezes it); the presentation decides whether
-  // this view ever types. Only the first is compared with the room's access.
+  // `readOnly` is the Work's scope (an archived or deleted Work's Scratch); the presentation decides
+  // whether this view ever types. Only the first is compared with the room's access.
   const editable = presentation.editable && !readOnly;
   const renderEditor = (
     session: DocumentSession | null,
@@ -127,8 +127,6 @@ export function ContextDocumentHost({
                   message={
                     failureReason === "not-visible" ? (
                       <Trans>Access lost (not saving to the server)</Trans>
-                    ) : retryDraftList ? (
-                      <Trans>Couldn't load this draft.</Trans>
                     ) : (
                       <Trans>Couldn't open this document.</Trans>
                     )
@@ -199,7 +197,7 @@ export function ContextDocumentHost({
       documentId={document.documentId}
       // A document only a Work has is plain text in its Live room, open while the Work has it: a
       // Discard closes the room, and its Undo opens it again.
-      workOnly={fileForDocument(document.documentId)?.draft.isNew === true}
+      workOnly={fileForDocument(document.documentId)?.item.isNew === true}
       bindingOwner={presentation.bindingOwner}
     >
       {renderEditor}
@@ -213,11 +211,10 @@ function ActiveReviewBinding(props: Parameters<typeof useActiveReviewBinding>[0]
 }
 
 /**
- * A room's scope follows its owner: an archived Work's drafts and scratch, and a trashed
- * chat's drafts, are read-only. The front editor already follows its room; when the server
- * names a scope that `readOnly` doesn't show, this tab's Works catalog or the review owner's
- * draft list is behind (another tab archived the Work or trashed the chat), and the notice,
- * its way back and `readOnly` all come from them. Asked on activation and on each named
+ * A room's scope follows its owner: an archived or deleted Work's Scratch is read-only. The
+ * front editor already follows its room; when the server names a scope that `readOnly` doesn't
+ * show, this tab's Works catalog is behind (another tab archived the Work), and the notice, its
+ * way back and `readOnly` all come from it. Asked on activation and on each named
  * scope; this tab's own commands never ask, because the room's next scope confirms them.
  */
 function RoomScopeCatalogCheck({

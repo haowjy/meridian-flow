@@ -1,5 +1,5 @@
 /** The review's changes shared by rows, editor focus, counts and commands. Attribution only overlays them. */
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import { type TreeLine, treeChange, treeLineOf } from "./tree-line";
 
 export type ReviewFocus = { id: string };
@@ -33,9 +33,7 @@ export interface ReviewChange extends ChangeAttribution {
 }
 
 /** Items with no text (pictures and empty creations) are still one review row. */
-export function itemChange(
-  item: Pick<ThreadDraftListItem, "itemKey" | "documentName">,
-): ReviewChange {
+export function itemChange(item: Pick<DraftItem, "itemKey" | "documentName">): ReviewChange {
   return {
     id: `item:${item.itemKey}`,
     excerpt: { removed: "", inserted: item.documentName ?? "" },
@@ -53,7 +51,7 @@ export function itemChange(
  */
 export function listedItemChanges(
   item: Pick<
-    ThreadDraftListItem,
+    DraftItem,
     "itemKey" | "documentName" | "wholeItem" | "isNew" | "tree" | "contextLocation"
   >,
   text: readonly ReviewChange[],

@@ -125,7 +125,6 @@ describe("durable document derivations", () => {
         blockOrder: ["prose"],
         wordCount: 0,
         documentHash: outputsOf("last good").documentHash,
-        cutGeneration: -1n,
         cutAdmissionSeq: -1n,
         cutLocationVersion: -1n,
         extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
@@ -190,7 +189,6 @@ describe("durable document derivations", () => {
       await transport.admitLiveWriterUpdate({
         documentId: documentId as never,
         document: room,
-        expectedGeneration: documentAuthority(room).generation,
         update,
         origin: { type: "user", userId: userId as never },
       });
@@ -293,7 +291,6 @@ describe("durable document derivations", () => {
       const keystroke = transport.admitLiveWriterUpdate({
         documentId: documentId as never,
         document: room,
-        expectedGeneration: authority.generation,
         update: Y.encodeStateAsUpdate(typist),
         origin: { type: "user", userId: userId as never },
       });

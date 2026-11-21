@@ -97,8 +97,8 @@ project tree's rows, written only by the tree list store (domains/context). Live
 purge. A checkpoint row with `background` set (a room store, or an empty
 seed's placeholder) deletes the document's other background rows in its own transaction;
 seeds with content and explicit checkpoints survive until document
-cascade. Retention reads the column, never `reason`, which is free text. Lazy checkpoint cuts validate their captured authority and
-generation after fetching inputs and again under the persistence lock. Schema versions are packed
+cascade. Retention reads the column, never `reason`, which is free text. Lazy checkpoint cuts validate their captured authority
+after fetching inputs and again under the persistence lock. Schema versions are packed
 only inside Drizzle adapters and must use the shared packer (no second literal);
 a `COLLAB_SCHEMA_VERSION` bump updates both Postgres column defaults and regenerates
 the baseline. The checkpoint range capture function stays one SQL

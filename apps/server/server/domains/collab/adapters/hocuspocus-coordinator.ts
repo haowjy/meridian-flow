@@ -23,7 +23,6 @@ import { partitionConcurrentUpdates } from "../domain/concurrent-updates.js";
 import {
   bindDocumentAuthority,
   boundDocumentAuthority,
-  documentAuthority,
   isDocumentHandleRetired,
   RetiredDocumentHandleError,
   retireDocumentHandle,
@@ -255,13 +254,11 @@ async function liveRoomCopy(
   const authority = snapshot.authority as CheckpointAuthority | undefined;
   const loaded = deps.hocuspocus().documents.get(docId);
   const bound = loaded && !isDocumentHandleRetired(loaded) ? boundDocumentAuthority(loaded) : null;
-  // A room bound to another generation is a retired version's: the journal names the current one.
+  // A room bound to another authority is a retired one's: the journal names the current one.
   const room =
     loaded &&
     !isDocumentHandleRetired(loaded) &&
-    (!authority ||
-      !bound ||
-      (bound.authorityId === authority.authorityId && bound.generation === authority.generation))
+    (!authority || !bound || bound.authorityId === authority.authorityId)
       ? loaded
       : undefined;
   if (!room && !snapshot.checkpoint && snapshot.updates.length === 0)
@@ -277,15 +274,14 @@ async function liveRoomCopy(
   if (authority) bindDocumentAuthority(copy, authority);
   return {
     doc: copy,
-    room: authority ? liveRoom(docId, authority.generation) : null,
+    room: authority ? liveRoom(docId) : null,
     position: snapshot.persistenceWatermark ?? 0,
   };
 }
 
 /** A live handle's room, by the authority its open or journal read bound to it. */
 export function liveRoomFor(docId: string, doc: Y.Doc): string | null {
-  const authority = boundDocumentAuthority(doc);
-  return authority ? liveRoom(docId, authority.generation) : null;
+  return boundDocumentAuthority(doc) ? liveRoom(docId) : null;
 }
 
 export function createHocuspocusCoordinatorForTest(
@@ -309,16 +305,6 @@ function createCoordinator(
       return await loadDocumentState(deps.journal, docId, handle, snapshot);
     } catch (cause) {
       if (cause instanceof RetiredDocumentHandleError && handle) {
-        // A cold open may have loaded a newer generation after our snapshot.
-        // Refuse this acquisition, but never evict that newer room.
-        if (!isDocumentHandleRetired(handle) && snapshot?.authority) {
-          const bound = documentAuthority(handle);
-          if (
-            bound.authorityId === snapshot.authority.authorityId &&
-            bound.generation > snapshot.authority.generation
-          )
-            throw cause;
-        }
         retireDocumentHandle(handle);
         const hp = deps.hocuspocus();
         if (hp.documents.get(docId) === handle) {
@@ -472,7 +458,7 @@ function createRoomDelivery(deps: {
         try {
           end((await deps.catchUp(docId, into)) ? "delivered" : "unloaded");
         } catch (cause) {
-          // A room retired for a replaced generation was closed by the attempt itself.
+          // A retired room was closed by the attempt itself.
           if (cause instanceof RetiredDocumentHandleError) end("unloaded");
           else {
             if (!failures) deps.diagnostics?.failed({ documentId: docId, cause });

@@ -28,7 +28,7 @@ import {
   useManuscriptState,
 } from "@/features/editor/ManuscriptStateNotice";
 import { useFocusSuccession } from "@/lib/focus-follow";
-import { useAiDraftLauncher } from "../review-launch";
+import { useItemLauncher } from "../review-launch";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
@@ -50,12 +50,12 @@ export function MobileDocumentReview({
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : null;
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const header = useReviewHeader({
     documentId,
     itemKey: itemKey ?? "",
     onCloseDraftOnly,
-    onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.draftId),
+    onOpenItem: (row: ReviewFileTarget) => openReviewFile(row, controller.draftId),
   });
   const [listOpen, setListOpen] = useState(false);
   const manuscriptState = useManuscriptState(projectId, document);

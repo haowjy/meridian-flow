@@ -193,7 +193,7 @@ const SAFE_MERIDIAN_ERROR_CODES = new Set([
   "scope_mismatch",
   "server_error",
   "spawn_depth_exceeded",
-  "stale_generation",
+  "stale_document",
   "stale_target",
   "tool_arguments_parse",
   "tool_error",

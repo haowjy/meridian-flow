@@ -14,14 +14,14 @@ export type DockFile = {
   count: number;
 };
 /**
- * Someone besides this chat wrote in the draft: another chat, the writer's own typing, or a
- * change of unknown author. Every other draft is this chat's alone.
+ * Someone besides this chat wrote in the item: another chat, the writer's own typing, or a
+ * change of unknown author. Every other item is this chat's alone.
  */
-export function isSharedDraft(draft: ReviewFileTarget["draft"] | undefined, threadId: string) {
+export function isSharedItem(item: ReviewFileTarget["item"] | undefined, threadId: string) {
   return (
-    !!draft &&
-    !draft.wholeItem &&
-    (draft.unattributed || draft.actorThreads.some((chat) => chat.threadId !== threadId))
+    !!item &&
+    !item.wholeItem &&
+    (item.unattributed || item.actorThreads.some((chat) => chat.threadId !== threadId))
   );
 }
 export function dockFile(
@@ -43,8 +43,8 @@ export function dockFile(
 }
 /** A document with text: the list says what changed; the press takes it whole. */
 export function wholeDockFile(row: ReviewFileTarget, name: string): DockFile {
-  const changes = listedItemChanges(row.draft, []);
-  const texts = row.draft.wholeItem ? 0 : row.draft.textChanges;
+  const changes = listedItemChanges(row.item, []);
+  const texts = row.item.wholeItem ? 0 : row.item.textChanges;
   return {
     row,
     name,

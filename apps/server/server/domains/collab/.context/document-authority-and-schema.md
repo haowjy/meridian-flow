@@ -1,7 +1,7 @@
 # Collab — document authority and schema admission
 
 This page defines the durable authority vocabulary and the one schema-aware
-content path. Authority is the durable head and its identity/generation, not a
+content path. Authority is the durable head and its identity, not a
 warm Y.Doc or an operation-specific mutation policy.
 
 ## Authority vocabulary
@@ -11,10 +11,10 @@ warm Y.Doc or an operation-specific mutation policy.
 - A **live document** is the mutable Y.Doc held by a loaded Hocuspocus room.
 
 Every loaded handle, room, checkpoint, writer frame, Markdown replacement, and
-agent journal batch carries the authority identity and generation that loaded
-it. Persistence revalidates both under the document mutation lock (a writer frame, under the head row
-its counter bump holds) and drops stale bytes instead of relabeling them. Nothing moves a
-generation today ([why](CONTEXT.md#authority-checkpoints-and-derivation)).
+agent journal batch carries the authority identity that loaded
+it. Persistence revalidates it under the document mutation lock (a writer frame, under the head row
+its counter bump holds) and drops stale bytes instead of relabeling them. Nothing replaces a
+document's history ([why](CONTEXT.md#authority-checkpoints-and-derivation)).
 
 ## Only explicit creation makes a head
 
@@ -38,7 +38,7 @@ and explicit repair of a living document whose authority is absent (the same
 `ensureDocumentAuthority`, seeded as an empty document: it reads first and
 writes only when the document has no state).
 Repair runs on a document text read (Markdown or export), live overwrite, the held
-live lease, and Hocuspocus room admission before its first generation read. A client
+live lease, and Hocuspocus room admission before the room loads. A client
 can create a tree node without ever opening its text room; that document has no
 authority yet and reads as empty. Text reads use the same initialize-only repair
 as room admission, so they neither mistake it for a missing document nor overwrite
@@ -101,7 +101,7 @@ All whole-document writes enter as a `BoundWrite`, not an unscoped Markdown
 string. The link binder parses, prepares the holder's link scope, assigns or
 preserves refs, registers ahead refs, and certifies the target before the
 caller opens a transaction. A fresh bind is initialize-only: admission refuses
-a non-empty target with `stale_generation`. Context checks the canonical path
+a non-empty target with `stale_document`. Context checks the canonical path
 under the project's list key and returns `stale_target` when its occupant changed.
 
 `agent-edit-runtime.ts` builds the codec once. Every serialization door gets a
@@ -124,8 +124,8 @@ records that committed live projection in its own transaction; see [the press](p
 Checkpoints are host-minted `CapturedCheckpointCut` values. They cover every
 journal row through their cut; a free state-vector/watermark pair and warm-room
 bytes are not checkpoint authority. Materialize outside the persistence lock,
-then revalidate authority identity, generation, and retention under lock.
-Stale checkpoint requests return `stale_generation`.
+then revalidate authority identity and retention under lock.
+Stale checkpoint requests return `stale_document`.
 
 Every server authority doc and every materialization of one (live
 docs, rooms in `yjs-ws-handler.ts`, clones, scratch docs) is `gc: false`, and a
@@ -149,7 +149,7 @@ writes and seeds at once and writer typing 2 s after typing stops, at most every
 10 s; no reader needs them fresh, because readers read live Yjs.
 
 Seed snapshots use the same mutation lock. A first seed is
-initialize-only, becomes the generation's base checkpoint, and reconciles an
+initialize-only, becomes the document's base checkpoint, and reconciles an
 already open room before success. Writer admission refuses no client ID and no
 Yjs root: nothing on the server writes under a fixed client ID or into a root of
 its own, so a writer frame has nothing it could collide with.

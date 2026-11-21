@@ -33,13 +33,6 @@ The purge batch bounds completed purges, not inspected candidates. Documents hel
 changes can make each sweep scan the full overdue backlog. Measure that backlog before changing the
 query or adding a held-candidate cursor.
 
-## Copy: client intent and draft destinations
-
-The browser sends a Copy under its own operation id with each root's `copyId` (a UUID the
-command takes and mints descendants around), from a live view: a drop across systems and
-Copy to… in the tree. Copy still refuses a draft placement destination (`invalid_operation`): a
-draft-mode chat's copy would need a draft create, which is E2's replica intent work.
-
 ## Copy: preparation cost
 
 A 200-document copy spends most of its time before the lock: reading each document's room

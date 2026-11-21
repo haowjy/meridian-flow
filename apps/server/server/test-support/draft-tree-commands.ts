@@ -1,6 +1,6 @@
 import type { DocumentId, DocumentLinkAnswer, WorkId } from "@meridian/contracts";
 import { canonicalContextUri, parseUnifiedContextUri } from "@meridian/contracts/context-uri";
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
 import { extractStoredLinks } from "@meridian/markup/stored-links";
@@ -93,7 +93,7 @@ export interface DraftTreeCommands {
   /** The Work's review list through its route core: the `items`. */
   review(work: ScenarioWork): ReturnType<typeof handleDraftListRequest>;
   /** The review list's `items` only. */
-  items(work: ScenarioWork): Promise<ThreadDraftListItem[]>;
+  items(work: ScenarioWork): Promise<DraftItem[]>;
   /**
    * The resolve route's answer for one stored link, read in a Work's view or live, from
    * `baseUri` (null for chat) and, when given, the holder pinned by id.
@@ -119,10 +119,7 @@ export interface DraftTreeCommands {
 }
 
 /** The review item of `documentId`; throws when the list has none. */
-export function itemFor(
-  items: readonly ThreadDraftListItem[],
-  documentId: DocumentId,
-): ThreadDraftListItem {
+export function itemFor(items: readonly DraftItem[], documentId: DocumentId): DraftItem {
   const item = items.find((candidate) => candidate.documentId === documentId);
   if (!item) throw new Error(`no review item for ${documentId}`);
   return item;
@@ -315,7 +312,6 @@ export function draftTreeCommands(
           document,
           update: Y.encodeStateAsUpdate(tab, Y.encodeStateVector(document)),
           origin: { type: "user", userId },
-          expectedGeneration: await sync.currentLiveGeneration(documentId),
         });
       } finally {
         hocuspocus.documents.delete(documentId);

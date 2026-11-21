@@ -9006,12 +9006,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "cut_generation": {
-          "name": "cut_generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
         "cut_admission_seq": {
           "name": "cut_admission_seq",
           "type": "bigint",
@@ -9165,12 +9159,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "authority_generation": {
-          "name": "authority_generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
         "attribution_manifest": {
           "name": "attribution_manifest",
           "type": "jsonb",
@@ -9312,13 +9300,6 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "authority_generation": {
-          "name": "authority_generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "1"
-        },
         "next_admission_sequence": {
           "name": "next_admission_sequence",
           "type": "bigint",
@@ -9433,12 +9414,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "authority_generation": {
-          "name": "authority_generation",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
         "admission_sequence": {
           "name": "admission_sequence",
           "type": "bigint",
@@ -9523,12 +9498,6 @@
           "columns": [
             {
               "expression": "authority_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "authority_generation",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

@@ -46,7 +46,7 @@ import { type FilesRoute, useTreeDropTarget } from "../../context/tree-drop/tree
 import { revealPlaced, subscribePlacedReveal } from "../../context/tree-reveal";
 import { useScopeScratchSource } from "../../context/use-scratch-trees";
 import { useWorkSourceWritable } from "../../context/use-work-source-writable";
-import { useAiDraftLauncher } from "../../review-launch";
+import { useItemLauncher } from "../../review-launch";
 import { useChatNavigation } from "../../routing/chat-navigation";
 import { useTrashNavigation } from "../../routing/ProjectNavigationContext";
 import { useShellTreeVersion } from "../../tree-version";
@@ -408,7 +408,7 @@ export function SourcesBody({
   };
   useEffect(() => subscribePlacedReveal((folderId) => placedIn.current(folderId)), []);
   const undo = useSidebarUndo(projectId, version);
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   // On Draft a document the Work drafts opens on its draft, as its Changes row does.
   const selectFile = useCallback<WriteSources["onSelectFile"]>(
     (scheme, file, options) => {

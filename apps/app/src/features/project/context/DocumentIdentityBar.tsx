@@ -20,7 +20,7 @@ import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
-import { useAiDraftLauncher } from "../review-launch";
+import { useItemLauncher } from "../review-launch";
 import { useAccountId } from "./account-feature-context";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -76,15 +76,15 @@ export function DocumentIdentityBar({
   });
 
   const { controller } = useDraftReview();
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const review = controller.inlineReview;
   const reviewItemKey =
     review?.documentId === document.documentId && review.shown ? review.itemKey : null;
   // A review that has been entered but not yet painted is a review destination in flight:
   // it must not read as the live document's chip until its preview answers.
   const reviewPending = review?.documentId === document.documentId && !review.shown;
-  const openDraft = (row: ReviewFileTarget, takeFocus?: boolean) => {
-    if (takeFocus) onFocusReview?.(row.draft.itemKey);
+  const openItem = (row: ReviewFileTarget, takeFocus?: boolean) => {
+    if (takeFocus) onFocusReview?.(row.item.itemKey);
     openReviewFile(row, controller.draftId);
   };
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
@@ -159,7 +159,7 @@ export function DocumentIdentityBar({
       document={document}
       documentId={document.documentId}
       itemKey={reviewItemKey ?? ""}
-      onOpenDraft={openDraft}
+      onOpenItem={openItem}
       onCloseDraftOnly={onCloseDraftOnly}
       onFocusDocument={() =>
         focusEditorProseOnceShown(document.documentId, onCloseDraftOnly !== undefined)

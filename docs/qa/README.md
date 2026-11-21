@@ -330,7 +330,7 @@ Three harness artifacts have produced false defects. Rule them out first.
    Check raw frontmatter, relative `.md` links, unescaped `[[text]]`, and
    escaped `[ref]` and `[^1]`. Ordinary `./mf doc read` stays escaped.
 3. Preview with `./mf api GET '/api/projects/<id>/export/preview?scratch=0&uploads=0'
-   --json`. Check outside-link and pending-draft counts. Download directly with
+   --json`. Check outside-link and pending-document counts. Download directly with
    `./mf api GET '/api/projects/<id>/export.zip?scratch=0&uploads=0' --output /tmp/project.zip`.
    Repeat with both options 1. Each GET independently reauthorizes files and
    Works; delete a disposable document or Work after preview and confirm it is

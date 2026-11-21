@@ -1,7 +1,7 @@
 /** Connect-time schema compatibility behavior for live Yjs rooms.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Yjs version subprotocol, unstamped admission, and generation plumbing
+ * - Yjs version subprotocol and unstamped admission
  */
 import { COLLAB_SCHEMA_VERSION, type CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import { describe, expect, it, vi } from "vitest";
@@ -27,16 +27,13 @@ const SENTINEL_SCHEMA_VERSION = version(0, 0, 0);
 /** A head stamped by another collab schema major than this server's. */
 const OTHER_MAJOR_HEAD = version(COLLAB_SCHEMA_VERSION.major + 1, 0);
 
-function versionGateServices(
-  input: { liveHead?: CollabSchemaVersion | null; liveGeneration?: bigint } = {},
-) {
+function versionGateServices(input: { liveHead?: CollabSchemaVersion | null } = {}) {
   const documentSync = {
     roomRemoval: vi.fn(async () => null),
     ensureDocumentAuthority: vi.fn(async () => {}),
     bindHocuspocus: vi.fn(),
     headSchemaVersion: vi.fn(async () => (input.liveHead === undefined ? null : input.liveHead)),
     validateHocuspocusDocument: vi.fn(async () => {}),
-    currentLiveGeneration: vi.fn(async () => input.liveGeneration ?? 1n),
     admitLiveWriterUpdate: vi.fn(async () => ({
       admitted: true as const,
     })),
@@ -136,37 +133,6 @@ describe("Yjs connect-time schema version gate", () => {
       } as never),
     ).resolves.toBeUndefined();
     expect(services.eventSink.events).toEqual([]);
-  });
-
-  it("carries the admitted live generation through the sync hook", async () => {
-    const services = versionGateServices({
-      liveHead: COLLAB_SCHEMA_VERSION,
-      liveGeneration: 9n,
-    });
-    const hocuspocus = createHocuspocus(services as never, createYjsRoomAccessIndex());
-    const context = connectContext(COLLAB_SCHEMA_VERSION);
-    const document = new Y.Doc({ gc: false });
-    const payload = new Uint8Array([1, 2, 3]);
-
-    await hocuspocus.configuration.onConnect?.({
-      connectionConfig: connectionConfig(),
-      documentName: liveDocumentName,
-      context,
-    } as never);
-    await hocuspocus.configuration.beforeSync?.({
-      documentName: liveDocumentName,
-      document,
-      type: messageYjsUpdate,
-      payload,
-      context,
-    } as never);
-
-    expect(services.documentSync.admitLiveWriterUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        documentId: liveDocumentName,
-        expectedGeneration: 9n,
-      }),
-    );
   });
 
   it("rejects sync when the admitted target does not match the message room", async () => {

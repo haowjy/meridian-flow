@@ -81,15 +81,13 @@ export type ModelEditCommandResult = {
  * One review item of the Work's active draft: a created or edited document, text or binary.
  * The list, Work counts and the open review all read this one row.
  */
-export interface ThreadDraftListItem {
+export interface DraftItem {
   /** The whole draft (a `drafts` row). */
   draftId: DraftId;
   /** `${draftId}:${documentId}`: the review identity for list rows, address, commands and queries. */
   itemKey: DraftItemKey;
   documentId: string;
-  /** Whether the Work has suggestions in the document's text. */
-  hasDraft: boolean;
-  /** The Work's suggested changes in the document's text, counted by the server after each write. */
+  /** The draft's suggested changes in the document's text, counted by the server after each write; 0 when it has none. */
   textChanges: number;
   origin: "created" | "edited";
   /** Created and still hidden from the manuscript. */
@@ -137,8 +135,8 @@ export interface DocumentDraftHintsResponse {
   items: DocumentDraftHint[];
 }
 
-export interface ThreadDraftListResponse {
-  items: ThreadDraftListItem[];
+export interface DraftItemsResponse {
+  items: DraftItem[];
   /** The folders the Work's tree changes (it has a row on). */
   folders: { id: string }[];
   /**

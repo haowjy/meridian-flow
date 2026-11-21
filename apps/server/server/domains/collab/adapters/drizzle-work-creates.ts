@@ -11,13 +11,13 @@ import { buildDocumentSchema, withBlockIds } from "@meridian/prosemirror-schema"
 import { sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { DraftPeerShadowAccess } from "../contracts.js";
+import type { EffectiveDocumentReader } from "../contracts.js";
 import type { MarkdownDocumentEngine } from "../domain/markdown-document.js";
 
 export function createDrizzleWorkCreates(
   db: Database,
   deps: { documents: Pick<MarkdownDocumentEngine, "installSeeds" | "changeLiveDocument"> },
-): Pick<DraftPeerShadowAccess, "seedWorkCreates" | "writeWorkCreatedContent"> {
+): Pick<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent"> {
   const schema = buildDocumentSchema();
   return {
     async seedWorkCreates(created) {

@@ -10,7 +10,7 @@ import * as Y from "yjs";
 import { Ok } from "../../../../shared/result.js";
 import { createCheckpointService } from "../../checkpoints.js";
 import { createCollabFacade } from "../../collab-facade.js";
-import type { CollabDomain, CollabDrafts, DraftPeerShadowAccess } from "../../contracts.js";
+import type { CollabDomain, CollabDrafts, EffectiveDocumentReader } from "../../contracts.js";
 import { createAgentEditRouter } from "../../domain/agent-edit-router.js";
 import {
   attributionFromMeta,
@@ -121,7 +121,6 @@ export function createInMemoryCollabDomain(
       headSchemaVersion: async () => null,
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
-      currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
       // Nothing is removed in memory.
       draftsHolding: async () => [],
       roomRemoval: async () => null,
@@ -189,7 +188,7 @@ export function createInMemoryCollabDomain(
         return { ...attributionFromMeta(latest.meta), updateSeq: latest.seq };
       },
     },
-    draftPeers: createInMemoryDraftPeerStub(
+    effectiveReader: createInMemoryEffectiveReaderStub(
       runtime.markdownDocuments,
       coordinator,
       runtime.model,
@@ -210,7 +209,7 @@ export function createInMemoryCollabDomain(
   });
 }
 
-function createInMemoryDraftPeerStub(
+function createInMemoryEffectiveReaderStub(
   documents: {
     readVersionedMarkdown(
       documentId: string,
@@ -225,7 +224,7 @@ function createInMemoryDraftPeerStub(
   codec: AgentEditCodecFactory,
   links: DocumentLinkScopes,
   resolveFiletype: (documentId: DocumentId) => Promise<string | null>,
-): DraftPeerShadowAccess {
+): EffectiveDocumentReader {
   return {
     async readEffectiveRevision(input) {
       const read = await documents.readVersionedMarkdown(input.documentId);

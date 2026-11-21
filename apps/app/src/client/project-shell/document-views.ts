@@ -16,7 +16,7 @@ import { tabChangeCounts, withTabChangeCounts } from "../query/tab-change-counts
 import { cachedOwnerDrafts } from "../query/useOwnerDrafts";
 import { browserRecord, isRecord } from "../storage/browser-record";
 
-/** A draft by its owner key (`work:<id>` or `lineage:<root>`), item, and focused change. */
+/** A draft by its id, item, and focused change. */
 export type DraftPin = { draftId: string; itemKey: string; changeId?: string };
 
 export type DocumentView = {

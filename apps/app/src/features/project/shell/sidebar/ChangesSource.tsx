@@ -48,7 +48,7 @@ import { schemeLabel } from "../../context/context-schemes";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "../../context/open-project-document";
 import { type NoticePlace, useTreeNoticeWords } from "../../context/use-tree-notice-words";
-import { useAiDraftLauncher } from "../../review-launch";
+import { useItemLauncher } from "../../review-launch";
 import { reviewCount, useShellTreeVersion } from "../../tree-version";
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
 import { SourcePane } from "./SourcePane";
@@ -79,7 +79,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   const { picked, work, draftId } = useScopeDraftOwner(projectId, chatThreadId);
   const lineageCount = useOwnerDrafts(projectId, picked ? "" : draftId, {
     enabled: !picked,
-  }).drafts?.length;
+  }).data?.length;
   const { works, nameOf } = useWorks(projectId);
   const chatWorkId = useDisplayedThread(projectId, chatThreadId)?.workId ?? null;
   // The shell's count is the Changes list's: the Work's changed documents and folders, from its
@@ -162,7 +162,7 @@ export function ChangesSource({
   const drafts = useOwnerDrafts(projectId, draftId);
   // A command in flight hides its row.
   const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
-  const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.draft.itemKey));
+  const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.item.itemKey));
   const shell = useShellTreeVersion();
   const tree = shell?.draftId === draftId ? shell.tree : null;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
@@ -188,7 +188,7 @@ export function ChangesSource({
   const applyingKey = (itemKey: string) =>
     inFlight(itemKey) && controller.owner.state(itemKey).applying;
   const applying =
-    (drafts.files ?? []).some((file) => applyingKey(file.draft.itemKey)) ||
+    (drafts.files ?? []).some((file) => applyingKey(file.item.itemKey)) ||
     (drafts.draftId !== null &&
       (grouped ?? []).some((group) =>
         (group.folder?.folders ?? []).some((id) =>
@@ -215,18 +215,18 @@ export function ChangesSource({
     setAsking(null);
   }, [hasFiles]);
 
-  const draftsOf = (targets: readonly ReviewFileTarget[]) =>
-    targets.map((file) => ({ documentId: file.documentId, itemKey: file.draft.itemKey }));
-  const everyDraft = draftsOf(files);
+  const refsOf = (targets: readonly ReviewFileTarget[]) =>
+    targets.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
+  const everyItem = refsOf(files);
   const applyAll = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
     hold();
     void controller.applyMany(
-      draftsOf(targets).map((draft) => ({ draft, target: { kind: "draft" as const } })),
+      refsOf(targets).map((item) => ({ item, target: { kind: "draft" as const } })),
       folders,
     );
   };
   const startApply = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
-    const deleting = targets.filter((file) => file.draft.tree?.deleted === true);
+    const deleting = targets.filter((file) => file.item.tree?.deleted === true);
     if (deleting.length > 0) setAsking({ targets, folders, deleting });
     else applyAll(targets, folders);
   };
@@ -348,14 +348,14 @@ export function ChangesSource({
               density="full"
               touch={touch}
               onDiscard={
-                everyDraft.length > 0 || changedFolders.length > 0
+                everyItem.length > 0 || changedFolders.length > 0
                   ? () => {
                       hold();
                       void controller.discardAll(
-                        everyDraft,
+                        everyItem,
                         changedFolders,
                         // A lone folder change names itself in the notice.
-                        everyDraft.length === 0 && changedFolders.length === 1
+                        everyItem.length === 0 && changedFolders.length === 1
                           ? (groupsOf(groups).find(
                               (group) => group.folder?.id === changedFolders[0],
                             )?.folder?.name ?? null)
@@ -365,7 +365,7 @@ export function ChangesSource({
                   : undefined
               }
               onApply={
-                files.every((file) => hasApply(file.draft)) &&
+                files.every((file) => hasApply(file.item)) &&
                 (files.length > 0 || changedFolders.length > 0)
                   ? () => startApply(files, changedFolders)
                   : undefined
@@ -450,12 +450,12 @@ export function ChangesSource({
                     controller={controller}
                     touch={touch}
                     notice={wordOf(folder.id)}
-                    canApply={!folder.fault && own.every((file) => hasApply(file.draft))}
+                    canApply={!folder.fault && own.every((file) => hasApply(file.item))}
                     onApply={() => startApply(own, folder.folders)}
                     onDiscard={(name) => {
                       hold();
                       void controller.discardSelection({
-                        drafts: draftsOf(own),
+                        items: refsOf(own),
                         folders: folder.folders,
                         name,
                       });
@@ -473,7 +473,7 @@ export function ChangesSource({
                   depth={item.depth}
                   fault={tree?.faults.get(file.documentId) ?? null}
                   active={isOpen(file)}
-                  canApply={hasApply(file.draft)}
+                  canApply={hasApply(file.item)}
                   controller={controller}
                   touch={touch}
                   notice={wordOf(file.documentId)}
@@ -558,19 +558,19 @@ function ChangeRow({
   touch: boolean;
   onPicked?: () => void;
 }) {
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const [previewing, setPreviewing] = useState(false);
   const discard = () => {
     onCommand();
-    void controller.discard(file.documentId, file.draft.itemKey);
+    void controller.discard(file.documentId, file.item.itemKey);
   };
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
   const copyView = draftCopyView(file, draftId);
   const drag = useReferenceDrag(
     copyView ? { ref: { kind: "file", id: file.documentId }, name, view: copyView } : null,
   );
-  const reviewable = opensAsDocument(file.draft);
-  const imageOpenable = file.draft.binary;
+  const reviewable = opensAsDocument(file.item);
+  const imageOpenable = file.item.binary;
   const opens = Boolean(file.contextLocation) && (reviewable || imageOpenable);
   const review = () => {
     if (reviewable) {
@@ -578,9 +578,9 @@ function ChangeRow({
       onPicked?.();
     } else if (imageOpenable) setPreviewing(true);
   };
-  const line = treeLineOf(file.draft);
+  const line = treeLineOf(file.item);
   const deleted = line?.kind === "delete";
-  const command = controller.owner.state(file.draft.itemKey);
+  const command = controller.owner.state(file.item.itemKey);
 
   return (
     <li data-change-row={file.documentId}>
@@ -608,7 +608,7 @@ function ChangeRow({
               canApply
                 ? () => {
                     onCommand();
-                    void controller.apply(file.documentId, file.draft.itemKey);
+                    void controller.apply(file.documentId, file.item.itemKey);
                   }
                 : undefined
             }
@@ -619,7 +619,7 @@ function ChangeRow({
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}
-            <DraftCommandStatus itemKey={file.draft.itemKey} />
+            <DraftCommandStatus itemKey={file.item.itemKey} />
           </div>
         }
       />
@@ -636,9 +636,9 @@ function ChangeRow({
  * The row's name is already the draft's, so a rename says what it was.
  */
 function changeSummary(file: ReviewFileTarget) {
-  const line = treeLineOf(file.draft);
+  const line = treeLineOf(file.item);
   const place = file.contextLocation ? folderPlace(file.contextLocation) : null;
-  const tree = file.draft.isNew
+  const tree = file.item.isNew
     ? place
       ? t`New in ${place}`
       : t`New`
@@ -652,8 +652,8 @@ function changeSummary(file: ReviewFileTarget) {
             ? t`Changing position`
             : null;
   // A new or deleted document is the whole change: its text needs no count.
-  const { textChanges } = file.draft;
-  const count = !file.draft.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
+  const { textChanges } = file.item;
+  const count = !file.item.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
   if (!tree && count === null) return null;
   return (
     <span className="flex min-w-0 flex-wrap gap-x-2">

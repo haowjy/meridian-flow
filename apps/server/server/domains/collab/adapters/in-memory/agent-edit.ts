@@ -68,7 +68,7 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   override async read(docId: string, opts?: Parameters<UpdateJournal["read"]>[1]) {
     return {
       ...(await super.read(docId, opts)),
-      authority: { authorityId: docId, generation: 1n },
+      authority: { authorityId: docId },
     };
   }
 
@@ -83,7 +83,7 @@ class InMemoryCollabJournal extends InMemoryAgentEditJournal implements InMemory
   }
 
   async captureCheckpoint(docId: string, authority: CheckpointAuthority) {
-    if (authority.authorityId !== docId || authority.generation !== 1n) return null;
+    if (authority.authorityId !== docId) return null;
     // Copy synchronously so later writers cannot change this captured range.
     const entry = this.debugEntry(docId);
     const base = entry?.checkpoint;
@@ -191,7 +191,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     const existing = docs.get(docId);
     if (existing) return existing;
     const doc = new Y.Doc({ gc: false });
-    bindDocumentAuthority(doc, { authorityId: docId as never, generation: 1n });
+    bindDocumentAuthority(doc, { authorityId: docId as never });
     docs.set(docId, doc);
     return doc;
   }
@@ -213,7 +213,7 @@ export function createInMemoryCoordinator(journal: UpdateJournal): DocumentCoord
     const copy = new Y.Doc({ gc: false });
     Y.applyUpdate(copy, Y.encodeStateAsUpdate(requireDoc(docId)));
     await applyPersisted(docId, copy);
-    bindDocumentAuthority(copy, { authorityId: docId as never, generation: 1n });
+    bindDocumentAuthority(copy, { authorityId: docId as never });
     return { doc: copy, room: liveRoomFor(docId, copy) };
   }
 
