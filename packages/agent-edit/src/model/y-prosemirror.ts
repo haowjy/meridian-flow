@@ -139,24 +139,40 @@ function projectBlocks(doc: Y.Doc, schema: Schema): ProjectedBlock[] {
 type Resolved =
   | { op: Extract<EditOp, { kind: "text" }>; node: Y.XmlElement }
   | { op: Extract<EditOp, { kind: "attrs" }>; node: Y.XmlElement }
-  | { op: Extract<EditOp, { kind: "insert" }>; node: Y.XmlElement; anchor: Y.XmlElement | null }
+  | {
+      op: Extract<EditOp, { kind: "insert" }>;
+      node: Y.XmlFragment | Y.XmlElement;
+      anchor: Y.XmlElement | null;
+    }
   | { op: Extract<EditOp, { kind: "delete" }>; node: Y.XmlElement };
 
 /**
  * Every path and offset is checked before anything changes, so an operation means the
  * block as planned whatever ran before it, and a write that does not fit leaves it alone.
  * Text and attributes go first, then inserts (each after an element found beforehand, which
- * a delete may remove next), then deletes.
+ * a delete may remove next), then deletes. `block` may be the document's fragment, whose
+ * children are only inserted and deleted.
  */
-export function applyOps(block: Y.XmlElement, ops: readonly EditOp[]): EditOpsResult {
+export function applyOps(
+  block: Y.XmlFragment | Y.XmlElement,
+  ops: readonly EditOp[],
+): EditOpsResult {
   const resolved: Resolved[] = [];
   for (const op of ops) {
     const node = findNode(block, op.path);
-    const problem = node ? opProblem(node, op) : "its path does not address an element";
+    const problem = !node
+      ? "its path does not address an element"
+      : node instanceof Y.XmlElement
+        ? opProblem(node, op)
+        : op.kind === "insert"
+          ? insertProblem(node, op)
+          : undefined;
     if (!node || problem) return invalidOp(`Cannot apply a ${op.kind} operation: ${problem}`);
     if (op.kind === "insert") {
       const anchor = op.after < 0 ? null : node.get(op.after);
       resolved.push({ op, node, anchor: anchor instanceof Y.XmlElement ? anchor : null });
+    } else if (!(node instanceof Y.XmlElement)) {
+      return invalidOp(`Cannot apply a ${op.kind} operation: the document root takes only inserts`);
     } else if (op.kind === "attrs" && op.unit !== undefined) {
       resolved.push({ op, node: atomAt(node, op.unit) ?? node });
     } else resolved.push({ op, node } as Resolved);
@@ -220,10 +236,7 @@ function atomAt(leaf: Y.XmlElement, unit: number): Y.XmlElement | undefined {
 function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
   if (op.kind === "attrs")
     return op.unit === undefined || atomAt(node, op.unit) ? undefined : "no atom at its unit";
-  if (op.kind === "insert")
-    return op.after < 0 || node.get(op.after) instanceof Y.XmlElement
-      ? undefined
-      : "no child to insert after";
+  if (op.kind === "insert") return insertProblem(node, op);
   if (op.kind === "delete")
     return op.path.length > 0 ? undefined : "a block does not delete itself";
   const slots = slotsOf(node);
@@ -237,6 +250,15 @@ function opProblem(node: Y.XmlElement, op: EditOp): string | undefined {
     if (from < 0 || to <= from || to > size)
       return `invalid format range ${from}..${to} of ${size}`;
   return undefined;
+}
+
+function insertProblem(
+  node: Y.XmlFragment | Y.XmlElement,
+  op: Extract<EditOp, { kind: "insert" }>,
+): string | undefined {
+  return op.after < 0 || node.get(op.after) instanceof Y.XmlElement
+    ? undefined
+    : "no child to insert after";
 }
 
 /** Units are addressed across the textblock's children, as `slotsOf` lays them out. */
@@ -438,7 +460,10 @@ function textblockLineage(leaf: Y.XmlElement, from: number, to: number): Content
 }
 
 /** The element at `path` under `block`, or undefined when the path leaves the elements. */
-function findNode(block: Y.XmlElement, path: readonly number[]): Y.XmlElement | undefined {
+function findNode(
+  block: Y.XmlFragment | Y.XmlElement,
+  path: readonly number[],
+): Y.XmlFragment | Y.XmlElement | undefined {
   let node = block;
   for (const index of path) {
     const child = node.get(index);
@@ -450,7 +475,8 @@ function findNode(block: Y.XmlElement, path: readonly number[]): Y.XmlElement | 
 
 function nodeAt(block: Y.XmlElement, path: readonly number[]): Y.XmlElement {
   const node = findNode(block, path);
-  if (!node) throw new Error(`Path ${path.join("/")} does not address an element`);
+  if (!(node instanceof Y.XmlElement))
+    throw new Error(`Path ${path.join("/")} does not address an element`);
   return node;
 }
 

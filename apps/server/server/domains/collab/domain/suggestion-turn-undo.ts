@@ -112,7 +112,7 @@ export function createSuggestionTurnUndo(deps: {
           documentId,
           origin,
           mutate: (doc) => {
-            changed = resolveStored(doc, deps.schema, "reject", { turn });
+            changed = resolveStored(doc, deps.schema, "reject", { turn }).size > 0;
           },
         });
         if (changed) rejected.push(documentId);

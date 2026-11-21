@@ -68,6 +68,18 @@ function matcher(filter: Filter, authors: Authors): Match {
   return (attrs) => !!attrs && authors.get(attrs.id)?.turn === filter.turn;
 }
 
+/** How a resolve decided a change. */
+export type Verdict = "accept" | "reject";
+
+/**
+ * On an accept or reject: how it decided each change whose text, block or attribute layer it
+ * changed, by id (`ReadonlyMap<string, Verdict>`). The filter's changes take its verdict; an
+ * accept also rejects the other Works' changes deleting the same text. Whoever applies the
+ * transaction records them beside the document, in the same transaction, so an Undo of the
+ * resolve takes them back with its text.
+ */
+export const DECIDED_META = "suggestions:decided";
+
 /**
  * Accept: an insertion becomes Live text, a deletion removes its text. One local transaction, which
  * only deletes text and blocks and removes marks and attributes: everything else stays as it is.
@@ -81,10 +93,17 @@ export function reject(state: EditorState, filter: Filter, authors: Authors): Tr
   return resolve(state, matcher(filter, authors), "reject");
 }
 
-function resolve(state: EditorState, matches: Match, action: "accept" | "reject"): Transaction {
+function resolve(state: EditorState, matches: Match, action: Verdict): Transaction {
   const tr = state.tr.setMeta(RAW_META, true);
   const { suggest_ins: ins, suggest_del: del } = state.schema.marks;
-  const fateOf = fates(state.doc, matches, action);
+  const decided = new Map<string, Verdict>();
+  const fated = fates(state.doc, matches, action);
+  // Every change a fate is read for has a piece the transaction changes.
+  const fateOf = (attrs: SuggestionAttrs | null) => {
+    const fate = fated(attrs);
+    if (attrs && fate) decided.set(attrs.id, fate);
+    return fate;
+  };
   const unmark: Array<[number, number, Mark]> = [];
   const remove: Array<[number, number]> = [];
   const set: Array<[number, string, unknown]> = [];
@@ -138,6 +157,7 @@ function resolve(state: EditorState, matches: Match, action: "accept" | "reject"
   for (const [from, to, mark] of unmark) tr.removeMark(from, to, mark);
   for (const [pos, key, value] of set) tr.setNodeAttribute(pos, key, value);
   for (const [from, to] of merge(remove).reverse()) tr.delete(from, to);
+  if (decided.size > 0) tr.setMeta(DECIDED_META, decided);
   return tr;
 }
 
@@ -149,8 +169,8 @@ function resolve(state: EditorState, matches: Match, action: "accept" | "reject"
 function fates(
   doc: Node,
   matches: Match,
-  action: "accept" | "reject",
-): (attrs: SuggestionAttrs | null) => "accept" | "reject" | null {
+  action: Verdict,
+): (attrs: SuggestionAttrs | null) => Verdict | null {
   const chosen = new Set<string>();
   const superseded = new Set<string>();
   if (action === "accept")

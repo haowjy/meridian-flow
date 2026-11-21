@@ -8,20 +8,21 @@ import {
   type Author,
   type Authors,
   accept,
+  DECIDED_META,
   type Filter,
   pendingChanges,
   pendingTurns,
   reject,
+  type Verdict,
   type WorkPending,
 } from "@meridian/suggestions";
 import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState } from "prosemirror-state";
 import * as Y from "yjs";
-import { lowerBlock, lowerResolved, resolvedEdit } from "../resolver/lower-block.js";
+import { lowerResolved } from "../resolver/lower-block.js";
 import type { EditRange } from "../undo/receipt.js";
 import { itemsInRange } from "../yjs-mutation.js";
-import { getTopLevelXmlBlocks } from "./block-hash.js";
 import { applyOps as applyRawOps, fragmentOf } from "./y-prosemirror.js";
 
 /** The map beside the fragment that holds each change's author, by change id. */
@@ -52,48 +53,59 @@ function isAuthor(value: unknown): value is Author {
 }
 
 /**
+ * The map beside the fragment that records each resolve's verdicts: one key per decision,
+ * `<change id>:accept` or `<change id>:reject`, so two peers resolving one change opposite ways
+ * at once both stand, and each Undo takes back only its own.
+ */
+const VERDICTS_ROOT = "suggestion_verdicts";
+
+/**
+ * How the document's resolves decided each change, as they stand: an entry exists exactly while
+ * the resolve that wrote it does (it is in every resolve's Undo scope, `resolveScope`). A change
+ * nobody resolved, or whose text an edit removed, has none. Any client writes the map, so an entry
+ * that is not `true` reads as none.
+ */
+export function suggestionVerdicts(doc: Y.Doc): { has(id: string, verdict: Verdict): boolean } {
+  const map = doc.getMap<unknown>(VERDICTS_ROOT);
+  return { has: (id, verdict) => map.get(`${id}:${verdict}`) === true };
+}
+
+/**
+ * What a resolve writes, and so what every `Y.UndoManager` that records or takes one back must
+ * hold: the fragment and the verdicts beside it. Typing never writes the verdicts.
+ */
+export function resolveScope(doc: Y.Doc): [Y.XmlFragment, Y.Map<unknown>] {
+  return [fragmentOf(doc), doc.getMap<unknown>(VERDICTS_ROOT)];
+}
+
+/**
  * Accept or reject a stored document's suggestions, as a client of the document would. The verdict
- * only deletes text and blocks and removes marks and attributes, and each changed block is lowered
- * to exactly that (`lowerResolved`): every Yjs item that survives stays, so text typed inside a
- * resolved word, a comment's anchor and a cursor keep their place, and a Yjs undo of it (the
- * press's Undo, Ctrl+Z in the tab) takes back only what it did. Call inside one transaction;
- * returns whether anything changed.
+ * only deletes text and blocks and removes marks and attributes, and it is lowered to exactly that
+ * (`lowerResolved`): every Yjs item that survives stays, so text typed inside a resolved word, a
+ * comment's anchor and a cursor keep their place, and a Yjs undo of it (the press's Undo, Ctrl+Z in
+ * the tab) takes back only what it did, its verdicts included. Call inside one transaction;
+ * returns how it decided each change it changed (empty: nothing changed).
  */
 export function resolveStored(
   doc: Y.Doc,
   schema: Schema,
-  verdict: "accept" | "reject",
+  verdict: Verdict,
   filter: Filter,
-): boolean {
-  const root = storedRoot(doc, schema);
-  const state = EditorState.create({ schema, doc: root });
+): ReadonlyMap<string, Verdict> {
+  const state = EditorState.create({ schema, doc: storedRoot(doc, schema) });
   const tr = (verdict === "accept" ? accept : reject)(state, filter, suggestionAuthors(doc));
-  if (!tr.docChanged) return false;
-  const fragment = fragmentOf(doc);
-  // Read after `storedRoot`: converting the fragment deletes the elements it cannot convert, so
-  // the elements left pair with the root's children by index.
-  const elements = getTopLevelXmlBlocks(doc);
-  const edit = resolvedEdit(tr);
-  const starts: number[] = [];
-  root.forEach((_, offset) => {
-    starts.push(offset);
-  });
-  for (let index = elements.length - 1; index >= 0; index--) {
-    const before = root.child(index);
-    // A removed block maps to one point; a kept one to the block it became.
-    const from = tr.mapping.map(starts[index], 1);
-    const to = tr.mapping.map(starts[index] + before.nodeSize, -1);
-    if (to <= from) fragment.delete(fragment.toArray().indexOf(elements[index]), 1);
-    else {
-      const after = tr.doc.nodeAt(from) as PMNode;
-      if (after.eq(before)) continue;
-      const ops = lowerResolved(before, starts[index], edit) ?? lowerBlock(before, after);
-      const applied = applyRawOps(elements[index], ops);
-      if (!applied.ok) throw new Error(applied.message);
-    }
-  }
-  return true;
+  const decided = (tr.getMeta(DECIDED_META) as ReadonlyMap<string, Verdict> | undefined) ?? NONE;
+  if (!tr.docChanged) return decided;
+  // Converting the fragment deleted the elements it cannot convert, so its children pair with the
+  // root's by index.
+  const applied = applyRawOps(fragmentOf(doc), lowerResolved(tr));
+  if (!applied.ok) throw new Error(applied.message);
+  const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
+  for (const [id, fate] of decided) verdicts.set(`${id}:${fate}`, true);
+  return decided;
 }
+
+const NONE: ReadonlyMap<string, Verdict> = new Map();
 
 /** The turns whose suggestions a stored document still holds; one read per document state. */
 export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<string> {
@@ -118,90 +130,58 @@ export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string,
 
 /**
  * Takes a Work's suggestions out of a stored document for good, as its owner ends: they are
- * rejected and their authors forgotten, in one transaction with no record, since nothing can take
- * it back. Every change the Work's items carry goes, a proposal Live has since matched included,
- * which no review lists. Returns whether anything changed.
+ * rejected and their authors and verdicts forgotten, in one transaction with no record, since
+ * nothing can take it back. Every change the Work's items carry goes, a proposal Live has since
+ * matched included, which no review lists. Returns whether anything changed.
  */
 export function dropWork(doc: Y.Doc, schema: Schema, work: string): boolean {
-  const { changes } = suggestionItems(fragmentOf(doc));
-  const ids = [...changes].filter(([, parts]) => parts.work === work).map(([id]) => id);
-  if (ids.length === 0) return false;
+  let decided = NONE;
   doc.transact(() => {
-    resolveStored(doc, schema, "reject", { work });
+    decided = resolveStored(doc, schema, "reject", { work });
     const authors = doc.getMap<unknown>(AUTHORS_ROOT);
-    for (const id of ids) authors.delete(id);
+    const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
+    for (const id of decided.keys()) {
+      authors.delete(id);
+      verdicts.delete(`${id}:accept`);
+      verdicts.delete(`${id}:reject`);
+    }
   });
-  return true;
+  return decided.size > 0;
 }
 
 /**
- * What the writer did with the suggestions one write left, read from the items it inserted
- * (`EditEffect.inserted`): `applied` when accepted, `discarded` when rejected, null when it left
- * none or one is still pending. The verdict is `verdicts`'s, on the write's own items.
+ * What the writer did with the suggestions one write left, read from the changes its own items
+ * carry (`EditEffect.inserted`) and their recorded verdicts: `applied` when every one was
+ * accepted, `discarded` when every one was rejected, null otherwise (one is pending, an edit
+ * removed it, or two resolves decided it opposite ways).
  */
 export function writeVerdict(
   doc: Y.Doc,
   inserted: readonly EditRange[],
 ): "applied" | "discarded" | null {
   const ids = new Set<string>();
-  const parts: ChangeItems = {
-    work: null,
-    inserted: [],
-    blocks: [],
-    struck: [],
-    strikes: [],
-    proposed: [],
-  };
-  const run = (item: Y.Item): ItemRun => ({ id: item.id, len: item.length });
   for (const range of inserted)
     for (const { item } of itemsInRange(doc, range)) {
       const { content } = item;
       if (content instanceof Y.ContentFormat) {
-        const mark = markOf(content.key);
-        const id = mark ? changeId(content.value) : null;
-        if (!id) continue;
-        ids.add(id);
-        if (mark === STRUCK) parts.struck.push(...markedAfter(item, content.key).map(run));
-      } else if (item.parentSub === null && item.countable) parts.inserted.push(run(item));
-      else if (item.parentSub === "sug") {
+        const id = markOf(content.key) ? changeId(content.value) : null;
+        if (id) ids.add(id);
+      } else if (item.parentSub === "sug") {
         const id = changeId(content.getContent()[0]);
         if (id) ids.add(id);
-      } else if (item.parentSub === "sugAttrs") {
-        const block = (item.parent as Y.AbstractType<unknown>)._item;
-        if (!block) continue;
-        for (const layer of layersOf(content.getContent()[0])) {
-          ids.add(layer.id);
-          parts.proposed.push({ block: block.id, attrs: layer.attrs, remove: layer.remove });
-        }
-      }
+      } else if (item.parentSub === "sugAttrs")
+        for (const id of layerIds(content.getContent()[0])) ids.add(id);
     }
   if (ids.size === 0) return null;
-  const now = itemsNow(doc);
-  if ([...ids].some((id) => now.changes.has(id))) return null;
-  return verdicts(doc, now.blocks)(parts) ? "discarded" : "applied";
-}
-
-/** `suggestionItems` of the document as it stands; one read per document state. */
-function itemsNow(doc: Y.Doc): ReturnType<typeof suggestionItems> {
-  let items = itemsByDoc.get(doc);
-  if (!items) {
-    items = suggestionItems(fragmentOf(doc));
-    itemsByDoc.set(doc, items);
-    doc.once("afterTransaction", () => itemsByDoc.delete(doc));
+  const verdicts = suggestionVerdicts(doc);
+  const decided = new Set<Verdict>();
+  for (const id of ids) {
+    const accepted = verdicts.has(id, "accept");
+    if (accepted === verdicts.has(id, "reject")) return null;
+    decided.add(accepted ? "accept" : "reject");
   }
-  return items;
-}
-
-const itemsByDoc = new WeakMap<Y.Doc, ReturnType<typeof suggestionItems>>();
-
-/** The countable items a mark started at `start` covered, deleted ones too, up to its end. */
-function markedAfter(start: Y.Item, key: string): Y.Item[] {
-  const out: Y.Item[] = [];
-  for (let item = start.right; item; item = item.right) {
-    if (item.content instanceof Y.ContentFormat && item.content.key === key) break;
-    if (item.countable) out.push(item);
-  }
-  return out;
+  if (decided.size > 1) return null;
+  return decided.has("accept") ? "applied" : "discarded";
 }
 
 /** Yjs item ids by client, as `[clock, len]` runs in clock order. */
@@ -217,18 +197,18 @@ export type PressRecord = { insertions: IdRanges; deletions: IdRanges };
 export function pressStored(
   doc: Y.Doc,
   schema: Schema,
-  verdict: "accept" | "reject",
+  verdict: Verdict,
   filter: Filter,
 ): PressRecord | null {
   const origin = Symbol("press");
-  const recorder = new Y.UndoManager(fragmentOf(doc), {
+  const recorder = new Y.UndoManager(resolveScope(doc), {
     trackedOrigins: new Set([origin]),
     captureTimeout: Number.POSITIVE_INFINITY,
   });
   try {
     let changed = false;
     doc.transact(() => {
-      changed = resolveStored(doc, schema, verdict, filter);
+      changed = resolveStored(doc, schema, verdict, filter).size > 0;
     }, origin);
     const item = recorder.undoStack[0];
     return changed && item
@@ -246,7 +226,7 @@ export function pressStored(
  * press ran on. Returns whether anything changed.
  */
 export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
-  const undo = new Y.UndoManager(fragmentOf(doc), { trackedOrigins: new Set() });
+  const undo = new Y.UndoManager(resolveScope(doc), { trackedOrigins: new Set() });
   try {
     // Yjs 13 does not export its stack item; `undo` reads only these three fields.
     undo.undoStack.push({
@@ -261,20 +241,17 @@ export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
 }
 
 /**
- * Takes out of a planning view (`createPlanningView`) the suggestions rejected in `room` since the
- * view's cut, so a write that proposes one again is a new suggestion, not a match with the view.
- * The verdict is read from what each half of a change left in the room (`rejectedIn`). Every step
- * is a deletion of an item the room has deleted or superseded too, so a write planned on the view
- * references nothing the room lacks.
+ * Takes out of a planning view (`createPlanningView`) the suggestions it shows that `room` records
+ * as rejected, so a write that proposes one again is a new suggestion, not a match with the view.
+ * A block's attribute layers share one item, which goes when any of them was rejected: the view
+ * then shows the block's Live attributes. Every step is a deletion of an item the room has deleted
+ * or replaced too: the write planned on the view ships the view's own updates to the room, so the
+ * view writes nothing new and references nothing the room lacks.
  */
 export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
   const shown = suggestionItems(fragmentOf(view));
-  if (shown.changes.size === 0) return;
-  const now = suggestionItems(fragmentOf(room));
-  const resolved = [...shown.changes].filter(([id]) => !now.changes.has(id));
-  if (resolved.length === 0) return;
-  const rejectedIn = verdicts(room, now.blocks);
-  const rejected = new Set(resolved.filter(([, parts]) => rejectedIn(parts)).map(([id]) => id));
+  const verdicts = suggestionVerdicts(room);
+  const rejected = new Set([...shown.changes.keys()].filter((id) => verdicts.has(id, "reject")));
   if (rejected.size === 0) return;
   const out: IdRanges = {};
   const take = ({ id, len }: ItemRun) => {
@@ -288,52 +265,16 @@ export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
     parts?.strikes.forEach(take);
   }
   for (const { item, ids } of shown.layers)
-    if (ids.every((id) => rejected.has(id))) take({ id: item.id, len: 1 });
+    if (ids.some((id) => rejected.has(id))) take({ id: item.id, len: 1 });
   for (const runs of Object.values(out)) runs.sort((a, b) => a[0] - b[0]);
   // Undoing an insertion deletes its items: the press's Undo does the deleting.
   undoPressStored(view, { insertions: out, deletions: {} });
 }
 
-/**
- * Whether a change the room no longer holds was rejected. Accept deletes struck text and reject
- * keeps it, which the writer can't undo without it reading as pending again, so struck text decides
- * when the change has any. A pure insertion is rejected when all of it is gone: an accepted one the
- * writer then deleted whole reads the same, and proposing it again is a suggestion to review. An
- * attribute layer is accepted when its block holds what it proposed, or is gone for a removal.
- */
-function verdicts(room: Y.Doc, blocks: Map<string, Record<string, unknown>>) {
-  const deleted = Y.createDeleteSetFromStructStore(room.store);
-  const gone = ({ id, len }: ItemRun) => {
-    for (let clock = id.clock; clock < id.clock + len; clock++)
-      if (!Y.isDeleted(deleted, Y.createID(id.client, clock))) return false;
-    return true;
-  };
-  return (parts: ChangeItems): boolean => {
-    if (parts.struck.length > 0) return parts.struck.some((run) => !gone(run));
-    const added = [...parts.inserted, ...parts.blocks];
-    if (added.length > 0) return added.every(gone);
-    return parts.proposed.some(({ block, attrs, remove }) => {
-      const held = blocks.get(itemKey(block));
-      if (!held) return false;
-      return (
-        remove === true || Object.entries(attrs).some(([key, value]) => !sameJson(held[key], value))
-      );
-    });
-  };
-}
-
 type ItemRun = { id: Y.ID; len: number };
 
-/** One change's items in a document: what it inserted, what it strikes, the marks that strike it, its attribute layers. */
-type ChangeItems = {
-  /** The Work whose draft it is. */
-  work: string | null;
-  inserted: ItemRun[];
-  blocks: ItemRun[];
-  struck: ItemRun[];
-  strikes: ItemRun[];
-  proposed: { block: Y.ID; attrs: Record<string, unknown>; remove?: boolean }[];
-};
+/** One change's items in a document: the text and blocks it inserted, and the marks that strike text. */
+type ChangeItems = { inserted: ItemRun[]; blocks: ItemRun[]; strikes: ItemRun[] };
 
 const INSERTED = "suggest_ins";
 const STRUCK = "suggest_del";
@@ -347,47 +288,42 @@ function markOf(key: string): typeof INSERTED | typeof STRUCK | null {
 }
 
 /**
- * Every change a document's visible items carry, read from Yjs items, since a resolve is told by
- * which items it deleted. Also each block's attribute layers with the item that holds them, and
- * each visible block's attributes.
+ * Every change a document's visible items carry, read from Yjs items, and each block's attribute
+ * layers with the item that holds them. `withdrawRejected` deletes them by id; a change to how
+ * marks or `sug`/`sugAttrs` are stored updates this beside `pendingBy` in `@meridian/suggestions`.
  */
 function suggestionItems(fragment: Y.XmlFragment): {
   changes: Map<string, ChangeItems>;
   layers: { item: Y.Item; ids: string[] }[];
-  blocks: Map<string, Record<string, unknown>>;
 } {
   const changes = new Map<string, ChangeItems>();
   const layers: { item: Y.Item; ids: string[] }[] = [];
-  const blocks = new Map<string, Record<string, unknown>>();
-  const of = (id: string, work: string | null) => {
+  const of = (id: string) => {
     let parts = changes.get(id);
     if (!parts) {
-      parts = { work, inserted: [], blocks: [], struck: [], strikes: [], proposed: [] };
+      parts = { inserted: [], blocks: [], strikes: [] };
       changes.set(id, parts);
     }
     return parts;
   };
   const walkText = (text: Y.XmlText) => {
-    const marks = new Map<string, { id: string; work: string | null }>();
+    // The insertions open at this point of the text, by mark key.
+    const open = new Map<string, string>();
     for (let item = text._start; item; item = item.right) {
       if (item.deleted) continue;
       if (item.content instanceof Y.ContentFormat) {
         const { key, value } = item.content;
         const mark = markOf(key);
-        if (!mark) continue;
-        const id = changeId(value);
-        if (id) {
-          marks.set(key, { id, work: workOf(value) });
-          if (mark === STRUCK) of(id, workOf(value)).strikes.push({ id: item.id, len: 1 });
-        } else marks.delete(key);
+        const id = mark && changeId(value);
+        if (mark === STRUCK && id) of(id).strikes.push({ id: item.id, len: 1 });
+        if (mark === INSERTED) {
+          if (id) open.set(key, id);
+          else open.delete(key);
+        }
         continue;
       }
-      if (!item.countable) continue;
-      for (const [key, { id, work }] of marks)
-        of(id, work)[markOf(key) === INSERTED ? "inserted" : "struck"].push({
-          id: item.id,
-          len: item.length,
-        });
+      if (item.countable)
+        for (const id of open.values()) of(id).inserted.push({ id: item.id, len: item.length });
     }
   };
   const walk = (parent: Y.XmlFragment | Y.XmlElement) => {
@@ -397,40 +333,18 @@ function suggestionItems(fragment: Y.XmlFragment): {
       if (child instanceof Y.XmlText) walkText(child);
       else if (child instanceof Y.XmlElement) {
         const attrs = child.getAttributes() as Record<string, unknown>;
-        blocks.set(itemKey(item.id), attrs);
         const sug = changeId(attrs.sug);
-        if (sug) of(sug, workOf(attrs.sug)).blocks.push({ id: item.id, len: 1 });
+        if (sug) of(sug).blocks.push({ id: item.id, len: 1 });
         const held = child._map.get("sugAttrs");
-        const ids: string[] = [];
-        for (const layer of layersOf(attrs.sugAttrs)) {
-          ids.push(layer.id);
-          of(layer.id, layer.work).proposed.push({
-            block: item.id,
-            attrs: layer.attrs,
-            remove: layer.remove,
-          });
-        }
+        const ids = layerIds(attrs.sugAttrs);
+        for (const id of ids) of(id);
         if (held && !held.deleted && ids.length > 0) layers.push({ item: held, ids });
         walk(child);
       }
     }
   };
   walk(fragment);
-  return { changes, layers, blocks };
-}
-
-function itemKey(id: Y.ID): string {
-  return `${id.client}:${id.clock}`;
-}
-
-function sameJson(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-}
-
-function workOf(value: unknown): string | null {
-  if (typeof value !== "object" || value === null) return null;
-  const work = (value as { work?: unknown }).work;
-  return typeof work === "string" ? work : null;
+  return { changes, layers };
 }
 
 function changeId(value: unknown): string | null {
@@ -439,29 +353,11 @@ function changeId(value: unknown): string | null {
   return typeof id === "string" ? id : null;
 }
 
-function layersOf(
-  value: unknown,
-): { id: string; work: string | null; attrs: Record<string, unknown>; remove?: boolean }[] {
+/** The change ids of a block's `sugAttrs` value: its layers, by Work. */
+function layerIds(value: unknown): string[] {
   if (typeof value !== "object" || value === null) return [];
   return Object.values(value as Record<string, unknown>).flatMap((layers) =>
-    Array.isArray(layers)
-      ? layers.flatMap((layer) => {
-          const id = changeId(layer);
-          if (!id) return [];
-          const { attrs, remove } = layer as { attrs?: unknown; remove?: unknown };
-          return [
-            {
-              id,
-              work: workOf(layer),
-              attrs:
-                typeof attrs === "object" && attrs !== null
-                  ? (attrs as Record<string, unknown>)
-                  : {},
-              ...(remove === true ? { remove: true } : {}),
-            },
-          ];
-        })
-      : [],
+    Array.isArray(layers) ? layers.flatMap((layer) => changeId(layer) ?? []) : [],
   );
 }
 

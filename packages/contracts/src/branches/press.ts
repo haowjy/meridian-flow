@@ -22,8 +22,9 @@ export type PressRequest = {
   /** The tree cut the press was drawn from: records admitted after it stay pending. */
   saw?: TreeSaw;
   /**
-   * For each document open in the pressing tab, its Yjs state vector (base64): the server answers
-   * "not yet" (503) until it holds them, so a keystroke typed just before the press is in it.
+   * For every live room open in the pressing tab, its Yjs state vector (base64): the server answers
+   * "not yet" (503) until it holds them all, so a keystroke typed just before the press is in it,
+   * in a document the press names or one it finds.
    */
   seen?: { documentId: string; vector: string }[];
 };

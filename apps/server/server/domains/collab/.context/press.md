@@ -15,8 +15,13 @@ has no branch row.
   takes the Work's pending records on those nodes; the text half takes every document among
   them, since resolving a document with no suggestion changes nothing, except an item sent with
   `half: "tree"` (a review's tree line), whose text stays pending. `"all"` takes every
-  pending record, and for text the documents the pending index lists for the Work plus the ones
-  in `seen`.
+  pending record, and for text every document of the Work's project and account that can hold
+  its suggestions (`documentsHolding` in `drizzle-block-text.ts`): a row whose derived cut is
+  current and lists the Work in `pending_changes`, and every row `staleForReaders` (no room,
+  behind the head, another extractor). That set is exact for committed writes: every live write
+  moves its document's head (`allocateAdmission`), so a document the derivation hasn't caught up
+  on is stale and pressed; a stale one with nothing of the Work's costs one journal read and
+  resolves to nothing.
 - **The branch is read under the owner's lock**, where it is made and closed: a branch read
   before it could miss the first tree records an AI turn admitted in between.
 - **Tree half.** Apply is the tree Apply (`createApplyTreeOperations`, the same judge, locks and
@@ -24,10 +29,14 @@ has no branch row.
 - **Text half.** For each selected document that stands in Live after the tree half,
   `pressStored` (agent-edit) runs `accept` or `reject({ work })` as one Yjs transaction, appends
   it to the Live journal as `human:<account>`, and stores its inserted and deleted id ranges in
-  `press_text_effects` with the authority generation. A document the press leaves out of Live
+  `press_text_effects` with the authority generation. The ranges hold the verdicts the resolve
+  recorded (`suggestion_verdicts`), so its Undo takes them back with the text. A document the press leaves out of Live
   (a discarded create) keeps its text untouched.
-- **`seen`.** The pressing tab's state vector per open document. Until Live holds it, the press
-  is `PressUnsynced` (503, nothing stored); the command driver resends.
+- **`seen`.** The pressing tab's state vector of every live room it holds open
+  (`openStateVectors`), checked first, after the lists' keys and before the selection is read:
+  until Live holds them all, the press is `PressUnsynced` (503, nothing stored), and the command
+  driver resends. A held vector stays held, so the typing it covers has moved its document's
+  head and the selection finds the document. `seen` only waits; it adds no document to press.
 - **A resend answers only with the stored result.** The driver reads any 2xx as the command's
   result, so a resend that finds the first request still running is a 503 (sent again), and an
   id stored for another body, or settled `never`, is the routes' 409 `command_conflict`
@@ -52,11 +61,12 @@ quietly.
 
 A Work purged for good (`drizzle-work-disposal.ts`, inside the purge's transaction) has its
 branches' tree records discarded, and its suggestions, and those of the lineages the purge
-deletes, rejected in every document the pending index lists for them, with their
-`suggestion_authors` entries deleted (`dropWork`). `dropWork` finds the Work's changes in the
-document's items, not in the review list, so a proposal Live has since matched goes too. Nothing
-records it: nothing can take it back. Changes the writer applied or discarded earlier keep their
-author entries: their documents are not in the index, and nothing reads the entries.
+deletes, rejected in every document the press's enumeration finds for them (`documentsHolding`,
+over the Work's project and its creator's account: a project has one owner), with their
+`suggestion_authors` and `suggestion_verdicts` entries deleted (`dropWork`). The reject reports
+every change it decided, a proposal Live has since matched included, which no review lists.
+Nothing records it: nothing can take it back. Changes the writer applied or discarded earlier
+keep their entries: nothing reads them for a purged Work.
 Archive and delete leave the suggestions in place, frozen, so unarchive and restore find them, as
 drafts were.
 
@@ -78,11 +88,9 @@ purged with discards after 30 days.
 `document_block_rooms.pending_changes` holds, for each Work with suggestions in a document, its
 review's change count, the chats that wrote them and whether one is no chat's, written by the
 document derivation (`pendingChanges` in `packages/suggestions`). The Work's counts, the Changes
-list's rows and export's pending count read it. The press reads it only for a whole Work, scoped to the Work's
-project and account documents. It lags the derivation's debounce (2–10 s for room
-typing), so it never decides what a named press touches. A whole-Work press can miss a
-document typed into in another tab seconds before; the pressing tab's open documents come in
-through `seen`.
+list's rows and export's pending count read it. It lags the derivation's debounce (2–10 s for
+room typing), so no command takes a lagging row as its authority: the press and Work purge read
+it only where its cut is current, and read the room for the rest.
 
 ## Work-only documents
 

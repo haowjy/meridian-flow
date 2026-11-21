@@ -1,7 +1,7 @@
 import { yjsMarkKey } from "@meridian/prosemirror-schema";
 import { DIFF_DELETE, DIFF_EQUAL, DIFF_INSERT } from "@sanity/diff-match-patch";
 import type { Mark } from "prosemirror-model";
-import { type Mappable, Mapping, type Transform } from "prosemirror-transform";
+import { Mapping, ReplaceAroundStep, ReplaceStep, type Transform } from "prosemirror-transform";
 import type { AgentEditCodec } from "../codec-adapter.js";
 import type { Block } from "../codec-types.js";
 import { correspond } from "../diff/correspond.js";
@@ -181,17 +181,93 @@ function shownAtom(walk: Walk, path: readonly number[], ordinal: number): Block 
 }
 
 /**
- * A transaction that only deletes and unmarks (an accept or a reject), read once for
- * `lowerResolved`: its mapping, its final document, and the ranges of its start document it
- * deleted, sorted and joined.
+ * The exact operations an accept or reject (`tr`, run on the whole stored document) made of its
+ * start document, as operations on the root container: kept nodes are visited, deleted ones are
+ * `delete`, a filler ProseMirror put in where a delete would leave a parent invalid (an emptied
+ * document, cell or `jsx_container`) is an `insert` read from its step, and inside a textblock
+ * only the deleted units and the removed marks are written. Nothing is diffed, so every unit, run
+ * and node the resolve kept keeps its Yjs item, and text typed inside a resolved word stays where
+ * it was typed. A resolve does nothing else, so a result that does not pair unit for unit is a bug
+ * and throws.
  */
-export type ResolvedEdit = {
-  mapping: Mappable;
-  doc: Block;
-  removed: ReadonlyArray<readonly [number, number]>;
-};
+export function lowerResolved(tr: Transform): EditOp[] {
+  const removed = removedRanges(tr);
+  const filled = fillers(tr);
+  const walk: Walk = { windows: null, ops: [] };
+  const mismatch = (path: readonly number[]): never => {
+    throw new Error(`A resolve's result does not pair with its document at /${path.join("/")}`);
+  };
+  /** Whether [from, to) of the start document lies inside one deleted range. */
+  const gone = (from: number, to: number) => {
+    let low = 0;
+    let high = removed.length - 1;
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      if (removed[mid][0] <= from) low = mid + 1;
+      else high = mid - 1;
+    }
+    const range = removed[high];
+    return !!range && to <= range[1];
+  };
+  // `from` and `at` are where the two nodes' content starts in the start and final documents.
+  const container = (before: Block, from: number, after: Block, at: number, path: number[]) => {
+    const kept: Array<{ node: Block; pos: number; index: number }> = [];
+    before.forEach((child, offset, index) => {
+      const pos = from + offset;
+      if (gone(pos, pos + child.nodeSize))
+        walk.ops.push({ kind: "delete", path: [...path, index] });
+      else kept.push({ node: child, pos, index });
+    });
+    let next = 0;
+    let anchor = -1;
+    let run: Block[] | null = null;
+    after.forEach((child, offset) => {
+      const pos = at + offset;
+      if (filled.has(pos)) {
+        if (!run) {
+          run = [];
+          walk.ops.push({ kind: "insert", path, after: anchor, nodes: run });
+        }
+        run.push(child);
+        return;
+      }
+      run = null;
+      const old = kept[next++];
+      if (!old || old.node.type !== child.type) mismatch(path);
+      anchor = old.index;
+      visit(old.node, old.pos, child, pos, [...path, old.index]);
+    });
+    if (next !== kept.length) mismatch(path);
+  };
+  const visit = (before: Block, pos: number, after: Block, at: number, path: number[]) => {
+    if (before.eq(after)) return;
+    const attrs = changedAttrs(before, after, undefined);
+    if (Object.keys(attrs).length > 0) walk.ops.push({ kind: "attrs", path, attrs });
+    if (!before.isTextblock) {
+      container(before, pos + 1, after, at + 1, path);
+      return;
+    }
+    const hunks: Hunk[] = [];
+    let left = 0;
+    for (let unit = 0; unit < before.content.size; unit += 1) {
+      const char = pos + 1 + unit;
+      if (!gone(char, char + 1)) {
+        left += 1;
+        continue;
+      }
+      const last = hunks.at(-1);
+      if (last && last.to === unit) last.to += 1;
+      else hunks.push({ from: unit, to: unit + 1, at: left, end: left });
+    }
+    if (left !== after.content.size) mismatch(path);
+    lowerTextblock(walk, before, after, path, hunks);
+  };
+  container(tr.before, 0, tr.doc, 0, []);
+  return walk.ops;
+}
 
-export function resolvedEdit(tr: Transform): ResolvedEdit {
+/** The ranges of `tr`'s start document its steps deleted, sorted and joined. */
+function removedRanges(tr: Transform): Array<[number, number]> {
   const ranges: Array<[number, number]> = [];
   tr.mapping.maps.forEach((map, index) => {
     // Back through the steps before it; built only for a step that deletes (an unmark maps nothing).
@@ -209,63 +285,25 @@ export function resolvedEdit(tr: Transform): ResolvedEdit {
     if (last && from <= last[1]) last[1] = Math.max(last[1], to);
     else removed.push([from, to]);
   }
-  return { mapping: tr.mapping, doc: tr.doc, removed };
+  return removed;
 }
 
-/**
- * The exact operations `edit` made of `before`, the stored block at `at` in its start document.
- * Nothing is diffed, so every unit, run and node the edit kept keeps its Yjs item, and text typed
- * inside a resolved word stays where it was typed. One pass over the block against the deleted
- * ranges. Null when the result does not pair with `before` unit for unit, as when ProseMirror
- * fills a container that a delete emptied: `lowerBlock` lowers that one.
- */
-export function lowerResolved(before: Block, at: number, edit: ResolvedEdit): EditOp[] | null {
-  const { mapping, doc, removed } = edit;
-  const walk: Walk = { windows: null, ops: [] };
-  // The first deleted range that ends after `pos`; ranges are visited in document order.
-  let next = 0;
-  const gone = (from: number, to: number) => {
-    while (next < removed.length && removed[next][1] <= from) next += 1;
-    const range = removed[next];
-    return !!range && range[0] <= from && to <= range[1];
-  };
-  const visit = (node: Block, pos: number, path: readonly number[]): boolean => {
-    const after = doc.nodeAt(mapping.map(pos, 1));
-    if (!after || after.type !== node.type) return false;
-    if (node.eq(after)) return true;
-    const attrs = changedAttrs(node, after, undefined);
-    if (Object.keys(attrs).length > 0) walk.ops.push({ kind: "attrs", path, attrs });
-    if (node.isTextblock) {
-      const hunks: Hunk[] = [];
-      let left = 0;
-      for (let unit = 0; unit < node.content.size; unit += 1) {
-        const char = pos + 1 + unit;
-        if (!gone(char, char + 1)) {
-          left += 1;
-          continue;
-        }
-        const last = hunks.at(-1);
-        if (last && last.to === unit) last.to += 1;
-        else hunks.push({ from: unit, to: unit + 1, at: left, end: left });
-      }
-      if (left !== after.content.size) return false;
-      lowerTextblock(walk, node, after, path, hunks);
-      return true;
-    }
-    let children = 0;
-    let paired = true;
-    node.forEach((child, offset, index) => {
-      const start = pos + 1 + offset;
-      if (gone(start, start + child.nodeSize))
-        walk.ops.push({ kind: "delete", path: [...path, index] });
-      else {
-        children += 1;
-        paired &&= visit(child, start, [...path, index]);
-      }
+/** Where in `tr`'s final document each node a step put in starts: the fillers of emptied parents. */
+function fillers(tr: Transform): Set<number> {
+  const at = new Set<number>();
+  tr.steps.forEach((step, index) => {
+    if (step instanceof ReplaceAroundStep) throw new Error("A resolve moved content it kept");
+    if (!(step instanceof ReplaceStep) || step.slice.size === 0) return;
+    if (step.slice.openStart > 0 || step.slice.openEnd > 0)
+      throw new Error("A resolve's step put in part of a node");
+    const later = tr.mapping.slice(index + 1);
+    let pos = step.from;
+    step.slice.content.forEach((node) => {
+      at.add(later.map(pos, 1));
+      pos += node.nodeSize;
     });
-    return paired && children === after.childCount;
-  };
-  return visit(before, at, []) ? walk.ops : null;
+  });
+  return at;
 }
 
 function lowerTextblock(

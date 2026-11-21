@@ -16,6 +16,11 @@ Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
   `suggestion_authors` map beside the fragment. The pure code reads and writes it as `Authors`
   (`get`/`set`, a `Map` in tests); agent-edit's `suggestionAuthors(doc)` is the map on a Y.Doc,
   and reads an entry that is not an author as none (any client writes the map).
+- How each resolve decided a change, in the Y.Doc's `suggestion_verdicts` map: one key per
+  decision, `<id>:accept` or `<id>:reject`, value `true` (`suggestionVerdicts(doc)` in agent-edit).
+  A key per decision, not a value per change, because two peers can resolve one change opposite
+  ways at once and Yjs keeps both texts' deletions: both entries stand, and each Undo takes back
+  only its own.
 
 A mark holds only what `kindOf` reads per run, because every changed word carries it on its
 insertion and its deletion and Live's history keeps it for good. `work` stays on the mark rather
@@ -69,7 +74,8 @@ agent-edit pairs a split's new block with it.
 ## Resolving: `accept` and `reject`
 
 Each is one local transaction (`RAW_META`), filtered by `{ id }`, `{ turn }` (read through
-`Authors`) or `{ work }`. Accept makes insertions Live, deletes deleted text, applies attribute
+`Authors`) or `{ work }`, which stages how it decided each change it touches under
+`DECIDED_META` (id → `accept` or `reject`): an accept's superseded changes as `reject`. Accept makes insertions Live, deletes deleted text, applies attribute
 layers. Reject is the reverse. Either only deletes text and blocks and removes marks and
 attributes: nothing it keeps is rewritten. Accepting a deletion rejects every other Work's change deleting the same text: the
 first applied wins. A block the Work added that stays (accepted) still holds what later turns
@@ -89,28 +95,43 @@ where Live text separates its pieces; `pending` the turns and the Works
   the phone's sheet draw a Work's suggestions as they drew a draft's.
 - Model: agent-edit's `suggestingModel(base, view, author)` replays a planned write as a
   ProseMirror transaction, rewrites it, and lowers it back to Yjs with `lowerBlock`. A write plans
-  on what the model was last shown (its frontier), less every suggestion rejected since
-  (`withdrawRejected`, called by `createPlanningView`): without that, the same rewrite asked for
-  after a card Undo, a Discard or an inline Reject matched the model's view and changed nothing.
-  The verdict is read from Yjs items, since accept and reject delete opposite halves of a change:
-  struck text decides when a change has any (the writer can't delete it without the change
-  reading as pending again), a pure insertion counts as rejected when all of it is gone, and an
-  attribute layer as accepted when its block holds what it proposed. An accepted change stays in
-  the view, whose text is the same either way. `suggestionItems` there is the item-level twin of
+  on what the model was last shown (its frontier), less every suggestion the room records as
+  rejected (`withdrawRejected`, called by `createPlanningView`, reads `suggestion_verdicts`):
+  without that, the same rewrite asked for after a card Undo, a Discard or an inline Reject
+  matched the model's view and changed nothing. The withdraw only deletes view items the room has
+  deleted or replaced: the write ships the view's own updates to the room. A block's attribute
+  layers share one item, which leaves the view when any of them was rejected; the view then shows
+  the block's Live attributes. An accepted change stays in the view, whose text is the same
+  either way, and a change an edit removed has no verdict and stays too, as Live text the writer
+  removed after the model's read does. `suggestionItems` there is the item-level twin of
   `pendingBy`: a change to how marks or `sug`/`sugAttrs` are stored updates both.
+- Edit list: `read(format: "edits")` says `applied` or `discarded` from the verdicts of the
+  changes a write's items carry (`writeVerdict`); with none, or both, it reads the text.
 - Resolving, everywhere: agent-edit's `resolveStored(doc, schema, verdict, filter)`
-  (`model/stored-suggestions.ts`) runs `accept` or `reject` on the stored document and lowers
-  each changed block with `lowerResolved`: the exact deletes, unmarks and attribute changes,
-  paired through the transaction's mapping, not diffed. Every Yjs item the verdict keeps stays,
-  so text typed inside a resolved word, a comment's anchor and a cursor keep their place. The
+  (`model/stored-suggestions.ts`) runs `accept` or `reject` on the stored document, lowers the
+  whole transaction from the root with `lowerResolved`, and writes the staged verdicts into
+  `suggestion_verdicts` in the same Yjs transaction; it returns them (empty: nothing changed).
+  The lowering is exact, not diffed: a kept node is visited, a deleted one is a delete, and the
+  filler ProseMirror puts in where a delete would leave a parent invalid (an emptied document,
+  cell or `jsx_container` gets an empty paragraph) is read from its step and inserted. A result
+  that doesn't pair is a bug and throws. Every Yjs item the verdict keeps stays, so text typed
+  inside a resolved word, a comment's anchor and a cursor keep their place. The
   tab's Apply and Reject (`acceptSuggestions`, `rejectSuggestions`) run it on the editor's
   Y.Doc as one writer edit (origin `DIRECT_WRITE_ORIGIN`, which the Undo history tracks), so Ctrl+Z takes back
   only it; the binding then redraws the editor. Card Undo runs it with `{ turn }`.
+- **A verdict is undone with its text.** Every `Y.UndoManager` that records or takes back a
+  resolve holds `resolveScope(doc)`, the fragment and the verdicts map: the press's recorder
+  (`pressStored`), its Undo (`undoPressStored`) and the tab's history
+  (`apps/app/src/core/editor/editor-history.ts`). So an entry exists exactly while its resolve
+  stands. A manager over the fragment alone would leave an undone resolve's verdict standing,
+  and the planning view would withdraw a suggestion that is pending again.
 - Press: Apply or Discard on documents, folders or a Work is a server command
   (`domains/collab/adapters/drizzle-press.ts`). `pressStored` runs `resolveStored` as one Yjs
   transaction and returns its inserted and deleted id ranges; `undoPressStored` takes those
   ranges back as a Yjs undo, the same undo Ctrl+Z is in the tab. A whole-Work press finds its
-  documents through `pending_changes`.
+  documents among its project's and account's: those `pending_changes` lists for it where the
+  derivation is current, and every one it hasn't caught up on
+  (`apps/server/server/domains/collab/.context/press.md`).
 
 ## Readers
 
@@ -163,15 +184,23 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   wording comes back, in two paragraphs). Block edits inside a container the Work added (a
   table's rows, a `jsx_container`'s blocks) are real and belong to that container's turn.
 - Text the writer types inside a paragraph the AI added goes with it on reject.
-- A pure AI insertion that the writer applied and then deleted whole reads as rejected in the
-  model's planning view, so proposing it again is a suggestion to review. A block's attribute layers
-  leave the view only when every layer on it was rejected.
+- A change the writer removed by typing (a pending AI insertion deleted, an applied one then
+  deleted) has no verdict: an identical re-proposal from the same stale plan keeps the writer's
+  deletion, as for Live text, and the next read shows the model the real text.
+- A block's attribute layers are one Yjs value. Rejecting a later turn's layer writes the
+  earlier layers anew in the room, and a re-proposal planned on the view writes its own value
+  concurrently: Yjs keeps one of the two by client id, so about half the time the re-proposal's
+  attributes are lost (or, when it wins, the earlier turn's layer). Concurrent attribute
+  proposals by two writers on one block lose one the same way. Per-layer items would fix it at
+  the cost of a stored-model change.
 - Rejecting an earlier turn's change first leaves a later turn's insertion over it standing
   beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
   discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work
   the writer did not reject.
-- An author entry is never removed: a change that is accepted, rejected or deleted keeps its
-  entry in `suggestion_authors` (about 60 bytes each).
+- An author or verdict entry is never removed, except by `dropWork` when a Work is purged: a
+  change that is accepted, rejected or deleted keeps its entry in `suggestion_authors` (about 60
+  bytes each), and each decision about 44 bytes in `suggestion_verdicts`. Typing never writes
+  the verdicts.
 - Live's history keeps every suggestion for good. A 4,200-word chapter (24 KB of history)
   stores about 400 KB per whole-chapter AI rewrite (30% of words changed) and under 1 KB per
   discard; ten discarded rewrites come to 3.9 MB (A2, measured as B2 did; with the earlier

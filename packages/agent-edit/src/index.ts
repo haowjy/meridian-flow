@@ -27,10 +27,12 @@ export {
   type IdRanges,
   type PressRecord,
   pressStored,
+  resolveScope,
   resolveStored,
   storedPendingChanges,
   storedPendingTurns,
   suggestionAuthors,
+  suggestionVerdicts,
   undoPressStored,
   writeVerdict,
 } from "./model/stored-suggestions.js";
