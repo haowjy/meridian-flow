@@ -161,16 +161,17 @@ export function useDocumentPaint(projectId: string, document: OpenDocument | nul
     scopeItemKey: scopeRow?.itemKey,
     choice,
   });
-  // The draft this page painted, and what the writer had chosen then: a Discard made anywhere
-  // else leaves its list without the draft, and the page stays on it, in Trash, until the
-  // writer chooses something else or a restore lists it again.
+  // The draft this page painted, and what the writer had chosen then, under which scope: a
+  // Discard made anywhere else leaves its list without the draft, and the page stays on it, in
+  // Trash, until the writer chooses something else, the scope's owner changes, or a restore
+  // lists it again.
   const commands = useDraftCommandOwner();
   const [painted, setPainted] = useState<{
     documentId: string;
     draft: DraftPin;
     chose: string;
   } | null>(null);
-  const choseKey = JSON.stringify([stored.pin?.draftId, stored.pin?.itemKey, choice]);
+  const choseKey = JSON.stringify([stored.pin?.draftId, stored.pin?.itemKey, choice, scopeDraftId]);
   const heldItem =
     painted?.documentId === documentId && painted.chose === choseKey ? painted.draft : null;
   // What became of it here: `ended` once it is gone or a press holds it.

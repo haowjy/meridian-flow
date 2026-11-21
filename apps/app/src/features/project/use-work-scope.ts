@@ -1,6 +1,7 @@
 import { draftOf, type Work } from "@meridian/contracts/works";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import { pickWorkViews } from "@/client/project-shell/document-views";
+import { enterScope } from "@/client/project-shell/document-views";
 import {
   NO_SCOPE,
   useProjectScope,
@@ -46,7 +47,7 @@ export function useWorkScopeState(projectId: string): WorkScope & { retry: () =>
 /**
  * Pick a Work, or No Work by its row id. Main, the address and the open documents stay put; a page
  * on the picked Work's draft stays on it with the toggle on Draft, and every other page showing a
- * draft returns to Live with the toggle (`pickWorkViews`). Written with the scope, so the first
+ * draft returns to Live with the toggle (`enterScope`). Written with the scope, so the first
  * render under the new scope already shows them.
  */
 export function useWorkScope(projectId: string): {
@@ -54,6 +55,7 @@ export function useWorkScope(projectId: string): {
   setWorkId(id: string): void;
 } {
   const accountId = useAccountId();
+  const queryClient = useQueryClient();
   const works = useWorks(projectId);
   const noWorkId = works.noWork?.id ?? null;
   const { workId } = useWorkScopeState(projectId);
@@ -61,11 +63,11 @@ export function useWorkScope(projectId: string): {
     (id: string) => {
       if (id === workId) return;
       const draft = id === noWorkId ? null : workDraftId(works, id);
-      const onWorkDraft = pickWorkViews(accountId, projectId, draft);
+      const onWorkDraft = enterScope(queryClient, accountId, projectId, draft);
       writeTreeVersionChoice(accountId, projectId, onWorkDraft ? "draft" : "live");
       writeProjectScope(accountId, projectId, id === noWorkId ? NO_SCOPE : id);
     },
-    [accountId, projectId, noWorkId, workId, works],
+    [queryClient, accountId, projectId, noWorkId, workId, works],
   );
   return useMemo(() => ({ workId, setWorkId }), [workId, setWorkId]);
 }

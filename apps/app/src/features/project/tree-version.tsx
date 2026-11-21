@@ -10,7 +10,17 @@
  */
 import { type Work, type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE, pendingRecords } from "@meridian/project-tree";
-import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
+import { enterScope } from "@/client/project-shell/document-views";
 import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
@@ -79,17 +89,37 @@ export function useDraftTreeVersion(
   return draftId ? draftTreeVersion(draftId, lifecycle) : null;
 }
 
+/** The owner key of a new chat on screen: a scope whose drafts nobody holds yet. */
+const NO_OWNER = "new-chat";
+
 export function TreeVersionProvider({
   projectId,
   chatThreadId,
+  newChat,
   children,
 }: {
   projectId: string;
   chatThreadId: string | null;
+  /** A new chat's composer is on screen: under None, a scope with no drafts. */
+  newChat: boolean;
   children: ReactNode;
 }) {
   const accountId = useAccountId();
   const { draftId, work } = useScopeDraftOwner(projectId, chatThreadId);
+  // Whose drafts the scope shows changed hands: pages leave the drafts of the owner before
+  // (`enterScope`). A new chat on screen has no drafts, so it is a change to no owner. "" with no
+  // new chat is no owner known yet (no chat on screen, or its row still loading), which changes
+  // nothing. A layout effect, so the address's arrival after it in this commit wins. A Work pick
+  // has already run `enterScope` with the scope's write, and this run finds nothing to change.
+  const queryClient = useQueryClient();
+  const ownerKey = draftId || (newChat ? NO_OWNER : "");
+  const owner = useRef(ownerKey);
+  useLayoutEffect(() => {
+    if (!ownerKey) return;
+    if (owner.current && owner.current !== ownerKey)
+      enterScope(queryClient, accountId, projectId, ownerKey === NO_OWNER ? null : ownerKey);
+    owner.current = ownerKey;
+  }, [queryClient, accountId, projectId, ownerKey]);
   const drafts = useOwnerDrafts(projectId, draftId);
   const { draftId: listedDraft, fileForDocument } = drafts;
   const project = useTreeList({ kind: "project", projectId });

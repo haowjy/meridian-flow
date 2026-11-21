@@ -10,11 +10,13 @@ stateDiagram-v2
   none --> held: a listed draft is painted
   held --> held: the writer's choice is unchanged and the draft is listed again
   held --> gone: the draft left its list, or a press holds it
-  held --> none: the writer chose another version, or the document changed
+  held --> none: the writer chose another version, the scope's owner changed, or the document changed
   gone --> none
 ```
 
 - **`held` is state, not a ref read during render**: the effect that follows the list sets it,
   and the next render paints from it.
-- **The writer's choice ends the hold**: the key is the pin and the sidebar's Live/Draft choice
-  when the draft was painted; any change to them drops it.
+- **The writer's choice ends the hold**: the key is the pin, the sidebar's Live/Draft choice and
+  the scope's draft owner when the draft was painted; any change to them drops it. Without the
+  owner in the key, switching to a chat with no draft of the document kept the last chat's draft
+  on screen.

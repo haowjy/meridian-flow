@@ -87,8 +87,7 @@ export function DocumentVersionMenu({
     scope: hint.draftId === scopeDraft,
     onSelect: () => {
       // The toggle's Work's draft is that Work's version of every page: the toggle goes to Draft,
-      // and another owner's pin, which outranks the toggle, goes. Pinning the scope's own draft
-      // instead would outlive a scope change and hold the next chat's page on this draft.
+      // and another owner's pin, which outranks the toggle, goes.
       const scoped = hint.draftId === shell?.draftId;
       if (scoped) shell.show("draft");
       setDocumentView(accountId, projectId, documentId, {
