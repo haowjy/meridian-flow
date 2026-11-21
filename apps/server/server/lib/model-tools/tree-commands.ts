@@ -7,7 +7,7 @@
  */
 import type { WriteToolInput } from "@meridian/agent-edit/integration";
 import { modelResult } from "@meridian/agent-edit/integration";
-import type { BranchId, ThreadId, TurnId } from "@meridian/contracts";
+import type { DraftId, ThreadId, TurnId } from "@meridian/contracts";
 import { addressScheme } from "@meridian/contracts/context-uri";
 import { contextPortForThread } from "../../domains/context/index.js";
 import type { ShownDelta } from "../../domains/context/tree/names-shown.js";
@@ -177,7 +177,7 @@ export async function runTreeToolCommand(
             ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
             ...(scope.view.draft
               ? {
-                  draftBranchId: scope.view.draft as BranchId,
+                  draftBranchId: scope.view.draft as DraftId,
                 }
               : {}),
             shownAt: uriOfWritten(result.shownAt),

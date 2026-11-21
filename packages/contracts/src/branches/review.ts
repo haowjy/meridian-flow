@@ -8,11 +8,10 @@
  */
 import type { CommandOutcome, Settlement } from "../commands/index.js";
 import type { ParsedContextUri } from "../context-uri.js";
-import type { BranchId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
+import type { DraftId, DraftItemKey, ProjectId, ThreadId, UserId } from "../ids.js";
 import type { ContextOperationReceipt } from "../protocol/context-operation.js";
 import type { ReversalOutcome } from "../protocol/write-reversal.js";
 import type { JsonObject, JsonValue, ToolContentPart } from "../threads/index.js";
-import type { DraftOwnerKey } from "./owner.js";
 
 /**
  * The cut the review rows were drawn from: for each list the Work's records are in, the list's
@@ -84,7 +83,7 @@ export type ModelEditCommandResult = {
  */
 export interface ThreadDraftListItem {
   /** The whole branch (a `branches` row). */
-  branchId: BranchId;
+  branchId: DraftId;
   /** `${branchId}:${documentId}`: the review identity for list rows, address, commands and queries. */
   itemKey: DraftItemKey;
   documentId: string;
@@ -118,16 +117,15 @@ export interface ThreadDraftListItem {
 }
 
 /**
- * One document's draft in an active branch, for the hint on an open document. The branch is
- * named by its own `label`; `owner` is who owns it, which the review address names.
+ * One document's pending changes in a draft, for the hint on an open document. The draft is
+ * named to the writer by the Work or chat that names it (`label`).
  */
 export interface DocumentDraftHint {
-  branchId: BranchId;
+  branchId: DraftId;
   /** The draft's review identity for the document, as in the list. */
   itemKey: DraftItemKey;
   /** How the branch is named to the writer; null when it has no name (the client words that). */
   label: string | null;
-  owner: DraftOwnerKey;
   /**
    * The branch's move or delete of the document, which live doesn't show until Apply:
    * where the branch puts it, or that it deletes it. Null when the branch only edits its text.
@@ -142,10 +140,10 @@ export interface DocumentDraftHintsResponse {
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
   /**
-   * The owner's active branch, null when it has none: the `draft` its tree records carry, which
-   * the browser replays as the Work's tree (a change to a folder alone lists no item).
+   * The draft listed: the `draft` its tree records carry, which the browser replays as the
+   * draft's tree (a change to a folder alone lists no item).
    */
-  branchId: BranchId | null;
+  branchId: DraftId;
   /** The folders the Work's tree changes (it has a row on). */
   folders: { id: string }[];
   /**

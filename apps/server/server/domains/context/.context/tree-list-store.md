@@ -114,7 +114,7 @@ Test hook points `treeList.*` mark each step; the kill suite stops a real proces
 The measurement behind the one-table shape (22,110 nodes, three Works with about 200 rows each,
 median of 21 runs, a three-folder path walk): live 0.18 ms; a Work's view as a plain left join
 with `COALESCE` 7.5 ms (72 ms when the walk is written to force index use); as the
-index-friendly union (`tree_nodes` rows with no `branch_tree_nodes` row for the branch, then
+index-friendly union (`tree_nodes` rows with no `draft_tree_nodes` row for the branch, then
 the branch's rows) with each walk step a `LATERAL (... OFFSET 0)` subquery, 0.48 ms. Today's
 two-table shape in the same walk costs 3.1 ms. A recursive step that joins the relation without
 the `LATERAL` is planned as a hash join of the whole relation, whatever the form: write

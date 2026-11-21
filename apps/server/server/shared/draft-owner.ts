@@ -1,14 +1,13 @@
 /**
- * Who owns a branch and whether its drafts can be written: the one reader of a branch's owner,
- * its handle and its lifecycle, and the lock that serializes a lineage's writes. A branch is
- * owned by a Work or by a conversation lineage, never both. Every reader that needs the owner
- * of a branch goes through `branchOwnerSql`, so a lineage branch (null `origin_work_id`) can't
- * be mistaken for a purged Work's.
+ * Whose material a chat writes (`chatOwner`), which draft an owner names, who names a draft, and
+ * the lock that serializes a lineage's writes. An owner is a Work or a conversation lineage; it
+ * names its draft (`works.draft_id`, the root chat's `threads.draft_id`), and the draft names no
+ * owner.
  */
-import { type DraftOwner, type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts";
+import type { DraftOwner } from "@meridian/contracts";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
-import { branches, threads } from "@meridian/database/schema";
-import { and, eq, inArray, type SQL, type SQLWrapper, sql } from "drizzle-orm";
+import { drafts, threads } from "@meridian/database/schema";
+import { inArray, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
 /** Owners a write set names: Works by id, lineages by root thread id. */
@@ -45,9 +44,9 @@ export function lineageHasLiveMember(rootThreadId: string | SQLWrapper) {
 }
 
 /**
- * Who owns a chat's drafts: its named Work, or its conversation lineage when it has no Work.
- * Scratch follows the same rule (`scratchOwnerFor`), so the two can't disagree about whose
- * material a chat writes.
+ * Whose material a chat writes: its named Work, or its conversation lineage when it has no Work.
+ * Scratch follows this rule (`scratchOwnerFor`), and the chat drafts into the draft this owner
+ * names (`draftOfOwnerSql`), so the two can't disagree.
  */
 export function chatOwner(
   thread: { projectId: string; rootThreadId: string },
@@ -58,46 +57,30 @@ export function chatOwner(
     : { kind: "work", workId: work.id };
 }
 
-type BranchColumns = { workId: SQLWrapper; rootThreadId: SQLWrapper };
-
 /**
- * The owner columns and handle of a branch row as SQL. Pass the drizzle `branches` table, or the
- * alias of a raw-SQL branch row.
+ * Who names a draft, as SQL over a query that reads `drafts`: the Work whose `draft_id` it is, or
+ * the root chat whose lineage it is, and the handle the writer knows it by (`w3`, `c12`). A draft
+ * names no owner itself; this is the one reverse read, for labels and the AI-write lifecycle.
  */
-export function branchOwnerSql(from: typeof branches | string): {
+export function draftOwnerSql(): {
   workId: SQL<string | null>;
   rootThreadId: SQL<string | null>;
   handle: SQL<string | null>;
 } {
-  const columns: BranchColumns =
-    typeof from === "string"
-      ? {
-          workId: sql.raw(`${from}.origin_work_id`),
-          rootThreadId: sql.raw(`${from}.origin_root_thread_id`),
-        }
-      : { workId: from.originWorkId, rootThreadId: from.originRootThreadId };
+  // Qualified by hand: Drizzle renders a lone table's column bare, which inside these subqueries
+  // would name the subquery's own `id`.
+  const draftId = sql`${drafts}.${sql.identifier("id")}`;
   return {
-    workId: sql<string | null>`${columns.workId}`,
-    rootThreadId: sql<string | null>`${columns.rootThreadId}`,
-    handle: sql<string | null>`CASE
-      WHEN ${columns.workId} IS NOT NULL THEN (SELECT ow.handle FROM works ow WHERE ow.id = ${columns.workId})
-      WHEN ${columns.rootThreadId} IS NOT NULL THEN (SELECT ot.ref FROM threads ot WHERE ot.id = ${columns.rootThreadId})
-    END`,
+    workId: sql<string | null>`(SELECT ow.id FROM works ow WHERE ow.draft_id = ${draftId})`,
+    rootThreadId: sql<string | null>`(SELECT ot.id FROM threads ot WHERE ot.draft_id = ${draftId})`,
+    handle: sql<string | null>`COALESCE(
+      (SELECT ow.handle FROM works ow WHERE ow.draft_id = ${draftId}),
+      (SELECT ot.ref FROM threads ot WHERE ot.draft_id = ${draftId})
+    )`,
   };
 }
 
-/** The owner key a branch's owner columns name; null for a closed branch with no owner. */
-export function ownerKeyOfColumns(columns: {
-  workId: string | null;
-  rootThreadId: string | null;
-}): DraftOwnerKey | null {
-  if (columns.workId) return draftOwnerKey({ kind: "work", workId: columns.workId });
-  if (columns.rootThreadId)
-    return draftOwnerKey({ kind: "lineage", rootThreadId: columns.rootThreadId });
-  return null;
-}
-
-/** The owner a branch's (or draft's) owner columns name; null for a closed branch with no owner. */
+/** The owner a draft's naming columns name; null when nothing names it any more. */
 export function ownerOfColumns(columns: {
   projectId: string;
   workId: string | null;
@@ -109,14 +92,13 @@ export function ownerOfColumns(columns: {
   return null;
 }
 
-/** The `branches` rows this owner owns. */
-export function branchOwnedBy(owner: DraftOwner): SQL {
+/** The draft an owner names, as SQL: its Work's `draft_id`, or its lineage root's. */
+export function draftOfOwnerSql(owner: DraftOwner): SQL<string | null> {
   return owner.kind === "work"
-    ? eq(branches.originWorkId, owner.workId)
-    : (and(
-        eq(branches.originRootThreadId, owner.rootThreadId),
-        eq(branches.projectId, owner.projectId),
-      ) as SQL);
+    ? sql<string | null>`(SELECT w.draft_id FROM works w WHERE w.id = ${owner.workId})`
+    : sql<
+        string | null
+      >`(SELECT t.draft_id FROM threads t WHERE t.id = ${owner.rootThreadId} AND t.project_id = ${owner.projectId})`;
 }
 
 /** The lock key of a lineage's drafts. */

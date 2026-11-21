@@ -8,7 +8,6 @@
  * Skill files (`skills://`) have their own rule, `skillLevel`.
  */
 
-import { draftOwnerKey } from "@meridian/contracts";
 import { type ContextUriScheme, isDraftedScheme } from "@meridian/contracts/context-uri";
 import type { AiWriteMode } from "@meridian/contracts/works";
 import { matchAncestors } from "./ancestors.js";
@@ -71,7 +70,7 @@ function destinationAt(
 ): FileDestination {
   const draft = access === "ask" || writeMode === "draft";
   return draft && isDrafted(scheme)
-    ? { kind: "draft", owner: owner.owner, ownerHandle: owner.handle }
+    ? { kind: "draft", draftId: owner.draftId, ownerHandle: owner.handle }
     : { kind: "live" };
 }
 
@@ -104,7 +103,11 @@ export interface NodeGrant {
 export function destinationFor(principal: Principal, facts: FileFacts): FileDestination {
   const target = facts.target;
   if (target.kind === "draft") {
-    return { kind: "draft", owner: target.owner, ownerHandle: facts.branchOwner?.handle ?? null };
+    return {
+      kind: "draft",
+      draftId: target.draftId,
+      ownerHandle: facts.branchOwner?.handle ?? null,
+    };
   }
   // A deleted document comes back live, where it was.
   if (target.kind === "restore") return { kind: "live" };
@@ -186,8 +189,8 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
   }
   if (facts.ownerWork) terms.push(...workTerms(facts.ownerWork));
   if (at.kind === "draft") {
-    if (!facts.branchOwner || draftOwnerKey(facts.branchOwner.owner) !== draftOwnerKey(at.owner)) {
-      throw new Error(`File facts lack the branch owner ${draftOwnerKey(at.owner)}`);
+    if (facts.branchOwner?.draftId !== at.draftId) {
+      throw new Error(`File facts lack the draft ${at.draftId}`);
     }
     terms.push(...branchOwnerTerms(facts.branchOwner));
   }
@@ -197,6 +200,7 @@ function lifecycleTerms(facts: FileFacts, at: FileDestination): Term[] {
 /** A lineage with no live member is read-only until a chat in it is restored. */
 function branchOwnerTerms(owner: FileBranchOwnerFacts): Term[] {
   if (owner.purged) return [{ cap: "none", limit: "not_found" }];
+  if (!owner.owner) return [];
   if (owner.owner.kind === "lineage") {
     return owner.frozen ? [{ cap: "read", limit: "chat_frozen" }] : [];
   }

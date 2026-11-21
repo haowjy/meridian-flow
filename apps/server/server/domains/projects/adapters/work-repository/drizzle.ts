@@ -46,6 +46,7 @@ function mapWork(row: WorkRow): Work {
     name: row.name,
     handle,
     isNoWork: row.isNoWork,
+    draftId: row.draftId,
     goal: row.goal,
     status: row.status,
     archivedAt: row.archivedAt?.toISOString() ?? null,
@@ -95,11 +96,15 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
   }
 
   async function lifecycleChanged(
-    work: Pick<Work, "id" | "projectId">,
+    work: Pick<Work, "id" | "projectId" | "draftId">,
     closed?: "work_archived" | "work_deleted",
   ): Promise<void> {
     await deps.fileAccessChanges.publish({ workId: work.id as WorkId, closed });
-    projectionMutation.lifecycleChanged({ id: work.id as WorkId, projectId: work.projectId });
+    projectionMutation.lifecycleChanged({
+      id: work.id as WorkId,
+      projectId: work.projectId,
+      draftId: work.draftId,
+    });
   }
 
   async function lockProjectWorkCreation(projectId: ProjectId): Promise<void> {
@@ -180,6 +185,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
               project?.userId ?? input.createdByUserId ?? "00000000-0000-4000-8000-000000000000",
             name: input.name,
             handle,
+            // Null mints the Work's draft in the insert (`mint_named_draft`).
+            draftId: input.draftId ?? null,
             goal: input.goal ?? null,
           })
           .returning();

@@ -8,11 +8,11 @@
 export type SuggestionAttrs = {
   /** One change: an insertion and the deletion it replaces share it. */
   id: string;
-  /** The Work whose draft this is. */
-  work: string;
+  /** The draft this change is in. */
+  draft: string;
 };
 
-/** Who wrote a change: a chat's turn, or the writer typing in the Work's view (no chat or turn). */
+/** Who wrote a change: a chat's turn, or the writer typing in the draft's view (no chat or turn). */
 export type Author = {
   chat: string | null;
   turn: string | null;
@@ -37,7 +37,7 @@ export function changeAuthor(
   authors: Authors,
 ): (SuggestionAttrs & Author) | null {
   const author = authors.get(change.id);
-  return author ? { id: change.id, work: change.work, ...author } : null;
+  return author ? { id: change.id, draft: change.draft, ...author } : null;
 }
 
 const ID_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz";

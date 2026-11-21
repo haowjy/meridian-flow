@@ -36,13 +36,20 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
-import { createInMemoryBranchStore, createInMemoryBranchWriteBoundary } from "./branches.js";
+import {
+  createInMemoryBranchStore,
+  createInMemoryBranchWriteBoundary,
+  type NamedDraft,
+} from "./branches.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "./static-document-link-scopes.js";
 
-export function createInMemoryCollabDomain(): CollabDomain {
+/** `namedDraft` reads the draft a Work's or root chat's row names; by default nothing names one. */
+export function createInMemoryCollabDomain(
+  namedDraft: NamedDraft = async () => null,
+): CollabDomain {
   // Nothing in memory carries a filetype: every document is prose.
   const resolveDocumentFiletype = async () => null;
   const journal = createInMemoryJournal();
@@ -81,13 +88,12 @@ export function createInMemoryCollabDomain(): CollabDomain {
     observability: createAgentEditObservabilityOptions({}),
   });
   const branches = createBranches({
-    store: createInMemoryBranchStore(),
+    store: createInMemoryBranchStore(namedDraft),
     boundary: createInMemoryBranchWriteBoundary(),
   });
   const agentEdit = createAgentEditRouter({
     liveUtilityCore: runtime.liveUtilityCore,
-    workView: runtime.workView,
-    branches,
+    draftView: runtime.draftView,
   });
   const projections = { refresh: runDocumentWriteHook };
   const hocuspocusPersistence = createHocuspocusPersistenceService({
@@ -117,7 +123,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
       // Nothing is removed in memory.
-      workOnlyOwners: async () => [],
+      draftsHolding: async () => [],
       roomRemoval: async () => null,
       validateHocuspocusDocument: hocuspocusPersistence.validateHocuspocusDocument,
       storeHocuspocusDocument: hocuspocusPersistence.storeHocuspocusDocument,
@@ -194,9 +200,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
     branches: createInMemoryBranchStub(),
     branchResolver: {
       branches,
-      // No branches in memory: a purged Work has none to dispose of.
+      // No drafts in memory: a purged Work has none to dispose of.
       workBranchDisposal: {
-        withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [] })),
+        withDisposal: (_workId, run) => run(async () => ({ releasedObjects: [], draftIds: [] })),
       },
       documentPurgeDisposal: { settle: async () => "closed" },
     },
@@ -228,7 +234,7 @@ function createInMemoryDraftPeerStub(
     // Nothing is derived in memory.
     readStoredGrepTexts: async () => new Map(),
     readStoredWordCounts: async () => new Map(),
-    readOwnerMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
+    readDraftMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveMarkdown: (input) => documents.readVersionedMarkdown(input.documentId),
     readEffectiveBlocks: (input) =>
       coordinator.withDocument(input.documentId, async (doc) => {
@@ -271,8 +277,8 @@ function createInMemoryBranchStub(): CollabBranches {
       async list() {
         return [];
       },
-      async listItems() {
-        return { branchId: null, items: [], folders: [], threadTitles: new Map(), saw: {} };
+      async listItems({ draft }) {
+        return { branchId: draft, items: [], folders: [], threadTitles: new Map(), saw: {} };
       },
       async pendingDocumentCount() {
         return 0;
@@ -280,16 +286,13 @@ function createInMemoryBranchStub(): CollabBranches {
       async branchesChangingDocument() {
         return [];
       },
-      async items() {
-        return { branchId: null, items: [] };
+      async items({ draft }) {
+        return { branchId: draft, items: [] };
       },
       async resolveItem() {
         return null;
       },
       async resolveItemInBranch() {
-        return null;
-      },
-      async resolveItemByDocument() {
         return null;
       },
       async lookupCommand() {

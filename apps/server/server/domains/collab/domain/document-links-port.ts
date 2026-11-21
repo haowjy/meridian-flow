@@ -14,8 +14,8 @@ export function createScopedDocumentLinks(input: {
   registrar: AheadRefRegistrar;
   /** The view a command on this document reads and writes in. */
   viewFor(documentId: string, context: WriteContext | undefined): LinkView;
-  /** The Work whose view of Live the core reads; null for Live's. */
-  work: string | null;
+  /** The draft whose view of Live the core reads; null for Live's. */
+  draft: string | null;
 }): DocumentLinksPort {
   const { scopes } = input;
   const holder = (documentId: string, context: WriteContext | undefined) => ({
@@ -41,7 +41,7 @@ export function createScopedDocumentLinks(input: {
       if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
       else await input.registrar.register(registrations);
     },
-    revision: (doc, scope) => viewRevision(documentRevision(doc, scope), input.work),
+    revision: (doc, scope) => viewRevision(documentRevision(doc, scope), input.draft),
   };
 }
 

@@ -6,10 +6,9 @@
 
 import { z } from "zod";
 import { type AgentSelection, agentSelectionSchema } from "../agents/index.js";
-import type { DraftOwnerKey } from "../branches/owner.js";
 import type { StoredResult } from "../commands/index.js";
 import { CONTEXT_URI_SCHEMES, type ContextUriScheme } from "../context-uri.js";
-import type { UserId, WorkId } from "../ids.js";
+import { type DraftId, isDraftId, type UserId, type WorkId } from "../ids.js";
 import type { ProjectDto } from "../projects/index.js";
 import type {
   Block,
@@ -156,11 +155,10 @@ export type CopyContextEntryView =
   /** The live document; what a sidebar row shows. */
   | { kind: "live" }
   /**
-   * The owner's draft of the document: the one its active branch holds, else the latest one a
-   * Discard closed. An owner that never drafted it reads the live document, which is what the
-   * draft would have held.
+   * The document in a draft's view: Live with that draft's suggestions applied. A draft that
+   * never changed it reads the live document, which is what the draft would have held.
    */
-  | { kind: "draft"; owner: DraftOwnerKey };
+  | { kind: "draft"; draft: DraftId };
 
 /** One selected root: what Copy copies, where it comes from, and how to read it. */
 export type CopyContextEntrySource = {
@@ -314,6 +312,8 @@ export type ContextReadResponse = ContextReadTrackedResponse | ContextReadBinary
 export type CreateThreadRequest = {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
+  /** The new chat's lineage draft (`newDraftId`), minted beside `id`; the server mints one if omitted. */
+  draftId?: DraftId;
   projectId: string;
   title?: string;
   agentSelection: AgentSelection;
@@ -367,6 +367,8 @@ export type SetThreadOverridesRequest = z.infer<typeof setThreadOverridesRequest
 
 export const handoffThreadRequestSchema = z.strictObject({
   id: z.uuid(),
+  /** The new lineage's draft (`newDraftId`), minted beside `id`; the server mints one if omitted. */
+  draftId: z.string().refine(isDraftId).optional(),
   originTurnId: z.uuid(),
   agentSelection: agentSelectionSchema,
   /** Omitted means none, as a tab from before overrides sends it. */

@@ -61,7 +61,7 @@ export type ChangesScope = {
   /** The Work the commands act for: the picked Work, else the chat on screen's (No Work for a chat's own drafts). */
   work: Work | null;
   /** "" when there is nothing to list (None with no chat of its own). */
-  ownerKey: string;
+  draftId: string;
   heading: string;
   empty: string;
   /** What waits on the writer: the documents and folders the Work or the chat changes. */
@@ -76,8 +76,8 @@ export type ChangesScope = {
 };
 
 export function useChangesScope(projectId: string, chatThreadId: string | null): ChangesScope {
-  const { picked, work, ownerKey } = useScopeDraftOwner(projectId, chatThreadId);
-  const lineageCount = useOwnerDrafts(projectId, picked ? "" : ownerKey, {
+  const { picked, work, draftId } = useScopeDraftOwner(projectId, chatThreadId);
+  const lineageCount = useOwnerDrafts(projectId, picked ? "" : draftId, {
     enabled: !picked,
   }).drafts?.length;
   const { works, nameOf } = useWorks(projectId);
@@ -85,7 +85,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
   // The shell's count is the Changes list's: the Work's changed documents and folders, from its
   // open list. The Works list's stored count is the same count for a Work whose list is not open.
   const shell = useShellTreeVersion();
-  const changed = shell?.ownerKey === ownerKey && ownerKey ? shell.changeCount : null;
+  const changed = shell?.draftId === draftId && draftId ? shell.changeCount : null;
   // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
     const count = picked ? reviewCount(shell, picked) : (changed ?? lineageCount ?? 0);
@@ -101,7 +101,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       const name = nameOf(named);
       return {
         work,
-        ownerKey,
+        draftId,
         heading: t`Changes in ${name}`,
         empty: t`Nothing to review in ${name}.`,
         count,
@@ -111,14 +111,14 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
     }
     return {
       work,
-      ownerKey,
+      draftId,
       heading: t`Changes in this chat`,
       empty: t`Nothing to review in this chat.`,
       count,
-      offered: Boolean(ownerKey) && count > 0,
+      offered: Boolean(draftId) && count > 0,
       elsewhere,
     };
-  }, [picked, work, ownerKey, lineageCount, works, nameOf, chatWorkId, changed, shell]);
+  }, [picked, work, draftId, lineageCount, works, nameOf, chatWorkId, changed, shell]);
 }
 
 /**
@@ -152,19 +152,19 @@ export function ChangesSource({
   isOpen: (file: ReviewFileTarget) => boolean;
   onPicked?: () => void;
 }) {
-  const { ownerKey } = scope;
+  const { draftId } = scope;
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
     controller.owner.snapshot,
   );
   const touch = useCoarsePointer();
-  const drafts = useOwnerDrafts(projectId, ownerKey);
+  const drafts = useOwnerDrafts(projectId, draftId);
   // A command in flight hides its row.
   const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
   const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.draft.itemKey));
   const shell = useShellTreeVersion();
-  const tree = shell?.ownerKey === ownerKey ? shell.tree : null;
+  const tree = shell?.draftId === draftId ? shell.tree : null;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const fold = (id: string) =>
     setFolded((current) => {
@@ -247,7 +247,7 @@ export function ChangesSource({
         disabled: controller.dispositionLocked,
       }
     : null;
-  const owned = useDraftNotice(ownerKey);
+  const owned = useDraftNotice(draftId);
   const notice = owned?.surface.kind === "changes" ? owned : null;
   const words = useDraftNoticeWords(notice);
   const openDocument = useOpenProjectDocument(projectId);
@@ -263,14 +263,13 @@ export function ChangesSource({
     for (const group of groups) walk(group, null);
     // A row the Apply took stays drawn while a word speaks for it, so what undoing the Apply
     // skipped or left (an edit made since) has a row to show on.
-    for (const { key } of taken.get(ownerKey) ?? [])
-      if (!folderOf.has(key)) folderOf.set(key, null);
+    for (const { key } of taken.get(draftId) ?? []) if (!folderOf.has(key)) folderOf.set(key, null);
     return {
       holds: (node) => folderOf.has(node),
       parent: (node) => folderOf.get(node) ?? null,
       open: (folder) => !folded.has(folder),
     };
-  }, [groups, folded, ownerKey]);
+  }, [groups, folded, draftId]);
   const treeWords = useTreeNoticeWords(projectId, drawn);
   const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
   // One list of the rows as shown: a folder heads its documents, then the folders inside it.
@@ -307,14 +306,14 @@ export function ChangesSource({
   const hold = () => {
     const keys = items.map(changeKey);
     taken.set(
-      ownerKey,
+      draftId,
       items.map((item, at) => ({ key: item.key, row: item, after: keys.slice(0, at).reverse() })),
     );
   };
   const shown = withGone(
     items,
     changeKey,
-    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
+    (taken.get(draftId) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
   );
   const goneRows = shown.some((item) => item.gone);
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
@@ -469,7 +468,7 @@ export function ChangesSource({
                 <ChangeRow
                   key={file.documentId}
                   projectId={projectId}
-                  ownerKey={ownerKey}
+                  draftId={draftId}
                   file={file}
                   depth={item.depth}
                   fault={tree?.faults.get(file.documentId) ?? null}
@@ -530,7 +529,7 @@ const NOTHING = () => {};
  */
 function ChangeRow({
   projectId,
-  ownerKey,
+  draftId,
   file,
   depth,
   fault,
@@ -543,7 +542,7 @@ function ChangeRow({
   onPicked,
 }: {
   projectId: string;
-  ownerKey: string;
+  draftId: string;
   file: ReviewFileTarget;
   /** Right before this row's Discard or Apply: the list holds what it shows. */
   onCommand: () => void;
@@ -566,7 +565,7 @@ function ChangeRow({
     void controller.discard(file.documentId, file.draft.itemKey);
   };
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
-  const copyView = draftCopyView(file, ownerKey);
+  const copyView = draftCopyView(file, draftId);
   const drag = useReferenceDrag(
     copyView ? { ref: { kind: "file", id: file.documentId }, name, view: copyView } : null,
   );
@@ -575,7 +574,7 @@ function ChangeRow({
   const opens = Boolean(file.contextLocation) && (reviewable || imageOpenable);
   const review = () => {
     if (reviewable) {
-      openReviewFile(file, ownerKey);
+      openReviewFile(file, draftId);
       onPicked?.();
     } else if (imageOpenable) setPreviewing(true);
   };
@@ -625,7 +624,7 @@ function ChangeRow({
         }
       />
       <DraftImagePreview
-        target={previewing ? { projectId, ownerKey, documentId: file.documentId, name } : null}
+        target={previewing ? { projectId, draftId, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}
       />
     </li>

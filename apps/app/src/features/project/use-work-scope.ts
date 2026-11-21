@@ -1,5 +1,4 @@
-import type { DraftOwnerKey } from "@meridian/contracts/branches";
-import type { Work } from "@meridian/contracts/works";
+import { draftOf, type Work } from "@meridian/contracts/works";
 import { useCallback, useMemo } from "react";
 import { pickWorkViews } from "@/client/project-shell/document-views";
 import {
@@ -10,8 +9,6 @@ import {
 } from "@/client/project-shell/store";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
-import { useIsThreadPendingCreation } from "@/client/stores";
-import { chatOwnerKey, workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { useAccountId } from "./context/account-feature-context";
 
 /** The Work scope as the shell can use it: ready with a Work row id (No Work's included), or not yet. */
@@ -63,15 +60,12 @@ export function useWorkScope(projectId: string): {
   const setWorkId = useCallback(
     (id: string) => {
       if (id === workId) return;
-      const onWorkDraft = pickWorkViews(
-        accountId,
-        projectId,
-        id === noWorkId ? null : workOwnerKey({ id }),
-      );
+      const draft = id === noWorkId ? null : workDraftId(works, id);
+      const onWorkDraft = pickWorkViews(accountId, projectId, draft);
       writeTreeVersionChoice(accountId, projectId, onWorkDraft ? "draft" : "live");
       writeProjectScope(accountId, projectId, id === noWorkId ? NO_SCOPE : id);
     },
-    [accountId, projectId, noWorkId, workId],
+    [accountId, projectId, noWorkId, workId, works],
   );
   return useMemo(() => ({ workId, setWorkId }), [workId, setWorkId]);
 }
@@ -79,31 +73,43 @@ export function useWorkScope(projectId: string): {
 /**
  * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's, which
  * are its Work's when it has one and its own when it has none. The sidebar's toggle, Changes
- * and the Work chip all show these, so under No Work they follow the chat. `ownerKey` is "" when
+ * and the Work chip all show these, so under No Work they follow the chat. `draftId` is "" when
  * there are none to show; `work` is the Work its commands act for.
  */
 export function useScopeDraftOwner(
   projectId: string,
   chatThreadId: string | null,
-): { picked: Work | null; work: Work | null; ownerKey: DraftOwnerKey | "" } {
+): { picked: Work | null; work: Work | null; draftId: string } {
   const { workId } = useWorkScope(projectId);
-  const { works, deleted, noWork } = useWorks(projectId);
+  const catalog = useWorks(projectId);
+  const { works, deleted, noWork } = catalog;
   const thread = useDisplayedThread(projectId, chatThreadId);
-  const pendingCreation = useIsThreadPendingCreation(chatThreadId);
   const snapshot = noWork ? { works: works ?? [], noWork } : null;
   // A deleted Work stays the pick until it is purged, as the scope keeps it.
   const picked =
     workId && workId !== noWork?.id
       ? (workFromSnapshot(snapshot, workId) ?? deleted.find((work) => work.id === workId) ?? null)
       : null;
+  // A Work still being created has its draft id from the browser that minted it.
+  const creating = !picked && workId ? catalog.creations.get(workId)?.work.draftId : undefined;
   const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
-  const chatKey =
-    picked || pendingCreation ? "" : chatOwnerKey(chatWork, thread?.rootThreadId ?? null);
+  const chatKey = picked || creating || !chatWork || !thread ? "" : draftOf(thread, chatWork);
   return useMemo(
     () =>
       picked
-        ? { picked, work: picked, ownerKey: workOwnerKey(picked) }
-        : { picked: null, work: chatKey ? chatWork : null, ownerKey: chatKey },
-    [picked, chatWork, chatKey],
+        ? { picked, work: picked, draftId: picked.draftId ?? "" }
+        : creating
+          ? { picked: null, work: null, draftId: creating }
+          : { picked: null, work: chatKey ? chatWork : null, draftId: chatKey },
+    [picked, creating, chatWork, chatKey],
+  );
+}
+
+/** A Work's draft id, the Work created or still being created; null for none. */
+function workDraftId(works: ReturnType<typeof useWorks>, id: string): string | null {
+  return (
+    works.works?.find((work) => work.id === id)?.draftId ??
+    works.creations.get(id)?.work.draftId ??
+    null
   );
 }

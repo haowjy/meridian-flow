@@ -178,7 +178,7 @@ export function transactionView(tr: Transaction): View {
  * attributes here.
  */
 export function shownAttrs(view: View, node: PMNode): Record<string, unknown> {
-  if (view.work === null || !node.attrs.sugAttrs) return node.attrs;
+  if (view.draft === null || !node.attrs.sugAttrs) return node.attrs;
   return { ...viewAttrs(node, view), sug: node.attrs.sug };
 }
 
@@ -198,7 +198,7 @@ const shownStates = new WeakMap<EditorState, EditorState>();
  */
 export function shownState(state: EditorState): EditorState {
   const view = suggestionView(state);
-  if (view.work === null) return state;
+  if (view.draft === null) return state;
   let shown = shownStates.get(state);
   if (shown) return shown;
   const transform = new Transform(state.doc);
@@ -338,7 +338,7 @@ export const SuggestionModeExtension = Extension.create({
             if (!set && !tr.docChanged) return value;
             const next = { ...value, ...set };
             viewOfDoc.set(state.doc, next.view);
-            if (next.view.work !== value.view.work)
+            if (next.view.draft !== value.view.draft)
               return { ...next, decorations: paintAll(state.doc, next) };
             return {
               ...next,

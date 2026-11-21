@@ -1,4 +1,4 @@
-import type { BranchId, ContextSourceId, DocumentId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -13,8 +13,8 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
-import { branches } from "./branches";
 import { contextSources } from "./content";
+import { draftIdColumn } from "./drafts";
 import { documentYjsHeads } from "./yjs";
 
 type NodeKind = "folder" | "document";
@@ -126,12 +126,9 @@ export const treeNodes = pgTable(
  * Written only by the replay of that Work's tree, in the same transaction as `tree_nodes`.
  */
 export const branchTreeNodes = pgTable(
-  "branch_tree_nodes",
+  "draft_tree_nodes",
   {
-    branchId: uuid("branch_id")
-      .$type<BranchId>()
-      .notNull()
-      .references(() => branches.id, { onDelete: "cascade" }),
+    branchId: draftIdColumn("draft_id").notNull(),
     id: uuid("id").$type<DocumentId>().notNull(),
     /** The tree list the node is in; a Work's tree spans a project's list and the account's. */
     listId: uuid("list_id").$type<DocumentId>().notNull(),
@@ -159,24 +156,24 @@ export const branchTreeNodes = pgTable(
   (table) => [
     primaryKey({ columns: [table.branchId, table.id] }),
     foreignKey({
-      name: "branch_tree_nodes_claimed_by_list",
+      name: "draft_tree_nodes_claimed_by_list",
       columns: [table.id, table.listId],
       foreignColumns: [treeNodeIds.id, treeNodeIds.listId],
     }).onDelete("cascade"),
-    check("branch_tree_nodes_kind_valid", sql`${table.kind} IN ('folder', 'document')`),
+    check("draft_tree_nodes_kind_valid", sql`${table.kind} IN ('folder', 'document')`),
     check(
-      "branch_tree_nodes_file_type_of_document",
+      "draft_tree_nodes_file_type_of_document",
       sql`(${table.kind} = 'folder') = (${table.fileType} IS NULL)`,
     ),
-    check("branch_tree_nodes_rank_present", sql`${table.rank} <> ''`),
-    index("branch_tree_nodes_list").on(table.listId, table.branchId),
-    index("branch_tree_nodes_walk").on(
+    check("draft_tree_nodes_rank_present", sql`${table.rank} <> ''`),
+    index("draft_tree_nodes_list").on(table.listId, table.branchId),
+    index("draft_tree_nodes_walk").on(
       table.branchId,
       table.contextSourceId,
       table.parentId,
       table.segment,
     ),
-    index("branch_tree_nodes_siblings").on(
+    index("draft_tree_nodes_siblings").on(
       table.branchId,
       table.contextSourceId,
       table.parentId,

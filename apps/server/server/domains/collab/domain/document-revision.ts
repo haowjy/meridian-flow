@@ -42,14 +42,14 @@ export function documentRevision(doc: Y.Doc, scope: HolderLinkScope): string {
     .digest("base64url")}`;
 }
 
-/** A revision as `work`'s view reads it; Live's (`null`) stays as it is. */
-export function viewRevision(revision: string, work: string | null): string {
-  return work ? `${revision}:${work}` : revision;
+/** A revision as `draft`'s view reads it; Live's (`null`) stays as it is. */
+export function viewRevision(revision: string, draft: string | null): string {
+  return draft ? `${revision}:${draft}` : revision;
 }
 
-/** A read whose revision names `work`'s view. */
-export function inView<T extends { revision: string | null }>(read: T, work: string | null): T {
-  return work && read.revision ? { ...read, revision: viewRevision(read.revision, work) } : read;
+/** A read whose revision names `draft`'s view. */
+export function inView<T extends { revision: string | null }>(read: T, draft: string | null): T {
+  return draft && read.revision ? { ...read, revision: viewRevision(read.revision, draft) } : read;
 }
 
 /**

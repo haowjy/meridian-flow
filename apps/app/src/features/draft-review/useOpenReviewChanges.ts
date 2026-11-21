@@ -31,9 +31,9 @@ function useSuggestionRead(draft: DraftRef | null, host: HostEditor | null): Rev
     store?.get ?? noEditor,
     noEditor,
   );
-  const listed = useOwnerDraftList(draft?.projectId ?? "", draft?.ownerKey ?? "", Boolean(draft));
+  const listed = useOwnerDraftList(draft?.projectId ?? "", draft?.draftId ?? "", Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
-  const read = useSuggestionChanges(draft ? editor : null, draft?.ownerKey ?? "", item);
+  const read = useSuggestionChanges(draft ? editor : null, draft?.draftId ?? "", item);
   // A document only the Work holds is plain text: the document itself is its one change.
   const changes = item?.wholeItem ? [itemChange(item)] : read.changes;
   return { status: !draft ? "idle" : read.ready || item?.wholeItem ? "ready" : "loading", changes };
@@ -42,20 +42,20 @@ const noSubscription = () => () => undefined;
 const noEditor = () => null;
 
 export function useOpenReviewChanges(
-  controller: Pick<DraftReviewController, "projectId" | "ownerKey" | "inlineReview">,
+  controller: Pick<DraftReviewController, "projectId" | "draftId" | "inlineReview">,
   options?: { enabled?: boolean; host?: HostEditor | null },
 ) {
   const inline = options?.enabled === false ? null : controller.inlineReview;
   const draft = inline
     ? {
         projectId: controller.projectId,
-        ownerKey: controller.ownerKey,
+        draftId: controller.draftId,
         documentId: inline.documentId,
         itemKey: inline.itemKey,
       }
     : null;
   const command = useDraftCommandState(draft?.itemKey ?? "");
-  const listed = useOwnerDraftList(controller.projectId, controller.ownerKey, Boolean(draft));
+  const listed = useOwnerDraftList(controller.projectId, controller.draftId, Boolean(draft));
   const item = draft ? listed.data?.items.find((row) => row.itemKey === draft.itemKey) : undefined;
   const withoutText = item?.hasDraft === false || item?.tree?.deleted === true;
   const read = useSuggestionRead(draft, options?.host ?? null);

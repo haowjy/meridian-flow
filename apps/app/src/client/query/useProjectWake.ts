@@ -1,12 +1,12 @@
 /**
  * The project's one live subscription to the server's wake hints. A hint carries no state: it says
  * a read is stale, and the read comes again. The tree itself is not read this way (the project's
- * list arrives as Yjs updates), so the hints left are the chat list, a draft owner's list (and,
- * for a Work, its row in the Works list: its count and its lifecycle), the project's sources, and
+ * list arrives as Yjs updates), so the hints left are the chat list, a draft's list (and, for a
+ * Work's draft, its row in the Works list: its count and its lifecycle), the project's sources, and
  * what Mars reads of the Agent files, and the writer's connections.
  * Hints sent while the socket was down are lost, so a reconnect makes every one of those stale.
  */
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
+import type { WorksSnapshot } from "@meridian/contracts/works";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
@@ -49,24 +49,25 @@ export function useProjectWake(projectId: string): void {
         }
       });
     };
-    // Draft owners' lists are stale, every owner's when the set holds `undefined`. An Apply of many
+    // Drafts' lists are stale, every draft's when the set holds `undefined`. An Apply of many
     // documents sends a hint per document: as with chats, one read runs and one more follows it.
     let draftsRefreshing = false;
     let draftsTrailing: Set<string | undefined> | null = null;
-    const readDrafts = (owners: ReadonlySet<string | undefined>) => {
+    const readDrafts = (drafts: ReadonlySet<string | undefined>) => {
       draftsRefreshing = true;
-      const all = owners.has(undefined);
-      const named = [...owners].filter((owner): owner is string => owner !== undefined);
-      const reads = (all ? [undefined] : named).map((owner) =>
+      const all = drafts.has(undefined);
+      const named = [...drafts].filter((draft): draft is string => draft !== undefined);
+      const reads = (all ? [undefined] : named).map((draft) =>
         queryClient.invalidateQueries({
           queryKey:
-            owner === undefined
-              ? projectQueryKeys.ownerDraftsOf(projectId)
-              : projectQueryKeys.ownerDrafts(projectId, owner),
+            draft === undefined
+              ? projectQueryKeys.draftsOf(projectId)
+              : projectQueryKeys.drafts(projectId, draft),
         }),
       );
       // A Work's count and lifecycle are the Works list's: the picker and Changes read them there.
-      if (all || named.some((owner) => workIdOfDraftOwnerKey(owner)))
+      const works = queryClient.getQueryData<WorksSnapshot>(projectQueryKeys.works(projectId));
+      if (all || named.some((draft) => works?.works.some((work) => work.draftId === draft)))
         reads.push(repairWorksSnapshot(queryClient, projectId));
       reads.push(
         queryClient.invalidateQueries({
@@ -81,13 +82,13 @@ export function useProjectWake(projectId: string): void {
         if (active && next) readDrafts(next);
       });
     };
-    const refreshDrafts = (owner?: string) => {
+    const refreshDrafts = (draft?: string) => {
       if (!draftsRefreshing) {
-        readDrafts(new Set([owner]));
+        readDrafts(new Set([draft]));
         return;
       }
       draftsTrailing ??= new Set();
-      draftsTrailing.add(owner);
+      draftsTrailing.add(draft);
     };
     const refreshSources = () => {
       void queryClient.invalidateQueries({
@@ -106,8 +107,8 @@ export function useProjectWake(projectId: string): void {
           void invalidateAgentReads(queryClient, projectId, accountId);
           void invalidateMcpConnections(queryClient, accountId);
         }
-      } else if (hint.type === "draft-owner-hint") {
-        refreshDrafts(hint.owner);
+      } else if (hint.type === "draft-hint") {
+        refreshDrafts(hint.draft);
       } else if (hint.type === "context-sources-hint") {
         // A chat or a lineage gained or lost a source (Scratch, uploads): which trees exist changed.
         refreshSources();

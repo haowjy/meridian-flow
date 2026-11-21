@@ -7,7 +7,7 @@ import {
   toDocHandle,
   yProsemirrorModel,
 } from "@meridian/agent-edit/integration";
-import { type BranchId, draftOwnerKey } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
@@ -123,6 +123,8 @@ export const OTHER_USER_ID = "00000000-0000-4000-8000-000000000809";
 export const PROJECT_ID = "00000000-0000-4000-8000-000000000802";
 export const SOURCE_ID = "00000000-0000-4000-8000-000000000803";
 export const WORK_ID = "00000000-0000-4000-8000-000000000804" as WorkId;
+/** The draft the Work names. */
+export const WORK_DRAFT_ID = "atomicitywk1";
 export const ALPHA_ID = "00000000-0000-4000-8000-000000000805" as DocumentId;
 export const BETA_ID = "00000000-0000-4000-8000-000000000806" as DocumentId;
 export const GAMMA_ID = "00000000-0000-4000-8000-000000000810" as DocumentId;
@@ -133,6 +135,7 @@ export const DEFAULT_SCENARIO_IDS = {
   PROJECT_ID,
   SOURCE_ID,
   WORK_ID,
+  WORK_DRAFT_ID,
   ALPHA_ID,
   BETA_ID,
   GAMMA_ID,
@@ -152,7 +155,17 @@ export async function seedDatabase(
   db: Database,
   ids: CollabScenarioIds = DEFAULT_SCENARIO_IDS,
 ): Promise<void> {
-  const { PROJECT_ID, SOURCE_ID, WORK_ID, ALPHA_ID, BETA_ID, GAMMA_ID, THREAD_ID, TURN_ID } = ids;
+  const {
+    PROJECT_ID,
+    SOURCE_ID,
+    WORK_ID,
+    WORK_DRAFT_ID,
+    ALPHA_ID,
+    BETA_ID,
+    GAMMA_ID,
+    THREAD_ID,
+    TURN_ID,
+  } = ids;
   await db
     .insert(schema.users)
     .values([
@@ -172,13 +185,7 @@ export async function seedDatabase(
     createdByUserId: USER_ID,
     name: "Atomicity work",
     handle: "w1",
-  });
-  // The Work already has its branch, as if an earlier write ensured it (contract §2.5):
-  // a drafted read pulls its thread peers instead of reading live.
-  await db.insert(schema.branches).values({
-    projectId: PROJECT_ID,
-    originWorkId: WORK_ID,
-    createdBy: USER_ID,
+    draftId: WORK_DRAFT_ID,
   });
   await db.insert(schema.contextSources).values({
     id: SOURCE_ID,
@@ -234,6 +241,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     documentId === ALPHA_ID ? "alpha" : documentId === GAMMA_ID ? "third" : "beta";
   const DRAFT_DESTINATION = {
     kind: "draft",
+    draftId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_DRAFT_ID,
     owner: { kind: "work", workId: (options.ids ?? DEFAULT_SCENARIO_IDS).WORK_ID },
     ownerHandle: "atomicity-work",
   } as const;
@@ -280,7 +288,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const resolveDocumentUri = async (documentId: string) =>
     `manuscript/${documentName(documentId as DocumentId)}.md`;
   const documentLastAddress = createDocumentLastAddress(db);
-  const resolveLastDocumentUri = async (documentId: string, branchId?: BranchId) =>
+  const resolveLastDocumentUri = async (documentId: string, branchId?: DraftId) =>
     (await documentLastAddress(documentId as DocumentId, branchId))?.uri ?? null;
   const projectionDiagnostics = createDocumentProjectionDiagnostics(eventSink);
   const runDocumentWriteHook = createDocumentWriteHookRunner({
@@ -316,8 +324,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   // Scoped as composition scopes it, so a real link scope sees every model call.
   const agentEditRouter = createAgentEditRouter({
     liveUtilityCore: runtime.liveUtilityCore,
-    workView: runtime.workView,
-    branches: workBranches,
+    draftView: runtime.draftView,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -328,14 +335,14 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
       write: scopeModelEditWrite(
         createModelEditWriter({
           liveCore: runtime.liveUtilityCore,
-          workView: runtime.workView,
+          draftView: runtime.draftView,
           branches: workBranches,
           fileAccess: options.fileAccess ?? createAllowAllFileAccess(),
           enterLiveSeam: (documentId) => enterLiveWriteSeam(db, documentId),
           enterDraftSeam: async () => {
             await lockSeamWorks(db, []);
           },
-          existsOnlyInWork: async () => false,
+          existsOnlyIn: async () => false,
         }),
         links,
       ),
@@ -377,7 +384,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   const identity = createBranchReviewIdentity({ branches: workBranches, reviewItems });
   const branches = createWorkBranchReviewService({
     purgeDiscards: async () => 0,
-    branches: workBranches,
     reviewItems,
     folderIds: (branchId) => branchFolderIds(db, branchId),
     // No tree lists in this fixture: a list read without a cut.
@@ -439,22 +445,16 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   }
 
   const scenario = options.ids ?? DEFAULT_SCENARIO_IDS;
-  const workKey = draftOwnerKey({ kind: "work", workId: scenario.WORK_ID });
+  const workKey = scenario.WORK_DRAFT_ID;
   /**
-   * The document's live authority and the Work's branch, which a draft-mode write ensures
-   * before its read; a fixture that seeds drafted content provisions them first.
+   * The document's live authority, which a draft-mode write needs before its read; a fixture
+   * that seeds drafted content provisions it first.
    */
   async function provisionDraft(documentId: DocumentId = ALPHA_ID) {
     await persistence.seeds.seedInitialDocument(
       documentId,
       Y.encodeStateAsUpdate(new Y.Doc({ gc: false })),
     );
-    return workBranches.ensureActiveForWrite({
-      owner: { kind: "work", workId: scenario.WORK_ID },
-      projectId: scenario.PROJECT_ID as never,
-      threadId: THREAD_ID,
-      userId: USER_ID as never,
-    });
   }
 
   async function seedWriterDocument(markdown: string, responseId: string): Promise<void> {
@@ -483,7 +483,7 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
   /** The document as the scenario's Work reads it: Live with its suggestions taken. */
   const workMarkdown = (documentId: DocumentId = ALPHA_ID) =>
     liveCoordinator.withDocument(documentId, async (doc) =>
-      serializeMarkdown(doc, runtime.workView.model(workKey)),
+      serializeMarkdown(doc, runtime.draftView.model(workKey)),
     );
 
   return {

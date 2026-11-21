@@ -2,7 +2,6 @@
 import type { Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  branches,
   contextSources,
   projects,
   threads,
@@ -35,9 +34,12 @@ export const TURN_ID = "00000000-0000-4000-8000-000000000707";
 export const TURN_2_ID = "00000000-0000-4000-8000-000000000708";
 const TURN_3_ID = "00000000-0000-4000-8000-000000000709";
 export const CREATED_DOC_ID = "00000000-0000-4000-8000-000000000710";
+/** The draft the Work names. */
+export const WORK_DRAFT_ID = "workfixture1";
 
 export const DRAFT_DESTINATION = {
   kind: "draft",
+  draftId: WORK_DRAFT_ID,
   owner: { kind: "work", workId: WORK_ID },
   ownerHandle: "work",
 } as const;
@@ -78,11 +80,8 @@ export function createWorkBranchFixture(db: Database) {
       createdByUserId: USER_ID,
       name: "Work",
       handle: "w1",
+      draftId: WORK_DRAFT_ID,
     });
-    // The Work already has its branch, as if an earlier write ensured it (contract §2.5).
-    await db
-      .insert(branches)
-      .values({ projectId: PROJECT_ID, originWorkId: WORK_ID, createdBy: USER_ID });
     await db.insert(contextSources).values({
       id: SOURCE_ID,
       projectId: PROJECT_ID,

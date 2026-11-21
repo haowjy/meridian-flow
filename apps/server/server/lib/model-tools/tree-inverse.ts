@@ -9,7 +9,7 @@
  * draft, and in live once an Apply has landed it.
  */
 import { modelResult, parseEditHandle } from "@meridian/agent-edit/integration";
-import type { BranchId, ThreadId, TurnId } from "@meridian/contracts";
+import type { DraftId, ThreadId, TurnId } from "@meridian/contracts";
 import { undoReports } from "@meridian/project-tree";
 import type { TreeReceipt } from "../../domains/collab/contracts.js";
 import { contextPortForThread } from "../../domains/context/index.js";
@@ -253,7 +253,7 @@ async function reverseReceipt(
               ...(ctx.toolCallId ? { toolCallId: ctx.toolCallId } : {}),
               // An applied change is taken back in live: the Work's draft no longer has it.
               ...(scope.view.draft && !result.inLive
-                ? { draftBranchId: scope.view.draft as BranchId }
+                ? { draftBranchId: scope.view.draft as DraftId }
                 : {}),
               shownAt: `${parts.area}${parts.rest}`,
               reverses: { kind, receipt: receipt.id },

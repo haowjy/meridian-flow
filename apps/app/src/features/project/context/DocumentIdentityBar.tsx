@@ -85,7 +85,7 @@ export function DocumentIdentityBar({
   const reviewPending = review?.documentId === document.documentId && !review.shown;
   const openDraft = (row: ReviewFileTarget, takeFocus?: boolean) => {
     if (takeFocus) onFocusReview?.(row.draft.itemKey);
-    openReviewFile(row, controller.ownerKey);
+    openReviewFile(row, controller.draftId);
   };
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.

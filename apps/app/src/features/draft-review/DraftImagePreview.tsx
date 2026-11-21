@@ -13,7 +13,7 @@ import { useAssetImageRenderState } from "@/core/editor/asset-image-render-state
 
 export type DraftImagePreviewTarget = {
   projectId: string;
-  ownerKey: string;
+  draftId: string;
   documentId: string;
   name: string;
 };
@@ -37,7 +37,7 @@ export function DraftImagePreview({
 function PreviewBody({ target }: { target: DraftImagePreviewTarget }) {
   const [state, actions] = useAssetImageRenderState({
     projectId: target.projectId,
-    owner: target.ownerKey,
+    owner: target.draftId,
     src: `asset:${target.documentId}`,
   });
   return (

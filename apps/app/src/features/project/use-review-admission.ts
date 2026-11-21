@@ -70,7 +70,7 @@ export function useReviewAdmission({
       const names =
         requested !== null &&
         presented?.documentId === inline.documentId &&
-        requested.ownerKey === review.controller.ownerKey &&
+        requested.draftId === review.controller.draftId &&
         requested.itemKey === inline.itemKey;
       if (!names) {
         settled.current = {};
@@ -84,7 +84,7 @@ export function useReviewAdmission({
         if (focusId && admission === "admitted" && requested.changeId !== focusId) {
           settled.current.pin = focusId;
           port.write({
-            ownerKey: requested.ownerKey,
+            draftId: requested.draftId,
             itemKey: requested.itemKey,
             changeId: focusId,
           });
@@ -116,7 +116,7 @@ export function useReviewAdmission({
       refused.current = null;
       return;
     }
-    if (admission !== "admitted" || review.controller.ownerKey !== requested.ownerKey) return;
+    if (admission !== "admitted" || review.controller.draftId !== requested.draftId) return;
     const itemKey = requested.itemKey;
     if (
       restoring.current === itemKey ||
@@ -128,7 +128,7 @@ export function useReviewAdmission({
     restoring.current = itemKey;
     void port
       .admit({
-        ownerKey: requested.ownerKey,
+        draftId: requested.draftId,
         documentId: presented.documentId,
         itemKey,
         contextLocation: { scheme: presented.scheme, path: presented.path },

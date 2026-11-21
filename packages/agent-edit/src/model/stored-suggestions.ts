@@ -1,20 +1,22 @@
 /**
  * A stored document's suggestions as a whole (`@meridian/suggestions` over a Y.Doc): who wrote
- * each change, which turns and Works still have some, and resolving them. The browser's Apply and
+ * each change, which turns and drafts still have some, and resolving them. The browser's Apply and
  * Reject, the press and the card's Undo all resolve through `resolveStored`, so a resolve writes the
  * same Yjs operations wherever it runs.
  */
+
+import { isLayerKey } from "@meridian/prosemirror-schema";
 import {
   type Author,
   type Authors,
   accept,
   DECIDED_META,
+  type DraftPending,
   type Filter,
   pendingChanges,
   pendingTurns,
   reject,
   type Verdict,
-  type WorkPending,
 } from "@meridian/suggestions";
 import { yXmlFragmentToProseMirrorRootNode } from "@tiptap/y-tiptap";
 import type { Node as PMNode, Schema } from "prosemirror-model";
@@ -121,23 +123,23 @@ export function storedPendingTurns(doc: Y.Doc, schema: Schema): ReadonlySet<stri
 const pendingByDoc = new WeakMap<Y.Doc, Set<string>>();
 
 /**
- * The Works whose suggestions a stored document holds, each with what it has pending: the views
+ * The drafts whose suggestions a stored document holds, each with what it has pending: the views
  * that read it otherwise than Live.
  */
-export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string, WorkPending> {
+export function storedPendingChanges(doc: Y.Doc, schema: Schema): Record<string, DraftPending> {
   return pendingChanges(storedRoot(doc, schema), suggestionAuthors(doc));
 }
 
 /**
- * Takes a Work's suggestions out of a stored document for good, as its owner ends: they are
+ * Takes a draft's suggestions out of a stored document for good, as its owner ends: they are
  * rejected and their authors and verdicts forgotten, in one transaction with no record, since
- * nothing can take it back. Every change the Work's items carry goes, a proposal Live has since
+ * nothing can take it back. Every change the draft's items carry goes, a proposal Live has since
  * matched included, which no review lists. Returns whether anything changed.
  */
-export function dropWork(doc: Y.Doc, schema: Schema, work: string): boolean {
+export function dropDraft(doc: Y.Doc, schema: Schema, draft: string): boolean {
   let decided = NONE;
   doc.transact(() => {
-    decided = resolveStored(doc, schema, "reject", { work });
+    decided = resolveStored(doc, schema, "reject", { draft });
     const authors = doc.getMap<unknown>(AUTHORS_ROOT);
     const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
     for (const id of decided.keys()) {
@@ -169,8 +171,10 @@ export function writeVerdict(
       } else if (item.parentSub === "sug") {
         const id = changeId(content.getContent()[0]);
         if (id) ids.add(id);
-      } else if (item.parentSub === "sugAttrs")
-        for (const id of layerIds(content.getContent()[0])) ids.add(id);
+      } else if (item.parentSub && isLayerKey(item.parentSub)) {
+        const id = changeId(content.getContent()[0]);
+        if (id) ids.add(id);
+      }
     }
   if (ids.size === 0) return null;
   const verdicts = suggestionVerdicts(doc);
@@ -251,7 +255,7 @@ export function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
 export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
   const shown = suggestionItems(fragmentOf(view));
   const verdicts = suggestionVerdicts(room);
-  const rejected = new Set([...shown.changes.keys()].filter((id) => verdicts.has(id, "reject")));
+  const rejected = new Set([...shown.keys()].filter((id) => verdicts.has(id, "reject")));
   if (rejected.size === 0) return;
   const out: IdRanges = {};
   const take = ({ id, len }: ItemRun) => {
@@ -259,15 +263,12 @@ export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
     out[id.client]?.push([id.clock, len]);
   };
   for (const id of rejected) {
-    const parts = shown.changes.get(id);
+    const parts = shown.get(id);
     parts?.inserted.forEach(take);
     parts?.blocks.forEach(take);
     parts?.strikes.forEach(take);
+    parts?.layers.forEach(take);
   }
-  // The item holds every Work's layers on the block, and a write planned without it would set
-  // the block's layers to its own alone: it goes only when nothing on it stands.
-  for (const { item, ids } of shown.layers)
-    if (ids.every((id) => rejected.has(id))) take({ id: item.id, len: 1 });
   for (const runs of Object.values(out)) runs.sort((a, b) => a[0] - b[0]);
   // Undoing an insertion deletes its items: the press's Undo does the deleting.
   undoPressStored(view, { insertions: out, deletions: {} });
@@ -275,8 +276,16 @@ export function withdrawRejected(view: Y.Doc, room: Y.Doc): void {
 
 type ItemRun = { id: Y.ID; len: number };
 
-/** One change's items in a document: the text and blocks it inserted, and the marks that strike text. */
-type ChangeItems = { inserted: ItemRun[]; blocks: ItemRun[]; strikes: ItemRun[] };
+/**
+ * One change's items in a document: the text and blocks it inserted, the marks that strike text,
+ * and its attribute layers (each its own element attribute, `layer-key.ts`).
+ */
+type ChangeItems = {
+  inserted: ItemRun[];
+  blocks: ItemRun[];
+  strikes: ItemRun[];
+  layers: ItemRun[];
+};
 
 const INSERTED = "suggest_ins";
 const STRUCK = "suggest_del";
@@ -290,20 +299,16 @@ function markOf(key: string): typeof INSERTED | typeof STRUCK | null {
 }
 
 /**
- * Every change a document's visible items carry, read from Yjs items, and each block's attribute
- * layers with the item that holds them. `withdrawRejected` deletes them by id; a change to how
- * marks or `sug`/`sugAttrs` are stored updates this beside `pendingBy` in `@meridian/suggestions`.
+ * Every change a document's visible items carry, read from Yjs items. `withdrawRejected` deletes
+ * them by id; a change to how marks, `sug` or attribute layers are stored updates this beside
+ * `pendingBy` in `@meridian/suggestions`.
  */
-function suggestionItems(fragment: Y.XmlFragment): {
-  changes: Map<string, ChangeItems>;
-  layers: { item: Y.Item; ids: string[] }[];
-} {
+function suggestionItems(fragment: Y.XmlFragment): Map<string, ChangeItems> {
   const changes = new Map<string, ChangeItems>();
-  const layers: { item: Y.Item; ids: string[] }[] = [];
   const of = (id: string) => {
     let parts = changes.get(id);
     if (!parts) {
-      parts = { inserted: [], blocks: [], strikes: [] };
+      parts = { inserted: [], blocks: [], strikes: [], layers: [] };
       changes.set(id, parts);
     }
     return parts;
@@ -334,33 +339,25 @@ function suggestionItems(fragment: Y.XmlFragment): {
       const child = item.content.type;
       if (child instanceof Y.XmlText) walkText(child);
       else if (child instanceof Y.XmlElement) {
-        const attrs = child.getAttributes() as Record<string, unknown>;
-        const sug = changeId(attrs.sug);
+        const sug = changeId(child.getAttribute("sug"));
         if (sug) of(sug).blocks.push({ id: item.id, len: 1 });
-        const held = child._map.get("sugAttrs");
-        const ids = layerIds(attrs.sugAttrs);
-        for (const id of ids) of(id);
-        if (held && !held.deleted && ids.length > 0) layers.push({ item: held, ids });
+        for (const [key, held] of child._map) {
+          if (held.deleted || !isLayerKey(key)) continue;
+          const id = changeId(held.content.getContent()[0]);
+          if (id) of(id).layers.push({ id: held.id, len: 1 });
+        }
         walk(child);
       }
     }
   };
   walk(fragment);
-  return { changes, layers };
+  return changes;
 }
 
 function changeId(value: unknown): string | null {
   if (typeof value !== "object" || value === null) return null;
   const id = (value as { id?: unknown }).id;
   return typeof id === "string" ? id : null;
-}
-
-/** The change ids of a block's `sugAttrs` value: its layers, by Work. */
-function layerIds(value: unknown): string[] {
-  if (typeof value !== "object" || value === null) return [];
-  return Object.values(value as Record<string, unknown>).flatMap((layers) =>
-    Array.isArray(layers) ? layers.flatMap((layer) => changeId(layer) ?? []) : [],
-  );
 }
 
 type DeleteSet = ReturnType<typeof Y.createDeleteSet>;

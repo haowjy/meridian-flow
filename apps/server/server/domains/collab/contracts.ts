@@ -1,6 +1,6 @@
 /** Public contracts for the collab domain. */
 import type { Hocuspocus } from "@hocuspocus/server";
-import type { BranchId, CommandId, DraftOwner, LinkView } from "@meridian/contracts";
+import type { CommandId, DraftId, LinkView } from "@meridian/contracts";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
@@ -117,10 +117,10 @@ export type CollabTransport = {
   }): Promise<AdmitLiveWriterUpdateResult>;
   currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
   /**
-   * The owners whose Work alone holds the document (its create is pending there): its Live room
-   * serves their view of it. Unauthorized, like `roomRemoval`.
+   * The drafts that alone hold the document (its create is pending there): its Live room serves
+   * their view of it. Unauthorized, like `roomRemoval`.
    */
-  workOnlyOwners(documentId: DocumentId): Promise<DraftOwner[]>;
+  draftsHolding(documentId: DocumentId): Promise<DraftId[]>;
   /**
    * The removed document a room serves, with its record, or null while it lives. Unauthorized:
    * the gateway reads it only where it is already refusing, and answers `4208` only to a reader
@@ -168,7 +168,7 @@ export type TreeReceiptInput = {
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
   /** The Work's branch the record was drafted in; absent when it is live. */
-  draftBranchId?: BranchId;
+  draftBranchId?: DraftId;
   /** The path the model gave. */
   shownAt: string;
   /** An undo or redo names the receipt it reverses. */
@@ -399,10 +399,10 @@ export type ModelDraftRow = {
 export type DraftReviewApi = {
   /** The day-30 purge of presses and their Undos (`drizzle-discard-purge.ts`); the rows removed. */
   purgeDiscards(): Promise<number>;
-  list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
-  /** The review list route's one read: the active branch's listed items with live text tokens. */
-  listItems(input: { owner: DraftOwner }): Promise<{
-    branchId: BranchId | null;
+  list(input: { draft: DraftId }): Promise<ModelDraftRow[]>;
+  /** The review list route's one read: the draft's listed items with live text tokens. */
+  listItems(input: { draft: DraftId }): Promise<{
+    branchId: DraftId;
     items: DraftReviewItem[];
     /** The folders the branch has a row on. */
     folders: { id: string }[];
@@ -410,27 +410,20 @@ export type DraftReviewApi = {
     /** Each list's cut, read before the items. */
     saw: import("@meridian/contracts/branches").TreeSaw;
   }>;
-  /** Pending documents summed over the project's active branches. */
+  /** Pending documents summed over the project's drafts. */
   pendingDocumentCount(projectId: ProjectId): Promise<number>;
-  /** Every active branch in the project with changes to the document, oldest first. */
+  /** Every draft in the project with changes to the document, oldest first. */
   branchesChangingDocument(input: {
     projectId: ProjectId;
     documentId: DocumentId;
   }): Promise<DocumentBranchOrigin[]>;
-  /** The owner's active branch's listed items, live text tokens unread: what Apply authorizes. */
-  items(input: {
-    owner: DraftOwner;
-  }): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }>;
-  /** The item a key names, when its branch is active. */
+  /** The draft's listed items, live text tokens unread: what Apply authorizes. */
+  items(input: { draft: DraftId }): Promise<{ branchId: DraftId; items: DraftReviewItem[] }>;
+  /** The item a key names, when its draft exists. */
   resolveItem(input: { itemKey: string }): Promise<ResolvedReviewItem | null>;
-  /** One document of an active branch. */
+  /** One document of a draft. */
   resolveItemInBranch(input: {
-    branchId: BranchId;
-    documentId: DocumentId;
-  }): Promise<ResolvedReviewItem | null>;
-  /** One document of the owner's active branch. */
-  resolveItemByDocument(input: {
-    owner: DraftOwner;
+    branchId: DraftId;
     documentId: DocumentId;
   }): Promise<ResolvedReviewItem | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
@@ -464,11 +457,11 @@ export type TurnLiveLineageAccess = {
 /**
  * The version an effective read reads, and so the view its links spell in:
  * the version the caller's writes change. `live` never touches a draft;
- * a draft read names its Work.
+ * a draft read names its draft.
  */
 export type EffectiveReadVersion =
   | { destination: "live"; workId?: never }
-  | { destination: "draft"; owner: DraftOwner };
+  | { destination: "draft"; draft: DraftId };
 
 /** A copy's source cut: the blocks, the revision they had, how they spelled, and its vector. */
 export type EffectiveBlocksRead = VersionedDocumentRead<
@@ -508,12 +501,12 @@ export type DraftPeerShadowAccess = {
   /** Words per document whose derived outputs are current; the others are absent. */
   readStoredWordCounts(documentIds: DocumentId[]): Promise<Map<DocumentId, number>>;
   /**
-   * A document's markdown as an owner's branch holds it: the owner's draft when it has one, else
-   * live. Needs no reading chat.
+   * A document's markdown in a draft's view: Live with that draft's suggestions applied. Needs no
+   * reading chat.
    */
-  readOwnerMarkdown(input: {
+  readDraftMarkdown(input: {
     documentId: DocumentId;
-    owner: DraftOwner;
+    draft: DraftId;
   }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   readEffectiveMarkdown(
     input: {
@@ -547,9 +540,7 @@ export type DraftPeerShadowAccess = {
    * in a Work's version, the writer's and the AI's alike. Its text is plain Live text; the
    * pending create is its whole pending state.
    */
-  seedWorkCreates(
-    created: readonly { documentId: DocumentId; branchId: BranchId }[],
-  ): Promise<void>;
+  seedWorkCreates(created: readonly { documentId: DocumentId; branchId: DraftId }[]): Promise<void>;
   /** A Work's copy's documents' first text, written into Live after `seedWorkCreates`. */
   writeWorkCreatedContent(
     created: readonly { documentId: DocumentId; content: BoundWrite }[],

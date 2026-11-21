@@ -1,13 +1,9 @@
 /**
- * useOwnerDrafts — reviewable AI draft list for one owner (one entry per document).
+ * useOwnerDrafts — reviewable AI draft list for one draft (one entry per document).
  *
- * Projects one tree-labelled file per active document draft, in stable order.
+ * Projects one tree-labelled file per document the draft changes, in stable order.
  */
-import {
-  parseDraftOwnerKey,
-  type ThreadDraftListItem,
-  type ThreadDraftListResponse,
-} from "@meridian/contracts/branches";
+import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/branches";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
@@ -17,7 +13,9 @@ import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
 import { projectReadEnabled } from "./project-read-gate";
 import { useTabChangeCounts, withTabChangeCounts } from "./tab-change-counts";
+import { useProjectThreads } from "./useProjectThreads";
 import { useProjectTreeViews } from "./useProjectTree";
+import { useWorks } from "./useWorks";
 import { projectWorkBranchFiles, type ReviewFileTarget } from "./work-branch-files";
 
 export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
@@ -29,17 +27,28 @@ export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
   branchId: string | null;
 };
 
-/** The tree owner whose Scratch names this draft owner's documents. */
-export function treeOwnerOf(owner: string | null): { workId?: string; rootThreadId?: string } {
-  const parsed = owner ? parseDraftOwnerKey(owner) : null;
-  if (!parsed) return {};
-  return parsed.kind === "work" ? { workId: parsed.id } : { rootThreadId: parsed.id };
+/** The tree owner whose Scratch names this draft's documents: the Work or root chat naming it. */
+function useDraftTreeOwner(
+  projectId: string,
+  draft: string | null,
+): { workId?: string; rootThreadId?: string } {
+  const { works, deleted } = useWorks(projectId, { enabled: Boolean(draft) });
+  const { threads } = useProjectThreads(projectId, { enabled: Boolean(draft) });
+  return useMemo(() => {
+    if (!draft) return {};
+    const work = [...(works ?? []), ...deleted].find((each) => each.draftId === draft);
+    if (work) return { workId: work.id };
+    const root = threads?.find(
+      (thread) => thread.id === thread.rootThreadId && thread.draftId === draft,
+    );
+    return root ? { rootThreadId: root.id } : {};
+  }, [draft, works, deleted, threads]);
 }
 
 /** The one owner draft-list query, shared by every reader so the list is fetched once. */
 export function ownerDraftsQueryOptions(projectId: string, owner: string) {
   return {
-    queryKey: projectQueryKeys.ownerDrafts(projectId, owner),
+    queryKey: projectQueryKeys.drafts(projectId, owner),
     queryFn: () => listOwnerDrafts(projectId, owner),
     staleTime: 15_000,
   };
@@ -52,7 +61,7 @@ export function cachedOwnerDrafts(
   owner: string,
 ): ThreadDraftListItem[] | undefined {
   return queryClient.getQueryData<ThreadDraftListResponse>(
-    projectQueryKeys.ownerDrafts(projectId, owner),
+    projectQueryKeys.drafts(projectId, owner),
   )?.items;
 }
 
@@ -64,7 +73,7 @@ export function patchOwnerDrafts(
   update: (items: ThreadDraftListItem[]) => ThreadDraftListItem[],
 ): void {
   queryClient.setQueryData<ThreadDraftListResponse>(
-    projectQueryKeys.ownerDrafts(projectId, owner),
+    projectQueryKeys.drafts(projectId, owner),
     (response) => (response ? { ...response, items: update(response.items) } : response),
   );
 }
@@ -86,7 +95,7 @@ export async function relistedOwnerDraft(
     // slop-lint: allow swallowed-error a failed read is one more retry, not an answer
     const response = await listOwnerDrafts(projectId, owner).catch(() => null);
     if (!response?.items.some((row) => row.itemKey === itemKey)) continue;
-    queryClient.setQueryData(projectQueryKeys.ownerDrafts(projectId, owner), response);
+    queryClient.setQueryData(projectQueryKeys.drafts(projectId, owner), response);
     return true;
   }
   return false;
@@ -129,6 +138,7 @@ export function useOwnerDrafts(
   const enabled = callerEnabled && Boolean(projectId) && Boolean(owner);
   const query = useOwnerDraftList(projectId ?? "", owner ?? "", enabled);
   const result = unwrapListQuery({ ...query, data: query.data?.items });
+  const treeOwner = useDraftTreeOwner(projectId ?? "", owner);
 
   const schemes = useMemo(
     () => [
@@ -140,7 +150,7 @@ export function useOwnerDrafts(
   );
   const trees = useProjectTreeViews(projectId ?? "", schemes, {
     enabled: enabled && Boolean(result.data?.length),
-    ...treeOwnerOf(owner),
+    ...treeOwner,
   });
   const visible = result.data;
   const files = useMemo(

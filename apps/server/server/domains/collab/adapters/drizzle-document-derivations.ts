@@ -1,9 +1,8 @@
 /** Journal-locked cuts and compare-and-set writes of document derived outputs. */
-import { parseDraftOwnerKey } from "@meridian/contracts/branches";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  branches,
   documentBlockRooms,
   documentBlocks,
   documentLinks,
@@ -12,7 +11,7 @@ import {
   treeNodes,
 } from "@meridian/database";
 import { sameValue } from "@meridian/suggestions";
-import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
   currentDrizzleDb,
@@ -97,8 +96,8 @@ export async function certifyDocumentDerivation(
   cut: DocumentDerivationCut,
   outputs: DocumentDerivationOutputs,
   at: Date,
-  /** The Works (`draftOwnerKey`) whose pending suggestions in the document moved. */
-  pendingMoved?: (owners: readonly string[]) => Promise<void>,
+  /** The drafts whose pending suggestions in the document moved. */
+  pendingMoved?: (drafts: readonly DraftId[]) => Promise<void>,
 ): Promise<boolean> {
   const w = cut.watermark;
   const [head] = await tx
@@ -149,7 +148,7 @@ export async function certifyDocumentDerivation(
   const before = room?.pendingChanges ?? {};
   const moved = [
     ...new Set([...Object.keys(before), ...Object.keys(outputs.pendingChanges)]),
-  ].filter((owner) => !sameValue(before[owner], outputs.pendingChanges[owner]));
+  ].filter((draft) => !sameValue(before[draft], outputs.pendingChanges[draft]));
   if (moved.length > 0) await pendingMoved?.(moved);
 
   const blockOrder = outputs.blocks.map((block) => block.id);
@@ -244,31 +243,15 @@ export function createDrizzleDocumentDerivationStore(
   lastAddress: DocumentLastAddress,
   aheads?: { registry: AheadRegistrationRecovery; eventSink?: EventSink },
   /** Wakes a Work's review list and recounts it when its suggestions in a document moved. */
-  workProjection?: Pick<WorkProjectionMutation, "liveChangedUnder" | "recountAfterCommit">,
+  workProjection?: Pick<
+    WorkProjectionMutation,
+    "liveChangedUnder" | "ownersOf" | "recountAfterCommit"
+  >,
 ): DocumentDerivationStore {
   const pendingMoved = workProjection
-    ? async (owners: readonly string[]) => {
-        const parsed = owners.flatMap((key) => parseDraftOwnerKey(key) ?? []);
-        const workIds = parsed.flatMap((owner) => (owner.kind === "work" ? [owner.id] : []));
-        const lineageRootIds = parsed.flatMap((owner) =>
-          owner.kind === "lineage" ? [owner.id] : [],
-        );
-        const rows = await currentDrizzleDb(db)
-          .select({ id: branches.id })
-          .from(branches)
-          .where(
-            and(
-              eq(branches.status, "active"),
-              or(
-                workIds.length ? inArray(branches.originWorkId, workIds) : undefined,
-                lineageRootIds.length
-                  ? inArray(branches.originRootThreadId, lineageRootIds)
-                  : undefined,
-              ),
-            ),
-          );
-        workProjection.liveChangedUnder(rows.map((row) => row.id));
-        workProjection.recountAfterCommit({ workIds, lineageRootIds });
+    ? async (drafts: readonly DraftId[]) => {
+        workProjection.liveChangedUnder(drafts);
+        workProjection.recountAfterCommit(await workProjection.ownersOf({ branches: drafts }));
       }
     : undefined;
   const page = async (

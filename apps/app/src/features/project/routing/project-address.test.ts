@@ -15,7 +15,7 @@ function parse(href: string) {
 
 describe("readable project addresses", () => {
   it("round trips a stable change only inside a review address", () => {
-    const href = `${P}/editor/manuscript/chapter.md?owner=work%3A${WORK}&item=draft-one&change=class%3Apart%2Ftwo`;
+    const href = `${P}/editor/manuscript/chapter.md?item=draft-one&change=class%3Apart%2Ftwo`;
     const parsed = parse(href);
     expect(parsed).toMatchObject({ kind: "valid", href, address: { changeId: "class:part/two" } });
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
@@ -66,28 +66,24 @@ describe("readable project addresses", () => {
     });
   });
 
-  it("a draft item requires its owner, and an owner is dropped where it names nothing", () => {
+  it("a draft item names its draft, so an owner is dropped where it names nothing", () => {
     expect(parse(`${P}/editor/manuscript/chapter.md?item=draft-one`)).toMatchObject({
-      kind: "invalid",
-      reason: "owner",
+      kind: "valid",
+      address: { itemKey: "draft-one" },
     });
-    expect(parse(`${P}/editor/manuscript/chapter.md?owner=work%3A${WORK}`)).toMatchObject({
+    // An address from before drafts named themselves still opens its review.
+    expect(
+      parse(`${P}/editor/manuscript/chapter.md?owner=work%3A${WORK}&item=draft-one`),
+    ).toMatchObject({ kind: "valid", href: `${P}/editor/manuscript/chapter.md?item=draft-one` });
+    expect(parse(`${P}/editor/manuscript/chapter.md?owner=${WORK}`)).toMatchObject({
       kind: "valid",
       href: `${P}/editor/manuscript/chapter.md`,
-    });
-    expect(parse(`${P}/editor/manuscript/chapter.md?owner=${WORK}`)).toMatchObject({
-      kind: "invalid",
-      reason: "owner",
     });
   });
 
   it("round trips review identity only on an Editor document", () => {
-    const href = `${P}/editor/manuscript/chapter.md?owner=lineage%3A${ROOT}&item=draft%2Fone`;
-    expect(parse(href)).toMatchObject({
-      kind: "valid",
-      href,
-      address: { itemKey: "draft/one", owner: `lineage:${ROOT}` },
-    });
+    const href = `${P}/editor/manuscript/chapter.md?item=draft%2Fone`;
+    expect(parse(href)).toMatchObject({ kind: "valid", href, address: { itemKey: "draft/one" } });
     const editor = parse(`${P}/editor?item=draft-one`);
     expect(editor).toMatchObject({ kind: "valid", href: `${P}/editor` });
     if (editor.kind !== "valid") throw new Error(editor.reason);
@@ -99,8 +95,8 @@ describe("readable project addresses", () => {
     });
   });
 
-  it("dropping a review drops a draft's owner but keeps a Scratch document's", () => {
-    const draft = parse(`${P}/editor/manuscript/chapter.md?owner=work%3A${WORK}&item=draft-one`);
+  it("dropping a review keeps a Scratch document's owner", () => {
+    const draft = parse(`${P}/editor/manuscript/chapter.md?item=draft-one`);
     const scratch = parse(`${P}/editor/scratch/notes.md?owner=work%3A${WORK}&item=draft-one`);
     if (draft.kind !== "valid" || scratch.kind !== "valid") throw new Error("fixture");
     expect(projectAddressHref(withoutReview(draft.address))).toBe(

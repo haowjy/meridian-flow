@@ -1,9 +1,9 @@
 /**
- * The tree half of the review list, read from the Work's rows (`branch_tree_nodes`, written by
+ * The tree half of the review list, read from the Work's rows (`draft_tree_nodes`, written by
  * the replay of the list) against live's (`tree_nodes`). Addresses are spelled by the tree reader.
  * A row the Work did not change (`changed` false: only a twin's suffix differs) is no row here.
  */
-import type { BranchId } from "@meridian/contracts";
+import { type DraftId, isDraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { sql } from "drizzle-orm";
@@ -26,12 +26,12 @@ type Row = {
 };
 
 /** The folders the Work has a row on: what an Apply of a folder lands. */
-export async function branchFolderIds(db: Database, branchId: BranchId): Promise<{ id: string }[]> {
-  if (!isUuid(branchId)) return [];
+export async function branchFolderIds(db: Database, branchId: DraftId): Promise<{ id: string }[]> {
+  if (!isDraftId(branchId)) return [];
   const rows = await currentDrizzleDb(db).execute<{ id: string }>(sql`
     SELECT b.id::text AS id
-    FROM branch_tree_nodes b
-    WHERE b.branch_id = ${branchId}::uuid AND b.kind = 'folder' AND b.changed`);
+    FROM draft_tree_nodes b
+    WHERE b.draft_id = ${branchId} AND b.kind = 'folder' AND b.changed`);
   return [...rows];
 }
 
@@ -55,8 +55,8 @@ export function createDrizzleBranchTreeState(
   tree: Pick<TreeReader, "identityStatus">,
 ): BranchTreeStateReader {
   return {
-    async read(branchId: BranchId, editedIds = [], onlyIds) {
-      if (!isUuid(branchId)) return [];
+    async read(branchId: DraftId, editedIds = [], onlyIds) {
+      if (!isDraftId(branchId)) return [];
       const edited = editedIds.filter(isUuid);
       const only = onlyIds?.filter(isUuid);
       const tx = currentDrizzleDb(db);
@@ -69,8 +69,8 @@ export function createDrizzleBranchTreeState(
         SELECT d.id::text AS id, b.exists_only_in_draft, b.deleted,
           t.id IS NOT NULL AS live, d.storage_url IS NOT NULL AS binary
         FROM documents d
-          LEFT JOIN branch_tree_nodes b
-            ON b.id = d.id AND b.branch_id = ${branchId}::uuid AND b.changed
+          LEFT JOIN draft_tree_nodes b
+            ON b.id = d.id AND b.draft_id = ${branchId} AND b.changed
           LEFT JOIN tree_nodes t ON t.id = d.id
         WHERE (b.id IS NOT NULL
           OR (t.trash_record IS NULL AND t.id IS NOT NULL
@@ -83,7 +83,7 @@ export function createDrizzleBranchTreeState(
         (
           await tx.execute<{ document_id: string }>(sql`
             SELECT p.document_id::text AS document_id
-            FROM (${pendingDocuments(sql`${branchId}::uuid`)}) p
+            FROM (${pendingDocuments(sql`${branchId}`)}) p
             WHERE p.document_id IN (${ids(documentIds)})`)
         ).map((row) => row.document_id),
       );

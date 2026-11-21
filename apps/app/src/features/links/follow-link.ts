@@ -37,7 +37,7 @@ export type LinkDocumentRef = {
   /** A document the writer just created: its editor takes the caret. */
   focus?: true;
   review?: {
-    ownerKey: string;
+    draftId: string;
     itemKey: string;
     contextLocation: { scheme: ContextUriScheme; path: string };
     documentName: string;
@@ -173,7 +173,7 @@ function documentRef(found: DocumentEntry): LinkDocumentRef {
   return {
     documentId: document.documentId,
     review: {
-      ownerKey: branch.owner,
+      draftId: branch.branchId,
       itemKey: draftItemKey(branch.branchId, document.documentId),
       // Draft list rows and review launches spell the path with a leading slash.
       contextLocation: {

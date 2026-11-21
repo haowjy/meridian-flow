@@ -61,8 +61,8 @@ export function createAgentEditRuntime(input: {
   const markupCodec = mdxCodec({ schema });
   const codec = createAgentEditCodecFactory(markupCodec);
   const storedModel = yProsemirrorModel(schema);
-  // `model` is the Live view for every reader and writer of Live; it keeps every Work's
-  // suggestions where they are. A Work's view is `workView`, the one way the server reads a Work's
+  // `model` is the Live view for every reader and writer of Live; it keeps every draft's
+  // suggestions where they are. A draft's view is `draftView`, the one way the server reads a
   // draft or writes its suggestions. A whole replacement (restore) through `model` keeps Live's
   // text and drops the document's pending suggestions.
   const model = suggestingModel(storedModel, liveView, null);
@@ -73,16 +73,16 @@ export function createAgentEditRuntime(input: {
       ? codec
       : createAgentEditCodecFactory(verbatimCodec(markupCodec, schema, filetype));
   };
-  const liveCoreOver = (coreModel: YProsemirrorDocumentModel, work: string | null) =>
+  const liveCoreOver = (coreModel: YProsemirrorDocumentModel, draft: string | null) =>
     createAgentEditCore({
       links: createScopedDocumentLinks({
         scopes: input.links,
         registrar: input.aheadRefs,
-        // A Work's links spell in its tree, which its caller names.
-        viewFor: work
+        // A draft's links spell in its tree, which its caller names.
+        viewFor: draft
           ? (_documentId, context) => context?.linkView ?? { kind: "live" }
           : liveViewFor,
-        work,
+        draft,
       }),
       journal: input.journal,
       documentEdits: input.documentEdits,
@@ -93,10 +93,10 @@ export function createAgentEditRuntime(input: {
       ...input.observability,
     });
   const liveUtilityCore = asLiveAgentEditCore(liveCoreOver(model, null));
-  const workView: WorkViews = {
-    model: (work) => suggestingModel(storedModel, { work }, null),
-    core: (work, author) => liveCoreOver(suggestingModel(storedModel, { work }, author), work),
-    onlyIn: (work) => liveCoreOver(model, work),
+  const draftView: DraftViews = {
+    model: (draft) => suggestingModel(storedModel, { draft }, null),
+    core: (draft, author) => liveCoreOver(suggestingModel(storedModel, { draft }, author), draft),
+    onlyIn: (draft) => liveCoreOver(model, draft),
   };
   const markdownDocuments = scopeMarkdownEngine(
     createMarkdownDocumentEngine({
@@ -164,7 +164,7 @@ export function createAgentEditRuntime(input: {
     linkBinder,
     importBinder,
     liveUtilityCore,
-    workView,
+    draftView,
     markdownDocuments,
     markupCodec,
     model,
@@ -172,18 +172,18 @@ export function createAgentEditRuntime(input: {
 }
 
 /**
- * A Work's view of Live, Live plus that Work's suggestions. `model` only reads
- * it; `core` serves the model's tools, and its writes go into Live as the Work's suggestions by
+ * A draft's view of Live, Live plus that draft's suggestions. `model` only reads
+ * it; `core` serves the model's tools, and its writes go into Live as the draft's suggestions by
  * `author`.
  */
-export type WorkViews = {
-  model(work: string): YProsemirrorDocumentModel;
-  core(work: string, author: Author): AgentEditCore;
+export type DraftViews = {
+  model(draft: string): YProsemirrorDocumentModel;
+  core(draft: string, author: Author): AgentEditCore;
   /**
-   * A document only this Work has (its create is pending there): its text is plain, so it writes
-   * as Live does, but its links spell in the Work's tree and its revision is the Work's.
+   * A document only this draft has (its create is pending there): its text is plain, so it writes
+   * as Live does, but its links spell in the draft's tree and its revision is the draft's.
    */
-  onlyIn(work: string): AgentEditCore;
+  onlyIn(draft: string): AgentEditCore;
 };
 
 export function metaForOrigin(origin: RuntimeOrigin): UpdateMeta {

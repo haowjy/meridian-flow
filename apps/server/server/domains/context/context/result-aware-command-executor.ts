@@ -16,11 +16,11 @@ export interface ResultAwareCommandExecutor<TError> {
     options?: ContextCommandOptions,
   ): Promise<Result<T, TError>>;
   /**
-   * A command in a Work's branch, which the transaction makes (`ensure`) and locks, with the
-   * namespaces of `sourceIds` taken in key order with its own.
+   * A command in an owner's draft, which the transaction locks, with the namespaces of
+   * `sourceIds` taken in key order with its own.
    */
   runInBranch<T>(
-    branch: ContextCommandBranch & { mode: "ensure" },
+    branch: ContextCommandBranch,
     operation: (branch: ContextCommandActiveBranch) => Promise<Result<T, TError>>,
     sourceIds?: readonly string[],
   ): Promise<Result<T, TError>>;

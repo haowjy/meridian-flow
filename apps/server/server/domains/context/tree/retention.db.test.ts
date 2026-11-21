@@ -6,11 +6,10 @@
  * whole Discard ends the hold.
  */
 import { randomUUID } from "node:crypto";
-import type { BranchId, DocumentId, UserId } from "@meridian/contracts";
+import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
 import { createDb } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  branches,
   branchTreeNodes,
   contextSources,
   documentBlockRooms,
@@ -41,7 +40,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
   const SOURCE = randomUUID();
   const WORK = randomUUID();
   const AGENT = `agent:${randomUUID()}/${randomUUID()}`;
-  let branchId: BranchId;
+  let branchId: DraftId;
   const { treeLists } = createTestRemovalDeps(db);
   const seed = treeSeeder(db);
   const trash = createDrizzleDocumentTrash({
@@ -65,11 +64,11 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     await db
       .insert(works)
       .values({ id: WORK, projectId: PROJECT, createdByUserId: USER, name: "W", handle: "w1" });
-    const [branch] = await db
-      .insert(branches)
-      .values({ projectId: PROJECT, originWorkId: WORK, createdBy: USER })
-      .returning({ id: branches.id });
-    branchId = (branch as { id: BranchId }).id;
+    const [work] = await db
+      .select({ draftId: works.draftId })
+      .from(works)
+      .where(eq(works.id, WORK));
+    branchId = work?.draftId as DraftId;
   });
 
   const branchRow = async (id: string) =>
@@ -111,12 +110,16 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
 
   it("keeps a trashed document an archived Work still has suggestions in", async () => {
     const id = (await seed.document(SOURCE, "live.md")) as DocumentId;
-    // The document's derivation counted one change of the Work's.
+    const [work] = await db
+      .select({ draftId: works.draftId })
+      .from(works)
+      .where(eq(works.id, WORK));
+    // The document's derivation counted one change of the Work's draft.
     await db.insert(documentBlockRooms).values({
       documentId: id,
       blockOrder: [],
       wordCount: 0,
-      pendingChanges: { [`work:${WORK}`]: { changes: 1, chats: [], writer: true } },
+      pendingChanges: { [`${work?.draftId}`]: { changes: 1, chats: [], writer: true } },
       documentHash: Buffer.alloc(32),
       cutGeneration: -1n,
       cutAdmissionSeq: -1n,

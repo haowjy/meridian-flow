@@ -3,12 +3,15 @@
  * project) plus its input/option types. The boundary both the drizzle and
  * in-memory work adapters implement.
  */
+import type { DraftId } from "@meridian/contracts";
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { AiWriteMode, Work } from "@meridian/contracts/works";
 
 export interface CreateWorkInput {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: WorkId;
+  /** The Work's draft, minted by the client beside `id`; the insert mints one if omitted. */
+  draftId?: DraftId;
   projectId: ProjectId;
   createdByUserId?: import("@meridian/contracts/runtime").UserId;
   name: string;

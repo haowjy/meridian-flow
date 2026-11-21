@@ -1,8 +1,8 @@
-import type { CommandId } from "../ids.js";
+import type { CommandId, DraftId } from "../ids.js";
 import type { TreeSaw } from "./review.js";
 
 /**
- * Apply or Discard pressed on documents, folders or a whole Work. One recorded command over both halves: the Work's pending tree records and its
+ * Apply or Discard pressed on documents, folders or a whole draft. One recorded command over both halves: the draft's pending tree records and its
  * suggestions in each document's text. One Undo (`PressUndoRequest`) takes back both; pressing
  * again is the Redo.
  */
@@ -10,8 +10,8 @@ export type PressVerdict = "apply" | "discard";
 
 export type PressRequest = {
   commandId: CommandId;
-  /** The Work: its draft owner key, `work:<id>` or `lineage:<rootThreadId>`. */
-  owner: string;
+  /** The draft pressed on. */
+  draft: DraftId;
   verdict: PressVerdict;
   /**
    * Documents and folders (a folder takes what is under it), or everything the Work has pending.
@@ -32,8 +32,8 @@ export type PressRequest = {
 export type PressResult = {
   status: "pressed";
   commandId: CommandId;
-  /** The Work pressed on, as its owner key. */
-  owner: string;
+  /** The draft pressed on. */
+  draft: DraftId;
   verdict: PressVerdict;
   /** The nodes the press changed, with the halves that changed: what its Undo takes back. */
   items: { node: string; tree?: true; text?: true }[];

@@ -2,7 +2,7 @@
  * The tree half of a Work's Discard: its pending records settled discarded in every list it
  * spans. The press's Discard and Work purge's disposal (`drizzle-work-disposal.ts`) run it.
  */
-import type { BranchId, UserId } from "@meridian/contracts";
+import type { DraftId, UserId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { discardDraft, pendingRecords, recordsOfItem } from "@meridian/project-tree";
@@ -18,7 +18,7 @@ export async function discardTreeRecords(
   db: Database,
   deps: { treeLists: Pick<TreeListStore, "submit"> },
   input: {
-    branchId: BranchId;
+    branchId: DraftId;
     userId?: UserId;
     commandId: string;
     documents?: readonly DocumentId[];

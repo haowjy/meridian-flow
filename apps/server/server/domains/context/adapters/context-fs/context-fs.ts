@@ -622,7 +622,7 @@ export class ContextFS implements ContextSchemeAdapter {
       view.destination ??
       sourceDestination(view.writeMode, this.scheme, view.branchOwner);
     return (decided || view.version !== "live") && at.kind === "draft"
-      ? { ...reader, destination: "draft", owner: at.owner }
+      ? { ...reader, destination: "draft", draft: at.draftId }
       : { ...reader, destination: "live" };
   }
 
@@ -683,7 +683,7 @@ export class ContextFS implements ContextSchemeAdapter {
     const owner = this.placement.branchOwner;
     if (!owner) return Err({ code: "permission_denied" });
     return this.commandExecutor.runInBranch(
-      { ...owner, mode: "ensure" },
+      owner,
       (branch) => write({ view: viewOfBranch(branch.id), actor }),
       [input.fromSourceId],
     );

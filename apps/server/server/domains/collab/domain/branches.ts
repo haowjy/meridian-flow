@@ -1,18 +1,10 @@
 /**
- * The one branches resolver: which branch an owner's drafted writes share (a Work, or a
- * conversation lineage), the view a read by that owner sees, and the lock and lifecycle calls
- * every later lane makes on branches. A branch is made only at the write boundary, never by a
- * read (F7): a draft-mode chat whose owner has no active branch reads live. Callers reach
- * branches only through this object.
+ * The one drafts resolver: which draft an owner's chats draft into (the draft a Work or a root
+ * chat names), the view a read by that owner sees, and the locks every later lane takes on a
+ * draft. A draft is minted with the Work or chat naming it, never at a write. Callers reach
+ * drafts only through this object.
  */
-import type {
-  BranchId,
-  DraftOwner,
-  ProjectId,
-  ThreadId,
-  UserId,
-  WorkId,
-} from "@meridian/contracts";
+import type { DraftId, DraftOwner, WorkId } from "@meridian/contracts";
 import type { TreeView } from "../../context/tree/tree-view.js";
 import type { WorkWriteOptions } from "../../projects/index.js";
 import type {
@@ -23,59 +15,43 @@ import type {
 } from "./ports/branch-store.js";
 
 export interface Branches {
-  /** Reads: the owner's active branch as a view, else live. Never creates a branch. */
+  /** Reads: the owner's draft as a view, else live. */
   viewForOwner(owner: DraftOwner | null): Promise<TreeView>;
   /**
-   * The write boundary only, and the only path that makes a branch: locks the owner (the Work
-   * row, or the lineage lock) under the caller's `WorkWriteOptions`, by default refusing an
-   * archived, deleted or frozen one (`requireActive: false` makes a branch on a closed Work), then the owner's
-   * active branch, made if absent, row-locked. With no ambient transaction it runs in its own.
-   * Inside one it joins only a transaction the ContextFS command boundary approved
-   * (`approveBranchWriteJoin`: it has locked nothing but owners); any other ambient caller gets
-   * `BranchWriteJoinRefusedError`, so it never takes the owner lock after namespace or document
-   * locks.
+   * The write boundary only: locks the owner (the Work row, or the lineage lock) under the
+   * caller's `WorkWriteOptions`, by default refusing an archived, deleted or frozen one (archive
+   * and Trash stop new AI writes), then the draft it names, row-locked. With no ambient
+   * transaction it runs in its own. Inside one it joins only a transaction the ContextFS command
+   * boundary approved (`approveBranchWriteJoin`: it has locked nothing but owners); any other
+   * ambient caller gets `BranchWriteJoinRefusedError`, so it never takes the owner lock after
+   * namespace or document locks.
    */
-  ensureActiveForWrite(
-    input: {
-      owner: DraftOwner;
-      projectId: ProjectId;
-      threadId: ThreadId | null;
-      userId: UserId;
-    },
-    options?: WorkWriteOptions,
-  ): Promise<Branch>;
-  /** No lock. The branch and its owner's lifecycle as it reads now; any status. */
-  ownerOf(branchId: BranchId): Promise<BranchOwnerView | null>;
-  /** No lock. The oldest active branch this owner has, else null. */
-  activeForOwner(owner: DraftOwner): Promise<Branch | null>;
+  lockForWrite(owner: DraftOwner, options?: WorkWriteOptions): Promise<Branch>;
+  /** No lock. The draft and who names it, as it reads now. */
+  ownerOf(draftId: DraftId): Promise<BranchOwnerView | null>;
+  /** No lock. The draft this owner names; null when the owner is gone. */
+  ofOwner(owner: DraftOwner): Promise<Branch | null>;
   /**
-   * Caller's transaction, after its Work row locks: `FOR NO KEY UPDATE` on the branch;
-   * null when closed or missing. Apply, Discard and closing take this.
+   * Caller's transaction, after its Work row locks: `FOR NO KEY UPDATE` on the draft; null when
+   * missing. The press and purge take this.
    */
-  lockActive(branchId: BranchId): Promise<Branch | null>;
+  lock(draftId: DraftId): Promise<Branch | null>;
   /**
-   * Caller's transaction, before any namespace lock: `FOR SHARE`, for a writer that needs
-   * the branch to stay active without changing it (ahead registration, peer ensure); null
-   * when closed or missing.
+   * Caller's transaction, before any namespace lock: `FOR SHARE`, for a writer that needs the
+   * draft to stay without changing it (ahead registration); null when missing.
    */
-  shareActive(branchId: BranchId): Promise<Branch | null>;
-  /**
-   * Caller's transaction, the branch locked by `lockActive`, every draft closed by the
-   * Discard kernel (which returns the exact peers to retire): closes the `branches` row only.
-   */
-  close(branchId: BranchId, at: Date): Promise<void>;
-  /** No lock. These branches, any status. */
-  byIds(branchIds: readonly BranchId[]): Promise<Branch[]>;
-  /** Purge only: every branch whose origin is this Work, any status, oldest first. */
-  byOriginWork(workId: WorkId): Promise<Branch[]>;
-  /** Purge only: the active branches these lineages own. */
-  activeByOriginLineages(rootThreadIds: readonly ThreadId[]): Promise<Branch[]>;
+  share(draftId: DraftId): Promise<Branch | null>;
+  /** No lock. These drafts. */
+  byIds(draftIds: readonly DraftId[]): Promise<Branch[]>;
+  /** Purge only: the drafts a Work and these lineages' roots name. */
+  namedBy(input: { workId: WorkId; lineageRootIds: readonly string[] }): Promise<DraftId[]>;
 }
 
-export class BranchClosedUnderOwnerLockError extends Error {
-  constructor(readonly branchId: BranchId) {
-    super(`Branch ${branchId} closed while its owner was locked`);
-    this.name = "BranchClosedUnderOwnerLockError";
+/** An owner the write boundary locked names no draft: its row went between the read and the lock. */
+export class OwnerWithoutDraftError extends Error {
+  constructor(readonly owner: DraftOwner) {
+    super(`No draft is named by ${JSON.stringify(owner)}`);
+    this.name = "OwnerWithoutDraftError";
   }
 }
 
@@ -87,34 +63,26 @@ export function createBranches(deps: {
   return {
     async viewForOwner(owner) {
       if (owner === null) return { kind: "live" };
-      const branch = await store.activeForOwner(owner);
-      return branch ? { kind: "branch", branchId: branch.id } : { kind: "live" };
+      const draft = await store.ofOwner(owner);
+      return draft ? { kind: "branch", branchId: draft.id } : { kind: "live" };
     },
-    ensureActiveForWrite(input, options) {
+    lockForWrite(owner, options) {
       return deps.boundary.withActiveOwnerLocked(
-        input.owner,
+        owner,
         async () => {
-          const ensured = await store.ensureActiveLocked({
-            owner: input.owner,
-            projectId: input.projectId,
-            originThreadId: input.threadId,
-            createdBy: input.userId,
-          });
-          // Every close locks the owner first, so the branch can't close between these.
-          const locked = await store.lockActive(ensured.id);
-          if (!locked) throw new BranchClosedUnderOwnerLockError(ensured.id);
+          const named = await store.ofOwner(owner);
+          const locked = named ? await store.lock(named.id) : null;
+          if (!locked) throw new OwnerWithoutDraftError(owner);
           return locked;
         },
         options,
       );
     },
-    ownerOf: (branchId) => store.ownerOf(branchId),
-    activeForOwner: (owner) => store.activeForOwner(owner),
-    lockActive: (branchId) => store.lockActive(branchId),
-    shareActive: (branchId) => store.shareActive(branchId),
-    close: (branchId, at) => store.close(branchId, at),
-    byIds: (branchIds) => store.byIds(branchIds),
-    byOriginWork: (workId) => store.byOriginWork(workId),
-    activeByOriginLineages: (rootThreadIds) => store.activeByOriginLineages(rootThreadIds),
+    ownerOf: (draftId) => store.ownerOf(draftId),
+    ofOwner: (owner) => store.ofOwner(owner),
+    lock: (draftId) => store.lock(draftId),
+    share: (draftId) => store.share(draftId),
+    byIds: (draftIds) => store.byIds(draftIds),
+    namedBy: (input) => store.namedBy(input),
   };
 }

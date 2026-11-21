@@ -12,7 +12,7 @@ import {
 export function createTestWorkProjectionMutation(db: Database): WorkProjectionMutation {
   return createWorkProjectionMutation({
     db,
-    draftOwnerHints: { publishDraftOwnerHints: () => {} },
+    draftOwnerHints: { publishDraftHints: () => {} },
     pendingCounts: createDrizzleWorkBranchPendingStore(db),
   });
 }

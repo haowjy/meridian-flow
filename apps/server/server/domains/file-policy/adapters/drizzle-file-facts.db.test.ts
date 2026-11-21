@@ -11,7 +11,6 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deleteDrizzleRows, useRollbackTestDatabase } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
-import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import { createDrizzleFileFacts } from "./drizzle-file-facts.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -43,7 +42,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.insert(projects).values({ id: p, userId: u, name: "Serial", slug: "serial" });
       await db.insert(works).values([
         { id: noWork, projectId: p, createdByUserId: u, name: "No Work", isNoWork: true },
-        { id: a, projectId: p, createdByUserId: u, name: "Arc A", handle: "w1" },
+        {
+          id: a,
+          projectId: p,
+          createdByUserId: u,
+          name: "Arc A",
+          handle: "w1",
+          draftId: "filefactsa01",
+        },
       ]);
       await db.insert(contextSources).values([
         { id: manuscript, projectId: p, slug: "manuscript" },
@@ -65,10 +71,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("loads documents, drafts and containers with their ancestors", async () => {
-      const facts = createDrizzleFileFacts(
-        database.current,
-        createTestWorkProjectionMutation(database.current),
-      );
+      const facts = createDrizzleFileFacts(database.current);
       const ch1 = await facts.load({ target: { kind: "document", documentId: chapter } });
       expect(ch1).toMatchObject({
         owner: { kind: "project", projectId: p },
@@ -114,7 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const drafted = await facts.load({
         target: { kind: "document", documentId: chapter },
-        branchOwner: { kind: "work", workId: a },
+        branchOwner: "filefactsa01",
       });
       expect(drafted?.branchOwner?.owner).toEqual({ kind: "work", workId: a });
 
@@ -138,7 +141,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, a));
-      const facts = createDrizzleFileFacts(db, createTestWorkProjectionMutation(db));
+      const facts = createDrizzleFileFacts(db);
       const ch1 = await facts.load({ target: { kind: "document", documentId: chapter } });
       const scratchNote = await facts.load({ target: { kind: "document", documentId: note } });
       expect(ch1?.deleted).toBe(true);

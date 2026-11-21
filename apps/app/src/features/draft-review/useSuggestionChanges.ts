@@ -58,14 +58,14 @@ const shown = new WeakMap<Editor, Map<string, Shown>>();
 /** Chat titles by id, kept per editor: a pressed row's chats keep their names until its Undo's read lands. */
 const titlesOf = new WeakMap<Editor, Map<string, string>>();
 
-function shownChanges(editor: Editor, doc: Node, work: string): ReviewChange[] {
-  const byWork = shown.get(editor) ?? new Map<string, Shown>();
-  shown.set(editor, byWork);
-  const was = byWork.get(work);
+function shownChanges(editor: Editor, doc: Node, draft: string): ReviewChange[] {
+  const byDraft = shown.get(editor) ?? new Map<string, Shown>();
+  shown.set(editor, byDraft);
+  const was = byDraft.get(draft);
   if (was?.doc === doc) return was.changes;
   const titles = titlesOf.get(editor) ?? new Map<string, string>();
   const rows: Shown["rows"] = new Map();
-  const changes = list(doc, { work }, authorsIn(editor.state)).map((source) => {
+  const changes = list(doc, { draft }, authorsIn(editor.state)).map((source) => {
     const title = source.chat ? (titles.get(source.chat) ?? "") : "";
     const old = was?.rows.get(source.id);
     const row =
@@ -80,7 +80,7 @@ function shownChanges(editor: Editor, doc: Node, work: string): ReviewChange[] {
     changes.length === was.changes.length &&
     changes.every((row, i) => row === was.changes[i]);
   const next = { doc, changes: same ? was.changes : changes, rows };
-  byWork.set(work, next);
+  byDraft.set(draft, next);
   return next.changes;
 }
 
@@ -96,16 +96,16 @@ function sameChange(a: Change, b: Change): boolean {
   );
 }
 
-/** `work`'s changes in the editor's document, in document order; empty while there is no editor. */
+/** `draft`'s changes in the editor's document, in document order; empty while there is no editor. */
 export function useSuggestionChanges(
   editor: Editor | null,
-  work: string,
+  draft: string,
   item: Pick<ThreadDraftListItem, "actorThreads"> | undefined,
 ): { ready: boolean; changes: ReviewChange[] } {
   const doc = useEditorDoc(editor);
   const actors = item?.actorThreads;
   return useMemo(() => {
-    if (!doc || !editor || !work) return { ready: false, changes: [] };
+    if (!doc || !editor || !draft) return { ready: false, changes: [] };
     const titles = titlesOf.get(editor) ?? new Map<string, string>();
     titlesOf.set(editor, titles);
     let renamed = false;
@@ -114,9 +114,9 @@ export function useSuggestionChanges(
       renamed ||= titles.get(chat.threadId) !== title;
       titles.set(chat.threadId, title);
     }
-    if (renamed) shown.get(editor)?.delete(work);
-    return { ready: true, changes: shownChanges(editor, doc, work) };
-  }, [doc, editor, work, actors]);
+    if (renamed) shown.get(editor)?.delete(draft);
+    return { ready: true, changes: shownChanges(editor, doc, draft) };
+  }, [doc, editor, draft, actors]);
 }
 
 /** One line, clipped to 120 characters. */

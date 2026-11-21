@@ -12,6 +12,7 @@ export { isDrafted, skillLevel, sourceDestination } from "./domain/policy.js";
 export {
   type AgentChain,
   type AgentLink,
+  agentBranchOwner,
   agentProject,
   type BranchOwnerRef,
   type FileAccessDenial,
@@ -44,5 +45,6 @@ export {
   type FileAccessChange,
   type FileAccessChanges,
   fileAccessChangeKey,
+  ownerAccessKey,
   projectAccessKey,
 } from "./ports/file-access-changes.js";

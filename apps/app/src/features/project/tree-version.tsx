@@ -22,7 +22,6 @@ import {
   type TreeVersion,
   TreeVersionContext,
 } from "@/core/project-tree/tree-version";
-import { workOwnerKey } from "@/features/draft-review/draft-owner-key";
 import { type WorkTreeChanges, workTreeChanges } from "@/features/draft-review/tree-groups";
 import { useAccountId } from "./context/account-feature-context";
 import { useScopeDraftOwner } from "./use-work-scope";
@@ -35,7 +34,7 @@ export type ShellTreeVersion = {
   /** The Work has pending changes: the toggle is offered. */
   offered: boolean;
   /** Whose drafts the toggle shows. */
-  ownerKey: string;
+  draftId: string;
   /** The Work whose drafts these are, for `WorkName`; null for a chat's own drafts. */
   work: Work | null;
   /** The Work's name (`nameOf`), for the words on a page; null for a chat's own drafts. */
@@ -64,7 +63,7 @@ export function useShellTreeVersion(): ShellTreeVersion | null {
  * count the Works list carries, which the open list agrees with once it syncs.
  */
 export function reviewCount(shell: ShellTreeVersion | null, work: Work): number {
-  return shell?.ownerKey === workOwnerKey(work)
+  return shell && shell.draftId === work.draftId
     ? shell.changeCount
     : work.pendingDocumentCount + work.pendingFolderCount;
 }
@@ -90,8 +89,8 @@ export function TreeVersionProvider({
   children: ReactNode;
 }) {
   const accountId = useAccountId();
-  const { ownerKey, work } = useScopeDraftOwner(projectId, chatThreadId);
-  const drafts = useOwnerDrafts(projectId, ownerKey);
+  const { draftId, work } = useScopeDraftOwner(projectId, chatThreadId);
+  const drafts = useOwnerDrafts(projectId, draftId);
   const { branchId, fileForDocument } = drafts;
   const project = useTreeList({ kind: "project", projectId });
   const account = useTreeList({ kind: "account", userId: accountId });
@@ -144,7 +143,7 @@ export function TreeVersionProvider({
       draftVersion,
       showing,
       offered,
-      ownerKey,
+      draftId,
       work: named,
       name,
       changed,
@@ -158,7 +157,7 @@ export function TreeVersionProvider({
       draftVersion,
       showing,
       offered,
-      ownerKey,
+      draftId,
       named,
       name,
       changed,

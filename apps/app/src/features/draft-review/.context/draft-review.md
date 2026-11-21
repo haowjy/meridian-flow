@@ -49,7 +49,7 @@ surfaces, and outlives them:
 - `presses` holds every press this tab can still take back (`PressEntries`,
   [state-machines.md](state-machines.md)): one entry in the history of each open editor of its
   documents. Ctrl+Z there, or its row's or notice's Undo, sends the press's `unpress`.
-- `notices` (`DraftNotices`) holds one notice per draft owner.
+- `notices` (`DraftNotices`) holds one notice per draft.
 
 A press is sent through the command driver (`client/query/press-commands.ts`, lane
 `press:<owner>`), which resends it under the same id until the server answers. A press that
@@ -70,7 +70,7 @@ one change in the editor is an editor transaction, undone with Ctrl+Z.
 
 ### Notices
 
-`DraftNotices` holds one notice per draft owner key: the latest Discard with its Undo, or the
+`DraftNotices` holds one notice per draft id: the latest Discard with its Undo, or the
 latest Apply's facts. The writer's tree deletes use the same line under a per-project key
 (`deleteNoticeKey`), only off the sidebar: on main's band or Recently opened. A newer press by
 the owner replaces it; a reload starts empty. Each notice records the surface it was made on

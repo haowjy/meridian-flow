@@ -1,15 +1,11 @@
 /** Drizzle store for what is pending review in a Work: counts, the branches changing a document and evidence. */
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, threads, works } from "@meridian/database/schema";
+import { drafts, threads, works } from "@meridian/database/schema";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import {
-  ownerKeyOfBranch,
-  pendingDocuments,
-  pendingFolders,
-} from "../../context/tree/pending-documents.js";
+import { pendingDocuments, pendingFolders } from "../../context/tree/pending-documents.js";
 import type { WorkBranchPendingStore } from "../domain/ports/work-branch-pending-store.js";
 
 /**
@@ -26,36 +22,43 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
           list.map((id) => sql`${id}::uuid`),
           sql`, `,
         );
-      const owned = [
-        workIds.length ? sql`b.origin_work_id IN (${ids(workIds)})` : null,
-        rootThreadIds.length ? sql`b.origin_root_thread_id IN (${ids(rootThreadIds)})` : null,
-      ].filter((clause) => clause !== null);
-      const active = sql`SELECT b.id FROM branches b WHERE b.status = 'active'
-        AND (${sql.join(owned, sql` OR `)})`;
-      // One row per active branch: its documents and its folders changed, whichever arm made each pending.
+      // The drafts these owners name.
+      const named = sql.join(
+        [
+          workIds.length
+            ? sql`SELECT w.draft_id FROM works w WHERE w.id IN (${ids(workIds)}) AND w.draft_id IS NOT NULL`
+            : null,
+          rootThreadIds.length
+            ? sql`SELECT t.draft_id FROM threads t WHERE t.id IN (${ids(rootThreadIds)}) AND t.draft_id IS NOT NULL`
+            : null,
+        ].filter((clause) => clause !== null),
+        sql` UNION `,
+      );
+      // One row per draft: its documents and its folders changed, whichever arm made each pending.
       const rows = await currentDrizzleDb(db).execute<{
-        branch_id: string;
+        draft_id: string;
         project_id: string;
         work_id: string | null;
         root_thread_id: string | null;
         documents: number;
         folders: number;
       }>(sql`
-        SELECT b.id::text AS branch_id, b.project_id::text AS project_id,
-               b.origin_work_id::text AS work_id, b.origin_root_thread_id::text AS root_thread_id,
+        SELECT b.id AS draft_id, b.project_id::text AS project_id,
+               (SELECT w.id::text FROM works w WHERE w.draft_id = b.id) AS work_id,
+               (SELECT t.id::text FROM threads t WHERE t.draft_id = b.id) AS root_thread_id,
                coalesce(d.count, 0)::int AS documents, coalesce(f.count, 0)::int AS folders
-        FROM branches b
+        FROM drafts b
         LEFT JOIN (
-          SELECT p.branch_id, count(DISTINCT p.document_id) AS count
-          FROM (${pendingDocuments(active)}) p GROUP BY p.branch_id
-        ) d ON d.branch_id = b.id
+          SELECT p.draft_id, count(DISTINCT p.document_id) AS count
+          FROM (${pendingDocuments(named)}) p GROUP BY p.draft_id
+        ) d ON d.draft_id = b.id
         LEFT JOIN (
-          SELECT p.branch_id, count(DISTINCT p.folder_id) AS count
-          FROM (${pendingFolders(active)}) p GROUP BY p.branch_id
-        ) f ON f.branch_id = b.id
-        WHERE b.id IN (${active})`);
+          SELECT p.draft_id, count(DISTINCT p.folder_id) AS count
+          FROM (${pendingFolders(named)}) p GROUP BY p.draft_id
+        ) f ON f.draft_id = b.id
+        WHERE b.id IN (${named})`);
       return rows.map((row) => ({
-        branchId: row.branch_id,
+        branchId: row.draft_id,
         projectId: row.project_id,
         workId: row.work_id,
         rootThreadId: row.root_thread_id,
@@ -65,41 +68,39 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
     },
     async countPendingInProject(projectId) {
       const [row] = await currentDrizzleDb(db)
-        .select({ count: sql<number>`coalesce(sum(${branches.pendingDocumentCount}), 0)::int` })
-        .from(branches)
-        .where(and(eq(branches.projectId, projectId), eq(branches.status, "active")));
+        .select({ count: sql<number>`coalesce(sum(${drafts.pendingDocumentCount}), 0)::int` })
+        .from(drafts)
+        .where(eq(drafts.projectId, projectId));
       return row?.count ?? 0;
     },
     async listBranchesChangingDocument({ projectId, documentId }) {
       const tx = currentDrizzleDb(db);
-      const active = sql`SELECT b.id FROM branches b
-        WHERE b.status = 'active' AND b.project_id = ${projectId}::uuid`;
+      const inProject = sql`SELECT b.id FROM drafts b WHERE b.project_id = ${projectId}::uuid`;
       // The same membership as the counts, narrowed to one document. Archived Works and
-      // lineages with no live member stay (their branches remain reviewable); deleted Works
-      // and branches with no owner are out, since today's review address needs a live owner.
+      // lineages with no live member stay (their drafts remain reviewable); deleted Works and
+      // drafts nothing names are out, since the review address needs a live owner's label.
       const lineageRoot = alias(threads, "lineage_root");
       const rows = await tx
         .select({
-          branchId: branches.id,
+          branchId: drafts.id,
           originWorkId: works.id,
           originRootThreadId: lineageRoot.id,
           workName: works.name,
           isNoWork: works.isNoWork,
           rootTitle: lineageRoot.title,
         })
-        .from(branches)
-        .leftJoin(works, eq(works.id, branches.originWorkId))
-        .leftJoin(lineageRoot, eq(lineageRoot.id, branches.originRootThreadId))
+        .from(drafts)
+        .leftJoin(works, eq(works.draftId, drafts.id))
+        .leftJoin(lineageRoot, eq(lineageRoot.draftId, drafts.id))
         .where(
           and(
-            eq(branches.projectId, projectId),
-            eq(branches.status, "active"),
+            eq(drafts.projectId, projectId),
             isNull(works.deletedAt),
             or(isNotNull(works.id), isNotNull(lineageRoot.id)),
-            sql`${branches.id} in (SELECT p.branch_id FROM (${pendingDocuments(active, documentId as DocumentId)}) p)`,
+            sql`${drafts.id} in (SELECT p.draft_id FROM (${pendingDocuments(inProject, documentId as DocumentId)}) p)`,
           ),
         )
-        .orderBy(asc(branches.createdAt), asc(branches.id));
+        .orderBy(asc(drafts.createdAt), asc(drafts.id));
       return rows.map((row) => ({
         branchId: row.branchId,
         originWorkId: row.originWorkId,
@@ -108,7 +109,6 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
       }));
     },
     async listBranchTextChanges(branchId, documentIds) {
-      const owner = ownerKeyOfBranch(sql`b`);
       const only = documentIds?.length
         ? sql`AND r.document_id IN (${sql.join(
             documentIds.map((id) => sql`${id}::uuid`),
@@ -122,12 +122,11 @@ export function createDrizzleWorkBranchPendingStore(db: Database): WorkBranchPen
         updated_at: Date | string;
         pending: { changes: number; chats: string[]; writer: boolean };
       }>(sql`
-        SELECT r.document_id::text AS document_id, d.updated_at, r.pending_changes -> ${owner} AS pending
-        FROM branches b
-        JOIN document_block_rooms r ON r.pending_changes ? ${owner}
+        SELECT r.document_id::text AS document_id, d.updated_at, r.pending_changes -> ${branchId}::text AS pending
+        FROM document_block_rooms r
         JOIN documents d ON d.id = r.document_id
-        WHERE b.id = ${branchId}::uuid ${only}
-          AND (r.pending_changes -> ${owner} ->> 'changes')::int > 0
+        WHERE r.pending_changes ? ${branchId}::text ${only}
+          AND (r.pending_changes -> ${branchId}::text ->> 'changes')::int > 0
         ORDER BY r.document_id`);
       return rows.map((row) => ({
         documentId: row.document_id as DocumentId,

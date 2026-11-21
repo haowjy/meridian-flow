@@ -1,8 +1,8 @@
 /** Figure signed URL HTTP boundary: resolve the query view, authorize, then sign. */
 
-import { draftOwnerFromKey } from "@meridian/contracts";
+import { isDraftId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { UserId } from "@meridian/contracts/runtime";
 import type { H3Event } from "nitro/h3";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { ownedByRequest } from "../../../../../../../domains/context/index.js";
@@ -14,7 +14,6 @@ import { requireRequestId } from "../../../../../../../lib/request-id.js";
 
 type FigureSignedUrlServices = Pick<AppServices, "fileAccess" | "figureAssets"> & {
   projectRepo: Pick<AppServices["projectRepo"], "findById">;
-  documentSync: Pick<AppServices["documentSync"], "branches">;
 };
 
 /** Authentication is the HTTP boundary; all query, authorization and signing logic stays shared. */
@@ -29,22 +28,18 @@ export function createFigureSignedUrlHandler(
     const projectId = getRouterParam(event, "projectId") ?? "";
     const assetDocumentId = requireRequestId(getRouterParam(event, "documentId"), "documentId");
     await requireProjectOwner({ projects: app.projectRepo }, projectId, user.userId);
-    const queryOwner = getQuery(event).owner;
-    const owner =
-      queryOwner === undefined
-        ? null
-        : draftOwnerFromKey(String(queryOwner), projectId as ProjectId);
-    if (queryOwner !== undefined && !owner) {
-      throw createError({ statusCode: 400, message: "Invalid draft owner" });
+    const queryDraft = getQuery(event).draft;
+    if (queryDraft !== undefined && !isDraftId(queryDraft)) {
+      throw createError({ statusCode: 400, message: "Invalid draft" });
     }
-    const view = owner
-      ? await app.documentSync.branches.viewForOwner(owner)
-      : { kind: "live" as const };
+    const draft = queryDraft ?? null;
+    const view = draft ? { kind: "branch" as const, branchId: draft } : { kind: "live" as const };
+    // A draft of another project reads nothing here: its facts name that project's owner.
     const asset = await requireFileGrant(
       app.fileAccess,
       user.userId,
-      owner
-        ? { kind: "draft", documentId: assetDocumentId, owner }
+      draft
+        ? { kind: "draft", documentId: assetDocumentId, draftId: draft }
         : documentTarget(assetDocumentId),
       "read",
     );

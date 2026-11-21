@@ -9,13 +9,13 @@ export {
   accept,
   type Change,
   DECIDED_META,
+  type DraftPending,
   type Filter,
   list,
   pendingChanges,
   pendingTurns,
   reject,
   type Verdict,
-  type WorkPending,
 } from "./resolve.js";
 export {
   CHANGE_META,
@@ -27,15 +27,17 @@ export {
   STARTED_META,
 } from "./rewrite.js";
 export {
-  type AttrProposal,
+  type AttrLayer,
   blockKind,
   kindOf,
+  layersOf,
   liveView,
   proposals,
   type Run,
   type RunKind,
   removedIn,
   runs,
+  SUGGESTION_ATTRS,
   sameValue,
   suggested,
   type View,

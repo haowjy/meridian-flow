@@ -1,6 +1,7 @@
 /** Resolves execution authority before asking collab for atomic document identities. */
 
 import type { DocumentId, ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import { chatOwner } from "../../shared/draft-owner.js";
 import type { DocumentLinkScopes, DraftPeerShadowAccess } from "../collab/index.js";
 import type { AgentChain, FileAccess, Principal } from "../file-policy/index.js";
 import type { WorkRepository } from "../projects/index.js";
@@ -46,7 +47,8 @@ export function createDocumentRevisions(deps: {
               projectId: thread.projectId as ProjectId,
               chain: await deps.readAgentChain(threadId),
               branchOwner: {
-                owner: threadExecutionContext(work, thread).branchOwner,
+                owner: chatOwner(thread, work),
+                draftId: threadExecutionContext(work, thread).draftId,
                 handle: work.handle,
               },
               writeMode: thread.aiWriteMode,
@@ -66,7 +68,7 @@ export function createDocumentRevisions(deps: {
                     documentId: documentId as DocumentId,
                     threadId,
                     destination: "draft",
-                    owner: at.owner,
+                    draft: at.draftId,
                   }
                 : { documentId: documentId as DocumentId, threadId: null, destination: "live" },
             )

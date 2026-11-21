@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { ProjectId } from "@meridian/contracts";
 import { type ToolContentPart, toolContentText } from "@meridian/contracts/threads";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
 import { writeMarkdown } from "../domains/collab/test-support/bound-writes.js";
@@ -35,8 +35,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDb } = await import("@meridian/database");
     const { deleteDrizzleRows } = await import("../test-support/drizzle-reset.js");
     const { useComposedRuntimes } = await import("../test-support/composed-runtime.js");
-    const { handleOwnerDraftListRequest, handlePressRequest, selectBranchRouteServices } =
-      await import("./branch-review-route.js");
+    const { handleDraftListRequest, handlePressRequest, selectBranchRouteServices } = await import(
+      "./branch-review-route.js"
+    );
 
     const USER_ID = "00000000-0000-4000-8000-000000000d01";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000d02";
@@ -180,10 +181,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       )[0];
     const branchOf = async (workId: string) => {
       const [row] = await db
-        .select({ id: schema.branches.id })
-        .from(schema.branches)
-        .where(and(eq(schema.branches.originWorkId, workId), eq(schema.branches.status, "active")));
-      if (!row) throw new Error(`Work ${workId} has no active branch`);
+        .select({ id: schema.works.draftId })
+        .from(schema.works)
+        .where(eq(schema.works.id, workId));
+      if (!row?.id) throw new Error(`Work ${workId} names no draft`);
       return row.id as never;
     };
     it("a path that names a folder beside the document it renders as reaches the folder", async () => {
@@ -222,18 +223,22 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
       const item = async (documentId: string) =>
         (
-          await handleOwnerDraftListRequest(routes, {
+          await handleDraftListRequest(routes, {
             ...scope,
-            owner: `work:${OTHER_WORK_ID}`,
+            draft: await branchOf(OTHER_WORK_ID),
           } as never)
         ).items.find((row) => row.documentId === documentId);
       // The writer's press on one document: its tree change only, or (`ends: "item"`) its text too.
-      const press = (verdict: "apply" | "discard", documentId: string, ends: "tree" | "item") =>
+      const press = async (
+        verdict: "apply" | "discard",
+        documentId: string,
+        ends: "tree" | "item",
+      ) =>
         handlePressRequest(routes, {
           ...scope,
           request: {
             commandId: randomUUID(),
-            owner: `work:${OTHER_WORK_ID}`,
+            draft: await branchOf(OTHER_WORK_ID),
             verdict,
             items: [{ node: documentId, ...(ends === "tree" ? { half: "tree" } : {}) }],
           },
@@ -503,19 +508,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         const routes = selectBranchRouteServices(script.runtime.app);
         const scope = { userId: USER_ID, projectId: PROJECT_ID } as const;
-        const owner = `work:${OTHER_WORK_ID}`;
-        const { items } = await handleOwnerDraftListRequest(routes, { ...scope, owner } as never);
+        const draft = await branchOf(OTHER_WORK_ID);
+        const { items } = await handleDraftListRequest(routes, { ...scope, draft } as never);
         const created = items.find((item) => item.documentId !== CH1);
         await review(script).discard(created?.documentId as string, { ends: "item" });
-        const { items: left } = await handleOwnerDraftListRequest(routes, {
+        const { items: left } = await handleDraftListRequest(routes, {
           ...scope,
-          owner,
+          draft,
         } as never);
         await handlePressRequest(routes, {
           ...scope,
           request: {
             commandId: randomUUID(),
-            owner,
+            draft,
             verdict: "apply",
             items: left.map((item) => ({ node: item.documentId, half: "tree" })),
           },

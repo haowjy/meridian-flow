@@ -4,7 +4,7 @@ import type { ContextCommandBranch } from "./context-command-transaction.js";
  * contract over context URI schemes plus file-entry, result, and error types.
  */
 
-import type { DraftOwner, LinkView, StoredDocumentProperties } from "@meridian/contracts";
+import type { DraftId, LinkView, StoredDocumentProperties } from "@meridian/contracts";
 import type {
   ContextUriScheme,
   ProjectScopedContextUriScheme,
@@ -288,8 +288,8 @@ export interface GrepResult {
  * One Copy as a port takes it: canonical addresses the route resolved from the writer's
  * locators, one ordered root per selection entry, and the destination parent's address.
  */
-/** Which version of a source Copy reads, with the draft owner resolved inside the project. */
-export type CopySourceView = { kind: "live" } | { kind: "draft"; owner: DraftOwner };
+/** Which version of a source Copy reads: Live, or a draft's view of it. */
+export type CopySourceView = { kind: "live" } | { kind: "draft"; draft: DraftId };
 
 export interface ContextCopyRequest {
   operationId: string;

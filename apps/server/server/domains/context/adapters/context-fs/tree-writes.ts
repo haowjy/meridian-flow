@@ -8,7 +8,7 @@
  * Callers hold the Work and branch locks their command transaction took and no document or
  * namespace key (the list's key sorts before those).
  */
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { ContextSiblingPosition, Filetype } from "@meridian/contracts/protocol";
 import { childAtSegment, readSegment } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -60,7 +60,7 @@ export function parseActor(
 }
 
 /** The Work's draft view for a branch, or live. */
-export function viewOfBranch(branchId: BranchId | null): View {
+export function viewOfBranch(branchId: DraftId | null): View {
   return branchId === null ? LIVE : { draft: branchId };
 }
 

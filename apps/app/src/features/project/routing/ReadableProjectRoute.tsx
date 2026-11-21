@@ -1,7 +1,6 @@
 /** Browser address resolution and navigation over one authorized, ID-backed project shell. */
 
-import { draftOwnerKey, parseDraftItemKey } from "@meridian/contracts";
-import type { DraftOwnerKey } from "@meridian/contracts/branches";
+import { parseDraftItemKey } from "@meridian/contracts";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import { contextOwner, type DocumentAddressResult } from "@meridian/contracts/protocol";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
@@ -19,6 +18,7 @@ import type { ContextOwner } from "@/client/query/context-request-options";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { type TreeViewResult, useProjectTreeViews } from "@/client/query/useProjectTree";
 import { ownerOfSource, useProjectTrees } from "@/client/query/useProjectTrees";
+import { useWorks } from "@/client/query/useWorks";
 import { isEditorScheme } from "@/client/stores";
 import { parseContextUri } from "@/lib/context-uri";
 import { originalBrowserSearch } from "@/router-search";
@@ -33,7 +33,7 @@ import { ProjectView } from "../ProjectView";
 import { useDraftTreeVersion } from "../tree-version";
 import { useWorkScopeState } from "../use-work-scope";
 import { ChatNavigationProvider, useProjectChatNavigation } from "./chat-navigation";
-import { addressReviewOwner } from "./document-address-review";
+import { addressReviewDraft } from "./document-address-review";
 import { createEditorDocumentCommand, prepareEditorDestination } from "./editor-document-command";
 import {
   draftOnlyTarget,
@@ -106,6 +106,8 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   // The Work scope is stored, never read from the address: a Work-scoped page lens, not a place.
   const editorScope = useWorkScopeState(projectId);
   const workId = editorScope.workId;
+  const { works } = useWorks(projectId);
+  const scopeDraft = works?.find((work) => work.id === workId)?.draftId ?? null;
   const presented = useOptionalPresentedDocuments();
   useBlocker({
     shouldBlockFn: async () => (navigation ? !(await navigation.allowDeparture()) : false),
@@ -212,8 +214,8 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const addressTree: TreeViewResult = documentDestination
     ? addressTrees[documentDestination.scheme]
     : NO_TREE;
-  const reviewOwner = addressReviewOwner(address, workId);
-  // A plain address never reads a Work's tree: only an item, with its owner, reviews a draft.
+  const reviewOwner = addressReviewDraft(address);
+  // A plain address never reads a draft's tree: only an item, whose key names it, reviews one.
   const addressKind = !address.itemKey ? "plain" : reviewOwner ? "review" : "pending";
   const [admission, setAdmission] = useState<AddressAdmission | null>(null);
   const closingDocumentId = address.itemKey ? parseDraftItemKey(address.itemKey)?.documentId : null;
@@ -266,9 +268,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   );
   const listedDrafts = useOwnerDrafts(
     projectId,
-    documentDestination
-      ? (reviewOwner ?? (workId ? draftOwnerKey({ kind: "work", workId }) : null))
-      : null,
+    documentDestination ? (reviewOwner ?? scopeDraft) : null,
   );
   // A review is read in its Work's tree: the branch the item's own row names, so a page the
   // draft created, moved or renamed is found by its id wherever the Work puts it. A drafted
@@ -495,14 +495,9 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
     if (!current.navigation) return;
     const ticket = current.navigation.capture();
     const { address } = current;
-    // A draft's owner is part of its link: the pin's owner.
+    // A draft's item key is part of its link, and names the draft.
     const next = review
-      ? {
-          ...address,
-          owner: review.ownerKey as DraftOwnerKey,
-          itemKey: review.itemKey,
-          changeId: review.changeId,
-        }
+      ? { ...address, itemKey: review.itemKey, changeId: review.changeId }
       : withoutReview(address);
     void current.navigation.replaceIfCurrent(ticket, next);
   }, []);
@@ -532,7 +527,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
       const next =
         "kind" in target
           ? { ...current.address, destination: { kind: "editor" as const } }
-          : prepareEditorDestination({ address: current.address, scope: workId }, target);
+          : prepareEditorDestination(current.address, target);
       return current.navigation.transition(next, { replace: true }, prepared);
     },
     [workId],
@@ -609,7 +604,6 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
             activeContextChat={locatorOwner.rootThreadId ?? null}
             reviewItemKey={address.itemKey}
             reviewOwner={reviewOwner}
-            reviewAddressOwner={address.owner}
             reviewChangeId={address.changeId}
             reviewAddressDocumentId={addressDocumentId}
             reviewAddressAdmission={

@@ -19,7 +19,7 @@ export type PressBody = { projectId: string } & Omit<PressRequest, "commandId">;
 export type PressUndoBody = { projectId: string; pressCommandId: string };
 
 /** One Work's presses and Undos go in the order the writer made them. */
-const pressLane = (owner: string) => `press:${owner}`;
+const pressLane = (draft: string) => `press:${draft}`;
 
 export function pressDomain(client: QueryClient): CommandDomain {
   // The Changes list and the counts read the server: a settled press shows there on the next read.
@@ -69,10 +69,10 @@ export function pressDomain(client: QueryClient): CommandDomain {
 }
 
 export function submitPress(driver: CommandDriver, body: PressBody) {
-  return submitCommand(driver, { kind: PRESS_KIND, lanes: [pressLane(body.owner)], body });
+  return submitCommand(driver, { kind: PRESS_KIND, lanes: [pressLane(body.draft)], body });
 }
 
-/** `owner` orders the Undo after the press it names. */
-export function submitPressUndo(driver: CommandDriver, owner: string, body: PressUndoBody) {
-  return submitCommand(driver, { kind: PRESS_UNDO_KIND, lanes: [pressLane(owner)], body });
+/** `draft` orders the Undo after the press it names. */
+export function submitPressUndo(driver: CommandDriver, draft: string, body: PressUndoBody) {
+  return submitCommand(driver, { kind: PRESS_UNDO_KIND, lanes: [pressLane(draft)], body });
 }

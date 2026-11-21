@@ -1,5 +1,4 @@
-import type { BranchId } from "@meridian/contracts";
-import type { Branches } from "../../collab/domain/branches.js";
+import type { DraftId } from "@meridian/contracts";
 import type { ContextCommandBranch } from "../ports/context-command-transaction.js";
 /**
  * Copy: one atomic command per drop, for a selection of roots into one destination.
@@ -41,7 +40,6 @@ import type { ContextCommandBranch } from "../ports/context-command-transaction.
  */
 
 import { setTimeout as delay } from "node:timers/promises";
-import { draftOwnerKey } from "@meridian/contracts";
 import type { Settlement } from "@meridian/contracts/commands";
 import type {
   ContextOperationCommand,
@@ -124,7 +122,6 @@ export interface CopyDestinationHandoff {
 
 export interface ContextCopyCommandDeps {
   documentSync: Pick<CollabDomain, "readEffectiveBlocks" | "bindCopiedBlocks" | "encodeSeed">;
-  branches: Pick<Branches, "viewForOwner">;
   objectStore: ObjectStorePort;
   release: Pick<ObjectRelease, "keys">;
 }
@@ -255,7 +252,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       }
       const view =
         source.view.kind === "draft"
-          ? await deps.branches.viewForOwner(source.view.owner)
+          ? { kind: "branch" as const, branchId: source.view.draft }
           : { kind: "live" as const };
       const snapshot = await source.copy.snapshotSource({
         id: source.expected.nodeId,
@@ -413,7 +410,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     for (;;) {
       const read = await deps.documentSync.readEffectiveBlocks(
         draft
-          ? { documentId, destination: "draft", owner: draft.owner }
+          ? { documentId, destination: "draft", draft: draft.draft }
           : { documentId, destination: "live" },
       );
       if (!read.ok) {
@@ -455,7 +452,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
-    branchId: BranchId | null,
+    branchId: DraftId | null,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
     const destination = await resolvedDestination(input);
     if (!destination.ok) return destination;
@@ -591,9 +588,7 @@ export function receiptCommand(
       (source): CopyContextEntryCommandSource => ({
         uri: source.uri,
         view:
-          source.view.kind === "draft"
-            ? { kind: "draft", owner: draftOwnerKey(source.view.owner) }
-            : source.view,
+          source.view.kind === "draft" ? { kind: "draft", draft: source.view.draft } : source.view,
         expected: source.expected,
         ...(source.copyId ? { copyId: source.copyId } : {}),
       }),
@@ -603,7 +598,7 @@ export function receiptCommand(
       ? {
           destinationView: {
             kind: "draft" as const,
-            owner: draftOwnerKey(request.destinationBranch.owner),
+            draft: request.destinationBranch.draftId,
           },
         }
       : {}),

@@ -54,7 +54,7 @@ export type CreatedDocument = {
   /** The folders the create made on the way, outermost first; its Undo takes them back too. */
   folders: readonly { record: string; node: string }[];
   /** The Work's branch it was drafted in; absent for a live create. */
-  draftBranchId?: import("@meridian/contracts").BranchId;
+  draftBranchId?: import("@meridian/contracts").DraftId;
 };
 
 /** The port's ensure options: the receipt hears the URI the document landed at. */

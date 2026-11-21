@@ -13,7 +13,7 @@ import {
 } from "prosemirror-transform";
 import { type Author, type Authors, newChangeId, type SuggestionAttrs } from "./change.js";
 import {
-  type AttrProposal,
+  type AttrLayer,
   blockKind,
   isSuggestionMark,
   kindOf,
@@ -34,7 +34,7 @@ import {
 /** A transaction already in stored form (accept, reject, a peer's or Undo's): never rewritten. */
 export const RAW_META = "suggestions:raw";
 
-/** On a rewritten transaction (`ChangeAt[]`): per range it replaced, the change a Work's edit took. */
+/** On a rewritten transaction (`ChangeAt[]`): per range it replaced, the change a draft's edit took. */
 export const CHANGE_META = "suggestions:change";
 
 /** On a rewritten transaction: part of the original could not be suggested and was left out. */
@@ -48,14 +48,16 @@ export const DROPPED_META = "suggestions:dropped";
 export const STARTED_META = "suggestions:started";
 
 /**
- * A Work's edit: whose draft it writes into, who writes it, the document's authors, which say
+ * A draft's edit: which draft it writes into, who writes it, the document's authors, which say
  * who wrote each change the edit meets, and the changes it started.
  */
 type Writer = {
-  work: string;
+  draft: string;
   author: Author;
   authors: Pick<Authors, "get">;
   started: Map<string, Author>;
+  /** The attribute layers this edit added: the only ones it extends. */
+  added: Set<string>;
 };
 
 /** Who wrote change `id`: one this edit started, or one the document records. */
@@ -91,9 +93,9 @@ function editChange(writer: Writer | null): EditChange {
 
 /**
  * Turns a local transaction into what the view allows, on `state` (the transaction's start).
- * In a Work's view, typing becomes that Work's insertion, deleting Live text becomes its
- * deletion, deleting its own insertion is a real delete, and another Work's text is never
- * touched. In the Live view (`view.work === null`) edits land, but hidden suggestions are kept
+ * In a draft's view, typing becomes that draft's insertion, deleting Live text becomes its
+ * deletion, deleting its own insertion is a real delete, and another draft's text is never
+ * touched. In the Live view (`view.draft === null`) edits land, but hidden suggestions are kept
  * and nothing typed or pasted carries a suggestion. Returns the original transaction when it
  * needs no rewrite. A change the edit starts is `author`'s, staged under `STARTED_META`; `authors`
  * is only read.
@@ -107,7 +109,7 @@ export function rewrite(
 ): Transaction {
   if (!tr.docChanged || tr.getMeta(RAW_META)) return tr;
   if (
-    view.work === null &&
+    view.draft === null &&
     !tr.steps.some((step, index) => touchesSuggestions(step, tr.docs[index], view))
   )
     return tr;
@@ -147,10 +149,12 @@ export function rewrite(
         node: !(mapped instanceof AddMarkStep || mapped instanceof RemoveMarkStep),
       });
   });
-  const work: Writer | null =
-    view.work === null || !author ? null : { work: view.work, author, authors, started: new Map() };
-  const change = editChange(work);
-  const ranges = work ? wholeBlockRanges(replaced, state.doc) : [...replaced];
+  const writer: Writer | null =
+    view.draft === null || !author
+      ? null
+      : { draft: view.draft, author, authors, started: new Map(), added: new Set() };
+  const change = editChange(writer);
+  const ranges = writer ? wholeBlockRanges(replaced, state.doc) : [...replaced];
   for (const range of [...ranges].reverse()) {
     const slice = stripSlice(tr.doc.slice(range.fromB, range.toB));
     const a = shownEdge(out.doc, range.fromA, view, -1);
@@ -160,10 +164,10 @@ export function rewrite(
     const changed = (c: SuggestionAttrs) => {
       took = c;
     };
-    const at = !work
+    const at = !writer
       ? replaceLive(out, a, b, slice, view, forward)
       : textblockAt(out.doc, a) && textblockAt(out.doc, b)
-        ? replaceInWork(
+        ? replaceInDraft(
             out,
             a,
             b,
@@ -180,12 +184,12 @@ export function rewrite(
               blockKind(textblockAtOrThrow(out.doc, b).node, view) === "own",
             ),
             view,
-            work,
+            writer,
             change,
             forward,
             changed,
           )
-        : replaceBlocks(out, a, b, slice, view, work, change, changed);
+        : replaceBlocks(out, a, b, slice, view, writer, change, changed);
     changes.push({ from: range.fromA, to: range.toA, change: took });
     if (at !== null && head >= range.fromB && head <= range.toB)
       caret = { pos: at, map: since(out) };
@@ -193,12 +197,12 @@ export function rewrite(
   // Formatting and block attributes where those steps reached content the transaction left in
   // place: the difference between the start and final documents there. What it replaced or made
   // already has its final form, from the final document.
-  const formatting = netFormatting(state.doc, tr.doc, ranges, reached, work !== null);
-  for (const run of formatting.runs) restyle(out, run, out.mapping.slice(), view, work, change);
+  const formatting = netFormatting(state.doc, tr.doc, ranges, reached, writer !== null);
+  for (const run of formatting.runs) restyle(out, run, out.mapping.slice(), view, writer, change);
   for (const step of formatting.nodes)
-    rewriteMarkup(out, step, out.mapping.slice(), view, work, change);
+    rewriteMarkup(out, step, out.mapping.slice(), view, writer, change);
   out.setMeta(CHANGE_META, changes);
-  if (work?.started.size) out.setMeta(STARTED_META, work.started);
+  if (writer?.started.size) out.setMeta(STARTED_META, writer.started);
   if (caret !== null)
     out.setSelection(
       TextSelection.near(out.doc.resolve(Math.min(caret.map(caret.pos), out.doc.content.size))),
@@ -207,7 +211,7 @@ export function rewrite(
   return out;
 }
 
-/** On a rewritten transaction (`CHANGE_META`): per range of the start document it replaced, the change a Work's edit there took. */
+/** On a rewritten transaction (`CHANGE_META`): per range of the start document it replaced, the change a draft's edit there took. */
 export type ChangeAt = { from: number; to: number; change: SuggestionAttrs | null };
 
 /**
@@ -225,7 +229,7 @@ const wholeText: TokenEncoder<unknown> = {
 type Range = { fromA: number; toA: number; fromB: number; toB: number };
 
 /**
- * Ranges for a Work's view: one that ends between blocks, or joins textblocks of different
+ * Ranges for a draft's view: one that ends between blocks, or joins textblocks of different
  * containers (two table cells), covers the whole blocks it reaches under the node holding both
  * its ends, so a block comes or goes whole. Overlaps join.
  */
@@ -261,7 +265,7 @@ type Restyle = { from: number; to: number; marks: readonly Mark[] };
 
 /**
  * Give a run its final marks. A mark reaches only what the view shows; a comment anchors on any
- * of it. In a Work's view, formatting Live text is suggested as that text struck and inserted
+ * of it. In a draft's view, formatting Live text is suggested as that text struck and inserted
  * again, formatted; a comment on it is added in place.
  */
 function restyle(
@@ -297,7 +301,7 @@ function restyle(
       content.forEach((node) => {
         formatted.push(styled(node));
       });
-      replaceInWork(
+      replaceInDraft(
         out,
         piece.from,
         piece.to,
@@ -329,7 +333,7 @@ type Reach = { from: number; to: number; node: boolean };
  * whose marks differ (suggestion marks aside), with the marks each ends with, never joined across
  * an edit's edge; and a markup step, with its final type and attributes, for each node a step
  * aimed at (the rewrite compares them with what the view
- * shows), all in the start document. In a Work's view a textblock an edit is inside is left to
+ * shows), all in the start document. In a draft's view a textblock an edit is inside is left to
  * that edit, which settles the block from the final document.
  */
 function netFormatting(
@@ -337,7 +341,7 @@ function netFormatting(
   b: Node,
   ranges: readonly Range[],
   reached: readonly Reach[],
-  inWork: boolean,
+  inDraft: boolean,
 ): { runs: Restyle[]; nodes: Step[] } {
   const runs: Restyle[] = [];
   const nodes: Step[] = [];
@@ -374,7 +378,7 @@ function netFormatting(
       }
       if (!markup || pos !== from || replacedAt(pos) || seen.has(`${pos}:node`)) return true;
       seen.add(`${pos}:node`);
-      if (inWork && node.isTextblock && editedIn(pos, node.nodeSize)) return true;
+      if (inDraft && node.isTextblock && editedIn(pos, node.nodeSize)) return true;
       const other = b.nodeAt(toB(pos));
       if (!other || other.isInline) return true;
       const attrs =
@@ -400,7 +404,7 @@ function netFormatting(
 /**
  * Where an edit lands in the final document: the textblocks holding its two ends, and the content
  * after its end there, which a join or a split carries on, formatted as the transaction made it.
- * When the edit ends in the Work's own block (`ownEnd`), that content keeps its layered marks, so
+ * When the edit ends in the draft's own block (`ownEnd`), that content keeps its layered marks, so
  * an earlier turn's wording moves with it.
  */
 function finalAround(
@@ -493,15 +497,15 @@ function rewriteMarkup(
   writer: Writer | null,
   change: EditChange,
 ): void {
-  // Attribute and structure steps. Live takes them; a Work's view takes them on its own blocks.
+  // Attribute and structure steps. Live takes them; a draft's view takes them on its own blocks.
   const mapped = step.map(map);
   if (!mapped) return;
   const range = stepRange(mapped);
   if (!writer || !range) {
-    if (view.work === null) out.maybeStep(mapped);
+    if (view.draft === null) out.maybeStep(mapped);
     return;
   }
-  // Read against what the Work sees: each Live block with its pending change applied, so an edit
+  // Read against what the draft sees: each Live block with its pending change applied, so an edit
   // that sets a block back to how Live has it withdraws the change.
   const shown = withPending(out.doc, range.from, range.to, view);
   const after = mapped.apply(shown).doc;
@@ -511,7 +515,7 @@ function rewriteMarkup(
     else out.setMeta(DROPPED_META, true);
     return;
   }
-  // An attribute change to a Live block is the Work's pending change to it: the block stays Live.
+  // An attribute change to a Live block is the draft's pending change to it: the block stays Live.
   for (const { pos, node, attrs } of changes) {
     const owner = ownerOf(out.doc, pos, view).kind;
     if (owner === "own") out.setNodeMarkup(pos, undefined, attrs);
@@ -525,7 +529,7 @@ function rewriteMarkup(
 
 /**
  * A textblock an edit is inside, given the attributes the transaction left it with (`final`):
- * the Work's own block takes them, a Live block takes them as the Work's pending change. Only
+ * the draft's own block takes them, a Live block takes them as the draft's pending change. Only
  * what the transaction changed counts; a Live block cannot change type.
  */
 function settle(
@@ -540,7 +544,7 @@ function settle(
   const { node, pos } = block;
   if (!final) return;
   const attrs = { ...final.attrs, sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs };
-  // A step aimed at the block sets what the Work sees; otherwise only what differs from the
+  // A step aimed at the block sets what the draft sees; otherwise only what differs from the
   // stored block is the transaction's (Enter and typing copy the stored attributes).
   const before = aimed
     ? { ...viewAttrs(node, view), sug: node.attrs.sug, sugAttrs: node.attrs.sugAttrs }
@@ -555,7 +559,7 @@ function settle(
 }
 
 /**
- * The Work's pending change to the Live block at `pos`, from attributes `shown` (as the Work sees
+ * The draft's pending change to the Live block at `pos`, from attributes `shown` (as the draft sees
  * them) to `attrs`: part of the edit's change, which continues this author's attribute change.
  * Who suggests and a block's identity are never themselves proposed.
  */
@@ -573,55 +577,65 @@ function proposeAttrs(
       set[key] = attrs[key];
   if (Object.keys(set).length === 0) return;
   const stored = out.doc.nodeAt(pos) as Node;
-  const layers = proposals(stored)[writer.work] ?? [];
-  const id = change(layers.find((layer) => !layer.remove && sameAuthor(layer, writer))?.id ?? null);
-  setLayers(out, pos, writer.work, addLayer(stored, layers, { id, work: writer.work, attrs: set }));
-}
-
-/** Store a Work's layers on the block at `pos`; none drops its entry. */
-function setLayers(out: Transaction, pos: number, work: string, layers: AttrProposal[]): void {
-  const entries = { ...proposals(out.doc.nodeAt(pos) as Node) };
-  if (layers.length > 0) entries[work] = layers;
-  else delete entries[work];
-  out.setNodeAttribute(pos, "sugAttrs", Object.keys(entries).length > 0 ? entries : null);
+  const continued = proposals(stored, writer.draft).find(
+    (layer) => !layer.remove && sameAuthor(layer, writer),
+  );
+  addLayer(out, pos, writer, { id: change(continued?.id ?? null), attrs: set });
 }
 
 /** `doc` with the view's pending attribute changes applied to the blocks in `[from, to)`. */
 function withPending(doc: Node, from: number, to: number, view: View): Node {
-  const work = view.work;
-  if (work === null) return doc;
+  const draft = view.draft;
+  if (draft === null) return doc;
   const shown = new Transform(doc);
   doc.nodesBetween(from, Math.max(to, from + 1), (node, pos) => {
-    for (const [key, value] of Object.entries(layered(proposals(node)[work] ?? [])))
+    for (const [key, value] of Object.entries(layered(proposals(node, draft))))
       shown.setNodeAttribute(pos, key, value);
   });
   return shown.doc;
 }
 
 /**
- * A Work's layers on a Live block once an edit adds `layer`: one change's layer per turn, so the
- * edit extends its turn's layer of the same change, or adds one. A lone layer that leaves the
- * block as Live has it is no change.
+ * Add an edit's layer of change `id` to the Live block at `pos`: merged into a layer this same
+ * edit added there, else appended after the draft's others under a fresh layer id. No layer
+ * another edit wrote is rewritten, so a layer written beside this edit stands. When the draft's
+ * layers would then set nothing Live doesn't have, and every one is this change's, they all go:
+ * the writer setting a heading and then body text again leaves no change.
  */
 function addLayer(
-  node: Node,
-  layers: readonly AttrProposal[],
-  layer: AttrProposal,
-): AttrProposal[] {
-  const next = [...layers];
-  const last = next.at(-1);
-  if (last && last.id === layer.id)
-    next[next.length - 1] = {
-      ...last,
-      attrs: { ...last.attrs, ...layer.attrs },
-      remove: last.remove || layer.remove,
-    };
-  else next.push(layer);
-  const attrs = layered(next);
+  out: Transaction,
+  pos: number,
+  writer: Writer,
+  layer: { id: string; attrs: Attrs; remove?: true },
+): void {
+  const node = out.doc.nodeAt(pos) as Node;
+  const own = proposals(node, writer.draft);
+  const last = own.at(-1);
+  const next: AttrLayer =
+    last && last.id === layer.id && writer.added.has(last.layer)
+      ? {
+          ...last,
+          attrs: { ...last.attrs, ...layer.attrs },
+          ...(last.remove || layer.remove ? { remove: true as const } : {}),
+        }
+      : {
+          id: layer.id,
+          draft: writer.draft,
+          layer: newChangeId(),
+          order: own.reduce((top, each) => Math.max(top, each.order), 0) + 1,
+          attrs: layer.attrs,
+          ...(layer.remove ? { remove: true as const } : {}),
+        };
+  writer.added.add(next.layer);
+  const after = [...own.filter((each) => each.layer !== next.layer), next];
+  const attrs = layered(after);
   const changes =
-    next.some((each) => each.remove) ||
+    after.some((each) => each.remove) ||
     Object.keys(attrs).some((key) => !sameValue(attrs[key], node.attrs[key]));
-  return changes || next.length > 1 ? next : [];
+  const entries: Record<string, AttrLayer> = { ...node.attrs.sugAttrs };
+  if (changes || after.some((each) => each.id !== layer.id)) entries[next.layer] = next;
+  else for (const each of after) delete entries[each.layer];
+  out.setNodeAttribute(pos, "sugAttrs", Object.keys(entries).length > 0 ? entries : null);
 }
 
 /** The nodes in `[from, to)` whose attributes alone differ in `after`; null when more differs. */
@@ -773,7 +787,7 @@ function replaceLive(
   return forward && removed.length === 0 ? map(to, 1) : insertAt;
 }
 
-// ─── A Work's view ──────────────────────────────────────────────────
+// ─── A draft's view ──────────────────────────────────────────────────
 
 function marked(schema: Schema, content: Fragment, attrs: SuggestionAttrs): Fragment {
   const mark = schema.marks.suggest_ins.create(attrs);
@@ -784,11 +798,11 @@ function marked(schema: Schema, content: Fragment, attrs: SuggestionAttrs): Frag
   return Fragment.from(nodes);
 }
 
-/** Whether `writer` wrote the change `attrs` belongs to: same Work, chat, turn and author. */
+/** Whether `writer` wrote the change `attrs` belongs to: same draft, chat, turn and author. */
 function sameAuthor(attrs: SuggestionAttrs, writer: Writer): boolean {
   const wrote = authorOf(writer, attrs.id);
   return (
-    attrs.work === writer.work &&
+    attrs.draft === writer.draft &&
     !!wrote &&
     wrote.turn === writer.author.turn &&
     wrote.chat === writer.author.chat &&
@@ -809,7 +823,7 @@ function continuedId(doc: Node, pos: number, writer: Writer): string | null {
 }
 
 /**
- * Remove `[from, to)` as the view sees it: Live text gets this Work's deletion mark, its own
+ * Remove `[from, to)` as the view sees it: Live text gets this draft's deletion mark, its own
  * insertions go, and own deletions and hidden text stay. Applied right to left.
  */
 function suggestRemoval(
@@ -822,29 +836,24 @@ function suggestRemoval(
 ): void {
   const schema = out.doc.type.schema;
   const del = schema.marks.suggest_del.create(attrs);
-  // The Work's own block goes outright, unless the edit layers over it (`layers`): then it stays,
+  // The draft's own block goes outright, unless the edit layers over it (`layers`): then it stays,
   // as a removed Live block does, with a removal layer and its text struck.
   const gone = wholeBlocks(out.doc, from, to).filter(
     ({ node }) => blockKind(node, view) === "own" && !layers(node.attrs.sug, writer),
   );
   const inGone = (pos: number) =>
     gone.some((block) => pos >= block.pos && pos < block.pos + block.node.nodeSize);
-  const work = pieces(out.doc, from, to, view).filter((piece) => !inGone(piece.from));
+  const removed = pieces(out.doc, from, to, view).filter((piece) => !inGone(piece.from));
   for (const { node, pos } of wholeBlocks(out.doc, from, to)) {
     const kind = blockKind(node, view);
     if (
       (kind === "live" && "sug" in node.attrs) ||
       (kind === "own" && layers(node.attrs.sug, writer))
     )
-      setLayers(
-        out,
-        pos,
-        attrs.work,
-        addLayer(node, proposals(node)[attrs.work] ?? [], { ...attrs, attrs: {}, remove: true }),
-      );
+      addLayer(out, pos, writer, { id: attrs.id, attrs: {}, remove: true });
   }
   const map = since(out);
-  for (const piece of work.reverse()) {
+  for (const piece of removed.reverse()) {
     if (piece.kind === "live") out.addMark(piece.from, piece.to, del);
     else if (piece.kind === "own-ins") retract(out, piece.from, piece.to, del, writer);
   }
@@ -864,7 +873,7 @@ function layers(written: SuggestionAttrs | null, writer: Writer): boolean {
   return turn !== null && (written ? authorOf(writer, written.id)?.turn : null) !== turn;
 }
 
-/** Content the view's Work writes into its own block `sug`: marked when it layers over the block. */
+/** Content the view's draft writes into its own block `sug`: marked when it layers over the block. */
 function intoOwn(
   schema: Schema,
   content: Fragment,
@@ -876,7 +885,7 @@ function intoOwn(
 }
 
 /**
- * Remove the view's own insertion in `[from, to)`, inline or inside a block the Work added. Text
+ * Remove the view's own insertion in `[from, to)`, inline or inside a block the draft added. Text
  * the same turn wrote goes, as does anything the writer (no turn) removes. Another turn's stays
  * under this turn's deletion (`layers`).
  */
@@ -911,7 +920,7 @@ function pastOwnDeletion(doc: Node, pos: number, view: View): number {
   return pos;
 }
 
-function replaceInWork(
+function replaceInDraft(
   out: Transaction,
   from: number,
   to: number,
@@ -927,9 +936,9 @@ function replaceInWork(
   const endBlock = textblockAtOrThrow(out.doc, to);
   const attrs: SuggestionAttrs = {
     id: change(continuedId(out.doc, from, writer) ?? continuedId(out.doc, to, writer)),
-    work: writer.work,
+    draft: writer.draft,
   };
-  // Text cut from a block the Work added stays that block's insertion, whoever cuts it.
+  // Text cut from a block the draft added stays that block's insertion, whoever cuts it.
   const startOwn = blockKind(startBlock.node, view) === "own";
   const cutChange = startOwn ? (startBlock.node.attrs.sug as SuggestionAttrs) : attrs;
   changed(cutChange);
@@ -937,8 +946,8 @@ function replaceInWork(
   const joining = startBlock.pos !== endBlock.pos;
   const endOwn = blockKind(endBlock.node, view) === "own";
   // What follows the cut in the last block moves to where the cut closes: kept as a copy, since
-  // Live text never moves in a Work's view. A Live end block the view keeps nothing of before the
-  // cut stays instead, as the edit's second half: after a block the Work added (a copy would be
+  // Live text never moves in a draft's view. A Live end block the view keeps nothing of before the
+  // cut stays instead, as the edit's second half: after a block the draft added (a copy would be
   // that block's insertion, gone with it), or when the cut is at its shown start.
   const keepEnd =
     !endOwn &&
@@ -1037,9 +1046,9 @@ function replaceInWork(
 }
 
 /**
- * A Work's edit between blocks (a gap cursor, a whole-block paste, a table row): inside a block
- * the Work added it is that block's content; elsewhere what it removes is struck and the blocks
- * it brings are its own. A table's rows and columns outside the Work's own table cannot be
+ * A draft's edit between blocks (a gap cursor, a whole-block paste, a table row): inside a block
+ * the draft added it is that block's content; elsewhere what it removes is struck and the blocks
+ * it brings are its own. A table's rows and columns outside the draft's own table cannot be
  * suggested, and are left out.
  */
 function replaceBlocks(
@@ -1052,7 +1061,7 @@ function replaceBlocks(
   change: EditChange,
   changed: (change: SuggestionAttrs) => void,
 ): null {
-  // Whoever owns the node holding both ends owns the edit: inside the Work's own block it is that
+  // Whoever owns the node holding both ends owns the edit: inside the draft's own block it is that
   // block's content, as typed.
   const $from = out.doc.resolve(from);
   const depth = $from.sharedDepth(to);
@@ -1081,7 +1090,7 @@ function replaceBlocks(
     out.setMeta(DROPPED_META, true);
     return null;
   }
-  const attrs: SuggestionAttrs = { id: change(null), work: writer.work };
+  const attrs: SuggestionAttrs = { id: change(null), draft: writer.draft };
   changed(attrs);
   const map = since(out);
   if (from < to) suggestRemoval(out, from, to, view, attrs, writer);

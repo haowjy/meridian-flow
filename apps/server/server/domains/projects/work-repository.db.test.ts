@@ -621,11 +621,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         (await loadDocumentAddresses(db, { ids: [document.id as DocumentId] }))
           .filter((address) => !address.deleted)
           .map((address) => address.documentId);
-      const [branch] = await db
-        .insert(schema.branches)
-        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
-        .returning({ id: schema.branches.id });
-      if (!branch) throw new Error("Expected the Work's branch");
       const resultTurnId = "00000000-0000-4000-8000-000000000848";
       const resultId = "00000000-0000-4000-8000-000000000849";
       await db.insert(schema.threads).values({
@@ -1213,11 +1208,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           size: 1,
         }),
       };
-      const [branch] = await db
-        .insert(schema.branches)
-        .values({ projectId: PROJECT_ID, originWorkId: work.id, createdBy: USER_ID })
-        .returning({ id: schema.branches.id });
-      if (!branch) throw new Error("Expected the Work's branch");
       await db.insert(schema.projectResults).values({
         id: "00000000-0000-4000-8000-000000000849",
         projectId: PROJECT_ID,

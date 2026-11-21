@@ -50,15 +50,15 @@ export function EditorView(props: EditorViewProps) {
   const file = fileForDocument(props.documentId);
   // As the host opens its room (`ContextDocumentHost`): the Work's row says the Work made it.
   const workOnly = file?.draft.isNew === true;
-  const owner = requestedItemKey && !workOnly ? controller.ownerKey : "";
+  const draft = requestedItemKey && !workOnly ? controller.draftId : "";
   // The phone reviews without typing; it types again once the review closes.
   const reviewReadOnly = props.reviewReadOnly === true && requestedItemKey !== null;
-  const view = useMemo<View>(() => (owner ? { work: owner } : liveView), [owner]);
+  const view = useMemo<View>(() => (draft ? { draft } : liveView), [draft]);
   const session = props.session ?? null;
   const identity: EditorMountIdentity = {
     documentId: props.documentId,
     projectId: props.projectId,
-    viewingOwner: controller.ownerKey || undefined,
+    viewingOwner: controller.draftId || undefined,
     schemaType: props.schemaType ?? "document",
     filetype: props.filetype,
     collaborationDecorations: props.showCollaborationDecorations ?? true,
@@ -86,9 +86,9 @@ export function EditorView(props: EditorViewProps) {
   }, [constructed, holds, hostEditor]);
   usePublishChangeCounts(props.documentId, holds ? constructed : null);
   const editor = useHostEditor();
-  const { changes } = useOpenReviewChanges(controller, { enabled: owner !== "" });
+  const { changes } = useOpenReviewChanges(controller, { enabled: draft !== "" });
   useSuggestionReviewFocus({
-    editor: owner ? editor : null,
+    editor: draft ? editor : null,
     documentId: props.documentId,
     itemKey: review?.itemKey ?? null,
     changes,

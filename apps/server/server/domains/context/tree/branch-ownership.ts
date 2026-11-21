@@ -4,8 +4,8 @@
  * another project's documents. Every check that pairs a branch with a document (draft
  * admission, file facts) asks here.
  */
-import type { BranchId, ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts";
-import { branches, contextSources, projects, works } from "@meridian/database/schema";
+import type { ContextSourceId, DocumentId, DraftId, ProjectId, UserId } from "@meridian/contracts";
+import { contextSources, drafts, projects, works } from "@meridian/database/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { TreeList } from "../ports/tree-list-store.js";
@@ -81,13 +81,13 @@ export async function loadDocumentOwner(
 
 export async function loadBranchHolder(
   db: DrizzleDb,
-  branchId: BranchId,
+  branchId: DraftId,
 ): Promise<BranchHolder | null> {
   const [row] = await currentDrizzleDb(db)
-    .select({ projectId: branches.projectId, accountId: projects.userId })
-    .from(branches)
-    .innerJoin(projects, eq(projects.id, branches.projectId))
-    .where(eq(branches.id, branchId))
+    .select({ projectId: drafts.projectId, accountId: projects.userId })
+    .from(drafts)
+    .innerJoin(projects, eq(projects.id, drafts.projectId))
+    .where(eq(drafts.id, branchId))
     .limit(1);
   return row ?? null;
 }

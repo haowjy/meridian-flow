@@ -7,7 +7,7 @@ import {
   unwrapDoc,
   type YProsemirrorDocumentModel,
 } from "@meridian/agent-edit/integration";
-import { type DraftOwner, draftOwnerKey, type LinkView } from "@meridian/contracts";
+import type { DraftId, LinkView } from "@meridian/contracts";
 import type { DocumentId, ThreadId } from "@meridian/contracts/runtime";
 import { settledAheads } from "@meridian/markup/links";
 import * as Y from "yjs";
@@ -20,8 +20,7 @@ import type {
   SyncError,
 } from "../contracts.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
-import type { WorkViews } from "./agent-edit-runtime.js";
-import type { Branches } from "./branches.js";
+import type { DraftViews } from "./agent-edit-runtime.js";
 import { documentRevision, inView, readHashlines, viewRevision } from "./document-revision.js";
 import { isCodeDocument } from "./document-schema-type.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
@@ -39,17 +38,16 @@ export function createEffectiveDocumentReader(input: {
   documents: Pick<MarkdownDocumentEngine, "serializeVersionedDocument">;
   /** Live's view. */
   model: YProsemirrorDocumentModel;
-  /** A Work's draft is Live read through the Work's view. */
-  workView: WorkViews;
+  /** A draft is Live read through the draft's view. */
+  draftView: DraftViews;
   codec: AgentEditCodecFactory;
   links: DocumentLinkScopes;
-  branches: Pick<Branches, "viewForOwner">;
   resolveFiletype(documentId: DocumentId): Promise<string | null>;
 }): Omit<DraftPeerShadowAccess, "seedWorkCreates" | "writeWorkCreatedContent"> {
   /** The view a read spells in: the version it reads. */
   async function viewOf(command: EffectiveReadInput): Promise<LinkView> {
     return command.destination === "draft"
-      ? input.branches.viewForOwner(command.owner)
+      ? { kind: "branch", branchId: command.draft }
       : { kind: "live" };
   }
 
@@ -60,17 +58,16 @@ export function createEffectiveDocumentReader(input: {
   }
 
   /**
-   * Reads the document's Live room through the view of `owner`'s Work, or Live's view. Choosing
-   * the content view never chooses the link view: every source renders through the same `read`,
-   * which spells in the command's own view.
+   * Reads the document's Live room through `draft`'s view, or Live's view. Choosing the content
+   * view never chooses the link view: every source renders through the same `read`, which spells
+   * in the command's own view.
    */
   async function readEffective<T>(
     command: EffectiveReadInput,
-    read: (doc: DocHandle, model: YProsemirrorDocumentModel, work: string | null) => Promise<T>,
-    owner: DraftOwner | undefined = command.destination === "draft" ? command.owner : undefined,
+    read: (doc: DocHandle, model: YProsemirrorDocumentModel, draft: string | null) => Promise<T>,
+    draft: DraftId | null = command.destination === "draft" ? command.draft : null,
   ): Promise<Result<T, SyncError>> {
-    const work = owner ? draftOwnerKey(owner) : null;
-    const model = work ? input.workView.model(work) : input.model;
+    const model = draft ? input.draftView.model(draft) : input.model;
     let room: Awaited<ReturnType<AgentEditRouter["readRoom"]>>;
     try {
       room = await input.agentEdit.readRoom({ documentId: command.documentId });
@@ -80,7 +77,7 @@ export function createEffectiveDocumentReader(input: {
       throw cause;
     }
     try {
-      return Ok(await read(toDocHandle(room.doc), model, work));
+      return Ok(await read(toDocHandle(room.doc), model, draft));
     } finally {
       room.dispose();
     }
@@ -89,9 +86,9 @@ export function createEffectiveDocumentReader(input: {
   return {
     async readEffectiveRevision(command) {
       try {
-        const result = await readEffective(command, async (handle, _model, work) => {
+        const result = await readEffective(command, async (handle, _model, view) => {
           const doc = unwrapDoc(handle);
-          return viewRevision(documentRevision(doc, await spelling(command, doc)), work);
+          return viewRevision(documentRevision(doc, await spelling(command, doc)), view);
         });
         return result.ok ? result.value : null;
       } catch {
@@ -100,13 +97,13 @@ export function createEffectiveDocumentReader(input: {
     },
     readStoredGrepTexts: ({ documentIds, ...version }) =>
       input.blockText.grepTexts(documentIds, {
-        draftOwner: version.destination === "draft" ? version.owner : null,
+        draft: version.destination === "draft" ? version.draft : null,
       }),
     readStoredWordCounts: (documentIds) => input.blockText.wordCounts(documentIds),
-    readOwnerMarkdown: ({ documentId, owner }) =>
+    readDraftMarkdown: ({ documentId, draft }) =>
       readEffective(
         { documentId, destination: "live" },
-        async (doc, model, work) =>
+        async (doc, model, view) =>
           inView(
             await input.documents.serializeVersionedDocument(
               documentId,
@@ -114,12 +111,12 @@ export function createEffectiveDocumentReader(input: {
               { kind: "live" },
               model,
             ),
-            work,
+            view,
           ),
-        owner,
+        draft,
       ),
     readEffectiveMarkdown(command) {
-      return readEffective(command, async (doc, model, work) =>
+      return readEffective(command, async (doc, model, view) =>
         inView(
           await input.documents.serializeVersionedDocument(
             command.documentId,
@@ -127,37 +124,37 @@ export function createEffectiveDocumentReader(input: {
             await viewOf(command),
             model,
           ),
-          work,
+          view,
         ),
       );
     },
     readEffectiveBlocks(command) {
       return readEffective(
         { documentId: command.documentId, destination: "live" },
-        async (handle, model, work): Promise<EffectiveBlocksRead> => {
+        async (handle, model, view): Promise<EffectiveBlocksRead> => {
           const doc = unwrapDoc(handle);
           const scope = await spelling(command, doc);
           const blocks = model.projectBlocks(toDocHandle(doc)).map((block) => block.node);
           return {
             content: blocks,
-            version: work ? "draft" : "live",
-            revision: viewRevision(documentRevision(doc, scope), work),
+            version: view ? "draft" : "live",
+            revision: viewRevision(documentRevision(doc, scope), view),
             holderUri: scope.holder.uri,
             stateVector: Y.encodeStateVector(doc),
             aheadSettlements: settledAheads(blocks, scope),
           };
         },
-        command.destination === "draft" ? command.owner : undefined,
+        command.destination === "draft" ? command.draft : null,
       );
     },
     readEffectiveHashlines(command) {
-      return readEffective(command, async (handle, model, work): Promise<HashlineRead> => {
+      return readEffective(command, async (handle, model, view): Promise<HashlineRead> => {
         const doc = unwrapDoc(handle);
         const [scope, verbatim] = await Promise.all([
           spelling(command, doc),
           isCodeDocument(input.resolveFiletype, command.documentId),
         ]);
-        return inView(readHashlines(doc, scope, model, input.codec, verbatim), work);
+        return inView(readHashlines(doc, scope, model, input.codec, verbatim), view);
       });
     },
   };

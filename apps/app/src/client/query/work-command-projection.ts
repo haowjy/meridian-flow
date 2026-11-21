@@ -15,6 +15,7 @@ import {
 /** A Work the server has not created yet, as the writer asked for it. */
 export type UncreatedWork = Pick<Work, "name" | "goal" | "lastActivityAt"> & {
   id: ParsedRequestId;
+  draftId: string;
 };
 
 /**
@@ -24,10 +25,10 @@ export type UncreatedWork = Pick<Work, "name" | "goal" | "lastActivityAt"> & {
 export type WorkCreation = { work: UncreatedWork; phase: "pending" | "failed" };
 
 function uncreatedWork(
-  { workId, name, goal }: WorkCommandVariables["create"],
+  { workId, draftId, name, goal }: WorkCommandVariables["create"],
   submittedAt: number,
 ): UncreatedWork {
-  return { id: workId, name, goal: goal ?? null, lastActivityAt: isoAt(submittedAt) };
+  return { id: workId, draftId, name, goal: goal ?? null, lastActivityAt: isoAt(submittedAt) };
 }
 
 const isoAt = (time: number) => new Date(time).toISOString();

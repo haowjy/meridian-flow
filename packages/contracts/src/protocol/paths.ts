@@ -98,8 +98,8 @@ export function apiProjectDocumentBranchesPath(projectId: string, documentId: st
 }
 
 /** An owner's active branch's reviewable drafts: `owner` is `work:<id>` or `lineage:<rootThreadId>`. */
-export function apiProjectDraftsPath(projectId: string, owner: string): string {
-  return `${apiProjectPath(projectId)}/drafts?owner=${encodeURIComponent(owner)}`;
+export function apiProjectDraftsPath(projectId: string, draft: string): string {
+  return `${apiProjectPath(projectId)}/drafts?draft=${encodeURIComponent(draft)}`;
 }
 
 /** (user, project)-scoped UI preferences — user resolved from auth. */

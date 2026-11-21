@@ -68,15 +68,15 @@ export interface BranchTreeWorld {
   work(name: string, mode: "draft" | "direct"): Promise<ScenarioWork>;
   /** Another thread whose primary Work is `work`, in that Work's mode. */
   thread(work: ScenarioWork): Promise<ScenarioWork>;
-  /** The Work's active branch, made at the write boundary if absent. */
+  /** The draft the Work names. */
   branchOf(work: ScenarioWork): Promise<Branch>;
   /** A live document, with live folders made as needed. */
   seedLive(path: string): Promise<DocumentId>;
   /** A live folder chain; returns the leaf. */
   seedLiveFolder(path: string): Promise<string>;
   /**
-   * A document the Work's branch created: a `create` record in the Work's draft view
-   * (`{ draft: branchId }`) at the path. Makes the Work's branch if it has none.
+   * A document the Work's draft created: a `create` record in its view (`{ draft: branchId }`)
+   * at the path.
    */
   seedHidden(work: ScenarioWork, path: string): Promise<DocumentId>;
   /** A registry row for an ahead ref at `path`, settled live to `settledTo` if given. */
@@ -199,13 +199,10 @@ export function branchTreeWorldOver(
     return { threadId, turnId };
   }
 
-  function branchOf(work: ScenarioWork): Promise<Branch> {
-    return branches.ensureActiveForWrite({
-      owner: { kind: "work", workId: work.id },
-      projectId,
-      threadId: work.threadId,
-      userId,
-    });
+  async function branchOf(work: ScenarioWork): Promise<Branch> {
+    const draft = await branches.ofOwner({ kind: "work", workId: work.id });
+    if (!draft) throw new Error(`Work ${work.id} names no draft`);
+    return draft;
   }
 
   return {

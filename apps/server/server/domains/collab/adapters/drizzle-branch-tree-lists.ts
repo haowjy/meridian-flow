@@ -2,7 +2,7 @@
  * Which tree lists a Work's tree spans. A Work's drafted records are in the list of the source
  * they were made in: its project's list, or the account's for `user://`.
  */
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { TreeSaw } from "@meridian/contracts/branches";
 import { sql } from "drizzle-orm";
 import * as Y from "yjs";
@@ -10,10 +10,10 @@ import { currentDrizzleDb, type DrizzleDb } from "../../../shared/drizzle-transa
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 
 /** The lists a Work's branch can hold records in: its project's, and its owner's account list. */
-export async function treeListsOfBranch(db: DrizzleDb, branchId: BranchId): Promise<TreeList[]> {
+export async function treeListsOfBranch(db: DrizzleDb, branchId: DraftId): Promise<TreeList[]> {
   const [row] = await currentDrizzleDb(db).execute<{ project_id: string; user_id: string }>(sql`
     SELECT b.project_id::text AS project_id, p.user_id::text AS user_id
-    FROM branches b JOIN projects p ON p.id = b.project_id WHERE b.id = ${branchId}::uuid`);
+    FROM drafts b JOIN projects p ON p.id = b.project_id WHERE b.id = ${branchId}`);
   if (!row) return [];
   return [
     { kind: "project", projectId: row.project_id },
@@ -76,7 +76,7 @@ export async function treeListsOfNodes(
 export async function treeCutOf(
   db: DrizzleDb,
   treeLists: Pick<TreeListStore, "read">,
-  branchId: BranchId,
+  branchId: DraftId,
 ): Promise<TreeSaw> {
   const lists = await treeListsOfBranch(db, branchId);
   if (lists.length === 0) return {};

@@ -195,7 +195,7 @@ function paintNode(block: PMNode, blockPos: number, paint: Paint, out: Decoratio
     return;
   }
   if (owner === "own") decorate(blockPos, end, added(block.attrs.sug?.id, true), "node");
-  const own = view.work ? (proposals(block)[view.work] ?? []) : [];
+  const own = view.draft ? proposals(block, view.draft) : [];
   if (removedIn(block, view))
     decorate(
       blockPos,
@@ -248,5 +248,5 @@ function paintNode(block: PMNode, blockPos: number, paint: Paint, out: Decoratio
 
 /** The view's own change a run's mark of `name` belongs to: the one its review lists it under. */
 function ownChange(marks: readonly PMMark[], view: View, name: string): string | undefined {
-  return marks.find((mark) => mark.type.name === name && mark.attrs.work === view.work)?.attrs.id;
+  return marks.find((mark) => mark.type.name === name && mark.attrs.draft === view.draft)?.attrs.id;
 }

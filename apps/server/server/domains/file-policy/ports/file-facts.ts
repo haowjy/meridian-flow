@@ -1,5 +1,5 @@
 /** Port: load the facts the file policy decides on (file-access §2, §5). */
-import type { DraftOwner } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { TreeView } from "../../context/tree/tree-view.js";
 import type { FileFacts, FileTarget } from "../domain/types.js";
@@ -10,7 +10,7 @@ export interface FileFactsRequest {
    * The owner whose branch this access goes through, asked only for a draft destination.
    * A `draft` target names its own; facts then include `branchOwner`.
    */
-  branchOwner?: DraftOwner;
+  branchOwner?: DraftId;
 }
 
 export interface FileFactsPort {
@@ -24,7 +24,7 @@ export interface FileFactsPort {
    */
   loadList(
     documentIds: readonly DocumentId[],
-    branchOwner?: DraftOwner,
+    branchOwner?: DraftId,
     branchViews?: ReadonlyMap<DocumentId, TreeView>,
   ): Promise<Map<DocumentId, FileFacts>>;
 }

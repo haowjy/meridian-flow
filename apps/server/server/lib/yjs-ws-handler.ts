@@ -2,7 +2,6 @@
 import { Hocuspocus, type WebSocketLike } from "@hocuspocus/server";
 import { isSchemaRepairUpdate } from "@meridian/agent-edit";
 import { isDocumentNotFoundError } from "@meridian/agent-edit/integration";
-import { draftOwnerKey } from "@meridian/contracts/branches";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   accessChangedClose,
@@ -34,6 +33,7 @@ import {
   fileAccessChangeKey,
   grantOwnerLocks,
   isFileAccessDenied,
+  ownerAccessKey,
   projectAccessKey,
 } from "../domains/file-policy/index.js";
 import {
@@ -105,7 +105,7 @@ type YjsConnectionAdmission =
       /** The file the room serves, asked again once the room is registered. */
       fileTarget: FileTarget;
       access: YjsRoomAccess;
-      /** The owners whose lifecycle decides this access: the file's owner, the draft's owner (its `draftOwnerKey`). */
+      /** The owners whose lifecycle decides this access: the file's owner, the draft's owner (its `ownerAccessKey`). */
       accessKeys: string[];
     }
   | {
@@ -331,9 +331,9 @@ async function classifyYjsConnectionAdmission(input: {
   // through Trash like a restore; a purged or unplaced document has no facts and is refused.
   let fileTarget: FileTarget = { kind: "restore", documentId };
   let found = await findRoomAccess(services, userId, fileTarget);
-  // A document only a Work holds is Live text that Work's view reads.
-  for (const owner of found ? [] : await services.documentSync.workOnlyOwners(documentId)) {
-    const target: FileTarget = { kind: "draft", documentId, owner };
+  // A document only a draft holds is Live text that draft's view reads.
+  for (const draftId of found ? [] : await services.documentSync.draftsHolding(documentId)) {
+    const target: FileTarget = { kind: "draft", documentId, draftId };
     found = await findRoomAccess(services, userId, target);
     if (found) {
       fileTarget = target;
@@ -390,7 +390,7 @@ async function classifyYjsConnectionAdmission(input: {
 function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | undefined {
   const owner = facts?.branchOwner ?? facts?.ownerWork;
   if (!owner) return undefined;
-  if ("frozen" in owner && owner.owner.kind === "lineage") {
+  if ("frozen" in owner && owner.owner?.kind === "lineage") {
     return owner.frozen ? "chat_frozen" : undefined;
   }
   if (owner.deleted) return "work_deleted";
@@ -398,15 +398,15 @@ function closedOwnerWhy(facts: FileFacts | null | undefined): ClosedOwnerWhy | u
 }
 
 /**
- * Room access follows the file's owners (each under its `draftOwnerKey`), its project and the
+ * Room access follows the file's owners (each under its `ownerAccessKey`), its project and the
  * document itself: access is decided once, when the socket opens, so every change that can end
  * it must reach a key the socket is under.
  */
 function accessKeys(facts: FileFacts, documentId: DocumentId): string[] {
   const { workIds, lineageRootIds } = grantOwnerLocks(facts);
   return [
-    ...workIds.map((workId) => draftOwnerKey({ kind: "work", workId })),
-    ...lineageRootIds.map((rootThreadId) => draftOwnerKey({ kind: "lineage", rootThreadId })),
+    ...workIds.map((workId) => ownerAccessKey({ workId })),
+    ...lineageRootIds.map((rootThreadId) => ownerAccessKey({ rootThreadId })),
     ...(facts.owner.kind === "project" ? [projectAccessKey(facts.owner.projectId)] : []),
     documentAccessKey(documentId),
   ];

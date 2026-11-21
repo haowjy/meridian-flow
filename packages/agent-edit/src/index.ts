@@ -23,7 +23,7 @@ export {
   schemaRepairCounts,
 } from "./model/schema-repair.js";
 export {
-  dropWork,
+  dropDraft,
   type IdRanges,
   type PressRecord,
   pressStored,

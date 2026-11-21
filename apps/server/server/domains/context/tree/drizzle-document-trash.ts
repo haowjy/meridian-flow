@@ -4,7 +4,6 @@ import type { DocumentTrashEntry, TrashEntryFacts } from "@meridian/contracts/pr
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
-  branches,
   branchTreeNodes,
   contextSources,
   documents,
@@ -155,9 +154,8 @@ export function createDrizzleDocumentTrash(deps: {
       SELECT DISTINCT p.document_id::text,
              coalesce(w.id, t.id)::text AS id, coalesce(w.name, nullif(t.title, ''), 'A chat') AS name
       FROM (${retentionHolds(ids)}) p
-      JOIN ${branches} b ON b.id = p.branch_id
-      LEFT JOIN ${works} w ON w.id = b.origin_work_id
-      LEFT JOIN ${threads} t ON t.id = b.origin_root_thread_id
+      LEFT JOIN ${works} w ON w.draft_id = p.draft_id
+      LEFT JOIN ${threads} t ON t.draft_id = p.draft_id
       WHERE (w.id IS NOT NULL OR t.id IS NOT NULL)
       ORDER BY p.document_id::text, 3, 2
     `);

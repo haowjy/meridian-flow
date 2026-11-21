@@ -1,8 +1,6 @@
-import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts/branches";
 import { readSegment } from "@meridian/contracts/protocol";
 import type { OpenDocument } from "@/client/stores";
 import { armEditorFocus } from "@/features/editor/focus-on-open";
-import { addressReviewOwner } from "./document-address-review";
 import { resolveLaunchLocator } from "./launch-locator";
 import {
   canonicalDocumentPath,
@@ -67,15 +65,11 @@ export function createEditorDocumentCommand({
       // Re-opening the document the address names (a rename or move following
       // its own placement, a review re-launch) keeps the review the address
       // carries; any other document starts without one.
-      const reviewOwner =
-        options?.reviewOwner ??
-        (sameDocument ? (addressReviewOwner(current.address, scope) ?? undefined) : undefined);
       const itemKey = options?.itemKey ?? (sameDocument ? current.address.itemKey : undefined);
       const next = prepareEditorDestination(
-        { address: current.address, scope },
+        current.address,
         target,
         itemKey,
-        reviewOwner,
         options?.changeId ??
           (sameDocument && (!itemKey || itemKey === current.address.itemKey)
             ? current.address.changeId
@@ -134,40 +128,28 @@ function routeTargetOwner(request: ContextRouteRequest, scope: string | null): C
 }
 
 export function prepareEditorDestination(
-  {
-    address,
-    scope,
-  }: {
-    address: ProjectAddress;
-    /** The Work scope; null while the Works list has not resolved. */
-    scope: string | null;
-  },
+  address: ProjectAddress,
   target: ContextRouteRequest,
   itemKey?: string,
-  reviewOwner?: string,
   changeId?: string,
 ) {
   const destination: ProjectDestination = target.path
     ? { kind: "document", scheme: target.scheme, path: canonicalDocumentPath(target.path) }
     : { kind: "editor" };
-  // Only a Scratch document and a draft item put an owner in the address; the scope never is one.
-  const workOwner = scope ? draftOwnerKey({ kind: "work", workId: scope }) : undefined;
+  // Only a Scratch document puts an owner in the address; the scope never is one.
   const scratchOwner =
     target.scheme === "scratch" && (target.workId || target.rootThreadId)
       ? scratchOwnerKey({ workId: target.workId ?? "", rootThreadId: target.rootThreadId })
       : undefined;
-  const owner = !target.path
-    ? undefined
-    : itemKey
-      ? ((reviewOwner as DraftOwnerKey | undefined) ?? scratchOwner ?? workOwner)
-      : scratchOwner;
+  const owner = target.path ? scratchOwner : undefined;
+  const review = target.path ? itemKey : undefined;
   const { owner: _previousOwner, ...previous } = address;
   return {
     ...previous,
     destination,
     ...(owner ? { owner } : {}),
-    itemKey: owner ? itemKey : undefined,
-    changeId: owner && itemKey ? changeId : undefined,
+    itemKey: review,
+    changeId: review ? changeId : undefined,
   } as ProjectAddress;
 }
 /** A prepared tab states the locator the route will use, not the one it was built from. */

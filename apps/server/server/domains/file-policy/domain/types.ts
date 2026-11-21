@@ -3,7 +3,7 @@
  * about, the facts the policy decides on, and the grant it returns.
  */
 
-import type { DraftOwner } from "@meridian/contracts";
+import type { DraftId, DraftOwner } from "@meridian/contracts";
 import type { AgentPermission } from "@meridian/contracts/agents";
 import type { ContextUriScheme } from "@meridian/contracts/context-uri";
 import type { FileAccessDenial } from "@meridian/contracts/protocol";
@@ -66,9 +66,13 @@ export interface WorkRef {
   handle: string | null;
 }
 
-/** The owner whose branch an agent's drafts land in, with the handle refusal copy names it by. */
+/**
+ * The draft an agent's drafts land in, the owner naming it (its chat's Work, or its lineage),
+ * whose lifecycle stops new AI writes, and the handle refusal copy names it by.
+ */
 export interface BranchOwnerRef {
   owner: DraftOwner;
+  draftId: DraftId;
   handle: string | null;
 }
 
@@ -141,7 +145,7 @@ export type FileOwnerRef =
  */
 export type FileTarget =
   | { kind: "document"; documentId: DocumentId }
-  | { kind: "draft"; documentId: DocumentId; owner: DraftOwner }
+  | { kind: "draft"; documentId: DocumentId; draftId: DraftId }
   | { kind: "restore"; documentId: DocumentId }
   | { kind: "container"; scheme: ContextUriScheme; owner: FileOwnerRef };
 
@@ -163,11 +167,13 @@ export interface FileWorkFacts {
 }
 
 /**
- * A branch owner's lifecycle: a Work as `FileWorkFacts` reads it, or a lineage, which is
- * `frozen` while no chat in it is live.
+ * The lifecycle of whoever names a draft: a Work as `FileWorkFacts` reads it, or a lineage, which
+ * is `frozen` while no chat in it is live.
  */
 export interface FileBranchOwnerFacts {
-  owner: DraftOwner;
+  draftId: DraftId;
+  /** The Work or lineage naming the draft; null when the draft or its owner is gone. */
+  owner: DraftOwner | null;
   handle: string | null;
   isNoWork: boolean;
   archived: boolean;
@@ -212,7 +218,7 @@ export interface FileFacts {
    * The policy takes the first. Absent until settings are stored.
    */
   aiAccessSettings?: readonly AiAccessSetting[];
-  /** The owner whose branch this access goes through, when one was asked about. */
+  /** The draft this access goes through and its owner, when one was asked about. */
   branchOwner?: FileBranchOwnerFacts;
 }
 
@@ -223,7 +229,7 @@ export interface FileFacts {
 /** Where a write lands: the live document, or an owner's branch. */
 export type FileDestination =
   | { kind: "live" }
-  | { kind: "draft"; owner: DraftOwner; ownerHandle: string | null };
+  | { kind: "draft"; draftId: DraftId; ownerHandle: string | null };
 
 /** The reason a transport reports (§9); the wire type. A deleted file is `not_found`. */
 export type { FileAccessDenial };
@@ -301,7 +307,7 @@ export function grantOwnerLocks(facts: FileFacts): OwnerLocks {
   const lineageRootIds: string[] = [];
   if (facts.ownerWork && !facts.ownerWork.isNoWork) workIds.push(facts.ownerWork.id);
   const branchOwner = facts.branchOwner;
-  if (branchOwner && !branchOwner.isNoWork) {
+  if (branchOwner?.owner && !branchOwner.isNoWork) {
     if (branchOwner.owner.kind === "work") workIds.push(branchOwner.owner.workId);
     else lineageRootIds.push(branchOwner.owner.rootThreadId);
   }
@@ -315,6 +321,13 @@ export function agentProject(grant: Pick<FileGrant, "principal">): ProjectId {
   const projectId = grant.principal.agent?.projectId;
   if (!projectId) throw new Error("The grant is not an agent's");
   return projectId;
+}
+
+/** The draft an agent's drafted writes land in, with its owner. */
+export function agentBranchOwner(principal: Principal): BranchOwnerRef {
+  const ref = principal.agent?.branchOwner;
+  if (!ref) throw new Error("The principal is not an agent");
+  return ref;
 }
 
 /** The node that stands for a file's owner, where its owner's grant attaches. */

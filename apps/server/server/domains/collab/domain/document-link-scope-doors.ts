@@ -137,8 +137,8 @@ export function scopeDraftPeer(
     // Passed through: no Markdown of their own.
     readStoredGrepTexts: access.readStoredGrepTexts,
     readStoredWordCounts: access.readStoredWordCounts,
-    readOwnerMarkdown: (command) =>
-      scopes.within(by(command), () => access.readOwnerMarkdown(command)),
+    readDraftMarkdown: (command) =>
+      scopes.within(by(command), () => access.readDraftMarkdown(command)),
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     readEffectiveBlocks: (command) =>

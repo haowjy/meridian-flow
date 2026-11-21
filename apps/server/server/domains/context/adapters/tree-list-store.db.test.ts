@@ -12,7 +12,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  branches,
   branchTreeNodes,
   contextSources,
   documents,
@@ -61,7 +60,7 @@ const STRANGER = "00000000-0000-4000-8000-000000000a02";
 const PROJECT = "00000000-0000-4000-8000-000000000a03";
 const MANUSCRIPT = "00000000-0000-4000-8000-000000000a04";
 const UNFILED = "00000000-0000-4000-8000-000000000a05";
-const BRANCH = "00000000-0000-4000-8000-000000000a06";
+const BRANCH = "treelistbr01";
 const WORK = "00000000-0000-4000-8000-000000000a07";
 const actor = `user:${ACCOUNT}`;
 const list = { kind: "project", projectId: PROJECT } as const;
@@ -106,13 +105,7 @@ describe("the tree list store (postgres)", () => {
       createdByUserId: ACCOUNT,
       name: "Drafting",
       handle: "w1",
-    });
-    await db.insert(branches).values({
-      id: BRANCH,
-      projectId: PROJECT,
-      status: "active",
-      originWorkId: WORK,
-      createdBy: ACCOUNT,
+      draftId: BRANCH,
     });
   });
   afterAll(() => closeDatabase(db));

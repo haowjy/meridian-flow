@@ -1,6 +1,6 @@
 /**
  * The two relations every reader of the tree composes: `visibleDocuments(view)` and
- * `visibleFolders(view)`, over `tree_nodes` (live) and `branch_tree_nodes` (a Work's view). The
+ * `visibleFolders(view)`, over `tree_nodes` (live) and `draft_tree_nodes` (a Work's view). The
  * rows are written only by the replay of the project's list (`adapters/tree-list-rows.ts`);
  * nothing here filters a hidden or tombstoned row, because there is none.
  *
@@ -10,13 +10,13 @@
  * relation without it is planned as a hash join of the whole relation (measured in
  * `context/.context/tree-list-store.md`).
  */
-import type { BranchId, ContextSourceId, DocumentId, FolderId } from "@meridian/contracts";
+import type { ContextSourceId, DocumentId, DraftId, FolderId } from "@meridian/contracts";
 import type { JsonObject } from "@meridian/contracts/threads";
 import { getTableColumns, type SQL, Subquery, sql } from "drizzle-orm";
 import { bigint, boolean, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { SelectionProxyHandler } from "drizzle-orm/selection-proxy";
 
-export type TreeView = { kind: "live" } | { kind: "branch"; branchId: BranchId };
+export type TreeView = { kind: "live" } | { kind: "branch"; branchId: DraftId };
 export const LIVE_TREE: TreeView = Object.freeze({ kind: "live" });
 
 // The relations' column shapes. Not schema tables: they type and decode the subqueries below,
@@ -84,28 +84,28 @@ function documentsQuery(view: TreeView): SQL {
     FROM tree_nodes t JOIN documents d ON d.id = t.id
     WHERE t.kind = 'document' AND t.trash_record IS NULL`;
   if (view.kind === "live") return live;
-  const branch = sql`${view.branchId}::uuid`;
+  const branch = sql`${view.branchId}`;
   return sql`${live} AND NOT EXISTS (
-      SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
+      SELECT 1 FROM draft_tree_nodes x WHERE x.draft_id = ${branch} AND x.id = t.id)
     UNION ALL
     SELECT b.id, b.context_source_id, b.parent_id AS folder_id, b.name, b.segment, b.extension,
       b.file_type, ${documentTail}, b.rank, coalesce(t.location_version, 0)
-    FROM branch_tree_nodes b JOIN documents d ON d.id = b.id
+    FROM draft_tree_nodes b JOIN documents d ON d.id = b.id
       LEFT JOIN tree_nodes t ON t.id = b.id
-    WHERE b.branch_id = ${branch} AND b.kind = 'document' AND NOT b.deleted`;
+    WHERE b.draft_id = ${branch} AND b.kind = 'document' AND NOT b.deleted`;
 }
 
 function foldersQuery(view: TreeView): SQL {
   const live = sql`SELECT t.id, t.context_source_id, t.parent_id, t.name, t.segment, t.rank, t.location_version
     FROM tree_nodes t WHERE t.kind = 'folder' AND t.trash_record IS NULL`;
   if (view.kind === "live") return live;
-  const branch = sql`${view.branchId}::uuid`;
+  const branch = sql`${view.branchId}`;
   return sql`${live} AND NOT EXISTS (
-      SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
+      SELECT 1 FROM draft_tree_nodes x WHERE x.draft_id = ${branch} AND x.id = t.id)
     UNION ALL
     SELECT b.id, b.context_source_id, b.parent_id, b.name, b.segment, b.rank, coalesce(t.location_version, 0)
-    FROM branch_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
-    WHERE b.branch_id = ${branch} AND b.kind = 'folder' AND NOT b.deleted`;
+    FROM draft_tree_nodes b LEFT JOIN tree_nodes t ON t.id = b.id
+    WHERE b.draft_id = ${branch} AND b.kind = 'folder' AND NOT b.deleted`;
 }
 
 /** Documents visible in this view, at the view's location (alias "visible_documents"). */

@@ -9,12 +9,12 @@ document. This is the only draft there is.
   Add no new `Y.Xml*` use elsewhere.
 - A resolve is one path: the tab, the press and card Undo all call `resolveStored`, which writes
   exactly what the verdict settles. A second way to apply a verdict to Yjs is the bug to look for.
-- Marks hold `{ id, work }` only; authors are once per change in `Authors`. Put nothing per-run on
+- Marks hold `{ id, draft }` only; authors are once per change in `Authors`. Put nothing per-run on
   a mark that `kindOf` does not read.
 - `kindOf` is the one decision table. Every reader shows a view through `viewBlock`, and every
   writer, the editor and the model alike, goes through `rewrite`. A second rule for "what does
   this view see" or "what does this edit do" is the bug to look for in review.
-- Discard is `reject({ work })`. There is no hidden or discarded state in the document.
+- Discard is `reject({ draft })`. There is no hidden or discarded state in the document.
 - A lifecycle fact is recorded when it is decided, never worked out from what survives: a
   resolve's verdicts go into `suggestion_verdicts` in its own transaction and Undo scope
   (`resolveScope`). A reader that infers applied or rejected from the remaining Yjs items is the

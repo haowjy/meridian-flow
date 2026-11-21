@@ -16,22 +16,18 @@ import * as Y from "yjs";
 import {
   drizzleFileAccess,
   grantInProject,
+  type TestDestination,
   testFileGrant,
 } from "../../test-support/file-grants.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDocumentRevisions } from "../context/index.js";
-import { createLocalFileAccessChanges, type FileDestination } from "../file-policy/index.js";
+import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
-import {
-  createDrizzleBranchStore,
-  createDrizzleBranchWriteBoundary,
-} from "./adapters/drizzle-branches.js";
 import { createDrizzleWorkCreates } from "./adapters/drizzle-work-creates.js";
-import { createBranches } from "./domain/branches.js";
 import { scopeDraftPeer } from "./domain/document-link-scope-doors.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
@@ -48,6 +44,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
@@ -98,10 +95,6 @@ async function fixture(
   });
   // The reads spell from the harness's scope, so their revisions compare with these.
   const links = f.links;
-  const branches = createBranches({
-    store: createDrizzleBranchStore(db),
-    boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
-  });
   const effective = scopeDraftPeer(
     createEffectiveDocumentReader({
       blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
@@ -109,10 +102,9 @@ async function fixture(
       agentEdit: f.collab.agentEdit(),
       documents: f.runtime.markdownDocuments,
       model: f.runtime.model,
-      workView: f.runtime.workView,
+      draftView: f.runtime.draftView,
       codec: f.runtime.codec,
       links,
-      branches,
     }),
     links,
     createDrizzleWorkCreates(db, { documents: f.runtime.markdownDocuments }),
@@ -144,13 +136,14 @@ async function fixture(
           ? { kind: "live" }
           : {
               kind: "draft",
+              draftId: WORK_DRAFT_ID,
               owner: { kind: "work", workId: WORK_ID },
               ownerHandle: "atomicity-work",
             },
       ),
     ),
   };
-  const read = (responseId?: string, destination?: FileDestination) =>
+  const read = (responseId?: string, destination?: TestDestination) =>
     core.read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
@@ -199,7 +192,7 @@ async function fixture(
     expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;
   }
-  return { ...f, branches, core, read, current, stage, writerDelete, revisions, effective };
+  return { ...f, core, read, current, stage, writerDelete, revisions, effective };
 }
 
 describe("document revisions (postgres and collab)", () => {
@@ -267,7 +260,7 @@ describe("document revisions (postgres and collab)", () => {
       documentId: ALPHA_ID,
       threadId: THREAD_ID,
       destination: "draft" as const,
-      owner: { kind: "work", workId: WORK_ID } as const,
+      draft: WORK_DRAFT_ID,
     };
     const markdown = await f.effective.readEffectiveMarkdown(view);
     const hashlines = await f.effective.readEffectiveHashlines(view);
@@ -294,12 +287,14 @@ describe("document revisions (postgres and collab)", () => {
       createdByUserId: USER_ID,
       name: "Other draft",
       handle: "w2",
+      draftId: "otherdraftw2",
     });
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);
-    // The thread's grants now name Work B, which has no branch yet: the read is live (S1).
+    // The thread's grants now name Work B, whose draft holds nothing yet: the read is live (S1).
     const rebound = {
       kind: "draft",
+      draftId: "otherdraftw2",
       owner: { kind: "work", workId: workB },
       ownerHandle: "other-draft",
     } as const;

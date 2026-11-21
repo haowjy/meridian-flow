@@ -9,6 +9,7 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import { draftOf } from "@meridian/contracts/works";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
@@ -20,7 +21,6 @@ import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { patchAccountRecentsFromDocuments } from "@/client/recents";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
-import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
 import {
   usePressCommands,
   type WorkBranchCommands,
@@ -91,10 +91,8 @@ export type ProjectViewProps = {
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewItemKey?: string;
-  /** Whose draft the address's item reviews (`addressReviewOwner`). */
+  /** The draft the address's item reviews (`addressReviewDraft`). */
   reviewOwner?: string | null;
-  /** The owner the address itself names (a Scratch document's or a draft's), if any. */
-  reviewAddressOwner?: string;
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
@@ -357,7 +355,7 @@ function HydratedReviewControllers({
   const chatCommands = usePressCommands({
     projectId: props.projectId,
     work: chatWork,
-    ownerKey: chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null),
+    draftId: chatWork && chatThread ? draftOf(chatThread, chatWork) : "",
     threadId: chatThreadId,
     surface: "strip",
   });
@@ -371,7 +369,6 @@ function HydratedReviewControllers({
     locationKey: props.routeLocationKey,
     reviewOwner: props.reviewOwner ?? null,
     address: {
-      owner: props.reviewAddressOwner,
       itemKey: props.reviewItemKey,
       changeId: props.reviewChangeId,
       documentId: main,

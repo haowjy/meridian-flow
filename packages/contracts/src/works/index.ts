@@ -1,11 +1,23 @@
 export { type AiWriteMode, aiWriteModeSchema, effectiveAiWriteMode } from "./ai-write-mode.js";
 
 import { z } from "zod";
-import type { DraftOwner } from "../branches/owner.js";
 import { decodeWorkHandle, type WorkHandle } from "../handles.js";
-import type { ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
+import type { DraftId, ProjectId, ThreadId, UserId, WorkId } from "../ids.js";
 import type { AiWriteMode } from "./ai-write-mode.js";
 import type { WorkReceiptState } from "./receipts.js";
+
+/**
+ * The draft a chat writes into: its named Work's, or with No Work its lineage's, which the root
+ * chat names (`Thread.draftId`, the lineage's on every chat in it).
+ */
+export function draftOf(
+  thread: { draftId: DraftId },
+  work: { draftId: DraftId | null; isNoWork: boolean },
+): DraftId {
+  if (work.isNoWork) return thread.draftId;
+  if (!work.draftId) throw new Error("A named Work names its draft");
+  return work.draftId;
+}
 
 export interface Work {
   id: WorkId;
@@ -15,6 +27,8 @@ export interface Work {
   /** Permanent project-unique handle (`w3`), never reused. Null on the locked No Work row. */
   handle: WorkHandle | null;
   isNoWork: boolean;
+  /** The Work's draft, minted with it; null on No Work, which owns nothing. */
+  draftId: DraftId | null;
   goal: string | null;
   /** AI-owned one-to-three-word progress summary. */
   status: string | null;
@@ -23,7 +37,7 @@ export interface Work {
   defaultAiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Documents and folders this Work's active branch changes (the Works badge is their sum), as the server stores them; never derive from visible rows. */
+  /** Documents and folders this Work's draft changes (the Works badge is their sum), as the server stores them; never derive from visible rows. */
   pendingDocumentCount: number;
   pendingFolderCount: number;
   createdAt: string;
@@ -78,6 +92,7 @@ export const workSchema = z.object({
   name: z.string(),
   handle: workHandleSchema.nullable(),
   isNoWork: z.boolean(),
+  draftId: z.string().nullable(),
   goal: z.string().nullable(),
   status: z.string().nullable(),
   archivedAt: z.string().nullable(),
@@ -118,6 +133,8 @@ export const worksSnapshotSchema = z.object({
 
 export interface CreateWorkRequest {
   id?: WorkId;
+  /** The Work's draft (`newDraftId`), minted beside `id`; the server mints one if omitted. */
+  draftId?: DraftId;
   name: string;
   goal?: string;
 }
@@ -134,8 +151,8 @@ export type ThreadWorkScope = { workId: WorkId; workHandle: WorkHandle | null };
 export type ThreadExecutionContext = {
   scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
-  /** Who owns the drafts this chat writes (its Work, or its lineage with no Work), in either mode. */
-  branchOwner: DraftOwner;
+  /** The draft this chat writes into, in either mode: its Work's, or its lineage's with no Work. */
+  draftId: DraftId;
 };
 
 /** HTTP rebind body. Null workId falls back to the project's No Work row. */

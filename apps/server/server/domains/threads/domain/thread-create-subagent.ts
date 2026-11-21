@@ -22,8 +22,11 @@ export interface CreateSubagentThreadInput {
   spawnStatus?: SpawnStatus;
 }
 
-/** Build a subagent Thread row — not reachable from public create normalization. */
-export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread {
+/**
+ * Build a subagent Thread row — not reachable from public create normalization. Its draft is its
+ * lineage's, which the store reads from the root.
+ */
+export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Omit<Thread, "draftId"> {
   const now = toIsoString(new Date());
   const id = input.id ?? crypto.randomUUID();
   return {

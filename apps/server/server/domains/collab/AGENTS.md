@@ -3,7 +3,7 @@
 Durable Yjs coordination and persistence for live documents. A Work's draft is its suggestion
 marks in the Live document, plus its branch's tree records; Apply and Discard is the press.
 
-- A model write is one `modelEdits().write` in its command transaction; a drafted one writes the Work's suggestions through `workView`. Nothing holds a write for a later save.
+- A model write is one `modelEdits().write` in its command transaction; a drafted one writes the Work's suggestions through `draftView`. Nothing holds a write for a later save.
 - Admit novel user content durably before Yjs apply, broadcast or ack.
 - Every server authority doc and every materialization of one is `gc: false`. A
   client doc (gc on) can't be the origin of a Yjs snapshot: a once-collected store

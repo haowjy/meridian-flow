@@ -74,7 +74,7 @@ stateDiagram-v2
   "Not deleted"). On a deleted Work's Draft no tree offers a control, New document is not offered
   and the identity bar's placement field doesn't open (`TreeVersion.ended`). Its Scratch on Live reads and
   offers no change (`useWorkSourceWritable`). The pick follows a lifecycle change made elsewhere at once: the
-  server wakes the Works list with the Work's `draft-owner-hint`.
+  server wakes the Works list with the Work's `draft-hint`.
 - Copy uses the destination tree shown by the toggle: on Draft it creates the copy in the
   Work's draft, and on Live it creates the copy live. A source in Draft reads its draft content
   where it has any, otherwise live content.

@@ -2,13 +2,13 @@
 import type {
   AgentFilesHint,
   ContextSourcesHint,
-  DraftOwnerHint,
+  DraftHint,
   McpConnectionsHint,
   ProjectChatsHint,
 } from "@meridian/contracts/protocol";
 
 export type ProjectHint =
-  | DraftOwnerHint
+  | DraftHint
   | ProjectChatsHint
   | ContextSourcesHint
   | AgentFilesHint
@@ -20,7 +20,7 @@ export interface ProjectWakePort {
 
 /** Wakes the project's clients once the caller's transaction commits. */
 export interface ProjectHintPort {
-  publishDraftOwnerHints(hints: readonly DraftOwnerHint[]): void;
+  publishDraftHints(hints: readonly DraftHint[]): void;
   /** A source of the project began, ended or was renamed, or access to it changed. */
   publishSourcesHint(projectId: string): void;
 }

@@ -11,7 +11,7 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { BranchId, CatalogFolder, ContextSourceId, DraftOwnerKey } from "@meridian/contracts";
+import type { CatalogFolder, ContextSourceId, DraftId } from "@meridian/contracts";
 import {
   type CatalogDocument,
   type ContextUriScheme,
@@ -23,15 +23,13 @@ import {
 import { contextOwner, type ResolvedContextOwner } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches as branchTable } from "@meridian/database/schema";
 import {
   createHolderLinkScope,
   type HolderCatalog,
   writtenAddresses,
 } from "@meridian/markup/links";
 import { storedLinkKeys } from "@meridian/markup/stored-links";
-import { inArray, type SQL, sql } from "drizzle-orm";
-import { ownerKeyOfColumns } from "../../../shared/draft-owner.js";
+import { type SQL, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type {
@@ -87,8 +85,8 @@ type Place = { uri: string; contextSourceId: ContextSourceId | null; path: strin
 /** One view's index: where each loaded document sits in that view. */
 type ViewIndex = {
   statuses: ReadonlyMap<DocumentId, IdentityStatus>;
-  /** The Work's branch and its owner, for a branch view: what "in a draft" names. */
-  branch?: { branchId: string; owner: DraftOwnerKey };
+  /** The draft, for a draft's view: what "in a draft" names. */
+  branch?: { branchId: DraftId };
 };
 
 type Snapshot = {
@@ -131,7 +129,7 @@ const memberKey = (key: LinkScopeKey) =>
 const viewKey = (view: LinkView) => (view.kind === "live" ? "live" : `branch:${view.branchId}`);
 
 const treeViewOf = (view: LinkView): TreeView =>
-  view.kind === "live" ? LIVE_TREE : { kind: "branch", branchId: view.branchId as BranchId };
+  view.kind === "live" ? LIVE_TREE : { kind: "branch", branchId: view.branchId as DraftId };
 
 export function createDrizzleDocumentLinkScopes(deps: {
   db: Database;
@@ -520,7 +518,7 @@ export function createDrizzleDocumentLinkScopes(deps: {
       if (!branch) continue;
       for (const [id, status] of statuses) {
         if (status.kind === "visible" && status.existsOnlyInDraft && !branchViews.has(id)) {
-          branchViews.set(id, { kind: "branch", branchId: branch.branchId as BranchId });
+          branchViews.set(id, { kind: "branch", branchId: branch.branchId as DraftId });
         }
       }
     }
@@ -537,21 +535,11 @@ export function createDrizzleDocumentLinkScopes(deps: {
   async function loadViews(snapshot: Snapshot, views: readonly LinkView[]) {
     const ids = [...snapshot.rows.keys()] as DocumentId[];
     const keys = new Map(views.map((view) => [viewKey(view), view]));
-    const owners = await branchOwners(
-      [...keys.values()].flatMap((view) => (view.kind === "branch" ? [view.branchId] : [])),
-    );
     for (const [key, view] of keys) {
       const statuses = await tree.identityStatus(treeViewOf(view), ids);
       const index: ViewIndex = {
         statuses,
-        ...(view.kind === "branch" && owners.has(view.branchId)
-          ? {
-              branch: {
-                branchId: view.branchId,
-                owner: owners.get(view.branchId) as DraftOwnerKey,
-              },
-            }
-          : {}),
+        ...(view.kind === "branch" ? { branch: { branchId: view.branchId } } : {}),
       };
       for (const [id, status] of statuses) {
         const row = snapshot.rows.get(id);
@@ -559,27 +547,6 @@ export function createDrizzleDocumentLinkScopes(deps: {
       }
       snapshot.views.set(key, index);
     }
-  }
-
-  /** The owner key of each branch: its Work, else its root thread. */
-  async function branchOwners(branchIds: readonly string[]) {
-    const ids = [...new Set(branchIds)].filter(isUuid);
-    const rows = ids.length
-      ? await currentDrizzleDb(db)
-          .select({
-            id: branchTable.id,
-            workId: branchTable.originWorkId,
-            rootThreadId: branchTable.originRootThreadId,
-          })
-          .from(branchTable)
-          .where(inArray(branchTable.id, ids as BranchId[]))
-      : [];
-    const out = new Map<string, DraftOwnerKey>();
-    for (const row of rows) {
-      const owner = ownerKeyOfColumns(row);
-      if (owner) out.set(row.id, owner);
-    }
-    return out;
   }
 
   return {

@@ -1,17 +1,24 @@
-# Suggestions — a Work's draft as marks in Live
+# Suggestions — a draft as marks in Live
 
 ## Stored shape
 
 Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
 
-- `suggest_ins` and `suggest_del` marks on text, each `{ id, work }` (`SuggestionAttrs`).
-  `excludes: ""`, so two Works can mark one word; the Yjs binding then stores each under
+- `suggest_ins` and `suggest_del` marks on text, each `{ id, draft }` (`SuggestionAttrs`, the
+  draft's 12-character id). `excludes: ""`, so two drafts can mark one word; the Yjs binding then stores each under
   `name--<hash>` (`yjsMarkKey`).
-- `sug` on a block that exists only as one Work's suggestion, `{ id, work }`. Every block inside
+- `sug` on a block that exists only as one draft's suggestion, `{ id, draft }`. Every block inside
   it carries the same `sug`.
-- `sugAttrs` on a block: by Work, one layer per turn of a pending change to the block's
-  attributes (`{ id, work, attrs, remove? }`). `remove: true` is the Work removing the
-  whole block, which is how a block with no text is deleted.
+- `sugAttrs` on a block: the layers of pending changes to the block's attributes, by layer id
+  (`AttrLayer`, `{ id, draft, layer, order, attrs, remove? }`). `remove: true` is the draft
+  removing the whole block, which is how a block with no text is deleted. Yjs stores each layer
+  as its own element attribute, `sugAttrs--<layer id>`, and ProseMirror sees the one record:
+  `@meridian/prosemirror-schema` `layer-key.ts` folds and expands them, and the binding patch
+  and agent-edit's lowering apply that rule, comparing layers by content so a layer left alone
+  keeps its item. A draft's layers apply in `order`, then by layer id; an edit appends one layer
+  per block (merging only into a layer the same edit added) and never rewrites a layer another
+  edit wrote, so concurrent proposals on one block all stand. A layer key that is not a layer
+  reads as none (`layersOf`).
 - Who wrote each change, `{ chat, turn, by }` (`Author`), once per change id in the Y.Doc's
   `suggestion_authors` map beside the fragment. The pure code reads and writes it as `Authors`
   (`get`/`set`, a `Map` in tests); agent-edit's `suggestionAuthors(doc)` is the map on a Y.Doc,
@@ -24,7 +31,7 @@ Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
 
 A mark holds only what `kindOf` reads per run, because every changed word carries it on its
 insertion and its deletion and Live's history keeps it for good. `work` stays on the mark rather
-than in the map: the view is `{ work }` for any document, and a map lookup per run would make every
+than in the map: the view is `{ draft }` for any document, and a map lookup per run would make every
 reader's view depend on the document's map. Change ids are 12 base-36 characters (`newChangeId`).
 - `comment` marks an anchor (`markdown: false`: the model's Markdown never writes or removes it).
 
@@ -40,8 +47,8 @@ it rewrites that change's text: a later turn's rewrite is its own row in `list`.
 
 ## The view
 
-`View` is `{ work }`: `null` is Live, otherwise Live plus that Work's suggestions. `kindOf`
-classifies each run of a block as `live`, `own-ins`, `own-del` or `hidden` (another Work's
+`View` is `{ draft }`: `null` is Live, otherwise Live plus that draft's suggestions. `kindOf`
+classifies each run of a block as `live`, `own-ins`, `own-del` or `hidden` (another draft's
 insertion, absent from this view). `viewBlock` is a block as a view reads it; readers project
 through it.
 
@@ -74,7 +81,7 @@ agent-edit pairs a split's new block with it.
 ## Resolving: `accept` and `reject`
 
 Each is one local transaction (`RAW_META`), filtered by `{ id }`, `{ turn }` (read through
-`Authors`) or `{ work }`, which stages how it decided each change it touches under
+`Authors`) or `{ draft }`, which stages how it decided each change it touches under
 `DECIDED_META` (id → `accept` or `reject`): an accept's superseded changes as `reject`. Accept makes insertions Live, deletes deleted text, applies attribute
 layers. Reject is the reverse. Either only deletes text and blocks and removes marks and
 attributes: nothing it keeps is rewritten. Accepting a deletion rejects every other Work's change deleting the same text: the
@@ -100,11 +107,10 @@ where Live text separates its pieces; `pending` the turns and the Works
   without that, the same rewrite asked for after a card Undo, a Discard or an inline Reject
   matched the model's view and changed nothing. The withdraw only deletes view items the room has
   deleted or replaced: the write ships the view's own updates to the room. A block's attribute
-  layers, every Work's, share one item, which leaves the view only when every layer on it was
-  rejected (see Known limits). An accepted change stays in the view, whose text is the same
+  layer is one item of its change and leaves with the change's text. An accepted change stays in the view, whose text is the same
   either way, and a change an edit removed has no verdict and stays too, as Live text the writer
   removed after the model's read does. `suggestionItems` there is the item-level twin of
-  `pendingBy`: a change to how marks or `sug`/`sugAttrs` are stored updates both.
+  `pendingBy`: a change to how marks, `sug` or attribute layers are stored updates both.
 - Edit list: `read(format: "edits")` says `applied` or `discarded` from the verdicts of the
   changes a write's items carry (`writeVerdict`); with none, or both, it reads the text.
 - Resolving, everywhere: agent-edit's `resolveStored(doc, schema, verdict, filter)`
@@ -140,7 +146,7 @@ Every reader of a document's text reads a view: `viewBlock`, `viewDoc` for a who
 matter. A view reads `live` and `own-ins` text, and no block that is another Work's or that the
 view removes. The Markdown codecs throw on a suggestion mark, so a reader that skips the view
 fails loudly; a reader of plain text does not, which is where to look for the next miss. The
-server's one way to a view is the runtime's `model` (Live) or `workView.model(work)`; the
+server's one way to a view is the runtime's `model` (Live) or `draftView.model(work)`; the
 browser's is `suggestionView(state)`, the view the editor shows, and `shownText(state, from,
 to)` for a range's words with their positions back in the stored document.
 
@@ -168,7 +174,7 @@ a later Work suggestion inside the range makes the change stop standing, and Und
 
 - One transaction that splits off a block, gives it attributes and joins it away loses those
   attributes. No editor command or model op does that.
-- `settle` (a block's attributes after an edit inside it) is called from `replaceInWork` as well
+- `settle` (a block's attributes after an edit inside it) is called from `replaceInDraft` as well
   as the driver: the one seam left.
 - Enter in a block with a pending heading gives the new half the stored attributes. (The toolbar
   reads the view: `shownState` in the editor's suggestion mode.)
@@ -187,19 +193,17 @@ a later Work suggestion inside the range makes the change stop standing, and Und
 - A change the writer removed by typing (a pending AI insertion deleted, an applied one then
   deleted) has no verdict: an identical re-proposal from the same stale plan keeps the writer's
   deletion, as for Live text, and the next read shows the model the real text.
-- A block's attribute layers, every Work's, are one Yjs value. With turn 1 and turn 2 both
-  proposing a heading level, rejecting turn 2 alone writes the remaining layers anew in the room,
-  and the planning view keeps the old value (it can't hold the room's new one without writing):
-  the same level-2 rewrite then changes nothing. Taking the old value out of the view instead
-  would let the write set the block's layers to its own alone, racing the room's value on Yjs
-  client id and, about half the time, erasing other Works' layers. Concurrent attribute writes
-  by two peers on one block keep one value the same way. Per-layer items would fix both at the
-  cost of a stored-model change.
+- Accepting a later layer trims an earlier kept layer of the keys Live now has: the one write
+  that rewrites a layer in place. Two tabs accepting two later layers of one draft on one block
+  at once each trim the same earlier layer, and one trim wins, so the earlier layer keeps a value
+  Live already has and reads as still pending. Nothing is lost; the writer can discard it.
+- Each attribute edit appends a layer (about 120 bytes) until it is resolved: changing one
+  block's heading five times leaves five layers.
 - Rejecting an earlier turn's change first leaves a later turn's insertion over it standing
   beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
   discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work
   the writer did not reject.
-- An author or verdict entry is never removed, except by `dropWork` when a Work is purged: a
+- An author or verdict entry is never removed, except by `dropDraft` when its draft's Work or chat is purged: a
   change that is accepted, rejected or deleted keeps its entry in `suggestion_authors` (about 60
   bytes each), and each decision about 44 bytes in `suggestion_verdicts`. Typing never writes
   the verdicts.
@@ -208,5 +212,7 @@ a later Work suggestion inside the range makes the change stop standing, and Und
   discard; ten discarded rewrites come to 3.9 MB (A2, measured as B2 did; with the earlier
   `{ id, work, chat, turn, by }` marks and diffed resolves it was 7.5 MB). What is left per changed
   word is Yjs structure: the new text, and a format item at each edge of its insertion and its
-  deletion, each holding the mark's key and `{ id, work }`. Dropping `work` from the mark would
-  save about another 20%.
+  deletion, each holding the mark's key and `{ id, draft }`. Naming the draft by its 12-character id
+  instead of the owner key `work:<uuid>` stores about 16% less per rewrite (measured on a
+  synthetic 4,200-word chapter, 30% of words rewritten: about 186 KB per rewrite against 222 KB
+  for the owner key; discards about 1.5 KB each).

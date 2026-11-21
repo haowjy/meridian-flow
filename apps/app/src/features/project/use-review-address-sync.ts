@@ -23,7 +23,7 @@ import { useScopeDraftOwner } from "./use-work-scope";
 import { useShownDraft } from "./views";
 
 function samePin(a: DraftPin | null | undefined, b: DraftPin | null | undefined): boolean {
-  return a?.ownerKey === b?.ownerKey && a?.itemKey === b?.itemKey && a?.changeId === b?.changeId;
+  return a?.draftId === b?.draftId && a?.itemKey === b?.itemKey && a?.changeId === b?.changeId;
 }
 
 const inheritedArrivals = new WeakMap<RouterHistory, Map<string, string>>();
@@ -63,11 +63,9 @@ export function useReviewAddressSync({
   chatThreadId: string | null;
   /** The rendered history entry's key. */
   locationKey: string | undefined;
-  /** Whose draft the address's item reviews (`addressReviewOwner`); null while unresolved. */
+  /** The draft the address's item reviews (`addressReviewDraft`); null without one. */
   reviewOwner: string | null;
   address: {
-    /** Whose draft the address names; a pin writes its own owner back. */
-    owner: string | undefined;
     itemKey: string | undefined;
     changeId: string | undefined;
     /** Main's document, as the address resolved it; undefined when main holds no document. */
@@ -89,7 +87,7 @@ export function useReviewAddressSync({
   // store when called, so `stored` is what re-runs the follow when the pin moves (a change focused).
   const shownOf = useShownDraft(projectId, chatThreadId);
   const stored = useDocumentView(accountId, projectId, documentId ?? null);
-  const scopeOwnerKey = useScopeDraftOwner(projectId, chatThreadId).ownerKey || null;
+  const scopeDraftId = useScopeDraftOwner(projectId, chatThreadId).draftId || null;
 
   useLayoutEffect(() => {
     if (locationKey === undefined || !documentId || arrived.current === locationKey) return;
@@ -98,18 +96,18 @@ export function useReviewAddressSync({
     const next =
       address.itemKey && reviewOwner
         ? {
-            ownerKey: reviewOwner,
+            draftId: reviewOwner,
             itemKey: address.itemKey,
             ...(address.changeId ? { changeId: address.changeId } : {}),
           }
         : null;
     // An address naming the scope's draft is the toggle's Draft: every page shows its draft.
-    if (next && next.ownerKey === scopeOwnerKey)
+    if (next && next.draftId === scopeDraftId)
       writeTreeVersionChoice(accountId, projectId, "draft");
     const current = readDocumentView(accountId, projectId, documentId).pin;
     if (samePin(next, current) || (!next && !current)) return;
     setDocumentView(accountId, projectId, documentId, next ? { pin: next } : { version: "live" });
-  }, [documentId, locationKey, reviewOwner, address, accountId, projectId, scopeOwnerKey]);
+  }, [documentId, locationKey, reviewOwner, address, accountId, projectId, scopeDraftId]);
 
   useEffect(() => {
     if (!documentId || arrived.current !== locationKey) return;
@@ -118,19 +116,9 @@ export function useReviewAddressSync({
     const shown = shownOf(documentId);
     if (
       (address.itemKey ?? null) === (shown?.itemKey ?? null) &&
-      address.changeId === shown?.changeId &&
-      (!shown || address.owner === shown.ownerKey)
+      address.changeId === shown?.changeId
     )
       return;
     writeItemKey(shown ?? null);
-  }, [
-    documentId,
-    locationKey,
-    address.itemKey,
-    address.changeId,
-    address.owner,
-    stored,
-    shownOf,
-    writeItemKey,
-  ]);
+  }, [documentId, locationKey, address.itemKey, address.changeId, stored, shownOf, writeItemKey]);
 }

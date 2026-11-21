@@ -29,6 +29,7 @@ import {
   TURN_2_ID,
   TURN_ID,
   USER_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./test-support/work-branch-fixture.js";
 
@@ -137,7 +138,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         actor: `user:${USER_ID}`,
         threadView: {
           threadId: THREAD_ID,
-          branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
+          branchOwner: {
+            owner: { kind: "work", workId: WORK_ID as never },
+            draftId: WORK_DRAFT_ID,
+            handle: "w1",
+          },
           writeMode: "draft",
         },
         documentSync: {
@@ -214,12 +219,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const RESPONSE_ID = "00000000-0000-4000-8000-000000000715";
       // The Work's branch created this chapter: a create in its draft view, as ContextFS
       // leaves a model's create in a draft-mode Work.
-      const branch = await collab.branches.ensureActiveForWrite({
-        owner: { kind: "work", workId: WORK_ID as never },
-        projectId: PROJECT_ID as never,
-        threadId: THREAD_ID as never,
-        userId: USER_ID as never,
-      });
+      const branch = { id: WORK_DRAFT_ID };
       await seeder.document(SOURCE_ID, "created", {
         id: CREATED_ID,
         view: { draft: branch.id },
@@ -287,7 +287,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: CREATED_ID as never,
         threadId: THREAD_ID as never,
         destination: "draft" as const,
-        owner: { kind: "work", workId: WORK_ID as never } as const,
+        draft: WORK_DRAFT_ID,
       };
       const createdMd = await collab.readEffectiveMarkdown(createdView);
       expect.soft(createdMd.ok && createdMd.value.revision, "Work-only write").toBe(wrote.revision);
@@ -324,7 +324,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         destination: "draft" as const,
-        owner: { kind: "work", workId: WORK_ID as never } as const,
+        draft: WORK_DRAFT_ID,
       };
       const read = await core.read(
         { file: "chapter", documentId: DOC_ID },
@@ -342,13 +342,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         actor: `user:${USER_ID}`,
         threadView: {
           threadId: THREAD_ID,
-          branchOwner: { owner: { kind: "work", workId: WORK_ID as never }, handle: "w1" },
+          branchOwner: {
+            owner: { kind: "work", workId: WORK_ID as never },
+            draftId: WORK_DRAFT_ID,
+            handle: "w1",
+          },
           writeMode: "draft",
         },
         documentSync: collab,
       }).grep(
         grepQuery("See created", {
-          destination: { kind: "draft", owner: view.owner, ownerHandle: "w1" },
+          destination: { kind: "draft", draftId: view.draft, ownerHandle: "w1" },
         }),
       );
       if (!markdown.ok || !hashlines.ok || !search.ok) {
@@ -380,7 +384,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: DOC_ID as never,
         threadId: THREAD_ID as never,
         destination: "draft" as const,
-        owner: { kind: "work", workId: WORK_ID as never } as const,
+        draft: WORK_DRAFT_ID,
       };
       // Read back (pulling the thread's peer) before the process goes away.
       const before = await collab.readEffectiveHashlines(draftRead);

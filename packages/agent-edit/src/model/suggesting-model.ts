@@ -1,7 +1,7 @@
 /**
  * The model port for suggestion mode: the model reads a view of the document (`@meridian/suggestions`)
- * and its writes go through the same `rewrite` the editor's typing does. A Work's view turns a
- * write into that Work's suggestions; the Live view (`work: null`) writes Live text and leaves
+ * and its writes go through the same `rewrite` the editor's typing does. A draft's view turns a
+ * write into that draft's suggestions; the Live view (`draft: null`) writes Live text and leaves
  * every suggestion where it is.
  *
  * The model plans in view units. A text write is replayed as a ProseMirror transaction on the
@@ -21,9 +21,11 @@ import {
   recordStarted,
   rewrite,
   runs,
+  SUGGESTION_ATTRS,
   type SuggestionAttrs,
   suggested,
   type View,
+  viewAttrs,
   viewBlock,
   visible,
 } from "@meridian/suggestions";
@@ -83,7 +85,7 @@ export function suggestingModel(
     applyOps(doc, block, ops) {
       const before = stored(block);
       // Nothing in the block that the view hides or marks: view units are stored units.
-      if (view.work === null && viewBlock(before, view) === before) {
+      if (view.draft === null && viewBlock(before, view) === before) {
         return base.applyOps(doc, block, ops);
       }
       const authors = authorsOf(block);
@@ -96,10 +98,10 @@ export function suggestingModel(
     },
 
     insertBlocks(doc, after, parsed) {
-      if (view.work === null || !author) return base.insertBlocks(doc, after, parsed);
+      if (view.draft === null || !author) return base.insertBlocks(doc, after, parsed);
       let sug = after && tails.get(unwrapBlock(after));
       if (!sug) {
-        sug = { id: newChangeId(), work: view.work };
+        sug = { id: newChangeId(), draft: view.draft };
         suggestionAuthors(unwrapDoc(doc)).set(sug.id, author);
       }
       if (after) tails.delete(unwrapBlock(after));
@@ -111,7 +113,7 @@ export function suggestingModel(
 
     deleteBlock(doc, block) {
       const node = stored(block);
-      if (view.work === null || !author) {
+      if (view.draft === null || !author) {
         base.deleteBlock(doc, block);
         return;
       }
@@ -174,7 +176,16 @@ function rewritten(
         op.unit === undefined
           ? target.pos
           : target.pos + 1 + rawUnit(runs(target.node, view), op.unit, "start");
-      for (const [key, value] of Object.entries(op.attrs)) tr.setNodeAttribute(map(at), key, value);
+      // The op changes some of what the view shows; the rest stays as the view shows it, the
+      // draft's pending attributes included, or `rewrite` would read it as taking them back. A key
+      // the op names is written even when stored already has it: setting a block back to Live is
+      // how a write withdraws the draft's pending value.
+      const node = tr.doc.nodeAt(map(at));
+      if (!node) return "the write does not fit the block";
+      const shown = viewAttrs(node, view);
+      const kept = Object.entries(shown).filter(([key, value]) => node.attrs[key] !== value);
+      for (const [key, value] of [...kept, ...Object.entries(op.attrs)])
+        if (!SUGGESTION_ATTRS.includes(key)) tr.setNodeAttribute(map(at), key, value);
     } else {
       const units = runs(target.node, view);
       const start = target.pos + 1;

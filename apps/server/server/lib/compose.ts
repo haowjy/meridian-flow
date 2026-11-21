@@ -641,7 +641,7 @@ export async function createProductionAppPorts(input: {
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db, workProjectionMutation),
+    facts: createDrizzleFileFacts(db),
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
@@ -719,7 +719,7 @@ export async function createProductionAppPorts(input: {
     branches: documentSync.branches,
     pendingBranch: workProjectionMutation,
     sourceHints: projectHints,
-    copy: { documentSync, branches: documentSync.branches, objectStore, release: objectRelease },
+    copy: { documentSync, objectStore, release: objectRelease },
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db, projectHints),
@@ -1547,7 +1547,12 @@ export function createInMemoryAppServices(
     expireAsks: () => asks.expireDue(),
   };
 
-  const documentSync: CollabDomain = createInMemoryCollabDomain();
+  // No Works in memory: a lineage's root chat is the only row that names a draft.
+  const documentSync: CollabDomain = createInMemoryCollabDomain(async (owner) => {
+    if (owner.kind !== "lineage") return null;
+    const root = await threadRepos.threads.findByIdIncludingDeleted(owner.rootThreadId);
+    return root?.draftId ? { id: root.draftId, projectId: root.projectId } : null;
+  });
   const unavailableWorkContext: WorkContextReader = {
     async renderForThread() {
       throw new Error("in-memory Work context is not configured");

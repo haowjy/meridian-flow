@@ -10,18 +10,17 @@
  * enters it: the document's derivation recounts the Work's suggestions after it, through
  * `mutate`.
  */
-import type { BranchId } from "@meridian/contracts";
-import { draftOwnerKey } from "@meridian/contracts";
-import type { DraftOwnerHint } from "@meridian/contracts/protocol";
+import type { DraftId } from "@meridian/contracts";
+import type { DraftHint } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { branches, works } from "@meridian/database/schema";
+import { drafts, works } from "@meridian/database/schema";
 import { type AnyColumn, and, inArray, ne, or, sql } from "drizzle-orm";
 import {
+  draftOwnerSql,
   LineageDraftsUnavailableError,
   lockLineageOwners,
   type OwnerLocks,
-  ownerKeyOfColumns,
 } from "../../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
@@ -49,7 +48,7 @@ import type { WorkBranchPendingCounts } from "../ports/work-branch-pending-count
 export type WorkWriteSet = {
   works?: readonly WorkId[];
   lineages?: readonly string[];
-  branches?: readonly BranchId[];
+  branches?: readonly DraftId[];
 };
 
 export type WorkWriteOptions = {
@@ -74,7 +73,7 @@ export type WorkProjectionMutation = {
    * lineages' draft-owner locks in root order, in the caller's transaction, before it takes any
    * draft, branch or document row. At commit each locked owner's branches are recounted and
    * stored; a Work whose total moved gets a revision, and it and every branch whose count moved
-   * wake their owner with a `draft-owner-hint`; unmoved counts get neither. Apart from the owners'
+   * wake their owner with a `draft-hint`; unmoved counts get neither. Apart from the owners'
    * own lifecycle writers, nothing else in collab or projects locks an owner for a write.
    */
   lockWorks(set: WorkWriteSet, options?: WorkWriteOptions): Promise<LockedWorkWriteSet>;
@@ -100,14 +99,14 @@ export type WorkProjectionMutation = {
   recountAfterCommit(owners: OwnerLocks): void;
   /**
    * The Work was archived, unarchived, deleted, restored or purged: once the caller commits, the
-   * Work's `draft-owner-hint` goes out, as for a count that moved, so the Works list and the
+   * Work's `draft-hint` goes out, as for a count that moved, so the Works list and the
    * Work's drafts list are read again.
    */
-  lifecycleChanged(work: { id: WorkId; projectId: string }): void;
+  lifecycleChanged(work: { id: WorkId; projectId: string; draftId: string | null }): void;
   /**
    * A tree commit changed live rows that these branches have rows on, their rows' parents, or a
    * document their Work has suggestions in: once it commits, each
-   * branch's owner gets its `draft-owner-hint`, since its list reads live there (a move's
+   * branch's owner gets its `draft-hint`, since its list reads live there (a move's
    * place) and neither its count nor its membership need have moved. No lock, no revision.
    */
   liveChangedUnder(branchIds: readonly string[]): void;
@@ -126,21 +125,16 @@ type WorksNoticeState = {
   /** Owners woken whatever their count did, by a live change under their branch's rows. */
   wakeBranchIds: Set<string>;
   /** Their hints, resolved at commit and sent with the commit's one publish. */
-  wake: Map<string, DraftOwnerHint>;
+  wake: Map<string, DraftHint>;
 };
 
 export function createWorkProjectionMutation(input: {
   db: Database;
-  draftOwnerHints: Pick<ProjectHintPort, "publishDraftOwnerHints">;
+  draftOwnerHints: Pick<ProjectHintPort, "publishDraftHints">;
   /** The collab-owned pending membership rule, counted per Work in SQL. */
   pendingCounts: WorkBranchPendingCounts;
   eventSink?: EventSink;
 }): WorkProjectionMutation {
-  const ownerColumns = {
-    projectId: branches.projectId,
-    workId: branches.originWorkId,
-    rootThreadId: branches.originRootThreadId,
-  };
   const worksNoticeParticipant: DrizzleTransactionParticipant<WorksNoticeState> = {
     key: WORKS_NOTICE_STATE,
     create: () => ({
@@ -187,30 +181,22 @@ export function createWorkProjectionMutation(input: {
     },
   };
 
-  /** The owners of the branches marked to wake, as hints on the state. */
+  /** The drafts marked to wake, as hints on the state. */
   async function resolveWakes(state: WorksNoticeState): Promise<void> {
-    const branchIds = [...state.wakeBranchIds];
+    const draftIds = [...state.wakeBranchIds];
     state.wakeBranchIds.clear();
-    if (branchIds.length === 0) return;
+    if (draftIds.length === 0) return;
     const rows = await currentDrizzleDb(input.db)
-      .select(ownerColumns)
-      .from(branches)
-      .where(inArray(branches.id, branchIds));
-    for (const row of rows) {
-      const owner = ownerKeyOfColumns(row);
-      if (owner)
-        state.wake.set(owner, {
-          type: "draft-owner-hint",
-          projectId: row.projectId as DraftOwnerHint["projectId"],
-          owner,
-        });
-    }
+      .select({ id: drafts.id, projectId: drafts.projectId })
+      .from(drafts)
+      .where(inArray(drafts.id, draftIds));
+    for (const row of rows) state.wake.set(row.id, draftHint(row.projectId, row.id));
   }
 
   async function recountInRoot(
     workIds: WorkId[],
     lineages: string[],
-    wake: ReadonlyMap<string, DraftOwnerHint>,
+    wake: ReadonlyMap<string, DraftHint>,
   ): Promise<void> {
     try {
       await runInRootDrizzleTransaction(input.db, () => {
@@ -245,7 +231,7 @@ export function createWorkProjectionMutation(input: {
     const woken = new Map(state.wake);
     state.wake.clear();
     if (state.reconcileWorkIds.size === 0 && state.reconcileRootIds.size === 0) {
-      input.draftOwnerHints.publishDraftOwnerHints([...woken.values()]);
+      input.draftOwnerHints.publishDraftHints([...woken.values()]);
       return;
     }
     const workIds = [...state.reconcileWorkIds].sort() as WorkId[];
@@ -257,48 +243,46 @@ export function createWorkProjectionMutation(input: {
     // Each owner whose list gained or lost a document is woken once: a branch whose count moved,
     // and a Work whose total moved (a whole Discard closes the branch, which then counts nowhere).
     const hints = woken;
-    const wake = (projectId: DraftOwnerHint["projectId"], owner: DraftOwnerHint["owner"]) =>
-      hints.set(owner, { type: "draft-owner-hint", projectId, owner });
+    const wake = (projectId: string, draft: string) =>
+      hints.set(draft, draftHint(projectId, draft));
     // One CASE per column: each branch's or Work's documents and folders changed, stored side by
     // side so a surface can name each (a Work moves when either does).
     const perKey = (column: AnyColumn, keys: readonly string[], value: (key: string) => number) =>
       sql`(case ${column} ${sql.join(
-        keys.map((key) => sql`when ${key}::uuid then ${value(key)}::integer`),
+        keys.map((key) =>
+          column === works.id
+            ? sql`when ${key}::uuid then ${value(key)}::integer`
+            : sql`when ${key} then ${value(key)}::integer`,
+        ),
         sql` `,
       )} end)`;
     if (branchCounts.length) {
       const byBranch = new Map(branchCounts.map((row) => [row.branchId, row]));
       const ids = [...byBranch.keys()];
-      const documents = perKey(branches.id, ids, (id) => byBranch.get(id)?.documents ?? 0);
-      const folders = perKey(branches.id, ids, (id) => byBranch.get(id)?.folders ?? 0);
-      const movedBranches = new Set(
+      const documents = perKey(drafts.id, ids, (id) => byBranch.get(id)?.documents ?? 0);
+      const folders = perKey(drafts.id, ids, (id) => byBranch.get(id)?.folders ?? 0);
+      const movedDrafts = new Set(
         (
           await tx
-            .update(branches)
+            .update(drafts)
             .set({ pendingDocumentCount: documents, pendingFolderCount: folders })
             .where(
               and(
-                inArray(branches.id, ids),
+                inArray(drafts.id, ids),
                 or(
-                  ne(branches.pendingDocumentCount, documents),
-                  ne(branches.pendingFolderCount, folders),
+                  ne(drafts.pendingDocumentCount, documents),
+                  ne(drafts.pendingFolderCount, folders),
                 ),
               ),
             )
-            .returning({ id: branches.id })
+            .returning({ id: drafts.id })
         ).map(({ id }) => id as string),
       );
       for (const row of branchCounts)
-        if (movedBranches.has(row.branchId))
-          wake(
-            row.projectId,
-            row.rootThreadId
-              ? draftOwnerKey({ kind: "lineage", rootThreadId: row.rootThreadId })
-              : draftOwnerKey({ kind: "work", workId: row.workId as string }),
-          );
+        if (movedDrafts.has(row.branchId)) wake(row.projectId, row.branchId);
     }
     if (workIds.length > 0) {
-      // A Work's totals are the sums over its active branches.
+      // A Work's totals are its draft's.
       const totals = new Map<string, { documents: number; folders: number }>();
       for (const row of branchCounts)
         if (row.workId) {
@@ -323,25 +307,24 @@ export function createWorkProjectionMutation(input: {
             or(ne(works.pendingDocumentCount, documents), ne(works.pendingFolderCount, folders)),
           ),
         )
-        .returning({ id: works.id, projectId: works.projectId });
-      for (const work of movedWorks)
-        wake(work.projectId, draftOwnerKey({ kind: "work", workId: work.id }));
+        .returning({ projectId: works.projectId, draftId: works.draftId });
+      for (const work of movedWorks) if (work.draftId) wake(work.projectId, work.draftId);
     }
-    input.draftOwnerHints.publishDraftOwnerHints([...hints.values()]);
+    input.draftOwnerHints.publishDraftHints([...hints.values()]);
   }
 
   /** The owners a set names. */
   async function resolveOwners(set: WorkWriteSet) {
-    const branchIds = [...new Set(set.branches ?? [])];
-    // A branch's owner is its origin columns, as the pending projection maps a branch.
-    const branchOwners =
-      branchIds.length === 0
+    const draftIds = [...new Set(set.branches ?? [])];
+    // A draft's owner is whoever names it: its Work, or its lineage's root chat.
+    const named = draftOwnerSql();
+    const owned =
+      draftIds.length === 0
         ? []
         : await currentDrizzleDb(input.db)
-            .select({ workId: branches.originWorkId, rootThreadId: branches.originRootThreadId })
-            .from(branches)
-            .where(inArray(branches.id, branchIds));
-    const owned = branchOwners;
+            .select({ workId: named.workId, rootThreadId: named.rootThreadId })
+            .from(drafts)
+            .where(inArray(drafts.id, draftIds));
     const workIds = [
       ...new Set([
         ...(set.works ?? []),
@@ -423,13 +406,8 @@ export function createWorkProjectionMutation(input: {
       for (const branchId of branchIds) state.wakeBranchIds.add(branchId);
     },
     lifecycleChanged(work) {
-      input.draftOwnerHints.publishDraftOwnerHints([
-        {
-          type: "draft-owner-hint",
-          projectId: work.projectId,
-          owner: draftOwnerKey({ kind: "work", workId: work.id }),
-        },
-      ]);
+      if (work.draftId)
+        input.draftOwnerHints.publishDraftHints([draftHint(work.projectId, work.draftId)]);
     },
     /**
      * The set's Works locked before `operation` takes any branch or draft row, so every
@@ -442,4 +420,9 @@ export function createWorkProjectionMutation(input: {
     },
   };
   return mutation;
+}
+
+/** A draft's list is stale; the Work naming it shows its count, so its Works row is too. */
+function draftHint(projectId: string, draft: string): DraftHint {
+  return { type: "draft-hint", projectId, draft };
 }

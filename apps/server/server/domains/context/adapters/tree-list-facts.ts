@@ -37,16 +37,16 @@ export async function treeListOfSource(db: DrizzleDb, sourceId: string): Promise
 }
 
 /**
- * The branches of a list's projects that can still come back, as ids: a Work's (open,
- * archived, or deleted and restorable) or a chat's, while the branch is active. A branch ends
- * with a whole Discard, and a Work purged for good has its branches discarded first. A project's
- * list holds its project's branches, an account's its projects'. Only `open` ones may write.
+ * The drafts of a list's projects, as ids: a Work's (open, archived, or deleted and restorable)
+ * or a chat's. A draft ends only when its Work is purged for good, which discards it first. A
+ * project's list holds its project's drafts, an account's its projects'. Only `open` ones may
+ * write.
  */
 async function activeBranches(db: DrizzleDb, list: TreeList, open: boolean): Promise<Set<string>> {
   const rows = await currentDrizzleDb(db as Database).execute<{ id: string }>(sql`
-    SELECT b.id::text AS id FROM branches b
-    LEFT JOIN works w ON w.id = b.origin_work_id
-    WHERE b.status = 'active'
+    SELECT b.id AS id FROM drafts b
+    LEFT JOIN works w ON w.draft_id = b.id
+    WHERE true
       ${open ? sql`AND (w.id IS NULL OR (w.archived_at IS NULL AND w.deleted_at IS NULL))` : sql``}
       AND b.project_id IN (SELECT id FROM projects WHERE ${
         list.kind === "project"
@@ -57,7 +57,7 @@ async function activeBranches(db: DrizzleDb, list: TreeList, open: boolean): Pro
 }
 
 /**
- * The Works whose view the rows keep (`branch_tree_nodes`, pending text counted): every branch
+ * The Works whose view the rows keep (`draft_tree_nodes`, pending text counted): every branch
  * that can still come back, so an archived Work's drafted creates and a restorable deleted
  * Work's changes are never in no view. Readers that show only open Works filter by the Work's
  * state themselves.

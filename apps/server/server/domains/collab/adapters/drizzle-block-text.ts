@@ -1,5 +1,5 @@
 /** Reads of the stored block rows, and the freshness rules that decide who may trust them. */
-import { draftOwnerKey } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -58,7 +58,7 @@ export const staleForSweep = or(
 ) as SQL;
 
 /**
- * The documents of a project and an account that can hold any of `owners`' suggestions, read in
+ * The documents of a project and an account that can hold any of `drafts`' suggestions, read in
  * the caller's transaction: every row whose cut is current and lists one of them in
  * `pending_changes`, and every row a reader may not trust (`staleForReaders`), which the caller
  * reads from the room. Exact for every committed write, since each live write moves its
@@ -67,9 +67,9 @@ export const staleForSweep = or(
 export async function documentsHolding(
   db: Database,
   scope: { projectId: ProjectId | null; userId: UserId },
-  owners: readonly string[],
+  drafts: readonly DraftId[],
 ): Promise<{ id: DocumentId; projectId: ProjectId | null; userId: UserId | null }[]> {
-  if (owners.length === 0) return [];
+  if (drafts.length === 0) return [];
   return currentDrizzleDb(db)
     .select({ id: documents.id, projectId: documents.projectId, userId: documents.userId })
     .from(documents)
@@ -85,7 +85,7 @@ export async function documentsHolding(
         or(
           staleForReaders,
           sql`${documentBlockRooms.pendingChanges} ?| array[${sql.join(
-            owners.map((owner) => sql`${owner}`),
+            drafts.map((draft) => sql`${draft}`),
             sql`, `,
           )}]::text[]`,
         ),
@@ -97,7 +97,7 @@ export function createDrizzleBlockText(db: Database): BlockText {
   const current = (ids: DocumentId[]) =>
     and(inArray(documentBlockRooms.documentId, ids), not(staleForReaders));
   return {
-    async grepTexts(ids, { draftOwner }) {
+    async grepTexts(ids, { draft }) {
       if (!ids.length) return new Map();
       // The watermark and the text come from one snapshot: one statement.
       const rows = await currentDrizzleDb(db)
@@ -118,9 +118,7 @@ export function createDrizzleBlockText(db: Database): BlockText {
           and(
             current(ids),
             // A Work's reader sees its own suggestions, which the stored blocks leave out.
-            draftOwner
-              ? sql`not (${documentBlockRooms.pendingChanges} ? ${draftOwnerKey(draftOwner)})`
-              : undefined,
+            draft ? sql`not (${documentBlockRooms.pendingChanges} ? ${draft})` : undefined,
           ),
         );
       return new Map(rows.map((row) => [row.id, row.text]));

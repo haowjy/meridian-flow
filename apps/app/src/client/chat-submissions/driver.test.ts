@@ -37,6 +37,7 @@ function record(): ChatSubmission {
     creation: {
       title: "Opening",
       workId: null,
+      draftId: "chatdraft001",
       workAiWriteMode: "direct",
       agentName: "General",
       agentSlug: "general",

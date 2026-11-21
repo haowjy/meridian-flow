@@ -1,12 +1,11 @@
 /** Production dependency graph for the server collab domain. */
 
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
-import { branches as branchRows, branchTreeNodes } from "@meridian/database/schema";
+import { branchTreeNodes } from "@meridian/database/schema";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { and, eq } from "drizzle-orm";
 import { lockDocumentMutation } from "../../shared/document-mutation-lock.js";
-import { ownerOfColumns } from "../../shared/draft-owner.js";
 import {
   currentDrizzleDb,
   deferUntilDrizzleCommit,
@@ -177,7 +176,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const documentUriResolver = createDocumentUriResolver(deps.db);
   const documentLastAddress = createDocumentLastAddress(deps.db);
-  const resolveLastDocumentUri = async (documentId: string, branchId?: BranchId) =>
+  const resolveLastDocumentUri = async (documentId: string, branchId?: DraftId) =>
     (await documentLastAddress(documentId as DocumentId, branchId))?.uri ?? null;
   const lookups = createDrizzleCollabLookups(deps.db);
   const projectionEffects = createDrizzleDocumentProjectionEffects(
@@ -265,8 +264,7 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const workBranchPendingStore = createDrizzleWorkBranchPendingStore(deps.db);
   const agentEditRouter = createAgentEditRouter({
     liveUtilityCore: runtime.liveUtilityCore,
-    workView: runtime.workView,
-    branches: workBranches,
+    draftView: runtime.draftView,
   });
   const agentEdit = scopeAgentEdit(agentEditRouter, deps.links);
   const modelEditRead = createModelEditRead(agentEdit.read);
@@ -274,22 +272,20 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   const modelEvidence = createDrizzleModelEvidence(deps.db);
   const modelEditWrite = createModelEditWriter({
     liveCore: runtime.liveUtilityCore,
-    workView: runtime.workView,
+    draftView: runtime.draftView,
     branches: workBranches,
     fileAccess: deps.fileAccess,
     enterLiveSeam: (documentId) => enterLiveWriteSeam(deps.db, documentId),
     enterDraftSeam: async () => {
       await lockSeamWorks(deps.db, []);
     },
-    existsOnlyInWork: async (documentId, owner) => {
-      const branch = await workBranches.activeForOwner(owner);
-      if (!branch) return false;
+    existsOnlyIn: async (documentId, draft) => {
       const [row] = await currentDrizzleDb(deps.db)
         .select({ id: branchTreeNodes.id })
         .from(branchTreeNodes)
         .where(
           and(
-            eq(branchTreeNodes.branchId, branch.id),
+            eq(branchTreeNodes.branchId, draft),
             eq(branchTreeNodes.id, documentId),
             eq(branchTreeNodes.existsOnlyInDraft, true),
           ),
@@ -354,7 +350,6 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
   });
   const branches = createWorkBranchReviewService({
     purgeDiscards: () => discardPurge.purge(),
-    branches: workBranches,
     reviewItems,
     identity,
     commands,
@@ -369,10 +364,9 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       agentEdit,
       documents: runtime.markdownDocuments,
       model: runtime.model,
-      workView: runtime.workView,
+      draftView: runtime.draftView,
       codec: runtime.codec,
       links: deps.links,
-      branches: workBranches,
       resolveFiletype: lookups.resolveDocumentFiletype,
     }),
     deps.links,
@@ -443,23 +437,14 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
       loadHocuspocusDocument: hocuspocusPersistence.loadHocuspocusDocument,
       admitLiveWriterUpdate: hocuspocusPersistence.admitLiveWriterUpdate,
       currentLiveGeneration: hocuspocusPersistence.currentLiveGeneration,
-      async workOnlyOwners(documentId) {
+      async draftsHolding(documentId) {
         const rows = await currentDrizzleDb(deps.db)
-          .select({
-            projectId: branchRows.projectId,
-            workId: branchRows.originWorkId,
-            rootThreadId: branchRows.originRootThreadId,
-          })
+          .select({ draft: branchTreeNodes.branchId })
           .from(branchTreeNodes)
-          .innerJoin(branchRows, eq(branchRows.id, branchTreeNodes.branchId))
           .where(
-            and(
-              eq(branchTreeNodes.id, documentId),
-              eq(branchTreeNodes.existsOnlyInDraft, true),
-              eq(branchRows.status, "active"),
-            ),
+            and(eq(branchTreeNodes.id, documentId), eq(branchTreeNodes.existsOnlyInDraft, true)),
           );
-        return rows.flatMap((row) => ownerOfColumns(row) ?? []);
+        return rows.map((row) => row.draft);
       },
       async roomRemoval(documentId) {
         const removal = (await removalRecords.lookup([documentId])).get(documentId);
