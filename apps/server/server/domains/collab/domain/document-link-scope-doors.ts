@@ -11,7 +11,7 @@
  */
 
 import type { FileGrant } from "../../file-policy/index.js";
-import type { DraftPeerShadowAccess } from "../contracts.js";
+import type { EffectiveDocumentReader } from "../contracts.js";
 import type { AgentEditRouter } from "./agent-edit-router.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
 import type { ModelEdits } from "./model-edit.js";
@@ -25,8 +25,10 @@ export function scopeMarkdownEngine(
   return {
     serializeDocument: (documentId, doc, view) =>
       scopes.within(by(documentId), () => engine.serializeDocument(documentId, doc, view)),
-    serializeVersionedDocument: (documentId, doc, view) =>
-      scopes.within(by(documentId), () => engine.serializeVersionedDocument(documentId, doc, view)),
+    serializeVersionedDocument: (documentId, doc, view, model) =>
+      scopes.within(by(documentId), () =>
+        engine.serializeVersionedDocument(documentId, doc, view, model),
+      ),
     readFrozenMarkdown: (documentId) =>
       scopes.within(by(documentId), () => engine.readFrozenMarkdown(documentId)),
     readVersionedMarkdown: (documentId) =>
@@ -42,6 +44,8 @@ export function scopeMarkdownEngine(
       scopes.within(by(documentId), () => engine.seedFromMarkdown(documentId, content, origin)),
     writeDocument: (input) =>
       scopes.within(by(input.documentId), () => engine.writeDocument(input)),
+    changeLiveDocument: (input) =>
+      scopes.within(by(input.documentId), () => engine.changeLiveDocument(input)),
     mergeCodeText: (input) =>
       scopes.within(by(input.documentId), () => engine.mergeCodeText(input)),
     // None spells a link: a seed is encoded from bound blocks, and authority repair seeds an
@@ -114,15 +118,15 @@ export function scopeModelEditWrite(
 }
 
 /**
- * Draft-aware reads, in the reader's thread: its manifest peer and reply's
- * staged creates decide what a branch view holds. The revision depends on the
+ * Draft-aware reads, in the reader's thread: its draft and its reply's
+ * staged creates decide what a draft view holds. The revision depends on the
  * tree, so it is scoped like the text.
  */
-export function scopeDraftPeer(
-  access: Omit<DraftPeerShadowAccess, "draftCreatedDocuments">,
+export function scopeEffectiveReader(
+  access: Omit<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent">,
   scopes: DocumentLinkScopes,
-  draftCreatedDocuments: DraftPeerShadowAccess["draftCreatedDocuments"],
-): DraftPeerShadowAccess {
+  created: Pick<EffectiveDocumentReader, "seedWorkCreates" | "writeWorkCreatedContent">,
+): EffectiveDocumentReader {
   const by = (command: { documentId: string; threadId?: string | null }) => ({
     documentId: command.documentId,
     ...(command.threadId ? { viewer: { threadId: command.threadId } } : {}),
@@ -131,17 +135,15 @@ export function scopeDraftPeer(
     readEffectiveRevision: (command) =>
       scopes.within(by(command), () => access.readEffectiveRevision(command)),
     // Passed through: no Markdown of their own.
-    catchUpDraft: access.catchUpDraft,
     readStoredGrepTexts: access.readStoredGrepTexts,
     readStoredWordCounts: access.readStoredWordCounts,
-    readOwnerMarkdown: (command) =>
-      scopes.within(by(command), () => access.readOwnerMarkdown(command)),
+    readDraftMarkdown: (command) =>
+      scopes.within(by(command), () => access.readDraftMarkdown(command)),
     readEffectiveMarkdown: (command) =>
       scopes.within(by(command), () => access.readEffectiveMarkdown(command)),
     readEffectiveBlocks: (command) =>
       scopes.within(by(command), () => access.readEffectiveBlocks(command)),
-    draftCreatedDocuments,
-    writeCreatedDraftContent: access.writeCreatedDraftContent,
+    ...created,
     readEffectiveHashlines: (command) =>
       scopes.within(by(command), () => access.readEffectiveHashlines(command)),
   };

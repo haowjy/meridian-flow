@@ -13,27 +13,22 @@ import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { runOutsideDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import {
   drizzleFileAccess,
   grantInProject,
+  type TestDestination,
   testFileGrant,
 } from "../../test-support/file-grants.js";
 import { treeListOfSource, treeSeeder } from "../../test-support/tree-seed.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 import { createDrizzleLineageScratchLifecycle } from "../context/adapters/lineage-scratch-lifecycle.js";
 import { createDocumentRevisions } from "../context/index.js";
-import { createLocalFileAccessChanges, type FileDestination } from "../file-policy/index.js";
+import { createLocalFileAccessChanges } from "../file-policy/index.js";
 import { createDrizzleProjectWorkRepository } from "../projects/index.js";
-import { createDrizzleThreadLock } from "../runtime/adapters/drizzle-thread-lock.js";
 import { createDrizzleThreadRepository } from "../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleThreadWorksRepository } from "../threads/adapters/drizzle/thread-works-repository.js";
-import {
-  createDrizzleBranchStore,
-  createDrizzleBranchWriteBoundary,
-} from "./adapters/drizzle-branches.js";
-import { createBranches } from "./domain/branches.js";
-import { scopeDraftPeer } from "./domain/document-link-scope-doors.js";
+import { createDrizzleWorkCreates } from "./adapters/drizzle-work-creates.js";
+import { scopeEffectiveReader } from "./domain/document-link-scope-doors.js";
 import { createEffectiveDocumentReader } from "./domain/effective-document-reader.js";
 import type { DocumentLinkScopes } from "./domain/ports/document-link-scope.js";
 import {
@@ -49,10 +44,10 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
-import { readResolvedDraft } from "./test-support/draft-store-seam.js";
 
 /** A live edit of the tree (rename, delete), as a person's would be. */
 async function liveEdit(db: Database, edit: (writer: TreeWriter) => unknown) {
@@ -100,31 +95,19 @@ async function fixture(
   });
   // The reads spell from the harness's scope, so their revisions compare with these.
   const links = f.links;
-  const branches = createBranches({
-    store: createDrizzleBranchStore(db),
-    boundary: createDrizzleBranchWriteBoundary(db, createTestWorkProjectionMutation(db)),
-  });
-  const effective = scopeDraftPeer(
+  const effective = scopeEffectiveReader(
     createEffectiveDocumentReader({
-      drafts: f.draftStore,
-      draftCoordinator: f.draftCoordinator,
       blockText: { grepTexts: async () => new Map(), wordCounts: async () => new Map() },
       resolveFiletype: async () => null,
-      draftPulls: f.draftPulls,
       agentEdit: f.collab.agentEdit(),
       documents: f.runtime.markdownDocuments,
       model: f.runtime.model,
+      draftView: f.runtime.draftView,
       codec: f.runtime.codec,
       links,
-      branches,
     }),
     links,
-    async (created) => {
-      for (const { documentId, branchId } of created) {
-        await f.runtime.markdownDocuments.ensureDocumentAuthority(documentId);
-        await f.draftStore.ensureCreatedDocumentDraft({ documentId, branchId });
-      }
-    },
+    createDrizzleWorkCreates(db, { documents: f.runtime.markdownDocuments }),
   );
   const revisions = createDocumentRevisions({
     links,
@@ -153,13 +136,14 @@ async function fixture(
           ? { kind: "live" }
           : {
               kind: "draft",
+              draftId: WORK_DRAFT_ID,
               owner: { kind: "work", workId: WORK_ID },
               ownerHandle: "atomicity-work",
             },
       ),
     ),
   };
-  const read = (responseId?: string, destination?: FileDestination) =>
+  const read = (responseId?: string, destination?: TestDestination) =>
     core.read(
       { file: "alpha.md", documentId: ALPHA_ID },
       {
@@ -208,7 +192,7 @@ async function fixture(
     expect(outcome.isError, renderAgentEditResult(outcome.result)).toBe(false);
     return outcome;
   }
-  return { ...f, branches, core, read, current, stage, writerDelete, revisions, effective };
+  return { ...f, core, read, current, stage, writerDelete, revisions, effective };
 }
 
 describe("document revisions (postgres and collab)", () => {
@@ -276,7 +260,7 @@ describe("document revisions (postgres and collab)", () => {
       documentId: ALPHA_ID,
       threadId: THREAD_ID,
       destination: "draft" as const,
-      owner: { kind: "work", workId: WORK_ID } as const,
+      draft: WORK_DRAFT_ID,
     };
     const markdown = await f.effective.readEffectiveMarkdown(view);
     const hashlines = await f.effective.readEffectiveHashlines(view);
@@ -303,12 +287,14 @@ describe("document revisions (postgres and collab)", () => {
       createdByUserId: USER_ID,
       name: "Other draft",
       handle: "w2",
+      draftId: "otherdraftw2",
     });
     await createDrizzleThreadWorksRepository(db).rebindPrimary(THREAD_ID, workB);
     expect(await f.current()).not.toBe(before.revision);
-    // The thread's grants now name Work B, which has no branch yet: the read is live (S1).
+    // The thread's grants now name Work B, whose draft holds nothing yet: the read is live (S1).
     const rebound = {
       kind: "draft",
+      draftId: "otherdraftw2",
       owner: { kind: "work", workId: workB },
       ownerHandle: "other-draft",
     } as const;
@@ -322,131 +308,4 @@ describe("document revisions (postgres and collab)", () => {
     expect(f.hocuspocus.documents.has(ALPHA_ID)).toBe(true);
     expect(await f.current()).toBeNull();
   });
-
-  it("current under the thread lock completes with a contending live pull", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    await f.provisionDraft();
-    await f.read();
-    await f.writerDelete();
-    const originalPull = f.draftCoordinator.loadBase;
-    const originalCopy = f.draftCoordinator.copyDraft;
-    const draft = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
-    const workDraftId = draft.draftId;
-    const contending = deferred();
-    let pulling: Promise<void> | undefined;
-    let contendingPull = false;
-    let reading: ReturnType<typeof f.current> | undefined;
-    let reached = false;
-    f.draftCoordinator.loadBase = async (...args) => {
-      if (contendingPull && args[0] === workDraftId) {
-        reached = true;
-        contending.resolve();
-      }
-      return originalPull(...args);
-    };
-    // Foreground reads copy the draft; readDraft belongs to background projection.
-    f.draftCoordinator.copyDraft = async (id) => {
-      if (!pulling && id === workDraftId) {
-        await f.writerDelete();
-        contendingPull = true;
-        pulling = runOutsideDrizzleTransaction(() => f.draftPulls.catchUpDraft(workDraftId));
-        await Promise.race([contending.promise, pulling]);
-      }
-      return originalCopy(id);
-    };
-    try {
-      await createDrizzleThreadLock(db).withThreadLock(THREAD_ID, async () => {
-        const current = f.current();
-        reading = current;
-        expect(await bounded(() => current)).toMatch(/^y2:/);
-        expect(reached).toBe(true);
-      });
-    } finally {
-      f.draftCoordinator.copyDraft = originalCopy;
-      f.draftCoordinator.loadBase = originalPull;
-      // A deadline releases the thread lock before joining its unfinished reads and pulls.
-      await Promise.allSettled([reading]);
-      await Promise.allSettled([pulling]);
-    }
-    await pulling;
-  }, 10000);
-
-  it("a flush joining an older snapshot waits for a fresh committed pull", async () => {
-    const f = await fixture(db, harnesses, "draft");
-    await f.liveCoordinator.withDocument(ALPHA_ID, async (liveDoc) => {
-      const branch = await f.branches.activeForOwner({ kind: "work", workId: WORK_ID });
-      if (!branch) throw new Error("the harness seeds the Work's branch");
-      await f.draftStore.ensureDocumentDraft({
-        documentId: ALPHA_ID,
-        branchId: branch.id,
-        liveDoc,
-        liveRoom: null,
-      });
-    });
-    const before = await f.current();
-    const captured = deferred();
-    const release = deferred();
-    const original = f.persistence.journal.read.bind(f.persistence.journal);
-    let pause = true;
-    f.persistence.journal.read = async (...args) => {
-      const snapshot = await original(...args);
-      if (pause) {
-        pause = false;
-        captured.resolve();
-        await release.promise;
-      }
-      return snapshot;
-    };
-    const { draftId } = await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
-    const older = f.draftPulls.catchUpDraft(draftId);
-    const started = [older];
-    try {
-      await Promise.race([
-        captured.promise,
-        older.then(() => {
-          throw new Error("Older pull completed without reaching its snapshot latch");
-        }),
-      ]);
-      await f.writerDelete();
-      const joined = f.draftPulls.catchUpDraft(draftId);
-      started.push(joined);
-      release.resolve();
-      await Promise.all(started);
-      const draft = await readResolvedDraft(
-        f.draftStore,
-        await f.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID),
-      );
-      const blocks = f.model.getBlocks(toDocHandle(draft.doc)).length;
-      draft.doc.destroy();
-      await f.draftPulls.catchUpDraft(draftId);
-      expect(blocks).toBe(1);
-      expect(await f.current()).not.toBe(before);
-    } finally {
-      // A failed writer/assertion must not leave a root transaction paused across suite cleanup.
-      release.resolve();
-      await Promise.allSettled(started);
-    }
-  });
 });
-
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
-async function bounded<T>(operation: () => Promise<T>): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      operation(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("pull timed out")), 3000);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-}

@@ -2,7 +2,6 @@
  * Port: tells every server instance that some files' access changed, so live
  * rooms admitted at the old level reconnect at the new one (file-access §7).
  */
-import { draftOwnerKey } from "@meridian/contracts/branches";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import { treeRoomName } from "@meridian/contracts/protocol";
 import type { WorkId } from "@meridian/contracts/runtime";
@@ -21,12 +20,17 @@ export type FileAccessChange =
   /** A document moved to another source, so possibly another Work: its connections end. */
   | { documentId: string };
 
-/** The key a room registers under for this change: the owner's `draftOwnerKey`. */
+/** The key a room registers under for this change: its owner's (`ownerAccessKey`). */
 export function fileAccessChangeKey(change: FileAccessChange): string {
-  if ("workId" in change) return draftOwnerKey({ kind: "work", workId: change.workId });
+  if ("workId" in change) return ownerAccessKey({ workId: change.workId });
   if ("projectId" in change) return projectAccessKey(change.projectId);
   if ("documentId" in change) return documentAccessKey(change.documentId);
-  return draftOwnerKey({ kind: "lineage", rootThreadId: change.rootThreadId });
+  return ownerAccessKey({ rootThreadId: change.rootThreadId });
+}
+
+/** The key a room registers under for a Work's or a lineage's lifecycle changes. */
+export function ownerAccessKey(owner: { workId: string } | { rootThreadId: string }): string {
+  return "workId" in owner ? `work:${owner.workId}` : `lineage:${owner.rootThreadId}`;
 }
 
 /** A project's key: its tree list's room name, so a deleted project ends its tree and document sockets. */

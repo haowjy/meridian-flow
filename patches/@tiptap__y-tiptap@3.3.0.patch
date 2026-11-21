@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca78bcc3d2a 100644
+index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..1cfd64265cb099aa64382cca9e4863fb79938054 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -594,15 +594,99 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
@@ -139,7 +139,72 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  		const textNodes = createTextNodesFromYText(type, schema, meta, snapshot, prevSnapshot, computeYChange);
  		if (textNodes === null) hasSkippedChild = true;
  		textNodes === null || textNodes === void 0 || textNodes.forEach((textNode) => children.push(textNode));
-@@ -873,29 +964,106 @@ const equalAttrs = (pattrs, yattrs) => {
+@@ -770,7 +861,7 @@ const createNodeFromYElement = (el, schema, meta, snapshot, prevSnapshot, comput
+ 	if (snapshot === void 0 || prevSnapshot === void 0) el.toArray().forEach(createChildren);
+ 	else yjs.typeListToArraySnapshot(el, new yjs.Snapshot(prevSnapshot.ds, snapshot.sv)).forEach(createChildren);
+ 	try {
+-		const attrs = el.getAttributes(snapshot);
++		const attrs = foldLayers(el.getAttributes(snapshot));
+ 		const ychange = snapshot ? getYChange(el, snapshot, prevSnapshot, computeYChange) : void 0;
+ 		if (ychange !== void 0) attrs.ychange = ychange;
+ 		let node = schema.node(el.nodeName, attrs, children);
+@@ -792,6 +883,43 @@ const createNodeFromYElement = (el, schema, meta, snapshot, prevSnapshot, comput
+ 	}
+ };
+ //#endregion
++//#region Meridian patch: attribute layers
++/**
++ * Meridian patch: a block's pending attribute layers are one element attribute each
++ * (`sugAttrs--<layer id>`) and one `sugAttrs` record to ProseMirror, so removing one layer deletes
++ * that item alone. The same rule as `@meridian/prosemirror-schema` `layer-key.ts`; change both.
++ */
++const LAYER_PREFIX = "sugAttrs--";
++const isLayerKey = (key) => key.startsWith(LAYER_PREFIX);
++const foldLayers = (yattrs) => {
++	const out = {};
++	let layers = null;
++	for (const key in yattrs) {
++		if (isLayerKey(key)) {
++			if (layers === null) layers = {};
++			layers[key.slice(LAYER_PREFIX.length)] = yattrs[key];
++		} else if (key !== "sugAttrs") out[key] = yattrs[key];
++	}
++	if (layers !== null) out.sugAttrs = layers;
++	return out;
++};
++const expandLayers = (pattrs) => {
++	const out = {};
++	for (const key in pattrs) {
++		const val = pattrs[key];
++		if (key !== "sugAttrs") out[key] = val;
++		else if (val !== null && typeof val === "object") for (const layer in val) out[LAYER_PREFIX + layer] = val[layer];
++	}
++	return out;
++};
++const sameJSON = (a, b) => {
++	if (a === b) return true;
++	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
++	if (Array.isArray(a) !== Array.isArray(b)) return false;
++	const keys = Object.keys(a);
++	return keys.length === Object.keys(b).length && keys.every((key) => sameJSON(a[key], b[key]));
++};
++//#endregion
+ //#region src/lib/utils/conversion/hashOfJSON.ts
+ const foldDigest = (digest) => {
+ 	const hashBytes = 6;
+@@ -847,8 +975,9 @@ const normalizePNodeContent = (pnode) => {
+ const createTypeFromTextOrElementNode = (node, meta) => node instanceof Array ? createTypeFromTextNodes(node, meta) : createTypeFromElementNode(node, meta);
+ const createTypeFromElementNode = (node, meta) => {
+ 	const type = new yjs.XmlElement(node.type.name);
+-	for (const key in node.attrs) {
+-		const val = node.attrs[key];
++	const attrs = expandLayers(node.attrs);
++	for (const key in attrs) {
++		const val = attrs[key];
+ 		if (val !== null && key !== "ychange") type.setAttribute(key, val);
+ 	}
+ 	type.insert(0, normalizePNodeContent(node).map((n) => createTypeFromTextOrElementNode(n, meta)));
+@@ -873,29 +1002,106 @@ const equalAttrs = (pattrs, yattrs) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/equalYTextPText.ts
@@ -252,7 +317,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
 +    const normalizedContent = normalizePNodeContent(pnode);
 +    const ygroups = groupYChildren(ytype.toArray());
 +    return ygroups.length === normalizedContent.length &&
-+      equalAttrs(ytype.getAttributes(), pnode.attrs) &&
++      equalAttrs(ytype.getAttributes(), expandLayers(pnode.attrs)) &&
 +      ygroups.every((ychild, i) =>
 +        equalYTypePNode(ychild, normalizedContent[i])
 +      )
@@ -262,7 +327,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -955,23 +1123,73 @@ const ytextTrans = (ytext) => {
+@@ -955,23 +1161,86 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -334,26 +399,39 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
 +    const owner = spans.find((span) => span.end >= index);
 +    owner.ytext.insert(index - owner.start, insert);
 +  }
++  // Meridian patch: format only the runs whose marks differ from what the text holds. Formatting a
++  // run deletes and re-inserts every format item inside it, so formatting every run on each edit
++  // moved the opening of a span that held no text any more (one a peer's resolve was concurrently
++  // deleting, closing item included) to a new item: once merged, it opened with nothing to close
++  // it, and the mark spread over all the text after it.
 +  let c = 0;
 +  let cOffset = 0;
-+  ytexts.forEach((ytext, i) => {
-+    const delta = [];
-+    for (let need = ytext.length; need > 0;) {
-+      const take = lib0_math.min(need, content[c].insert.length - cOffset);
-+      delta.push({ retain: take, attributes: Object.assign({}, trans[i].nAttrs, marksToAttributes(content[c].attributes, meta)) });
-+      need -= take;
-+      cOffset += take;
-+      if (cOffset === content[c].insert.length) {
-+        c++;
-+        cOffset = 0;
++  ytexts.forEach((ytext) => {
++    let at = 0;
++    for (const d of ytext.toDelta()) {
++      const have = d.attributes || {};
++      let left = typeof d.insert === "string" ? d.insert.length : 1;
++      while (left > 0) {
++        const take = lib0_math.min(left, content[c].insert.length - cOffset);
++        const want = marksToAttributes(content[c].attributes, meta);
++        const attributes = {};
++        for (const key in want) if (!equalAttrs({ v: want[key] }, { v: have[key] ?? null })) attributes[key] = want[key];
++        for (const key in have) if (!(key in want)) attributes[key] = null;
++        if (Object.keys(attributes).length > 0) ytext.format(at, take, attributes);
++        at += take;
++        left -= take;
++        cOffset += take;
++        if (cOffset === content[c].insert.length) {
++          c++;
++          cOffset = 0;
++        }
 +      }
 +    }
-+    if (delta.length > 0) ytext.applyDelta(delta);
 +  });
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1042,125 +1260,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1042,125 +1311,339 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -541,10 +619,14 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
 +  // update attributes
 +  if (yDomFragment instanceof yjs.XmlElement) {
 +    const yDomAttrs = yDomFragment.getAttributes();
-+    const pAttrs = pNode.attrs;
++    const pAttrs = expandLayers(pNode.attrs);
 +    for (const key in pAttrs) {
 +      if (pAttrs[key] !== null) {
-+        if (yDomAttrs[key] !== pAttrs[key] && key !== 'ychange') {
++        if (
++          yDomAttrs[key] !== pAttrs[key] && key !== 'ychange' &&
++          // A layer the node holds unchanged, or as a copy, keeps its item.
++          !(isLayerKey(key) && sameJSON(yDomAttrs[key], pAttrs[key]))
++        ) {
 +          yDomFragment.setAttribute(key, pAttrs[key]);
 +        }
 +      } else {
@@ -803,7 +885,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1195,6 +1623,10 @@ var ProsemirrorBinding = class {
+@@ -1195,6 +1678,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = (0, lib0_mutex.createMutex)();
  		this.isOMark = /* @__PURE__ */ new Map();
@@ -814,7 +896,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1281,7 +1713,6 @@ var ProsemirrorBinding = class {
+@@ -1281,7 +1768,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -822,7 +904,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1325,7 +1756,7 @@ var ProsemirrorBinding = class {
+@@ -1325,7 +1811,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = lib0_math.min(lib0_math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = lib0_math.min(lib0_math.max(sel.head, 0), tr.doc.content.size);
@@ -831,7 +913,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1426,8 +1857,14 @@ var ProsemirrorBinding = class {
+@@ -1426,8 +1912,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -846,7 +928,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1498,6 +1935,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1498,6 +1990,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -912,7 +994,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1633,14 +2129,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1633,14 +2184,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -939,7 +1021,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1758,6 +2264,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1758,6 +2319,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -966,7 +1048,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..6b9b0ff080a95ab36f25ca0b336dcca7
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1784,6 +2310,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
+@@ -1784,6 +2365,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.findAbsolutePositionAfterStructuralChange = findAbsolutePositionAfterStructuralChange;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -1078,7 +1160,7 @@ index cd119d0d4ccbf7c175052efb60907f98c6f93859..a25c38bac7ea41bb4eccb448a11325c6
  /** A selection stored as Yjs relative positions. */
  type CursorAwarenessSelection = {
 diff --git a/dist/index.js b/dist/index.js
-index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64cb3dc869 100644
+index 64482faff4203574f1326cfab8f847cd00c2d850..5c1aeb6e48159c2bd92831dd6559452165f89f38 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -561,15 +561,99 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
@@ -1218,7 +1300,72 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  		const textNodes = createTextNodesFromYText(type, schema, meta, snapshot, prevSnapshot, computeYChange);
  		if (textNodes === null) hasSkippedChild = true;
  		textNodes === null || textNodes === void 0 || textNodes.forEach((textNode) => children.push(textNode));
-@@ -840,29 +931,106 @@ const equalAttrs = (pattrs, yattrs) => {
+@@ -737,7 +828,7 @@ const createNodeFromYElement = (el, schema, meta, snapshot, prevSnapshot, comput
+ 	if (snapshot === void 0 || prevSnapshot === void 0) el.toArray().forEach(createChildren);
+ 	else Y.typeListToArraySnapshot(el, new Y.Snapshot(prevSnapshot.ds, snapshot.sv)).forEach(createChildren);
+ 	try {
+-		const attrs = el.getAttributes(snapshot);
++		const attrs = foldLayers(el.getAttributes(snapshot));
+ 		const ychange = snapshot ? getYChange(el, snapshot, prevSnapshot, computeYChange) : void 0;
+ 		if (ychange !== void 0) attrs.ychange = ychange;
+ 		let node = schema.node(el.nodeName, attrs, children);
+@@ -759,6 +850,43 @@ const createNodeFromYElement = (el, schema, meta, snapshot, prevSnapshot, comput
+ 	}
+ };
+ //#endregion
++//#region Meridian patch: attribute layers
++/**
++ * Meridian patch: a block's pending attribute layers are one element attribute each
++ * (`sugAttrs--<layer id>`) and one `sugAttrs` record to ProseMirror, so removing one layer deletes
++ * that item alone. The same rule as `@meridian/prosemirror-schema` `layer-key.ts`; change both.
++ */
++const LAYER_PREFIX = "sugAttrs--";
++const isLayerKey = (key) => key.startsWith(LAYER_PREFIX);
++const foldLayers = (yattrs) => {
++	const out = {};
++	let layers = null;
++	for (const key in yattrs) {
++		if (isLayerKey(key)) {
++			if (layers === null) layers = {};
++			layers[key.slice(LAYER_PREFIX.length)] = yattrs[key];
++		} else if (key !== "sugAttrs") out[key] = yattrs[key];
++	}
++	if (layers !== null) out.sugAttrs = layers;
++	return out;
++};
++const expandLayers = (pattrs) => {
++	const out = {};
++	for (const key in pattrs) {
++		const val = pattrs[key];
++		if (key !== "sugAttrs") out[key] = val;
++		else if (val !== null && typeof val === "object") for (const layer in val) out[LAYER_PREFIX + layer] = val[layer];
++	}
++	return out;
++};
++const sameJSON = (a, b) => {
++	if (a === b) return true;
++	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
++	if (Array.isArray(a) !== Array.isArray(b)) return false;
++	const keys = Object.keys(a);
++	return keys.length === Object.keys(b).length && keys.every((key) => sameJSON(a[key], b[key]));
++};
++//#endregion
+ //#region src/lib/utils/conversion/hashOfJSON.ts
+ const foldDigest = (digest) => {
+ 	const hashBytes = 6;
+@@ -814,8 +942,9 @@ const normalizePNodeContent = (pnode) => {
+ const createTypeFromTextOrElementNode = (node, meta) => node instanceof Array ? createTypeFromTextNodes(node, meta) : createTypeFromElementNode(node, meta);
+ const createTypeFromElementNode = (node, meta) => {
+ 	const type = new Y.XmlElement(node.type.name);
+-	for (const key in node.attrs) {
+-		const val = node.attrs[key];
++	const attrs = expandLayers(node.attrs);
++	for (const key in attrs) {
++		const val = attrs[key];
+ 		if (val !== null && key !== "ychange") type.setAttribute(key, val);
+ 	}
+ 	type.insert(0, normalizePNodeContent(node).map((n) => createTypeFromTextOrElementNode(n, meta)));
+@@ -840,29 +969,106 @@ const equalAttrs = (pattrs, yattrs) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/equalYTextPText.ts
@@ -1331,7 +1478,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
 +    const normalizedContent = normalizePNodeContent(pnode);
 +    const ygroups = groupYChildren(ytype.toArray());
 +    return ygroups.length === normalizedContent.length &&
-+      equalAttrs(ytype.getAttributes(), pnode.attrs) &&
++      equalAttrs(ytype.getAttributes(), expandLayers(pnode.attrs)) &&
 +      ygroups.every((ychild, i) =>
 +        equalYTypePNode(ychild, normalizedContent[i])
 +      )
@@ -1341,7 +1488,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -922,23 +1090,73 @@ const ytextTrans = (ytext) => {
+@@ -922,23 +1128,86 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -1413,26 +1560,39 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
 +    const owner = spans.find((span) => span.end >= index);
 +    owner.ytext.insert(index - owner.start, insert);
 +  }
++  // Meridian patch: format only the runs whose marks differ from what the text holds. Formatting a
++  // run deletes and re-inserts every format item inside it, so formatting every run on each edit
++  // moved the opening of a span that held no text any more (one a peer's resolve was concurrently
++  // deleting, closing item included) to a new item: once merged, it opened with nothing to close
++  // it, and the mark spread over all the text after it.
 +  let c = 0;
 +  let cOffset = 0;
-+  ytexts.forEach((ytext, i) => {
-+    const delta = [];
-+    for (let need = ytext.length; need > 0;) {
-+      const take = math.min(need, content[c].insert.length - cOffset);
-+      delta.push({ retain: take, attributes: Object.assign({}, trans[i].nAttrs, marksToAttributes(content[c].attributes, meta)) });
-+      need -= take;
-+      cOffset += take;
-+      if (cOffset === content[c].insert.length) {
-+        c++;
-+        cOffset = 0;
++  ytexts.forEach((ytext) => {
++    let at = 0;
++    for (const d of ytext.toDelta()) {
++      const have = d.attributes || {};
++      let left = typeof d.insert === "string" ? d.insert.length : 1;
++      while (left > 0) {
++        const take = math.min(left, content[c].insert.length - cOffset);
++        const want = marksToAttributes(content[c].attributes, meta);
++        const attributes = {};
++        for (const key in want) if (!equalAttrs({ v: want[key] }, { v: have[key] ?? null })) attributes[key] = want[key];
++        for (const key in have) if (!(key in want)) attributes[key] = null;
++        if (Object.keys(attributes).length > 0) ytext.format(at, take, attributes);
++        at += take;
++        left -= take;
++        cOffset += take;
++        if (cOffset === content[c].insert.length) {
++          c++;
++          cOffset = 0;
++        }
 +      }
 +    }
-+    if (delta.length > 0) ytext.applyDelta(delta);
 +  });
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1009,125 +1227,335 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1009,125 +1278,339 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -1620,10 +1780,14 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
 +  // update attributes
 +  if (yDomFragment instanceof Y.XmlElement) {
 +    const yDomAttrs = yDomFragment.getAttributes();
-+    const pAttrs = pNode.attrs;
++    const pAttrs = expandLayers(pNode.attrs);
 +    for (const key in pAttrs) {
 +      if (pAttrs[key] !== null) {
-+        if (yDomAttrs[key] !== pAttrs[key] && key !== 'ychange') {
++        if (
++          yDomAttrs[key] !== pAttrs[key] && key !== 'ychange' &&
++          // A layer the node holds unchanged, or as a copy, keeps its item.
++          !(isLayerKey(key) && sameJSON(yDomAttrs[key], pAttrs[key]))
++        ) {
 +          yDomFragment.setAttribute(key, pAttrs[key]);
 +        }
 +      } else {
@@ -1882,7 +2046,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1162,6 +1590,10 @@ var ProsemirrorBinding = class {
+@@ -1162,6 +1645,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = createMutex();
  		this.isOMark = /* @__PURE__ */ new Map();
@@ -1893,7 +2057,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1248,7 +1680,6 @@ var ProsemirrorBinding = class {
+@@ -1248,7 +1735,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -1901,7 +2065,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1292,7 +1723,7 @@ var ProsemirrorBinding = class {
+@@ -1292,7 +1778,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = math.min(math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = math.min(math.max(sel.head, 0), tr.doc.content.size);
@@ -1910,7 +2074,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1393,8 +1824,14 @@ var ProsemirrorBinding = class {
+@@ -1393,8 +1879,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -1925,7 +2089,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1465,6 +1902,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1465,6 +1957,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -1991,7 +2155,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1600,14 +2096,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1600,14 +2151,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -2018,7 +2182,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1725,6 +2231,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1725,6 +2286,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -2045,7 +2209,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..3c3c23c7f42299b99123fce396511f64
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1740,6 +2266,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1740,6 +2321,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
  	};
  };
  //#endregion

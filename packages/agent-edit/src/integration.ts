@@ -14,16 +14,13 @@ export type {
   FrontierLookups,
   ObservationFrontier,
   ReplyMutations,
-  ResolvedObservationFrontier,
-  SeedAttributionBridge,
 } from "./frontier.js";
 export {
   createReplyMutations,
   decodeSnapshot,
-  docAtFrontier,
+  dropUnseenContent,
   frontierBlockId,
   frontierDelta,
-  projectSeedFrontier,
 } from "./frontier.js";
 export type { BlockRef, DocHandle } from "./handles.js";
 export { toDocHandle, toRef, unwrapBlock, unwrapDoc } from "./handles.js";
@@ -50,6 +47,7 @@ export {
   getBlockItemId,
   getTopLevelXmlBlocks,
 } from "./model/block-hash.js";
+export { suggestingModel } from "./model/suggesting-model.js";
 export type { YProsemirrorDocumentModel } from "./model/y-prosemirror.js";
 export { fragmentOf, yProsemirrorModel } from "./model/y-prosemirror.js";
 export type {
@@ -57,7 +55,6 @@ export type {
   ActorSessionStore,
 } from "./ports/actor-session-store.js";
 export type {
-  DocumentAccess,
   DocumentCoordinator,
   PreparedSave,
   PreparedWrite,
@@ -125,6 +122,7 @@ export type {
   Utf16Span,
 } from "./semantic-edit-ir.js";
 export { validateOutputPartition, validateSemanticEditIRV1 } from "./semantic-edit-ir.js";
+export type { ShownBlock } from "./tool/read-view.js";
 export { returnedWriteResult } from "./tool/receipt.js";
 export { isWriteErrorStatus } from "./tool/response-format.js";
 export type { LinkSpliceFallbackDetail, ObservationFailedDetail } from "./tool/write-deps.js";

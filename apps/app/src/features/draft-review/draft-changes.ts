@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import { useDraftCommandOwner } from "@/features/project/context/account-feature-context";
 import type { ReviewChange } from "./review-model";
 
-export type ReviewChangeItem = {
+type ReviewChangeItem = {
   change: ReviewChange;
 };
 
@@ -12,11 +12,9 @@ export type ReviewChangeItem = {
 export type DraftChangesData = {
   documentId: string | null;
   itemKey: string | null;
-  /** `error`: the draft room could not be read. Never read it as "no changes". */
-  status: "idle" | "loading" | "error" | "ready" | "gone";
+  /** `gone`: the item left the list while on screen. */
+  status: "idle" | "loading" | "ready" | "gone";
   items: readonly ReviewChangeItem[];
-  /** Read the room again; present when `status` is `error`. */
-  retry?: () => void;
 };
 
 export type DraftChangesView = DraftChangesData & {
@@ -31,7 +29,7 @@ export type DraftChangesView = DraftChangesData & {
 
 /** A ready new document is the file itself, not a header followed by a second named row. */
 export function isWholeDocumentChange(view: Pick<DraftChangesData, "status" | "items">): boolean {
-  return view.status === "ready" && view.items.length === 1 && view.items[0]?.change.frame === null;
+  return view.status === "ready" && view.items.length === 1 && view.items[0]?.change.whole === true;
 }
 
 /** Subscribe to this item's record, not another draft's command activity. */

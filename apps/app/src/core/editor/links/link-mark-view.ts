@@ -60,7 +60,7 @@ export function drawLinkAnswer(
     draw(element, "data-link-chip-icon", attributes?.["data-link-chip-icon"] ?? null);
     draw(element, "role", folder ? "button" : "link");
     draw(element, "aria-haspopup", folder ? "menu" : null);
-    const inBranch = entry?.state === "document" && entry.branch ? t`In a draft` : null;
+    const inDraft = entry?.state === "document" && entry.draft ? t`In a draft` : null;
     draw(
       element,
       "aria-description",
@@ -70,10 +70,10 @@ export function drawLinkAnswer(
           ? t`No longer available`
           : entry?.state === "missing"
             ? t`Doesn't exist yet`
-            : inBranch,
+            : inDraft,
     );
     // The sighted writer reads the same words on hover; outside a draft the link's own title stays.
-    draw(element, "title", inBranch ?? (typeof link.title === "string" ? link.title : null));
+    draw(element, "title", inDraft ?? (typeof link.title === "string" ? link.title : null));
     draw(
       element,
       "aria-disabled",

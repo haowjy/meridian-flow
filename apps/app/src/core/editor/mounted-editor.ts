@@ -47,19 +47,10 @@ type EditorMountBase = {
  * or which shared document the editor is built from, so any change to it is a
  * remount — and nothing outside this type may cause one.
  */
-export type EditorMountIdentity =
-  | (EditorMountBase & {
-      surface: "live";
-      /** Not-yet-materialized document kept off server transport. */
-      detached: boolean;
-    })
-  | (EditorMountBase & {
-      surface: "review";
-      /** Generation-fenced draft review room from the preview DTO. */
-      roomName: string;
-      itemKey: string;
-      ownerKey: string;
-    });
+export type EditorMountIdentity = EditorMountBase & {
+  /** Not-yet-materialized document kept off server transport. */
+  detached: boolean;
+};
 
 /** Values that may change while the same editor keeps running. */
 export type EditorSurfaceOptions = {
@@ -76,25 +67,17 @@ export type EditorSurfaceOptions = {
   publishPresence: boolean;
 };
 
-/** Room the `DocumentSessionRegistry` binds this editor to. */
-export function editorRoomKey(identity: EditorMountIdentity): string {
-  return identity.surface === "review" ? identity.roomName : identity.documentId;
-}
-
 /** React key that owns the editor's lifetime. Equal keys keep the instance. */
 export function editorMountKey(identity: EditorMountIdentity): string {
   // Only a code file's editor is built from its filetype: a prose rename keeps the editor.
   const filetype = identity.schemaType === "code" ? (identity.filetype ?? "") : "";
-  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingOwner ?? ""}|${identity.schemaType}|${filetype}|${identity.collaborationDecorations}`;
-  return identity.surface === "review"
-    ? `review|${identity.roomName}|${identity.itemKey}|${shared}`
-    : `live|${shared}`;
+  return `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.viewingOwner ?? ""}|${identity.schemaType}|${filetype}|${identity.collaborationDecorations}`;
 }
 
 export type MountedEditorInput = {
   identity: EditorMountIdentity;
   /**
-   * Session for `editorRoomKey(identity)`. The caller's mount key covers every
+   * Session for `identity.documentId`. The caller's mount key covers every
    * input the session lookup depends on, so it is constant for this mount.
    */
   session: DocumentSession;
@@ -158,17 +141,15 @@ export function useMountedEditor({
     const editorConfig = createEditorConfig({
       document: session.document,
       history: session.history,
-      // The session owns whether this client is visible (inline review suspends
-      // it), so it owns every local awareness field the editor publishes — the
-      // caret's included. Its caret is arbitrated, because another view of
+      // The session owns whether this client is visible, so it owns every local
+      // awareness field the editor publishes — the caret's included. Its caret is arbitrated, because another view of
       // this session may be the one in front.
       presence: caretGate.presence,
       schemaType: identity.schemaType,
       filetype: identity.filetype,
       assetRenderContext: { projectId: identity.projectId, owner: identity.viewingOwner },
       showCollaborationDecorations: identity.collaborationDecorations,
-      enableDraftInlineReview: identity.surface === "review",
-      markerStore: identity.surface === "review" ? undefined : session.markerStore,
+      markerStore: session.markerStore,
       agentNames,
       user,
       placeholder,

@@ -38,6 +38,7 @@ export default defineEventHandler(async (event) => {
       },
       {
         id: body.id,
+        ...(body.draftId ? { draftId: body.draftId } : {}),
         originTurnId: body.originTurnId,
         threadId,
         userId: user.userId,

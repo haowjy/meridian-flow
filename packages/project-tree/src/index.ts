@@ -9,8 +9,6 @@ export {
 } from "./admission.js";
 export {
   type ApplyResult,
-  appliedCreates,
-  appliedNodes,
   applyDraft,
   covers,
   type DiscardedBy,
@@ -68,9 +66,9 @@ export {
   type TreeProjection,
 } from "./replay.js";
 export {
-  type BranchRow,
-  branchRows,
   changedRows,
+  type DraftRow,
+  draftRows,
   type ProjectedRow,
   pendingCreates,
   projectedRows,

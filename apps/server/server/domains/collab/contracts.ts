@@ -1,7 +1,6 @@
 /** Public contracts for the collab domain. */
-import type { Hocuspocus, Document as HocuspocusDocument } from "@hocuspocus/server";
-import type { BranchId, CommandId, DraftOwner, LinkView } from "@meridian/contracts";
-import type { DiscardCommandResult } from "@meridian/contracts/branches";
+import type { Hocuspocus } from "@hocuspocus/server";
+import type { CommandId, DraftId, LinkView } from "@meridian/contracts";
 import type {
   DocumentRemovalRecord,
   ReversalOutcome,
@@ -24,20 +23,17 @@ import type {
   CommandLookupKey,
 } from "../../shared/commands/command-record.js";
 import type { Result } from "../../shared/result.js";
-import type { DocumentPurgeDraftDisposal } from "../context/ports/document-trash.js";
-import type { WorkBranchDisposal } from "../projects/index.js";
+import type { DocumentPurgeDisposal } from "../context/ports/document-trash.js";
+import type { WorkDraftDisposal } from "../projects/index.js";
 import type { AgentEditRouter } from "./domain/agent-edit-router.js";
-import type { DiscardSelection } from "./domain/branch-discard.js";
-import type { ResolvedReviewItem } from "./domain/branch-review-identity.js";
-import type { DraftReviewItem } from "./domain/branch-review-items.js";
-import type { Branches } from "./domain/branches.js";
 import type { DocumentCreationAggregate } from "./domain/document-creation.js";
-import type { DraftAheadRegistration } from "./domain/draft-ahead-registration.js";
+import type { ResolvedReviewItem } from "./domain/draft-review-identity.js";
+import type { DraftReviewItem } from "./domain/draft-review-items.js";
+import type { Drafts } from "./domain/drafts.js";
 import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
 import type { ModelEdits } from "./domain/model-edit.js";
 import type { ModelEvidence } from "./domain/model-evidence.js";
-import type { BranchOwnerView } from "./domain/ports/branch-store.js";
-import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
+import type { DocumentDraftOrigin } from "./domain/ports/work-draft-pending-store.js";
 import type {
   LiveLineageDocument,
   TurnEditedDocument,
@@ -53,7 +49,7 @@ export type UpdateOrigin =
 export type DocumentSeedOrigin = Extract<UpdateOrigin, { type: "import" | "system" }>;
 
 export type SyncError =
-  | { code: "stale_generation"; documentId: string }
+  | { code: "stale_document"; documentId: string }
   | { code: "not_found"; documentId: string }
   | { code: "checkpoint_not_found"; checkpointId: string }
   | { code: "corrupt_state"; documentId: string; message: string };
@@ -110,68 +106,30 @@ export type AdmitLiveWriterUpdateResult = { admitted: true } | { admitted: false
 
 export type CollabTransport = {
   bindHocuspocus(instance: Hocuspocus): void;
-  primeReservedNamespaceIndex(document: Y.Doc): void;
   headSchemaVersion(documentId: DocumentId): Promise<CollabSchemaVersion | null>;
-  resolveDraftHocuspocusRoom(draftId: string): Promise<{
-    draftId: string;
-    documentId: DocumentId;
-    /** The owner whose draft the room is; its lifecycle caps the room's access. */
-    owner: DraftOwner;
-    schemaVersion: CollabSchemaVersion;
-  } | null>;
-  /** Whether the draft exists: a created document's draft is named before it is made. */
-  draftExists(draftId: string): Promise<boolean>;
-  /** Which of these drafts are in the user's projects: a draft that is not listed is gone. */
-  openDraftIds(userId: UserId, draftIds: readonly string[]): Promise<string[]>;
-  /**
-   * The document's Work drafts with a connected room in this process, kept from a connection to the room's unload.
-   * A Live commit pushes to exactly these.
-   */
-  openDraftRooms(documentId: DocumentId): Promise<string[]>;
   loadHocuspocusDocument(documentId: DocumentId, document?: Y.Doc): Promise<Uint8Array | undefined>;
-  loadHocuspocusDraftState(draftId: string): Promise<{ state: Uint8Array } | undefined>;
   admitLiveWriterUpdate(input: {
     documentId: DocumentId;
     document: Y.Doc;
     update: Uint8Array;
     origin: Extract<UpdateOrigin, { type: "user" | "system" }>;
-    expectedGeneration: bigint;
   }): Promise<AdmitLiveWriterUpdateResult>;
-  currentLiveGeneration(documentId: DocumentId): Promise<bigint>;
   /**
-   * The removed document a room serves, with its record (a draft room's by its retained draft,
-   * at any status, never reopened), or null while it lives. Unauthorized: the gateway reads it
-   * only where it is already refusing, and answers `4208` only to a reader of the document.
+   * The drafts that alone hold the document (its create is pending there): its Live room serves
+   * their view of it. Unauthorized, like `roomRemoval`.
+   */
+  draftsHolding(documentId: DocumentId): Promise<DraftId[]>;
+  /**
+   * The removed document a room serves, with its record, or null while it lives. Unauthorized:
+   * the gateway reads it only where it is already refusing, and answers `4208` only to a reader
+   * of the document.
    */
   roomRemoval(
-    room: { documentId: DocumentId } | { draftId: string },
+    documentId: DocumentId,
   ): Promise<{ documentId: DocumentId; removal: DocumentRemovalRecord } | null>;
   validateHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
-  admitDraftWriterUpdate(input: {
-    draftId: string;
-    update: Uint8Array;
-    origin: UpdateOrigin;
-    document: Y.Doc;
-  }): Promise<void>;
   storeHocuspocusDocument(documentId: DocumentId, document: Y.Doc): Promise<void>;
-  storeHocuspocusDraft(draftId: string, document: Y.Doc): Promise<void>;
   drainHocuspocusPersistence(): Promise<void>;
-  drainHocuspocusDraftPersistence(draftId: string): Promise<void>;
-  /** Nonterminal disconnect affordance for the durable shadow-probe T6. */
-  closeHocuspocusDraftRoom(draftId: string): void;
-  /**
-   * A client connected to a draft room: lists the room for Live pushes, catches it up to the
-   * committed draft (it loaded before it registered) and catches the draft up to Live.
-   */
-  connectedHocuspocusDraftRoom(input: {
-    draftId: string;
-    documentId: DocumentId;
-    document: HocuspocusDocument;
-  }): void;
-  /** Brings the draft's open room, if this process has one, up to the committed draft. */
-  catchUpDraftRoom(draftId: string): Promise<void>;
-  /** A draft room unloaded: it is no longer pushed to. */
-  unloadedHocuspocusDraftRoom(draftId: string): void;
   getPersistenceQueueMetrics(): CollabPersistenceMetrics;
 };
 
@@ -207,8 +165,8 @@ export type TreeReceiptInput = {
   turnId?: TurnId;
   responseIdentity?: import("@meridian/contracts").ResponseAuthorship;
   toolCallId?: string;
-  /** The Work's branch the record was drafted in; absent when it is live. */
-  draftBranchId?: BranchId;
+  /** The Work's draft the record was drafted in; absent when it is live. */
+  draftId?: DraftId;
   /** The path the model gave. */
   shownAt: string;
   /** An undo or redo names the receipt it reverses. */
@@ -222,7 +180,7 @@ export type TreeReceipt = {
   op: TreeReceiptInput["op"];
   kind: "write" | "undo" | "redo";
   reverses: string | null;
-  draftBranchId: string | null;
+  draftId: string | null;
   turnId: string | null;
   /** The path the model gave for it. */
   shownAt: string | null;
@@ -286,8 +244,6 @@ export type AgentTreeHistory = {
   ): Promise<{ node: string; folder: boolean } | null>;
   /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */
   historyOf(threadId: ThreadId, nodeId: string, isDocument: boolean): Promise<NodeHistory>;
-  /** The Works (`Work "‹name›"`) whose active drafts of a document still change it. */
-  survivingDraftWorks(documentId: DocumentId): Promise<string[]>;
 };
 
 export type ReverseThreadContextInput = {
@@ -421,8 +377,6 @@ export type MarkdownDocumentStore = LinkBinder & {
 
 export type DocumentProjectionRefresher = {
   documentDerivations: import("./domain/ports/document-derivations.js").DocumentDerivationService;
-  /** One pass of the draft-effect projection's sweep over stale drafts (design §3.2). */
-  draftEffects: { sweep(): Promise<number>; flush(): Promise<void> };
   refreshDocumentProjection(input: { documentId: DocumentId; threadId?: ThreadId }): Promise<void>;
 };
 
@@ -432,129 +386,61 @@ export type DocumentCheckpoints = {
   listCheckpoints(documentId: string): Promise<Result<CheckpointInfo[], SyncError>>;
 };
 
-/**
- * A writer command's answer: the stored wire body, or the id belongs to a different command.
- * The route maps these to HTTP.
- */
-export type CommandOutcome =
-  | { kind: "result"; result: DiscardCommandResult }
-  | { kind: "conflict" };
-
 /** The model-facing list row: which documents have a draft, nothing more. */
 export type ModelDraftRow = {
   documentId: DocumentId;
   documentName: string | null;
-  contextLocation: import("@meridian/contracts/branches").ThreadDraftListItem["contextLocation"];
+  contextLocation: import("@meridian/contracts/drafts").DraftItem["contextLocation"];
   createdDocument?: boolean;
 };
 
 export type DraftReviewApi = {
-  /**
-   * Apply any selection of nodes, documents and folders, tree and text, as one command; a
-   * per-document click is its one-item case.
-   */
-  apply(input: {
-    branchId: BranchId;
-    request: Omit<import("@meridian/contracts/branches").ApplyItemsClick, "saw">;
-    /** The press's cut, decoded at the route. */
-    saw?: import("./domain/apply-click.js").TreeCut;
-    envelope: CommandEnvelope;
-  }): Promise<import("@meridian/contracts/branches").ApplyClickAnswer>;
-  /** One Apply command taken back, text and tree: its document is the command's own record. */
-  unapplyClick(input: {
-    branchId: BranchId;
-    request: import("@meridian/contracts/branches").UnapplyClick;
-    envelope: CommandEnvelope;
-  }): Promise<import("@meridian/contracts/branches").UnapplyClickAnswer>;
-  /** The documents a command touched, from its own record: what its routes authorize. */
-  commandDocuments: {
-    ofApply(input: { applyCommandId: CommandId; accountId: UserId }): Promise<DocumentId[]>;
-    ofDiscard(input: {
-      discardCommandId: CommandId;
-      accountId: UserId;
-      branchId: BranchId;
-    }): Promise<DocumentId[]>;
-    /** The items of an Apply that applies again what an Un-Apply took back. */
-    redoItems(input: {
-      unapplyCommandId: CommandId;
-      accountId: UserId;
-    }): Promise<import("@meridian/contracts/branches").ApplyItemsClick["items"]>;
-  };
-  /** The document half of Trash's Discard entries in a project; the tree answers its own half. */
-  /** The day-30 purge of Trash's command entries (`drizzle-discard-purge.ts`); the rows removed. */
+  /** The day-30 purge of presses and their Undos (`drizzle-discard-purge.ts`); the rows removed. */
   purgeDiscards(): Promise<number>;
-  listDiscards(
-    projectId: ProjectId,
-  ): Promise<import("@meridian/contracts/branches").DiscardEntry[]>;
-  /** Restores what a Discard settled and closed: the Work's current branch holds it afterwards. */
-  undoDiscard(input: {
-    /** The branch the Discard ran on; it may have closed with it. */
-    branchId: BranchId;
-    userId: UserId;
-    request: import("@meridian/contracts/branches").UndoDiscardClick;
-    envelope: CommandEnvelope;
-  }): Promise<import("@meridian/contracts/branches").UndoDiscardAnswer>;
-  list(input: { owner: DraftOwner }): Promise<ModelDraftRow[]>;
-  /** The review list route's one read: the active branch's listed items with live text tokens. */
-  listItems(input: { owner: DraftOwner }): Promise<{
-    branchId: BranchId | null;
+  list(input: { draft: DraftId }): Promise<ModelDraftRow[]>;
+  /** The review list route's one read: the draft's listed items with live text tokens. */
+  listItems(input: { draft: DraftId }): Promise<{
     items: DraftReviewItem[];
-    /** The folders the branch has a row on. */
+    /** The folders the draft has a row on. */
     folders: { id: string }[];
     threadTitles: ReadonlyMap<string, string>;
     /** Each list's cut, read before the items. */
-    saw: import("@meridian/contracts/branches").TreeSaw;
+    saw: import("@meridian/contracts/drafts").TreeSaw;
   }>;
-  /** Pending documents summed over the project's active branches. */
+  /** Pending documents summed over the project's drafts. */
   pendingDocumentCount(projectId: ProjectId): Promise<number>;
-  /** Every active branch in the project with changes to the document, oldest first. */
-  branchesChangingDocument(input: {
+  /** Every draft in the project with changes to the document, oldest first. */
+  draftsChangingDocument(input: {
     projectId: ProjectId;
     documentId: DocumentId;
-  }): Promise<DocumentBranchOrigin[]>;
-  /** The owner's active branch's listed items, live text tokens unread: what Apply authorizes. */
-  items(input: {
-    owner: DraftOwner;
-  }): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }>;
-  /** A branch, any status, with its owner and the owner's lifecycle as it reads now. */
-  branchOwner(branchId: BranchId): Promise<BranchOwnerView | null>;
-  /** The item a key names, when its branch is active. */
+  }): Promise<DocumentDraftOrigin[]>;
+  /** The draft's listed items, live text tokens unread: what Apply authorizes. */
+  items(input: { draft: DraftId }): Promise<{ draftId: DraftId; items: DraftReviewItem[] }>;
+  /** The item a key names, when its draft exists. */
   resolveItem(input: { itemKey: string }): Promise<ResolvedReviewItem | null>;
-  /** One document of an active branch. */
-  resolveItemInBranch(input: {
-    branchId: BranchId;
-    documentId: DocumentId;
-  }): Promise<ResolvedReviewItem | null>;
-  /** One document of the owner's active branch. */
-  resolveItemByDocument(input: {
-    owner: DraftOwner;
+  /** One document of a draft. */
+  resolveItemInDraft(input: {
+    draftId: DraftId;
     documentId: DocumentId;
   }): Promise<ResolvedReviewItem | null>;
   lookupCommand(key: CommandLookupKey): Promise<CommandLookup>;
   /** `lookupCommand` for a resend: waits a while on a first request still running under the id. */
   awaitCommand(envelope: CommandEnvelope): Promise<CommandLookup | { kind: "running" }>;
-  /** The branch's Discard command (`BranchDiscardRequest`): all of it, or a selection of nodes. */
-  discardBranch(input: {
-    branchId: BranchId;
-    selection: DiscardSelection;
-    userId: UserId;
-    envelope: CommandEnvelope;
-  }): Promise<CommandOutcome>;
 };
 
-export type CollabBranches = {
+export type CollabDrafts = {
   draftReview: DraftReviewApi;
+  /** Apply and Discard on documents, folders or a Work, and their Undo. */
+  presses: import("./adapters/drizzle-press.js").PressStore;
 };
 
-/** The one branch resolver (Work → active branch, made only at the write boundary). */
-export type CollabBranchResolver = {
-  branches: Branches;
-  /** A drain for the debounced registration of writers' review-room edits (§10.7). */
-  draftLinks: Pick<DraftAheadRegistration, "flush">;
-  /** Work purge's disposal of the purged Work's branches through the locked Discard kernel (§2.6). */
-  workBranchDisposal: WorkBranchDisposal;
-  /** Document trash purge's locked retirement of drafts whose content is being released. */
-  documentPurgeDraftDisposal: DocumentPurgeDraftDisposal;
+/** The one draft resolver (Work → active draft, made only at the write boundary). */
+export type CollabDraftResolver = {
+  drafts: Drafts;
+  /** Work purge's disposal of the purged Work's drafts through the locked Discard kernel (§2.6). */
+  workDraftDisposal: WorkDraftDisposal;
+  /** Document trash purge's check that nothing holds the documents, and their rooms' close. */
+  documentPurgeDisposal: DocumentPurgeDisposal;
 };
 
 export type TurnLiveLineageAccess = {
@@ -568,14 +454,11 @@ export type TurnLiveLineageAccess = {
 /**
  * The version an effective read reads, and so the view its links spell in:
  * the version the caller's writes change. `live` never touches a draft;
- * a draft read names its Work.
+ * a draft read names its draft.
  */
 export type EffectiveReadVersion =
   | { destination: "live"; workId?: never }
-  | { destination: "draft"; owner: DraftOwner };
-
-/** A draft read of a Work that holds no draft of the document. */
-export type WorkDraftMissing = { code: "draft_not_found"; documentId: string };
+  | { destination: "draft"; draft: DraftId };
 
 /** A copy's source cut: the blocks, the revision they had, how they spelled, and its vector. */
 export type EffectiveBlocksRead = VersionedDocumentRead<
@@ -593,16 +476,15 @@ export type EffectiveBlocksRead = VersionedDocumentRead<
   aheadSettlements: ReadonlyMap<string, string>;
 };
 
-export type DraftPeerShadowAccess = {
+/** Reads a document as one reader sees it: Live, or a draft's view with its suggestions applied. */
+export type EffectiveDocumentReader = {
   readEffectiveRevision(
     input: {
       documentId: DocumentId;
-      /** The reading thread: its peer and its reply's staged writes count. */
+      /** The reading thread: its draft and its reply's staged writes count. */
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<string | null>;
-  /** Brings Live's committed text into the draft before a reader shows it. */
-  catchUpDraft(draftId: string): Promise<void>;
   /**
    * Stored grep text for those of `documentIds` whose text matches what this reader sees: the
    * derived outputs are current, no active draft stands between a draft reader and the live
@@ -617,12 +499,12 @@ export type DraftPeerShadowAccess = {
   /** Words per document whose derived outputs are current; the others are absent. */
   readStoredWordCounts(documentIds: DocumentId[]): Promise<Map<DocumentId, number>>;
   /**
-   * A document's markdown as an owner's branch holds it: the owner's draft when it has one, else
-   * live. Needs no reading chat.
+   * A document's markdown in a draft's view: Live with that draft's suggestions applied. Needs no
+   * reading chat.
    */
-  readOwnerMarkdown(input: {
+  readDraftMarkdown(input: {
     documentId: DocumentId;
-    owner: DraftOwner;
+    draft: DraftId;
   }): Promise<Result<VersionedDocumentRead<string>, SyncError>>;
   readEffectiveMarkdown(
     input: {
@@ -650,24 +532,18 @@ export type DraftPeerShadowAccess = {
       threadId?: ThreadId | null;
     } & EffectiveReadVersion,
   ): Promise<Result<HashlineRead, SyncError>>;
-  writeCreatedDraftContent(
-    created: readonly { documentId: DocumentId; branchId: BranchId; content: BoundWrite }[],
-  ): Promise<void>;
   /**
-   * Each text document a branch's admitted create just made gets its Yjs authority and its
-   * Work text draft (empty: a draft create never seeds live Yjs), in the admitting
-   * transaction under the list's key: the tree list store calls it for every create in a
-   * Work's version, the writer's and the AI's alike (contract §6.2 step 5).
+   * Each text document a draft's admitted create just made gets its Live authority, empty, in
+   * the admitting transaction under the list's key: the tree list store calls it for every create
+   * in a Work's version, the writer's and the AI's alike. Its text is plain Live text; the
+   * pending create is its whole pending state.
    */
-  draftCreatedDocuments(
-    created: readonly { documentId: DocumentId; branchId: BranchId }[],
+  seedWorkCreates(created: readonly { documentId: DocumentId; draftId: DraftId }[]): Promise<void>;
+  /** A Work's copy's documents' first text, written into Live after `seedWorkCreates`. */
+  writeWorkCreatedContent(
+    created: readonly { documentId: DocumentId; content: BoundWrite }[],
+    origin: DocumentWriteOrigin,
   ): Promise<void>;
-};
-
-export type DraftAttributionAccess = {
-  readDraftProvenance: ReturnType<
-    typeof import("./domain/draft-provenance.js").createDraftProvenanceReader
-  >;
 };
 
 export type DocumentAttribution = {
@@ -682,8 +558,7 @@ export type DocumentAttribution = {
 /** Background work the domain schedules itself, stopped when the app shuts down. */
 export type CollabLifecycle = {
   /**
-   * Drops debounced live-to-draft pulls and projection runs that haven't started; running
-   * ones finish.
+   * Drops projection runs that haven't started; running ones finish.
    */
   dispose(): Promise<void>;
 };
@@ -697,10 +572,9 @@ export type CollabDomain = CollabTransport &
   TurnLiveLineageAccess &
   DocumentCheckpoints &
   DocumentAttribution &
-  DraftAttributionAccess &
-  DraftPeerShadowAccess &
-  CollabBranches &
-  CollabBranchResolver &
+  EffectiveDocumentReader &
+  CollabDrafts &
+  CollabDraftResolver &
   DocumentCreationAggregate & { importBinder: ImportLinkBinder };
 
 export type { DocumentCreationAggregate } from "./domain/document-creation.js";

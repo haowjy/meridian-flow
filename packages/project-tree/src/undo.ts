@@ -135,8 +135,12 @@ export type TakenBack = TreeRecord | NotUndone | ClosedUndo;
 /** What the Undo of one record would do now: `undoes`, or why it would not, and the sources it would change. */
 export type UndoReport = { answer: "undoes" | NotUndone; sources: readonly string[] };
 
-/** One record to take back, in the view its Undo was asked in. */
-export type UndoStep = { id: string; view: View };
+/**
+ * One record to take back, in the view its Undo was asked in. `withdraw`: the draft a landed
+ * create goes back to (the press's Undo, which puts its record pending again); its opposite is a
+ * withdrawal (rule 15), not a delete Trash lists.
+ */
+export type UndoStep = { id: string; view: View; withdraw?: string };
 
 /** The view an opposite record is written to: live when the record it takes back is live (an Apply landed it). */
 const viewOfRecord = (record: TreeRecord, asked: View): View =>
@@ -159,8 +163,7 @@ const notTaken = (reason: SkipReason): NotUndone =>
  * its records taken one call at a time. An id given twice is walked once, at its first step.
  *
  * A Work's view is live and then its pending records, so a record landed in live is not at the
- * end of it: the Work's replay is started again when live has grown under it. `pendingText` is
- * the text the Work's view holds pending, which its replay cannot see in the list.
+ * end of it: the Work's replay is started again when live has grown under it.
  */
 function takeBack(
   writer: TreeWriter,
@@ -168,7 +171,6 @@ function takeBack(
   steps: readonly UndoStep[],
   closed: (source: string) => boolean,
   write: boolean,
-  pendingText?: ReadonlySet<string>,
 ): Map<string, { back: TakenBack; sources: readonly string[] }> {
   const doc = writer.doc;
   const byId = new Map(listRecords(doc).map((record) => [record.id, record]));
@@ -196,14 +198,13 @@ function takeBack(
     const mine = view.draft === null ? [] : landed.filter((each) => each.draft === view.draft);
     const replay = startReplay([...live, ...landedLive, ...pendingOf(view), ...mine], {
       draft: view.draft,
-      ...(view.draft === null ? {} : { pendingText }),
     });
     open.set(view.draft, { replay, liveSeen: landedLive.length });
     return replay;
   };
 
   const out = new Map<string, { back: TakenBack; sources: readonly string[] }>();
-  for (const { id, view: asked } of steps) {
+  for (const { id, view: asked, withdraw } of steps) {
     if (out.has(id)) continue;
     const answer = (back: TakenBack, sources: readonly string[] = []) =>
       out.set(id, { back, sources });
@@ -219,7 +220,7 @@ function takeBack(
     }
     const view = viewOfRecord(named, asked);
     const replay = replayOf(view);
-    const made = opposite(writer, view, actor, replay.standing(), named);
+    const made = opposite(writer, view, actor, replay.standing(), named, withdraw);
     if (typeof made === "string") {
       answer(made);
       continue;
@@ -272,9 +273,8 @@ export function undoChange(
   actor: Actor,
   recordId: string,
   closed: (source: string) => boolean,
-  pendingText?: ReadonlySet<string>,
 ): TreeRecord | NotUndone | ClosedUndo {
-  return takeBackAll(writer, actor, [{ id: recordId, view: asked }], closed, pendingText).get(
+  return takeBackAll(writer, actor, [{ id: recordId, view: asked }], closed).get(
     recordId,
   ) as TakenBack;
 }
@@ -288,15 +288,12 @@ export function undoReports(
   writer: TreeWriter,
   steps: readonly UndoStep[],
   closed: (source: string) => boolean = () => false,
-  pendingText?: ReadonlySet<string>,
 ): Map<string, UndoReport> {
   return new Map(
-    [...takeBack(writer, "system", steps, closed, false, pendingText)].map(
-      ([id, { back, sources }]) => [
-        id,
-        typeof back === "string" ? { answer: back, sources: [] } : { answer: "undoes", sources },
-      ],
-    ),
+    [...takeBack(writer, "system", steps, closed, false)].map(([id, { back, sources }]) => [
+      id,
+      typeof back === "string" ? { answer: back, sources: [] } : { answer: "undoes", sources },
+    ]),
   );
 }
 
@@ -306,13 +303,9 @@ export function takeBackAll(
   actor: Actor,
   steps: readonly UndoStep[],
   closed: (source: string) => boolean = () => false,
-  pendingText?: ReadonlySet<string>,
 ): Map<string, TakenBack> {
   return new Map(
-    [...takeBack(writer, actor, steps, closed, true, pendingText)].map(([id, { back }]) => [
-      id,
-      back,
-    ]),
+    [...takeBack(writer, actor, steps, closed, true)].map(([id, { back }]) => [id, back]),
   );
 }
 
@@ -344,6 +337,7 @@ function opposite(
   actor: Actor,
   tree: TreeStanding,
   named: TreeRecord,
+  withdraw?: string,
 ): TreeRecord | NotUndone {
   const change = tree.changes.get(named.id);
   if (!change?.inForce) return "already";
@@ -378,6 +372,13 @@ function opposite(
     case "create":
       if (node.trashed) return "already";
       // Only the node the create made: what others put in a folder since stands, and keeps it standing.
+      if (withdraw !== undefined && view.draft === null && named.fromDraft !== undefined)
+        return writer.prepare(
+          view,
+          actor,
+          { type: "delete", node: named.node, cascade: [] },
+          { ...extra, fromDraft: withdraw },
+        );
       return author({ type: "delete", node: named.node, cascade: [] });
     case "delete":
       // Lifted already, by a restore of the node or by an earlier Undo of this delete.

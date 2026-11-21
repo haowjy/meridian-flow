@@ -1,6 +1,6 @@
 /**
  * The tree's rows, written from the list in the transaction that admitted its records
- * (`tree_nodes` for live, `branch_tree_nodes` for each open Work's view). Only this module
+ * (`tree_nodes` for live, `draft_tree_nodes` for each open Work's view). Only this module
  * writes them: it replays live and each view the records can change, compares with what the
  * last replay wrote, and writes the rows that differ with the history text derivations need.
  */
@@ -8,21 +8,20 @@ import type { DocumentId, ProjectId, UserId } from "@meridian/contracts";
 import { entrySegment, filetypeForMimeType } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
 import {
-  branchTreeNodes,
   contextSources,
-  documentDrafts,
   documents,
+  draftTreeNodes,
   treeNodeIds,
   treeNodes,
   works,
 } from "@meridian/database/schema";
 import {
-  type BranchRow,
-  branchRows,
   type CreateRecord,
   changedFolders,
   changedRows,
+  type DraftRow,
   deleteCovering,
+  draftRows,
   LIVE,
   listRecords,
   type ProjectedRow,
@@ -39,8 +38,9 @@ import { testHook } from "../../../shared/test-hooks.js";
 import { isUuid } from "../../../shared/uuid.js";
 import type { TreeList } from "../ports/tree-list-store.js";
 import { recordLocationHistory } from "../tree/node-locations.js";
+import { pendingText } from "../tree/pending-documents.js";
 import { ownerColumns, sourceOwnerProjectId } from "../tree/source-owner.js";
-import { keptBranches } from "./tree-list-facts.js";
+import { keptDrafts } from "./tree-list-facts.js";
 
 /** Rows per statement: bounds the parameter count, not the atomic operation. */
 const BATCH = 500;
@@ -141,14 +141,14 @@ async function loadLive(tx: DrizzleDb, listId: string): Promise<Map<string, Live
   );
 }
 
-async function loadBranches(
+async function loadDrafts(
   tx: DrizzleDb,
   listId: string,
-): Promise<Map<string, Map<string, BranchRow>>> {
-  const rows = await tx.select().from(branchTreeNodes).where(eq(branchTreeNodes.listId, listId));
-  const out = new Map<string, Map<string, BranchRow>>();
+): Promise<Map<string, Map<string, DraftRow>>> {
+  const rows = await tx.select().from(draftTreeNodes).where(eq(draftTreeNodes.listId, listId));
+  const out = new Map<string, Map<string, DraftRow>>();
   for (const row of rows) {
-    const byNode = out.get(row.branchId) ?? new Map<string, BranchRow>();
+    const byNode = out.get(row.draftId) ?? new Map<string, DraftRow>();
     byNode.set(row.id, {
       id: row.id,
       kind: row.kind,
@@ -163,31 +163,12 @@ async function loadBranches(
       existsOnlyInDraft: row.existsOnlyInDraft,
       changed: row.changed,
     });
-    out.set(row.branchId, byNode);
+    out.set(row.draftId, byNode);
   }
   return out;
 }
 
-/** Documents a Work holds a pending text draft of, which the list cannot see (rule 7). */
-async function pendingText(tx: DrizzleDb, drafts: readonly string[]) {
-  const out = new Map<string, Set<string>>();
-  if (drafts.length === 0) return out;
-  const rows = await tx
-    .select({ branchId: documentDrafts.branchId, documentId: documentDrafts.documentId })
-    .from(documentDrafts)
-    .where(
-      and(
-        inArray(documentDrafts.branchId, [...drafts]),
-        eq(documentDrafts.kind, "work_draft"),
-        // A draft an Apply emptied keeps nothing; one not judged since its last write may hold text.
-        sql`(${documentDrafts.hasEffect} OR ${documentDrafts.hasEffectRevision} < ${documentDrafts.revision})`,
-      ),
-    );
-  for (const row of rows)
-    out.set(row.branchId, (out.get(row.branchId) ?? new Set<string>()).add(row.documentId));
-  return out;
-}
-
+/** Documents a Work has suggestions in, which the list cannot see (rule 7). */
 /** An admitted `create`'s node id is refused: another node, a document or a list has it. */
 export class NodeIdRefusedError extends Error {
   /** The node id at fault, when the claim could tell which. */
@@ -338,6 +319,7 @@ async function writeLive(
   listId: string,
   next: Map<string, ProjectedRow>,
   trash: ReadonlyMap<string, { record: string; by: string | null }>,
+  made: ReadonlySet<string>,
 ): Promise<{ changed: string[]; reassigned: string[] }> {
   const prev = await loadLive(tx, listId);
   await dropUnowned(tx, listId, prev, next);
@@ -432,29 +414,34 @@ async function writeLive(
   }
   if (vacated.length > 0 || claimed.length > 0)
     await recordLocationHistory(tx as unknown as Database, { vacated, claimed });
-  // A document that changed source may have changed Work, and so who may write it.
-  const reassigned = bumped.filter(
-    (id) => next.get(id)?.kind === "document" && was.get(id)?.source !== now.get(id)?.source,
+  // A document that changed source may have changed Work, and so who may write it; so has one
+  // that comes into Live from a Work's draft (its create applied), whose sockets were admitted as
+  // that Work's.
+  const reassigned = [...next].flatMap(([id, row]) =>
+    row.kind === "document" &&
+    (prev.has(id) ? was.get(id)?.source !== now.get(id)?.source : !made.has(id))
+      ? [id]
+      : [],
   );
   return { changed: [...changed.keys(), ...gone], reassigned };
 }
 
-async function writeBranch(
+async function writeDraft(
   tx: DrizzleDb,
   listId: string,
-  branchId: string,
-  prev: ReadonlyMap<string, BranchRow>,
-  next: Map<string, BranchRow>,
+  draftId: string,
+  prev: ReadonlyMap<string, DraftRow>,
+  next: Map<string, DraftRow>,
 ): Promise<string[]> {
   await dropUnowned(tx, listId, prev, next);
   const { upserts, gone } = changedRows(prev, next);
   for (const batch of chunks(upserts))
     await tx
-      .insert(branchTreeNodes)
+      .insert(draftTreeNodes)
       .values(
         batch.map((row) => ({
           ...columnsOf(row),
-          branchId,
+          draftId,
           listId,
           deleted: row.deleted,
           existsOnlyInDraft: row.existsOnlyInDraft,
@@ -462,7 +449,7 @@ async function writeBranch(
         })),
       )
       .onConflictDoUpdate({
-        target: [branchTreeNodes.branchId, branchTreeNodes.id],
+        target: [draftTreeNodes.draftId, draftTreeNodes.id],
         set: {
           kind: sql`excluded.kind`,
           contextSourceId: sql`excluded.context_source_id`,
@@ -479,12 +466,12 @@ async function writeBranch(
       });
   for (const batch of chunks(gone))
     await tx
-      .delete(branchTreeNodes)
+      .delete(draftTreeNodes)
       .where(
         and(
-          eq(branchTreeNodes.listId, listId),
-          eq(branchTreeNodes.branchId, branchId),
-          inArray(branchTreeNodes.id, batch),
+          eq(draftTreeNodes.listId, listId),
+          eq(draftTreeNodes.draftId, draftId),
+          inArray(draftTreeNodes.id, batch),
         ),
       );
   return [...upserts.map((row) => row.id), ...gone];
@@ -535,7 +522,7 @@ async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void
       UPDATE documents d SET in_no_view_since = v.since
       FROM (
         SELECT d2.id, CASE WHEN EXISTS (SELECT 1 FROM tree_nodes t WHERE t.id = d2.id)
-            OR EXISTS (SELECT 1 FROM branch_tree_nodes b WHERE b.id = d2.id)
+            OR EXISTS (SELECT 1 FROM draft_tree_nodes b WHERE b.id = d2.id)
           THEN NULL ELSE coalesce(d2.in_no_view_since, now()) END AS since
         FROM documents d2 WHERE d2.id IN (${list})
       ) v
@@ -548,7 +535,7 @@ async function markUnviewed(tx: DrizzleDb, ids: readonly string[]): Promise<void
  * documents get their `documents` rows. Call under the list's lock, after the update is
  * journaled, so the rows are never behind the list. The views replayed are live and every open
  * Work with pending tree records or pending text. Returns the creates that made a document row,
- * and the Works' branches whose rows changed (their review count may have moved).
+ * and the Works' drafts whose rows changed (their review count may have moved).
  */
 export async function syncRows(
   db: DrizzleDb,
@@ -558,7 +545,7 @@ export async function syncRows(
   added: readonly TreeRecord[],
 ): Promise<{
   created: CreateRecord[];
-  changedBranches: string[];
+  changedDrafts: string[];
   liveChangedUnder: string[];
   reassigned: string[];
 }> {
@@ -566,17 +553,16 @@ export async function syncRows(
   const live = replayView(doc, LIVE);
   const liveRows = shownRows(live);
 
-  const kept = [...(await keptBranches(tx, list))];
-  const text = await pendingText(tx, kept);
+  const kept = [...(await keptDrafts(tx, list))];
   const works = new Map<
     string,
     { rows: Map<string, ProjectedRow>; faulted: Set<string>; pending: TreeRecord[] }
   >();
-  for (const branchId of kept) {
-    const pending = pendingRecords(doc, branchId);
-    if (!text.has(branchId) && pending.length === 0) continue;
-    const projection = replayView(doc, { draft: branchId }, text.get(branchId));
-    works.set(branchId, {
+  for (const draftId of kept) {
+    const pending = pendingRecords(doc, draftId);
+    if (pending.length === 0) continue;
+    const projection = replayView(doc, { draft: draftId });
+    works.set(draftId, {
       rows: shownRows(projection),
       faulted: changedFolders(live, projection, pending),
       pending,
@@ -584,8 +570,8 @@ export async function syncRows(
   }
   await dropForeignSources(tx, list, [liveRows, ...[...works.values()].map((work) => work.rows)]);
   const next = new Map(
-    [...works].map(([branchId, { rows, faulted, pending }]) => {
-      const differing = branchRows(liveRows, rows, pending);
+    [...works].map(([draftId, { rows, faulted, pending }]) => {
+      const differing = draftRows(liveRows, rows, pending);
       // A folder whose move cannot land shows as live does and is still a change: its row stands
       // for it, so the stored count is the one the Changes list shows.
       for (const id of faulted) {
@@ -593,7 +579,7 @@ export async function syncRows(
         if (row && !differing.get(id)?.changed)
           differing.set(id, { ...row, existsOnlyInDraft: false, changed: true });
       }
-      return [branchId, differing] as const;
+      return [draftId, differing] as const;
     }),
   );
 
@@ -607,16 +593,22 @@ export async function syncRows(
         )
       : [];
   const actors = new Map(listRecords(doc).map((record) => [record.id, record.actor]));
-  const { changed, reassigned } = await writeLive(tx, listId, liveRows, trashRecords(live, actors));
+  const { changed, reassigned } = await writeLive(
+    tx,
+    listId,
+    liveRows,
+    trashRecords(live, actors),
+    new Set(created.map((record) => record.node)),
+  );
   await testHook("treeList.afterLiveRows");
 
-  const prev = await loadBranches(tx, listId);
-  // A branch row reads live's rows on its node and its parent (`deletedLive`, a move's place),
-  // so a live change there changes the owner's list even when the branch's own rows don't.
+  const prev = await loadDrafts(tx, listId);
+  // A draft row reads live's rows on its node and its parent (a move's place),
+  // so a live change there changes the owner's list even when the draft's own rows don't.
   // `writeLive` names every node under a changed folder, so the parent covers deeper folders.
   const liveIds = new Set(changed);
-  const liveChangedUnder = [...new Set([...prev.keys(), ...next.keys()])].filter((branchId) =>
-    [prev.get(branchId), next.get(branchId)].some(
+  const liveChangedUnder = [...new Set([...prev.keys(), ...next.keys()])].filter((draftId) =>
+    [prev.get(draftId), next.get(draftId)].some(
       (rows) =>
         rows &&
         [...rows].some(
@@ -624,18 +616,45 @@ export async function syncRows(
         ),
     ),
   );
-  const changedBranches: string[] = [];
-  for (const branchId of new Set([...prev.keys(), ...next.keys()])) {
-    const written = await writeBranch(
+  // A live change to a document a Work has suggestions in changes the Work's list (a move's place),
+  // and a trash or restore its count, though the Work has no row there.
+  const holding = await draftsWithText(tx, kept, [...liveIds].filter(isUuid));
+  const changedDrafts: string[] = [...holding];
+  liveChangedUnder.push(...holding.filter((draftId) => !liveChangedUnder.includes(draftId)));
+  for (const draftId of new Set([...prev.keys(), ...next.keys()])) {
+    const written = await writeDraft(
       tx,
       listId,
-      branchId,
-      prev.get(branchId) ?? new Map(),
-      next.get(branchId) ?? new Map(),
+      draftId,
+      prev.get(draftId) ?? new Map(),
+      next.get(draftId) ?? new Map(),
     );
-    if (written.length > 0) changedBranches.push(branchId);
+    if (written.length > 0) changedDrafts.push(draftId);
     changed.push(...written);
   }
   await markUnviewed(tx, changed);
-  return { created, changedBranches, liveChangedUnder, reassigned };
+  return { created, changedDrafts: [...new Set(changedDrafts)], liveChangedUnder, reassigned };
+}
+
+/** The list's drafts (`kept`) whose Work has suggestions in one of `documentIds`. */
+async function draftsWithText(
+  tx: DrizzleDb,
+  kept: readonly string[],
+  documentIds: readonly string[],
+): Promise<string[]> {
+  if (kept.length === 0 || documentIds.length === 0) return [];
+  const list = (ids: readonly string[]) =>
+    sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    );
+  const documents = sql.join(
+    documentIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const rows = await tx.execute<{ draft_id: string }>(sql`
+    SELECT DISTINCT text.draft_id AS draft_id
+    FROM (${pendingText(list(kept))}) text
+    WHERE text.document_id IN (${documents})`);
+  return rows.map((row) => row.draft_id);
 }

@@ -1,21 +1,11 @@
 /** Retains retired sessions and quarantines their room keys until destruction succeeds. */
 import type { DocumentSession } from "./document-session";
 
-export type DocumentSessionRetirementKey = Readonly<{
-  kind: "live" | "draft";
-  roomKey: string;
-}>;
-
 type Entry = {
   key: string;
-  retirement: DocumentSessionRetirementKey;
   session: DocumentSession;
   attempt: Promise<void> | null;
 };
-
-function qualifiedKey(key: DocumentSessionRetirementKey): string {
-  return `${key.kind}:${key.roomKey}`;
-}
 
 export class DocumentSessionTeardownOwner {
   private readonly entries = new Map<DocumentSession, Entry>();
@@ -23,19 +13,13 @@ export class DocumentSessionTeardownOwner {
   private readonly settled = new WeakSet<DocumentSession>();
   private drainAttempt: Promise<void> | null = null;
 
-  constructor(
-    private readonly unavailable: (key: DocumentSessionRetirementKey) => Error,
-    /** Each session once, as its retirement begins: the last moment its text can be read. */
-    private readonly retiring: (session: DocumentSession) => void = () => {},
-  ) {}
+  constructor(private readonly unavailable: () => Error) {}
 
-  retire(key: DocumentSessionRetirementKey, session: DocumentSession): Promise<void> {
+  retire(room: string, session: DocumentSession): Promise<void> {
     if (this.settled.has(session)) return Promise.resolve();
     let entry = this.entries.get(session);
     if (!entry) {
-      this.retiring(session);
-      const room = qualifiedKey(key);
-      entry = { key: room, retirement: key, session, attempt: null };
+      entry = { key: room, session, attempt: null };
       this.entries.set(session, entry);
       const sessions = this.byRoom.get(room) ?? new Set<DocumentSession>();
       sessions.add(session);
@@ -48,17 +32,16 @@ export class DocumentSessionTeardownOwner {
    * Retires a session another one replaced, once its editors have unmounted. Its database is its
    * own, so the room's name stays available: the quarantine is keyed by persistence name.
    */
-  async retireReplaced(kind: DocumentSessionRetirementKey["kind"], session: DocumentSession) {
+  async retireReplaced(session: DocumentSession) {
     await session.whenUnbound();
-    return this.retire({ kind, roomKey: session.persistenceName ?? session.roomKey }, session);
+    return this.retire(session.persistenceName ?? session.roomKey, session);
   }
 
-  assertAvailable(key: DocumentSessionRetirementKey): void {
-    if (this.byRoom.has(qualifiedKey(key))) throw this.unavailable(key);
+  assertAvailable(room: string): void {
+    if (this.byRoom.has(room)) throw this.unavailable();
   }
 
-  drainRoom(key: DocumentSessionRetirementKey): Promise<void> {
-    const room = qualifiedKey(key);
+  drainRoom(room: string): Promise<void> {
     const attempted = new Set<DocumentSession>();
     const run = async () => {
       const failures = new Map<DocumentSession, unknown>();

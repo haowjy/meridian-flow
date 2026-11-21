@@ -158,11 +158,6 @@
         "count": 2
       },
       {
-        "path": "apps/app/src/features/draft-review/apply-click-queue.ts",
-        "line": "} catch {",
-        "count": 4
-      },
-      {
         "path": "apps/app/src/features/editor/clipboard.ts",
         "line": "} catch {",
         "count": 1
@@ -208,7 +203,7 @@
         "count": 2
       },
       {
-        "path": "apps/server/server/domains/collab/adapters/in-memory/branches.ts",
+        "path": "apps/server/server/domains/collab/adapters/in-memory/drafts.ts",
         "line": "const tail = run.catch(() => undefined);",
         "count": 1
       },
@@ -425,19 +420,9 @@
         "count": 1
       },
       {
-        "path": "apps/server/server/domains/collab/adapters/draft-journal-reads.db.test.ts",
-        "line": "setTimeout(() => resolve(\"waiting for a connection\"), 1500),",
-        "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/collab/adapters/drizzle-branches.db.test.ts",
+        "path": "apps/server/server/domains/collab/adapters/drizzle-drafts.db.test.ts",
         "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
         "count": 1
-      },
-      {
-        "path": "apps/server/server/domains/collab/adapters/drizzle-document-derivations.db.test.ts",
-        "line": "await new Promise((resolve) => setTimeout(resolve, 10));",
-        "count": 2
       },
       {
         "path": "apps/server/server/domains/context/adapters/document-link-scope.db.test.ts",

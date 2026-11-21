@@ -28,7 +28,7 @@ export type ProjectedRow = {
  * it is a change the Work made, which review lists and the count counts: a row that differs from
  * live only in a twin's suffix is not one (its sibling was renamed, moved or deleted).
  */
-export type BranchRow = ProjectedRow & { existsOnlyInDraft: boolean; changed: boolean };
+export type DraftRow = ProjectedRow & { existsOnlyInDraft: boolean; changed: boolean };
 
 function extensionOf(node: TreeNode): string {
   if (node.kind === "folder") return "";
@@ -71,12 +71,12 @@ function sameFacts(a: ProjectedRow, b: ProjectedRow): boolean {
 }
 
 function same(a: ProjectedRow, b: ProjectedRow): boolean {
-  const branch = (row: ProjectedRow) => row as Partial<BranchRow>;
+  const draft = (row: ProjectedRow) => row as Partial<DraftRow>;
   return (
     sameFacts(a, b) &&
     a.suffix === b.suffix &&
-    branch(a).existsOnlyInDraft === branch(b).existsOnlyInDraft &&
-    branch(a).changed === branch(b).changed
+    draft(a).existsOnlyInDraft === draft(b).existsOnlyInDraft &&
+    draft(a).changed === draft(b).changed
   );
 }
 
@@ -94,20 +94,22 @@ export function pendingCreates(
  * What a Work's tree shows differently from live: each node that differs or exists only in the
  * Work. A node exists only in the Work when live has no row for it or the Work's pending records
  * create it and the Work still shows it: Un-Apply puts a create back to pending while live keeps
- * the node in Trash, and an Undo of that create leaves it in Trash in both, which is no change.
+ * the node in Trash when anything else holds it there (rule 15), and an Undo of that create
+ * leaves it in Trash in both, which is no change.
+ * A node in Trash in both is no change whatever the Work drafted for it: that waits for a restore.
  */
-export function branchRows(
+export function draftRows(
   live: ReadonlyMap<string, ProjectedRow>,
   draft: ReadonlyMap<string, ProjectedRow>,
   pending: readonly TreeRecord[],
-): Map<string, BranchRow> {
+): Map<string, DraftRow> {
   const created = pendingCreates(pending);
-  const out = new Map<string, BranchRow>();
+  const out = new Map<string, DraftRow>();
   for (const row of draft.values()) {
     const base = live.get(row.id);
     if (!base || (created.has(row.id) && !row.deleted))
       out.set(row.id, { ...row, existsOnlyInDraft: true, changed: true });
-    else if (!same(base, row))
+    else if (!(base.deleted && row.deleted) && !same(base, row))
       out.set(row.id, { ...row, existsOnlyInDraft: false, changed: !sameFacts(base, row) });
   }
   return out;

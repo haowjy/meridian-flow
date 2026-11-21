@@ -260,7 +260,7 @@ export type WsServerMessage =
       message?: string;
     }
   | { type: "ping"; ts: number }
-  | import("./context-catalog.js").DraftOwnerHint
+  | import("./context-catalog.js").DraftHint
   | import("./context-catalog.js").ProjectChatsHint
   | import("./context-sources.js").ContextSourcesHint
   | import("./context-catalog.js").AgentFilesHint
@@ -331,11 +331,9 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     projectId: z.string().min(1),
   }),
   z.object({
-    type: z.literal("draft-owner-hint"),
+    type: z.literal("draft-hint"),
     projectId: z.string().min(1),
-    owner: z.string().regex(/^(work|lineage):.+$/) as z.ZodType<
-      `work:${string}` | `lineage:${string}`
-    >,
+    draft: z.string().regex(/^[0-9a-z]{12}$/),
   }),
   wsAskAnswerOkSchema,
   wsAskAnswerErrorSchema,

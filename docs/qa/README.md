@@ -27,9 +27,8 @@ stack.
 - [Rich mock provider](../../apps/server/server/lib/gateway/.context/qa/mock-provider.md): samples, large output, thinking, pacing, cancellation, tool scripts and startup defaults.
 - [The model's move and delete](../../apps/server/server/domains/collab/.context/qa/model-move-delete.md): tool rows, the turn card's lines and Undo beside a namesake, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.
 - [Model-owned chat actions](../../apps/server/server/domains/runtime/.context/qa/model-agent-actions.md): Work switch during a reply, next-reply write mode, out-of-lineage background messaging, and read-Agent refusals.
-- [Crash test of the model's edits](../../apps/server/server/domains/collab/.context/qa/model-edit-crash.md): a composed server killed (`SIGKILL`) or held at named steps of a chat turn, a second process recovering, rows asserted, over a scratch database; six probes: kills, takeover, drafts, tree, evidence, locks.
-- [Atomic frozen Apply](../../apps/server/server/domains/collab/.context/qa/atomic-apply.md): production API-core command, merge, rollback and lifecycle probes over a scratch database.
-- [Document existence admission](../../apps/server/server/domains/collab/.context/qa/document-existence-admission.md): live frames, saves and Apply against a removal, head creation only by create or repair, with the pause controller.
+- [Crash test of the model's edits](../../apps/server/server/domains/collab/.context/qa/model-edit-crash.md): a composed server killed (`SIGKILL`) or held at named steps of a chat turn, a second process recovering, rows asserted, over a scratch database; five probes: kills, takeover, tree, evidence, locks.
+- [Document existence admission](../../apps/server/server/domains/collab/.context/qa/document-existence-admission.md): live frames and saves against a removal, head creation only by create or repair, with the pause controller.
 - [Direct upload canary](../../apps/server/server/domains/storage/.context/qa/direct-put.md): signed PUT length and type, copy, ranged reads, CORS and expiry against MinIO or R2, with a browser PUT.
 - [Runtime protocols](../../apps/server/server/domains/runtime/.context/qa/runtime-probes.md): RP-1 through RP-21, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
 - [Project chrome and shell](../../apps/app/src/features/project/.context/qa/project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`.
@@ -39,6 +38,9 @@ stack.
 - [Durable questions](../../apps/server/server/domains/runtime/.context/qa/ask.md): answer, own words, Skip, timeout, restart and crash recovery, claim races, the queue barrier, and fork refusal.
 - [Concurrent typing](../../apps/app/src/core/editor/.context/qa/concurrent-typing.md): two TipTap editors type different words into one paragraph a key at a time with updates arriving late; each word must stay whole and in order. Vitest, no stack; run it by hand when the y-tiptap patch changes.
 - [Fold fuzz](../../apps/app/src/core/editor/.context/qa/fold-fuzz.md): random concurrent typing, deleting, bolding and paragraph inserts in two or three TipTap editors while agent-edit writes the same paragraphs, through a relaying server; counts lost, doubled and re-attributed characters and rebuilt blocks. Vitest, no stack; run it by hand when the y-tiptap patch changes.
+- [Offline typing against a press](../../apps/app/src/core/editor/.context/qa/offline-press.md): a tab types offline in a view of a paragraph with several drafts' suggestions while another client applies or discards one; after it reconnects, no mark may spread to words neither side gave it, and no mark of a resolved change survives. Vitest, no stack; run it by hand when the y-tiptap or yjs patch, `rewrite`, the resolve or `dropResolvedMarks` changes.
+- [Repaint fuzz](../../apps/app/src/core/editor/.context/qa/repaint-fuzz.md): random edits from two Works and Live through `rewrite`, with focus and the bar slot moving, painted in all three views; the suggestion editor's incremental repaint must match a full paint decoration for decoration. Vitest, no stack; run it by hand when `suggestion-paint.ts`, the suggestion marks or `rewrite` change.
+- [Fork lowering](../../packages/agent-edit/src/model/.context/qa/fork-lowering.md): the gate for separate draft rooms; random scripts suggest in a fork of a real-schema document through y-tiptap and `rewrite`, apply one change into Live by Yjs id, withdraw it from the fork, and take it back; Live must equal the accepted view and hold nothing of the fork. Vitest, no stack; a harness, not shipped code.
 - [Manuscript gate](../../apps/app/src/core/editor/.context/qa/manuscript-gate.md): an AI edit undone by its recorded content, against an oracle: the AI through the model's tools, the writer typing in a TipTap editor, with marks, tables, images and unsent typing; counts matches to an oracle, glued words, lost words and offered Undos. Vitest, no stack; run it by hand when `content-merge` or the editor binding changes.
 - [Unsent edits hold a live session](../../apps/app/src/core/editor/.context/qa/unsent-edits-session-hold.md): offline edit, tab closed, reconnect without reopening, and the removal exit; plus the two-draft Apply and untitled-document probes.
 - [Browser state envelopes](../../apps/app/.context/qa/browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
@@ -47,19 +49,14 @@ stack.
 - [Chat submissions](../../apps/app/src/features/chat/.context/qa/chat-submissions.md): first-send and existing-send failure, FIFO ownership and tab takeover.
 - [Folder mentions](../../apps/app/src/features/links/.context/qa/folder-mentions.md): the `@` Mention row, composer and Editor folder chips, the drill-in menu a folder chip opens, and rename or delete then click.
 - [Chat Files menu](../../apps/app/src/features/chat/.context/qa/chat-files.md): shared nested Scratch plus chat uploads; search, rename, move, delete, fork source and phone parity.
-- [Crash and two processes](../../apps/server/server/domains/collab/.context/qa/crash-and-two-process.md): P5, a server crash between a draft write's commit and its ack, then the resend; P6, two servers on one database with a tab on each, using `tools/qa/shared-db-server.ts` and `draft-readback.mts`.
-- [Stable draft identity and terminal closes](../../apps/app/src/features/draft-review/.context/qa/draft-generations.md): draft rooms through Discard all, a fresh server instance and live restore; `4205` and removal `4208`.
-- [Lock-free drafts seam probes](../../apps/server/server/domains/collab/.context/qa/drafts-lock-free-probes.md): the PostgreSQL interleavings behind lock-free drafts (Work-first order, attempt ownership, archived drafts, Undo ordering, room delivery, sequenced appends, the effect projection and its sweep, the reconnect order), run with one command against a scratch database.
 - [#871 cells](../../apps/app/src/features/draft-review/.context/qa/871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is lost to ancestor delete, and how the result names the user.
 - [Model text reversal](../../apps/server/server/domains/collab/.context/qa/model-revert.md): model Undo, Redo and Revert by Yjs identity, including partial changes, destination routing, repeated text and a revert of a revert, in auto-apply and draft mode.
 - [Scratch before compaction](../../apps/server/server/domains/runtime/.context/qa/scratch-compaction.md): zero to three calls, honest held results, summary, bypasses, cancellation and unchanged ownership.
-- [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the branch store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
+- [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the draft store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
 - [Editor schema notices](../../apps/app/src/features/editor/.context/qa/editor-notices.md): one-line repair and fence bars, the Details popover, copy refusals and Dismiss focus.
-- [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
+- [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, invalidation and opaque cuts.
 - [Document adoption across a reload](../../apps/app/src/features/project/.context/qa/document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
 - [Document open: commit first](../../apps/app/src/features/project/.context/qa/document-open.md): immediate main, side, and phone placement; one content open; transfer ownership; failures, removal, fencing, passages, projection readiness, streaming, and keystrokes.
-- [Draft review](../../apps/app/src/features/draft-review/.context/qa/draft-review.md): visual editor and review workflows.
-- [Text-derived draft disposition](../../apps/server/server/domains/collab/.context/qa/draft-disposition.md): inverse policy, historical Apply evidence and whole-Work close, with an isolated PostgreSQL runner.
 - [Tree sidebar](tree-sidebar.md): rename, move, delete and create across two tabs, offline and a fresh profile; the chat side panel's document path; list actions; folder deletion and Scratch lineage.
 - [Row selection and drag](row-drag.md): multi-select, dragging rows into folders and areas, reordering on row edges and through Move…, Scratch and Work Files.
 - [Copy in the tree](../../apps/app/src/features/project/context/.context/qa/copy-browser.md): a drop across systems and Copy to… in the browser: the menu, predicted names, a refusal toast with Retry, a source with unsynced edits, a hidden draft at the target name and the phone, with `agent-browser`.
@@ -90,8 +87,7 @@ claim that it passed on the current commit. `pnpm test:probes` runs every
 it after the DB suite. Run it before marking a PR ready when the change touches what the
 probes cover. So a file named `run.mts` there must be self-contained: it makes and drops any database it uses
 (`lfd_probe_*`), needs no browser, model or running stack, and exits nonzero
-on failure. A probe that needs any of those is not named `run.mts` (see
-`draft-generations/live.mts`) and stays a manual recipe. A probe whose subject no
+on failure. A probe that needs any of those is not named `run.mts` and stays a manual recipe. A probe whose subject no
 longer exists is deleted, not left red or skipped. Locally, `pnpm dev:infra` provides
 the Postgres; `pnpm test:probes <name> ...` runs some, and an unknown name fails. A probe
 that has not exited after five minutes (`PROBE_TIMEOUT_MS`) is killed and counted as failed.
@@ -335,7 +331,7 @@ Three harness artifacts have produced false defects. Rule them out first.
    Check raw frontmatter, relative `.md` links, unescaped `[[text]]`, and
    escaped `[ref]` and `[^1]`. Ordinary `./mf doc read` stays escaped.
 3. Preview with `./mf api GET '/api/projects/<id>/export/preview?scratch=0&uploads=0'
-   --json`. Check outside-link and pending-draft counts. Download directly with
+   --json`. Check outside-link and pending-document counts. Download directly with
    `./mf api GET '/api/projects/<id>/export.zip?scratch=0&uploads=0' --output /tmp/project.zip`.
    Repeat with both options 1. Each GET independently reauthorizes files and
    Works; delete a disposable document or Work after preview and confirm it is

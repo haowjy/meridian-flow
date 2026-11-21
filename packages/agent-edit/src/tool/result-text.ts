@@ -169,7 +169,8 @@ function writeVersion(result: Pick<AgentEditResultV1, "destination" | "draftWork
   return result.destination === "live" ? "live" : "";
 }
 
-const UNCHANGED_NOTE = "unchanged: the document already matches this content; nothing was written.";
+const UNCHANGED_NOTE =
+  "unchanged: nothing was written; the document as you last read it already holds this content.";
 
 function notes(result: AgentEditResultV1): string[] {
   const lines: string[] = [];
@@ -179,24 +180,11 @@ function notes(result: AgentEditResultV1): string[] {
     lines.push("later edits were kept, so the text may not match how it was before the write.");
   }
   if (result.documentEmpty) lines.push("document is now empty; its one blank block always stays.");
-  const surviving = result.tree?.survivingWorks;
-  if (surviving?.length)
-    lines.push(
-      `${listed(surviving)} still ${surviving.length === 1 ? "has" : "have"} changes to it; applying them brings it back.`,
-    );
-  if (result.tree?.deletedInLive)
-    lines.push("deleted in live by the user: applying this brings it back");
   if (result.unchanged) lines.push(UNCHANGED_NOTE);
   if (result.awarenessDegraded) {
     lines.push("the write landed, but concurrent changes could not be reported.");
   }
   return lines;
-}
-
-function listed(items: readonly string[]): string {
-  return items.length < 2
-    ? (items[0] ?? "")
-    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
 /**

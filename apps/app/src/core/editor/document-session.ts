@@ -40,6 +40,7 @@
  * saved" after an outage.
  */
 
+import { dropResolvedMarks } from "@meridian/agent-edit";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   type ChangeEventWsMessage,
@@ -47,7 +48,6 @@ import {
   WS_CLOSE,
   type YjsRoomName,
 } from "@meridian/contracts/protocol";
-import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import type { ConnectionState } from "@meridian/thread-client";
 import type { Editor } from "@tiptap/core";
 import { IndexeddbPersistence } from "y-indexeddb";
@@ -92,9 +92,8 @@ export type DocumentSessionStatus =
   | "destroyed";
 
 export type DocumentSessionSnapshot = {
-  /** Live document id for live rooms; draft sessions expose the room-scoped id here. */
   documentId: string;
-  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>` for a draft room. */
+  /** Hocuspocus room key: the bare document id. */
   roomKey: string;
   room: YjsRoomName;
   status: DocumentSessionStatus;
@@ -112,6 +111,11 @@ export type DocumentSessionSnapshot = {
   /** A read admission whose reason has not arrived yet: `closedWhy` may still change. */
   reasonPending: boolean;
   localPersistenceSynced: boolean;
+  /**
+   * The document has reached this session from the server once. It stays true offline and through
+   * reconnects, which leave the text in place.
+   */
+  contentHeld: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
   /**
@@ -128,7 +132,6 @@ export type HandshakeDifference = { lacking: Uint8Array; server: Uint8Array };
 export type DocumentSessionAccess = "edit" | "read";
 
 export type DocumentSessionResetReason =
-  | typeof WS_CLOSE.DRAFT_PURGED.reason
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE.reason
   /** The document was deleted or discarded; its rooms never reopen. */
@@ -140,12 +143,7 @@ export type DocumentSessionResetReason =
  * rebuilds or replays on its own; the session stays read-only until its owner
  * closes it, or an exact open proves the document present and restarts it.
  */
-export type ResetDisposition = "schema" | "removed" | "closed";
-
-/** The server purged the draft with its Work (`WS_CLOSE.DRAFT_PURGED`); its owner may keep showing its text read-only. */
-export function draftClosed(state: DocumentSessionConnectionState | null | undefined): boolean {
-  return state?.kind === "reset" && state.disposition === "closed";
-}
+export type ResetDisposition = "schema" | "removed";
 
 /**
  * A 4401 says the sign-in lapsed, not that access ended: the room keeps its local text and takes
@@ -220,12 +218,6 @@ export type DocumentSessionTransportProvider = {
   /** On a read-admitted connection, one more handshake; the server's answer is the verdict. */
   requestHandshake?: () => void;
   /**
-   * On a draft room: settles once the server has pulled Live's committed text into the draft and
-   * this document holds the result; at once when the socket is not connected, and on its close or
-   * when no answer comes within a bound.
-   */
-  catchUpWithLive?: () => Promise<void>;
-  /**
    * Every scope the server names for this room, and on subscribe the one it
    * last named. Nothing until it names one: a transport never invents a scope.
    */
@@ -249,7 +241,7 @@ export type DocumentSessionTransportFactory = (opts: {
 }) => DocumentSessionTransportProvider;
 
 export type DocumentSessionOptions = {
-  /** Hocuspocus room key: the bare document id for a live document, `draft:<draftId>` for a draft room. */
+  /** Hocuspocus room key: the bare document id. */
   roomKey: string;
   /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
   persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
@@ -303,6 +295,8 @@ export class DocumentSession {
   private localPersistenceSynced = false;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
   private transportInitialSyncComplete = false;
+  /** True after any transport's first `whenSynced`; a detach doesn't reset it. */
+  private contentHeld = false;
   /** Raw transport signal; the snapshot exposes it only while `status` is `synced`. */
   private transportAcknowledged = false;
   private status: DocumentSessionStatus = "detached";
@@ -369,18 +363,19 @@ export class DocumentSession {
     access = null,
   }: DocumentSessionOptions) {
     const room = parseYjsRoomName(roomKey);
-    if (!room || room.kind === "tree") throw new Error(`Invalid Yjs room key: ${roomKey}`);
+    if (room?.kind !== "live") throw new Error(`Invalid Yjs room key: ${roomKey}`);
     this.roomKey = roomKey;
     this.access = access;
     this.room = room;
-    this.documentId = room.kind === "live" ? room.documentId : room.draftId;
-    this.document = createCollabYDoc();
+    this.documentId = room.documentId;
+    this.document = new Y.Doc();
     this.history = DocumentHistory.forDocument(this.document);
     this.unsent = new UnsentEdits(this.document, () => this.persistence?.db ?? null);
     this.serverMark = createServerMark(() =>
       this.destroyed ? null : (this.persistence?.db ?? null),
     );
     this.document.on("update", this.onDocumentUpdate);
+    this.document.on("afterTransaction", this.onAfterTransaction);
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
@@ -564,24 +559,6 @@ export class DocumentSession {
     this.startLocalPeers();
   }
 
-  /**
-   * The server answered that this draft closed before its socket said so: the room ends as its
-   * close would (read-only, its transport ended so nothing more is sent or reconnects), and stays
-   * readable for its owner.
-   */
-  endClosed(): void {
-    if (this.destroyed || this.transportState?.kind === "reset") return;
-    this.transportState = {
-      kind: "reset",
-      reason: WS_CLOSE.DRAFT_PURGED.reason,
-      disposition: "closed",
-    };
-    this.localPeers?.stop();
-    this.transportAttachmentPending = false;
-    void this.transportProvider?.destroy();
-    this.recomputeStatus();
-  }
-
   get resetDisposition(): ResetDisposition | null {
     return this.transportState?.kind === "reset" ? this.transportState.disposition : null;
   }
@@ -640,11 +617,6 @@ export class DocumentSession {
       if (settled) stop();
       else this.whenCurrentChangesAcknowledged().then(done, done);
     });
-  }
-
-  /** On a draft room: the server pulls Live's committed text into it now (`catchUpWithLive`). */
-  catchUpWithLive(): Promise<void> {
-    return this.transportProvider?.catchUpWithLive?.() ?? Promise.resolve();
   }
 
   /**
@@ -755,6 +727,14 @@ export class DocumentSession {
     this.recomputeStatus();
   };
 
+  /**
+   * What the server, the copy or a peer tab brings in may end a mark another client re-opened
+   * inside a change resolved since: that mark goes, or it runs on over the words after it.
+   */
+  private readonly onAfterTransaction = (transaction: Y.Transaction): void => {
+    if (!transaction.local && this.access === "edit") dropResolvedMarks(this.document, transaction);
+  };
+
   private waitForLocalPersistenceTransportGate(): Promise<void> {
     return new Promise((resolve) => {
       let complete = false;
@@ -781,6 +761,7 @@ export class DocumentSession {
       closedWhy: this.closedWhy,
       reasonPending: this.reasonPending,
       localPersistenceSynced: this.localPersistenceSynced,
+      contentHeld: this.contentHeld,
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
       holdsUndeliverableEdits: this.holdsUndeliverable,
@@ -1094,8 +1075,11 @@ export class DocumentSession {
     await provider.whenSynced;
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
+    const first = !this.contentHeld;
+    this.contentHeld = true;
     if (provider.whenSynced) this.establishContentInitialization();
     this.recomputeStatus();
+    if (first) this.emit();
   }
 
   /**

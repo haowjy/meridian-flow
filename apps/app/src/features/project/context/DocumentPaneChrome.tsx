@@ -1,22 +1,22 @@
 /**
  * DocumentPaneChrome — what sits above an open document's editor: the passage
- * notice, the frozen-document notice (an archived Work, a trashed chat) and the document's properties. Main's page and the side's
+ * notice, the archived Work's notice over its own files and the document's properties. Main's page and the side's
  * document stack the same chrome. The document's identity and state (an Agent file's included)
  * are elsewhere: in main at the end of the toolbar row, in the side in its header (the Live
  * menu lists every draft of the document, and its dot says one exists).
  */
+import type { Work } from "@meridian/contracts/works";
 import type { OpenDocument } from "@/client/stores";
 import { DraftedDeleteNotice } from "@/features/draft-review/DraftedDeleteNotice";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
+import { EndedWorkNotice } from "../work/EndedWorkNotice";
 import { DocumentProperties } from "./DocumentProperties";
-import type { DocumentFreeze } from "./use-document-freeze";
 
 export type DocumentPaneChromeProps = {
   projectId: string;
   document: OpenDocument;
-  /** Set when the document as shown is frozen: by its archived Work, or a trashed chat. */
-  freeze: DocumentFreeze | null;
+  /** The archived or deleted Work whose own file this is (`useDocumentFreeze`). */
+  freeze: Work | null;
 };
 
 export function DocumentPaneChrome({ projectId, document, freeze }: DocumentPaneChromeProps) {
@@ -26,7 +26,7 @@ export function DocumentPaneChrome({ projectId, document, freeze }: DocumentPane
           rather than in the layout. */}
       <PassageNotice documentId={document.documentId} />
       {freeze ? (
-        <DocumentFreezeNotice projectId={projectId} freeze={freeze} className="px-4 pt-3" />
+        <EndedWorkNotice projectId={projectId} work={freeze} className="px-4 pt-3" />
       ) : null}
       <DocumentProperties projectId={projectId} document={document} />
       <DraftedDeleteNotice documentId={document.documentId} />

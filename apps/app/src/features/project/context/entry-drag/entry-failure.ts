@@ -218,7 +218,6 @@ function showDeleteNotice(
       answer: (await Promise.all(taken.map(({ list, step }) => list.undo(step)))).some(Boolean)
         ? "ok"
         : "gone",
-      landed: Promise.resolve(),
     }),
     end: () => {},
   };
@@ -235,7 +234,7 @@ function showDeleteNotice(
   }
   const id = notices.showDiscard({
     projectId,
-    ownerKey: deleteNoticeKey(projectId),
+    draftId: deleteNoticeKey(projectId),
     // Leaving main's document, the notice follows main to where it goes back to (`landed`).
     surface,
     parts: [

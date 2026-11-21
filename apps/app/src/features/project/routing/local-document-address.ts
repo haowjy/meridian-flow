@@ -8,7 +8,7 @@ import type {
   ProjectContextAuthority,
 } from "@meridian/contracts/protocol";
 import { resolveIn, type TreeViewResult } from "@/client/query/useProjectTree";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { TreeFile } from "@/core/project-tree/tree-view";
 import { resolveLiveRouteDocument } from "../context/route-document-owner";
 import { type ProjectAddress, type ProjectDestination, scratchOwnerKey } from "./project-address";

@@ -1,7 +1,7 @@
 import type * as Y from "yjs";
 
 export type NodeKind = "folder" | "document" | "file";
-/** The Work's branch id for a drafted record. */
+/** The Work's draft id for a drafted record. */
 export type DraftId = string;
 /** `user:<id>`, or `agent:<chat>/<turn>`. A client may only claim its own account. */
 export type Actor = string;
@@ -32,7 +32,7 @@ type RecordBase = {
   id: string;
   node: string;
   actor: Actor;
-  /** Null for live; the Work's branch id for a drafted record. */
+  /** Null for live; the Work's draft id for a drafted record. */
   draft: DraftId | null;
   /**
    * On a record that stands for an earlier one (an Apply's live copy, a restored Discard's

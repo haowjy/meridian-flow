@@ -33,20 +33,6 @@ The purge batch bounds completed purges, not inspected candidates. Documents hel
 changes can make each sweep scan the full overdue backlog. Measure that backlog before changing the
 query or adding a held-candidate cursor.
 
-## Copy: client intent and draft destinations
-
-The browser sends a Copy under its own operation id with each root's `copyId` (a UUID the
-command takes and mints descendants around), from a live view: a drop across systems and
-Copy to… in the tree. Copy still refuses a draft placement destination (`invalid_operation`): a
-draft-mode chat's copy would need a branch create, which is E2's replica intent work. A
-document that exists only in a Work's draft cannot be a source for the same reason: the
-listing reads the live tree.
-
-The state-vector check compares against the draft room for a draft view, but only against
-vectors a probe built. The browser sends a live document's vector from its open session and
-has been checked against it; no surface sends a draft tab's yet. Before one does, compare the
-draft room's vector (`drafts.copyDraft`) against a real tab's.
-
 ## Copy: preparation cost
 
 A 200-document copy spends most of its time before the lock: reading each document's room

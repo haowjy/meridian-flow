@@ -3,11 +3,10 @@
  * for every Work that can come back (open, archived, or deleted and restorable), so a document
  * is held while
  *
- * - a row of a kept view shows it (`branch_tree_nodes`: the Work drafted a create of it, kept a
+ * - a row of a kept view shows it (`draft_tree_nodes`: the Work drafted a create of it, kept a
  *   delete's victim, moved it...), or
- * - a branch that has not ended has an active text draft of it with an effect, whatever the
- *   rows say (a draft outlives a delete of its document, and a Discard of that delete brings
- *   both back).
+ * - a draft that has not ended has suggestions in it, whatever the rows say (they outlive a
+ *   delete of their document, and a Discard of that delete brings both back).
  *
  * The third source, an unsettled record in the list for a kept Work, is read from the list's
  * copy by the paths that hold its key (`purgeEntry`, `purgeUnviewed`); its rows are the first
@@ -15,8 +14,9 @@
  */
 import type { DocumentId } from "@meridian/contracts";
 import { type SQL, sql } from "drizzle-orm";
+import { pendingText } from "./pending-documents.js";
 
-/** `(branch_id, document_id)` for each hold, narrowed to `documentIds` when given. */
+/** `(draft_id, document_id)` for each hold, narrowed to `documentIds` when given. */
 export function retentionHolds(documentIds?: readonly DocumentId[]): SQL {
   const only = (column: string) =>
     documentIds
@@ -25,11 +25,10 @@ export function retentionHolds(documentIds?: readonly DocumentId[]): SQL {
           sql`, `,
         )})`
       : sql``;
-  return sql`SELECT b.branch_id, b.id AS document_id FROM branch_tree_nodes b
-      JOIN branches br ON br.id = b.branch_id AND br.status = 'active'
+  return sql`SELECT b.draft_id, b.id AS document_id FROM draft_tree_nodes b
       WHERE b.kind = 'document'${only("b.id")}
     UNION
-    SELECT dd.branch_id, dd.document_id FROM document_drafts dd
-      JOIN branches br ON br.id = dd.branch_id AND br.status = 'active'
-      WHERE dd.kind = 'work_draft' AND dd.has_effect${only("dd.document_id")}`;
+    SELECT text.draft_id, text.document_id
+      FROM (${pendingText(sql`SELECT id FROM drafts`)}) text
+      WHERE true${only("text.document_id")}`;
 }

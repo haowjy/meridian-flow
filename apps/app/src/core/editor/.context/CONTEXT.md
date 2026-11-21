@@ -60,8 +60,8 @@ and remain quarantined until their retryable destroy ledger succeeds.
   (`editor-history.ts`) refuses to delete an `id` attribute, because a paragraph survives its
   creator's undo and would keep a peer's text with no id. A pure keystroke is repaired only in
   the block typed in; a stored block with no id (written before ids were assigned on every path)
-  gets its id when someone types in it or edits its structure, and a Draft cannot be seeded from
-  the document until then. There is no migration; nothing deployed holds one.
+  gets its id when someone types in it or edits its structure, and an edit addressed by block
+  cannot reach it until then. There is no migration; nothing deployed holds one.
 - A block's adjacent `Y.XmlText` children are one run of text: peers typing into
   an empty block at once create several. One rule reads and writes them
   everywhere: diff the run as one string, send each change to the `XmlText`
@@ -142,7 +142,11 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `dist/index.js` and `dist/index.cjs` identically (`package.json` `exports` point only at `dist`;
   the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
   `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
-  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), the empty-fragment guard, the forced-render
+  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), formatting only the runs whose marks differ (`updateYText`; re-formatting every run moved format items a peer needed, `qa/offline-press.md`), the empty-fragment guard, the attribute layers (a block's
+  `sugAttrs` record folded from and expanded to one `sugAttrs--<layer id>` element attribute per
+  layer, compared by content, in `createNodeFromYElement`, `createTypeFromElementNode`,
+  `updateYFragment` and `equalYTypePNode`; the rule is `@meridian/prosemirror-schema`
+  `layer-key.ts`), the forced-render
   selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
   capture and restore (`resolveRelativeCellSelection`), the gap-cursor restore (a remote edit
   used to turn the gap below a final table into a caret in its last cell), and `recoverSelectionEndpoint` trusting a
@@ -163,29 +167,16 @@ and remain quarantined until their retryable destroy ledger succeeds.
   an inline atom deletes a peer's concurrent typing into it (a text is emptied
   only when the whole block empties), and a concurrent split moves the bylines
   of the text after the split to the splitting client.
-- `EditorMountIdentity` distinguishes live and stable draft review rooms
-  and includes every construction fact. `editorMountKey()` becomes the React
-  key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts
-  TipTap. Review identity includes both `itemKey` and `roomName`.
+- `EditorMountIdentity` holds every construction fact. `editorMountKey()` becomes the React
+  key; a reopened session adds its Y.Doc `guid` so a concrete room swap remounts TipTap. A
+  Work's view of the document is not a construction fact: it reaches the running editor as an
+  option (`suggestion`).
 - `useMountedEditor()` freezes construction options, binds through the session,
   and owns destruction. It applies editability and `editorProps` to the live
   instance. A new construction dependency belongs in the identity type, not an
   effect dependency list.
-- Live sessions use the IndexedDB key of the account and the document id. Draft sessions
-  use `{ kind: "indexeddb", key: roomKey }` so reopening or reloading the same
-  draft recovers unsent text. A draft is deleted only with its Work or document, so
-  the copy goes with its document at the list's purge (`local-document-copies.ts`). `closeDraftRoom`
-  ends the room when the review owner learns the draft is gone through authoritative metadata
-  before the socket frame, and the pool refuses to reopen that closed id. A room an owner still
-  retains keeps its session, read-only, and its transport ends as the socket's close would end it
-  (`endClosed`), so a draft that ended on screen stays readable and sends nothing more. Only an
-  unretained closed room retires.
-  The tree list's dropped stamp ends the room of a document's create the server dropped (its
-  draft was never made, so the room would only retry `DOCUMENT_UNKNOWN`) through
-  `closeDraftRoom` (`watchBounces`): its typing is dropped with the pill like any closed draft's.
-  Such a draft never answers active, so it never reopens.
-- Typing a closed draft's room never sent is dropped with one "Couldn't save" pill (see "Unsent
-  typing dropped").
+- Live sessions use the IndexedDB key of the account and the document id; the copy goes with
+  its document at the list's purge (`local-document-copies.ts`).
 
 `DocumentSession` status combines persistence and transport: `detached`,
 `syncing`, `synced`, `offline`, `access-lost`, or `destroyed`; `schemaFence` is
@@ -220,8 +211,7 @@ re-inserts the element and has the binding delete it again.
 Local presence is owned by `local-presence.ts`. Extensions receive `setField`,
 read-only peer state, and an Awareness-shaped caret facade; they never receive
 the mutable Awareness instance. Suspension publishes null while retaining the
-desired map, nested suspension republished only at the outer boundary. Draft
-review rotates the document client while migrating suspended fields. A second
+desired map, nested suspension republished only at the outer boundary. A second
 presence write path or cached client ID creates ghost carets.
 
 The session is the only writer of local presence. A transport's provider is
@@ -291,9 +281,9 @@ identity in anchors or holds.
   history lasts as long as the session, so a tab's undo survives its editor (the patched
   y-tiptap undo plugin neither destroys a manager it didn't create nor leaves its
   listeners on it). Only edits written through an editor are tracked, so Ctrl+Z reverts
-  the writer's own and leaves peer and model edits alone. Reload resets it. A text Apply enters it as one entry, from any surface, while the
-  session lives (`features/draft-review/.context/draft-review.md`); a Discard from the side, Work, tree-only Apply, and
-  title changes never enter it.
+  the writer's own and leaves peer and model edits alone. Reload resets it. A press Apply enters it as one entry, from any surface, while the
+  session lives (`features/draft-review/.context/draft-review.md`); a press Discard, a tree-only
+  Apply and title changes never enter it.
 - Slash is one spec over the shared suggestion lane. Its predicate is the whole
   trigger envelope; insertion strategy determines target, schema availability,
   and caret placement. A pick in a table cell remains in that cell. Image picks
@@ -301,9 +291,7 @@ identity in anchors or holds.
 - Autoformat uses inherited TipTap rules plus explicit local fence and recovery
   behavior. Auto-pair owns only its declarative character table; Markdown
   delimiters remain input rules. Do not duplicate either mechanism.
-- Draft inline review is a projection-only extension installed for review
-  mounts. It owns decorations and relative-anchor resolution, never browser
-  mutation origins or collaborative history. Passage navigation retains a
+- Passage navigation retains a
   session until mounted-editor acceptance, uses block identity plus text, and
   refuses ambiguous fallback. It acquires one exact container registration; hiding, holding, replacing, or
   destroying that editor revokes the target and ends the jump without
@@ -328,10 +316,13 @@ identity in anchors or holds.
 - Writer-visible save state: an outage (`offline`)
   reads "Saved locally (offline)" until the server acknowledges every local
   change, then briefly "Back online"; "Closed" and "Access lost" always win and
-  healthy sessions show nothing. Draft sessions use the same local save copy.
-- Draft review paints removed base text red and inserted draft text green,
-  including writer edits and formatting. Attribution is a byline/membership
-  overlay; it never chooses a third paint colour or splits boxes.
+  healthy sessions show nothing.
+- A Work's view paints its suggestions (`SuggestionModeExtension`): deletions red and
+  insertions green. Attribution is a byline/membership overlay; it never chooses a third paint
+  colour or splits boxes.
+  After an edit it repaints only the blocks the edit reached (`suggestion-paint.ts`); the repaint
+  fuzz (`qa/repaint-fuzz.md`) checks that against a full paint. Run it by hand when the paint
+  changes.
 - Keep the custom `math_display` node; do not install TipTap mathematics nodes
   that are absent from the shared schema.
 
@@ -349,7 +340,7 @@ must recheck the native-selection readers and browser verification, not merely
 make the diff apply. The [upstream proposal](https://github.com/haowjy/meridian-flow-docs/blob/a9d5e8706fa7f459f3c79b102f00281e1be0b5f2/work/native-composition-restart/upstream-proposal.md) is prepared but not submitted; the replacement tracker needs an authenticated account.
 
 Keep interaction policy centralized: a new surface must use these seams rather than add a competing
-keyboard, pointer, drop, or draft-recovery answer.
+keyboard, pointer, drop, or recovery answer.
 
 ### Pointer, keyboard, and drop policy
 
@@ -591,7 +582,7 @@ keyboard, pointer, drop, or draft-recovery answer.
 - `DocumentSession.canDeliverUnsentEdits()` says whether the wait can still end in
   delivery. It is false for a reset, unauthorized, terminal, destroyed or read-only room
   (the server drops a read-only room's writes without closing it). The live registry
-  and `DraftRoomPool` both ask it; neither keeps its own list.
+  asks it and keeps no list of its own.
 - A held session ends when the server acknowledges its edits, when the predicate turns
   false, when the document is removed or access revoked
   (`drainDocument`, `drainAccess`), when the account closes
@@ -599,8 +590,7 @@ keyboard, pointer, drop, or draft-recovery answer.
   without an acknowledgement. That cap is for a room that answers but never accepts; the
   clock runs only while the connection is up and restarts on each drop, so offline time
   never counts and a writer who types on a train gets delivery on reconnect, however
-  long it takes. (Elapsed connected time, not a refusal count: the transport counts
-  refusals for draft rooms only, and a live-room count would change every live session.)
+  long it takes. (Elapsed connected time, not a refusal count.)
   The edits stay in IndexedDB in every case but a removed room.
 - A removed room (4208) retires at once, before an availability check can prove a
   restore and restart it. The local copy stays until the list's purge (`clearLocalCopy`).
@@ -631,13 +621,11 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
   from it, so structs past a gap are never counted. The check covers inserts: a vector carries
   no deletions, so a peer's deletions released by a server frame go with the next handshake.
 - **A replaced room.** The server can replace a room's document with one that lacks items a mark
-  counts: a restore from a checkpoint (`CollabDomain.restore`, no caller yet) installs an older
-  state as a new generation, and a document with no authority head is reseeded empty. A handshake
-  whose vector does not cover the mark replaces it instead of merging. The client sees a
-  replacement only at its next handshake, whatever it is keyed on, so this is the same check a
-  generation id would give. Items the replaced room lost and a copy still holds stay within the mark
-  until then: the server had them, and the replacement dropped them. When a restore gets a
-  caller, it should tell open clients, so their marks are replaced before an offline purge.
+  counts: a document with no authority head is reseeded empty. A handshake whose vector does not
+  cover the mark replaces it instead of merging. Items the replaced room lost and a copy still holds
+  stay within the mark until then: the server had them, and the replacement dropped them. A
+  version restore replaces nothing: it is an edit every copy merges, so a copy's typing from before
+  it lands.
 - **Who drops from the mark.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s
   `retiring`) reads its copy beyond its mark (`LocalDocumentCopies.beyondMark`); the
   copy has every write of the session's by then. Not at the reset: a session kept on screen still
@@ -647,7 +635,6 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
   from before an offline reload, in a document purged before its room reconnects, is dropped with
   the pill, and a room with no session in this tab is measured too. A copy with no mark (written
   before marks, or whose first mark write was lost) counts as marking nothing: all of it counts.
-  A closed draft's copy stays for an Undo of its Discard, which delivers it.
 - What it cannot reach: a read admission or a refused room has no such loss (see the next section). A document no
   tab has open keeps its typing in its copy until its next open or its purge.
 
@@ -658,7 +645,7 @@ It is checked at every handshake of a read admission (`core/transport/handshake-
 from the wire alone, with nothing stored between handshakes. A room whose updates the server
 kept refusing (`updatesRefused`, the transport context's "Frames the server can't store") holds
 them by definition: the replacement skips the handshake, drops what its copy holds beyond the
-mark (with the pill) and advances the copy, Live or draft. It does that even when an owner retired
+mark (with the pill) and advances the copy. It does that even when an owner retired
 the session first (a room nobody shows retires in the same emit that ends it), and then opens
 nothing; the next open loads from the server, and its older-copy read may show the pill once more.
 
@@ -690,7 +677,7 @@ nothing; the next open loads from the server, and its older-copy read may show t
   have unmounted (`retireReplaced`, quarantined by persistence name), and its copy then goes by the
   older-copy path below, like any older incarnation: read whole against the new session's first
   handshake, so words another tab wrote into the same copy meanwhile are dropped too. Holders
-  follow through `observeReplacement` (live bindings and open tabs, draft room reads); a mount keeps its
+  follow through `observeReplacement` (live bindings and open tabs); a mount keeps its
   reading position across it, because the store is keyed by room (`use-reading-position.ts`).
 - **Who drops.** The replacement (`undeliverableEdits`: the typing in the handshake's difference;
   it reads that and a snapshot, then makes the old session inert; for a refused room, its copy
@@ -701,44 +688,4 @@ nothing; the next open loads from the server, and its older-copy read may show t
   under its key.
 - A session that opens a room's current incarnation reads the older ones no tab holds against
   its first handshake, drops what they hold beyond it, and deletes each one.
-- Not done yet: the Discard's `returned` on replacement waits for never-refuse PR B's
-  `read_only` frame.
 
-### Draft room retirement
-
-- `DraftRoomPool` retains stable `draft:<draftId>` rooms without leases. The last
-  owner releases through a grace period; a room with unacknowledged edits drains
-  before retirement. The drain ends when the server acknowledges the edits or when
-  `canDeliverUnsentEdits()` turns false, read-only access included. Ordinary retirement keeps IndexedDB state. There is no
-  draft-generation replacement or writer-operation handoff to a new draft.
-- Terminal `4205` (`closed`) and `4208` (`removed`) end the session's transport; its cache
-  stays, and a retained session stays readable until its owner releases it or a restore
-  restarts it. Once its last owner releases it, it retires on the next task, not after the
-  grace. A closed draft's retirement drops typing that just left the screen; a removed
-  document's typing is dropped once, by `clearLocalCopy` at its purge (live copies only: a draft copy was told when its draft closed). Dropping a closed draft's typing never
-  deletes the copy: Undo Discard reopens the same draft row, and the restarted session replays the
-  copy into it, so the writer may see the pill and also get the words back. The copy goes with the
-  document's purge. `closeDraftRoom` lets the session the pool
-  holds retire as a closed draft's (the pool's `closed` set overrides whatever ended its socket)
-  and, with no session, drops the copy's typing itself. A draft copy no page opened is
-  found at start: once at idle after the account lifetime opens (cancelled if the lifetime
-  closes), `sweepDraftCopies` lists the draft copies not yet swept and asks `POST /api/drafts/states`
-  for each draft's state. A closed draft's copy is left as it is. An open draft's copy that holds typing
-  beyond its mark (an Apply left the draft with no changes, so nothing lists it and nothing
-  reopens its room) has its room opened through the draft pool under a `sweep:` owner until the
-  server acknowledges, then released, so the typing is delivered and shows as a change by the
-  writer. An older copy version's words are dropped instead. A copy another tab has open is left to that
-  tab, and a copy a page in this tab opened during the sweep stays unswept. At most four copies are handled at a time. A swept copy is recorded (`meridian:copy-swept:<name>` in local storage) and
-  skipped without loading at later starts until a session opens it (`hold`, a restore). A copy
-  with no mark proves nothing undelivered, so the sweep skips it. The account command owner asks the server whether the draft is gone (fresh
-  metadata) and handles a metadata `gone` the same way,
-  whichever arrives first; see Draft end in the
-  [draft-review state machines](../../../features/draft-review/.context/state-machines.md). See the
-  [review runtime](../../../features/draft-review/.context/draft-review.md).
-- `resetDisposition` is the session transport's terminal-state vocabulary,
-  not a draft reset protocol. Schema fences, authorization loss and explicit
-  session rebuild retain their own meanings; local text Discard does not retire
-  the room, selection or UndoManager.
-- A draft room whose updates the server kept refusing (`updatesRefused`) is kept by the pool
-  (`readDraftRoom` holds it `fenced`) only until the registry replaces it ("Undeliverable
-  edits"). A drop's next handshake SyncStep2 supplies missing bytes before held keystrokes.

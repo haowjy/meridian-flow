@@ -39,12 +39,6 @@ export function useReverseTurnMutation(threadId: string) {
       void queryClient.invalidateQueries({
         predicate: (query) =>
           query.queryKey[0] === projectQueryKeys.all[0] &&
-          query.queryKey[2] === "works" &&
-          (query.queryKey[4] === "branches" || query.queryKey[6] === "draft"),
-      });
-      void queryClient.invalidateQueries({
-        predicate: (query) =>
-          query.queryKey[0] === projectQueryKeys.all[0] &&
           query.queryKey[2] === "document-draft-hints",
       });
       // The lineage receipt owns the Undo and view-change affordance. Await

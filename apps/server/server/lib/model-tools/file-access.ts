@@ -24,6 +24,7 @@ import {
   type Principal,
   runWithEditGrants,
 } from "../../domains/file-policy/index.js";
+import { chatOwner } from "../../shared/draft-owner.js";
 import {
   isPermissionDenial,
   permissionDeniedMessage,
@@ -53,7 +54,14 @@ export async function agentPrincipal(
     agent: {
       projectId: thread.projectId as ProjectId,
       chain: await deps.readAgentChain(thread.id as ThreadId),
-      branchOwner: { owner: execution.branchOwner, handle: execution.scope.workHandle },
+      draftOwner: {
+        owner: chatOwner(thread, {
+          id: execution.scope.workId,
+          isNoWork: execution.scope.workHandle === null,
+        }),
+        draftId: execution.draftId,
+        handle: execution.scope.workHandle,
+      },
       writeMode: execution.aiWriteMode,
     },
   };
@@ -66,16 +74,16 @@ export async function agentPrincipal(
  * reads where its access sends it, as `draft` always did there.
  */
 export async function keptDraft(
-  deps: Pick<ToolWiringDeps, "branches">,
+  deps: Pick<ToolWiringDeps, "drafts">,
   grant: Pick<FileGrant, "facts">,
   documentId: string,
   execution: ThreadExecutionContext,
 ): Promise<FileDestination | null> {
   if (!isDrafted(grant.facts.contentScheme)) return null;
-  const owner = execution.branchOwner;
-  const drafts = await deps.branches.draftReview.list({ owner });
-  return drafts.some((draft) => draft.documentId === documentId)
-    ? { kind: "draft", owner, ownerHandle: execution.scope.workHandle }
+  const draft = execution.draftId;
+  const drafts = await deps.drafts.draftReview.list({ draft });
+  return drafts.some((row) => row.documentId === documentId)
+    ? { kind: "draft", draftId: draft, ownerHandle: execution.scope.workHandle }
     : null;
 }
 

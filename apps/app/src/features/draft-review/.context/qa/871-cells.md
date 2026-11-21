@@ -31,9 +31,9 @@ Create one document for each cell and mode with `./mf doc put`, create one Work
 with `POST /api/projects/$P/works` (body `{"commandId": <uuid>, "name": ...}`), and create one direct and one Draft chat per
 cell. The Draft chats use `workId` and `aiWriteMode: "draft"`. Read each
 document once on its chat to learn the hashes for heading, A, B, C, D, and E.
-Prime each Draft document with a write to paragraph A so its Work draft exists;
-get the `itemKey` from `GET /api/projects/$P/works/$W/branches` and open
-`/p/<P>/editor/manuscript/<document>?owner=work:<W>&item=<itemKey>`.
+Prime each Draft document with a write to paragraph A so the Work's draft holds a change;
+get the `itemKey` (`<draftId>:<documentId>`) from `GET /api/projects/$P/drafts?draft=<the Work's draftId>` and open
+`/p/<P>/editor/manuscript/<document>?item=<itemKey>`.
 
 ## Each cell
 

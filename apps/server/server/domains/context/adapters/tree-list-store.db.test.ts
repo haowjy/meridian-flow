@@ -12,13 +12,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
-  branches,
-  branchTreeNodes,
   contextSources,
-  documentDrafts,
   documents,
   documentYjsHeads,
   documentYjsUpdates,
+  draftTreeNodes,
   projects,
   treeNodeIds,
   treeNodes,
@@ -26,8 +24,8 @@ import {
   works,
 } from "@meridian/database/schema";
 import {
-  branchRows,
   CopyFault,
+  draftRows,
   LIVE,
   type ProjectedRow,
   pendingRecords,
@@ -62,7 +60,7 @@ const STRANGER = "00000000-0000-4000-8000-000000000a02";
 const PROJECT = "00000000-0000-4000-8000-000000000a03";
 const MANUSCRIPT = "00000000-0000-4000-8000-000000000a04";
 const UNFILED = "00000000-0000-4000-8000-000000000a05";
-const BRANCH = "00000000-0000-4000-8000-000000000a06";
+const DRAFT = "treelistbr01";
 const WORK = "00000000-0000-4000-8000-000000000a07";
 const actor = `user:${ACCOUNT}`;
 const list = { kind: "project", projectId: PROJECT } as const;
@@ -107,13 +105,7 @@ describe("the tree list store (postgres)", () => {
       createdByUserId: ACCOUNT,
       name: "Drafting",
       handle: "w1",
-    });
-    await db.insert(branches).values({
-      id: BRANCH,
-      projectId: PROJECT,
-      status: "active",
-      originWorkId: WORK,
-      createdBy: ACCOUNT,
+      draftId: DRAFT,
     });
   });
   afterAll(() => closeDatabase(db));
@@ -164,7 +156,7 @@ describe("the tree list store (postgres)", () => {
     const live = shown(LIVE);
     return {
       live,
-      branch: branchRows(live, shown({ draft: BRANCH }), pendingRecords(doc, BRANCH)),
+      draft: draftRows(live, shown({ draft: DRAFT }), pendingRecords(doc, DRAFT)),
     };
   }
 
@@ -198,7 +190,7 @@ describe("the tree list store (postgres)", () => {
         deleted: row.trashRecord !== null,
       }),
     );
-    const branch = (await db.select().from(branchTreeNodes)).map((row) => ({
+    const draft = (await db.select().from(draftTreeNodes)).map((row) => ({
       ...pick({
         id: row.id,
         kind: row.kind,
@@ -214,16 +206,16 @@ describe("the tree list store (postgres)", () => {
       existsOnlyInDraft: row.existsOnlyInDraft,
       changed: row.changed,
     }));
-    return { live: byId(live), branch: byId(branch) };
+    return { live: byId(live), draft: byId(draft) };
   }
 
   async function expectRowsEqualReplay() {
     const replayed = await replayedRows();
     const stored = await storedRows();
     expect(stored.live).toEqual(byId([...replayed.live.values()].map(pick)));
-    expect(stored.branch).toEqual(
+    expect(stored.draft).toEqual(
       byId(
-        [...replayed.branch.values()].map((row) => ({
+        [...replayed.draft.values()].map((row) => ({
           ...pick(row),
           existsOnlyInDraft: row.existsOnlyInDraft,
           changed: row.changed,
@@ -261,7 +253,7 @@ describe("the tree list store (postgres)", () => {
     c.writer.rename(LIVE, actor, one.node, `first ${tag}`);
     c.writer.move(LIVE, actor, two.node, sourceRoot(UNFILED));
     await send();
-    c.writer.create({ draft: BRANCH }, actor, {
+    c.writer.create({ draft: DRAFT }, actor, {
       kind: "document",
       name: `draft ${tag}`,
       parent: folder.node,
@@ -279,10 +271,10 @@ describe("the tree list store (postgres)", () => {
     );
 
     expect(await updateCount()).toBeGreaterThanOrEqual(24);
-    const { live, branch } = await storedRows();
+    const { live, draft } = await storedRows();
     expect(live.filter((row) => row.kind === "folder")).toHaveLength(6);
     expect(live.filter((row) => row.kind === "document")).toHaveLength(12);
-    expect(branch.some((row) => row.existsOnlyInDraft)).toBe(true);
+    expect(draft.some((row) => row.existsOnlyInDraft)).toBe(true);
     await expectRowsEqualReplay();
     // Each created document has its documents row, from the same transaction.
     expect(await db.select().from(documents)).toHaveLength(18);
@@ -327,13 +319,13 @@ describe("the tree list store (postgres)", () => {
     it("stamps a create raced into a closed Work dropped: no row, no draft, and it stays dropped when the Work comes back", async () => {
       const { store, honest, folder } = await seededList();
       await db.update(works).set({ archivedAt: new Date() }).where(eq(works.id, WORK));
-      const raced = honest.writer.create({ draft: BRANCH }, actor, {
+      const raced = honest.writer.create({ draft: DRAFT }, actor, {
         kind: "document",
         filetype: "markdown",
         name: "raced",
         parent: sourceRoot(MANUSCRIPT),
       });
-      const inside = honest.writer.create({ draft: BRANCH }, actor, {
+      const inside = honest.writer.create({ draft: DRAFT }, actor, {
         kind: "document",
         filetype: "markdown",
         name: "also raced",
@@ -347,9 +339,8 @@ describe("the tree list store (postgres)", () => {
       ]);
       expect(await db.select().from(documents).where(eq(documents.id, raced.node))).toEqual([]);
       expect(
-        await db.select().from(branchTreeNodes).where(eq(branchTreeNodes.id, raced.node)),
+        await db.select().from(draftTreeNodes).where(eq(draftTreeNodes.id, raced.node)),
       ).toEqual([]);
-      expect(await db.select().from(documentDrafts)).toEqual([]);
       await db.update(works).set({ archivedAt: null }).where(eq(works.id, WORK));
       honest.writer.rename(LIVE, actor, folder.node, "Part Three");
       await store.admit({ list, accountId: ACCOUNT, update: honest.send() });
@@ -449,7 +440,7 @@ describe("the tree list store (postgres)", () => {
         name: "Killed",
         parent: sourceRoot(MANUSCRIPT),
       });
-      c.writer.create({ draft: BRANCH }, actor, {
+      c.writer.create({ draft: DRAFT }, actor, {
         kind: "document",
         name: "killed draft",
         parent: folder.node,
@@ -503,7 +494,7 @@ describe("the tree list store (postgres)", () => {
     ])("leaves neither the record nor its rows when killed at %s", async (step) => {
       await killAt(step);
       expect(await updateCount()).toBe(0);
-      expect(await storedRows()).toEqual({ live: [], branch: [] });
+      expect(await storedRows()).toEqual({ live: [], draft: [] });
       expect(await db.select().from(documents)).toEqual([]);
       expect(await db.select().from(treeNodeIds)).toEqual([]);
 
@@ -525,7 +516,7 @@ describe("the tree list store (postgres)", () => {
       expect(await updateCount()).toBe(1);
       const stored = await storedRows();
       expect(stored.live.map((row) => row.name)).toEqual(["Killed"]);
-      expect(stored.branch.map((row) => row.name)).toEqual(["killed draft"]);
+      expect(stored.draft.map((row) => row.name)).toEqual(["killed draft"]);
       await expectRowsEqualReplay();
     });
   });
@@ -758,8 +749,8 @@ describe("the tree list store (postgres)", () => {
     expect(await updateCount()).toBe(0);
     expect(await db.select().from(treeNodes)).toEqual([]);
     expect(await db.select().from(treeNodeIds)).toEqual([]);
-    expect(
-      await db.select().from(branchTreeNodes).where(eq(branchTreeNodes.branchId, BRANCH)),
-    ).toEqual([]);
+    expect(await db.select().from(draftTreeNodes).where(eq(draftTreeNodes.draftId, DRAFT))).toEqual(
+      [],
+    );
   });
 });

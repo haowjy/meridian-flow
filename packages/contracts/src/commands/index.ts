@@ -10,10 +10,6 @@ export type CommandBody<T extends object = object> = T & { commandId: CommandId 
 
 /** Which kind of command a `commandId` was recorded for. */
 export const COMMAND_KINDS = [
-  "apply",
-  "unapply",
-  "discard",
-  "undo_discard",
   "model_edit",
   "reverse_turn",
   "copy",
@@ -25,6 +21,8 @@ export const COMMAND_KINDS = [
   "work_restore",
   "project_create",
   "thread_set_overrides",
+  "press",
+  "unpress",
 ] as const;
 export type CommandKind = (typeof COMMAND_KINDS)[number];
 
@@ -78,7 +76,6 @@ export type LeftOutWhy =
   | "after_press"
   | "needs"
   | "changed_since"
-  | "has_text"
   | "closed"
   | "already";
 
@@ -95,12 +92,6 @@ export type ClosedOwnerWhy = (typeof CLOSED_OWNER_WHYS)[number];
 
 /** What a stored command result may carry beyond its own fields. */
 export type StoredResult = { settled?: Settlement[] };
-
-/**
- * A resend's answer while the first request under its id is still running: nothing is known yet,
- * and sending it again waits on that request for its answer.
- */
-export type CommandRunning = { status: "running"; commandId: string };
 
 /** `GET /api/commands/:id`: the stored outcome, or `none` (also for another account's id). */
 export type CommandLookupResponse =

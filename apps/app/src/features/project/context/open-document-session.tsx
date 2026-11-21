@@ -14,8 +14,8 @@ import { useLiveDocumentBinding } from "./use-live-document-binding";
 type OpenDocumentSessionProps = {
   projectId: string;
   documentId: string;
-  /** False for a document with no live room yet (draft-only until Apply promotes it). */
-  liveRoom?: boolean;
+  /** The live room of a document only a Work holds. */
+  workOnly?: boolean;
   bindingOwner?: DocumentPresentation["bindingOwner"];
   children: (
     session: DocumentSession | null,
@@ -41,15 +41,16 @@ export function OpenDocumentSessionBoundary(props: OpenDocumentSessionProps) {
 function OpenDocumentSession({
   projectId,
   documentId,
-  liveRoom = true,
+  workOnly = false,
   bindingOwner = "desktop-document-host",
   children,
   onReopen,
 }: OpenDocumentSessionProps & { onReopen: () => void }) {
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId: liveRoom ? documentId : null,
+    documentId,
     owner: bindingOwner,
+    ...(workOnly ? { workOnly: true as const } : {}),
   });
   const state = binding.state;
   const opened = state.kind === "opened" && state.documentId === documentId ? state.session : null;

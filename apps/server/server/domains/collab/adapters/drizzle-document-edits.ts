@@ -1,6 +1,6 @@
 // Immutable edit capture shared by writer inverses and the model stack.
 import { captureDelta, type StoredDelta } from "@meridian/agent-edit/content-merge";
-import { readBlocks } from "@meridian/agent-edit/diff";
+import { heldBlocks } from "@meridian/agent-edit/diff";
 import {
   type CapturedPart,
   captureEditParts,
@@ -10,15 +10,13 @@ import {
 import type { DocumentId, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import {
   type Database,
-  documentDrafts,
   documentEditParts,
   documentEdits,
   documentYjsUpdates,
-  draftWriteJournal,
   type EditOrigin,
 } from "@meridian/database";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import { eq, inArray, sql } from "drizzle-orm";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
+import { eq, inArray } from "drizzle-orm";
 import * as Y from "yjs";
 import {
   getDrizzleTransactionLocal,
@@ -96,23 +94,9 @@ export async function recordDocumentEdit(db: Db, input: ReceiptWrite): Promise<s
       delta: p.delta ?? null,
       targets: p.targets ?? [],
       origin: p.origin,
-      draftBranchId:
-        p.origin.kind === "pending"
-          ? sql`(select ${documentDrafts.branchId} from ${documentDrafts} where ${documentDrafts.id} = ${p.origin.draftId})`
-          : null,
     })),
   );
-  for (const [ordinal, p] of input.receipts.entries()) {
-    if (p.origin.kind !== "pending") continue;
-    await db
-      .update(draftWriteJournal)
-      .set({
-        updateMeta: sql`coalesce(${draftWriteJournal.updateMeta}, '{}'::jsonb) || ${JSON.stringify({ documentEdit: { editId: edit.id, ordinal } })}::jsonb`,
-      })
-      .where(eq(draftWriteJournal.id, p.origin.rowId));
-  }
-  const live = input.receipts.filter((p) => p.origin.kind === "live");
-  for (const seq of new Set(live.map((p) => (p.origin.kind === "live" ? p.origin.seq : 0)))) {
+  for (const seq of new Set(input.receipts.map((p) => p.origin.seq))) {
     await db
       .update(documentYjsUpdates)
       .set({ editId: edit.id })
@@ -131,12 +115,14 @@ export function captureReceiptRows(
   rows: readonly { update: Uint8Array; origin: EditOrigin }[],
   withDelta: boolean,
 ): (ReceiptWrite["receipts"][number] & { held: ReadonlySet<string> })[] {
-  const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
+  const blocks = withDelta ? heldBlocks(doc, deltaSchema, "readBlocks") : null;
+  let textBefore = blocks?.all() ?? null;
   const receipts = rows.map((row) => {
     const held = heldDeletes(doc, row.update, Y.decodeStateVector(Y.encodeStateVector(doc)));
-    const textBefore = withDelta ? readBlocks(fragment, deltaSchema) : null;
     Y.applyUpdate(doc, row.update);
-    const delta = textBefore ? captureDelta(textBefore, readBlocks(fragment, deltaSchema)) : null;
+    const textAfter = blocks?.all() ?? null;
+    const delta = textBefore && textAfter ? captureDelta(textBefore, textAfter) : null;
+    textBefore = textAfter;
     return { ...row, held, delta };
   });
   return receipts.map((receipt, i) => ({

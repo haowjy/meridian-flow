@@ -3,20 +3,17 @@
  * whose derived outputs are current; a document left out is unknown here and its caller reads
  * the document itself. The writer side is `DocumentDerivationStore`.
  */
-import type { DraftOwner } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 
 export type BlockText = {
   /**
    * Stored grep text of the documents whose derived outputs are current: the blocks' text
-   * joined with `\n` in block order, in one statement with the freshness check. A reader whose
-   * Work (`draftOwner`) holds an active draft of a document sees the draft, not the live text,
+   * joined with `\n` in block order, in one statement with the freshness check. The text is
+   * Live's: a reader whose draft has suggestions in a document sees its own view,
    * so that document is left out.
    */
-  grepTexts(
-    ids: DocumentId[],
-    reader: { draftOwner: DraftOwner | null },
-  ): Promise<Map<DocumentId, string>>;
+  grepTexts(ids: DocumentId[], reader: { draft: DraftId | null }): Promise<Map<DocumentId, string>>;
   /**
    * Words per document, as the current derivation counted them. A document whose derivation is
    * behind (or never ran) is absent: `ls` omits its count rather than show a stale one, since

@@ -13,7 +13,7 @@ import {
   treeEditReceiptNodes,
   treeEditReceipts,
 } from "@meridian/database";
-import { branches, commands, documentDrafts, works } from "@meridian/database/schema";
+import { commands } from "@meridian/database/schema";
 import { and, desc, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { AgentTreeHistory, NodeHistory, TreeReceipt } from "../contracts.js";
@@ -92,7 +92,7 @@ export function createDrizzleTreeHistory(
           op: input.op,
           kind: input.reverses?.kind ?? "write",
           reverses: input.reverses?.receipt ?? null,
-          draftBranchId: input.draftBranchId ?? null,
+          draftId: input.draftId ?? null,
           shownAt: input.shownAt,
         })
         .returning({ id: treeEditReceipts.id });
@@ -128,7 +128,7 @@ export function createDrizzleTreeHistory(
       const [row] = await tx()
         .select({ id: treeEditReceipts.id })
         .from(treeEditReceipts)
-        .where(and(eq(treeEditReceipts.turnId, turnId), isNotNull(treeEditReceipts.draftBranchId)))
+        .where(and(eq(treeEditReceipts.turnId, turnId), isNotNull(treeEditReceipts.draftId)))
         .limit(1);
       return row !== undefined;
     },
@@ -189,10 +189,7 @@ export function createDrizzleTreeHistory(
       // walked in order, carrying what stood at `at`.
       const touched = (address: string | null, node: string) =>
         address === at ||
-        (address !== null &&
-          address.endsWith("/") &&
-          at.startsWith(address) &&
-          holds(node, at.slice(address.length)));
+        (address?.endsWith("/") && at.startsWith(address) && holds(node, at.slice(address.length)));
       const rows = await tx()
         .select({
           node: treeEditReceiptNodes.nodeId,
@@ -279,26 +276,6 @@ export function createDrizzleTreeHistory(
         text,
       } satisfies NodeHistory;
     },
-
-    async survivingDraftWorks(documentId) {
-      const rows = await tx()
-        .selectDistinct({ name: works.name })
-        .from(documentDrafts)
-        .innerJoin(branches, eq(branches.id, documentDrafts.branchId))
-        .innerJoin(works, eq(works.id, branches.originWorkId))
-        .where(
-          and(
-            eq(documentDrafts.documentId, documentId),
-            eq(documentDrafts.kind, "work_draft"),
-            eq(documentDrafts.hasEffect, true),
-            eq(branches.status, "active"),
-            // No Work's drafts are a chat's own, not a Work's.
-            isNotNull(works.handle),
-          ),
-        );
-      // By name, as the model repeats it to the writer, who never sees handles (#914).
-      return rows.map((row) => `Work "${row.name}"`).sort();
-    },
   };
 }
 
@@ -315,7 +292,7 @@ function receiptOf(
     op: row.op,
     kind: row.kind,
     reverses: row.reverses,
-    draftBranchId: row.draftBranchId,
+    draftId: row.draftId,
     turnId: row.turnId,
     commandId: row.commandId,
     shownAt: row.shownAt,

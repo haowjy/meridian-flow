@@ -105,9 +105,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("batch initial states (po
       return {
         headSeq: head?.latestUpdateSeq,
         headCheckpointIsSeed: head?.latestCheckpointId === checkpoint?.id,
-        authorityMatches:
-          checkpoint?.authorityId === head?.authorityId &&
-          checkpoint?.authorityGeneration === head?.authorityGeneration,
+        authorityMatches: checkpoint?.authorityId === head?.authorityId,
         next: head?.nextAdmissionSequence,
         upToSeq: checkpoint?.upToSeq,
         reason: checkpoint?.reason,

@@ -61,7 +61,7 @@ paragraph, and authored newlines become `hardBreak` nodes, as in the composer.
 
 `serializeMessageDoc` reads plain JSON, preserving authored spacing and occurrence order. Image
 capability, upload intake, file type and ownership belong only to document references. Submitted
-identities deduplicate by kind, identity and URI, with document draft-upload metadata taking
+identities deduplicate by kind, identity and URI, with document upload metadata taking
 precedence. Skills activate once per slug but every occurrence stays in the blocks. The walk
 exposes each reference through `onReference`, so the app projects its uploads without walking the
 document again.
@@ -176,7 +176,7 @@ are the app's chat sends (`chat-submissions/`), queued `/compact` and write-mode
 The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`, `pong`, `ask.answer`, `catalog.subscribe`
 and `catalog.unsubscribe`; its server vocabulary is `connected`, `subscribed`, `event`, `gap`, `error`, `ping`,
 `ask.answer.ok`, `ask.answer.error`, and the project channel's `context-sources-hint` (a source began, ended or changed access: ask the sources query again),
-`draft-owner-hint` and `project-chats-hint` (a chat's run, question or status changed, so its project's chat
+`draft-hint` and `project-chats-hint` (a chat's run, question or status changed, so its project's chat
 list is stale; a delete adds `removedChatIds`, a Work delete or the client's own post-reconnect replay adds `recheckTabs`, which also makes the client read the Works list, draft lists and sources again, since hints sent while the socket was down are lost). Turn cancellation is an HTTP operation through the
 injected `cancelTurn` port. Keep these names aligned with `@meridian/contracts/protocol`.
 

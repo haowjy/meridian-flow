@@ -1,16 +1,15 @@
 /** Wiring-only assembly of collab application services into the public domain. */
 import type {
   AgentEditAccess,
-  CollabBranches,
-  CollabBranchResolver,
   CollabDomain,
+  CollabDraftResolver,
+  CollabDrafts,
   CollabLifecycle,
   CollabTransport,
   DocumentAttribution,
   DocumentCheckpoints,
   DocumentProjectionRefresher,
-  DraftAttributionAccess,
-  DraftPeerShadowAccess,
+  EffectiveDocumentReader,
   MarkdownDocumentStore,
   TurnLiveLineageAccess,
   TurnReversalAccess,
@@ -28,10 +27,9 @@ export type CollabFacadeServices = {
   lineage: TurnLiveLineageAccess;
   checkpoints: DocumentCheckpoints;
   attribution: DocumentAttribution;
-  draftAttribution: DraftAttributionAccess;
-  draftPeers: DraftPeerShadowAccess;
-  branches: CollabBranches;
-  branchResolver: CollabBranchResolver;
+  effectiveReader: EffectiveDocumentReader;
+  drafts: CollabDrafts;
+  draftResolver: CollabDraftResolver;
   documentCreation: DocumentCreationAggregate;
   importBinder: ImportLinkBinder;
 };
@@ -47,10 +45,9 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.lineage,
     ...services.checkpoints,
     ...services.attribution,
-    ...services.draftAttribution,
-    ...services.draftPeers,
-    ...services.branches,
-    ...services.branchResolver,
+    ...services.effectiveReader,
+    ...services.drafts,
+    ...services.draftResolver,
     ...services.documentCreation,
     importBinder: services.importBinder,
   };

@@ -203,7 +203,7 @@ export class ThreadSocketClient implements ThreadTransport {
     const message = parseWsServerMessage(data);
     if (!message) return;
     if (
-      message.type === "draft-owner-hint" ||
+      message.type === "draft-hint" ||
       message.type === "project-chats-hint" ||
       message.type === "context-sources-hint" ||
       message.type === "agent-files-hint" ||

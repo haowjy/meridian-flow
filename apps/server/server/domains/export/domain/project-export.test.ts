@@ -135,7 +135,7 @@ function fixture() {
   const denied = new Set<string>();
   let afterRead = () => {};
   const ports: Parameters<typeof createProjectExport>[0] = {
-    pendingDrafts: {
+    pendingDocuments: {
       async count() {
         return 3;
       },

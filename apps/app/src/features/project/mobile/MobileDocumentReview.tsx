@@ -15,7 +15,7 @@
  */
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { OpenDocument } from "@/client/stores";
 import { PaintCapture } from "@/components/app/PaintHold";
 import { DraftNoticeLine, useDocumentNotice } from "@/features/draft-review/CommandNotice";
@@ -28,7 +28,7 @@ import {
   useManuscriptState,
 } from "@/features/editor/ManuscriptStateNotice";
 import { useFocusSuccession } from "@/lib/focus-follow";
-import { useAiDraftLauncher } from "../review-launch";
+import { useItemLauncher } from "../review-launch";
 import { MobileChangeBar } from "./MobileChangeBar";
 import { MobileChangeSheet } from "./MobileChangeSheet";
 import { MobileKeyboardAware } from "./MobileKeyboardAware";
@@ -50,12 +50,12 @@ export function MobileDocumentReview({
   const { controller } = useDraftReview();
   const review = controller.inlineReview;
   const itemKey = review?.documentId === documentId && review.shown ? review.itemKey : null;
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const header = useReviewHeader({
     documentId,
     itemKey: itemKey ?? "",
     onCloseDraftOnly,
-    onOpenDraft: (row: ReviewFileTarget) => openReviewFile(row, controller.ownerKey),
+    onOpenItem: (row: ReviewFileTarget) => openReviewFile(row, controller.draftId),
   });
   const [listOpen, setListOpen] = useState(false);
   const manuscriptState = useManuscriptState(projectId, document);

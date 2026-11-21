@@ -40,11 +40,7 @@ const threadList: { current: ThreadListItem[] } = {
 };
 
 /** Runtime callbacks are inert; these tests own only editor lifetime and surface selection. */
-const roomOwner = { session: null, error: false };
 const controller = {
-  registerInlineReviewRuntime: () => {},
-  releaseInlineReviewRuntime: () => {},
-  setInlineReviewShown: () => {},
   inlineReview: null as
     | import("@/features/draft-review/draft-review-session").InlineDraftReview
     | null,
@@ -53,14 +49,13 @@ const controller = {
 vi.mock("@/features/draft-review/DraftReviewProvider", () => ({
   useDraftReview: () => ({
     controller,
-    roomOwner,
     fileForDocument: () => null,
   }),
 }));
 
-const reviewHooks = vi.hoisted(() => ({ sync: vi.fn(), focus: vi.fn() }));
-vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: reviewHooks.sync }));
-vi.mock("./useInlineReviewFocus", () => ({ useInlineReviewFocus: reviewHooks.focus }));
+vi.mock("@/features/draft-review/useOpenReviewChanges", () => ({
+  useOpenReviewChanges: () => ({ changes: [] }),
+}));
 
 const openDocument = vi.hoisted(() => vi.fn());
 vi.mock("@/features/project/context/open-project-document", () => ({

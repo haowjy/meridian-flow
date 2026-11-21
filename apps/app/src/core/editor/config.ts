@@ -24,7 +24,6 @@ import type { DocumentHistory } from "./editor-history";
 import { AtReferenceExtension, type AtReferenceExtensionOptions } from "./extensions/at-reference";
 import { AutoPairExtension } from "./extensions/auto-pair";
 import { BlockIdExtension } from "./extensions/block-id";
-import { DraftInlineReviewExtension } from "./extensions/inline-review";
 import { LiveRangeNavigationExtension } from "./extensions/LiveRangeNavigationExtension";
 import { MarkdownAutoformatExtension } from "./extensions/MarkdownAutoformatExtension";
 import {
@@ -51,6 +50,7 @@ import { PeerMarkerExtension } from "./extensions/PeerMarkerExtension";
 import { PeerCarets } from "./extensions/peer-carets";
 import { type ReferenceDropOptions, referenceDropDoor } from "./extensions/reference-drop";
 import { SlashCommandExtension, type SlashCommandExtensionOptions } from "./extensions/slash";
+import { SuggestionModeExtension } from "./extensions/suggestion-mode";
 import { TabKeymapExtension } from "./extensions/TabKeymapExtension";
 import { TableEnterKeymapExtension } from "./extensions/TableEnterKeymapExtension";
 import { UndoRedoKeymapExtension } from "./extensions/UndoRedoKeymapExtension";
@@ -77,7 +77,7 @@ export type EditorUser = {
 /** Project whose asset namespace resolves `asset:<documentId>` image sources. */
 export type AssetRenderContext = {
   projectId?: string;
-  /** The draft owner the viewer reads (`work:<id>` or `lineage:<root>`): a picture still pending in its branch is signed through it. */
+  /** The draft id the viewer reads: a picture still pending in its draft is signed through it. */
   owner?: string;
 };
 
@@ -105,12 +105,7 @@ export type CreateEditorExtensionsOptions = {
   assetRenderContext?: AssetRenderContext;
   /** Render remote cursor/selection decorations from awareness. */
   showCollaborationDecorations?: boolean;
-  /**
-   * Mount the DraftInlineReviewExtension when the editor is bound to a draft
-   * room. Live editors omit this flag so they never pay the extra plugin cost.
-   */
-  enableDraftInlineReview?: boolean;
-  /** Live-session sidecar; omitted for draft rooms. */
+  /** Live-session sidecar. */
   markerStore?: SessionMarkerStore;
   /** Writer-facing thread names for agent-authored session marks. */
   agentNames?: AgentNameStore;
@@ -330,7 +325,6 @@ export function createEditorExtensions({
   user,
   assetRenderContext,
   showCollaborationDecorations,
-  enableDraftInlineReview = false,
   markerStore,
   agentNames,
   slashCommands,
@@ -364,14 +358,6 @@ export function createEditorExtensions({
     // ephemeral half of uploads mounts here rather than beside the doors.
     ...(schemaType === "document" ? [UploadPresenceExtension.configure({ presence })] : []),
     ...(markerStore ? [PeerMarkerExtension.configure({ markerStore, agentNames })] : []),
-    ...(enableDraftInlineReview
-      ? [
-          DraftInlineReviewExtension.configure({
-            document,
-            adoptDocumentClient: presence.adoptDocumentClient,
-          }),
-        ]
-      : []),
   ];
 }
 
@@ -418,6 +404,7 @@ export function createStandaloneEditorExtensions({
     MeridianLink,
     BlockIdExtension,
     NestingExtension,
+    SuggestionModeExtension,
     MeridianHardBreak,
     MeridianHorizontalRule,
     MeridianParagraph,
@@ -488,7 +475,6 @@ export function createEditorConfig({
   user,
   assetRenderContext,
   showCollaborationDecorations,
-  enableDraftInlineReview,
   markerStore,
   agentNames,
   slashCommands,
@@ -521,7 +507,6 @@ export function createEditorConfig({
         user,
         assetRenderContext,
         showCollaborationDecorations,
-        enableDraftInlineReview,
         markerStore,
         agentNames,
         slashCommands,

@@ -1,4 +1,4 @@
-// Durable draft receipts and staged response setup shared by the Postgres suites.
+// Staged model writes and response setup shared by the Postgres suites.
 
 import { randomUUID } from "node:crypto";
 import { editHandle } from "@meridian/agent-edit/integration";
@@ -14,6 +14,7 @@ import {
   THREAD_ID,
   TURN_ID,
   USER_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./collab-postgres-harness.js";
 
@@ -44,14 +45,6 @@ export async function stageDraft(
     expect(outcome).toMatchObject({ status: "success", phase: "committed" });
     identities.push(outcome.writeId);
   }
-  const documentDraft = await fixture.draftStore.resolveWorkDraftForThread(ALPHA_ID, THREAD_ID);
-  const draftId = documentDraft.draftId;
-  const rows = await db
-    .select()
-    .from(schema.draftWriteJournal)
-    .where(eq(schema.draftWriteJournal.draftId, draftId))
-    .orderBy(schema.draftWriteJournal.id);
-  expect(rows).toHaveLength(writes.length);
   const edits = await db
     .select()
     .from(schema.documentEdits)
@@ -64,8 +57,7 @@ export async function stageDraft(
     .orderBy(schema.documentEdits.wId);
   expect(identities).toEqual(edits.map((edit) => editHandle(edit.wId as number)));
   expect(new Set(identities).size).toBe(writes.length);
-  expect(rows.map((row) => editHandle(row.wId as number))).toEqual(identities);
-  return { fixture, draftId, rows, responseId };
+  return { fixture, responseId };
 }
 
 export async function createResponse(db: ReturnType<typeof createTestDatabase>, sequence: number) {
@@ -91,6 +83,7 @@ export function responseContext(responseId: string) {
     grant: inProject(
       testFileGrant({
         kind: "draft",
+        draftId: WORK_DRAFT_ID,
         owner: { kind: "work", workId: WORK_ID },
         ownerHandle: "atomicity-work",
       }),
@@ -101,48 +94,4 @@ export function responseContext(responseId: string) {
 /** The grant names this project and its owner, as the file policy would, so a write can make a draft. */
 export function inProject<T extends ReturnType<typeof testFileGrant>>(grant: T): T {
   return grantInProject(grant, PROJECT_ID, USER_ID);
-}
-export async function setupResponseDraft(
-  db: ReturnType<typeof createTestDatabase>,
-  harness: ReturnType<typeof createHarness>,
-  empty = false,
-) {
-  const { fixture, draftId, rows } = await stageDraft(
-    db,
-    harness,
-    "red\n\nblue\n\ngreen",
-    "replace",
-    empty
-      ? [["red", "gold"]]
-      : [
-          ["red", "gold"],
-          ["blue", "azure"],
-        ],
-  );
-  const resolved = await fixture.collab.draftReview.resolveItemByDocument({
-    owner: { kind: "work", workId: WORK_ID },
-    documentId: ALPHA_ID,
-  });
-  if (!resolved) throw new Error("staged draft has no review item");
-  const target = { workId: WORK_ID, itemKey: resolved.itemKey };
-  const read = () =>
-    fixture.collab
-      .agentEdit()
-      .read({ file: "alpha.md", documentId: ALPHA_ID, tool_use_id: `read-${++tool}` }, context);
-  const responseId = await createResponse(db, 2);
-  const context = responseContext(responseId);
-  let tool = 0;
-  const write = (find: string, content: string, command: "replace" | "insert" = "replace") =>
-    fixture.collab.agentEdit().write(
-      {
-        command,
-        file: "alpha.md",
-        documentId: ALPHA_ID,
-        find,
-        content,
-        tool_use_id: `later-${++tool}`,
-      },
-      context,
-    );
-  return { fixture, draftId, rows, target, responseId, context, read, write };
 }

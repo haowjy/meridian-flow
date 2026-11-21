@@ -12,3 +12,8 @@
   last control starts off-screen, nothing shows the row scrolls, and a vertical wheel
   doesn't move it. Give the clipped edge a visible cue (a fade, or wheel-to-horizontal
   scrolling) without moving controls into a menu.
+
+- `DocumentVersionMenu.tsx`: a document a draft created, shown on another owner's screen
+  (opened from Changes, then a chat switch), reads "Draft: Unnamed draft". The menu turns
+  draft hints off for a new document (`document.kind !== "new"`), so the chip has no label for
+  the owner. Name the owner from the Work or chat instead of the hint.

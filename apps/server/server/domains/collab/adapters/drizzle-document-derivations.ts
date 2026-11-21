@@ -1,4 +1,5 @@
 /** Journal-locked cuts and compare-and-set writes of document derived outputs. */
+import type { DraftId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
@@ -9,6 +10,7 @@ import {
   documentYjsHeads,
   treeNodes,
 } from "@meridian/database";
+import { sameValue } from "@meridian/suggestions";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import {
@@ -20,6 +22,7 @@ import {
 import type { DocumentLastAddress } from "../../context/document-uri-resolver.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import { documentHash } from "../domain/document-derivations.js";
 import {
   DOCUMENT_EXTRACTOR_VERSION,
@@ -39,7 +42,6 @@ export async function captureDocumentDerivation(
 ): Promise<DocumentDerivationCut | null> {
   const [row] = await tx
     .select({
-      generation: documentYjsHeads.authorityGeneration,
       admissionSequence: documentYjsHeads.nextAdmissionSequence,
       locationVersion: liveLocationVersion,
       inLive: sql<boolean>`${treeNodes.trashRecord} IS NULL AND ${treeNodes.id} IS NOT NULL`,
@@ -64,7 +66,6 @@ export async function captureDocumentDerivation(
     holderUri,
     state,
     watermark: {
-      generation: row.generation,
       admissionSequence: row.admissionSequence,
       locationVersion: row.locationVersion,
       extractorVersion: DOCUMENT_EXTRACTOR_VERSION,
@@ -93,6 +94,8 @@ export async function certifyDocumentDerivation(
   cut: DocumentDerivationCut,
   outputs: DocumentDerivationOutputs,
   at: Date,
+  /** The drafts whose pending suggestions in the document moved. */
+  pendingMoved?: (drafts: readonly DraftId[]) => Promise<void>,
 ): Promise<boolean> {
   const w = cut.watermark;
   const [head] = await tx
@@ -100,12 +103,7 @@ export async function certifyDocumentDerivation(
     .from(documentYjsHeads)
     .where(eq(documentYjsHeads.documentId, cut.documentId))
     .limit(1);
-  if (
-    !head ||
-    head.authorityGeneration !== w.generation ||
-    head.nextAdmissionSequence !== w.admissionSequence
-  )
-    return false;
+  if (head?.nextAdmissionSequence !== w.admissionSequence) return false;
   // A document no live row places derives at version 0; a replay that moves one waits here.
   const [location] = await tx
     .select({ version: treeNodes.locationVersion })
@@ -121,7 +119,6 @@ export async function certifyDocumentDerivation(
   if (room && room.extractorVersion > w.extractorVersion) return false;
   if (
     room &&
-    room.cutGeneration === w.generation &&
     room.cutAdmissionSeq === w.admissionSequence &&
     room.cutLocationVersion === w.locationVersion &&
     room.extractorVersion === w.extractorVersion
@@ -140,11 +137,17 @@ export async function certifyDocumentDerivation(
     .returning({ id: documents.id });
   if (!updated) return false;
 
+  const before = room?.pendingChanges ?? {};
+  const moved = [
+    ...new Set([...Object.keys(before), ...Object.keys(outputs.pendingChanges)]),
+  ].filter((draft) => !sameValue(before[draft], outputs.pendingChanges[draft]));
+  if (moved.length > 0) await pendingMoved?.(moved);
+
   const blockOrder = outputs.blocks.map((block) => block.id);
   const roomValues = {
     wordCount: outputs.wordCount,
+    pendingChanges: outputs.pendingChanges,
     documentHash: outputs.documentHash,
-    cutGeneration: w.generation,
     cutAdmissionSeq: w.admissionSequence,
     cutLocationVersion: w.locationVersion,
     extractorVersion: w.extractorVersion,
@@ -230,7 +233,18 @@ export function createDrizzleDocumentDerivationStore(
   db: Database,
   lastAddress: DocumentLastAddress,
   aheads?: { registry: AheadRegistrationRecovery; eventSink?: EventSink },
+  /** Wakes a Work's review list and recounts it when its suggestions in a document moved. */
+  workProjection?: Pick<
+    WorkProjectionMutation,
+    "liveChangedUnder" | "ownersOf" | "recountAfterCommit"
+  >,
 ): DocumentDerivationStore {
+  const pendingMoved = workProjection
+    ? async (drafts: readonly DraftId[]) => {
+        workProjection.liveChangedUnder(drafts);
+        workProjection.recountAfterCommit(await workProjection.ownersOf({ drafts: drafts }));
+      }
+    : undefined;
   const page = async (
     scope: Parameters<AheadRegistrationRecovery["registerUnregistered"]>[0],
     after: string | undefined,
@@ -284,7 +298,7 @@ export function createDrizzleDocumentDerivationStore(
       return runInDrizzleTransaction(db, async () => {
         const tx = currentDrizzleDb(db);
         await lockDocumentMutation(tx, cut.documentId);
-        return certifyDocumentDerivation(tx, cut, outputs, at);
+        return certifyDocumentDerivation(tx, cut, outputs, at, pendingMoved);
       });
     },
     async stale(page) {

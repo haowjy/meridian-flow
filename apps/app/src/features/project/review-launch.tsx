@@ -1,21 +1,18 @@
 /**
  * The one review-launch path. Every launcher (the composer strip, a change card, a link to a draft,
- * the Work page, the version menu, the phone) calls `openAiDraft`: it sets the document's view to
+ * the Work page, the version menu, the phone) calls `openItem`: it sets the document's view to
  * that draft, with the clicked change as the pin's change, and opens the document in the pane
  * `place` picks. In main, the route command opens it and writes the address; beside, `place` shows it. That pane's host then paints the draft and focuses the change. Latest launch wins.
  */
 
-import { type BranchId, type DocumentId, draftItemKey } from "@meridian/contracts";
+import { type DocumentId, type DraftId, draftItemKey } from "@meridian/contracts";
 import type { EventRecord } from "@meridian/contracts/observability";
 import { createContext, type ReactNode, useCallback, useContext, useRef } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import {
-  claimDocumentTarget,
-  whenReviewEditorMounted,
-} from "@/core/editor/reading-position-navigation";
+import { claimDocumentTarget, whenEditorMounted } from "@/core/editor/reading-position-navigation";
 import { appendTraceEvent } from "@/features/debug/trace/trace-store";
 import type { ReviewFocus } from "@/features/draft-review/review-model";
 import type { LinkDocumentRef } from "@/features/links";
@@ -28,8 +25,8 @@ import { contextRouteRequest } from "./routing/project-route";
 import { useOptionalPlaceHere } from "./side/SideView";
 import { useShellTreeVersion } from "./tree-version";
 
-export type AiDraftLaunchTarget = {
-  ownerKey: string;
+export type ItemLaunchTarget = {
+  draftId: string;
   documentId: string;
   itemKey: string;
   contextLocation: Pick<ContextUri, "scheme" | "path">;
@@ -42,11 +39,11 @@ export type AiDraftLaunchTarget = {
   made?: true;
 };
 
-type EditorReviewCommand = (target: AiDraftLaunchTarget) => Promise<void>;
+type EditorReviewCommand = (target: ItemLaunchTarget) => Promise<void>;
 
 function reportRouteSettlement(
   projectId: string,
-  target: AiDraftLaunchTarget,
+  target: ItemLaunchTarget,
   kind: "applied" | "cancelled" | "superseded" | "failed",
   attempt: number,
 ): void {
@@ -61,7 +58,7 @@ function reportRouteSettlement(
     payload: {
       kind,
       attempt,
-      ownerKey: target.ownerKey,
+      draftId: target.draftId,
       documentId: target.documentId,
       itemKey: target.itemKey,
     },
@@ -89,7 +86,7 @@ export function ReviewLaunchProvider({
       const pin = () =>
         setDocumentView(accountId, projectId, target.documentId, {
           pin: {
-            ownerKey: target.ownerKey,
+            draftId: target.draftId,
             itemKey: target.itemKey,
             ...(target.focus ? { changeId: target.focus.id } : {}),
           },
@@ -111,7 +108,6 @@ export function ReviewLaunchProvider({
               document: tab ?? undefined,
               draftOnly: target.draftOnly,
               itemKey: target.itemKey,
-              reviewOwner: target.ownerKey,
               changeId: target.focus?.id,
               ...(target.made ? { focus: true as const } : {}),
               canCommit: () => sequence.current === launch,
@@ -121,7 +117,7 @@ export function ReviewLaunchProvider({
           reportRouteSettlement(projectId, target, result.kind, attempt + 1);
           if (result.kind === "failed") throw result.error;
           if (result.kind === "applied") {
-            await whenReviewEditorMounted(target.documentId, AbortSignal.timeout(5_000));
+            await whenEditorMounted(target.documentId, AbortSignal.timeout(5_000));
             return;
           }
           if (result.kind !== "superseded" || sequence.current !== launch) return;
@@ -148,14 +144,19 @@ function useOptionalOpenEditorReview(): EditorReviewCommand | null {
 
 const committed = (documentId: string): OpenDocumentOutcome => ({ kind: "committed", documentId });
 
-/** Opens a document on a draft, in the pane `place` picks. */
-function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOutcome> {
+/** Opens a draft item's document in review, in the pane `place` picks. */
+function useOpenItem(): (target: ItemLaunchTarget) => Promise<OpenDocumentOutcome> {
   const openEditorReview = useOptionalOpenEditorReview();
   const place = useOptionalPlaceHere();
+  const shell = useShellTreeVersion();
+  // A draft of the toggle's Work is that Work's version of the page: the toggle goes to Draft.
+  const showsWork = shell?.show;
+  const workOwner = shell?.draftId;
   return useCallback(
     (target) => {
+      if (showsWork && target.draftId === workOwner) showsWork("draft");
       const draft = {
-        ownerKey: target.ownerKey,
+        draftId: target.draftId,
         itemKey: target.itemKey,
         ...(target.focus ? { changeId: target.focus.id } : {}),
       };
@@ -171,41 +172,36 @@ function useOpenDraft(): (target: AiDraftLaunchTarget) => Promise<OpenDocumentOu
         },
       );
     },
-    [place, openEditorReview],
+    [place, openEditorReview, showsWork, workOwner],
   );
 }
 
-export function useAiDraftLauncher() {
-  const openDraft = useOpenDraft();
-  const shell = useShellTreeVersion();
-  // A draft of the toggle's Work is that Work's version of the page: the toggle goes to Draft.
-  const showsWork = shell?.show;
-  const workOwner = shell?.ownerKey;
-  const openAiDraft = useCallback(
-    (target: AiDraftLaunchTarget) => {
-      if (showsWork && target.ownerKey === workOwner) showsWork("draft");
-      void openDraft(target);
+export function useItemLauncher() {
+  const open = useOpenItem();
+  const openItem = useCallback(
+    (target: ItemLaunchTarget) => {
+      void open(target);
     },
-    [openDraft, showsWork, workOwner],
+    [open],
   );
 
-  /** Opens a listed draft in review. A draft with no address yet (still being written) has nothing to open. */
+  /** Opens a listed item in review. An item with no address yet (still being written) has nothing to open. */
   const openReviewFile = useCallback(
-    (row: ReviewFileTarget, ownerKey: string, focus?: ReviewFocus) =>
+    (row: ReviewFileTarget, draftId: string, focus?: ReviewFocus) =>
       row.contextLocation &&
-      openAiDraft({
-        ownerKey,
+      openItem({
+        draftId,
         documentId: row.documentId,
-        itemKey: row.draft.itemKey,
+        itemKey: row.item.itemKey,
         contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
         draftOnly: row.draftOnly,
         ...(focus ? { focus } : {}),
       }),
-    [openAiDraft],
+    [openItem],
   );
 
-  return { openAiDraft, openReviewFile };
+  return { openItem, openReviewFile };
 }
 
 /** A document the writer just made: where the version it was made in puts it. */
@@ -228,16 +224,15 @@ export function useOpenCreatedDocument(): (
   opened?: () => void,
 ) => Promise<void> {
   const shell = useShellTreeVersion();
-  const { openAiDraft } = useAiDraftLauncher();
-  const branchId = shell?.version.view.draft ?? null;
-  const ownerKey = shell?.ownerKey ?? null;
+  const { openItem } = useItemLauncher();
+  const shown = shell?.version.view.draft ?? null;
   return useCallback(
     async (document, live, opened) => {
-      if (!branchId || !ownerKey) return live();
-      openAiDraft({
-        ownerKey,
+      if (!shown) return live();
+      openItem({
+        draftId: shown,
         documentId: document.documentId,
-        itemKey: draftItemKey(branchId as BranchId, document.documentId as DocumentId),
+        itemKey: draftItemKey(shown as DraftId, document.documentId as DocumentId),
         contextLocation: document.contextLocation,
         documentName: document.documentName,
         draftOnly: true,
@@ -245,7 +240,7 @@ export function useOpenCreatedDocument(): (
       });
       opened?.();
     },
-    [branchId, ownerKey, openAiDraft],
+    [shown, openItem],
   );
 }
 
@@ -263,30 +258,30 @@ export type LinkPlacement = (
  * What a followed link opens: the one rule for links in a chat or a page, a chat's doors and its
  * "Drafted N documents" rows. The pane is `place`'s.
  * - A page only a draft holds (`document.review`) opens on that draft.
- * - A page `ownerKey` drafted opens on that draft, as the draft strip does.
+ * - A page `draftId` drafted opens on that draft, as the draft strip does.
  * - Any other page opens through `live`. Once the opener knows what it is, a chat's upload opens in
  *   its viewer wherever the link is (no pane holds one), a page in the trash opens in main, and any
  *   other page is placed beside in the link's Work (`placeBeside`) or opens in main.
  */
-export function useLinkPlacement(projectId: string | null, ownerKey: string | null): LinkPlacement {
-  const { fileForDocument } = useOwnerDrafts(projectId, ownerKey);
-  const openDraft = useOpenDraft();
+export function useLinkPlacement(projectId: string | null, draftId: string | null): LinkPlacement {
+  const { fileForDocument } = useOwnerDrafts(projectId, draftId);
+  const openItem = useOpenItem();
   const place = useOptionalPlaceHere();
   return useCallback(
     (document, live, workId) => {
       if (document.review)
-        return openDraft({
+        return openItem({
           documentId: document.documentId,
           ...document.review,
           draftOnly: true,
         });
       if (document.trashed) return live(document);
-      const drafted = ownerKey ? fileForDocument(document.documentId) : null;
-      if (ownerKey && drafted?.contextLocation)
-        return openDraft({
-          ownerKey,
+      const drafted = draftId ? fileForDocument(document.documentId) : null;
+      if (draftId && drafted?.contextLocation)
+        return openItem({
+          draftId,
           documentId: document.documentId,
-          itemKey: drafted.draft.itemKey,
+          itemKey: drafted.item.itemKey,
           contextLocation: drafted.contextLocation,
           documentName: drafted.documentName ?? undefined,
           draftOnly: drafted.draftOnly,
@@ -298,7 +293,7 @@ export function useLinkPlacement(projectId: string | null, ownerKey: string | nu
       } as const;
       return live(document, place ? () => place(placed) === "side" : undefined);
     },
-    [fileForDocument, ownerKey, openDraft, place],
+    [fileForDocument, draftId, openItem, place],
   );
 }
 

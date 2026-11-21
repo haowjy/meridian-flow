@@ -9,6 +9,7 @@
 
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protocol";
+import { draftOf } from "@meridian/contracts/works";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { DraftPin } from "@/client/project-shell/document-views";
 import { LiveTabsProvider } from "@/client/project-shell/live-tabs";
@@ -20,18 +21,12 @@ import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { patchAccountRecentsFromDocuments } from "@/client/recents";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
-import { DraftOnlySettlement } from "@/features/draft-review/DraftOnlySettlement";
-import { chatOwnerKey } from "@/features/draft-review/draft-owner-key";
-import {
-  useWorkBranchCommands,
-  type WorkBranchCommands,
-} from "@/features/draft-review/useWorkBranchCommands";
+import { usePressCommands, type WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { ImportProvider } from "@/features/import/ImportProvider";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
 import {
   useAccountId,
   useDraftCommandOwner,
-  useOptionalDraftOnlyPresentations,
   useOptionalPresentedDocuments,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
@@ -52,7 +47,12 @@ import type { ProjectRouteIssue, ProjectRouteMask } from "./routing/ProjectRoute
 import { contextRouteRequest, type ProjectRouteCommands } from "./routing/project-route";
 import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { ChatDeleteProvider } from "./shell/sidebar/ChatDeleteProvider";
-import { SideViewProvider, useChatOnScreen, usePlaceChat } from "./side/SideView";
+import {
+  SideViewProvider,
+  useChatOnScreen,
+  useNewChatOnScreen,
+  usePlaceChat,
+} from "./side/SideView";
 import type { MainForSide } from "./side/side-item";
 import { TreeVersionProvider } from "./tree-version";
 import { useMainArrival } from "./use-main-arrival";
@@ -93,10 +93,8 @@ export type ProjectViewProps = {
   activeContextChat: string | null;
   /** Draft identity persisted by an Editor document address. */
   reviewItemKey?: string;
-  /** Whose draft the address's item reviews (`addressReviewOwner`). */
+  /** The draft the address's item reviews (`addressReviewDraft`). */
   reviewOwner?: string | null;
-  /** The owner the address itself names (a Scratch document's or a draft's), if any. */
-  reviewAddressOwner?: string;
   reviewChangeId?: string;
   /** Document the Editor address resolved to; a review follows it through a rename. */
   reviewAddressDocumentId?: string;
@@ -119,7 +117,6 @@ export function ProjectView(props: ProjectViewProps) {
   const projectTitle = cachedProject?.title ?? props.project.title;
   const renameProject = useRenameProject(cachedProject ?? props.project);
   const accountId = useAccountId();
-  const draftOnlyDocuments = useOptionalDraftOnlyPresentations();
   useProjectWake(props.projectId);
   const presented = useOptionalPresentedDocuments();
   useEffect(() => {
@@ -128,22 +125,14 @@ export function ProjectView(props: ProjectViewProps) {
         accountId,
         props.projectId,
         (presented?.documents(props.projectId) ?? []).flatMap((tab) => {
-          const address = recentAddressFromTab(
-            tab,
-            draftOnlyDocuments?.isDraftOnly(props.projectId, tab.documentId) ?? false,
-          );
+          const address = recentAddressFromTab(tab);
           return address ? [{ documentId: tab.documentId, name: tab.name, address }] : [];
         }),
       );
     };
     patchRecents();
-    const stopPresented = presented?.subscribe(patchRecents);
-    const stopDraftOnly = draftOnlyDocuments?.subscribe(patchRecents);
-    return () => {
-      stopPresented?.();
-      stopDraftOnly?.();
-    };
-  }, [accountId, draftOnlyDocuments, presented, props.projectId]);
+    return presented?.subscribe(patchRecents);
+  }, [accountId, presented, props.projectId]);
   const worksQuery = useWorks(props.projectId);
   const { works, noWork } = worksQuery;
   const editorScope = useWorkScopeState(props.projectId);
@@ -224,7 +213,7 @@ export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
     /** The chat on screen's Work (main's chat, or the side's beside a document). */
     chatWork: Work | null;
-    chatCommands: WorkBranchCommands;
+    chatCommands: WorkDraftCommands;
     /** Main keeps its previous document painted while the new address loads. */
     retainEditorWhileLoading?: boolean;
   };
@@ -356,6 +345,7 @@ function HydratedReviewControllers({
 }) {
   // Under None the draft scope is the chat on screen: beside a document, the side's chat.
   const chatThreadId = useChatOnScreen();
+  const newChat = useNewChatOnScreen();
   // Every chat door and reveal opens through the one placement command.
   const openThread = usePlaceChat();
   useConversationRevealRouting(openThread);
@@ -365,10 +355,10 @@ function HydratedReviewControllers({
   const chatWork = chatThread?.workId
     ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId)
     : null;
-  const chatCommands = useWorkBranchCommands({
+  const chatCommands = usePressCommands({
     projectId: props.projectId,
     work: chatWork,
-    ownerKey: chatOwnerKey(chatWork, chatThread?.rootThreadId ?? null),
+    draftId: chatWork && chatThread ? draftOf(chatThread, chatWork) : "",
     threadId: chatThreadId,
     surface: "strip",
   });
@@ -382,7 +372,6 @@ function HydratedReviewControllers({
     locationKey: props.routeLocationKey,
     reviewOwner: props.reviewOwner ?? null,
     address: {
-      owner: props.reviewAddressOwner,
       itemKey: props.reviewItemKey,
       changeId: props.reviewChangeId,
       documentId: main,
@@ -402,9 +391,12 @@ function HydratedReviewControllers({
   return (
     <ChatThreadNavigationProvider onOpenThread={openThread}>
       <MainReviewAddressContext.Provider value={main ? mainAddress : null}>
-        <DraftOnlySettlement projectId={props.projectId} />
         <LiveTabsProvider projectId={props.projectId}>
-          <TreeVersionProvider projectId={props.projectId} chatThreadId={chatThreadId}>
+          <TreeVersionProvider
+            projectId={props.projectId}
+            chatThreadId={chatThreadId}
+            newChat={newChat}
+          >
             {usePhone ? <MobileProject {...scopedProps} /> : <DesktopProject {...scopedProps} />}
           </TreeVersionProvider>
         </LiveTabsProvider>

@@ -42,7 +42,7 @@ function input(overrides: Partial<UserTurnAdmissionInput> = {}): UserTurnAdmissi
       { type: "image", documentId, uri },
     ],
     references: [
-      { kind: "document" as const, documentId, uri, purpose: "draft-upload", intakeId: "intake-1" },
+      { kind: "document" as const, documentId, uri, purpose: "upload", intakeId: "intake-1" },
     ],
     ...overrides,
   };
@@ -89,7 +89,7 @@ function availableResolution(resolvedUri = uri) {
 function harness(
   existing: AdmissionRecord | null = null,
   resolutions: readonly unknown[] = [availableResolution()],
-  draftUploadMatches = true,
+  chatUploadMatches = true,
   authorizeActivatedSkills?: (input: {
     threadId: string;
     slugs: readonly string[];
@@ -152,7 +152,7 @@ function harness(
     },
     availability,
     threadProject,
-    verifyDraftUpload: vi.fn(async () => draftUploadMatches),
+    verifyChatUpload: vi.fn(async () => chatUploadMatches),
     authorizeActivatedSkills,
     producer: { enqueue: producer },
   });
@@ -206,7 +206,7 @@ describe("UserTurnAdmission", () => {
     expect(() =>
       parseSubmittedReferences([
         { kind: "document" as const, documentId, uri, purpose: "reference" },
-        { kind: "document" as const, documentId, uri, purpose: "draft-upload", intakeId: "intake" },
+        { kind: "document" as const, documentId, uri, purpose: "upload", intakeId: "intake" },
       ]),
     ).toThrow(InvalidAdmissionError);
   });
@@ -242,7 +242,7 @@ describe("UserTurnAdmission", () => {
             kind: "document" as const,
             documentId: alternateId,
             uri,
-            purpose: "draft-upload",
+            purpose: "upload",
             intakeId: "intake-1",
           },
         ],
@@ -341,7 +341,7 @@ describe("UserTurnAdmission", () => {
         kind: "document" as const,
         documentId,
         uri,
-        purpose: "draft-upload",
+        purpose: "upload",
         intakeId: "intake-1",
         relationship: "created",
       },
@@ -415,12 +415,12 @@ describe("UserTurnAdmission", () => {
     ["upload identity mismatch", [availableResolution()], false],
   ])(
     "degrades %s identity in place without veto or retargeting",
-    async (_label, resolutions, draftUploadMatches) => {
+    async (_label, resolutions, chatUploadMatches) => {
       // A picture that can't be admitted fails the send, in the app's words for a failed upload.
       await expect(
-        harness(null, resolutions, draftUploadMatches).service.admit(input()),
+        harness(null, resolutions, chatUploadMatches).service.admit(input()),
       ).rejects.toThrow("The upload failed.");
-      const h = harness(null, resolutions, draftUploadMatches);
+      const h = harness(null, resolutions, chatUploadMatches);
       const mentionsOnly = input({
         blocks: (input().blocks as { type: string }[]).filter((block) => block.type !== "image"),
       });
@@ -472,7 +472,7 @@ describe("UserTurnAdmission", () => {
         documentId,
         uri: "uploads://@c1/moved.png",
         kind: "document" as const,
-        purpose: "draft-upload",
+        purpose: "upload",
         intakeId: "intake-1",
         relationship: "created",
       },
@@ -497,7 +497,7 @@ describe("UserTurnAdmission", () => {
               kind: "document",
               documentId,
               uri: bare,
-              purpose: "draft-upload",
+              purpose: "upload",
               intakeId: "intake-1",
             },
           ],

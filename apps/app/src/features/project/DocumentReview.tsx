@@ -12,7 +12,6 @@
  * hidden: a host that is not showing paints nothing of a draft, admits nothing, holds no draft
  * room and writes no pin, so Discard's Undo lands in the editor the writer sees.
  */
-import { workIdOfDraftOwnerKey } from "@meridian/contracts/branches";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -20,10 +19,10 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useState,
   useSyncExternalStore,
 } from "react";
 import { setDocumentView } from "@/client/project-shell/document-views";
-import { fetchCurrentDraftMetadata } from "@/client/query/useDraftMetadata";
 import { useWorks } from "@/client/query/useWorks";
 import type { OpenDocument } from "@/client/stores";
 import {
@@ -31,6 +30,7 @@ import {
   type DraftReviewContextValue,
   useDraftReviewScopeValue,
 } from "@/features/draft-review/DraftReviewProvider";
+import { HostEditor, HostEditorContext } from "@/features/draft-review/host-editor";
 import { useAccountId, useDraftCommandOwner } from "./context/account-feature-context";
 import { useShellTreeVersion } from "./tree-version";
 import {
@@ -49,7 +49,12 @@ export type MainReviewAddress = {
 };
 export const MainReviewAddressContext = createContext<MainReviewAddress | null>(null);
 
-export type DocumentReview = { value: DraftReviewContextValue; paint: DocumentPaint };
+export type DocumentReview = {
+  value: DraftReviewContextValue;
+  paint: DocumentPaint;
+  /** The editor the host shows: suggestion mode's review chrome reads the review there. */
+  editor: HostEditor;
+};
 
 const DocumentPaintContext = createContext<DocumentPaint | null>(null);
 
@@ -69,13 +74,13 @@ export function useDocumentReview(
   const documentId = tab?.documentId ?? null;
   const { workId: activeWorkId } = useWorkScopeState(projectId);
   const { works, noWork } = useWorks(projectId);
-  const ownerKey = paint.draft?.ownerKey ?? paint.view.pin?.ownerKey ?? paint.scopeOwnerKey ?? "";
+  const draftId = paint.draft?.draftId ?? paint.view.pin?.draftId ?? paint.scopeDraftId ?? "";
   // A lineage's drafts carry no Work: its review reads the scope's Work for archive state.
-  const reviewWorkId = workIdOfDraftOwnerKey(ownerKey) ?? activeWorkId;
   const reviewWork =
-    reviewWorkId === noWork?.id
+    (draftId ? works?.find((work) => work.draftId === draftId) : undefined) ??
+    (activeWorkId === noWork?.id
       ? noWork
-      : (works?.find((work) => work.id === reviewWorkId) ?? null);
+      : (works?.find((work) => work.id === activeWorkId) ?? null));
   const showChanges = paint.view.showChanges;
   const marks = useMemo(
     () => ({
@@ -96,7 +101,7 @@ export function useDocumentReview(
   const value = useDraftReviewScopeValue({
     projectId,
     work: reviewWork,
-    ownerKey,
+    draftId,
     threadId: null,
     marks,
     showLive,
@@ -105,11 +110,9 @@ export function useDocumentReview(
   const draftCommands = useDraftCommandOwner();
   const queryClient = useQueryClient();
   const reviewedItemKey = paint.draft?.itemKey ?? "";
-  const generation = () => draftCommands.generation(reviewedItemKey);
   const hidden = () => draftCommands.state(reviewedItemKey).hidden;
-  // A new generation of the item is a new port: admission retries what it refused. So is the
-  // end of a command that hid it: a refused Discard leaves the draft pending.
-  const itemGeneration = useSyncExternalStore(draftCommands.subscribe, generation, generation);
+  // The end of a press that hid the item is a new port: admission retries what it refused (a
+  // failed Discard leaves the draft pending).
   const itemHidden = useSyncExternalStore(draftCommands.subscribe, hidden, hidden);
   const enterInlineReview = value.controller.enterInlineReview;
   const port = useMemo<ReviewAdmissionPort>(
@@ -117,27 +120,15 @@ export function useDocumentReview(
       write: (review) => {
         if (documentId) setDocumentView(accountId, projectId, documentId, { pin: review });
       },
-      // A hidden draft (a Discard in flight) or a gone one (its Work or document was purged) has
-      // already ended its review: the room owner exits it. A draft-only document keeps naming it
-      // until settlement closes its tab, and admitting it again would re-open what the room
-      // owner just closed, every render.
+      // A draft a press has in flight has already left its review; admitting it again would
+      // re-open what the provider just closed, every render.
       admit: async (target) => {
-        const state = draftCommands.state(target.itemKey);
-        if (state.hidden || state.ended) return false;
+        if (draftCommands.state(target.itemKey).hidden) return false;
         enterInlineReview(target.documentId, target.itemKey);
         return true;
       },
     }),
-    [
-      accountId,
-      projectId,
-      documentId,
-      enterInlineReview,
-      draftCommands,
-      queryClient,
-      itemGeneration,
-      itemHidden,
-    ],
+    [accountId, projectId, documentId, enterInlineReview, draftCommands, queryClient, itemHidden],
   );
 
   const main = useContext(MainReviewAddressContext);
@@ -160,8 +151,9 @@ export function useDocumentReview(
         : null,
     [tab, paint.draft, paint.view.version],
   );
-  useReviewAdmission({ review: value, presented, admission, port });
-  return { value, paint };
+  const [editor] = useState(() => new HostEditor());
+  useReviewAdmission({ review: value, presented, admission, port, editor });
+  return { value, paint, editor };
 }
 
 /** Exposes one host's review to everything that host renders, in one or several subtrees. */
@@ -174,7 +166,9 @@ export function DocumentReviewBoundary({
 }) {
   return (
     <DraftReviewBoundary value={review.value}>
-      <DocumentPaintContext.Provider value={review.paint}>{children}</DocumentPaintContext.Provider>
+      <DocumentPaintContext.Provider value={review.paint}>
+        <HostEditorContext.Provider value={review.editor}>{children}</HostEditorContext.Provider>
+      </DocumentPaintContext.Provider>
     </DraftReviewBoundary>
   );
 }

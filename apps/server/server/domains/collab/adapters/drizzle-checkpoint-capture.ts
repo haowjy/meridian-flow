@@ -1,13 +1,24 @@
 /** Trusted checkpoint minting: a short locked range snapshot, then unlocked journal replay. */
+
+import { dropUnseenContent } from "@meridian/agent-edit/integration";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { documentYjsCheckpoints, documentYjsHeads, documentYjsUpdates } from "@meridian/database";
+import {
+  documentYjsCheckpoints,
+  documentYjsHeads,
+  documentYjsUpdates,
+  observationFrontiers,
+} from "@meridian/database";
 import { and, asc, desc, eq, gt, lte, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import type { CapturedCheckpointCut } from "../domain/checkpoint-cut.js";
+import { liveRoom } from "../domain/observation-rooms.js";
 import type { CheckpointAuthority } from "../domain/ports/checkpoint-authority.js";
 import { mintCheckpointCut } from "./checkpoint-capability.js";
-import { materializeCheckpoint } from "./checkpoint-materialization.js";
+import {
+  type MaterializedCheckpoint,
+  materializeCheckpoint,
+} from "./checkpoint-materialization.js";
 
 type JournalDb = Pick<Database, "select" | "execute">;
 const asDocumentId = (id: string) => id as DocumentId;
@@ -23,7 +34,7 @@ export async function captureDrizzleCheckpoint(
     floor_seq: string | number;
     ceiling_seq: string | number;
   }>(sql`select * from capture_document_checkpoint_range(
-    ${docId}::text, ${authority.authorityId}::uuid, ${authority.generation}::bigint
+    ${docId}::text, ${authority.authorityId}::uuid
   )`);
   if (!reference) return null;
   const selected = {
@@ -33,21 +44,24 @@ export async function captureDrizzleCheckpoint(
   };
   const validateInputs = async () => {
     const [head] = await currentDrizzleDb(db as Database)
-      .select({
-        authorityId: documentYjsHeads.authorityId,
-        generation: documentYjsHeads.authorityGeneration,
-      })
+      .select({ authorityId: documentYjsHeads.authorityId })
       .from(documentYjsHeads)
       .where(eq(documentYjsHeads.documentId, asDocumentId(docId)));
-    if (
-      !head ||
-      head.authorityId !== authority.authorityId ||
-      head.generation !== authority.generation
-    ) {
+    if (head?.authorityId !== authority.authorityId)
       throw new Error("Checkpoint inputs retired during materialization");
-    }
   };
-  let state: Promise<Uint8Array> | undefined;
+  // The room's latest model read: the chat working on the document now plans on it. Every
+  // chat's last read would keep each discarded rewrite a fresh chat wrote, for good.
+  const frontiers = async () =>
+    (
+      await currentDrizzleDb(db as Database)
+        .select({ snapshot: observationFrontiers.snapshot })
+        .from(observationFrontiers)
+        .where(eq(observationFrontiers.roomKey, liveRoom(docId)))
+        .orderBy(desc(observationFrontiers.recordedSeq))
+        .limit(1)
+    ).map((row) => new Uint8Array(row.snapshot));
+  let state: Promise<MaterializedCheckpoint> | undefined;
   const materialize = async () => {
     const readDb = currentDrizzleDb(db as Database) as JournalDb;
     // A store since the capture may have deleted the base (a superseded background checkpoint);
@@ -61,7 +75,6 @@ export async function captureDrizzleCheckpoint(
             and(
               eq(documentYjsCheckpoints.documentId, asDocumentId(docId)),
               eq(documentYjsCheckpoints.authorityId, authority.authorityId),
-              eq(documentYjsCheckpoints.authorityGeneration, authority.generation),
               lte(documentYjsCheckpoints.upToSeq, selected.floor),
             ),
           )
@@ -76,18 +89,18 @@ export async function captureDrizzleCheckpoint(
         and(
           eq(documentYjsUpdates.documentId, asDocumentId(docId)),
           eq(documentYjsUpdates.authorityId, authority.authorityId),
-          eq(documentYjsUpdates.authorityGeneration, authority.generation),
           gt(documentYjsUpdates.id, replayFloor),
           lte(documentYjsUpdates.id, selected.ceiling),
         ),
       )
       .orderBy(asc(documentYjsUpdates.id));
-    // Check after reading: a restore or removal since the capture invalidates the read.
+    // Check after reading: a removal since the capture invalidates the read.
     // Persistence repeats this check under the mutation lock.
     await validateInputs();
     return materializeCheckpoint(
       base ? new Uint8Array(base.state) : null,
       rows.map((row) => new Uint8Array(row.update)),
+      frontiers,
     );
   };
   return mintCheckpointCut({
@@ -98,9 +111,17 @@ export async function captureDrizzleCheckpoint(
     async materializeState() {
       await validateInputs();
       state ??= materialize();
-      const bytes = await state;
+      const bytes = (await state).state;
       await validateInputs();
       return bytes.slice();
+    },
+    async history() {
+      state ??= materialize();
+      const { state: bytes, structs, contentBytes } = await state;
+      return { bytes: bytes.byteLength, structs, contentBytes };
+    },
+    async dropUnseenContent(document) {
+      dropUnseenContent(document, await frontiers());
     },
   });
 }

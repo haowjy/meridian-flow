@@ -5,7 +5,7 @@
  */
 import type { AheadMint, DocumentLinksPort, WriteContext } from "@meridian/agent-edit/integration";
 import { type LinkView, parseLinkRef } from "@meridian/contracts";
-import { documentRevision } from "./document-revision.js";
+import { documentRevision, viewRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
 import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
@@ -14,6 +14,8 @@ export function createScopedDocumentLinks(input: {
   registrar: AheadRefRegistrar;
   /** The view a command on this document reads and writes in. */
   viewFor(documentId: string, context: WriteContext | undefined): LinkView;
+  /** The draft whose view of Live the core reads; null for Live's. */
+  draft: string | null;
 }): DocumentLinksPort {
   const { scopes } = input;
   const holder = (documentId: string, context: WriteContext | undefined) => ({
@@ -39,7 +41,7 @@ export function createScopedDocumentLinks(input: {
       if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
       else await input.registrar.register(registrations);
     },
-    revision: documentRevision,
+    revision: (doc, scope) => viewRevision(documentRevision(doc, scope), input.draft),
   };
 }
 
@@ -50,7 +52,7 @@ export function liveViewFor(_documentId: string, _context: WriteContext | undefi
 
 /**
  * The registry rows for minted ahead refs: each under the project its holder scope had,
- * and in the branch its holder was minted in (B7), so the branch's occupant settles it there.
+ * and in the draft its holder was minted in (B7), so the draft's occupant settles it there.
  */
 export function aheadRegistrations(mints: readonly AheadMint[]) {
   return mints.map((mint) => {
@@ -62,7 +64,7 @@ export function aheadRegistrations(mints: readonly AheadMint[]) {
       aheadId: parsed.aheadId,
       holderProjectId: mint.holderProjectId,
       address: mint.address,
-      ...(mint.view.kind === "branch" ? { branchId: mint.view.branchId } : {}),
+      ...(mint.view.kind === "draft" ? { draftId: mint.view.draftId } : {}),
     };
   });
 }

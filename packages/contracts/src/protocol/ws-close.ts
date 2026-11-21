@@ -6,10 +6,8 @@ export const WS_CLOSE = {
   AUTH_FAILED: { code: 4401, reason: "auth_failed" },
   AUTH_ERROR: { code: 1011, reason: "auth_error" },
   PERMISSION_DENIED: { code: 4403, reason: "permission-denied" },
-  /** Terminal: the draft's row was purged with its Work, so its room is gone. Never reconnect. */
-  DRAFT_PURGED: { code: 4205, reason: "purged" },
   /**
-   * The server could not store a writer's frame on a document room, Live or draft. Not terminal:
+   * The server could not store a writer's frame on a document room. Not terminal:
    * the client reconnects and its handshake resends. A client counts these, since a frame the
    * server can never store would otherwise loop.
    */

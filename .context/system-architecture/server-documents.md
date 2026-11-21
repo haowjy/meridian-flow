@@ -4,7 +4,7 @@ The domains that hold a writer's text and decide who may change it. When the mod
 
 ```mermaid
 flowchart LR
-  collab["collab<br/><small>live Yjs rooms, drafts, the write journal</small>"]:::domain
+  collab["collab<br/><small>live Yjs rooms, the press, the write journal</small>"]:::domain
   context["context<br/><small>document addresses and the file tree</small>"]:::domain
   file-policy["file-policy<br/><small>who may read or write a document</small>"]:::domain
   conversation["conversation<br/><small>the model's tool calls</small>"]:::context
@@ -31,9 +31,9 @@ flowchart LR
 
 ## collab
 
-Live documents: Yjs rooms, the write journal, drafts, branches and Apply.
+Live documents: Yjs rooms, the write journal, drafts, and the press (Apply or Discard over a draft's suggestions and tree, and its Undo).
 
-Runs the Hocuspocus rooms for live documents and drafts, and keeps the write journal, the inverses Undo applies, receipts and checkpoints. A write is journaled before the room accepts it.
+Runs the Hocuspocus rooms for live documents, presses a Work's suggestions (Apply, Discard), and keeps the write journal, the inverses Undo applies, receipts and checkpoints. A write is journaled before the room accepts it.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/collab`
@@ -45,7 +45,7 @@ Runs the Hocuspocus rooms for live documents and drafts, and keeps the write jou
 
 The context filesystem behind `manuscript://`, `kb://`, `user://`, `unfiled://`, `scratch://` and `uploads://`.
 
-The sources query, the tree, copy, uploads, links and arrivals. `skills://` exists for the model only. Writes to documents go through the collab engine. The project tree's list of records is stored through the collab journal and its rows are written with it (the tree list store). The model's tree commands (move, delete, restore, folders) are one command per tool call on that list; each resolves paths through the names the chat was shown and keeps a receipt for its Undo. Trash entries for a view, and the tree half of a Discard's entry, are read from the same list.
+The sources query, the tree, copy, uploads, links and arrivals. `skills://` exists for the model only. Writes to documents go through the collab engine. The project tree's list of records is stored through the collab journal and its rows are written with it (the tree list store). The model's tree commands (move, delete, restore, folders) are one command per tool call on that list; each resolves paths through the names the chat was shown and keeps a receipt for its Undo. Trash entries for a view are read from the same list.
 
 - Kind: domain
 - Paths: `apps/server/server/domains/context`
@@ -62,7 +62,7 @@ Answers who may read or write a document, and why not. A route asks `requireFile
 - Kind: domain
 - Paths: `apps/server/server/domains/file-policy`
 - Docs: [CONTEXT](../../apps/server/server/domains/file-policy/.context/CONTEXT.md)
-- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also imports `collab/adapters/drizzle-branches.ts`.
+- Breaks: In the import cycle, which the root CONTEXT.md rules out. It also imports `collab/adapters/drizzle-drafts.ts`.
 
 ## conversation
 

@@ -1,6 +1,5 @@
-import type { BranchId } from "@meridian/contracts";
-import type { Branches } from "../../collab/domain/branches.js";
-import type { ContextCommandBranch } from "../ports/context-command-transaction.js";
+import type { DraftId } from "@meridian/contracts";
+import type { ContextCommandDraft } from "../ports/context-command-transaction.js";
 /**
  * Copy: one atomic command per drop, for a selection of roots into one destination.
  *
@@ -41,7 +40,6 @@ import type { ContextCommandBranch } from "../ports/context-command-transaction.
  */
 
 import { setTimeout as delay } from "node:timers/promises";
-import { draftOwnerKey } from "@meridian/contracts";
 import type { Settlement } from "@meridian/contracts/commands";
 import type {
   ContextOperationCommand,
@@ -52,10 +50,11 @@ import type {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { PMNode } from "@meridian/markup";
 import { decodeStateVector } from "yjs";
+import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { closedOwnerBounce } from "../../collab/adapters/closed-owner-bounce.js";
 import type { CollabDomain } from "../../collab/index.js";
+import { WorkLifecycleUnavailableError } from "../../projects/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import { prepareBinaryCopy } from "../binary-copy.js";
 import { adapterFaultToContextError } from "../context/adapter-fault.js";
@@ -118,12 +117,11 @@ export interface CopyDestinationHandoff {
   /** The folder the writer named by id, and the folders to make under it; `dir` spells where it stands. */
   parent?: { folderId: string; createFolders: readonly string[] };
   /** The Work's draft this copy lands in, when the destination is a drafted scheme's draft view. */
-  branch: ContextCommandBranch | null;
+  draft: ContextCommandDraft | null;
 }
 
 export interface ContextCopyCommandDeps {
   documentSync: Pick<CollabDomain, "readEffectiveBlocks" | "bindCopiedBlocks" | "encodeSeed">;
-  branches: Pick<Branches, "viewForOwner">;
   objectStore: ObjectStorePort;
   release: Pick<ObjectRelease, "keys">;
 }
@@ -213,11 +211,11 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
             if (putKeys.length > 0) deferUntilDrizzleRollback(() => deps.release.keys(putKeys));
             try {
               return await commandTransaction.run(
-                (command) => write(selected, prepared.value, command.branch?.id ?? null),
+                (command) => write(selected, prepared.value, command.draft?.id ?? null),
                 [scopeOf(input.destination)],
                 {
                   sourceIds: prepared.value.sourceIds,
-                  ...(input.destination.branch ? { branch: input.destination.branch } : {}),
+                  ...(input.destination.draft ? { draft: input.destination.draft } : {}),
                 },
               );
             } catch (cause) {
@@ -254,7 +252,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
       }
       const view =
         source.view.kind === "draft"
-          ? await deps.branches.viewForOwner(source.view.owner)
+          ? { kind: "draft" as const, draftId: source.view.draft }
           : { kind: "live" as const };
       const snapshot = await source.copy.snapshotSource({
         id: source.expected.nodeId,
@@ -412,7 +410,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
     for (;;) {
       const read = await deps.documentSync.readEffectiveBlocks(
         draft
-          ? { documentId, destination: "draft", owner: draft.owner }
+          ? { documentId, destination: "draft", draft: draft.draft }
           : { documentId, destination: "live" },
       );
       if (!read.ok) {
@@ -454,7 +452,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
   async function write(
     input: ContextCopyInput,
     prepared: PreparedCopy,
-    branchId: BranchId | null,
+    draftId: DraftId | null,
   ): Promise<Result<CopyContextEntriesResult, ContextError>> {
     const destination = await resolvedDestination(input);
     if (!destination.ok) return destination;
@@ -476,7 +474,7 @@ export function createContextCopyCommand(deps: ContextCopyCommandDeps): ContextC
         ...(dest.parent ? { parent: dest.parent } : {}),
         plan: planned.value.plan,
         contents: planned.value.contents,
-        branchId,
+        draftId,
         ...(input.request.position ? { position: input.request.position } : {}),
       });
       if (!inserted.ok) return Err(adapterFaultToContextError(inserted.error, dest.uri));
@@ -582,7 +580,7 @@ function scopeOf(destination: CopyDestinationHandoff): ContextCommandScope {
 export function receiptCommand(
   sources: readonly Pick<CopySourceHandoff, "uri" | "view" | "expected" | "copyId">[],
   destinationUri: string,
-  request: Pick<ContextCopyRequest, "destinationParent" | "destinationBranch" | "position">,
+  request: Pick<ContextCopyRequest, "destinationParent" | "destinationDraft" | "position">,
 ): ContextOperationCommand {
   return {
     kind: "copy",
@@ -590,19 +588,17 @@ export function receiptCommand(
       (source): CopyContextEntryCommandSource => ({
         uri: source.uri,
         view:
-          source.view.kind === "draft"
-            ? { kind: "draft", owner: draftOwnerKey(source.view.owner) }
-            : source.view,
+          source.view.kind === "draft" ? { kind: "draft", draft: source.view.draft } : source.view,
         expected: source.expected,
         ...(source.copyId ? { copyId: source.copyId } : {}),
       }),
     ),
     destinationUri,
-    ...(request.destinationBranch
+    ...(request.destinationDraft
       ? {
           destinationView: {
             kind: "draft" as const,
-            owner: draftOwnerKey(request.destinationBranch.owner),
+            draft: request.destinationDraft.draftId,
           },
         }
       : {}),
@@ -672,4 +668,18 @@ function behind(client: ReadonlyMap<number, number>, server: Uint8Array): boolea
     if (clock > (held.get(clientId) ?? 0)) return true;
   }
   return false;
+}
+
+/**
+ * The Work lock found the destination's owner closed (an archived or deleted Work, a chat in
+ * Trash): the `returned` the command stores in place of the throw. Any other cause is undefined.
+ */
+function closedOwnerBounce(cause: unknown): Settlement[] | undefined {
+  if (cause instanceof LineageDraftsUnavailableError)
+    return [{ rule: "returned", why: "chat_frozen" }];
+  if (cause instanceof WorkLifecycleUnavailableError && cause.state !== "missing")
+    return [
+      { rule: "returned", why: cause.state === "archived" ? "work_archived" : "work_deleted" },
+    ];
+  return undefined;
 }

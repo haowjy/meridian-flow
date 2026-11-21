@@ -44,7 +44,7 @@ const ZIP_HEADROOM_BYTES = 64 * 1024 ** 2;
 
 export function createProjectExport(deps: {
   snapshot: ExportSnapshotStore;
-  pendingDrafts: { count(projectId: string): Promise<number> };
+  pendingDocuments: { count(projectId: string): Promise<number> };
   documents: ExportDocumentReader;
   files: Pick<FileAccess, "listAccess">;
   objects: Pick<ObjectStorePort, "getStream">;
@@ -253,11 +253,11 @@ export function createProjectExport(deps: {
     ): Promise<ProjectExportPreview> {
       const scope = await createScope(projectId, accountId, options);
       signal?.throwIfAborted();
-      const [outsideLinks, pendingDrafts] = await Promise.all([
+      const [outsideLinks, pendingDocuments] = await Promise.all([
         scope.summarize(signal),
-        deps.pendingDrafts.count(projectId),
+        deps.pendingDocuments.count(projectId),
       ]);
-      return { outsideLinks, pendingDrafts, refusal: scope.refusal() };
+      return { outsideLinks, pendingDocuments, refusal: scope.refusal() };
     },
     async download(
       projectId: string,

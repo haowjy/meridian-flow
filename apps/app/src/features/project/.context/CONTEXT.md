@@ -281,12 +281,16 @@ document id per account and project in session storage: Live or Draft, the pinne
 item), and Show changes. A document opens on Live; a draft paints only when the writer picks it or
 arrives at an address naming it, and a draft-created document paints its own draft. `views.ts`
 resolves the paint and holds it while the pinned owner's list loads, so a document never paints
-Live and then the draft.
+Live and then the draft. A view lasts only as long as the scope's draft owner: when a Work pick, a
+chat switch or a new chat's composer changes whose drafts the scope shows, pins to another owner's
+draft end and the toggle goes to Draft (`enterScope`): each page shows the new scope's own draft
+where it has one, else Live, and never the chat before's draft. A page only a draft holds stays on
+it.
 
 Every document host (main, the side, the phone) has its own review (`DocumentReview.tsx`);
 `useReviewAdmission` makes it enter, keep or leave the draft its paint names. Only a host on screen
 reviews: a host that is not showing (the kept document, a closed side) paints no draft, admits
-nothing, holds no draft room and writes no pin. That keeps one review per document, and Discard
+nothing and writes no pin. That keeps one review per document, and Discard
 writes into the issuing host's own editor, whose Undo takes it back.
 
 Main's address and main's view stay in step (`use-review-address-sync.ts`): an address arriving by

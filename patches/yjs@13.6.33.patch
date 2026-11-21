@@ -1,5 +1,5 @@
 diff --git a/dist/yjs.cjs b/dist/yjs.cjs
-index a29f8ef1834d884d6650fde67c5541643f8a9d55..f6bca2a9947983b9499fcb47f753ce99027c1dff 100644
+index a29f8ef1834d884d6650fde67c5541643f8a9d55..f3081e819cc2eef43c063d6705accccb918ca021 100644
 --- a/dist/yjs.cjs
 +++ b/dist/yjs.cjs
 @@ -3526,18 +3526,38 @@ const popStackItem = (undoManager, stack, eventType) => {
@@ -50,7 +50,34 @@ index a29f8ef1834d884d6650fde67c5541643f8a9d55..f6bca2a9947983b9499fcb47f753ce99
          }
        });
        iterateDeletedStructs(transaction, stackItem.deletions, struct => {
-@@ -9570,6 +9590,7 @@ const followRedone = (store, id) => {
+@@ -6794,9 +6814,9 @@ const deleteText = (transaction, currPos, length) => {
+     }
+     currPos.forward();
+   }
+-  if (start) {
+-    cleanupFormattingGap(transaction, start, currPos.right, startAttrs, currPos.currentAttributes);
+-  }
++  // Meridian patch: no cleanup of the format items a delete leaves redundant. A peer that inserted
++  // text between them concurrently needs them: without the item that closes a mark before its
++  // text, the text takes that mark once the two merge.
+   const parent = /** @type {AbstractType<any>} */ (/** @type {Item} */ (currPos.left || currPos.right).parent);
+   if (parent._searchMarker) {
+     updateMarkerChanges(parent._searchMarker, currPos.index, -startLength + length);
+@@ -7159,10 +7179,9 @@ class YText extends AbstractType {
+     super._callObserver(transaction, parentSubs);
+     const event = new YTextEvent(this, transaction, parentSubs);
+     callTypeObservers(this, transaction, event);
+-    // If a remote change happened, we try to cleanup potential formatting duplicates.
+-    if (!transaction.local && this._hasFormatting) {
+-      transaction._needFormattingCleanup = true;
+-    }
++    // Meridian patch: no cleanup of formatting after a remote change. Each peer would delete what
++    // looks redundant in its own copy, which a concurrent insertion elsewhere still needs (see
++    // `deleteText`).
+   }
+ 
+   /**
+@@ -9570,6 +9589,7 @@ const followRedone = (store, id) => {
     */
    let nextID = id;
    let diff = 0;
@@ -58,7 +85,7 @@ index a29f8ef1834d884d6650fde67c5541643f8a9d55..f6bca2a9947983b9499fcb47f753ce99
    let item;
    do {
      if (diff > 0) {
-@@ -9577,10 +9598,11 @@ const followRedone = (store, id) => {
+@@ -9577,10 +9597,11 @@ const followRedone = (store, id) => {
      }
      item = getItem(store, nextID);
      diff = nextID.clock - item.id.clock;
@@ -72,7 +99,7 @@ index a29f8ef1834d884d6650fde67c5541643f8a9d55..f6bca2a9947983b9499fcb47f753ce99
  };
  
 diff --git a/dist/yjs.mjs b/dist/yjs.mjs
-index bd77560daff905e0c1785080a1b2ca4c52425e2b..d4e467ca02338bbe12dabd97d3603c8f72c74620 100644
+index bd77560daff905e0c1785080a1b2ca4c52425e2b..4e62d171c70dde8ff4b6aaf65e33ffa3335a1edd 100644
 --- a/dist/yjs.mjs
 +++ b/dist/yjs.mjs
 @@ -3489,18 +3489,38 @@ const popStackItem = (undoManager, stack, eventType) => {
@@ -123,7 +150,34 @@ index bd77560daff905e0c1785080a1b2ca4c52425e2b..d4e467ca02338bbe12dabd97d3603c8f
          }
        });
        iterateDeletedStructs(transaction, stackItem.deletions, struct => {
-@@ -9533,6 +9553,7 @@ const followRedone = (store, id) => {
+@@ -6757,9 +6777,9 @@ const deleteText = (transaction, currPos, length) => {
+     }
+     currPos.forward();
+   }
+-  if (start) {
+-    cleanupFormattingGap(transaction, start, currPos.right, startAttrs, currPos.currentAttributes);
+-  }
++  // Meridian patch: no cleanup of the format items a delete leaves redundant. A peer that inserted
++  // text between them concurrently needs them: without the item that closes a mark before its
++  // text, the text takes that mark once the two merge.
+   const parent = /** @type {AbstractType<any>} */ (/** @type {Item} */ (currPos.left || currPos.right).parent);
+   if (parent._searchMarker) {
+     updateMarkerChanges(parent._searchMarker, currPos.index, -startLength + length);
+@@ -7122,10 +7142,9 @@ class YText extends AbstractType {
+     super._callObserver(transaction, parentSubs);
+     const event = new YTextEvent(this, transaction, parentSubs);
+     callTypeObservers(this, transaction, event);
+-    // If a remote change happened, we try to cleanup potential formatting duplicates.
+-    if (!transaction.local && this._hasFormatting) {
+-      transaction._needFormattingCleanup = true;
+-    }
++    // Meridian patch: no cleanup of formatting after a remote change. Each peer would delete what
++    // looks redundant in its own copy, which a concurrent insertion elsewhere still needs (see
++    // `deleteText`).
+   }
+ 
+   /**
+@@ -9533,6 +9552,7 @@ const followRedone = (store, id) => {
     */
    let nextID = id;
    let diff = 0;
@@ -131,7 +185,7 @@ index bd77560daff905e0c1785080a1b2ca4c52425e2b..d4e467ca02338bbe12dabd97d3603c8f
    let item;
    do {
      if (diff > 0) {
-@@ -9540,10 +9561,11 @@ const followRedone = (store, id) => {
+@@ -9540,10 +9560,11 @@ const followRedone = (store, id) => {
      }
      item = getItem(store, nextID);
      diff = nextID.clock - item.id.clock;
@@ -177,6 +231,37 @@ index fca5827090ca1b0fd6fdff1b74d260308e6c9196..97860bf787f2f4a261161ec09627c10c
    }
  }
  
+diff --git a/src/types/YText.js b/src/types/YText.js
+index 75bf5dd646e2eb9d120e07d76a06afb5bd2d96dc..4321240e64d2e96711bdb264c1e16e868c24560d 100644
+--- a/src/types/YText.js
++++ b/src/types/YText.js
+@@ -556,9 +556,9 @@ const deleteText = (transaction, currPos, length) => {
+     }
+     currPos.forward()
+   }
+-  if (start) {
+-    cleanupFormattingGap(transaction, start, currPos.right, startAttrs, currPos.currentAttributes)
+-  }
++  // Meridian patch: no cleanup of the format items a delete leaves redundant. A peer that inserted
++  // text between them concurrently needs them: without the item that closes a mark before its
++  // text, the text takes that mark once the two merge.
+   const parent = /** @type {AbstractType<any>} */ (/** @type {Item} */ (currPos.left || currPos.right).parent)
+   if (parent._searchMarker) {
+     updateMarkerChanges(parent._searchMarker, currPos.index, -startLength + length)
+@@ -921,10 +921,9 @@ export class YText extends AbstractType {
+     super._callObserver(transaction, parentSubs)
+     const event = new YTextEvent(this, transaction, parentSubs)
+     callTypeObservers(this, transaction, event)
+-    // If a remote change happened, we try to cleanup potential formatting duplicates.
+-    if (!transaction.local && this._hasFormatting) {
+-      transaction._needFormattingCleanup = true
+-    }
++    // Meridian patch: no cleanup of formatting after a remote change. Each peer would delete what
++    // looks redundant in its own copy, which a concurrent insertion elsewhere still needs (see
++    // `deleteText`).
+   }
+ 
+   /**
 diff --git a/src/utils/UndoManager.js b/src/utils/UndoManager.js
 index e5c4dc82585b811b179ad4d9a7dfd9b25d98bf3f..68041dcb332daf4ace10883031fd6b7c602df895 100644
 --- a/src/utils/UndoManager.js

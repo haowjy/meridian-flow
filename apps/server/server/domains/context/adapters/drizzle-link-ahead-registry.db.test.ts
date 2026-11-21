@@ -1,5 +1,5 @@
 /**
- * PostgreSQL proof for ahead registration, settlement CAS, and refs written in a draft: registered globally and left unbound until a live document arrives (12a), the writer's own links registered from the review room (L-3).
+ * PostgreSQL proof for ahead registration, settlement CAS, and refs written in a draft: registered globally and left unbound until a live document arrives (12a), the writer's own links registered when the document's derivation runs (L-3).
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
  * - global ahead registration, arrival settlement CAS, and draft-ref deferral (kb/wiki/architecture/documents/links.md#gone-missing-and-ahead)
@@ -21,8 +21,8 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { branchTreeScenario } from "../../../test-support/branch-tree-scenario.js";
 import { useComposedRuntimes } from "../../../test-support/composed-runtime.js";
+import { draftTreeScenario } from "../../../test-support/draft-tree-scenario.js";
 import { deleteDrizzleRows } from "../../../test-support/drizzle-reset.js";
 import { treeListOfSource, treeSeeder } from "../../../test-support/tree-seed.js";
 import { createScopedDocumentLinks } from "../../collab/domain/document-links-port.js";
@@ -245,9 +245,9 @@ if (!RUN) {
 
       async function start() {
         const runtime = await runtimes.compose();
-        const scenario = await branchTreeScenario(db, { runtime, runtimes });
+        const scenario = await draftTreeScenario(db, { runtime, runtimes });
         const work = await scenario.work("Ascension", "draft");
-        // The model's create is a hidden row in the Work's branch.
+        // The model's create is a hidden row in the Work's draft.
         const kael = await scenario.model(work).create("lore/kael", "Kael, the smith.");
         return { runtime, scenario, work, kael };
       }
@@ -261,22 +261,23 @@ if (!RUN) {
         return { registered: ref !== undefined, live: ref?.settled ?? null };
       }
 
-      it("registers a branch's ref globally and leaves it unbound until a live document arrives (12a)", async () => {
+      it("registers a draft's ref globally and leaves it unbound until a live document arrives (12a)", async () => {
         const { scenario, kael } = await start();
         const registry = createTestLinkAheadRegistry(db);
         const at = { holderProjectId: scenario.project.id, address: KAEL };
-        // The branch's hidden document at the path binds nothing, for any holder or mint.
+        // The draft's hidden document at the path binds nothing, for any holder or mint.
         const typed = crypto.randomUUID();
         await registry.register([{ ...at, aheadId: typed }]);
         await registry.register([{ ...at, aheadId: typed }]);
         expect
-          .soft(await registryRow(typed), "registered once, not bound to the branch's document")
+          .soft(await registryRow(typed), "registered once, not bound to the draft's document")
           .toEqual({ registered: true, live: null });
-        // A model's mint in the branch's view registers the same way.
+        // A model's mint in the draft's view registers the same way.
         const links = createScopedDocumentLinks({
           scopes: createTestDocumentLinkScopes(db),
           registrar: registry,
           viewFor: () => ({ kind: "live" }),
+          draft: null,
         });
         const minted = crypto.randomUUID();
         await links.registerAhead([{ ref: `ahead:${minted}`, ...at, view: { kind: "live" } }]);
@@ -293,7 +294,7 @@ if (!RUN) {
         expect.soft(live, "a live create at the address makes its own document").not.toBe(kael);
       });
 
-      it("registers the writer's link typed in the draft's review room, best effort and globally (L-3)", async () => {
+      it("registers the writer's link typed in a Work's document, best effort and globally (L-3)", async () => {
         const { runtime, scenario, work } = await start();
         const chapter = await scenario.model(work).create("chapter-two", "The forge was cold.");
         // The client mints the ahead ref as the writer types; the server has never seen it.
@@ -306,10 +307,11 @@ if (!RUN) {
             paragraph.insert(0, [text]);
             doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
           };
-        const draftLinks = runtime.ports.documentSync.draftLinks;
+        // The document's derivation registers the links it finds, after the writer's update.
+        const derive = () => runtime.ports.documentSync.documentDerivations.derive(chapter);
         const typed = crypto.randomUUID();
-        await scenario.writer.editDraft(work, chapter, link(typed));
-        await draftLinks.flush();
+        await scenario.writer.editLive(chapter, link(typed));
+        await derive();
         expect
           .soft(await registryRow(typed), "after the debounce, registered and unbound")
           .toEqual({ registered: true, live: null });
@@ -317,11 +319,11 @@ if (!RUN) {
         // A ref that can never register (its Work doesn't exist) never keeps the valid one
         // beside it from registering.
         const [ghost, beside] = [crypto.randomUUID(), crypto.randomUUID()];
-        await scenario.writer.editDraft(work, chapter, (doc) => {
+        await scenario.writer.editLive(chapter, (doc) => {
           link(beside)(doc);
           link(ghost, "scratch://@w98/notes")(doc);
         });
-        await draftLinks.flush();
+        await derive();
         expect.soft((await registryRow(beside)).registered, "the valid ref registers").toBe(true);
         expect
           .soft((await registryRow(ghost)).registered, "the refused one has no row")

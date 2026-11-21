@@ -12,7 +12,7 @@ import { ChangeAuthor, ChangeDot } from "./ReviewChangeParts";
 import { changeExcerpt, type ReviewChange } from "./review-model";
 import { treeLineSentence } from "./tree-line";
 
-export type ReviewChangeRowProps = {
+type ReviewChangeRowProps = {
   change: ReviewChange;
   focused: boolean;
   /** This change just arrived while the writer was reviewing; it pulses once. */

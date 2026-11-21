@@ -5,8 +5,8 @@ Read the page that owns the seam you are changing:
 - [Port contracts](port-contracts.md): what a host must do that the port types can't say.
 - [Write architecture](write-architecture.md): planning, capture, targeting and results.
 - [Link identity](link-correspondence.md): ref assignment at every write door.
-- [Diff review](diff-review.md): pure text review, composition and local Discard.
-- [Content merge](content-merge.md): the three-way merge of a draft with live: its rules, repairs, rescues and known losses.
+- [Diff](diff.md): the block diff, block correspondence and the Yjs block writer.
+- [Content merge](content-merge.md): the three-way block merge and what an AI edit's change is in a text now: its rules, repairs, rescues and known losses.
 
 Deferred work is in [TODO.md](TODO.md) and [FUTURE.md](FUTURE.md); rejected
 directions are in [ALTERNATIVES.md](ALTERNATIVES.md).
@@ -32,6 +32,18 @@ journals it with no actor. A new read of a fragment goes through `readRepairedRo
 repairs are not counted. A repair inside a caller's transaction (a capture, a write) is part of
 that transaction's update: read before a capture starts.
 
+## Reading blocks per change
+
+A whole-fragment read walks every deleted item the document keeps (`gc: false`; a checkpoint
+drops their content but keeps their ids), so it costs the document's history, not its text. Code that reads the document again after each of many small
+changes (the suggestion model per block, a draft write's receipts per paragraph segment) reads
+through `heldBlocks` (`diff/fragments.ts`): the first read converts the whole fragment, repairs
+and all, and each transaction then forgets only the top-level blocks it changed, which the next
+read converts alone from a copy. Yjs leaves a block created inside a transaction out of
+`transaction.changed`, so inside a transaction a node is stored only for a block that existed
+before it and that it has not changed yet; a node stored for any other could go stale for good. `readBlocks` per change makes a 100-paragraph write read the whole
+document hundreds of times.
+
 ## Text runs
 
 Adjacent `Y.XmlText` children of a block are one run of text, as in the patched
@@ -45,7 +57,7 @@ document.
 ## Block correspondence
 
 `src/diff/correspond.ts` decides which old block is which new block. The content merge asks by
-id (`byId`: [diff-review](diff-review.md#block-correspondence-by-id)). Everyone else asks in guess
+id (`byId`: [diff](diff.md#block-correspondence-by-id)). Everyone else asks in guess
 mode, for every writer of a sequence of blocks: `resolver/block-alignment.ts` (the model's write),
 `writeChildren` (the Yjs writer, at each level) and, inside a block, the writer's atoms
 (breaks, images). Identity comes from content with attributes left out, chosen over the
@@ -64,22 +76,47 @@ budget remove a pair the cut found. An unpaired block is deleted or inserted, an
 rebuilds an element. Inside a block the model's write and the Yjs writer share one lowering
 (`resolver/lower-block.ts`) and one adapter (`applyOps`): a container's children pair here
 too (by id where they have ids), and text is word-diffed as units. The model's write carries no ids (it writes text), so its pairing is by
-content only; the Yjs writer and review pair by id.
+content only; the Yjs writer and `diffBlocks` pair by id.
 
 What this keeps is the element, not every character's author: an image or break inserted
 inside a text run copies the text after it into a new run, so those characters change
 author and a peer's edit aimed at them can be lost. `main` rebuilt the whole paragraph
 there; this is a rare case left as it is.
 
+## Planning on what the model read
+
+A write plans on the document as the model last read it, so a word the writer deleted after
+that read stays deleted. That read has two sources:
+
+- **The Yjs frontier** (`planningSnapshot`), the main one: the room copy at the frontier
+  recorded with the read, plus the reply's own writes. It gives the whole document as read,
+  including blocks the model saw only partly (an outline heading, a grep passage, an echo's
+  opening words), so a writer's later edit anywhere in them survives.
+- **The transcript** (`tool/read-view.ts`), only when a checkpoint has dropped content the
+  frontier saw, so the frontier can't be rebuilt. Each block a stored result showed in full
+  (`{hash, body}`, latest showing wins) is the base; the model's command applied to that base is
+  ours; the room now is theirs; the three-way content merge writes the result as a
+  whole-document replace. A rewrite of a block the room has deleted since answers `block_gone`
+  with the current text, as on a usable frontier, since the merge would bring the block back. A shown hash counts only when it matches exactly one block visible at
+  the frontier, so a block made since the read can't take a shown body by prefix. It covers a
+  `replace` with content and no `find`; `insert` and `remove` can't bring deleted text back, and
+  `find` matches the room as it is now.
+
+The transcript isn't the main source, because a block it showed only partly has no base but
+current Live: the model's text for it lands as a plain rewrite, and the writer's later edits
+there are overwritten. That is also what the fallback still loses: a block with no full showing
+whose writer edit came after the read. The concurrent listing can't name who made an edit since
+a collected read either (it needs the read's document), so it says `unknown`.
+
 ## What an Undo reads
 
 No Yjs item is followed to undo an edit. Each AI write records its `delta` (the blocks it changed,
 before and after), and Undo, revert and the card's state read that against the text as it is now
-([content-merge](content-merge.md#reading-an-ai-edit-against-a-text-stands-and-membership)). The receipt's `effect` still names the
-items a write inserted and deleted (`captureEditParts`, in `undo/receipt.ts`), for draft bylines;
-`heldDeletes` keeps a delete the room had already made out of it.
+([content-merge](content-merge.md#reading-an-ai-edit-against-a-text-stands)). The receipt's `effect` still names the
+items a write inserted and deleted (`captureEditParts`, in `undo/receipt.ts`), which the model's
+inverse reads; `heldDeletes` keeps a delete the room had already made out of it.
 
-A pull or Apply keeps who wrote which characters only where text was inserted: `retainShared`
+A block write keeps who wrote which characters only where text was inserted: `retainShared`
 (`resolver/lower-block.ts`) keeps the old characters of a changed run and writes just the
 insertions when the old run is a subsequence of the new one (`dog`→`dXoYg`, `cat`→`cats`).
 Any other change, a deletion inside a word or a letter swap, writes the run whole, so a replaced

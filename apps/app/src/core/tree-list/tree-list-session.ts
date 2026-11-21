@@ -172,26 +172,20 @@ export class TreeListSession {
 
   private readonly replayed = new Map<
     string | null,
-    { doc: Y.Doc; edits: number; pendingText?: ReadonlySet<string>; projection: TreeProjection }
+    { doc: Y.Doc; edits: number; projection: TreeProjection }
   >();
 
   /**
    * The replay of the copy as it stands in `view` (live, or live and one Work's pending records),
    * records appended a moment ago included: one replay per change and view however many views and
-   * writers read it. `pendingText` is the Work's documents with pending text, which the list
-   * cannot see (rule 7); pass the same set while it is unchanged, or the view replays again.
+   * writers read it.
    */
-  replay(view: View = LIVE, pendingText?: ReadonlySet<string>): TreeProjection {
+  replay(view: View = LIVE): TreeProjection {
     const { doc } = this.current;
     const held = this.replayed.get(view.draft);
-    if (
-      held?.doc === doc &&
-      held.edits === this.edits &&
-      (view.draft === null || held.pendingText === pendingText)
-    )
-      return held.projection;
-    const projection = replayView(doc, view, pendingText);
-    this.replayed.set(view.draft, { doc, edits: this.edits, pendingText, projection });
+    if (held?.doc === doc && held.edits === this.edits) return held.projection;
+    const projection = replayView(doc, view);
+    this.replayed.set(view.draft, { doc, edits: this.edits, projection });
     return projection;
   }
 

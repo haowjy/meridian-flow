@@ -1,11 +1,7 @@
 import { mdxCodec, UNSCOPED_DOCUMENT_LINKS } from "@meridian/markup";
-import {
-  buildDocumentSchema,
-  createCollabYDoc,
-  withoutBlockIds,
-} from "@meridian/prosemirror-schema";
+import { buildDocumentSchema, withoutBlockIds } from "@meridian/prosemirror-schema";
 import { describe, expect, it } from "vitest";
-
+import * as Y from "yjs";
 import { readRepairedRoot } from "./schema-repair.js";
 import { fragmentOf, yProsemirrorModel } from "./y-prosemirror.js";
 
@@ -62,7 +58,7 @@ describe("markdown → Yjs → markdown fidelity", () => {
 
 function roundTrip(markdown: string): string {
   const parsed = codec.parse(markdown);
-  const doc = createCollabYDoc({ gc: false });
+  const doc = new Y.Doc({ gc: false });
   model.insertBlocks(doc, null, parsed);
   const root = readRepairedRoot("projectBlocks", fragmentOf(doc), schema);
   const blocks = Array.from({ length: root.childCount }, (_, index) => root.child(index));
@@ -83,7 +79,7 @@ function prosemirrorJson(markdown: string): unknown {
 }
 
 function prosemirrorReadbackJson(markdown: string): unknown {
-  const doc = createCollabYDoc({ gc: false });
+  const doc = new Y.Doc({ gc: false });
   model.insertBlocks(doc, null, codec.parse(markdown));
   return withoutBlockIds(readRepairedRoot("projectBlocks", fragmentOf(doc), schema)).toJSON();
 }

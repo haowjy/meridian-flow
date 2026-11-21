@@ -4,10 +4,9 @@ import type { DocumentTrashEntry, TrashEntryFacts } from "@meridian/contracts/pr
 import { deletionPurgeAt, deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { Database } from "@meridian/database";
 import {
-  branches,
-  branchTreeNodes,
   contextSources,
   documents,
+  draftTreeNodes,
   projects,
   threads,
   treeNodes,
@@ -27,7 +26,7 @@ import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizz
 import { type EventSink, emitEvent } from "../../observability/index.js";
 import { createObjectRelease, type ObjectStorePort } from "../../storage/index.js";
 import { trashActorsOf } from "../adapters/trash-removals.js";
-import type { DocumentPurgeDraftDisposal, DocumentTrash } from "../ports/document-trash.js";
+import type { DocumentPurgeDisposal, DocumentTrash } from "../ports/document-trash.js";
 import { type TreeList, type TreeListStore, TreeRefusal } from "../ports/tree-list-store.js";
 import { type Released, releaseDocumentContent } from "./release-document-content.js";
 import { retentionHolds } from "./retention-holds.js";
@@ -69,7 +68,7 @@ export function createDrizzleDocumentTrash(deps: {
   db: Database;
   objectStore: Pick<ObjectStorePort, "delete">;
   eventSink: EventSink;
-  drafts: DocumentPurgeDraftDisposal;
+  purges: DocumentPurgeDisposal;
   tree: Pick<TreeListStore, "submit">;
 }): DocumentTrash {
   const objects = createObjectRelease({
@@ -155,9 +154,8 @@ export function createDrizzleDocumentTrash(deps: {
       SELECT DISTINCT p.document_id::text,
              coalesce(w.id, t.id)::text AS id, coalesce(w.name, nullif(t.title, ''), 'A chat') AS name
       FROM (${retentionHolds(ids)}) p
-      JOIN ${branches} b ON b.id = p.branch_id
-      LEFT JOIN ${works} w ON w.id = b.origin_work_id
-      LEFT JOIN ${threads} t ON t.id = b.origin_root_thread_id
+      LEFT JOIN ${works} w ON w.draft_id = p.draft_id
+      LEFT JOIN ${threads} t ON t.draft_id = p.draft_id
       WHERE (w.id IS NOT NULL OR t.id IS NOT NULL)
       ORDER BY p.document_id::text, 3, 2
     `);
@@ -288,7 +286,7 @@ export function createDrizzleDocumentTrash(deps: {
             };
           },
         });
-        if ((await deps.drafts.settle(taken.documentIds)) === "pending")
+        if ((await deps.purges.settle(taken.documentIds)) === "pending")
           throw new TreeRefusal("held");
         await deps.tree.submit({
           lists: [list],
@@ -366,7 +364,7 @@ export function createDrizzleDocumentTrash(deps: {
           .where(and(eq(documents.id, documentId), unviewedBefore(cutoff)))
           .limit(1);
         if (!still) return null;
-        if ((await deps.drafts.settle([documentId])) === "pending") return null;
+        if ((await deps.purges.settle([documentId])) === "pending") return null;
         // The list that holds its create says the content is gone: the browsers keeping a copy
         // of a Discarded document delete it on this record, the one fact they can trust.
         await deps.tree.submit({
@@ -409,8 +407,8 @@ export function createDrizzleDocumentTrash(deps: {
       notExists(
         currentDrizzleDb(deps.db)
           .select({ one: sql`1` })
-          .from(branchTreeNodes)
-          .where(eq(branchTreeNodes.id, documents.id)),
+          .from(draftTreeNodes)
+          .where(eq(draftTreeNodes.id, documents.id)),
       ),
     );
   }

@@ -1,4 +1,5 @@
 /** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
+import { newDraftId } from "@meridian/contracts";
 import type { SubmittedReference, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadOverrides } from "@meridian/contracts/threads";
 import type { AiWriteMode } from "@meridian/contracts/works";
@@ -82,6 +83,7 @@ export function sendProjectChat({
       draft,
       creation: {
         title,
+        draftId: newDraftId(),
         workId,
         workAiWriteMode,
         ...(aiWriteMode ? { aiWriteMode } : {}),

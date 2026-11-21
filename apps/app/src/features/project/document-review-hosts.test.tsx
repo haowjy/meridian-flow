@@ -41,10 +41,10 @@ function Host({ showing, report }: { showing: boolean; report: (review: Document
 it("reviews a document only in the host that shows it", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  queryClient.setQueryData(projectQueryKeys.ownerDrafts(projectId, owner), {
+  queryClient.setQueryData(projectQueryKeys.drafts(projectId, owner), {
     items: [{ itemKey: "item", documentId: "chapter" }],
   });
-  setDocumentView(accountId, projectId, "chapter", { pin: { ownerKey: owner, itemKey: "item" } });
+  setDocumentView(accountId, projectId, "chapter", { pin: { draftId: owner, itemKey: "item" } });
   let main: DocumentReview | null = null;
   let side: DocumentReview | null = null;
   const root = createRoot(document.createElement("div"));

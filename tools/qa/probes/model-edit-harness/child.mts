@@ -10,8 +10,6 @@
  *   {op:"sweep"}                     the recovery lanes once: wake scan, orphan repair
  *   {op:"reverse", threadId, userId, turnId, commandId, direction}   a chat card's Undo or Redo, as the route sends it
  *   {op:"resolve", threadId, responseId, toolCallId, accountId, projectId}   settle a model call's key, as recovery does
- *   {op:"discard", projectId, branchId, userId, commandId}   Discard all on a Work's branch
- *   {op:"openDraft", draftId}       catch a draft up with Live, as opening its room does
  *   {op:"timeout", tool, ms}        shorten a tool's registered timeout, for the timeout cases
  *   {op:"exit"}
  *
@@ -21,10 +19,6 @@
 import { createInterface } from "node:readline";
 import { createDb } from "@meridian/database";
 import { NoopEventSink } from "../../../../apps/server/server/domains/observability/index.ts";
-import {
-  handleDiscardBranchRequest,
-  selectBranchRouteServices,
-} from "../../../../apps/server/server/lib/branch-review-route.ts";
 import {
   composeAppServices,
   createProductionAppPorts,
@@ -101,9 +95,7 @@ type Op = { id?: number } & (
       accountId: string;
       projectId: string;
     }
-  | { op: "discard"; projectId: string; branchId: string; userId: string; commandId: string }
   | { op: "timeout"; tool: string; ms: number }
-  | { op: "openDraft"; draftId: string }
   | { op: "sweep" | "exit" }
 );
 
@@ -151,22 +143,12 @@ async function handle(message: Op): Promise<unknown> {
         accountId: message.accountId as never,
         projectId: message.projectId as never,
       });
-    case "discard":
-      return handleDiscardBranchRequest(selectBranchRouteServices(app), {
-        projectId: message.projectId as never,
-        branchId: message.branchId as never,
-        userId: message.userId as never,
-        request: { all: true, commandId: message.commandId },
-      });
     case "timeout": {
       const registration = app.toolRegistry.getRegistration(message.tool);
       if (!registration) throw new Error(`no tool ${message.tool}`);
       (registration as { timeoutMs?: number }).timeoutMs = message.ms;
       return null;
     }
-    case "openDraft":
-      // What a draft room's first connection does: bring Live's committed text into the draft.
-      return ports.documentSync.catchUpDraft(message.draftId);
     case "sweep":
       await app.recovery.repairOrphans();
       return app.recovery.scanWakes();

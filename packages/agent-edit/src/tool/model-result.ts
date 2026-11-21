@@ -168,10 +168,6 @@ export interface AgentEditTreeFacts {
   already?: "deleted" | "at_destination" | "live";
   /** Nodes the call left alone, each with the one reason. */
   leftOut?: Array<{ path: string; why: "would_loop" | "purged" }>;
-  /** A drafted change to a node live deleted: applying it restores the node. */
-  deletedInLive?: true;
-  /** The Works whose drafts of a deleted document survive it. */
-  survivingWorks?: string[];
   /** The first drafted tree change of a reply says once that drafted changes wait for review. */
   firstDrafted?: true;
   /** What others did to the nodes the call named, by author. */

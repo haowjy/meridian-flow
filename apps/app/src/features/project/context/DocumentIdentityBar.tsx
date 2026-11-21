@@ -8,7 +8,7 @@ import "./document-identity-row.css";
 import type { ContextOwner, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTreeList } from "@/client/query/useProjectTree";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import type { OpenDocument } from "@/client/stores";
 import { useTreeVersion } from "@/core/project-tree/tree-version";
 import { AgentFileState } from "@/features/agents/AgentFileState";
@@ -20,7 +20,7 @@ import { DocumentStatePortal } from "@/features/editor/document-state-slot";
 import { ManuscriptStateSlot, useManuscriptState } from "@/features/editor/ManuscriptStateNotice";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { holdFocus, useFocusSuccession } from "@/lib/focus-follow";
-import { useAiDraftLauncher } from "../review-launch";
+import { useItemLauncher } from "../review-launch";
 import { useAccountId } from "./account-feature-context";
 import { ChooseHomeChip, DeviceOnlyChip } from "./IdentityChips";
 import { IdentityPlacementField } from "./IdentityPlacementField";
@@ -76,16 +76,16 @@ export function DocumentIdentityBar({
   });
 
   const { controller } = useDraftReview();
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const review = controller.inlineReview;
   const reviewItemKey =
     review?.documentId === document.documentId && review.shown ? review.itemKey : null;
   // A review that has been entered but not yet painted is a review destination in flight:
   // it must not read as the live document's chip until its preview answers.
   const reviewPending = review?.documentId === document.documentId && !review.shown;
-  const openDraft = (row: ReviewFileTarget, takeFocus?: boolean) => {
-    if (takeFocus) onFocusReview?.(row.draft.itemKey);
-    openReviewFile(row, controller.ownerKey);
+  const openItem = (row: ReviewFileTarget, takeFocus?: boolean) => {
+    if (takeFocus) onFocusReview?.(row.item.itemKey);
+    openReviewFile(row, controller.draftId);
   };
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it
   // has one, renaming and moving belong to the lists. Uploads aren't writing material.
@@ -159,7 +159,7 @@ export function DocumentIdentityBar({
       document={document}
       documentId={document.documentId}
       itemKey={reviewItemKey ?? ""}
-      onOpenDraft={openDraft}
+      onOpenItem={openItem}
       onCloseDraftOnly={onCloseDraftOnly}
       onFocusDocument={() =>
         focusEditorProseOnceShown(document.documentId, onCloseDraftOnly !== undefined)

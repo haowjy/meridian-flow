@@ -1,4 +1,4 @@
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 /**
  * Copy's destination half in one ContextFS source: naming and identity, planned without a
  * lock, and the insertion of a plan inside the caller's command transaction.
@@ -14,7 +14,7 @@ import type { BranchId } from "@meridian/contracts";
  * is written.
  */
 
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, UserId } from "@meridian/contracts";
 import { type ContextSiblingPosition, renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { runAfterDrizzleCommit } from "../../../../shared/drizzle-transaction.js";
@@ -23,7 +23,7 @@ import {
   type CollabDomain,
   createCopyIdentityMap,
   type DocumentCreationAggregate,
-  type DraftPeerShadowAccess,
+  type EffectiveDocumentReader,
 } from "../../../collab/index.js";
 import type { AdapterFault } from "../../ports/context-adapter.js";
 import type {
@@ -37,7 +37,7 @@ import type {
 } from "../../ports/context-copy.js";
 import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { NodeIdRefusedError } from "../tree-list-rows.js";
-import { type NewNode, type SourceTree, viewOfBranch } from "./tree-writes.js";
+import { type NewNode, type SourceTree, viewOfDraft } from "./tree-writes.js";
 
 export interface CopyTreeDeps {
   writes: SourceTree;
@@ -109,36 +109,31 @@ export async function insertPlannedTrees(
   }[],
   position?: ContextSiblingPosition,
   draft?: {
-    branchId: BranchId;
-    documentSync: Pick<DraftPeerShadowAccess, "writeCreatedDraftContent">;
+    draftId: DraftId;
+    documentSync: Pick<EffectiveDocumentReader, "writeWorkCreatedContent">;
   },
 ): Promise<Result<CopyOutcome, AdapterFault>> {
   if (draft) {
-    const { branchId } = draft;
+    const { draftId } = draft;
     const { plan, contents, parent } = inputs[0];
     const tree = toNewTree(plan.roots, contents);
     if (!tree.ok) return tree;
     try {
       const inserted = await deps.writes.insertTree(
-        { view: viewOfBranch(branchId), actor: deps.actor },
+        { view: viewOfDraft(draftId), actor: deps.actor },
         {
           trees: [{ dir: plan.dir, ...(parent ? { parent } : {}), roots: tree.value.roots }],
           ...(position ? { position: position } : {}),
         },
       );
       if (!inserted.ok) return inserted;
-      await draft.documentSync.writeCreatedDraftContent(
+      await draft.documentSync.writeWorkCreatedContent(
         [...tree.value.contents].flatMap(([documentId, content]) =>
           content.content
-            ? [
-                {
-                  documentId: documentId as DocumentId,
-                  branchId: branchId as BranchId,
-                  content: content.content,
-                },
-              ]
+            ? [{ documentId: documentId as DocumentId, content: content.content }]
             : [],
         ),
+        { type: "user", actorUserId: deps.actor.slice("user:".length) as UserId },
       );
       return Ok({
         kind: "copied",

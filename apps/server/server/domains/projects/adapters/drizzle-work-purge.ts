@@ -1,6 +1,6 @@
 /**
  * Permanently removes expired Works, then best-effort removes their object-store blobs.
- * A purged Work's branches end first through collab's Discard (contract §2.6, F10): their drafts
+ * A purged Work's drafts end first through collab's Discard (contract §2.6, F10): their drafts
  * leased before the transaction, then, after the deleted/cutoff proof, one settlement discards
  * every pending record of the Work. The documents it drafted are then in no view, and retention
  * releases them on its own window. The Work's sources go with it: first a `purge` record in the
@@ -8,13 +8,13 @@
  * the content release Trash retention uses; then their source rows, which take any node rows left.
  */
 
-import type { DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import { deletionPurgeCutoff } from "@meridian/contracts/retention";
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
-  branches,
   contextSources,
+  drafts,
   eventJournal,
   projectResults,
   promptBakes,
@@ -38,7 +38,7 @@ import {
   type ObjectStorePort,
   objectStoreKeyFromStorageUrl,
 } from "../../storage/index.js";
-import type { WorkBranchDisposal } from "../ports/work-branch-disposal.js";
+import type { WorkDraftDisposal } from "../ports/work-draft-disposal.js";
 import type { WorkProjectionMutation } from "./work-projection-mutation.js";
 
 const WORK_PURGE_BATCH_LIMIT = 100;
@@ -78,7 +78,7 @@ export function createDrizzleWorkPurger(deps: {
   db: Database;
   objectStore: Pick<ObjectStorePort, "delete" | "list">;
   eventSink: EventSink;
-  branches: WorkBranchDisposal;
+  drafts: WorkDraftDisposal;
   /** The project's list, where the Work's sources' nodes end. */
   tree: Pick<TreeListStore, "submit">;
   /** A purged Work leaves the project's Works list, which is woken for it. */
@@ -127,7 +127,7 @@ export function createDrizzleWorkPurger(deps: {
     workId: WorkId,
     cutoff: Date,
   ): Promise<{ purged: boolean; objectKeys: string[]; threadIds: readonly string[] }> {
-    return deps.branches.withDisposal(workId, (disposeDrafts) =>
+    return deps.drafts.withDisposal(workId, (disposeDrafts) =>
       purgeLocked(workId, cutoff, disposeDrafts),
     );
   }
@@ -137,7 +137,7 @@ export function createDrizzleWorkPurger(deps: {
     cutoff: Date,
     disposeDrafts: (
       lineageRootIds: readonly string[],
-    ) => Promise<{ releasedObjects: readonly string[] }>,
+    ) => Promise<{ releasedObjects: readonly string[]; draftIds: readonly DraftId[] }>,
   ): Promise<{ purged: boolean; objectKeys: string[]; threadIds: readonly string[] }> {
     return runInDrizzleTransaction(deps.db, async () => {
       const lockedTree = await lockWorkThreadTree(deps.db, workId, { includeMarked: true });
@@ -146,7 +146,12 @@ export function createDrizzleWorkPurger(deps: {
       }
       const activeDb = currentDrizzleDb(deps.db);
       const [work] = await activeDb
-        .select({ id: works.id, projectId: works.projectId, deletedAt: works.deletedAt })
+        .select({
+          id: works.id,
+          projectId: works.projectId,
+          draftId: works.draftId,
+          deletedAt: works.deletedAt,
+        })
         .from(works)
         .where(eq(works.id, workId));
       if (!work?.deletedAt || work.deletedAt.getTime() > cutoff.getTime()) {
@@ -224,7 +229,7 @@ export function createDrizzleWorkPurger(deps: {
             ),
           ),
       ]);
-      // F10: the Work's branches end through the Discard kernel, after this proof and before
+      // F10: the Work's drafts end through the Discard kernel, after this proof and before
       // their rows go, so nothing they created stays live and their storage is released.
       const purgedRoots = lockedTree.threadIds.length
         ? (
@@ -291,15 +296,6 @@ export function createDrizzleWorkPurger(deps: {
         await activeDb.delete(threads).where(inArray(threads.id, lockedTree.threadIds));
         await deps.evidence.forgetThreads(lockedTree.threadIds);
       }
-      // The disposed branches' rows go with the Work and its purged lineages; their closed drafts cascade.
-      await activeDb
-        .delete(branches)
-        .where(
-          or(
-            eq(branches.originWorkId, workId),
-            purgedRoots.length ? inArray(branches.originRootThreadId, purgedRoots) : undefined,
-          ),
-        );
       // A chat that moved to another Work keeps this Work's membership as non-primary history.
       // Its readers (the Work's chat list, the Work switcher's recent summary) filter by this Work,
       // which is gone after this. A primary membership still blocks the delete: those chats went above.
@@ -320,8 +316,15 @@ export function createDrizzleWorkPurger(deps: {
             entityRevision: sql`${works.entityRevision} + ${String(deleted[0].entityRevision)}::bigint + 1`,
           })
           .where(and(eq(works.projectId, work.projectId), eq(works.isNoWork, true)));
-        deps.works.lifecycleChanged({ id: workId, projectId: work.projectId });
+        deps.works.lifecycleChanged({
+          id: workId,
+          projectId: work.projectId,
+          draftId: work.draftId,
+        });
       }
+      // The disposed drafts go after the Work and chats naming them; their tree records cascade.
+      if (disposed.draftIds.length > 0)
+        await activeDb.delete(drafts).where(inArray(drafts.id, [...disposed.draftIds]));
       return { purged: deleted.length > 0, objectKeys, threadIds: lockedTree.threadIds };
     });
   }

@@ -1,10 +1,10 @@
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 /**
  * Where a ContextFS adapter's writes land, as a strategy (contract §2.3, §6.1). The port factory
  * decides the placement once (`placementFor`); ContextFS delegates the commands whose meaning
  * differs: reads' tree view, `ensureTrackedDocument`, `writeBinary`, and the
  * refusals a draft placement makes (a draft never seeds live Yjs). A drafted write is a record
- * of the Work's branch (`{ draft: branchId }`), which the command transaction ensures and
+ * of the Work's draft (`{ draft: draftId }`), which the command transaction ensures and
  * locks; a live one is a live record.
  */
 
@@ -12,7 +12,6 @@ import type { DocumentId, DraftOwner, ThreadId, UserId } from "@meridian/contrac
 import { entrySegment, renderFilename } from "@meridian/contracts/protocol";
 import { LIVE } from "@meridian/project-tree";
 import { Ok, type Result } from "../../../../shared/result.js";
-import type { Branches } from "../../../collab/domain/branches.js";
 import type { MarkdownDocumentStore } from "../../../collab/index.js";
 import type { ResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { AdapterFault, ContextEnsureTrackedOptions } from "../../ports/context-adapter.js";
@@ -22,33 +21,38 @@ import type { DocumentArrivals } from "../../ports/document-arrivals.js";
 import { LIVE_TREE, type TreeView } from "../../tree/tree-view.js";
 import { type CreateTarget, resolveBinaryTarget, resolveCreateTarget } from "./create-target.js";
 import type { LiveCreate } from "./live-create.js";
-import { actorOf, type SourceTree, type TreeWriteTarget, viewOfBranch } from "./tree-writes.js";
+import { actorOf, type SourceTree, type TreeWriteTarget, viewOfDraft } from "./tree-writes.js";
 
 /**
  * People and auto-apply chats are live. A draft-mode chat on a drafted source is a draft
- * placement: reads see the Work's active branch (live while it has none), and creates are
- * records of that branch, which the command transaction ensures.
+ * placement: reads see the chat's draft, and creates are records of it, written under its
+ * owner's lock, which the command transaction takes.
  */
-export interface BranchPlacement {
+export interface DraftPlacement {
   owner: DraftOwner;
+  draftId: DraftId;
   threadId: ThreadId;
   userId: UserId;
-  branches: Pick<Branches, "viewForOwner">;
 }
 
 export type ContextPlacement =
-  | { kind: "live"; branch?: BranchPlacement }
-  | ({ kind: "draft" } & BranchPlacement);
+  | { kind: "live"; draft?: DraftPlacement }
+  | ({ kind: "draft" } & DraftPlacement);
 
 /** Commands only a live placement runs. */
 export type LiveOnlyCommand = "take a whole-file write" | "create a file with text";
 
-/** The branch a drafted tree command is made in: the owner, its thread and user. */
-export type BranchCommandOwner = { owner: DraftOwner; threadId: ThreadId; userId: UserId };
+/** The draft a drafted tree command is made in: it, its owner, its thread and user. */
+export type DraftCommandOwner = {
+  owner: DraftOwner;
+  draftId: DraftId;
+  threadId: ThreadId;
+  userId: UserId;
+};
 
 export interface CreatePlacement {
   readonly kind: ContextPlacement["kind"];
-  /** What reads see, resolved once per command; a read never makes a branch. */
+  /** What reads see, resolved once per command; a read never makes a draft. */
   readView(version: "draft" | "live" | undefined): Promise<TreeView>;
   /** The fault a live-only command meets here, or null when it may run. */
   refuse(command: LiveOnlyCommand): AdapterFault | null;
@@ -66,8 +70,8 @@ export interface CreatePlacement {
   ): Promise<
     Result<{ documentId: string; placement: ContextPlacement["kind"]; path: string }, AdapterFault>
   >;
-  /** The branch a drafted move or delete is made in, or null where this adapter has none. */
-  readonly branchOwner: BranchCommandOwner | null;
+  /** The draft a drafted move or delete is made in, or null where this adapter has none. */
+  readonly draftOwner: DraftCommandOwner | null;
 }
 
 export interface CreatePlacementDeps {
@@ -136,8 +140,8 @@ function livePlacement(
   return {
     kind: "live",
     readView: (version) =>
-      version !== "live" && placement.branch
-        ? placement.branch.branches.viewForOwner(placement.branch.owner)
+      version !== "live" && placement.draft
+        ? Promise.resolve({ kind: "draft" as const, draftId: placement.draft.draftId })
         : Promise.resolve(LIVE_TREE),
     refuse: () => null,
     ensureTracked(path, options) {
@@ -181,7 +185,7 @@ function livePlacement(
         return Ok({ ...created.value, placement: "live" as const });
       });
     },
-    branchOwner: placement.branch ? branchOwnerOf(placement.branch) : null,
+    draftOwner: placement.draft ? draftOwnerOf(placement.draft) : null,
   };
 }
 
@@ -190,27 +194,27 @@ function draftPlacement(
   deps: CreatePlacementDeps,
 ): CreatePlacement {
   const { executor, tree } = deps;
-  const owner = branchOwnerOf(placement);
-  /** A command in the drafting Work's branch, which the transaction ensures and locks. */
-  const inBranch = <T>(operation: (branch: { id: BranchId }) => Promise<Result<T, AdapterFault>>) =>
-    executor.runInBranch({ ...owner, mode: "ensure" }, (branch) => operation({ id: branch.id }));
+  const owner = draftOwnerOf(placement);
+  /** A command in the drafting Work's draft, which the transaction ensures and locks. */
+  const inDraft = <T>(operation: (draft: { id: DraftId }) => Promise<Result<T, AdapterFault>>) =>
+    executor.runInDraft(owner, (draft) => operation({ id: draft.id }));
   return {
     kind: "draft",
     readView: (version) =>
       version === "live"
         ? Promise.resolve(LIVE_TREE)
-        : placement.branches.viewForOwner(placement.owner),
+        : Promise.resolve({ kind: "draft" as const, draftId: placement.draftId }),
     refuse: (operation) => ({
       code: "invalid_operation",
       message: `In draft mode, you can't ${operation}; create the file empty and write into it`,
     }),
     ensureTracked(path, options) {
-      return inBranch<{ documentId: string; created: boolean; path: string }>(async (branch) => {
+      return inDraft<{ documentId: string; created: boolean; path: string }>(async (draft) => {
         const resolved = resolveCreateTarget(deps.scheme, path, options);
         if (!resolved.ok) return resolved;
         const { dir, name, extension, filetype } = resolved.value;
         const target = {
-          view: viewOfBranch(branch.id),
+          view: viewOfDraft(draft.id),
           actor: actorOf(options?.origin),
         };
         const existing = await existingTracked(deps, target, resolved.value, options);
@@ -230,28 +234,33 @@ function draftPlacement(
           documentId,
           record: created.value.record,
           folders: created.value.folders,
-          draftBranchId: branch.id,
+          draftId: draft.id,
           path: created.value.path.join("/"),
         });
         return Ok({ documentId, created: true, path: created.value.path.join("/") });
       });
     },
     writeBinary(path, options) {
-      // A branch's binary document is its own file holding the branch's object (12b-Q2).
-      return inBranch(async (branch) => {
+      // A draft's binary document is its own file holding the draft's object (12b-Q2).
+      return inDraft(async (draft) => {
         const created = await createBinary(
           deps,
-          { view: viewOfBranch(branch.id), actor: actorOf(options.origin) },
+          { view: viewOfDraft(draft.id), actor: actorOf(options.origin) },
           path,
           options,
         );
         return created.ok ? Ok({ ...created.value, placement: "draft" as const }) : created;
       });
     },
-    branchOwner: owner,
+    draftOwner: owner,
   };
 }
 
-function branchOwnerOf(placement: BranchPlacement): BranchCommandOwner {
-  return { owner: placement.owner, threadId: placement.threadId, userId: placement.userId };
+function draftOwnerOf(placement: DraftPlacement): DraftCommandOwner {
+  return {
+    owner: placement.owner,
+    draftId: placement.draftId,
+    threadId: placement.threadId,
+    userId: placement.userId,
+  };
 }

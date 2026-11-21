@@ -23,9 +23,8 @@ import {
   createDrizzleCreditLedger,
   createInMemoryCreditLedger,
 } from "../domains/billing/index.js";
-import { createDraftClose } from "../domains/collab/adapters/drizzle-draft-close.js";
 import { createDrizzleJournal } from "../domains/collab/adapters/drizzle-journal.js";
-import { createDrizzleWorkBranchPendingStore } from "../domains/collab/adapters/drizzle-work-branch-pending.js";
+import { createDrizzleWorkDraftPendingStore } from "../domains/collab/adapters/drizzle-work-draft-pending.js";
 import { createStaticDocumentLinkScopes } from "../domains/collab/adapters/in-memory/static-document-link-scopes.js";
 import {
   type CollabDomain,
@@ -45,11 +44,11 @@ import {
   type ContextSources,
   createAgentFilesHints,
   createAgentLevelFiles,
+  createChatUploadVerifier,
   createContextUploadContentPort,
   createDocumentAddressResolver,
   createDocumentLinkResolver,
   createDocumentRevisions,
-  createDraftUploadVerifier,
   createDrizzleChatUploads,
   createDrizzleChatUploadsOwners,
   createDrizzleContextSources,
@@ -543,7 +542,7 @@ export async function createProductionAppPorts(input: {
   const workProjectionMutation = createWorkProjectionMutation({
     db,
     draftOwnerHints: projectHints,
-    pendingCounts: createDrizzleWorkBranchPendingStore(db),
+    pendingCounts: createDrizzleWorkDraftPendingStore(db),
     eventSink,
   });
   const runClaim = createDrizzleRunClaim(db, {
@@ -642,7 +641,7 @@ export async function createProductionAppPorts(input: {
   };
   const readChain = (threadId: ThreadId) => readAgentChain(chainDeps, threadId);
   const fileAccess = createFileAccess({
-    facts: createDrizzleFileFacts(db, workProjectionMutation),
+    facts: createDrizzleFileFacts(db),
     grants: createOwnerFileGrants(),
     readAgentChain: readChain,
   });
@@ -667,12 +666,11 @@ export async function createProductionAppPorts(input: {
     db,
     journal: createDrizzleJournal(db),
     // Collab is composed below, before anything can submit or admit a record.
-    draftCreatedDocuments: (created) => documentSync.draftCreatedDocuments(created),
+    seedWorkCreates: (created) => documentSync.seedWorkCreates(created),
     recountAfterCommit: (owners) => workProjectionMutation.recountAfterCommit(owners),
-    liveChangedUnder: (branchIds) => workProjectionMutation.liveChangedUnder(branchIds),
+    liveChangedUnder: (draftIds) => workProjectionMutation.liveChangedUnder(draftIds),
     fileAccessChanges,
   });
-  const draftClose = createDraftClose();
   const documentLinks = createDrizzleDocumentLinkScopes({
     db,
     fileAccess,
@@ -689,7 +687,6 @@ export async function createProductionAppPorts(input: {
     eventSink,
     notices,
     workProjectionMutation,
-    draftClose,
     treeLists,
     removals: createTrashRemovals(db),
     liveTextHints: createAgentFilesHints({ db, backgroundTasks, wake: projectWakeHub, eventSink }),
@@ -719,10 +716,10 @@ export async function createProductionAppPorts(input: {
     documentSync,
     treeLists,
     arrivals,
-    branches: documentSync.branches,
-    pendingBranch: workProjectionMutation,
+    drafts: documentSync.drafts,
+    pendingDraft: workProjectionMutation,
     sourceHints: projectHints,
-    copy: { documentSync, branches: documentSync.branches, objectStore, release: objectRelease },
+    copy: { documentSync, objectStore, release: objectRelease },
   });
   const uploadIntake = createUploadIntake({
     repository: createDrizzleUploadIntakeRepository(db, projectHints),
@@ -828,7 +825,7 @@ export async function createProductionAppPorts(input: {
       db,
       objectStore,
       eventSink,
-      drafts: documentSync.documentPurgeDraftDisposal,
+      purges: documentSync.documentPurgeDisposal,
       tree: treeLists,
     }),
     projectContextAvailability,
@@ -1023,7 +1020,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     works: ports.workRepo,
     permissionGrants,
     workAuthorityResolver: ports.workAuthorityResolver,
-    branches: ports.documentSync,
+    drafts: ports.documentSync,
     workContextNotices,
     notices: ports.notices,
     controls: delivery,
@@ -1116,7 +1113,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     db: ports.db,
     objectStore: ports.objectStore,
     eventSink: ports.eventSink,
-    branches: ports.documentSync.workBranchDisposal,
+    drafts: ports.documentSync.workDraftDisposal,
     tree: ports.treeLists,
     works: ports.workProjectionMutation,
     evidence: ports.documentSync.modelEvidence(),
@@ -1189,7 +1186,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async threadProject(threadId) {
       return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
     },
-    verifyDraftUpload: createDraftUploadVerifier({
+    verifyChatUpload: createChatUploadVerifier({
       identities: ports.uploadIdentity,
       chats: topChats,
     }),
@@ -1337,7 +1334,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   return {
     projectExport: createProjectExport({
       snapshot: ports.exportSnapshot,
-      pendingDrafts: {
+      pendingDocuments: {
         count: (projectId) => ports.documentSync.draftReview.pendingDocumentCount(projectId),
       },
       documents: exportDocumentsFrom(ports.documentSync),
@@ -1550,7 +1547,12 @@ export function createInMemoryAppServices(
     expireAsks: () => asks.expireDue(),
   };
 
-  const documentSync: CollabDomain = createInMemoryCollabDomain();
+  // No Works in memory: a lineage's root chat is the only row that names a draft.
+  const documentSync: CollabDomain = createInMemoryCollabDomain(async (owner) => {
+    if (owner.kind !== "lineage") return null;
+    const root = await threadRepos.threads.findByIdIncludingDeleted(owner.rootThreadId);
+    return root?.draftId ? { id: root.draftId, projectId: root.projectId } : null;
+  });
   const unavailableWorkContext: WorkContextReader = {
     async renderForThread() {
       throw new Error("in-memory Work context is not configured");
@@ -1805,7 +1807,7 @@ export function createInMemoryAppServices(
       workAuthorityResolver,
     }),
     projectExport: createProjectExport({
-      pendingDrafts: {
+      pendingDocuments: {
         async count() {
           return 0;
         },

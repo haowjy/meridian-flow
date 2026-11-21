@@ -1,9 +1,9 @@
 /**
-The diff core's named risks: word salad in review and partial
- * Apply or Discard that corrupts text. Seeded, so a failure replays.
+ * The diff core's named risks: hunks that read as word salad, and composing some of a diff's
+ * changes that corrupts text. Seeded, so a failure replays.
  *
  * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - Word-level review hunk cleanup and edit categorization
+ * - Word-level hunk cleanup
  * - Where the tokenizer splits words (`segmentText`)
  */
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
@@ -11,8 +11,8 @@ import type { Mark, Node as PMNode } from "prosemirror-model";
 import { describe, expect, it, vi } from "vitest";
 import { applySpanPatches, composeHunks, type SpanPatch } from "./compose.js";
 import { blocksEqual } from "./equal.js";
-import { diffBlocks, type Hunk, hunkKind } from "./hunks.js";
-import { projectReview } from "./review.js";
+import { changeGroups } from "./groups.js";
+import { diffBlocks, type Hunk } from "./hunks.js";
 import { segmentText, type Tok } from "./tokens.js";
 
 const schema = buildDocumentSchema();
@@ -102,12 +102,12 @@ it("splits words the same on every engine", () => {
   ]);
 });
 
-describe("review hunks read as edits, not word salad", () => {
+describe("hunks read as edits, not word salad", () => {
   const rows: Array<{
     name: string;
     base: PMNode[];
     draft: PMNode[];
-    expected: Array<{ kind: string; removed: string; inserted: string }>;
+    expected: Array<{ removed: string; inserted: string }>;
   }> = [
     {
       name: "the bell sentence is one replacement (before/01)",
@@ -115,7 +115,6 @@ describe("review hunks read as edits, not word salad", () => {
       draft: plain("Each clear note promised an empty road beyond the wall"),
       expected: [
         {
-          kind: "text",
           removed: "Three notes meant the road was safe",
           inserted: "Each clear note promised an empty road beyond the wall",
         },
@@ -125,15 +124,15 @@ describe("review hunks read as edits, not word salad", () => {
       name: "a single-word swap stays word-level",
       base: plain("The road was safe and quiet tonight"),
       draft: plain("The road was dangerous and quiet tonight"),
-      expected: [{ kind: "text", removed: " safe", inserted: " dangerous" }],
+      expected: [{ removed: " safe", inserted: " dangerous" }],
     },
     {
       name: "cleanup never crosses a paragraph break",
       base: plain("alpha beta", "gamma delta"),
       draft: plain("ALPHA beta", "gamma DELTA"),
       expected: [
-        { kind: "text", removed: "alpha", inserted: "ALPHA" },
-        { kind: "text", removed: " delta", inserted: " DELTA" },
+        { removed: "alpha", inserted: "ALPHA" },
+        { removed: " delta", inserted: " DELTA" },
       ],
     },
     {
@@ -146,20 +145,19 @@ describe("review hunks read as edits, not word salad", () => {
           schema.text(" three"),
         ]),
       ],
-      expected: [{ kind: "format", removed: " two", inserted: " two" }],
+      expected: [{ removed: " two", inserted: " two" }],
     },
     {
       name: "a doubled space is whitespace",
       base: plain("one two three"),
       draft: plain("one  two three"),
-      expected: [{ kind: "whitespace", removed: " two", inserted: "  two" }],
+      expected: [{ removed: " two", inserted: "  two" }],
     },
   ];
   it.each(rows)("$name", ({ base, draft, expected }) => {
     const d = diffBlocks(base, draft);
     expect(
       d.hunks.map((h) => ({
-        kind: hunkKind(d.base.toks, h),
         removed: removed(d, h),
         inserted: inserted(h),
       })),
@@ -297,7 +295,7 @@ function untouchedOutside(base: PMNode[], patches: SpanPatch[], result: PMNode[]
   expect(r).toBe(result.length);
 }
 
-describe("partial Apply and Discard never corrupt text", () => {
+describe("composing some changes never corrupts text", () => {
   it("composes exactly over random rich documents and random group selections", () => {
     const r = rng(20261013);
     let withChanges = 0;
@@ -311,34 +309,18 @@ describe("partial Apply and Discard never corrupt text", () => {
       expect(d.hunks.length > 0, ctx).toBe(!blocksEqual(base, draft));
       if (!d.hunks.length) continue;
       withChanges++;
-      const groups = projectReview(d).groups.map((g) => g.hunks.map((h) => d.hunks[h.index]));
+      const groups = changeGroups(d).map((g) => g.hunks);
       const all = groups.flat();
 
-      const applyAll = composeHunks(schema, d, all, "apply");
-      const got = applySpanPatches(base, applyAll, "base");
+      const got = applySpanPatches(base, composeHunks(schema, d, all));
       expect(blocksEqual(got, draft), `${ctx} apply all`).toBe(true);
-      expect(composeHunks(schema, d, [], "apply"), ctx).toEqual([]);
-      const discardAll = composeHunks(schema, d, all, "discard");
-      expect(
-        blocksEqual(applySpanPatches(draft, discardAll, "draft"), base),
-        `${ctx} discard all`,
-      ).toBe(true);
+      expect(composeHunks(schema, d, []), ctx).toEqual([]);
 
       const chosen = groups.filter(() => r.chance(0.5));
       const set = chosen.flat();
-      const rest = groups.filter((g) => !chosen.includes(g)).flat();
-      if (chosen.length && rest.length) partial++;
-      const applied = composeHunks(schema, d, set, "apply");
-      const viaApply = applySpanPatches(base, applied, "base");
-      const viaDiscard = applySpanPatches(draft, composeHunks(schema, d, rest, "discard"), "draft");
-      expect(blocksEqual(viaApply, viaDiscard), `${ctx} apply(set) = discard(rest)`).toBe(true);
-      untouchedOutside(base, applied, viaApply);
-      const discarded = composeHunks(schema, d, set, "discard");
-      untouchedOutside(
-        draft,
-        discarded.map((p) => ({ ...p, base: p.draft })),
-        applySpanPatches(draft, discarded, "draft"),
-      );
+      if (chosen.length && chosen.length < groups.length) partial++;
+      const applied = composeHunks(schema, d, set);
+      untouchedOutside(base, applied, applySpanPatches(base, applied));
     }
     expect(withChanges).toBeGreaterThan(350);
     expect(partial).toBeGreaterThan(100);
@@ -349,17 +331,11 @@ describe("partial Apply and Discard never corrupt text", () => {
     const draft = plain("RED one two three four BLUE");
     const d = diffBlocks(base, draft);
     expect(d.hunks).toHaveLength(2);
-    const both = composeHunks(schema, d, d.hunks, "apply");
+    const both = composeHunks(schema, d, d.hunks);
     expect(both).toHaveLength(1);
-    expect(blocksEqual(applySpanPatches(base, both, "base"), draft)).toBe(true);
-    const first = applySpanPatches(base, composeHunks(schema, d, [d.hunks[0]], "apply"), "base");
+    expect(blocksEqual(applySpanPatches(base, both), draft)).toBe(true);
+    const first = applySpanPatches(base, composeHunks(schema, d, [d.hunks[0]]));
     expect(first[0].textContent).toBe("RED one two three four blue");
-    const discardSecond = applySpanPatches(
-      draft,
-      composeHunks(schema, d, [d.hunks[1]], "discard"),
-      "draft",
-    );
-    expect(discardSecond[0].textContent).toBe("RED one two three four blue");
   });
 });
 

@@ -122,9 +122,7 @@ export type TabPlacement =
 export function placeTab(
   found: { scheme: ProjectContextTreeScheme; file: TreeFile; owner: ContextOwner } | null,
   listSynced: boolean,
-  draftOnly: boolean,
 ): TabPlacement {
-  if (draftOnly) return { kind: "none" };
   if (!found) return listSynced ? { kind: "removed" } : { kind: "none" };
   return {
     kind: "projected",

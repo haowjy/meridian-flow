@@ -48,13 +48,12 @@ export const docCopyCommand: CommandSpec = {
     if (!to) throw usageError("--to <folder-uri> is required");
 
     const draftWork = stringOption(ctx, "draft-work");
-    const view: CopyContextEntryView | undefined =
-      draftWork === undefined
-        ? undefined
-        : {
-            kind: "draft",
-            owner: `work:${(await resolveWork(session, projectId, draftWork)).id}`,
-          };
+    const drafting =
+      draftWork === undefined ? null : await resolveWork(session, projectId, draftWork);
+    if (drafting && !drafting.draftId) throw usageError(`Work ${draftWork} names no draft`);
+    const view: CopyContextEntryView | undefined = drafting?.draftId
+      ? { kind: "draft", draft: drafting.draftId }
+      : undefined;
 
     if (ctx.positionals.length === 0) throw usageError("Name at least one source URI");
     const sources: CopyContextEntrySource[] = [];

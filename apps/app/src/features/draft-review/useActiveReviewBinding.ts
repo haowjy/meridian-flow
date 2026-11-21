@@ -12,16 +12,16 @@ export function useActiveReviewBinding({
   documentId: string | null;
   liveSession: DocumentSession | null;
   active: boolean;
-  /** Host policy: requested review on phone, resolved draft room on desktop. */
+  /** Host policy: requested review on phone, the painted draft on desktop. */
   inReview: boolean;
 }) {
   const { setActiveEditorDocumentId } = useDraftReview();
   const owner = useRef({});
   useEffect(() => {
     if (!active || !documentId) return;
-    setActiveEditorDocumentId(documentId, liveSession, inReview, owner.current);
-    return () => setActiveEditorDocumentId(null, null, false, owner.current);
-  }, [active, documentId, inReview, liveSession, setActiveEditorDocumentId]);
+    setActiveEditorDocumentId(documentId, owner.current);
+    return () => setActiveEditorDocumentId(null, owner.current);
+  }, [active, documentId, setActiveEditorDocumentId]);
 
   useEffect(() => {
     if (!active || !inReview || !liveSession) return;

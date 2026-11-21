@@ -8,7 +8,6 @@
  * state (that's React Query).
  */
 
-import type { ListDiscardEntriesResponse } from "@meridian/contracts/branches";
 import type { CommandBody } from "@meridian/contracts/commands";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
 import type {
@@ -254,16 +253,6 @@ export function getTrash(projectId: string, init?: RequestInitOptions): Promise<
     headers: init?.headers,
     signal: init?.signal,
   });
-}
-
-export function getTrashDiscards(
-  projectId: string,
-  init?: RequestInitOptions,
-): Promise<ListDiscardEntriesResponse> {
-  return getJson(
-    urlFor(`/api/projects/${encodeURIComponent(projectId)}/context/trash/discards`, init),
-    { headers: init?.headers, signal: init?.signal },
-  );
 }
 
 export function getTrashedDocument(

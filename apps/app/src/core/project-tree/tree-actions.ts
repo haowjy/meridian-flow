@@ -59,8 +59,8 @@ export class TreeActions {
     const session = this.session();
     if (!session) throw new Error("There is no tree list to change here.");
     const { doc } = session.getSnapshot();
-    const { view, pendingText } = this.version();
-    const replay = () => session.replay(view, pendingText);
+    const { view } = this.version();
+    const replay = () => session.replay(view);
     // The session's replay is the one every view reads: the writer numbers and ranks against it.
     return {
       writer: new TreeWriter(doc, "local", (asked) => (asked === view ? replay() : null)),
@@ -112,9 +112,7 @@ export class TreeActions {
   undo(step: UndoStep): Promise<boolean> {
     const session = this.session();
     if (!session) return Promise.resolve(false);
-    const { view, pendingText } = this.version();
-    const same = step.kind === "tree" && view.draft === step.draft;
-    return undoStep(session, step, this.actor, this.closed, same ? pendingText : undefined);
+    return undoStep(session, step, this.actor, this.closed);
   }
 
   /** The record parent for a folder's id or a source's id (the top of its tree). */

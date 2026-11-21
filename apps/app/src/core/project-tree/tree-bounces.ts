@@ -20,21 +20,10 @@ import type * as Y from "yjs";
 import type { TreeListSession } from "../tree-list/tree-list-session";
 import { addBounces, type Bounce, type Was } from "./tree-undo";
 
-/** What a bounce reads from, and tells, the document sessions of this browser. */
-export type BounceHost = {
-  /** A dropped create's draft will never exist: its room ends for good, its typed words dropped. */
-  endCreatedDraftRoom(documentId: string): void;
-};
-
-export function watchBounces(
-  session: TreeListSession,
-  actor: string,
-  host: BounceHost,
-): () => void {
+export function watchBounces(session: TreeListSession, actor: string): () => void {
   let doc: Y.Doc | null = null;
   let settles = 0;
   let seen = new Set<string>();
-  const ended = new Set<string>();
   let read = false;
   const check = () => {
     if (!read) return;
@@ -46,13 +35,6 @@ export function watchBounces(
     doc = now;
     settles = length;
     const own = droppedRecords(now).filter(({ record }) => record.actor === actor);
-    // Whichever tab said it: this one's room for the draft may still be retrying.
-    for (const { record } of own) {
-      if (record.type !== "create" || record.kind !== "document" || record.draft === null) continue;
-      if (ended.has(record.id)) continue;
-      ended.add(record.id);
-      host.endCreatedDraftRoom(record.node);
-    }
     // A copy just read (or a replacement) holds what earlier tabs already said.
     if (fresh) {
       seen = new Set(own.map(({ record }) => record.id));

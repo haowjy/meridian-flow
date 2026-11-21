@@ -2,7 +2,7 @@
 
 import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { Button } from "@/components/ui/button";
 
 export type ReviewStateProps = {
@@ -50,7 +50,7 @@ export function ReviewNextAction({
       onClick={() => (next ? onOpenNext(next) : onShowLive())}
     >
       {next ? (
-        <Trans>Next draft</Trans>
+        <Trans>Next document</Trans>
       ) : draftOnly ? (
         <Trans>Close review</Trans>
       ) : (

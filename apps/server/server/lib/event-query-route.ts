@@ -44,11 +44,7 @@ const correlationParsers = {
   draftId: parseStringCorrelation,
   yjsClient: parseNumberCorrelation,
   yjsSpans: parseStringCorrelation,
-  batchId: parseStringCorrelation,
-  pushId: parseStringCorrelation,
-  branchId: parseStringCorrelation,
   folderIds: parseStringCorrelation,
-  releasedDraftIds: parseStringCorrelation,
 } satisfies Record<keyof EventCorrelation, CorrelationParser>;
 
 function singleValue(query: EventQueryParameters, key: string): string | undefined {

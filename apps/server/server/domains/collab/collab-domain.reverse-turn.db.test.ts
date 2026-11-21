@@ -5,7 +5,7 @@
  * - the certified projection as the sole publisher of stored Markdown
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { asGrantedWriter, testFileGrant } from "../../test-support/file-grants.js";
 import { treeSeeder } from "../../test-support/tree-seed.js";
@@ -13,7 +13,7 @@ import { writeMarkdown } from "./test-support/bound-writes.js";
 import { createTestDocumentLinkScopes } from "./test-support/document-link-scopes.js";
 import { modelWrite } from "./test-support/model-write.js";
 import {
-  createWorkBranchFixture,
+  createWorkDraftFixture,
   DOC_ID,
   DRAFT_DESTINATION,
   PROJECT_ID,
@@ -22,7 +22,7 @@ import {
   TURN_2_ID,
   TURN_ID,
   USER_ID,
-} from "./test-support/work-branch-fixture.js";
+} from "./test-support/work-draft-fixture.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -32,10 +32,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab domain reverseTurn (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
-    const { draftWriteJournal, documentBlockRooms, documentBlocks, documents, modelResponses } =
+    const { documentBlockRooms, documentBlocks, documentEdits, documents, modelResponses } =
       await import("@meridian/database/schema");
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose } = createWorkBranchFixture(db);
+    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     afterEach(dispose);
 
     beforeEach(reset);
@@ -125,6 +125,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         origin: { type: "user", actorUserId: USER_ID as never },
         threadId: THREAD_ID as never,
       });
+      const [responseA, responseB] = [
+        "00000000-0000-4000-8000-0000000007a1",
+        "00000000-0000-4000-8000-0000000007a2",
+      ];
+      await db.insert(modelResponses).values(
+        [
+          [responseA, TURN_ID],
+          [responseB, TURN_2_ID],
+        ].map(([id, turnId]) => ({
+          id: id as never,
+          turnId: turnId as never,
+          sequence: 0,
+          provider: "mock",
+          model: "mock",
+          requestMessageCount: 0,
+          predictedCacheState: "cold" as const,
+          predictedCacheReason: "facts_unavailable" as const,
+        })),
+      );
 
       await expect(
         modelWrite(
@@ -138,11 +157,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            grant: testFileGrant(DRAFT_DESTINATION),
+            grant: testFileGrant(DRAFT_DESTINATION, DOC_ID),
             threadId: THREAD_ID,
             turnId: TURN_ID,
             responseIdentity: {
-              modelResponseId: "response-reused-provider-tool-id-db-a",
+              modelResponseId: responseA,
             },
           },
           { accountId: USER_ID, projectId: PROJECT_ID },
@@ -161,11 +180,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
           {
             sessionId: "session-reused-provider-tool-id-db",
-            grant: testFileGrant(DRAFT_DESTINATION),
+            grant: testFileGrant(DRAFT_DESTINATION, DOC_ID),
             threadId: THREAD_ID,
             turnId: TURN_2_ID,
             responseIdentity: {
-              modelResponseId: "response-reused-provider-tool-id-db-b",
+              modelResponseId: responseB,
             },
           },
           { accountId: USER_ID, projectId: PROJECT_ID },
@@ -173,10 +192,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).resolves.toMatchObject({ status: "success" });
 
       const rows = await db
-        .select({ id: draftWriteJournal.id })
-        .from(draftWriteJournal)
-        .orderBy(draftWriteJournal.id);
-      expect(rows).toHaveLength(2);
+        .select({ responseId: documentEdits.responseId, toolCallId: documentEdits.toolCallId })
+        .from(documentEdits)
+        .where(
+          and(eq(documentEdits.documentId, DOC_ID as never), eq(documentEdits.actor, "agent")),
+        );
+      expect(rows.map((row) => row.responseId).sort()).toEqual([responseA, responseB]);
     });
   });
 }

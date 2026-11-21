@@ -1,4 +1,4 @@
-import type { BranchId } from "@meridian/contracts";
+import type { DraftId } from "@meridian/contracts";
 /**
  * What one tree must tell a Copy about itself, and what it must do with what a Copy made.
  *
@@ -170,7 +170,7 @@ export interface ContextCopyAdapter {
     parent?: { folderId: string; createFolders: readonly string[] };
     plan: CopyPlan;
     contents: ReadonlyMap<string, CopiedContent>;
-    branchId: BranchId | null;
+    draftId: DraftId | null;
     position?: ContextSiblingPosition;
   }): Promise<Result<CopyOutcome, AdapterFault>>;
 }

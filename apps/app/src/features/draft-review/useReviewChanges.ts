@@ -11,8 +11,8 @@
  * only the open review's focus, stepping and command behavior.
  */
 import { useCallback, useMemo } from "react";
-
 import type { DraftChangesView } from "./draft-changes";
+import { useHostEditor } from "./host-editor";
 import { type ReviewChange, resolveFocusedChange, targetOfChanges } from "./review-model";
 import type { DraftReviewController } from "./useDraftReviewController";
 import { useOpenReviewChanges } from "./useOpenReviewChanges";
@@ -27,7 +27,7 @@ export type ReviewChangesView = DraftChangesView & {
    * answers. Surfaces say so honestly and offer no way on.
    */
   completing: "apply" | "discard" | null;
-  /** The synced projection has no differences. This never closes the draft room. */
+  /** The review has no differences left. */
   finished: boolean;
   focus: (change: ReviewChange, options?: { scroll?: boolean }) => void;
   step: (direction: 1 | -1) => void;
@@ -37,7 +37,7 @@ export function useReviewChanges(
   controller: DraftReviewController,
   options?: { enabled?: boolean },
 ): ReviewChangesView {
-  const { documentId, itemKey, changes, items, completing, finished, status, retry } =
+  const { documentId, itemKey, changes, items, completing, finished, status } =
     useOpenReviewChanges(controller, options);
   // Focus belongs to the review; this only resolves its group id.
   const focused = resolveFocusedChange(changes, controller.focus) ?? changes[0] ?? null;
@@ -80,23 +80,25 @@ export function useReviewChanges(
     [changes, focus, focused],
   );
 
+  const editor = useHostEditor();
   const run = useCallback(
     async (change: ReviewChange, mode: "apply" | "discard", instant: boolean) => {
       // Apply draft and Discard draft handle what has no per-change commands.
       if (!review) return;
       settleFocus(change, instant);
-      const outcome = await controller.commandChange(mode, review, targetOfChanges([change]));
-      // The change is back (or was updated): the writer returns to it, where its
-      // reason is shown. Only in the review the command was sent from: the
-      // writer may have opened another while it was in flight.
-      if (
-        outcome.kind === "settled" ||
-        (outcome.kind === "change-refused" && outcome.code !== "gone")
-      ) {
-        controller.focusReviewChange(review, change, { scroll: true });
+      // A suggestion is resolved in the tab, as one edit of the writer's: Ctrl+Z takes it back.
+      if (!change.tree && !change.whole) {
+        if (mode === "apply") editor?.commands.acceptSuggestions({ id: change.id });
+        else editor?.commands.rejectSuggestions({ id: change.id });
+        return;
       }
+      const outcome = await controller.commandChange(mode, review, targetOfChanges([change]));
+      // The change is back: the writer returns to it. Only in the review the command was sent
+      // from: the writer may have opened another while it was in flight.
+      if (outcome.kind === "settled")
+        controller.focusReviewChange(review, change, { scroll: true });
     },
-    [controller.commandChange, controller.focusReviewChange, review, settleFocus],
+    [controller.commandChange, controller.focusReviewChange, review, settleFocus, editor],
   );
   const apply = useCallback((change: ReviewChange) => run(change, "apply", false), [run]);
   const discard = useCallback((change: ReviewChange) => run(change, "discard", true), [run]);
@@ -105,12 +107,11 @@ export function useReviewChanges(
     documentId,
     itemKey,
     status,
-    retry,
     items,
     focused,
     focusedIndex,
 
-    locked: controller.changesLocked || completing === "discard" || status !== "ready",
+    locked: controller.dispositionLocked || completing === "discard" || status !== "ready",
     completing,
     finished,
     focus,

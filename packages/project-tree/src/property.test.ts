@@ -157,7 +157,22 @@ function makeReplicas(): Replica[] {
 function viewProblems(doc: Y.Doc, view: View): string[] {
   const projection = replayView(doc, view);
   const ops = viewRecords(doc, view);
-  const created = ops.flatMap((op) => (op.type === "create" ? [op.node] : []));
+  // Rule 15: a node may leave the view only while a withdrawal in force names it. That another
+  // delete keeps it in Trash is the casebook's rule 15 case.
+  const byRoot = new Map(ops.map((op) => [op.carries ?? op.id, op]));
+  // A withdrawal, or the Undo of a restore that took one back, which puts it back.
+  const withdraws = (op: TreeRecord): boolean => {
+    if (op.type !== "delete" || op.draft !== null || op.undoes === undefined) return false;
+    if (op.fromDraft !== undefined && op.carries === undefined) return true;
+    const restore = byRoot.get(op.undoes);
+    const back = restore?.type === "restore" && restore.undoes && byRoot.get(restore.undoes);
+    return back ? withdraws(back) : false;
+  };
+  const withdrawn = (node: string) =>
+    ops.some((op) => op.node === node && projection.inForce.has(op.id) && withdraws(op));
+  const created = ops.flatMap((op) =>
+    op.type === "create" && !withdrawn(op.node) ? [op.node] : [],
+  );
   const problems = treeViolations(projection, created);
   const named = new Set(
     ops.flatMap((op) => (op.type === "delete" ? [op.node, ...op.cascade] : [])),
@@ -291,7 +306,6 @@ function runSeed(seed: number): {
       if (action < 0.93) {
         const shownBefore = standing(replayView(writer.doc, view));
         const shownTree = replayView(writer.doc, view);
-        const liveRecords = viewRecords(writer.doc, LIVE);
         const liveBefore = standing(replayView(writer.doc, LIVE));
         // Apply lands what can land and leaves the rest pending.
         const viewBefore = viewRecords(writer.doc, view);
@@ -306,20 +320,13 @@ function runSeed(seed: number): {
           ),
         );
         const landed = applyDraft(writer, view.draft, "user:w", cmd(), some);
-        // The tree the Apply keeps: the Work's view behind the restores the Apply wrote.
-        const shapeBefore = fingerprint(
-          landed.restored.length > 0
-            ? replay([...liveRecords, ...landed.restored, ...pending], { draft: view.draft })
-            : shownTree,
-          false,
-        );
+        // The tree the Apply keeps: the Work's view.
+        const shapeBefore = fingerprint(shownTree, false);
         const landing = landed.left.length > 0;
         if (landed.left.length > 0) leftPending += 1;
         if (random() < 0.3) {
           // Undo of an Apply at once: live and the draft both read as before it.
-          const result = undoApply(writer, landed.command, "user:w", cmd(), {
-            restoredByApply: landed.restored.map((record) => record.id),
-          });
+          const result = undoApply(writer, landed.command, "user:w", cmd());
           undone += 1;
           // No writer path doubles a live copy (it takes a live Undo of an Un-Apply's Undo record):
           // seed 400084 fails without this exemption. Keep it (#1610).
@@ -370,22 +377,26 @@ function runSeed(seed: number): {
               ),
               false,
             );
-          // A view that reads as before passes as is: leaving out the records that could not land
-          // can change which of two same-named siblings reads as the later twin.
+          // A view that reads as before passes as is: without a record that could not land, a
+          // node only it brought back from Trash reads trashed before and lifted after.
           if (fingerprint(replayView(writer.doc, view), false) !== shapeBefore)
             expect(without(viewRecords(writer.doc, view)), `seed ${seed} landing apply`).toBe(
-              without(
-                landed.restored.length > 0
-                  ? [...liveRecords, ...landed.restored, ...pending]
-                  : viewBefore,
-              ),
+              without(viewBefore),
             );
         }
+        // What the writer saw lands; a record on a node in Trash in both waits, so the nodes in
+        // Trash are left out.
+        const shown = (shape: string) =>
+          shape
+            .split("\n")
+            .filter((line) => !line.trimStart().startsWith("~"))
+            .filter((line, at, lines) => line.startsWith(" ") || lines[at + 1]?.startsWith(" "))
+            .join("\n");
         if (!some && !landing)
           expect(
-            fingerprint(replayView(writer.doc, LIVE), false),
+            shown(fingerprint(replayView(writer.doc, LIVE), false)),
             `seed ${seed} WYSIWYG apply`,
-          ).toBe(shapeBefore);
+          ).toBe(shown(shapeBefore));
       } else {
         discardDraft(writer, view.draft, "user:w", cmd(), some);
         if (!some)
@@ -453,7 +464,6 @@ function runSeed(seed: number): {
           n.rank,
           n.trashed,
           n.keptByChild,
-          n.keptByPending,
           n.purged,
           n.filetype,
         ]

@@ -9,7 +9,6 @@ import { childAtSegment, idHex } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
-  appliedNodes,
   applyDraft,
   changedFolders,
   childrenOf,
@@ -25,7 +24,6 @@ import {
   segmentOf,
   sourceRoot,
   type TreeNode,
-  type TreeProjection,
   type TreeRecord,
   TreeWriter,
   treeViolations,
@@ -33,7 +31,7 @@ import {
   type View,
   viewRecords,
 } from "./index.js";
-import { branchRows, projectedRows } from "./rows.js";
+import { draftRows, projectedRows } from "./rows.js";
 import { undoChange } from "./undo-open.js";
 
 const ROOT = sourceRoot("manuscript");
@@ -66,14 +64,6 @@ function start() {
 function purge(w: TreeWriter, removal: { id: string; node: string }) {
   const entry = w.view(LIVE).trash.find((each) => each.id === removal.id);
   return w.purge("system", removal, entry ? [entry.node, ...entry.cascade] : []);
-}
-
-/** Drafted records review reports as "deleted in live": their node stands in the view only because they are pending. */
-function targetGone(doc: Y.Doc, view: View): TreeRecord[] {
-  const projection: TreeProjection = replayView(doc, view);
-  return viewRecords(doc, view).filter(
-    (op) => op.draft === view.draft && projection.nodes.get(op.node)?.keptByPending === true,
-  );
 }
 
 describe("part 1: a draft and live changed the same thing", () => {
@@ -219,7 +209,7 @@ describe("part 1: a draft and live changed the same thing", () => {
     expect([a, b, c].every((n) => t.at(n)?.trashed === false)).toBe(true);
   });
 
-  it("9. draft moved and renamed a chapter, live deleted it: the Work's view still shows it, marked; Apply lands both and brings it back", () => {
+  it("9. draft moved and renamed a chapter, live deleted it: it is in Trash in the Work's view too; Apply leaves both pending until a restore", () => {
     const t = start();
     const arc = t.folder("Arc 3");
     const ch = t.chapter("Chapter 49");
@@ -229,20 +219,22 @@ describe("part 1: a draft and live changed the same thing", () => {
     t.w.rename(D, CHAT, other, "Lands");
     t.w.delete(LIVE, WRITER, ch);
     expect(t.at(ch)?.trashed).toBe(true);
-    expect(t.at(ch, D)).toMatchObject({
-      parent: arc,
-      name: "The Fall",
-      trashed: false,
-      keptByPending: true,
-    });
-    expect(targetGone(t.doc, D).map((op) => op.type)).toEqual(["move", "rename"]);
-    const before = fingerprint(t.w.view(D), false);
-    const { copies, left, lifted } = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(copies.map((op) => op.type)).toEqual(["move", "rename", "rename"]);
-    expect(left).toEqual([]);
-    expect(lifted.map(({ node, copy }) => [node, copy.type])).toEqual([[ch, "move"]]);
+    expect(t.at(ch, D)?.trashed).toBe(true);
+    // A node in Trash in both is no change in the Work's rows.
+    expect(draftRows(projectedRows(t.w.view(LIVE)), projectedRows(t.w.view(D)), []).has(ch)).toBe(
+      false,
+    );
+    const first = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(first.copies.map((op) => op.type)).toEqual(["rename"]);
+    expect(first.left).toEqual([]);
+    expect(t.at(ch)?.trashed).toBe(true);
+    expect(t.at(other)?.name).toBe("Lands");
+    // Restored from Trash, the Work's move and rename show again, and Apply lands them.
+    t.w.restore(LIVE, WRITER, ch);
+    expect(t.at(ch, D)).toMatchObject({ trashed: false, parent: arc, name: "The Fall" });
+    const second = applyDraft(t.w, "work-1", WRITER, cmd());
+    expect(second.copies.map((op) => op.type)).toEqual(["move", "rename"]);
     expect(t.at(ch)).toMatchObject({ trashed: false, parent: arc, name: "The Fall" });
-    expect(fingerprint(t.w.view(D), false)).toBe(before);
     t.valid();
   });
 
@@ -253,23 +245,7 @@ describe("part 1: a draft and live changed the same thing", () => {
     t.w.move(D, CHAT, ch, arc);
     t.w.delete(D, CHAT, ch);
     t.w.delete(LIVE, WRITER, ch);
-    expect(t.at(ch, D)).toMatchObject({ trashed: true, keptByPending: false });
-  });
-
-  it("10. draft edited a chapter's text, live deleted the chapter (and its folder): the Work's view still shows it, marked", () => {
-    const t = start();
-    const f = t.folder("Doomed");
-    const ch = t.chapter("Letter", f);
-    t.w.delete(LIVE, WRITER, f);
-    // The text draft is not in the tree list; the view is told which documents the Work holds
-    // a pending text draft of.
-    const view = replayView(t.doc, D, new Set([ch]));
-    expect(view.nodes.get(ch)).toMatchObject({ trashed: false, keptByPending: true });
-    expect(view.nodes.get(f)).toMatchObject({ trashed: false, keptByChild: true });
-    expect(treeViolations(view)).toEqual([]);
-    // Without a pending text draft, and in live, it is in Trash.
-    expect(t.at(ch, D)?.trashed).toBe(true);
-    expect(t.at(ch)?.trashed).toBe(true);
+    expect(t.at(ch, D)).toMatchObject({ trashed: true });
   });
 
   it("11. draft deleted a chapter, live edited its text: the delete applies; the tree list holds what review needs to warn", () => {
@@ -323,7 +299,7 @@ describe("part 2: two authors inside one Work's draft", () => {
     const arc2 = both.folder("Arc", ROOT, D, CHAT);
     both.chapter("Scene", arc2, D, CHAT2);
     const create2 = recordsOf(both.doc).toArray()[0] as TreeRecord;
-    expect(discardDraft(both.w, "work-1", WRITER, cmd(), [create2.id])).toHaveLength(2);
+    expect(discardDraft(both.w, "work-1", WRITER, cmd(), [create2.id]).discarded).toHaveLength(2);
     // A discard that did not see the scene (two writers, or a scene written after the discard
     // was computed): only the folder's create is settled.
     t.doc.transact(() => t.w.settle(CHAT, [createArc.id], "discarded"));
@@ -408,7 +384,7 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
 
   it("20. discards 'create Arc': everything made in or moved into Arc goes with it, the rest stays", () => {
     const t = reorganisation();
-    const gone = discardDraft(t.w, "work-1", WRITER, cmd(), [t.idOf("create", t.arc)]);
+    const gone = discardDraft(t.w, "work-1", WRITER, cmd(), [t.idOf("create", t.arc)]).discarded;
     expect(gone).toHaveLength(3);
     expect(t.at(t.ch1, D)?.parent).toBe(ROOT);
     expect(t.at(t.arc, D)).toBeUndefined();
@@ -513,19 +489,18 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
     const gone = t.chapter("Chapter 2");
     const loop = t.w.move(D, CHAT, a, b);
     t.w.rename(D, CHAT, ch, "Renamed");
-    const revived = t.w.rename(D, CHAT, gone, "Brought back");
+    t.w.rename(D, CHAT, gone, "Waits for a restore");
     t.w.move(LIVE, WRITER, b, a);
     t.w.delete(LIVE, WRITER, gone);
     // Before Apply, the draft's view already says which part cannot land.
     expect(t.w.view(D).skipped).toEqual([{ record: loop.id, reason: "cycle" }]);
-    expect(targetGone(t.doc, D).map((op) => op.node)).toEqual([gone]);
     const { copies, left } = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(copies.map((op) => op.carries)).toEqual([expect.any(String), revived.id]);
+    expect(copies.map((op) => op.type)).toEqual(["rename"]);
     expect(left.map(({ record, why }) => [record.id, why])).toEqual([[loop.id, "would_loop"]]);
     expect(t.at(ch)?.name).toBe("Renamed");
     expect(t.at(a)?.parent).toBe(ROOT);
-    // The rename of a node live had in Trash lands and brings it back (rule 9).
-    expect(t.at(gone)).toMatchObject({ trashed: false, name: "Brought back" });
+    // The rename of a node live has in Trash waits for its restore.
+    expect(t.at(gone)).toMatchObject({ trashed: true, name: "Chapter 2" });
     // The writer fixes the cause in live, and the same drafted move now lands.
     t.w.move(LIVE, WRITER, b, ROOT);
     expect(t.w.view(D).skipped).toEqual([]);
@@ -761,15 +736,51 @@ describe("Undo of an Apply, fact by fact", () => {
     expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([b]);
   });
 
-  it("a document with text written since stays, and the folder it stands in while it does", () => {
+  it("an Apply or Discard Undo leaves a created folder and document the Work's alone, out of live and Trash; any other Undo of the create goes to Trash", () => {
     const t = start();
     const folder = t.folder("Arc", ROOT, D, CHAT);
     const ch = t.chapter("Chapter 50", folder, D, CHAT);
     const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
-    const result = undoApply(t.w, command, WRITER, cmd(), { writtenSince: new Set([ch]) });
-    expect(result.left.map(({ record, why }) => [record.node, why])).toEqual([[ch, "has_text"]]);
-    expect(t.at(ch)).toMatchObject({ trashed: false, parent: folder });
-    expect(t.at(folder)).toMatchObject({ trashed: false, keptByChild: true });
+    expect(undoApply(t.w, command, WRITER, cmd()).left).toEqual([]);
+    const live = t.w.view(LIVE);
+    expect([live.nodes.has(folder), live.nodes.has(ch), live.trash]).toEqual([false, false, []]);
+    expect(t.at(ch, D)).toMatchObject({ trashed: false, parent: folder });
+    expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([folder, ch]);
+    // A Discard after it puts them in Trash as one entry, and its Undo makes them pending again.
+    const discard = cmd();
+    const { trashed } = discardDraft(t.w, "work-1", WRITER, discard, undefined, { trash: true });
+    expect(t.w.view(LIVE).trash.map((entry) => entry.node)).toEqual([folder]);
+    restoreDiscard(t.w, discard, WRITER, "work-1", cmd(), trashed);
+    expect([t.w.view(LIVE).nodes.has(folder), t.w.view(LIVE).trash]).toEqual([false, []]);
+    expect(t.at(ch, D)).toMatchObject({ trashed: false, parent: folder });
+    t.valid();
+
+    // Any other Undo of a create an Apply landed goes to Trash, and a Trash restore of part of a
+    // discarded folder keeps it, and the folder, in live.
+    const scene = t.chapter("Scene", ROOT, D, CHAT);
+    const create = pendingRecords(t.doc, "work-1").find(
+      (record) => record.node === scene,
+    ) as TreeRecord;
+    applyDraft(t.w, "work-1", WRITER, cmd());
+    // The model's own Undo of its create: its record stays applied, so the node is no draft's.
+    expect(typeof undoChange(t.w, D, CHAT, create.id)).toBe("object");
+    expect(t.w.view(LIVE).trash.map((entry) => entry.node)).toEqual([scene]);
+
+    const arc = t.folder("Arc 2", ROOT, D, CHAT);
+    const a = t.chapter("A", arc, D, CHAT);
+    const b = t.chapter("B", arc, D, CHAT);
+    const again = cmd();
+    const second = discardDraft(t.w, "work-1", WRITER, again, undefined, { trash: true });
+    t.w.restore(LIVE, WRITER, a);
+    restoreDiscard(t.w, again, WRITER, "work-1", cmd(), second.trashed);
+    // A stays live, and the folder holding it; B is the Work's again.
+    expect([t.at(arc)?.trashed, t.at(a)?.trashed, t.w.view(LIVE).nodes.has(b)]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect(pendingRecords(t.doc, "work-1").map((record) => record.node)).toEqual([b]);
+    t.valid();
   });
 
   it("a second Undo of the same Apply has nothing to take back", () => {
@@ -805,40 +816,18 @@ function reorganisedOnce() {
 }
 
 describe("an Apply's copy that a later record undid is no longer in force", () => {
-  const inLive = (t: ReturnType<typeof start>, command: string) => appliedNodes(t.doc, command, []);
-
   it("a card's Undo of the drafted rename ends the Apply's copy", () => {
     const t = start();
     const n = t.chapter("Hall");
     const drafted = t.w.rename(D, CHAT, n, "Lobby");
     const { command, copies } = applyDraft(t.w, "work-1", WRITER, cmd());
-    expect(inLive(t, command)).toEqual([n]);
     undoChange(t.w, D, CHAT, drafted.id);
     expect(t.at(n)?.name).toBe("Hall");
-    expect(inLive(t, command)).toEqual([]);
     expect(undoChange(t.w, LIVE, WRITER, (copies[0] as TreeRecord).id)).toBe("already");
     expect(undoApply(t.w, command, WRITER, cmd())).toMatchObject({
       undone: [],
       left: [{ why: "already" }],
     });
-  });
-
-  it("an Apply that only restores lists the node until Un-Apply or an Undo of the restore takes it back", () => {
-    for (const how of ["unapply", "undo"] as const) {
-      const t = start();
-      const n = t.chapter("Hall");
-      t.w.delete(LIVE, WRITER, n);
-      const restore = t.w.restore(LIVE, WRITER, n);
-      const { command } = applyDraft(t.w, "work-1", WRITER, cmd());
-      const mine = [restore.id];
-      expect(appliedNodes(t.doc, command, mine)).toEqual([n]);
-      if (how === "unapply") {
-        const result = undoApply(t.w, command, WRITER, cmd(), { restoredByApply: mine });
-        expect(result.left).toEqual([]);
-      } else undoChange(t.w, LIVE, WRITER, restore.id);
-      expect(t.at(n)?.trashed).toBe(true);
-      expect(appliedNodes(t.doc, command, mine)).toEqual([]);
-    }
   });
 });
 
@@ -893,7 +882,7 @@ describe("part 5: what a document is", () => {
     expect(undoChange(t.w, LIVE, WRITER, renamed.id)).toBe("already");
   });
 
-  it("34. restores a Discard into another branch: the copies are pending there", () => {
+  it("34. restores a Discard into another draft: the copies are pending there", () => {
     const t = start();
     const ch = t.chapter("Chapter 1");
     t.w.rename(D, CHAT, ch, "Draft name");
@@ -1004,8 +993,7 @@ describe("replay rules 9 to 13", () => {
     t.w.delete(D, CHAT, own);
     t.w.rename(D, CHAT, own, "Renamed after its own delete");
     expect(t.at(live)?.trashed).toBe(true);
-    // The Work's view keeps the live-deleted node standing while it has a pending change (rule 7).
-    expect(t.at(live, D)).toMatchObject({ trashed: false, keptByPending: true });
+    expect(t.at(live, D)).toMatchObject({ trashed: true });
     expect(t.at(own, D)).toMatchObject({
       trashed: false,
       name: "Renamed after its own delete",
@@ -1248,7 +1236,7 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     const work = t.w.view(D);
     const pending = pendingRecords(t.doc, "work-1");
     expect([...changedFolders(live, work, pending)]).toEqual([first]);
-    const rows = branchRows(projectedRows(live), projectedRows(work), pending);
+    const rows = draftRows(projectedRows(live), projectedRows(work), pending);
     expect(rows.get(later)).toMatchObject({ suffix: null, changed: false });
     expect(rows.get(first)).toMatchObject({ changed: true });
   });
@@ -1272,8 +1260,8 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     const arc = t.folder("Arc", ch2);
     t.w.delete(LIVE, WRITER, ch2);
     t.w.rename(D, CHAT, map, "Ch2");
-    // Putting Ch2 back brings Arc back too, and the Work's view shows both standing.
-    t.w.author(D, CHAT, {
+    // Putting Ch2 back brings Arc back too, before the Work's rename lands.
+    t.w.author(LIVE, WRITER, {
       type: "move",
       node: ch2,
       parent: ROOT,
@@ -1287,34 +1275,6 @@ describe("rule 14: twins keep the name, and the later carries a suffix", () => {
     expect(t.at(ch2)?.suffix).toBeUndefined();
     expect(t.at(map)?.suffix).toBe(idHex(map).slice(0, 4));
     t.valid();
-  });
-
-  it("an Apply's restore leaves the twins as the Work showed them; a Trash restore does not", () => {
-    const clash = () => {
-      const t = start();
-      const doc = t.chapter("Doc");
-      t.w.author(D, CHAT, {
-        type: "move",
-        node: doc,
-        parent: ROOT,
-        rank: "Zz",
-        from: { parent: ROOT, rank: t.at(doc)?.rank as string },
-      });
-      t.w.delete(LIVE, WRITER, doc);
-      const other = t.chapter("Doc");
-      const carries = (view: View = LIVE) => [
-        t.at(doc, view)?.suffix !== undefined,
-        t.at(other, view)?.suffix !== undefined,
-      ];
-      return { t, doc, carries };
-    };
-    const a = clash();
-    expect(a.carries(D)).toEqual([false, true]);
-    expect(applyDraft(a.t.w, "work-1", WRITER, cmd()).left).toEqual([]);
-    expect(a.carries()).toEqual([false, true]);
-    const b = clash();
-    b.t.w.restore(LIVE, WRITER, b.doc);
-    expect(b.carries()).toEqual([true, false]);
   });
 });
 
@@ -1530,20 +1490,6 @@ describe("Undo of names and places reads the changes in force", () => {
     expect(parentOf(a, f)).toBe(ROOT);
     expect(said(undoChange(a, LIVE, W, out.id))).toBe("move");
     expect(parentOf(a, node)).toBe(f);
-  });
-
-  it("an applied delete undone on two copies: the Apply's tree half has ended", () => {
-    const a = replica(1000);
-    const node = folder(a, "N");
-    a.delete(D, W, node);
-    const applied = applyDraft(a, "work-1", W, cmd());
-    const copy = viewRecords(a.doc, LIVE).at(-1) as TreeRecord;
-    expect(appliedNodes(a.doc, applied.command, [])).toEqual([node]);
-    const b = replica(2000, a);
-    undo(a, copy.id);
-    undo(b, copy.id);
-    sync(a, b);
-    expect(appliedNodes(a.doc, applied.command, [])).toEqual([]);
   });
 
   it("who last renamed a node after an Undo is the Undo's author", () => {
@@ -1869,7 +1815,7 @@ describe("two replicas of one list", () => {
     discardDraft(a, "w", WRITER, "cmd-1");
     purge(a, a.delete(LIVE, CHAT, arc));
     const result = restoreDiscard(a, "cmd-1", CHAT, "w", "restore-3");
-    expect(result).toEqual({ copies: [] });
+    expect(result).toEqual({ copies: [], back: [] });
   });
 
   it("a record id counts once: two copies that appended the same record merge to one act", () => {

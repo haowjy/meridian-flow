@@ -1,6 +1,5 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import type { LandingFault } from "@meridian/project-tree";
@@ -8,9 +7,8 @@ import { Folder as FolderIcon, Layers } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
-import type { ReviewFileTarget } from "@/client/query/work-branch-files";
+import type { ReviewFileTarget } from "@/client/query/work-draft-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { type GoneRow, withGone } from "@/components/app/RowWord";
 import { WorkName } from "@/components/app/WorkName";
@@ -26,13 +24,8 @@ import {
   useDraftNoticeWords,
 } from "@/features/draft-review/CommandNotice";
 import { draftCopyView } from "@/features/draft-review/copy-view";
-import {
-  DeletedLiveTag,
-  DeletedWord,
-  DraftCommandStatus,
-} from "@/features/draft-review/DraftCommandStatus";
+import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
-import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { ReviewStatusContent } from "@/features/draft-review/ReviewCompletion";
@@ -44,8 +37,8 @@ import {
   groupsOf,
   landingFaultSentence,
 } from "@/features/draft-review/tree-groups";
-import { hasApply, reviewHasNoRoom, treeLineOf } from "@/features/draft-review/tree-line";
-import type { WorkBranchCommands } from "@/features/draft-review/useWorkBranchCommands";
+import { hasApply, opensAsDocument, treeLineOf } from "@/features/draft-review/tree-line";
+import type { WorkDraftCommands } from "@/features/draft-review/usePressCommands";
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { useFocusSuccession } from "@/lib/focus-follow";
@@ -55,7 +48,7 @@ import { schemeLabel } from "../../context/context-schemes";
 import { useReferenceDrag } from "../../context/entry-drag/reference-source";
 import { useOpenProjectDocument } from "../../context/open-project-document";
 import { type NoticePlace, useTreeNoticeWords } from "../../context/use-tree-notice-words";
-import { useAiDraftLauncher } from "../../review-launch";
+import { useItemLauncher } from "../../review-launch";
 import { reviewCount, useShellTreeVersion } from "../../tree-version";
 import { useScopeDraftOwner, useWorkScope } from "../../use-work-scope";
 import { SourcePane } from "./SourcePane";
@@ -68,7 +61,7 @@ export type ChangesScope = {
   /** The Work the commands act for: the picked Work, else the chat on screen's (No Work for a chat's own drafts). */
   work: Work | null;
   /** "" when there is nothing to list (None with no chat of its own). */
-  ownerKey: string;
+  draftId: string;
   heading: string;
   empty: string;
   /** What waits on the writer: the documents and folders the Work or the chat changes. */
@@ -83,16 +76,16 @@ export type ChangesScope = {
 };
 
 export function useChangesScope(projectId: string, chatThreadId: string | null): ChangesScope {
-  const { picked, work, ownerKey } = useScopeDraftOwner(projectId, chatThreadId);
-  const lineageCount = useOwnerDrafts(projectId, picked ? "" : ownerKey, {
+  const { picked, work, draftId } = useScopeDraftOwner(projectId, chatThreadId);
+  const lineageCount = useOwnerDrafts(projectId, picked ? "" : draftId, {
     enabled: !picked,
-  }).drafts?.length;
+  }).data?.length;
   const { works, nameOf } = useWorks(projectId);
   const chatWorkId = useDisplayedThread(projectId, chatThreadId)?.workId ?? null;
   // The shell's count is the Changes list's: the Work's changed documents and folders, from its
   // open list. The Works list's stored count is the same count for a Work whose list is not open.
   const shell = useShellTreeVersion();
-  const changed = shell?.ownerKey === ownerKey && ownerKey ? shell.changeCount : null;
+  const changed = shell?.draftId === draftId && draftId ? shell.changeCount : null;
   // SourcesBody's context carries this scope: a new object every render would redraw every pane.
   return useMemo(() => {
     const count = picked ? reviewCount(shell, picked) : (changed ?? lineageCount ?? 0);
@@ -108,7 +101,7 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
       const name = nameOf(named);
       return {
         work,
-        ownerKey,
+        draftId,
         heading: t`Changes in ${name}`,
         empty: t`Nothing to review in ${name}.`,
         count,
@@ -118,14 +111,14 @@ export function useChangesScope(projectId: string, chatThreadId: string | null):
     }
     return {
       work,
-      ownerKey,
+      draftId,
       heading: t`Changes in this chat`,
       empty: t`Nothing to review in this chat.`,
       count,
-      offered: Boolean(ownerKey) && count > 0,
+      offered: Boolean(draftId) && count > 0,
       elsewhere,
     };
-  }, [picked, work, ownerKey, lineageCount, works, nameOf, chatWorkId, changed, shell]);
+  }, [picked, work, draftId, lineageCount, works, nameOf, chatWorkId, changed, shell]);
 }
 
 /**
@@ -154,26 +147,24 @@ export function ChangesSource({
   projectId: string;
   scope: ChangesScope;
   /** The scope's commands, held by the sidebar so their notice outlives this pane. */
-  controller: WorkBranchCommands;
+  controller: WorkDraftCommands;
   /** Whether the file is the document open in the editor. */
   isOpen: (file: ReviewFileTarget) => boolean;
   onPicked?: () => void;
 }) {
-  const { ownerKey } = scope;
+  const { draftId } = scope;
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
     controller.owner.snapshot,
   );
   const touch = useCoarsePointer();
-  const drafts = useOwnerDrafts(projectId, ownerKey);
+  const drafts = useOwnerDrafts(projectId, draftId);
   // A command in flight hides its row.
   const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
-  const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.draft.itemKey));
-  const sources = useProjectTrees(projectId).sources;
-  const schemeOfSource = (id: string) => sources.find((source) => source.id === id)?.scheme;
+  const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.item.itemKey));
   const shell = useShellTreeVersion();
-  const tree = shell?.ownerKey === ownerKey ? shell.tree : null;
+  const tree = shell?.draftId === draftId ? shell.tree : null;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
   const fold = (id: string) =>
     setFolded((current) => {
@@ -182,7 +173,7 @@ export function ChangesSource({
       return next;
     });
   const folderInFlight = (id: string) =>
-    drafts.branchId !== null && inFlight(folderKey(drafts.branchId, id));
+    drafts.draftId !== null && inFlight(folderKey(drafts.draftId, id));
   // A folder whose own cut is in flight hides as a document does, once nothing under it shows.
   const shownGroups = (list: ChangeGroup<ReviewFileTarget>[]): ChangeGroup<ReviewFileTarget>[] =>
     list.flatMap((group) => {
@@ -197,22 +188,21 @@ export function ChangesSource({
   const applyingKey = (itemKey: string) =>
     inFlight(itemKey) && controller.owner.state(itemKey).applying;
   const applying =
-    (drafts.files ?? []).some((file) => applyingKey(file.draft.itemKey)) ||
-    (drafts.branchId !== null &&
+    (drafts.files ?? []).some((file) => applyingKey(file.item.itemKey)) ||
+    (drafts.draftId !== null &&
       (grouped ?? []).some((group) =>
         (group.folder?.folders ?? []).some((id) =>
-          applyingKey(folderKey(drafts.branchId as string, id)),
+          applyingKey(folderKey(drafts.draftId as string, id)),
         ),
       ));
   // Grouped, the list's order is the groups' order: every index below reads this one.
   const files = groups.flatMap(groupFiles);
 
-  /** What an Apply of several asks about first: the documents it deletes and those it brings back. */
+  /** What an Apply of several asks about first: the documents it deletes. */
   const [asking, setAsking] = useState<{
     targets: readonly ReviewFileTarget[];
     folders: readonly string[];
     deleting: readonly ReviewFileTarget[];
-    restoring: readonly ReviewFileTarget[];
   } | null>(null);
   // The folder changes Apply all takes along: every one that can land.
   const changedFolders = groupsOf(groups).flatMap((group) =>
@@ -225,22 +215,19 @@ export function ChangesSource({
     setAsking(null);
   }, [hasFiles]);
 
-  const draftsOf = (targets: readonly ReviewFileTarget[]) =>
-    targets.map((file) => ({ documentId: file.documentId, itemKey: file.draft.itemKey }));
-  const everyDraft = draftsOf(files);
-  // One command; it brings back a document live deleted before landing what the Work drafted.
+  const refsOf = (targets: readonly ReviewFileTarget[]) =>
+    targets.map((file) => ({ documentId: file.documentId, itemKey: file.item.itemKey }));
+  const everyItem = refsOf(files);
   const applyAll = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
     hold();
     void controller.applyMany(
-      draftsOf(targets).map((draft) => ({ draft, target: { kind: "draft" as const } })),
+      refsOf(targets).map((item) => ({ item, target: { kind: "draft" as const } })),
       folders,
     );
   };
   const startApply = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
-    const restoring = targets.filter((file) => isDeletedLive(file.draft));
-    const deleting = targets.filter((file) => file.draft.tree?.deleted === true);
-    if (restoring.length > 0 || deleting.length > 0)
-      setAsking({ targets, folders, deleting, restoring });
+    const deleting = targets.filter((file) => file.item.tree?.deleted === true);
+    if (deleting.length > 0) setAsking({ targets, folders, deleting });
     else applyAll(targets, folders);
   };
   const untitled = t`Untitled document`;
@@ -249,15 +236,7 @@ export function ChangesSource({
   const question: CommandQuestion | null = asking
     ? {
         kind: "apply-all",
-        sentence: (
-          <ApplyAllQuestion
-            deleting={names(asking.deleting)}
-            restoring={asking.restoring.map((file) => ({
-              name: reviewFileTargetName(file, untitled),
-              scheme: file.draft.deletedFrom?.scheme,
-            }))}
-          />
-        ),
+        sentence: <ApplyAllQuestion deleting={names(asking.deleting)} />,
         keep: <Trans>Cancel</Trans>,
         confirm: <Trans>Apply all</Trans>,
         onKeep: () => setAsking(null),
@@ -268,7 +247,7 @@ export function ChangesSource({
         disabled: controller.dispositionLocked,
       }
     : null;
-  const owned = useDraftNotice(ownerKey);
+  const owned = useDraftNotice(draftId);
   const notice = owned?.surface.kind === "changes" ? owned : null;
   const words = useDraftNoticeWords(notice);
   const openDocument = useOpenProjectDocument(projectId);
@@ -284,14 +263,13 @@ export function ChangesSource({
     for (const group of groups) walk(group, null);
     // A row the Apply took stays drawn while a word speaks for it, so what undoing the Apply
     // skipped or left (an edit made since) has a row to show on.
-    for (const { key } of taken.get(ownerKey) ?? [])
-      if (!folderOf.has(key)) folderOf.set(key, null);
+    for (const { key } of taken.get(draftId) ?? []) if (!folderOf.has(key)) folderOf.set(key, null);
     return {
       holds: (node) => folderOf.has(node),
       parent: (node) => folderOf.get(node) ?? null,
       open: (folder) => !folded.has(folder),
     };
-  }, [groups, folded, ownerKey]);
+  }, [groups, folded, draftId]);
   const treeWords = useTreeNoticeWords(projectId, drawn);
   const wordOf = (key: string) => words.word(key) ?? treeWords.word(key);
   // One list of the rows as shown: a folder heads its documents, then the folders inside it.
@@ -328,14 +306,14 @@ export function ChangesSource({
   const hold = () => {
     const keys = items.map(changeKey);
     taken.set(
-      ownerKey,
+      draftId,
       items.map((item, at) => ({ key: item.key, row: item, after: keys.slice(0, at).reverse() })),
     );
   };
   const shown = withGone(
     items,
     changeKey,
-    (taken.get(ownerKey) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
+    (taken.get(draftId) ?? []).filter((row) => words.held(row.key) || treeWords.word(row.key)),
   );
   const goneRows = shown.some((item) => item.gone);
   // A Discard's focus follows to its notice's Undo; an Undo's, to the row it brings back.
@@ -370,14 +348,14 @@ export function ChangesSource({
               density="full"
               touch={touch}
               onDiscard={
-                everyDraft.length > 0 || changedFolders.length > 0
+                everyItem.length > 0 || changedFolders.length > 0
                   ? () => {
                       hold();
                       void controller.discardAll(
-                        everyDraft,
+                        everyItem,
                         changedFolders,
                         // A lone folder change names itself in the notice.
-                        everyDraft.length === 0 && changedFolders.length === 1
+                        everyItem.length === 0 && changedFolders.length === 1
                           ? (groupsOf(groups).find(
                               (group) => group.folder?.id === changedFolders[0],
                             )?.folder?.name ?? null)
@@ -387,8 +365,7 @@ export function ChangesSource({
                   : undefined
               }
               onApply={
-                controller.canApply &&
-                files.every((file) => hasApply(file.draft)) &&
+                files.every((file) => hasApply(file.item)) &&
                 (files.length > 0 || changedFolders.length > 0)
                   ? () => startApply(files, changedFolders)
                   : undefined
@@ -407,13 +384,6 @@ export function ChangesSource({
           ) : null
         }
       >
-        {hasFiles && controller.frozen ? (
-          <div className="px-2">
-            <ListLine iconSlot>
-              <Trans>This chat is in Trash</Trans>
-            </ListLine>
-          </div>
-        ) : null}
         {applying ? (
           <div className="px-2">
             <ListLine iconSlot status>
@@ -471,9 +441,8 @@ export function ChangesSource({
                 return (
                   <FolderGroupRow
                     key={`folder:${folder.id}`}
-                    branchId={drafts.branchId}
+                    draftId={drafts.draftId}
                     folder={folder}
-                    schemeOfSource={schemeOfSource}
                     depth={item.depth}
                     open={!folded.has(folder.id)}
                     onToggle={() => fold(folder.id)}
@@ -481,16 +450,12 @@ export function ChangesSource({
                     controller={controller}
                     touch={touch}
                     notice={wordOf(folder.id)}
-                    canApply={
-                      controller.canApply &&
-                      !folder.fault &&
-                      own.every((file) => hasApply(file.draft))
-                    }
+                    canApply={!folder.fault && own.every((file) => hasApply(file.item))}
                     onApply={() => startApply(own, folder.folders)}
                     onDiscard={(name) => {
                       hold();
                       void controller.discardSelection({
-                        drafts: draftsOf(own),
+                        items: refsOf(own),
                         folders: folder.folders,
                         name,
                       });
@@ -503,12 +468,12 @@ export function ChangesSource({
                 <ChangeRow
                   key={file.documentId}
                   projectId={projectId}
-                  ownerKey={ownerKey}
+                  draftId={draftId}
                   file={file}
                   depth={item.depth}
                   fault={tree?.faults.get(file.documentId) ?? null}
                   active={isOpen(file)}
-                  canApply={controller.canApply && hasApply(file.draft)}
+                  canApply={hasApply(file.item)}
                   controller={controller}
                   touch={touch}
                   notice={wordOf(file.documentId)}
@@ -564,7 +529,7 @@ const NOTHING = () => {};
  */
 function ChangeRow({
   projectId,
-  ownerKey,
+  draftId,
   file,
   depth,
   fault,
@@ -577,7 +542,7 @@ function ChangeRow({
   onPicked,
 }: {
   projectId: string;
-  ownerKey: string;
+  draftId: string;
   file: ReviewFileTarget;
   /** Right before this row's Discard or Apply: the list holds what it shows. */
   onCommand: () => void;
@@ -589,33 +554,33 @@ function ChangeRow({
   fault: LandingFault | null;
   active: boolean;
   canApply: boolean;
-  controller: WorkBranchCommands;
+  controller: WorkDraftCommands;
   touch: boolean;
   onPicked?: () => void;
 }) {
-  const { openReviewFile } = useAiDraftLauncher();
+  const { openReviewFile } = useItemLauncher();
   const [previewing, setPreviewing] = useState(false);
   const discard = () => {
     onCommand();
-    void controller.discard(file.documentId, file.draft.itemKey);
+    void controller.discard(file.documentId, file.item.itemKey);
   };
   const name = file.documentName || file.contextLocation?.path || t`Untitled document`;
-  const copyView = draftCopyView(file, ownerKey);
+  const copyView = draftCopyView(file, draftId);
   const drag = useReferenceDrag(
     copyView ? { ref: { kind: "file", id: file.documentId }, name, view: copyView } : null,
   );
-  const treeOnly = reviewHasNoRoom(file.draft);
-  const imageOpenable = file.draft.binary;
-  const opens = Boolean(file.contextLocation) && (file.draft.hasDraft || treeOnly || imageOpenable);
+  const reviewable = opensAsDocument(file.item);
+  const imageOpenable = file.item.binary;
+  const opens = Boolean(file.contextLocation) && (reviewable || imageOpenable);
   const review = () => {
-    if (file.draft.hasDraft || treeOnly) {
-      openReviewFile(file, ownerKey);
+    if (reviewable) {
+      openReviewFile(file, draftId);
       onPicked?.();
     } else if (imageOpenable) setPreviewing(true);
   };
-  const line = treeLineOf(file.draft);
+  const line = treeLineOf(file.item);
   const deleted = line?.kind === "delete";
-  const command = controller.owner.state(file.draft.itemKey);
+  const command = controller.owner.state(file.item.itemKey);
 
   return (
     <li data-change-row={file.documentId}>
@@ -628,7 +593,7 @@ function ChangeRow({
         icon={fileKindIcon(file.contextLocation?.path ?? name)}
         title={<span className={cn("truncate", deleted && "line-through")}>{name}</span>}
         detail={changeSummary(file)}
-        notice={notice ?? <DeletedLiveTag item={file.draft} />}
+        notice={notice}
         revealActions={!touch}
         actions={
           <ReviewActions
@@ -636,14 +601,14 @@ function ChangeRow({
             labels={{ apply: t`Apply draft of ${name}`, discard: t`Discard draft of ${name}` }}
             density="icon"
             touch={touch}
-            disabled={command.pending || controller.dispositionLocked}
+            disabled={command.hidden || controller.dispositionLocked}
             className={touch ? "gap-0" : "gap-0.5"}
             onDiscard={discard}
             onApply={
               canApply
                 ? () => {
                     onCommand();
-                    void controller.apply(file.documentId, file.draft.itemKey);
+                    void controller.apply(file.documentId, file.item.itemKey);
                   }
                 : undefined
             }
@@ -654,12 +619,12 @@ function ChangeRow({
             {fault ? (
               <InlineErrorRow message={landingFaultSentence(fault)} className="p-0 text-xs" />
             ) : null}
-            <DraftCommandStatus itemKey={file.draft.itemKey} />
+            <DraftCommandStatus itemKey={file.item.itemKey} />
           </div>
         }
       />
       <DraftImagePreview
-        target={previewing ? { projectId, ownerKey, documentId: file.documentId, name } : null}
+        target={previewing ? { projectId, draftId, documentId: file.documentId, name } : null}
         onClose={() => setPreviewing(false)}
       />
     </li>
@@ -671,9 +636,9 @@ function ChangeRow({
  * The row's name is already the draft's, so a rename says what it was.
  */
 function changeSummary(file: ReviewFileTarget) {
-  const line = treeLineOf(file.draft);
+  const line = treeLineOf(file.item);
   const place = file.contextLocation ? folderPlace(file.contextLocation) : null;
-  const tree = file.draft.isNew
+  const tree = file.item.isNew
     ? place
       ? t`New in ${place}`
       : t`New`
@@ -687,8 +652,8 @@ function changeSummary(file: ReviewFileTarget) {
             ? t`Changing position`
             : null;
   // A new or deleted document is the whole change: its text needs no count.
-  const { textChanges } = file.draft;
-  const count = !file.draft.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
+  const { textChanges } = file.item;
+  const count = !file.item.isNew && line?.kind !== "delete" && textChanges ? textChanges : null;
   if (!tree && count === null) return null;
   return (
     <span className="flex min-w-0 flex-wrap gap-x-2">
@@ -718,9 +683,8 @@ function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>)
  * does under its row.
  */
 function FolderGroupRow({
-  branchId,
+  draftId,
   folder,
-  schemeOfSource,
   depth,
   open,
   onToggle,
@@ -735,29 +699,28 @@ function FolderGroupRow({
   /** What the owner's notice says on this row. */
   notice: ReactNode;
   folder: NonNullable<ChangeGroup<ReviewFileTarget>["folder"]>;
-  schemeOfSource: (sourceId: string) => ProjectContextTreeScheme | undefined;
   /** Under its changed folder's row. */
   depth: number;
   /** Its rows show; a click folds them. */
   open: boolean;
   onToggle: () => void;
   files: readonly ReviewFileTarget[];
-  controller: WorkBranchCommands;
+  controller: WorkDraftCommands;
   touch: boolean;
   canApply: boolean;
   onApply: () => void;
   /** `name`: the folder's, for what the Discard's notice says. */
   onDiscard: (name: string) => void;
-  /** The Work's branch, whose folder items hold the folder's command state. */
-  branchId: string | null;
+  /** The Work's draft, whose folder items hold the folder's command state. */
+  draftId: string | null;
 }) {
-  const keys = branchId ? folder.folders.map((id) => folderKey(branchId, id)) : [];
+  const keys = draftId ? folder.folders.map((id) => folderKey(draftId, id)) : [];
   useSyncExternalStore(
     controller.owner.subscribe,
     controller.owner.snapshot,
     controller.owner.snapshot,
   );
-  const pending = keys.some((key) => controller.owner.state(key).pending);
+  const pending = keys.some((key) => controller.owner.state(key).hidden);
   const { name, change } = folder;
   return (
     <li data-change-folder={folder.id}>
@@ -772,9 +735,6 @@ function FolderGroupRow({
             <span className={cn("truncate", change.kind === "deleted" && "line-through")}>
               {name}
             </span>
-            {folder.deletedLive ? (
-              <DeletedWord scheme={schemeOfSource(folder.deletedLive)} />
-            ) : null}
           </span>
         }
         detail={folderSummary(folder)}

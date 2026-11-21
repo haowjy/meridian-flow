@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { type DraftOwnerKey, draftOwnerKey } from "@meridian/contracts";
 import type { ClosedOwnerWhy, Settlement } from "@meridian/contracts/commands";
 import type { Database } from "@meridian/database";
 import { contextSources } from "@meridian/database/schema";
@@ -91,8 +90,8 @@ export function closedWhyOf(owner: SourceOwner, owners: LockedOwners): ClosedOwn
   return null;
 }
 
-/** Why the owner of a closed source takes no change, the name it goes by, and which owner it is. */
-export type ClosedSource = { why: ClosedOwnerWhy; ownerKey: DraftOwnerKey };
+/** Why the owner of a closed source takes no change. */
+export type ClosedSource = { why: ClosedOwnerWhy };
 
 /**
  * What a source takes, judged under the owners' locks: `closed` (an archived or deleted Work, a
@@ -183,16 +182,7 @@ export async function treeOwners(
         if (!owner || !alive.has(source)) return { kind: "gone" };
         const why = closedWhyOf(owner, locked);
         if (!why) return null;
-        const id = (owner.workId ?? owner.rootThreadId) as string;
-        return {
-          kind: "closed",
-          why,
-          ownerKey: draftOwnerKey(
-            owner.workId
-              ? { kind: "work", workId: owner.workId as string }
-              : { kind: "lineage", rootThreadId: id },
-          ),
-        };
+        return { kind: "closed", why };
       };
       return {
         fate,

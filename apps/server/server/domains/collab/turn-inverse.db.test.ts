@@ -11,6 +11,7 @@ import {
   SOURCE_ID,
   THREAD_ID,
   TURN_ID,
+  WORK_DRAFT_ID,
   WORK_ID,
 } from "./test-support/collab-postgres-harness.js";
 import { inverseFixture } from "./test-support/turn-inverse-fixture.js";
@@ -26,7 +27,12 @@ it("a document in no view (deleted after its edit) does not stop another documen
     const betaContext = {
       ...context,
       grant: testFileGrant(
-        { kind: "draft", owner: { kind: "work", workId: WORK_ID }, ownerHandle: "atomicity-work" },
+        {
+          kind: "draft",
+          draftId: WORK_DRAFT_ID,
+          owner: { kind: "work", workId: WORK_ID },
+          ownerHandle: "atomicity-work",
+        },
         BETA_ID,
       ),
     };

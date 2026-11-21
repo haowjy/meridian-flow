@@ -75,6 +75,7 @@ function harness() {
 }
 
 const forkInput = {
+  draftId: "forkdraft001",
   kind: "fork" as const,
   projectId: "project",
   sourceThreadId: "source",

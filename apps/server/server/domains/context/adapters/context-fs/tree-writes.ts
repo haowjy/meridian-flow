@@ -5,10 +5,10 @@
  * (final names, and paths whose segments carry a twin's `~id`); a refusal makes no record. No
  * write is refused for a name a sibling has: it makes a twin (rule 14).
  *
- * Callers hold the Work and branch locks their command transaction took and no document or
+ * Callers hold the Work and draft locks their command transaction took and no document or
  * namespace key (the list's key sorts before those).
  */
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { ContextSiblingPosition, Filetype } from "@meridian/contracts/protocol";
 import { childAtSegment, readSegment } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
@@ -59,9 +59,9 @@ export function parseActor(
   return null;
 }
 
-/** The Work's draft view for a branch, or live. */
-export function viewOfBranch(branchId: BranchId | null): View {
-  return branchId === null ? LIVE : { draft: branchId };
+/** The Work's draft view for a draft, or live. */
+export function viewOfDraft(draftId: DraftId | null): View {
+  return draftId === null ? LIVE : { draft: draftId };
 }
 
 export type TreeWriteTarget = { view: View; actor: Actor };

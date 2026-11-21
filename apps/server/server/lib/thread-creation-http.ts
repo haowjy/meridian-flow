@@ -1,4 +1,6 @@
 /** Shared root-creation request validation and definite-refusal transport mapping. */
+
+import { type DraftId, isDraftId } from "@meridian/contracts";
 import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import {
   NO_OVERRIDES,
@@ -20,6 +22,13 @@ export function parseCreationTitle(value: unknown): string | null {
   if (typeof value !== "string")
     throw createError({ statusCode: 400, message: "title must be a string or null" });
   return value || null;
+}
+
+/** The client mints a new chat's draft beside its id, so its first screen already names it. */
+export function parseCreationDraftId(value: unknown): DraftId | undefined {
+  if (value === undefined) return undefined;
+  if (isDraftId(value)) return value;
+  throw createError({ statusCode: 400, message: "draftId must be a draft id" });
 }
 
 /** Omitted means the chat copies its Work's default. */

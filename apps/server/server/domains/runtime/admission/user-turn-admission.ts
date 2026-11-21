@@ -251,13 +251,13 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
     }
     const purpose = record.purpose;
     const expected =
-      purpose === "draft-upload"
+      purpose === "upload"
         ? ["kind", "documentId", "uri", "purpose", "intakeId"]
         : ["kind", "documentId", "uri", "purpose"];
     if (
       !exactObject(record, expected) ||
       record.kind !== "document" ||
-      (purpose !== "reference" && purpose !== "draft-upload")
+      (purpose !== "reference" && purpose !== "upload")
     ) {
       throw new InvalidAdmissionError(`references[${index}] has an invalid shape`);
     }
@@ -265,7 +265,7 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
       typeof record.documentId === "string" ? parseRequestId(record.documentId) : null;
     if (
       !documentId ||
-      (purpose === "draft-upload" && (typeof record.intakeId !== "string" || !record.intakeId))
+      (purpose === "upload" && (typeof record.intakeId !== "string" || !record.intakeId))
     ) {
       throw new InvalidAdmissionError(`references[${index}] has invalid identity`);
     }
@@ -280,7 +280,7 @@ export function parseSubmittedReferences(value: unknown): SubmittedReference[] {
       documentId: documentId as Extract<SubmittedReference, { kind: "document" }>["documentId"],
       uri,
       purpose,
-      ...(purpose === "draft-upload" ? { intakeId: record.intakeId as string } : {}),
+      ...(purpose === "upload" ? { intakeId: record.intakeId as string } : {}),
     };
   });
 }
@@ -432,7 +432,7 @@ export function createUserTurnAdmission(deps: {
   threadProject(threadId: string): Promise<string | null>;
   chatMedia: ChatMediaPort;
   /** Identity, not spelling: the intake, its document, and that the thread's top chat owns it. */
-  verifyDraftUpload?(
+  verifyChatUpload?(
     reference: Extract<SubmittedReference, { kind: "document" }> & { intakeId: string },
     threadId: string,
   ): Promise<boolean>;
@@ -556,14 +556,14 @@ export function createUserTurnAdmission(deps: {
         const identity = available.get(reference.documentId);
         if (!identity) continue;
         // A New-chat upload was attached before the chat had a handle, so its atom holds the
-        // chat-relative spelling while the catalog now answers the handle one. A draft upload is
+        // chat-relative spelling while the catalog now answers the handle one. A chat upload is
         // admitted by its verified intake and owner, and records the address it now has.
-        const draftUpload = reference.purpose === "draft-upload";
-        if (!draftUpload && identity.entry.uri !== reference.uri) continue;
+        const chatUpload = reference.purpose === "upload";
+        if (!chatUpload && identity.entry.uri !== reference.uri) continue;
         if (
-          draftUpload &&
-          deps.verifyDraftUpload &&
-          !(await deps.verifyDraftUpload(
+          chatUpload &&
+          deps.verifyChatUpload &&
+          !(await deps.verifyChatUpload(
             reference as Extract<SubmittedReference, { kind: "document" }> & {
               intakeId: string;
             },
@@ -573,12 +573,12 @@ export function createUserTurnAdmission(deps: {
           continue;
         }
         // The one admitted occurrence: stored blocks and reference metadata both take this uri.
-        const admittedUri = draftUpload ? identity.entry.uri : reference.uri;
+        const admittedUri = chatUpload ? identity.entry.uri : reference.uri;
         admittedUris.set(referenceIdentity(reference), admittedUri);
         admittedReferences.push({
           ...reference,
           uri: admittedUri,
-          relationship: draftUpload ? "created" : "reading",
+          relationship: chatUpload ? "created" : "reading",
         });
       }
       const admittedBlocks = blocks.flatMap((block): UserMessageBlock[] => {

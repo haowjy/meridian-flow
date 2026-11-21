@@ -73,15 +73,14 @@ export function rankAt(
 
 /**
  * A canonical string of the tree, for comparing replicas. Without `marks` it leaves out why a
- * deleted node still stands (kept by a child, kept by a pending change): what a writer reads as
- * the tree's shape.
+ * deleted node still stands (kept by a child): what a writer reads as the tree's shape.
  */
 export function fingerprint(projection: TreeProjection, marks = true): string {
   const lines: string[] = [];
   const walk = (parent: string, depth: number) => {
     for (const child of childrenOf(projection, parent, true)) {
       lines.push(
-        `${"  ".repeat(depth)}${child.trashed ? "~" : ""}${marks && child.keptByChild ? "!" : ""}${marks && child.keptByPending ? "?" : ""}${child.kind[0]}:${segmentOf(child)}#${child.id}@${child.rank}`,
+        `${"  ".repeat(depth)}${child.trashed ? "~" : ""}${marks && child.keptByChild ? "!" : ""}${child.kind[0]}:${segmentOf(child)}#${child.id}@${child.rank}`,
       );
       walk(child.id, depth + 1);
     }

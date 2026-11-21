@@ -197,15 +197,6 @@ it("an already-connected live room sees Undo without a repairing read", async ()
         immediate,
       ),
     ).toMatchObject({ status: "success", phase: "committed" });
-    // Reading the fixture creates an empty default draft. Retire it before observing the no-draft room.
-    await db
-      .delete(schema.documentDrafts)
-      .where(
-        and(
-          eq(schema.documentDrafts.documentId, ALPHA_ID),
-          eq(schema.documentDrafts.kind, "work_draft"),
-        ),
-      );
     await vi.waitFor(() => expect(prose()).toBe("Alpha Gamma.\n\nBlue."));
     const broadcasts = view.hocuspocus.broadcasts.length;
     expect(

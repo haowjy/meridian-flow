@@ -14,9 +14,10 @@ receives and the history keeps.
 
 **How.** An edit is appended to the document's journal before it is applied, broadcast
 or acknowledged, under a per-document lock and admission sequence
-(`apps/server/server/domains/collab/live-room.ts`, `draft-room.ts`, `adapters/drizzle-journal.ts`).
+(`apps/server/server/domains/collab/live-room.ts`, `adapters/drizzle-journal.ts`).
 A cold load replays the journal above the last checkpoint, and checkpoints come only
-from the journal. Server documents keep Yjs history (`gc: false`). Mechanism and reasons:
+from the journal. Server documents keep Yjs history (`gc: false`) in memory and in the journal;
+a stored checkpoint drops deleted items' content, keeping their ids. Mechanism and reasons:
 the KB's `wiki/architecture/collaboration/durability-and-honest-outcomes.md`; contracts:
 `apps/server/server/domains/collab/.context/CONTEXT.md`.
 
@@ -26,22 +27,20 @@ deliveries through the production admission path), `hocuspocus-persistence.test.
 Postgres.
 
 **Gaps.** The convergence test uses the in-memory journal, not Postgres. Nothing checks
-`gc: false`. Five write paths (live, draft, model edit, Apply, import) each have their
+`gc: false`, nor that no reader needs a deleted item's content. Five write paths (live, draft, model edit, Apply, import) each have their
 own tests; none spans them. Open: #691 and #680.
 
-Two paths change text on one copy with no edit the others receive:
+One path changes text on one copy with no edit the others receive:
 
 - **Schema repair while projecting.** `deriveDocument`
   (`apps/server/server/domains/collab/domain/document-derivations.ts`) and `projectBlocks`
   (`packages/agent-edit/src/model/y-prosemirror.ts`) drop an element the schema cannot
   represent from a private copy and append nothing. What the model reads can omit text the
   stored document still holds.
-- **Checkpoint restore.** `apps/server/server/domains/collab/checkpoints.ts` and
-  `adapters/drizzle-document-authority-head.ts` install a checkpoint's state as a new
-  generation and disconnect the old one. Edits made after that checkpoint are gone, not
-  undone by a recorded edit.
 
-Import seeds a new document as its first checkpoint; that is creation, not an edit.
+Checkpoint restore (`apps/server/server/domains/collab/checkpoints.ts`) is an edit every copy
+receives: it writes the version's text onto the document as it stands. Import seeds a new
+document as its first checkpoint; that is creation, not an edit.
 
 ## Writer text stays out of logs and diagnostics
 
@@ -59,18 +58,19 @@ sink built without it writes raw payloads. `errorMessage` is free text by design
 
 ## Marks and receipts say truthfully who did what
 
-**How.** Draft review attributes changes in the browser with
-`packages/agent-edit/src/diff/attribution.ts`. Every edit, undo, revert and
+**How.** A suggestion carries its author (`Authors` in `packages/suggestions`), and the review
+names it. Every edit, undo, revert and
 rollback writes an immutable receipt naming its actor (`document_edits`); an inverse
-is an ordinary forward edit with its own receipt. Apply records its settlement in one
+is an ordinary forward edit with its own receipt. A press records its text effects in one
 commit. Contracts: `apps/server/server/domains/collab/.context/reversal.md` and
 `apply.md`; reasons: the KB's `wiki/architecture/collaboration/draft-review.md` and
 `turn-receipts.md`.
 
-**Checked by** `packages/agent-edit/src/diff/attribution.test.ts` and the collab DB
-tests: `inverse-attribution`, `model-inverse`, `turn-inverse`, `response-rollback`,
-`draft-disposition` and `branch-tree.apply-placement`.
+**Checked by** the collab DB tests: `inverse-attribution`, `model-inverse` and
+`turn-inverse`. `packages/suggestions/src/turn-undo.test.ts` resolves suggestions by the
+turn their author entry names.
 
-**Gaps.** What the browser displays is unchecked. Live documents carry no marks.
+**Gaps.** What the browser displays is unchecked, and no test checks that a suggestion's author
+entry names the writer or chat that made it.
 Cut-and-pasted text reads as the writer's (#889). Five receipt families have separate shapes,
 and nothing cross-checks them.

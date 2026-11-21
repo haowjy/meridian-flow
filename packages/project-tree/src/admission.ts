@@ -7,7 +7,7 @@ import type { TreeWriter } from "./writer.js";
 
 /** What only the server knows about the connection that sent an update. */
 export type Connection = {
-  /** Branches that are open: a Work's that is neither archived nor deleted, and chats'. */
+  /** Drafts that are open: a Work's that is neither archived nor deleted, and chats'. */
   drafts: ReadonlySet<string>;
   /** Sources of archived or deleted Works: nothing may be created in them. */
   closed: (source: string) => boolean;
@@ -197,7 +197,6 @@ export function changedSources(before: TreeProjection, after: TreeProjection): S
       node.hasProperties,
       node.trashed,
       node.keptByChild,
-      node.keptByPending,
       node.purged,
       node.blob,
     ];

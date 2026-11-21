@@ -1,15 +1,12 @@
 /**
  * Canonical immutable turn targets shared by authorization, lineage and inverse admission:
- * documents the turn edited the text of that some tree view still shows, plus draft-scoped
- * edits of a document live deleted or in no view, whose drafts may outlive it (the inverse
- * decides from the draft row). Each draft-scoped target names the Work whose branch held the
- * draft, as the part recorded it, where it is read and reversed: a draft purged from Trash
- * leaves its target, and the inverse reads it as discarded. Final address liveness stays
- * with the lineage reader. A tree change leaves no text target;
+ * documents the turn edited the text of that some tree view still shows. Every text edit is in
+ * Live (a Work's are suggestions there). Final address liveness stays with the lineage reader.
+ * A tree change leaves no text target;
  * `readTurnTreeTargets` lists the documents a reply only moved, created or deleted, for its card.
  */
 
-import { type DocumentId, draftOwnerKey } from "@meridian/contracts";
+import type { DocumentId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import {
   documentEditParts,
@@ -18,50 +15,30 @@ import {
   treeEditReceiptNodes,
   treeEditReceipts,
 } from "@meridian/database";
-import { branches } from "@meridian/database/schema";
+import { drafts } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
-import { branchOwnerSql, ownerKeyOfColumns, ownerOfColumns } from "../../../shared/draft-owner.js";
+import { draftOwnerSql } from "../../../shared/draft-owner.js";
 import { livingDocumentSql } from "../../context/tree/living-document.js";
 import type { TurnInverseQuery } from "../domain/turn-inverse-service.js";
 import type { TurnEditedDocumentId, TurnFolderTarget } from "../domain/turn-live-lineage.js";
 
 /**
- * A receipt drafted in a branch whose row a Work purge deleted has no draft left to show: reading
- * its missing branch as no branch would list the edit as live.
+ * A receipt drafted in a draft a Work purge deleted has nothing left to show: reading its missing
+ * draft as none would list the edit as live.
  */
-export const receiptBranchExists = or(
-  isNull(treeEditReceipts.draftBranchId),
-  isNotNull(branches.id),
-);
+export const receiptDraftExists = or(isNull(treeEditReceipts.draftId), isNotNull(drafts.id));
 
 export async function readTurnEditTargets(
   db: Pick<Database, "selectDistinct">,
   query: TurnInverseQuery,
 ): Promise<TurnEditedDocumentId[]> {
-  const owner = branchOwnerSql(branches);
   const rows = await db
-    .selectDistinct({
-      documentId: documentEdits.documentId,
-      origin: documentEditParts.origin,
-      branchId: branches.id,
-      workId: owner.workId,
-      rootThreadId: owner.rootThreadId,
-      projectId: branches.projectId,
-      handle: owner.handle,
-    })
+    .selectDistinct({ documentId: documentEdits.documentId })
     .from(documentEdits)
-    .leftJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
-    // A pending edit's Work: the branch its part was drafted in, which outlives the draft row.
-    .leftJoin(branches, eq(branches.id, documentEditParts.draftBranchId))
+    .innerJoin(documentEditParts, eq(documentEditParts.editId, documentEdits.id))
     .where(
       and(
-        isNotNull(documentEditParts.id),
-        // A draft-scoped edit keeps its history while the document's content is kept: a delete
-        // in live or a discarded creation leaves the draft's bytes to retention.
-        sql`(${livingDocumentSql(documentEdits.documentId)}
-          OR (${documentEditParts.origin}->>'kind' = 'pending'
-            AND exists (select 1 from documents d
-              where d.id = ${documentEdits.documentId} and d.content_purged_at is null)))`,
+        livingDocumentSql(documentEdits.documentId),
         eq(documentEdits.threadId, query.threadId),
         query.turnId ? eq(documentEdits.turnId, query.turnId) : undefined,
         query.responseIdentity
@@ -74,39 +51,11 @@ export async function readTurnEditTargets(
       ),
     )
     .orderBy(documentEdits.documentId);
-  const targets = new Map<string, TurnEditedDocumentId>();
-  for (const row of rows) {
-    // A receipt's destination never changes when its draft text is applied or discarded.
-    const draft = row.origin?.kind === "pending";
-    if (!draft) {
-      targets.set(`${row.documentId}:live`, { documentId: row.documentId, scope: "live" });
-      continue;
-    }
-    if (!row.branchId || !row.projectId) continue;
-    const owner = ownerOfColumns({ ...row, projectId: row.projectId });
-    if (!owner) continue;
-    const ownerKey = draftOwnerKey(owner);
-    const key = `${row.documentId}:draft:${ownerKey}`;
-    const known = targets.get(key);
-    if (known?.scope === "draft") {
-      if (!known.branchIds.includes(row.branchId)) known.branchIds.push(row.branchId);
-      continue;
-    }
-    targets.set(key, {
-      documentId: row.documentId,
-      scope: "draft",
-      owner,
-      ownerHandle: row.handle,
-      branchIds: [row.branchId],
-    });
-  }
-  return [...targets.values()].sort(
-    (a, b) => a.documentId.localeCompare(b.documentId) || a.scope.localeCompare(b.scope),
-  );
+  return rows.map((row) => ({ documentId: row.documentId, scope: "live" as const }));
 }
 
 /**
- * The folders the turn's tree receipts changed, live or in the branch the change was drafted in,
+ * The folders the turn's tree receipts changed, live or in the draft the change was drafted in,
  * whether or not the card's Undo has since taken them back: a folder has no document, and the
  * reply's card lists it all the same. Each is named by the path the receipt recorded. Only the
  * turn's own writes say where it wrote: a Redo of an applied draft lands live, and read as a
@@ -119,36 +68,32 @@ export async function readTurnFolderTargets(
     turnId: NonNullable<TurnInverseQuery["turnId"]>;
   },
 ): Promise<TurnFolderTarget[]> {
-  const owner = branchOwnerSql(branches);
   const rows = await db
     .selectDistinct({
       nodeId: treeEditReceiptNodes.nodeId,
       shownAt: sql<string>`coalesce(${treeEditReceiptNodes.afterAt}, ${treeEditReceiptNodes.beforeAt}, ${treeEditReceipts.shownAt})`,
-      branchId: branches.id,
-      workId: owner.workId,
-      rootThreadId: owner.rootThreadId,
+      draft: drafts.id,
     })
     .from(treeEditReceipts)
     .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
     .leftJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
-    .leftJoin(branches, eq(branches.id, treeEditReceipts.draftBranchId))
+    .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftId))
     .where(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
         eq(treeEditReceipts.kind, "write"),
         isNull(documents.id),
-        receiptBranchExists,
+        receiptDraftExists,
       ),
     )
     .orderBy(treeEditReceiptNodes.nodeId);
   const folders = new Map<string, TurnFolderTarget>();
   for (const row of rows)
     if (row.shownAt)
-      folders.set(`${row.nodeId}:${row.workId}:${row.rootThreadId}`, {
+      folders.set(`${row.nodeId}:${row.draft}`, {
         nodeId: row.nodeId,
-        ownerKey: ownerKeyOfColumns({ workId: row.workId, rootThreadId: row.rootThreadId }),
-        branchId: row.branchId,
+        draft: row.draft,
         shownAt: row.shownAt,
       });
   return [...folders.values()];
@@ -156,7 +101,7 @@ export async function readTurnFolderTargets(
 
 /**
  * The documents the turn's tree receipts changed (a folder has no document), live or in the
- * branch the change was drafted in, whether or not the card's Undo has since taken them back.
+ * draft the change was drafted in, whether or not the card's Undo has since taken them back.
  * Merged into `known` where a text edit already lists the same destination.
  */
 export async function readTurnTreeTargets(
@@ -167,54 +112,38 @@ export async function readTurnTreeTargets(
   },
   known: readonly TurnEditedDocumentId[],
 ): Promise<TurnEditedDocumentId[]> {
-  const owner = branchOwnerSql(branches);
+  const owner = draftOwnerSql();
   const rows = await db
     .selectDistinct({
       documentId: treeEditReceiptNodes.nodeId,
-      branchId: branches.id,
-      workId: owner.workId,
-      rootThreadId: owner.rootThreadId,
-      projectId: branches.projectId,
+      draft: drafts.id,
       handle: owner.handle,
     })
     .from(treeEditReceipts)
     .innerJoin(treeEditReceiptNodes, eq(treeEditReceiptNodes.receiptId, treeEditReceipts.id))
     .innerJoin(documents, eq(documents.id, treeEditReceiptNodes.nodeId))
-    .leftJoin(branches, eq(branches.id, treeEditReceipts.draftBranchId))
+    .leftJoin(drafts, eq(drafts.id, treeEditReceipts.draftId))
     .where(
       and(
         eq(treeEditReceipts.threadId, query.threadId),
         eq(treeEditReceipts.turnId, query.turnId),
         // Write receipts only: a Redo's names where it landed (live after an Apply), not where the turn wrote.
         eq(treeEditReceipts.kind, "write"),
-        receiptBranchExists,
+        receiptDraftExists,
       ),
     );
   const targets = new Map<string, TurnEditedDocumentId>();
   const keyOf = (target: TurnEditedDocumentId) =>
     target.scope === "draft"
-      ? `${target.documentId}:draft:${draftOwnerKey(target.owner)}`
+      ? `${target.documentId}:draft:${target.draft}`
       : `${target.documentId}:live`;
   for (const target of known) targets.set(keyOf(target), target);
   for (const row of rows) {
     const documentId = row.documentId as DocumentId;
-    let target: TurnEditedDocumentId;
-    if (!row.branchId) target = { documentId, scope: "live" };
-    else {
-      const owner = row.projectId ? ownerOfColumns({ ...row, projectId: row.projectId }) : null;
-      if (!owner) continue;
-      target = {
-        documentId,
-        scope: "draft",
-        owner,
-        ownerHandle: row.handle,
-        branchIds: [row.branchId],
-      };
-    }
-    const present = targets.get(keyOf(target));
-    if (!present) targets.set(keyOf(target), target);
-    else if (present.scope === "draft" && row.branchId && !present.branchIds.includes(row.branchId))
-      present.branchIds.push(row.branchId);
+    const target: TurnEditedDocumentId = row.draft
+      ? { documentId, scope: "draft", draft: row.draft, ownerHandle: row.handle }
+      : { documentId, scope: "live" };
+    if (!targets.has(keyOf(target))) targets.set(keyOf(target), target);
   }
   return [...targets.values()].sort(
     (a, b) => a.documentId.localeCompare(b.documentId) || a.scope.localeCompare(b.scope),

@@ -6,7 +6,7 @@
  * A change's or a document's ✓ in a list row is jade ink, not a fill: the group's own Apply
  * is the one filled button, and a column of filled squares would drown it.
  *
- * Discard never asks: every Discard's notice has its Undo, and Trash keeps it.
+ * Discard never asks: every Discard's notice has its Undo.
  *
  * Each button has a word on screen and a name: the name ("Discard draft", or the caller's
  * `labels` where the row names more) is the accessible name and the tooltip. A change's and a
@@ -23,8 +23,8 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-export type ReviewScope = "change" | "document" | "all";
-export type ReviewDensity = "full" | "icon";
+type ReviewScope = "change" | "document" | "all";
+type ReviewDensity = "full" | "icon";
 
 /** The scope's name, and its word beside a name: the bare verb, except for "all", whose scope is the word. */
 function reviewActionNames(
@@ -41,7 +41,7 @@ function reviewActionNames(
   return { word: scope === "all" ? name : t`Discard`, name };
 }
 
-export type ReviewActionsProps = {
+type ReviewActionsProps = {
   scope: ReviewScope;
   /** Names, where the scope's name doesn't say all the buttons act on. */
   labels?: { apply: string; discard: string };

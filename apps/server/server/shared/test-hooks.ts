@@ -24,7 +24,7 @@ const TEST_HOOK_POINTS = [
   "checkpoint.afterAuthorityRead",
   /** A Discard attempt has not entered its commit scope. */
   "discard.beforeCommitScope",
-  /** A committed transaction's draft retirement (any cause: Discard, removal, branch close) is about to run. */
+  /** A committed transaction's draft retirement (any cause: Discard, removal, draft close) is about to run. */
   "draft.beforeRetirement",
   /** A thread core's access, or a peer pull past its ensures, is about to read its drafts. */
   "draft.beforeAccess",

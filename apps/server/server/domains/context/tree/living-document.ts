@@ -6,7 +6,7 @@
  * that Work's tree shows it.
  */
 import { DocumentNotFoundError } from "@meridian/agent-edit/integration";
-import type { BranchId, DocumentId } from "@meridian/contracts";
+import type { DocumentId, DraftId } from "@meridian/contracts";
 import type { Database } from "@meridian/database";
 import { documents, treeNodes } from "@meridian/database/schema";
 import { type AnyColumn, and, eq, inArray, isNotNull, type SQL, sql } from "drizzle-orm";
@@ -21,7 +21,7 @@ type LivingDocumentDb = Pick<Database, "select">;
  */
 export function livingDocumentSql(documentId: SQL | AnyColumn): SQL {
   return sql`(exists (select 1 from tree_nodes t where t.id = ${documentId} and t.trash_record is null)
-    or exists (select 1 from branch_tree_nodes b where b.id = ${documentId} and not b.deleted))`;
+    or exists (select 1 from draft_tree_nodes b where b.id = ${documentId} and not b.deleted))`;
 }
 
 /**
@@ -31,7 +31,7 @@ export function livingDocumentSql(documentId: SQL | AnyColumn): SQL {
  */
 export function textHeldSql(documentId: SQL | AnyColumn): SQL {
   return sql`(exists (select 1 from tree_nodes t where t.id = ${documentId})
-    or exists (select 1 from branch_tree_nodes b where b.id = ${documentId} and not b.deleted))`;
+    or exists (select 1 from draft_tree_nodes b where b.id = ${documentId} and not b.deleted))`;
 }
 
 /** Why the document is not living: deleted, or in no view, or no row at all; null when it lives. */
@@ -66,14 +66,14 @@ export async function requireLivingDocument(
   if (refusal) throw refusal;
 }
 
-/** The ids of `documentIds` that this Work branch's tree shows. */
-export async function shownInBranch(
+/** The ids of `documentIds` that this Work draft's tree shows. */
+export async function shownInDraft(
   db: DrizzleDb,
-  branchId: BranchId,
+  draftId: DraftId,
   documentIds: readonly DocumentId[],
 ): Promise<ReadonlySet<DocumentId>> {
   if (documentIds.length === 0) return new Set();
-  const shown = visibleDocuments({ kind: "branch", branchId });
+  const shown = visibleDocuments({ kind: "draft", draftId });
   const rows = await currentDrizzleDb(db)
     .select({ id: shown.id })
     .from(shown)
@@ -85,8 +85,8 @@ export async function shownInBranch(
 export async function requireDraftableDocument(
   db: DrizzleDb,
   documentId: DocumentId,
-  branchId: BranchId,
+  draftId: DraftId,
 ): Promise<void> {
-  if ((await shownInBranch(db, branchId, [documentId])).has(documentId)) return;
+  if ((await shownInDraft(db, draftId, [documentId])).has(documentId)) return;
   await requireLivingDocument(currentDrizzleDb(db), documentId);
 }

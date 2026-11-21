@@ -24,7 +24,6 @@ describe("Yjs reconnect writer admission", () => {
       journal,
       hocuspocus: () => server?.hocuspocus ?? null,
       metaForOrigin: () => ({ origin: "human:user-1", seq: 0 }),
-      emitAgentEditInvariantViolation: () => undefined,
     });
     const writerFrames: Array<{ syncType: number; update: Uint8Array; admitted: boolean }> = [];
 
@@ -37,7 +36,6 @@ describe("Yjs reconnect writer admission", () => {
         onLoadDocument: async ({ document }) => {
           bindDocumentAuthority(document, {
             authorityId: "test-authority" as never,
-            generation: 1n,
           });
           return Y.encodeStateAsUpdate(liveDocument);
         },
@@ -49,7 +47,6 @@ describe("Yjs reconnect writer admission", () => {
             syncType: type,
             payload,
             userId: "user-1" as never,
-            expectedGeneration: 1n,
           });
           if (result) {
             writerFrames.push({

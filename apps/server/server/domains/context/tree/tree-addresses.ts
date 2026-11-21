@@ -72,15 +72,15 @@ export function placedNodesSql(view: TreeView): SQL {
       false AS exists_only_in_draft
     FROM tree_nodes t`;
   if (view.kind === "live") return sql`(${live})`;
-  const branch = sql`${view.branchId}::uuid`;
+  const draft = sql`${view.draftId}`;
   return sql`(${live}
-    WHERE NOT EXISTS (SELECT 1 FROM branch_tree_nodes x WHERE x.branch_id = ${branch} AND x.id = t.id)
+    WHERE NOT EXISTS (SELECT 1 FROM draft_tree_nodes x WHERE x.draft_id = ${draft} AND x.id = t.id)
     UNION ALL
     SELECT b.id, b.kind, b.context_source_id, b.parent_id, b.name, b.segment, b.extension,
       CASE WHEN b.extension <> '' THEN left(b.name, -(length(b.extension) + 1)) ELSE b.name END,
       b.file_type, b.rank, coalesce(lt.location_version, 0), b.deleted, b.exists_only_in_draft
-    FROM branch_tree_nodes b LEFT JOIN tree_nodes lt ON lt.id = b.id
-    WHERE b.branch_id = ${branch})`;
+    FROM draft_tree_nodes b LEFT JOIN tree_nodes lt ON lt.id = b.id
+    WHERE b.draft_id = ${draft})`;
 }
 
 /** Which content documents to spell. */
@@ -401,7 +401,7 @@ export function chainPrefix(chain: readonly FolderLink[]): string {
     .join("");
 }
 
-/** A node's location in some view: the row's, or a branch's. */
+/** A node's location in some view: the row's, or a draft's. */
 export type NodeLocation = {
   documentId: DocumentId;
   contextSourceId: ContextSourceId;
@@ -541,7 +541,7 @@ export async function loadDocumentPlacements(
     FROM (
       SELECT id, context_source_id, file_type, 0 AS ord FROM tree_nodes WHERE id IN (${list})
       UNION ALL
-      SELECT id, context_source_id, file_type, 1 FROM branch_tree_nodes WHERE id IN (${list})
+      SELECT id, context_source_id, file_type, 1 FROM draft_tree_nodes WHERE id IN (${list})
     ) p
     WHERE p.file_type IS NOT NULL
     ORDER BY p.id, p.ord`);

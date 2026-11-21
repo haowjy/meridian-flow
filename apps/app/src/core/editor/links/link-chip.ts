@@ -75,7 +75,7 @@ export function linkChip(
   if (target.kind === "external") return null;
   // A document found only in a draft reads differently from live text; the answer says so, the mark never does.
   if (entry?.state === "document")
-    return { state: entry.branch ? "draft" : "filled", icon: entry.document.scheme };
+    return { state: entry.draft ? "draft" : "filled", icon: entry.document.scheme };
   if (entry?.state === "folder") return { state: "filled", icon: "folder" };
   if (target.addressKind === "folder")
     return {
