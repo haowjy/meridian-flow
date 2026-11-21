@@ -29,7 +29,7 @@ import {
 } from "@meridian/suggestions";
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
-import * as Y from "yjs";
+import type * as Y from "yjs";
 import { heldBlocks } from "../diff/fragments.js";
 import type { BlockRef } from "../handles.js";
 import { unwrapBlock, unwrapDoc } from "../handles.js";
