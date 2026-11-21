@@ -18,6 +18,8 @@ flowchart TB
   project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
   command-driver["command-driver<br/><small>one delivery loop for commands</small>"]:::package
   tree-list-sync["tree-list-sync<br/><small>how a client keeps its copy of the list</small>"]:::package
+  loro-prosemirror["loro-prosemirror<br/><small>the editor bound to a Loro document</small>"]:::package
+  document-model["document-model<br/><small>a document as Loro docs, and its rooms</small>"]:::package
   markup["markup<br/><small>text to document and back</small>"]:::package
   prosemirror-schema["prosemirror-schema<br/><small>the editor's node and mark schema</small>"]:::package
   database["database<br/><small>Postgres schema and migrations</small>"]:::package
@@ -43,6 +45,9 @@ flowchart TB
   app -->|"delivers commands with"| command-driver
   app -->|"syncs the tree's list with"| tree-list-sync
   tree-list-sync -->|"reads the list's records with"| project-tree
+  loro-prosemirror -->|"reads and writes the document shape with"| document-model
+  agent-edit -->|"will plan and save on Loro rooms with"| document-model
+  document-model -->|"names rooms with"| contracts
   note1["markup turns text into a document and back. The app uses it for the writer's text, and agent-edit uses it for the model's reads and writes."]:::note
   note1 -.- markup
 ```
@@ -201,6 +206,26 @@ Owns no storage and no tabs: the browser's copy comes in through `ListCopy`. The
 - Kind: package
 - Paths: `packages/tree-list-sync/src`
 - Docs: [CONTEXT](../../packages/tree-list-sync/.context/CONTEXT.md), [AGENTS](../../packages/tree-list-sync/AGENTS.md)
+
+## loro-prosemirror
+
+Our binding of ProseMirror to the Loro document shape: the codec both ways, the editor plugin and the composition guard.
+
+Every peer batch enters a tab through `importRemoteUpdate`, never `doc.import`. Not yet imported by the app or the server: phase 1c of the Loro build mounts it.
+
+- Kind: package
+- Paths: `packages/loro-prosemirror/src`
+- Docs: [AGENTS](../../packages/loro-prosemirror/AGENTS.md)
+
+## document-model
+
+A document as Loro docs: one structure doc of value maps and one text doc per block, the read normalizer, the writes, `applyOps`, the envelope, peer ids, and the `DocumentRooms` door with an in-memory adapter.
+
+No ProseMirror at runtime: the binding hands it the schema's facts. Not yet imported by the app or the server.
+
+- Kind: package
+- Paths: `packages/document-model/src`
+- Docs: [AGENTS](../../packages/document-model/AGENTS.md)
 
 ## yjs-inspect
 
