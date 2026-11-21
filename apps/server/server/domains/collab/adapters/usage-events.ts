@@ -10,7 +10,7 @@ import type { Database } from "@meridian/database";
 import { threads, turns } from "@meridian/database";
 import { eq } from "drizzle-orm";
 import { deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
-import { type EventSink, emitEvent } from "../../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 
 export type UsageEvents = {
   /** A press taken back, per document whose text it changed: how long after it was pressed. */
@@ -34,7 +34,14 @@ export function createUsageEvents(db: Database, sink: EventSink | undefined): Us
     if (!deferUntilDrizzleCommit(send))
       void Promise.resolve()
         .then(send)
-        .catch(() => {});
+        .catch((cause) =>
+          emitEvent(eventSink, {
+            level: "warn",
+            source: SOURCE,
+            name: "usage.failed",
+            payload: unknownToEventPayload(cause),
+          }),
+        );
   };
   const ageSeconds = (since: Date) => Math.round((Date.now() - since.getTime()) / 1000);
   return {
