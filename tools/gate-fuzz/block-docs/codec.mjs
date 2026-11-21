@@ -11,12 +11,12 @@ const styles=Object.fromEntries(Object.entries(schema.marks).filter(([k])=>k!=='
 styles.inline={expand:'none'};
 export function configure(doc) {doc.configDefaultTextStyle({expand:'none'});doc.configTextStyle(styles);return doc;}
 const makeDoc=(peer)=>{const d=configure(new LoroDoc());d.setPeerId(peer);return d};
-export function newDocument(peer) {return {peer,draft:false,configure,structure:makeDoc(peer),texts:new Map()};}
+export function newDocument(peer) {const structure=makeDoc(peer);structure._valueMap=true;return {peer,draft:false,configure,structure,texts:new Map()};}
 export function forkDocument(doc,peer,draft=doc.draft) {
   const fork=(d)=>{const f=configure(d.fork());f.setPeerId(peer);return f};
-  const structure=fork(doc.structure);structure._draft=draft;return {peer,draft,configure,structure,texts:new Map([...doc.texts].map(([id,d])=>[id,fork(d)]))};
+  const structure=fork(doc.structure);structure._draft=draft;structure._valueMap=true;return {peer,draft,configure,structure,texts:new Map([...doc.texts].map(([id,d])=>[id,fork(d)]))};
 }
-export function lazyTurn(doc,peer){const structure=configure(doc.structure.fork());structure.setPeerId(peer);structure._draft=true;return {peer,draft:true,configure,structure,texts:new Map(doc.texts),lazyParent:doc,ownedTexts:new Set(),forkTimes:new Map()};}
+export function lazyTurn(doc,peer){const structure=configure(doc.structure.fork());structure.setPeerId(peer);structure._draft=true;structure._valueMap=true;return {peer,draft:true,configure,structure,texts:new Map(doc.texts),lazyParent:doc,ownedTexts:new Set(),forkTimes:new Map()};}
 export function freeDocument(doc) {doc.structure.free();if(doc.lazyParent){for(const d of doc.ownedTexts)d.free();}else for(const d of doc.texts.values())d.free();}
 const sentinel='\ufffc';
 function storedMarks(marks) {
@@ -52,7 +52,7 @@ export function read(doc) {
     const spec=schema.nodes[type]; if(!spec) throw Error(`unknown node ${type}`);
     let content=spec.isTextblock?textNodes(doc.texts.get(id),spec):children(s,id,shown).map(one).filter(Boolean);
     if((type==='table'||type==='table_row')&&!content.length)return null;
-    if((type==='table_cell'||type==='table_header'||type==='jsx_container')&&!content.length)content=[schema.nodes.paragraph.create()];
+    if((type==='table_cell'||type==='table_header'||type==='jsx_container')&&!content.length)content=[schema.nodes.paragraph.create({id:id+'/empty'})];
     return spec.create(a,content);
   }
   return schema.nodes.doc.create(null,children(s,null,shown).map(one).filter(Boolean));
@@ -61,7 +61,7 @@ function flatten(pm) {
   const map=new Map(), siblings=new Map();
   function walk(node,parent) {
     const id=node.attrs.id;
-    if(id==null&&node.type.name==='paragraph'&&!node.content.size)return;
+    if(node.type.name==='paragraph'&&!node.content.size&&(id==null||id===parent+'/empty'))return;
     if(id==null) throw Error(`missing id in ${node.type.name}`);
     const attrs=Object.fromEntries(Object.entries(node.attrs).filter(([k,v])=>k!=='id'&&v!==null));
     if(!siblings.has(parent))siblings.set(parent,[]);siblings.get(parent).push(id);
@@ -136,7 +136,7 @@ export function write(doc,pm,{rng=Math.random,message='edit'}={}) {
 }
 export function edit(doc,fn,options={}) {
   const state=EditorState.create({schema,doc:read(doc)}),tr=fn(state.tr,state.doc);
-  if(!tr||!tr.docChanged)return {changed:[]};const virtual=new Set();state.doc.descendants((node,pos)=>{if(node.type.name==='paragraph'&&node.attrs.id==null&&!node.content.size)virtual.add(tr.mapping.map(pos));});fixBlockIds(tr,options.rng,(node,pos)=>virtual.has(pos)&&node.type.name==='paragraph'&&!node.content.size);
+  if(!tr||!tr.docChanged)return {changed:[]};const virtual=new Set();state.doc.descendants((node,pos)=>{if(node.type.name==='paragraph'&&(node.attrs.id==null||node.attrs.id.endsWith('/empty'))&&!node.content.size)virtual.add(tr.mapping.map(pos));});fixBlockIds(tr,options.rng,(node,pos)=>virtual.has(pos)&&node.type.name==='paragraph'&&!node.content.size);
   return write(doc,tr.doc,options);
 }
 
@@ -146,7 +146,7 @@ export function fixBlockIds(tr,rng=Math.random,skip=()=>false){
   const seen=new Set(),A='0123456789abcdefghijklmnopqrstuvwxyz';
   tr.doc.descendants((node,pos)=>{
     if(node.type.spec.attrs?.id===undefined||skip(node,pos))return !node.isTextblock;
-    if(node.attrs.id==null||seen.has(node.attrs.id)){let id='';for(let i=0;i<10;i++)id+=A[Math.floor(rng()*36)];tr.setNodeAttribute(pos,'id',id+(idCounter++).toString(36));}
+    if(node.attrs.id==null||node.attrs.id.endsWith('/empty')||seen.has(node.attrs.id)){let id='';for(let i=0;i<10;i++)id+=A[Math.floor(rng()*36)];tr.setNodeAttribute(pos,'id',id+(idCounter++).toString(36));}
     else seen.add(node.attrs.id);return !node.isTextblock;
   });
 }
