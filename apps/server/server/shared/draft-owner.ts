@@ -61,16 +61,13 @@ export function chatOwner(
 type BranchColumns = { workId: SQLWrapper; rootThreadId: SQLWrapper };
 
 /**
- * The owner columns, handle and lifecycle of a branch row as SQL. Pass the drizzle `branches`
- * table, or the alias of a raw-SQL branch row. `lifecycle` is `active`, `archived` (a Work),
- * `frozen` (a lineage with no live member), `deleted`, or `missing` (a closed branch whose
- * owner is gone).
+ * The owner columns and handle of a branch row as SQL. Pass the drizzle `branches` table, or the
+ * alias of a raw-SQL branch row.
  */
 export function branchOwnerSql(from: typeof branches | string): {
   workId: SQL<string | null>;
   rootThreadId: SQL<string | null>;
   handle: SQL<string | null>;
-  lifecycle: SQL<BranchOwnerLifecycle>;
 } {
   const columns: BranchColumns =
     typeof from === "string"
@@ -85,15 +82,6 @@ export function branchOwnerSql(from: typeof branches | string): {
     handle: sql<string | null>`CASE
       WHEN ${columns.workId} IS NOT NULL THEN (SELECT ow.handle FROM works ow WHERE ow.id = ${columns.workId})
       WHEN ${columns.rootThreadId} IS NOT NULL THEN (SELECT ot.ref FROM threads ot WHERE ot.id = ${columns.rootThreadId})
-    END`,
-    lifecycle: sql<BranchOwnerLifecycle>`CASE
-      WHEN ${columns.workId} IS NOT NULL THEN coalesce((SELECT CASE
-        WHEN ow.deleted_at IS NOT NULL THEN 'deleted'
-        WHEN ow.archived_at IS NOT NULL THEN 'archived'
-        ELSE 'active' END FROM works ow WHERE ow.id = ${columns.workId}), 'missing')
-      WHEN ${columns.rootThreadId} IS NOT NULL THEN
-        CASE WHEN ${lineageHasLiveMember(sql`${columns.rootThreadId}`)} THEN 'active' ELSE 'frozen' END
-      ELSE 'missing'
     END`,
   };
 }

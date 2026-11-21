@@ -62,7 +62,6 @@ export function createWorkBranchReviewService(input: {
       pendingDocumentCount: (projectId) => input.pending.countPendingInProject(projectId),
       branchesChangingDocument: (command) => input.pending.listBranchesChangingDocument(command),
       items: (command) => ownerItems(command.owner),
-      branchOwner: (branchId) => input.branches.ownerOf(branchId),
       resolveItem: (command) => input.identity.resolveReviewItem(command),
       resolveItemInBranch: (command) => input.identity.resolveReviewItemInBranch(command),
       resolveItemByDocument: (command) => input.identity.resolveReviewItemByDocument(command),

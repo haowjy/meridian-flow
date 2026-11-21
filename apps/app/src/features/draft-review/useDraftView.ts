@@ -14,7 +14,7 @@ export function useDraftView(
     enabled = true,
     item,
   }: {
-    controller: Pick<WorkBranchCommands, "commandChange" | "changesLocked">;
+    controller: Pick<WorkBranchCommands, "commandChange" | "dispositionLocked">;
     enabled?: boolean;
     item?: ThreadDraftListItem;
   },
@@ -33,7 +33,7 @@ export function useDraftView(
     items: changes.map((change) => ({ change })),
     focused: null,
     canApply: (!!item && hasTreeLine(item)) || item?.isNew === true,
-    locked: controller.changesLocked || !enabled,
+    locked: controller.dispositionLocked || !enabled,
     apply: async (change) => {
       await controller.commandChange("apply", draft, targetOfChanges([change]));
     },

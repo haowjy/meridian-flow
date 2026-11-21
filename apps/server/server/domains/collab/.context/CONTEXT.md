@@ -101,7 +101,7 @@ either way has its stored pending count reconciled at commit, and only a Work
 whose count moved is notified (one SQL aggregate over the transaction's locked Works;
 `projects/.context/CONTEXT.md`). `seam` adds the bound edit
 grants' Works and confirms the grants; `requireActive` refuses unless every
-Work of the set is active, and `allowFrozenLineage` lets a chat in Trash pass it. `ensureActiveForWrite` takes the caller's `WorkWriteOptions` the same way. No other collab code locks a Work for a write; the
+Work and lineage of the set is active: new AI writes and branch creation use it, while a press on a closed owner's suggestions locks without it. `ensureActiveForWrite` takes the caller's `WorkWriteOptions` the same way. No other collab code locks a Work for a write; the
 live journal's seam locks only the bound grants' Works. No keystroke enters the boundary:
 no keystroke locks a Work or counts. Tests use the same boundary
 (`apps/server/server/test-support/work-projection.ts`), with no catalog or

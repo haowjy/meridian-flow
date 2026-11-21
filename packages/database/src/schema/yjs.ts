@@ -292,9 +292,7 @@ export const applyCommandTrees = pgTable(
     /** The project's list, or its owner's account list (`user://`). */
     scope: text("scope").$type<"project" | "account">().notNull(),
     mark: byteaColumn("mark").notNull(),
-    /** The live restore records the Apply appended before its copies, which its Undo takes back. */
-    restored: jsonb("restored").$type<string[]>().notNull(),
-    /** The nodes whose live copies or restores this Apply made in this list: what its Undo writes. */
+    /** The nodes whose live copies this Apply made in this list: what its Undo writes. */
     nodes: jsonb("nodes").$type<string[]>().notNull(),
   },
   (table) => [primaryKey({ columns: [table.commandId, table.scope] })],

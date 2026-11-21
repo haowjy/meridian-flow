@@ -16,18 +16,14 @@ import type {
   ThreadDraftListResponse,
 } from "@meridian/contracts/branches";
 import type { TreeListRef } from "@meridian/contracts/protocol";
-import { type Work, workLifecycleState } from "@meridian/contracts/works";
+import type { Work } from "@meridian/contracts/works";
 import { LIVE } from "@meridian/project-tree";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useMemo } from "react";
 import { useCommandDriver } from "@/client/commands/driver-context";
 import { submitPress, submitPressUndo } from "@/client/query/press-commands";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
-import {
-  cachedOwnerDrafts,
-  patchOwnerDrafts,
-  useOwnerDraftsFrozen,
-} from "@/client/query/useOwnerDrafts";
+import { cachedOwnerDrafts, patchOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { refreshTurnCards } from "@/client/query/useTurnLiveLineage";
 import { documentBasename } from "@/client/query/work-branch-files";
 import { notifyFailure } from "@/components/app/failure-toast";
@@ -37,7 +33,6 @@ import {
   pushUndoStep,
   shownSourceOf,
 } from "@/core/project-tree/tree-undo";
-import { draftTreeVersion } from "@/core/project-tree/tree-version";
 import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
   useDraftCommandOwner,
@@ -89,7 +84,6 @@ export function usePressCommands({
   const registry = useLiveDocumentSessionRegistry();
   const treeLists = useOptionalTreeLists();
   const queryClient = useQueryClient();
-  const frozen = useOwnerDraftsFrozen(projectId, ownerKey);
   const locked = !ownerKey || !driver;
   return useMemo(() => {
     const { notices } = owner;
@@ -140,13 +134,11 @@ export function usePressCommands({
       const branchId = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.ownerDrafts(projectId, ownerKey),
       )?.branchId;
-      const { view, pendingText } = branchId
-        ? draftTreeVersion(branchId, rows(), work ? workLifecycleState(work) : "active")
-        : { view: LIVE, pendingText: undefined };
+      const view = branchId ? { draft: branchId } : LIVE;
       const project: TreeListRef = { kind: "project", projectId };
       const placement = [project, treeLists.account].flatMap((list) => {
         const handle = treeLists.acquire(list);
-        const shown = handle.session.replay(view, pendingText);
+        const shown = handle.session.replay(view);
         handle.release();
         const sources = [...new Set(nodes.flatMap((node) => shownSourceOf(shown, node) ?? []))];
         return sources.length ? [{ list, sources }] : [];
@@ -301,7 +293,6 @@ export function usePressCommands({
     /** What the press says of the nodes it was sent: the ones it changed nothing in are untaken. */
     const outcomeOf = (pressed: Pressed, nodes: readonly string[]): CommandOutcome => {
       const { result } = pressed;
-      if (result.settled?.length) return { kind: "returned" };
       const took = new Set(result.items.map((item) => item.node));
       const untaken = nodes.filter((node) => !took.has(node));
       return took.size > 0
@@ -423,9 +414,6 @@ export function usePressCommands({
       threadId,
       owner,
       dispositionLocked: locked,
-      changesLocked: locked || frozen,
-      frozen,
-      canApply: !frozen,
       /**
        * One change in the text is the editor's (`useSuggestionChanges`); a list's row is the
        * document, and a tree line its tree change alone.
@@ -456,7 +444,6 @@ export function usePressCommands({
     registry,
     treeLists,
     queryClient,
-    frozen,
     locked,
     projectId,
     work,

@@ -196,19 +196,6 @@ export async function runTreeToolCommand(
     if (!result.ok)
       return { refused: refusalOf(input, result), notMoved: result.notMoved ?? [result.message] };
 
-    // A delete is never refused for its Works: they keep their drafts of what it took.
-    const survivingWorks =
-      input.command === "delete" && !drafted && result.taken.length <= 100
-        ? [
-            ...new Set(
-              (
-                await Promise.all(
-                  result.taken.map((id) => history.survivingDraftWorks(id as never)),
-                )
-              ).flat(),
-            ),
-          ].sort()
-        : [];
     const payload: Parameters<typeof modelResult>[0]["payload"] = {
       ...(result.landed ? { path: result.landed } : {}),
       ...(destination ? { destination: destination.kind } : {}),
@@ -222,8 +209,6 @@ export async function runTreeToolCommand(
         ...(result.placedAtEnd ? { placedAtEnd: result.placedAtEnd } : {}),
         ...(result.already ? { already: result.already } : {}),
         ...(result.leftOut ? { leftOut: result.leftOut } : {}),
-        ...(result.deletedInLive ? { deletedInLive: true as const } : {}),
-        ...(survivingWorks.length > 0 ? { survivingWorks } : {}),
         ...(drafted && firstDrafted && result.made.length > 0
           ? { firstDrafted: true as const }
           : {}),

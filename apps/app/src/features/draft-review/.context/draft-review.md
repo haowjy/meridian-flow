@@ -53,9 +53,9 @@ surfaces, and outlives them:
 
 A press is sent through the command driver (`client/query/press-commands.ts`, lane
 `press:<owner>`), which resends it under the same id until the server answers. A press that
-fails shows a brief pill (`notifyFailure`), never a line in the row or bar pressed. A closed
-owner (an archived Work, a chat in Trash) answers `returned`, changes nothing, and the press
-shows the chip for why.
+fails shows a brief pill (`notifyFailure`), never a line in the row or bar pressed. An archived
+Work's or a trashed chat's suggestions take every press and every keystroke: nothing in the review
+reads the owner's lifecycle.
 
 ## Discard
 

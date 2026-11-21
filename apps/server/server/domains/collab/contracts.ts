@@ -33,7 +33,6 @@ import type { DocumentCreationAggregate } from "./domain/document-creation.js";
 import type { BoundWrite, ImportLinkBinder, LinkBinder } from "./domain/link-binding.js";
 import type { ModelEdits } from "./domain/model-edit.js";
 import type { ModelEvidence } from "./domain/model-evidence.js";
-import type { BranchOwnerView } from "./domain/ports/branch-store.js";
 import type { DocumentBranchOrigin } from "./domain/ports/work-branch-pending-store.js";
 import type {
   LiveLineageDocument,
@@ -247,8 +246,6 @@ export type AgentTreeHistory = {
   ): Promise<{ node: string; folder: boolean } | null>;
   /** This chat's history of a node: its tree receipts and the ordinals of its text edits. */
   historyOf(threadId: ThreadId, nodeId: string, isDocument: boolean): Promise<NodeHistory>;
-  /** The Works (`Work "‹name›"`) whose active drafts of a document still change it. */
-  survivingDraftWorks(documentId: DocumentId): Promise<string[]>;
 };
 
 export type ReverseThreadContextInput = {
@@ -424,8 +421,6 @@ export type DraftReviewApi = {
   items(input: {
     owner: DraftOwner;
   }): Promise<{ branchId: BranchId | null; items: DraftReviewItem[] }>;
-  /** A branch, any status, with its owner and the owner's lifecycle as it reads now. */
-  branchOwner(branchId: BranchId): Promise<BranchOwnerView | null>;
   /** The item a key names, when its branch is active. */
   resolveItem(input: { itemKey: string }): Promise<ResolvedReviewItem | null>;
   /** One document of an active branch. */

@@ -8863,12 +8863,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "restored": {
-          "name": "restored",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
         "nodes": {
           "name": "nodes",
           "type": "jsonb",

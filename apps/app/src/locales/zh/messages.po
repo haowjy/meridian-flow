@@ -1067,12 +1067,12 @@ msgid "Applying"
 msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applying brings back {names}"
-msgstr ""
+#~ msgid "Applying brings back {names}"
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applying brings back {names}, deleted from {area}"
-msgstr ""
+#~ msgid "Applying brings back {names}, deleted from {area}"
+#~ msgstr ""
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applying deletes {deletes}."
@@ -2165,8 +2165,8 @@ msgid "Couldn't restore {title}"
 msgstr ""
 
 #: src/features/draft-review/TrashedChatNotice.tsx
-msgid "Couldn't restore the chat"
-msgstr ""
+#~ msgid "Couldn't restore the chat"
+#~ msgstr ""
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -2424,8 +2424,6 @@ msgstr ""
 
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/chat/command-descriptor.ts
-#: src/features/draft-review/DraftCommandStatus.tsx
-#: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -2449,12 +2447,12 @@ msgid "Deleted a Work"
 msgstr ""
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Deleted from {area}"
-msgstr ""
+#~ msgid "Deleted from {area}"
+#~ msgstr ""
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Deleted from {from}"
-msgstr ""
+#~ msgid "Deleted from {from}"
+#~ msgstr ""
 
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Deleted from {location}"
@@ -4885,7 +4883,6 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
-#: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/editor/InTrashStatus.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/TrashedDocument.tsx
@@ -5851,8 +5848,8 @@ msgstr ""
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This chat is in Trash"
-msgstr ""
+#~ msgid "This chat is in Trash"
+#~ msgstr ""
 
 #. placeholder {0}: naming.current(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts

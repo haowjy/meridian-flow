@@ -1,6 +1,5 @@
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { isWorkArchived } from "@meridian/contracts/works";
 import type { LandingFault } from "@meridian/project-tree";
@@ -8,7 +7,6 @@ import { Folder as FolderIcon, Layers } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useDisplayedThread } from "@/client/query/useDisplayedThread";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
-import { useProjectTrees } from "@/client/query/useProjectTrees";
 import { useWorks } from "@/client/query/useWorks";
 import type { ReviewFileTarget } from "@/client/query/work-branch-files";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -26,13 +24,8 @@ import {
   useDraftNoticeWords,
 } from "@/features/draft-review/CommandNotice";
 import { draftCopyView } from "@/features/draft-review/copy-view";
-import {
-  DeletedLiveTag,
-  DeletedWord,
-  DraftCommandStatus,
-} from "@/features/draft-review/DraftCommandStatus";
+import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
-import { isDeletedLive } from "@/features/draft-review/deleted-drafts";
 import { folderKey } from "@/features/draft-review/draft-command-owner";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
 import { ReviewStatusContent } from "@/features/draft-review/ReviewCompletion";
@@ -170,8 +163,6 @@ export function ChangesSource({
   // A command in flight hides its row.
   const inFlight = (itemKey: string) => controller.owner.state(itemKey).hidden;
   const listedFiles = (drafts.files ?? []).filter((file) => !inFlight(file.draft.itemKey));
-  const sources = useProjectTrees(projectId).sources;
-  const schemeOfSource = (id: string) => sources.find((source) => source.id === id)?.scheme;
   const shell = useShellTreeVersion();
   const tree = shell?.ownerKey === ownerKey ? shell.tree : null;
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set());
@@ -207,12 +198,11 @@ export function ChangesSource({
   // Grouped, the list's order is the groups' order: every index below reads this one.
   const files = groups.flatMap(groupFiles);
 
-  /** What an Apply of several asks about first: the documents it deletes and those it brings back. */
+  /** What an Apply of several asks about first: the documents it deletes. */
   const [asking, setAsking] = useState<{
     targets: readonly ReviewFileTarget[];
     folders: readonly string[];
     deleting: readonly ReviewFileTarget[];
-    restoring: readonly ReviewFileTarget[];
   } | null>(null);
   // The folder changes Apply all takes along: every one that can land.
   const changedFolders = groupsOf(groups).flatMap((group) =>
@@ -228,7 +218,6 @@ export function ChangesSource({
   const draftsOf = (targets: readonly ReviewFileTarget[]) =>
     targets.map((file) => ({ documentId: file.documentId, itemKey: file.draft.itemKey }));
   const everyDraft = draftsOf(files);
-  // One command; it brings back a document live deleted before landing what the Work drafted.
   const applyAll = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
     hold();
     void controller.applyMany(
@@ -237,10 +226,8 @@ export function ChangesSource({
     );
   };
   const startApply = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
-    const restoring = targets.filter((file) => isDeletedLive(file.draft));
     const deleting = targets.filter((file) => file.draft.tree?.deleted === true);
-    if (restoring.length > 0 || deleting.length > 0)
-      setAsking({ targets, folders, deleting, restoring });
+    if (deleting.length > 0) setAsking({ targets, folders, deleting });
     else applyAll(targets, folders);
   };
   const untitled = t`Untitled document`;
@@ -249,15 +236,7 @@ export function ChangesSource({
   const question: CommandQuestion | null = asking
     ? {
         kind: "apply-all",
-        sentence: (
-          <ApplyAllQuestion
-            deleting={names(asking.deleting)}
-            restoring={asking.restoring.map((file) => ({
-              name: reviewFileTargetName(file, untitled),
-              scheme: file.draft.deletedFrom?.scheme,
-            }))}
-          />
-        ),
+        sentence: <ApplyAllQuestion deleting={names(asking.deleting)} />,
         keep: <Trans>Cancel</Trans>,
         confirm: <Trans>Apply all</Trans>,
         onKeep: () => setAsking(null),
@@ -387,7 +366,6 @@ export function ChangesSource({
                   : undefined
               }
               onApply={
-                controller.canApply &&
                 files.every((file) => hasApply(file.draft)) &&
                 (files.length > 0 || changedFolders.length > 0)
                   ? () => startApply(files, changedFolders)
@@ -407,13 +385,6 @@ export function ChangesSource({
           ) : null
         }
       >
-        {hasFiles && controller.frozen ? (
-          <div className="px-2">
-            <ListLine iconSlot>
-              <Trans>This chat is in Trash</Trans>
-            </ListLine>
-          </div>
-        ) : null}
         {applying ? (
           <div className="px-2">
             <ListLine iconSlot status>
@@ -473,7 +444,6 @@ export function ChangesSource({
                     key={`folder:${folder.id}`}
                     branchId={drafts.branchId}
                     folder={folder}
-                    schemeOfSource={schemeOfSource}
                     depth={item.depth}
                     open={!folded.has(folder.id)}
                     onToggle={() => fold(folder.id)}
@@ -481,11 +451,7 @@ export function ChangesSource({
                     controller={controller}
                     touch={touch}
                     notice={wordOf(folder.id)}
-                    canApply={
-                      controller.canApply &&
-                      !folder.fault &&
-                      own.every((file) => hasApply(file.draft))
-                    }
+                    canApply={!folder.fault && own.every((file) => hasApply(file.draft))}
                     onApply={() => startApply(own, folder.folders)}
                     onDiscard={(name) => {
                       hold();
@@ -508,7 +474,7 @@ export function ChangesSource({
                   depth={item.depth}
                   fault={tree?.faults.get(file.documentId) ?? null}
                   active={isOpen(file)}
-                  canApply={controller.canApply && hasApply(file.draft)}
+                  canApply={hasApply(file.draft)}
                   controller={controller}
                   touch={touch}
                   notice={wordOf(file.documentId)}
@@ -628,7 +594,7 @@ function ChangeRow({
         icon={fileKindIcon(file.contextLocation?.path ?? name)}
         title={<span className={cn("truncate", deleted && "line-through")}>{name}</span>}
         detail={changeSummary(file)}
-        notice={notice ?? <DeletedLiveTag item={file.draft} />}
+        notice={notice}
         revealActions={!touch}
         actions={
           <ReviewActions
@@ -720,7 +686,6 @@ function folderPlace(location: NonNullable<ReviewFileTarget["contextLocation"]>)
 function FolderGroupRow({
   branchId,
   folder,
-  schemeOfSource,
   depth,
   open,
   onToggle,
@@ -735,7 +700,6 @@ function FolderGroupRow({
   /** What the owner's notice says on this row. */
   notice: ReactNode;
   folder: NonNullable<ChangeGroup<ReviewFileTarget>["folder"]>;
-  schemeOfSource: (sourceId: string) => ProjectContextTreeScheme | undefined;
   /** Under its changed folder's row. */
   depth: number;
   /** Its rows show; a click folds them. */
@@ -772,9 +736,6 @@ function FolderGroupRow({
             <span className={cn("truncate", change.kind === "deleted" && "line-through")}>
               {name}
             </span>
-            {folder.deletedLive ? (
-              <DeletedWord scheme={schemeOfSource(folder.deletedLive)} />
-            ) : null}
           </span>
         }
         detail={folderSummary(folder)}

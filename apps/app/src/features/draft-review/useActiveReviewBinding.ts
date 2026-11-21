@@ -19,9 +19,9 @@ export function useActiveReviewBinding({
   const owner = useRef({});
   useEffect(() => {
     if (!active || !documentId) return;
-    setActiveEditorDocumentId(documentId, liveSession, inReview, owner.current);
-    return () => setActiveEditorDocumentId(null, null, false, owner.current);
-  }, [active, documentId, inReview, liveSession, setActiveEditorDocumentId]);
+    setActiveEditorDocumentId(documentId, owner.current);
+    return () => setActiveEditorDocumentId(null, owner.current);
+  }, [active, documentId, setActiveEditorDocumentId]);
 
   useEffect(() => {
     if (!active || !inReview || !liveSession) return;

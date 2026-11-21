@@ -127,14 +127,9 @@ export function droppedRecords(doc: Y.Doc): DroppedRecord[] {
   });
 }
 
-/** `pendingText`: documents the Work holds a pending text draft of, which the list cannot see. */
-export function replayView(
-  doc: Y.Doc,
-  view: View,
-  pendingText?: ReadonlySet<string>,
-): TreeProjection {
+export function replayView(doc: Y.Doc, view: View): TreeProjection {
   return {
-    ...replay(viewValues(doc, view), { draft: view.draft, pendingText }),
+    ...replay(viewValues(doc, view), { draft: view.draft }),
     dropped: droppedRecords(doc),
   };
 }

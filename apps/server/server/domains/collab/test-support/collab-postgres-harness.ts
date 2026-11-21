@@ -393,7 +393,6 @@ export function createHarness(db: Database, options: CollabHarnessOptions = {}) 
     live: persistence.journal,
     liveCoordinator,
     treeLists,
-    tree: createTreeReader(db),
     onCommitted: async () => {},
   });
   // Tests mint a destination grant without a target; a write's grant names its document. A

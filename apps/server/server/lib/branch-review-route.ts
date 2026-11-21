@@ -159,19 +159,13 @@ export async function handleOwnerDraftListRequest(
     { accountId: input.userId },
     listed.items.filter((item) => !item.isNew).map((item) => item.documentId),
   );
-  // The branch's owner lifecycle is the one its commands enforce.
-  const frozen =
-    listed.branchId !== null &&
-    (await deps.documentSync.draftReview.branchOwner(listed.branchId))?.lifecycle === "frozen";
   const visible = listed.items.filter(
-    (item) =>
-      readable.has(item.documentId) || liveReadable.has(item.documentId) || item.deletedLive,
+    (item) => readable.has(item.documentId) || liveReadable.has(item.documentId),
   );
   return {
     items: visible.map((item) => toWireItem(item, listed.threadTitles)),
     branchId: listed.branchId,
     folders: listed.folders,
-    frozen,
     saw: listed.saw,
   };
 }
@@ -250,10 +244,6 @@ export function toWireItem(
       : null,
     documentName: item.documentName,
     contextLocation: reviewContextLocation(item.path),
-    deletedLive: item.deletedLive,
-    ...(item.deletedFrom
-      ? { deletedFrom: reviewContextLocation(item.deletedFrom) ?? undefined }
-      : {}),
     actorThreads: item.actorThreadIds.map((threadId) => ({
       threadId,
       title: threadTitles.get(threadId) ?? null,

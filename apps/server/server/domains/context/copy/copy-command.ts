@@ -52,10 +52,11 @@ import type {
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { PMNode } from "@meridian/markup";
 import { decodeStateVector } from "yjs";
+import { LineageDraftsUnavailableError } from "../../../shared/draft-owner.js";
 import { deferUntilDrizzleRollback } from "../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../shared/result.js";
-import { closedOwnerBounce } from "../../collab/adapters/closed-owner-bounce.js";
 import type { CollabDomain } from "../../collab/index.js";
+import { WorkLifecycleUnavailableError } from "../../projects/index.js";
 import type { ObjectRelease, ObjectStorePort } from "../../storage/index.js";
 import { prepareBinaryCopy } from "../binary-copy.js";
 import { adapterFaultToContextError } from "../context/adapter-fault.js";
@@ -672,4 +673,18 @@ function behind(client: ReadonlyMap<number, number>, server: Uint8Array): boolea
     if (clock > (held.get(clientId) ?? 0)) return true;
   }
   return false;
+}
+
+/**
+ * The Work lock found the destination's owner closed (an archived or deleted Work, a chat in
+ * Trash): the `returned` the command stores in place of the throw. Any other cause is undefined.
+ */
+function closedOwnerBounce(cause: unknown): Settlement[] | undefined {
+  if (cause instanceof LineageDraftsUnavailableError)
+    return [{ rule: "returned", why: "chat_frozen" }];
+  if (cause instanceof WorkLifecycleUnavailableError && cause.state !== "missing")
+    return [
+      { rule: "returned", why: cause.state === "archived" ? "work_archived" : "work_deleted" },
+    ];
+  return undefined;
 }

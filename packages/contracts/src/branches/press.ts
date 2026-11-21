@@ -1,4 +1,3 @@
-import type { Settlement } from "../commands/index.js";
 import type { CommandId } from "../ids.js";
 import type { TreeSaw } from "./review.js";
 
@@ -38,8 +37,6 @@ export type PressResult = {
   verdict: PressVerdict;
   /** The nodes the press changed, with the halves that changed: what its Undo takes back. */
   items: { node: string; tree?: true; text?: true }[];
-  /** A Discard on a closed owner (an archived or deleted Work, a chat in Trash) changes nothing. */
-  settled?: Settlement[];
 };
 
 export type PressUndoRequest = { commandId: CommandId; pressCommandId: CommandId };

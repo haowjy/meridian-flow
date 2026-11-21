@@ -102,14 +102,6 @@ export interface ThreadDraftListItem {
   /** The document URI's scheme and leading-slash path in the branch's view, independent of the Work. */
   contextLocation: Pick<ParsedContextUri, "scheme" | "path"> | null;
   /**
-   * Live has the document in Trash while the branch keeps it (a move, a rename or text the
-   * branch has in it), in any area: Apply brings it back, at its name or the next free leaf
-   * name, before merging. A document the branch deletes is never `deletedLive`.
-   */
-  deletedLive: boolean;
-  /** For `deletedLive`: where live last had it, the area it was deleted from. */
-  deletedFrom?: Pick<ParsedContextUri, "scheme" | "path">;
-  /**
    * The branch's move, delete or creation of the document, when it has one. `movedFrom` is where
    * live has it now (`contextLocation` is where the branch puts it).
    */
@@ -156,12 +148,6 @@ export interface ThreadDraftListResponse {
   branchId: BranchId | null;
   /** The folders the Work's tree changes (it has a row on). */
   folders: { id: string }[];
-  /**
-   * The owner is a conversation lineage with no live chat (every chat in it is in Trash):
-   * its drafts take no text and no Apply, only a whole Discard, until a chat is restored.
-   * Always false for a Work, whose archive state the Work itself carries.
-   */
-  frozen: boolean;
   /**
    * The cut the items were read at: each list's vector, read before the rows. An Apply pressed on
    * these rows sends it, so what lands is what the rows showed.

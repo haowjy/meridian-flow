@@ -880,7 +880,6 @@ CREATE TABLE "apply_command_trees" (
 	"branch_id" uuid NOT NULL,
 	"scope" text NOT NULL,
 	"mark" "bytea" NOT NULL,
-	"restored" jsonb NOT NULL,
 	"nodes" jsonb NOT NULL,
 	CONSTRAINT "apply_command_trees_command_id_scope_pk" PRIMARY KEY("command_id","scope")
 );

@@ -38,11 +38,6 @@ export type TreeNode = {
   trashed: boolean;
   /** Deleted, but shown because something not deleted is inside (rule 3). */
   keptByChild: boolean;
-  /**
-   * Deleted in live, but shown in this Work's view because the Work has a pending change to it
-   * (rule 7). Review marks it "Deleted"; Apply restores it and lands the change.
-   */
-  keptByPending: boolean;
   /** Trash emptied: gone for good, and in no Trash entry. */
   purged: boolean;
   blob?: BlobRef;
@@ -210,12 +205,11 @@ type DeleteInForce = {
  * Turns records, in replay order, into a tree: the eight rules of the design, section 2. Each
  * value is read through `readStored` and the replay uses the copy that builds; one that is not a
  * record is skipped as `unreadable`.
- * `of.draft` is the Work whose view this is (null for live); `of.pendingText` the documents it
- * holds pending text of, which the list cannot see.
+ * `of.draft` is the Work whose view this is (null for live).
  */
 export function replay(
   values: readonly unknown[],
-  of: { draft?: string | null; pendingText?: ReadonlySet<string> } = {},
+  of: { draft?: string | null } = {},
 ): TreeProjection {
   return startReplay(values, of).finish();
 }
@@ -263,20 +257,33 @@ export type Replay = {
 
 export function startReplay(
   values: readonly unknown[],
-  of: { draft?: string | null; pendingText?: ReadonlySet<string> } = {},
+  of: { draft?: string | null } = {},
 ): Replay {
   const nodes = new Map<string, Working>();
   const skipped: TreeProjection["skipped"] = [];
   const rescued: string[] = [];
   const gone = new Set<string>();
+  const reads = values.map(readStored);
+  // The view's own drafted records, by family root as `undoes` names them: a live delete that
+  // takes one back (Un-Apply of a create) is the Work's own, so the record, pending again, lifts
+  // it in the Work's view.
+  const drafted = new Set(
+    of.draft == null
+      ? []
+      : reads.flatMap((read) =>
+          read.ok && read.record.draft === of.draft ? [read.record.carries ?? read.record.id] : [],
+        ),
+  );
   const ownDelete = (record: TreeRecord) =>
-    record.draft !== null || (of.draft != null && record.fromDraft === of.draft);
+    record.draft !== null ||
+    (of.draft != null &&
+      (record.fromDraft === of.draft ||
+        (record.undoes !== undefined && drafted.has(record.undoes))));
   // Rule 10: a purge is final wherever it sits. A Yjs-merged record placed before it in the list
   // (an offline restore or move admitted later) never lifts the delete it empties.
   const purgedDeletes = new Set<string>();
   // Each purged node, by the position of the purge that took it.
   const purgedAt = new Map<string, number>();
-  const reads = values.map(readStored);
   for (const read of reads)
     if (read.ok && read.record.type === "purge") purgedDeletes.add(read.record.delete);
   const isFinal = (entry: DeleteInForce) =>
@@ -285,23 +292,14 @@ export function startReplay(
   // What a restore lifted, and what a delete that took a restore back put in force again, by
   // the id an Undo of it names: taking either back undoes exactly that.
   const lifted = new Map<string, Lifted>();
-  const pendingOn = new Map<string, Set<string>>();
-  // A drafted change and the drafted record that takes it back leave nothing pending.
-  const pend = (record: TreeRecord) => {
-    if (record.draft === null) return;
-    const on = pendingOn.get(record.node) ?? new Set<string>();
-    if (record.undoes !== undefined && on.has(record.undoes)) on.delete(record.undoes);
-    else on.add(record.carries ?? record.id);
-    pendingOn.set(record.node, on);
-  };
 
   // A node still in this list that something may be placed under or done to: purged nodes are in
   // no view, for placement as for display.
   const placeable = (id: string) => placeIn(nodes, id);
 
   // Lifts the deletes a restore (or, by rule 9, a move or rename of a node in Trash) takes back.
-  // A touch by a drafted record lifts only the Work's own deletes: a live delete stays in force
-  // in the Work's view (rule 7), and is lifted when the Apply lands the record live.
+  // A touch by a drafted record lifts only the Work's own deletes: any other live delete stays in
+  // force in the Work's view, and the record waits there until a restore (rule 7).
   const lift = (
     record: TreeRecord,
     node: Working,
@@ -531,7 +529,6 @@ export function startReplay(
         if (existing.root !== (record.carries ?? record.id)) return skip("duplicate");
         if (dry) return { parent: parentAfter(existing, flipsOf(record)) };
         lift(record, existing, { ownOnly: record.draft !== null });
-        pend(record);
         take(record, index);
         return;
       }
@@ -596,7 +593,6 @@ export function startReplay(
           take(record, index, undefined, flips);
           const back = lifted.get(record.undoes);
           if (back) putBack(record, back);
-          pend(record);
           node.lastChangedBy = record.actor;
           return;
         }
@@ -605,7 +601,6 @@ export function startReplay(
         if (dry) return { parent: record.parent };
         // Rule 9: acting on a node in Trash brings it back (an Undo's opposite record never does).
         lift(record, node, { ownOnly: record.draft !== null });
-        pend(record);
         const sets: Sets = {
           place: holder(record, index, { parent: record.parent, rank: record.rank }),
         };
@@ -641,7 +636,6 @@ export function startReplay(
           take(record, index, sets);
           set(node, sets, index);
         }
-        pend(record);
         // A rename to the same name counts: it is how a writer keeps "Untitled" on purpose.
         if (record.actor.startsWith("user:")) node.provisional = false;
         node.lastChangedBy = record.actor;
@@ -668,8 +662,8 @@ export function startReplay(
       }
       case "restore":
         if (dry) return { parent: parentAfter(node, flipsOf(record)) };
-        // An Apply's restore of a node the Work's view kept brings back what live deleted and
-        // leaves the node where it arrived: the twin the writer saw as plain stays plain.
+        // A restore an Apply landed (`fromDraft`) brings back what live deleted and leaves the
+        // node where it arrived: the twin the writer saw as plain stays plain.
         lift(record, node, record.fromDraft === undefined ? { index } : { ownOnly: false });
         take(record, index);
         return;
@@ -728,13 +722,7 @@ export function startReplay(
     standing() {
       if (cached?.count === count) return cached.tree;
       const rescuedTo = rescueFromPurged(nodes, purgedAt);
-      const { children, standing } = stand(
-        nodes,
-        deletes,
-        pendingOn,
-        of.pendingText ?? new Set(),
-        rescuedTo,
-      );
+      const { children, standing } = stand(nodes, deletes, rescuedTo);
       const sorted = new Map<string, Working[]>();
       const kidsOf = (parent: string) => {
         let kids = sorted.get(parent);
@@ -781,16 +769,7 @@ export function startReplay(
     finish() {
       done = true;
       return {
-        ...derive(
-          nodes,
-          deletes,
-          pendingOn,
-          of.pendingText ?? new Set(),
-          skipped,
-          rescued,
-          gone,
-          rescueFromPurged(nodes, purgedAt),
-        ),
+        ...derive(nodes, deletes, skipped, rescued, gone, rescueFromPurged(nodes, purgedAt)),
         changes,
         inForce: new Set([...changes.values()].flatMap((each) => (each.inForce ? [each.id] : []))),
         dropped: [],
@@ -931,7 +910,7 @@ export function standingOf(
   return standing;
 }
 
-type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean; source: string };
+type Standing = { deleted: boolean; keptByChild: boolean; source: string };
 
 /**
  * One pass over the nodes, parents before children on the way down and children before parents
@@ -942,8 +921,6 @@ type Standing = { deleted: boolean; keptByChild: boolean; keptByPending: boolean
 function stand(
   nodes: Map<string, Working>,
   deletes: DeleteInForce[],
-  pendingOn: Map<string, Set<string>>,
-  pendingText: ReadonlySet<string>,
   rescuedTo: Rescued,
 ): { children: Map<string, Working[]>; standing: Map<string, Standing> } {
   const children = new Map<string, Working[]>();
@@ -962,10 +939,6 @@ function stand(
     for (const member of entry.cascade)
       if (nodes.has(member)) takenBy.set(member, [...(takenBy.get(member) ?? []), entry]);
   }
-  const pendingNodes = new Set([
-    ...[...pendingOn].flatMap(([node, on]) => (on.size > 0 ? [node] : [])),
-    ...pendingText,
-  ]);
 
   const standing = new Map<string, Standing>();
   const active = new Set<DeleteInForce>();
@@ -992,28 +965,13 @@ function stand(
         const mine = ownedBy.get(child.id);
         const cascades = takenBy.get(child.id);
         let deleted = false;
-        let draftDeleted = false;
         if (mine)
           for (const entry of mine) {
             active.add(entry);
             deleted = true;
-            draftDeleted ||= entry.own;
           }
-        if (cascades)
-          for (const entry of cascades)
-            if (active.has(entry)) {
-              deleted = true;
-              draftDeleted ||= entry.own;
-            }
-        // Rule 7: a delete in live does not take a node this Work has a pending change to,
-        // unless the Work deleted it too: it stays in the Work's view, marked.
-        const keptByPending = deleted && !draftDeleted && pendingNodes.has(child.id);
-        standing.set(child.id, {
-          deleted: deleted && !keptByPending,
-          keptByChild: false,
-          keptByPending,
-          source: frame.source,
-        });
+        if (cascades) for (const entry of cascades) if (active.has(entry)) deleted = true;
+        standing.set(child.id, { deleted, keptByChild: false, source: frame.source });
         open(child.id, frame.source, child);
         continue;
       }
@@ -1070,14 +1028,12 @@ const rootsOf = (entries: DeleteInForce[], counts: (put: ReadonlySet<string>) =>
 function derive(
   nodes: Map<string, Working>,
   deletes: DeleteInForce[],
-  pendingOn: Map<string, Set<string>>,
-  pendingText: ReadonlySet<string>,
   skipped: TreeProjection["skipped"],
   rescued: string[],
   gone: ReadonlySet<string>,
   rescuedTo: Rescued,
 ): Omit<TreeProjection, "dropped" | "changes" | "inForce"> {
-  const { children, standing } = stand(nodes, deletes, pendingOn, pendingText, rescuedTo);
+  const { children, standing } = stand(nodes, deletes, rescuedTo);
   const parentOf = (node: Working) => rescuedTo.get(node.id)?.parent ?? node.parent;
   const arrivedAt = (node: Working) => rescuedTo.get(node.id)?.arrivedAt ?? node.arrivedAt;
   const suffixes = new Map<string, string>();
@@ -1116,7 +1072,6 @@ function derive(
       hasProperties: node.hasProperties,
       trashed: node.purged || (state.deleted && !state.keptByChild),
       keptByChild: state.keptByChild,
-      keptByPending: state.keptByPending,
       purged: node.purged,
       ...(node.blob ? { blob: node.blob } : {}),
       createdBy: node.createdBy,

@@ -69,8 +69,11 @@ over the Work's project and its creator's account: a project has one owner), wit
 every change it decided, a proposal Live has since matched included, which no review lists.
 Nothing records it: nothing can take it back. Changes the writer applied or discarded earlier
 keep their entries: nothing reads them for a purged Work.
-Archive and delete leave the suggestions in place, frozen, so unarchive and restore find them, as
-drafts were.
+Archive, delete and Trash leave the suggestions in place and open: the press, the editor and card
+Undo take an archived Work's or a trashed chat's suggestions as they take any. What archive and
+Trash stop is new AI writes, at the model's write (`ensureActiveForWrite` in `model-edit-write.ts`
+refuses a closed owner). A closed owner's own notes (its Scratch) stay closed, by the tree judge
+below.
 
 ## Undo and Redo
 

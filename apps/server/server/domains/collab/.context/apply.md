@@ -46,7 +46,7 @@ rows still exist, in one query, and answers per source:
 | Source | Judge | Apply's item | Undo |
 |---|---|---|---|
 | No row (a Work or chat purged) | `gone` | `left_out purged`, the record stays pending | `left_out purged` for the node |
-| Work archived or deleted; chat lineage with no live member | `closed` with `why`, `owner`, `ownerKey` | `returned` | held |
+| Work archived or deleted; chat lineage with no live member | `closed` with `why`, `owner`, `ownerKey` | stays pending, out of the press's items | held |
 | Anything else: an open Work or chat, a project source, the account's files | open | lands | taken back |
 
 Every source has a row while it exists, the account's files included, so "no row" is gone, not
@@ -63,9 +63,9 @@ a missed owner can never commit.
 `applyDraft` and `undoApply` take that predicate: a record whose effect would change a closed
 source stays pending, and the plan is made again without it, so nothing that commits touches a
 closed owner's notes. A record standing on a held one is `closed` too, with that source, so a note
-whose folder's create is in archived notes says so and not `needs`. A press answers such an item
-`returned`, the rest landing. The restore Apply makes so a document's
-text can land (`restoredByApply`) is made only for a document whose source is open.
+whose folder's create is in archived notes says so and not `needs`. A press leaves such an item
+out of its items, the rest landing. Apply never restores: a document the writer trashed has its text
+skipped and its drafted moves and renames wait until a Trash restore.
 
 The file policy's own owner reader (`loadPhysicalOwnership`, `file-policy/adapters/drizzle-file-facts.ts`)
 stays separate: a grant is about a document's content where it stands now, live's placement

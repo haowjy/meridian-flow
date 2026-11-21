@@ -11,7 +11,7 @@ import {
   noticeAction,
 } from "@/features/draft-review/CommandNotice";
 import { DocumentChangeRows } from "@/features/draft-review/DocumentChangeRows";
-import { DeletedLiveTag, DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
+import { DraftCommandStatus } from "@/features/draft-review/DraftCommandStatus";
 import { DraftImagePreview } from "@/features/draft-review/DraftImagePreview";
 import { isWholeDocumentChange } from "@/features/draft-review/draft-changes";
 import { ReviewActions } from "@/features/draft-review/ReviewActions";
@@ -25,11 +25,8 @@ import type { DraftDockModel } from "./useDraftDock";
 
 export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const [expanded, setExpanded] = useState(false);
-  /** What an Apply of several files deletes or brings back, asked about first. */
-  const [asking, setAsking] = useState<{
-    deleting: readonly DockFile[];
-    restoring: readonly DockFile[];
-  } | null>(null);
+  /** What an Apply of several files deletes, asked about first. */
+  const [asking, setAsking] = useState<readonly DockFile[] | null>(null);
 
   const root = useRef<HTMLDivElement>(null);
   useFocusSuccession(root, dock.mounted, noticeAction);
@@ -39,24 +36,14 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
   const multi = dock.files.length > 1;
   const only = dock.files[0];
   const askingApply = asking !== null && dock.showCommands;
-  // One file's row shows its delete, so its Apply already says to delete or bring it back.
+  // One file's row shows its delete, so its Apply already says to delete it.
   const startApply = () =>
-    multi && (dock.deletedToApply.length > 0 || dock.deletingToApply.length > 0)
-      ? setAsking({ deleting: dock.deletingToApply, restoring: dock.deletedToApply })
-      : dock.apply();
+    multi && dock.deletingToApply.length > 0 ? setAsking(dock.deletingToApply) : dock.apply();
   // One question at a time, in the footer below the files: opening it never moves a row.
   const question: CommandQuestion | null = askingApply
     ? {
         kind: "apply-all",
-        sentence: (
-          <ApplyAllQuestion
-            deleting={asking.deleting.map((file) => file.name)}
-            restoring={asking.restoring.map((file) => ({
-              name: file.name,
-              scheme: file.row.draft.deletedFrom?.scheme,
-            }))}
-          />
-        ),
+        sentence: <ApplyAllQuestion deleting={asking.map((file) => file.name)} />,
         keep: <Trans>Cancel</Trans>,
         confirm: <Trans>Apply</Trans>,
         onKeep: () => setAsking(null),
@@ -115,7 +102,6 @@ export function DraftDock({ dock }: { dock: DraftDockModel }) {
           ) : null}
         </span>
       </FoldToggle>
-      {only && !multi ? <DeletedLiveTag item={only.row.draft} /> : null}
       {multi || dock.changeCount === null ? null : (
         <span className="hidden shrink-0 whitespace-nowrap text-muted-foreground @min-[25rem]/dock:inline">
           <ChangeCount count={dock.changeCount} />
@@ -236,7 +222,6 @@ function DockFileLine({
             onClick={() => dock.review(file)}
           >
             <span className="min-w-0 truncate">{fileLabel(file)}</span>
-            <DeletedLiveTag item={file.row.draft} />
             <span className="ml-auto shrink-0 text-muted-foreground">
               <ChangeCount count={file.count} />
             </span>
@@ -267,7 +252,6 @@ function DockFileLine({
       ) : expanded && !wholeDocument ? (
         <div className="flex min-h-7 items-center gap-1.5 px-2 text-xs text-foreground">
           <span className="min-w-0 truncate">{fileLabel(file)}</span>
-          <DeletedLiveTag item={file.row.draft} />
         </div>
       ) : null}
       {/* A file with no header row keeps its status line under its one row, which it describes. */}
@@ -276,7 +260,6 @@ function DockFileLine({
         <div className={cn(summary && "app-scroll max-h-[min(40svh,20rem)]")}>
           <DocumentChangeRows
             documentName={file.name}
-            notice={summary ? undefined : <DeletedLiveTag item={file.row.draft} />}
             view={{ ...view, items, locked: view.locked || dock.generating }}
             touch={touch}
             onSelect={(change) => dock.review(file, change)}

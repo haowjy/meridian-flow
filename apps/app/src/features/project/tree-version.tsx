@@ -8,7 +8,6 @@
  * picking the Work's draft or Live there, or opening one of the Work's drafts anywhere
  * (`review-launch`, a review address), sets the toggle.
  */
-import type { ThreadDraftListItem } from "@meridian/contracts/branches";
 import { type Work, type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE, pendingRecords } from "@meridian/project-tree";
 import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
@@ -76,13 +75,9 @@ export function useWorkReviewCount(work: Work): number {
 
 export function useDraftTreeVersion(
   branchId: string | null,
-  rows: readonly ThreadDraftListItem[] | null,
   lifecycle: WorkLifecycleState = "active",
 ): TreeVersion | null {
-  return useMemo(
-    () => (branchId ? draftTreeVersion(branchId, rows, lifecycle) : null),
-    [branchId, rows, lifecycle],
-  );
+  return branchId ? draftTreeVersion(branchId, lifecycle) : null;
 }
 
 export function TreeVersionProvider({
@@ -101,11 +96,7 @@ export function TreeVersionProvider({
   const project = useTreeList({ kind: "project", projectId });
   const account = useTreeList({ kind: "account", userId: accountId });
   const { drafts: rows } = drafts;
-  const draftVersion = useDraftTreeVersion(
-    branchId,
-    rows,
-    work ? workLifecycleState(work) : "active",
-  );
+  const draftVersion = useDraftTreeVersion(branchId, work ? workLifecycleState(work) : "active");
   // The Work's tree changes, from the browser's replay of its view in each list its branch
   // spans: what the Changes list builds its folder groups from, including a change not yet
   // admitted (made offline or in flight).
@@ -118,7 +109,7 @@ export function TreeVersionProvider({
           ? [
               {
                 live: session.replay(LIVE),
-                work: session.replay(draftVersion.view, draftVersion.pendingText),
+                work: session.replay(draftVersion.view),
                 pending: pendingRecords(snapshot.doc, draft),
               },
             ]

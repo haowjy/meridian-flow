@@ -33,13 +33,13 @@ import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextRouteRequest } from "../routing/project-route";
 import { pageSheetClass } from "../shell/tab-chip";
 import type { MainDocument } from "../views";
+import { EndedWorkNotice } from "../work/EndedWorkNotice";
 import {
   useContextRemovalCoordinator,
   useOptionalPresentedDocuments,
 } from "./account-feature-context";
 import { ContextDocumentHost, type EditableOpenDocument } from "./ContextDocumentHost";
 import { ContextViewerHost } from "./ContextViewerHost";
-import { DocumentFreezeNotice } from "./DocumentFreezeNotice";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { DocumentPaneChrome } from "./DocumentPaneChrome";
 import { PHONE_DOCUMENT_PRESENTATION } from "./document-presentation";
@@ -231,7 +231,7 @@ function EditableDocument({
   active: boolean;
   inMain: boolean;
 }) {
-  const freeze = useHostFreeze(projectId, document);
+  const freeze = useDocumentFreeze(projectId, document);
   return (
     <ContextDocumentHost
       projectId={projectId}
@@ -241,17 +241,6 @@ function EditableDocument({
       inMain={inMain}
     />
   );
-}
-
-/**
- * One freeze source on every shell: an archived Work freezes its own files and its drafts'
- * reviews; a trashed chat freezes its drafts' reviews.
- */
-function useHostFreeze(projectId: string, tab: OpenDocument) {
-  const { controller } = useDraftReview();
-  const review = controller.inlineReview;
-  const reviewing = review?.documentId === tab.documentId && review.shown;
-  return useDocumentFreeze(projectId, tab, reviewing ? controller.ownerKey : null);
 }
 
 /** The document's identity and state, and its notices. */
@@ -270,7 +259,7 @@ function DesktopDocumentChrome({
   focusReview?: string | null;
   onFocusReview?: (itemKey: string | null) => void;
 }) {
-  const freeze = useHostFreeze(projectId, document);
+  const freeze = useDocumentFreeze(projectId, document);
   const removal = useContextRemovalCoordinator();
   const openRoute = useOpenContextRoute();
   const draftOnly = useDocumentLiveness(projectId, document) === "draft-only";
@@ -305,7 +294,7 @@ function DesktopDocumentChrome({
         projectId={projectId}
         editorWorkId={editorWorkId}
         document={document}
-        readOnly={Boolean(fileInWork && freeze?.kind === "work")}
+        readOnly={Boolean(fileInWork && freeze)}
         onCloseDraftOnly={draftOnly ? () => removal.writerClose(projectId, document) : undefined}
         focusReview={focusReview}
         onFocusReview={onFocusReview}
@@ -379,7 +368,7 @@ function PhoneEditor({
   document: EditableOpenDocument;
   children?: ReactNode;
 }) {
-  const freeze = useHostFreeze(projectId, document);
+  const freeze = useDocumentFreeze(projectId, document);
   const review = useDraftReview().controller.inlineReview;
   return (
     <DocumentStateSlotProvider>
@@ -392,11 +381,7 @@ function PhoneEditor({
         </DocumentStatePortal>
       )}
       {freeze ? (
-        <DocumentFreezeNotice
-          projectId={projectId}
-          freeze={freeze}
-          className="shrink-0 px-2 pt-2"
-        />
+        <EndedWorkNotice projectId={projectId} work={freeze} className="shrink-0 px-2 pt-2" />
       ) : null}
       <div className="relative min-h-0 flex-1">
         {children}

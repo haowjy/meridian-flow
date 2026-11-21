@@ -1067,12 +1067,12 @@ msgid "Applying"
 msgstr "Applying"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applying brings back {names}"
-msgstr "Applying brings back {names}"
+#~ msgid "Applying brings back {names}"
+#~ msgstr "Applying brings back {names}"
 
 #: src/features/draft-review/CommandNotice.tsx
-msgid "Applying brings back {names}, deleted from {area}"
-msgstr "Applying brings back {names}, deleted from {area}"
+#~ msgid "Applying brings back {names}, deleted from {area}"
+#~ msgstr "Applying brings back {names}, deleted from {area}"
 
 #: src/features/draft-review/CommandNotice.tsx
 msgid "Applying deletes {deletes}."
@@ -2165,8 +2165,8 @@ msgid "Couldn't restore {title}"
 msgstr "Couldn't restore {title}"
 
 #: src/features/draft-review/TrashedChatNotice.tsx
-msgid "Couldn't restore the chat"
-msgstr "Couldn't restore the chat"
+#~ msgid "Couldn't restore the chat"
+#~ msgstr "Couldn't restore the chat"
 
 #: src/features/project/work/WorkCommandFailureRow.tsx
 msgid "Couldn’t restore this Work"
@@ -2424,8 +2424,6 @@ msgstr "deleted"
 
 #: src/features/agents/SavedDiffDialog.tsx
 #: src/features/chat/command-descriptor.ts
-#: src/features/draft-review/DraftCommandStatus.tsx
-#: src/features/editor/ManuscriptStateNotice.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
 #: src/features/project/shell/sidebar/WorkScopePicker.tsx
 #: src/features/project/work/WorkCollection.tsx
@@ -2449,12 +2447,12 @@ msgid "Deleted a Work"
 msgstr "Deleted a Work"
 
 #: src/features/draft-review/DraftCommandStatus.tsx
-msgid "Deleted from {area}"
-msgstr "Deleted from {area}"
+#~ msgid "Deleted from {area}"
+#~ msgstr "Deleted from {area}"
 
 #: src/features/editor/ManuscriptStateNotice.tsx
-msgid "Deleted from {from}"
-msgstr "Deleted from {from}"
+#~ msgid "Deleted from {from}"
+#~ msgstr "Deleted from {from}"
 
 #: src/features/project/shell/sidebar/TrashSource.tsx
 msgid "Deleted from {location}"
@@ -4885,7 +4883,6 @@ msgstr "Resize sidebar"
 msgid "Response complete"
 msgstr "Response complete"
 
-#: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/editor/InTrashStatus.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/context/TrashedDocument.tsx
@@ -5851,8 +5848,8 @@ msgstr "This chat continues without a brief."
 
 #: src/features/draft-review/TrashedChatNotice.tsx
 #: src/features/project/shell/sidebar/ChangesSource.tsx
-msgid "This chat is in Trash"
-msgstr "This chat is in Trash"
+#~ msgid "This chat is in Trash"
+#~ msgstr "This chat is in Trash"
 
 #. placeholder {0}: naming.current(commit.work)
 #: src/features/chat/useComposerWorkBinding.ts

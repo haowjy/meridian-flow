@@ -16,10 +16,6 @@ export type BranchDocumentTree = {
   isNew: boolean;
   /** A stored object, not a text document. */
   binary: boolean;
-  /** Live has it in Trash while the Work keeps it: Apply restores it first. */
-  deletedLive: boolean;
-  /** For `deletedLive`: the URI live last had it at, which names where it was deleted from. */
-  deletedFromUri: string | null;
   /** The Work's row on the document; null when only its text changed. */
   change: BranchTreeChange | null;
   /** The reviewable-pending predicate (`context/tree/pending-documents.ts`). */

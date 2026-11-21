@@ -97,7 +97,6 @@ export type Done = {
   already?: "deleted" | "at_destination" | "live";
   /** Nodes the call left alone: moving a folder into itself, or a node deleted for good. */
   leftOut?: LeftOut[];
-  deletedInLive?: true;
   /** Changes by others to the nodes the call named, by author. */
   concurrent: Array<{ author: string; lines: string[] }>;
   /** Documents and files a delete took, for the Works whose drafts outlive it. */
@@ -648,7 +647,6 @@ function landed(
     landedAt,
     ...(landedAt !== item.toUri ? { landed: landedAt } : {}),
     ...(item.kept ? { kept: item.kept } : {}),
-    ...(landedNode.keptByPending ? { deletedInLive: true as const } : {}),
     notMoved: [],
     concurrent: [],
     taken: [],
@@ -961,7 +959,6 @@ export function runTreeCommand(
       // Every item shares the destination and the anchor: one placement, so they land in order.
       const into = decided[0]?.folder;
       let placedAtEnd: string | undefined;
-      let deletedInLive = false;
       const arrived: string[] = [];
       if (into !== undefined) {
         const placed = placeFor(
@@ -973,9 +970,7 @@ export function runTreeCommand(
         placedAtEnd = placed.atEnd;
         writeMoves(cx, decided, into, placed.place);
         for (const item of decided) {
-          const done = landed(cx, item, filled, emptied);
-          deletedInLive ||= done.deletedInLive === true;
-          arrived.push(...done.arrived);
+          arrived.push(...landed(cx, item, filled, emptied).arrived);
         }
       }
       if (made === 0) {
@@ -1006,7 +1001,6 @@ export function runTreeCommand(
         ...(leftOut.length > 0 ? { leftOut } : {}),
         ...(kept ? { kept } : {}),
         ...(placedAtEnd ? { placedAtEnd } : {}),
-        ...(deletedInLive ? { deletedInLive: true as const } : {}),
         concurrent: [],
         taken: [],
         arrived,
@@ -1078,7 +1072,6 @@ export function runTreeCommand(
         landedAt: command.path,
         ...(node.kind === "folder" ? { deleted: took.length } : {}),
         ...(keptNote ? { kept: keptNote } : {}),
-        ...(node.keptByPending ? { deletedInLive: true as const } : {}),
         notMoved: [],
         concurrent: [],
         taken: took,

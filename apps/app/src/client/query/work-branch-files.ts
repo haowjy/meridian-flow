@@ -14,10 +14,7 @@ export type ReviewFileTarget = {
   contextLocation: Pick<ContextUri, "scheme" | "path"> | null;
   /** The active draft the row's verbs act on. */
   draft: ThreadDraftListItem;
-  /**
-   * Absent from the live project until Apply: a document the draft created, or one deleted
-   * live that this draft still has (`deletedLive`).
-   */
+  /** Absent from the live project until Apply: a document the draft created. */
   draftOnly: boolean;
 };
 
@@ -46,7 +43,7 @@ export function projectWorkBranchFiles(
           ? { scheme: location.scheme, path: location.path }
           : (movedFrom ?? draft.contextLocation),
         draft,
-        draftOnly: draft.isNew || draft.deletedLive,
+        draftOnly: draft.isNew,
       };
     }),
   );

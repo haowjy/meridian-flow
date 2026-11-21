@@ -29,16 +29,8 @@ export type DraftReviewItem = {
   isNew: boolean;
   binary: boolean;
   documentName: string | null;
-  /** Canonical URI in the branch's view (the last address for one deleted live). */
+  /** Canonical URI in the branch's view (the last address for one the branch deletes). */
   path: string | null;
-  /**
-   * Deleted live (an edited document, or a revealed create): live no longer shows it, the
-   * branch's view does while it has pending changes. It authorizes through its final location
-   * (F9, §13.3), and Apply restores it.
-   */
-  deletedLive: boolean;
-  /** For `deletedLive`: where live last had it (`path` is where the branch puts it). */
-  deletedFrom: string | null;
   /** `isNew || binary`: one change, settled by item Apply or Discard only (§3.3). */
   wholeItem: boolean;
   /**
@@ -128,7 +120,6 @@ function toItem(
     origin: node.origin,
     isNew: node.isNew,
     binary: node.binary,
-    // A document deleted live takes per-change Apply too: any Apply restores it first.
     wholeItem: node.isNew || node.binary,
     tree: node.change
       ? {
@@ -140,8 +131,6 @@ function toItem(
     textChanges: text?.textChanges ?? 0,
     documentName: documentTitleFromUri(path),
     path,
-    deletedLive: node.deletedLive,
-    deletedFrom: node.deletedLive ? node.deletedFromUri : null,
     actorThreadIds: [...new Set([...(text?.writers.threadIds ?? []), ...treeActorThreadIds])],
     unattributed: text?.writers.unattributed ?? false,
     updatedAt: text?.updatedAt ?? new Date(),

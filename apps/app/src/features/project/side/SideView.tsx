@@ -111,7 +111,7 @@ function useDescriptions(projectId: string): Descriptions {
         const row = drafts?.items.find(
           (item) => item.itemKey === pin.itemKey && item.documentId === documentId,
         );
-        if (row && (row.isNew || row.deletedLive)) return openDocumentFromDraftGroup(row);
+        if (row?.isNew) return openDocumentFromDraftGroup(row);
       }
       return describeLive(documentId, workId);
     },

@@ -47,19 +47,10 @@ export type DraftReviewController = {
   commandChange: WorkBranchCommands["commandChange"];
   /** A command on this presented draft only. */
   /**
-   * Every Apply and Discard control disables on this: a disposition is in
-   * flight, or the Work is archived and its drafts are frozen. Review
-   * stays available on a frozen Work.
+   * Every Apply and Discard control disables on this: there is no owner to press on, or no
+   * command driver yet. Clicks during another change's command are accepted and queued.
    */
   dispositionLocked: boolean;
-  /**
-   * A change's own Apply and Discard disable on this alone: a command on the
-   * whole presented draft is in flight, or the Work is frozen. Clicks during
-   * another change's command are accepted and queued.
-   */
-  changesLocked: boolean;
-  /** Whether an Apply can be sent at all (`WorkBranchCommands.canApply`). */
-  canApply: boolean;
   /** The presented tab's "Show changes" (`view.showChanges`). The editor paints from it (`useInlineReviewFocus`). */
   marksVisible: boolean;
   setMarksVisible: (visible: boolean) => void;
@@ -131,7 +122,6 @@ export function useDraftReviewController({
   const inlineReview = inlineReviewFromState(state);
 
   const dispositionLocked = commands.dispositionLocked;
-  const changesLocked = commands.changesLocked;
 
   const enterInlineReview = useCallback(
     (documentId: string, itemKey: string) => {
@@ -215,8 +205,6 @@ export function useDraftReviewController({
       inlineReview,
       commandChange: commands.commandChange,
       dispositionLocked,
-      changesLocked,
-      canApply: commands.canApply,
       marksVisible: marks.visible,
       setMarksVisible: marks.set,
       focus: inlineReview?.focus ?? null,
@@ -239,8 +227,6 @@ export function useDraftReviewController({
       threadId,
       inlineReview,
       dispositionLocked,
-      changesLocked,
-      commands.canApply,
       marks.visible,
       marks.set,
       inlineReview?.focus,

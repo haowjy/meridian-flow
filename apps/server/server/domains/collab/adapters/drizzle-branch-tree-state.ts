@@ -22,7 +22,6 @@ type Row = {
   exists_only_in_draft: boolean | null;
   deleted: boolean | null;
   live: boolean;
-  live_trashed: boolean;
   binary: boolean;
 };
 
@@ -37,9 +36,9 @@ export async function branchFolderIds(db: Database, branchId: BranchId): Promise
 }
 
 /**
- * Where live has (or, in Trash, last had) a document the Work keeps elsewhere: a move of a
- * deleted document is still a move, which Apply makes after restoring it. Null when live's
- * address is the Work's, as for a deleted document the Work only has text in.
+ * Where live has (or, in Trash, last had) a document the Work keeps elsewhere: a Work's move of
+ * a document out of its own applied delete is still a move. Null when live's address is the
+ * Work's.
  */
 function movedFrom(live: IdentityStatus | undefined, workUri: string | null): string | null {
   const at =
@@ -68,8 +67,7 @@ export function createDrizzleBranchTreeState(
         );
       const rows = await tx.execute<Row>(sql`
         SELECT d.id::text AS id, b.exists_only_in_draft, b.deleted,
-          t.id IS NOT NULL AS live, coalesce(t.trash_record IS NOT NULL, false) AS live_trashed,
-          d.storage_url IS NOT NULL AS binary
+          t.id IS NOT NULL AS live, d.storage_url IS NOT NULL AS binary
         FROM documents d
           LEFT JOIN branch_tree_nodes b
             ON b.id = d.id AND b.branch_id = ${branchId}::uuid AND b.changed
@@ -113,8 +111,6 @@ export function createDrizzleBranchTreeState(
           origin: created ? "created" : "edited",
           isNew: created && row.deleted === false,
           binary: row.binary,
-          deletedLive: change === "moving" && row.live_trashed,
-          deletedFromUri: there?.kind === "deleted" ? (there.lastAddress?.uri ?? null) : null,
           change,
           pending: pending.has(id),
           uri,

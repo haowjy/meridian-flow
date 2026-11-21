@@ -25,8 +25,6 @@ export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
   drafts: ThreadDraftListItem[] | null;
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
-  /** The server's word that the owner's drafts are frozen (`ThreadDraftListResponse.frozen`). */
-  frozen: boolean;
   /** The owner's active branch: the `draft` of its tree records. */
   branchId: string | null;
 };
@@ -92,17 +90,6 @@ export async function relistedOwnerDraft(
     return true;
   }
   return false;
-}
-
-/** Whether the owner's drafts are frozen (a lineage with every chat in Trash), as last read. */
-export function useOwnerDraftsFrozen(projectId: string, owner: string): boolean {
-  return (
-    useQuery({
-      ...ownerDraftsQueryOptions(projectId, owner),
-      select: (response) => response.frozen,
-      enabled: projectReadEnabled(Boolean(projectId) && Boolean(owner)),
-    }).data ?? false
-  );
 }
 
 /**
@@ -183,7 +170,6 @@ export function useOwnerDrafts(
       drafts: null,
       files: null,
       fileForDocument,
-      frozen: false,
       branchId: null,
     };
   }
@@ -200,7 +186,6 @@ export function useOwnerDrafts(
     drafts: result.data,
     files,
     fileForDocument,
-    frozen: query.data?.frozen ?? false,
     branchId: query.data?.branchId ?? null,
   };
 }

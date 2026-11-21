@@ -111,7 +111,7 @@ export function useReviewChanges(
     focused,
     focusedIndex,
 
-    locked: controller.changesLocked || completing === "discard" || status !== "ready",
+    locked: controller.dispositionLocked || completing === "discard" || status !== "ready",
     completing,
     finished,
     focus,
