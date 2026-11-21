@@ -37,6 +37,7 @@ export {
   type RunKind,
   removedIn,
   runs,
+  SUGGESTION_ATTRS,
   sameValue,
   suggested,
   type View,

@@ -21,9 +21,11 @@ import {
   recordStarted,
   rewrite,
   runs,
+  SUGGESTION_ATTRS,
   type SuggestionAttrs,
   suggested,
   type View,
+  viewAttrs,
   viewBlock,
   visible,
 } from "@meridian/suggestions";
@@ -174,7 +176,13 @@ function rewritten(
         op.unit === undefined
           ? target.pos
           : target.pos + 1 + rawUnit(runs(target.node, view), op.unit, "start");
-      for (const [key, value] of Object.entries(op.attrs)) tr.setNodeAttribute(map(at), key, value);
+      // The op changes some of what the view shows; the rest stays as the view shows it, the
+      // draft's pending attributes included, or `rewrite` would read it as taking them back.
+      const node = tr.doc.nodeAt(map(at));
+      const shown = node ? viewAttrs(node, view) : {};
+      for (const [key, value] of Object.entries({ ...shown, ...op.attrs }))
+        if (!SUGGESTION_ATTRS.includes(key) && node && node.attrs[key] !== value)
+          tr.setNodeAttribute(map(at), key, value);
     } else {
       const units = runs(target.node, view);
       const start = target.pos + 1;
