@@ -192,7 +192,7 @@ export function useAiDraftLauncher() {
       openAiDraft({
         draftId,
         documentId: row.documentId,
-        itemKey: row.draft.itemKey,
+        itemKey: row.item.itemKey,
         contextLocation: row.contextLocation,
         documentName: row.documentName ?? undefined,
         draftOnly: row.draftOnly,
@@ -281,7 +281,7 @@ export function useLinkPlacement(projectId: string | null, draftId: string | nul
         return openDraft({
           draftId,
           documentId: document.documentId,
-          itemKey: drafted.draft.itemKey,
+          itemKey: drafted.item.itemKey,
           contextLocation: drafted.contextLocation,
           documentName: drafted.documentName ?? undefined,
           draftOnly: drafted.draftOnly,

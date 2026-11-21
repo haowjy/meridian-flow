@@ -6,7 +6,7 @@
  */
 import { t } from "@lingui/core/macro";
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
-import type { DocumentDraftHint, ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DocumentDraftHint, DraftItem } from "@meridian/contracts/drafts";
 import { describeMove, type ParsedContextLocation } from "@/features/chat/document-display-name";
 import type { ReviewChange } from "./review-model";
 
@@ -19,7 +19,7 @@ const nameOf = (location: ParsedContextLocation | null | undefined) =>
 
 /** The item's move or delete, if its draft has one; a creation has no tree line. */
 export function treeLineOf(
-  item: Pick<ThreadDraftListItem, "tree" | "contextLocation" | "documentName">,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName">,
 ): TreeLine | null {
   const { tree } = item;
   if (tree?.deleted)
@@ -31,7 +31,7 @@ export function treeLineOf(
 
 /** Whether the item's rows include a move or delete line. */
 export function hasTreeLine(
-  item: Pick<ThreadDraftListItem, "tree" | "contextLocation" | "documentName" | "isNew">,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew">,
 ): boolean {
   return !item.isNew && treeLineOf(item) !== null;
 }
@@ -41,12 +41,9 @@ export function hasTreeLine(
  * in place has no tree line).
  */
 export function hasApply(
-  item: Pick<
-    ThreadDraftListItem,
-    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft"
-  >,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges">,
 ): boolean {
-  return item.hasDraft || item.isNew || hasTreeLine(item);
+  return item.textChanges > 0 || item.isNew || hasTreeLine(item);
 }
 
 /**
@@ -54,12 +51,9 @@ export function hasApply(
  * the live document with the draft's tree line.
  */
 export function isTreeOnly(
-  item: Pick<
-    ThreadDraftListItem,
-    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft"
-  >,
+  item: Pick<DraftItem, "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges">,
 ): boolean {
-  return item.tree?.deleted === true || (!item.hasDraft && hasTreeLine(item));
+  return item.tree?.deleted === true || (item.textChanges === 0 && hasTreeLine(item));
 }
 
 /**
@@ -68,18 +62,15 @@ export function isTreeOnly(
  */
 export function opensAsDocument(
   item: Pick<
-    ThreadDraftListItem,
-    "tree" | "contextLocation" | "documentName" | "isNew" | "hasDraft" | "binary"
+    DraftItem,
+    "tree" | "contextLocation" | "documentName" | "isNew" | "textChanges" | "binary"
   >,
 ): boolean {
-  return item.hasDraft || (item.isNew && !item.binary) || isTreeOnly(item);
+  return item.textChanges > 0 || (item.isNew && !item.binary) || isTreeOnly(item);
 }
 
 /** The tree line as a review row: one change with no text, keyed apart from text. */
-export function treeChange(
-  item: Pick<ThreadDraftListItem, "itemKey">,
-  line: TreeLine,
-): ReviewChange {
+export function treeChange(item: Pick<DraftItem, "itemKey">, line: TreeLine): ReviewChange {
   return {
     id: `tree:${item.itemKey}`,
     excerpt:

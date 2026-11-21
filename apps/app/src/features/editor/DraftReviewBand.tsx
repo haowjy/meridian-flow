@@ -45,7 +45,7 @@ export type DraftReviewBandProps = {
   onRename?: () => void;
   /** Puts the caret back in the document when the review closes under the writer's focus. */
   onFocusDocument: () => void;
-  /** Opened by Apply or Next draft from the previous draft's controls: take the focus once they show. */
+  /** Opened by Apply or Next document from the previous document's review: take the focus once they show. */
   focusOnOpen?: boolean;
   onOpenFocused?: () => void;
 };

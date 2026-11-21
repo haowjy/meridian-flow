@@ -1334,7 +1334,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   return {
     projectExport: createProjectExport({
       snapshot: ports.exportSnapshot,
-      pendingDrafts: {
+      pendingDocuments: {
         count: (projectId) => ports.documentSync.draftReview.pendingDocumentCount(projectId),
       },
       documents: exportDocumentsFrom(ports.documentSync),
@@ -1807,7 +1807,7 @@ export function createInMemoryAppServices(
       workAuthorityResolver,
     }),
     projectExport: createProjectExport({
-      pendingDrafts: {
+      pendingDocuments: {
         async count() {
           return 0;
         },

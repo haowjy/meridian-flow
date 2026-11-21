@@ -11,11 +11,7 @@
 import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
 import type { CommandId } from "@meridian/contracts";
-import type {
-  PressResult,
-  ThreadDraftListItem,
-  ThreadDraftListResponse,
-} from "@meridian/contracts/drafts";
+import type { DraftItem, DraftItemsResponse, PressResult } from "@meridian/contracts/drafts";
 import type { TreeListRef } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { LIVE } from "@meridian/project-tree";
@@ -43,7 +39,7 @@ import {
 } from "@/features/project/context/account-feature-context";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
 import type { DiscardPart, NoticeSurface } from "./draft-notices";
-import type { DraftReviewSelection } from "./draft-review-session";
+import type { DraftItemRef } from "./draft-review-session";
 import { PressEntries, type PressPort, type Seat } from "./press-history";
 import type { ChangeTarget } from "./review-model";
 
@@ -134,7 +130,7 @@ export function usePressCommands({
      */
     const placementOf = (nodes: readonly string[]): Placement => {
       if (!treeLists) return [];
-      const listed = queryClient.getQueryData<ThreadDraftListResponse>(
+      const listed = queryClient.getQueryData<DraftItemsResponse>(
         projectQueryKeys.drafts(projectId, draftId),
       );
       const view = listed ? { draft: draftId } : LIVE;
@@ -240,12 +236,12 @@ export function usePressCommands({
       live: CommandDriver,
       redoes?: string,
     ): Promise<Pressed | Unpressed> => {
-      const listed = queryClient.getQueryData<ThreadDraftListResponse>(
+      const listed = queryClient.getQueryData<DraftItemsResponse>(
         projectQueryKeys.drafts(projectId, draftId),
       );
       const nodes =
         items === "all" ? rows().map((item) => item.documentId) : items.map((item) => item.node);
-      const gone = (item: ThreadDraftListItem) =>
+      const gone = (item: DraftItem) =>
         items === "all" ||
         items.some(({ node, half }) => node === item.documentId && half !== "tree");
       const rowKeys = rows().flatMap((item) =>
@@ -391,24 +387,24 @@ export function usePressCommands({
     /** A target of a tree line alone takes the node's tree change and leaves its text pending. */
     const itemOf = (documentId: string, target?: ChangeTarget): PressItem =>
       target?.kind === "tree" ? { node: documentId, half: "tree" } : { node: documentId };
-    const startDraft = (verdict: Verdict, draft: DraftReviewSelection, target?: ChangeTarget) =>
-      run(verdict, [itemOf(draft.documentId, target)], { documentId: draft.documentId });
+    const startItem = (verdict: Verdict, item: DraftItemRef, target?: ChangeTarget) =>
+      run(verdict, [itemOf(item.documentId, target)], { documentId: item.documentId });
     const many = (
       verdict: Verdict,
-      items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
+      items: readonly { item: DraftItemRef; target: ChangeTarget }[],
       folders: readonly string[] = [],
     ) => {
       const sent = [
         ...whole(folders),
-        ...items.map(({ draft, target }) => itemOf(draft.documentId, target)),
+        ...items.map(({ item, target }) => itemOf(item.documentId, target)),
       ];
-      return run(verdict, sent, { documentId: items[0]?.draft.documentId ?? null }).outcome.then(
+      return run(verdict, sent, { documentId: items[0]?.item.documentId ?? null }).outcome.then(
         (outcome) => items.map(() => outcome),
       );
     };
     const discardSelection = (input: {
       all?: boolean;
-      drafts: readonly DraftReviewSelection[];
+      items: readonly DraftItemRef[];
       folders: readonly string[];
       name: string | null;
     }): Promise<CommandOutcome> =>
@@ -416,9 +412,9 @@ export function usePressCommands({
         "discard",
         input.all
           ? "all"
-          : whole([...input.folders, ...input.drafts.map((draft) => draft.documentId)]),
+          : whole([...input.folders, ...input.items.map((item) => item.documentId)]),
         {
-          documentId: input.drafts[0]?.documentId ?? null,
+          documentId: input.items[0]?.documentId ?? null,
           name: input.name,
           folder: input.name !== null && input.folders.length > 0,
         },
@@ -434,25 +430,25 @@ export function usePressCommands({
        * One change in the text is the editor's (`useSuggestionChanges`); a list's row is the
        * document, and a tree line its tree change alone.
        */
-      commandChange: (verdict: Verdict, draft: DraftReviewSelection, target: ChangeTarget) =>
-        startDraft(verdict, draft, target).outcome,
-      startDraft: (verdict: Verdict, draft: DraftReviewSelection) => startDraft(verdict, draft),
+      commandChange: (verdict: Verdict, item: DraftItemRef, target: ChangeTarget) =>
+        startItem(verdict, item, target).outcome,
+      startItem: (verdict: Verdict, item: DraftItemRef) => startItem(verdict, item),
       apply: (documentId: string, itemKey: string) =>
-        startDraft("apply", { documentId, itemKey }).outcome,
+        startItem("apply", { documentId, itemKey }).outcome,
       discard: (documentId: string, itemKey: string) =>
-        startDraft("discard", { documentId, itemKey }).outcome,
+        startItem("discard", { documentId, itemKey }).outcome,
       applyMany: (
-        items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[],
+        items: readonly { item: DraftItemRef; target: ChangeTarget }[],
         folders: readonly string[] = [],
       ) => many("apply", items, folders),
-      discardMany: (items: readonly { draft: DraftReviewSelection; target: ChangeTarget }[]) =>
+      discardMany: (items: readonly { item: DraftItemRef; target: ChangeTarget }[]) =>
         many("discard", items),
       discardSelection,
       discardAll: (
-        drafts: readonly DraftReviewSelection[],
+        items: readonly DraftItemRef[],
         folders: readonly string[],
         name: string | null,
-      ) => discardSelection({ all: true, drafts, folders, name }),
+      ) => discardSelection({ all: true, items, folders, name }),
     };
   }, [
     owner,

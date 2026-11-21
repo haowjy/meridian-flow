@@ -392,7 +392,7 @@ export type DocumentCheckpoints = {
 export type ModelDraftRow = {
   documentId: DocumentId;
   documentName: string | null;
-  contextLocation: import("@meridian/contracts/drafts").ThreadDraftListItem["contextLocation"];
+  contextLocation: import("@meridian/contracts/drafts").DraftItem["contextLocation"];
   createdDocument?: boolean;
 };
 

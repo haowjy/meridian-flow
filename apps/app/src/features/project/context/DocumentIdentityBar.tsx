@@ -84,7 +84,7 @@ export function DocumentIdentityBar({
   // it must not read as the live document's chip until its preview answers.
   const reviewPending = review?.documentId === document.documentId && !review.shown;
   const openDraft = (row: ReviewFileTarget, takeFocus?: boolean) => {
-    if (takeFocus) onFocusReview?.(row.draft.itemKey);
+    if (takeFocus) onFocusReview?.(row.item.itemKey);
     openReviewFile(row, controller.draftId);
   };
   // A document in Unfiled, untitled or named, is invited to choose a home. Once it

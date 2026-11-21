@@ -6,7 +6,7 @@
  * owner's list.
  */
 import { t } from "@lingui/core/macro";
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import { type Change, list, sameValue } from "@meridian/suggestions";
 import type { Editor } from "@tiptap/core";
 import type { Node } from "@tiptap/pm/model";
@@ -100,7 +100,7 @@ function sameChange(a: Change, b: Change): boolean {
 export function useSuggestionChanges(
   editor: Editor | null,
   draft: string,
-  item: Pick<ThreadDraftListItem, "actorThreads"> | undefined,
+  item: Pick<DraftItem, "actorThreads"> | undefined,
 ): { ready: boolean; changes: ReviewChange[] } {
   const doc = useEditorDoc(editor);
   const actors = item?.actorThreads;

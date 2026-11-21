@@ -3,7 +3,7 @@
  *
  * Projects one tree-labelled file per document the draft changes, in stable order.
  */
-import type { ThreadDraftListItem, ThreadDraftListResponse } from "@meridian/contracts/drafts";
+import type { DraftItem, DraftItemsResponse } from "@meridian/contracts/drafts";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
@@ -18,9 +18,7 @@ import { useProjectTreeViews } from "./useProjectTree";
 import { useWorks } from "./useWorks";
 import { projectWorkDraftFiles, type ReviewFileTarget } from "./work-draft-files";
 
-export type OwnerDraftListStatus = ListQueryStatus<ThreadDraftListItem> & {
-  /** Raw query rows for generation evidence and command fences. */
-  drafts: ThreadDraftListItem[] | null;
+export type OwnerDraftListStatus = ListQueryStatus<DraftItem> & {
   files: ReviewFileTarget[] | null;
   fileForDocument: (documentId: string | null | undefined) => ReviewFileTarget | null;
   /** The owner's active draft: the `draft` of its tree records. */
@@ -59,10 +57,9 @@ export function cachedOwnerDrafts(
   queryClient: QueryClient,
   projectId: string,
   owner: string,
-): ThreadDraftListItem[] | undefined {
-  return queryClient.getQueryData<ThreadDraftListResponse>(
-    projectQueryKeys.drafts(projectId, owner),
-  )?.items;
+): DraftItem[] | undefined {
+  return queryClient.getQueryData<DraftItemsResponse>(projectQueryKeys.drafts(projectId, owner))
+    ?.items;
 }
 
 /** Rewrites the owner's cached draft rows until the next read replaces them. */
@@ -70,9 +67,9 @@ export function patchOwnerDrafts(
   queryClient: QueryClient,
   projectId: string,
   owner: string,
-  update: (items: ThreadDraftListItem[]) => ThreadDraftListItem[],
+  update: (items: DraftItem[]) => DraftItem[],
 ): void {
-  queryClient.setQueryData<ThreadDraftListResponse>(
+  queryClient.setQueryData<DraftItemsResponse>(
     projectQueryKeys.drafts(projectId, owner),
     (response) => (response ? { ...response, items: update(response.items) } : response),
   );
@@ -177,7 +174,6 @@ export function useOwnerDrafts(
       ...result,
       data: null,
       status: "disabled",
-      drafts: null,
       files: null,
       fileForDocument,
       draftId: null,
@@ -193,7 +189,6 @@ export function useOwnerDrafts(
           ? "ready"
           : "empty"
         : result.status,
-    drafts: result.data,
     files,
     fileForDocument,
     draftId: query.data ? owner : null,

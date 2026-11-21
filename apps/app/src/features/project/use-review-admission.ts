@@ -124,7 +124,7 @@ export function useReviewAdmission({
     )
       return;
     // The list, when loaded, supplies labels and whole-item state; it is never an authority.
-    const file = review.files.find((candidate) => candidate.draft.itemKey === itemKey);
+    const file = review.files.find((candidate) => candidate.item.itemKey === itemKey);
     restoring.current = itemKey;
     void port
       .admit({

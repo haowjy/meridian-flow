@@ -272,7 +272,7 @@ a `FileCard` shows name, type, size, Download. An `<img>` failure gets one
 automatic URL refresh, then the card, and the editor then treats that picture
 as undrawable: it keeps re-signing the card's Download before expiry and never
 retries the `<img>`. Retry stays only for a signed-URL request that failed. Draft review opens any
-binary draft (`ThreadDraftListItem.binary`) in the same preview.
+binary draft (`DraftItem.binary`) in the same preview.
 
 ## Import activity
 

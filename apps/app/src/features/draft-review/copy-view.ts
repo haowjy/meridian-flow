@@ -13,5 +13,5 @@ export function draftCopyView(
   file: ReviewFileTarget,
   draftId: string,
 ): CopyContextEntryView | null {
-  return file.draft.hasDraft && !file.draftOnly ? { kind: "draft", draft: draftId } : null;
+  return file.item.textChanges > 0 && !file.draftOnly ? { kind: "draft", draft: draftId } : null;
 }

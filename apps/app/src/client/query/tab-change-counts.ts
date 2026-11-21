@@ -5,7 +5,7 @@
  * write. The tab's own Apply, Discard, Undo and typing are in its editor first, so while the
  * document is open the rows on screen follow the editor: their counts, and whether they are listed.
  */
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import { useSyncExternalStore } from "react";
 
 type Counts = ReadonlyMap<string, Readonly<Record<string, number>>>;
@@ -19,7 +19,7 @@ const listeners = new Set<() => void>();
  * The row the server last listed for an open document, by owner, and where: an Undo of the
  * document's last change lists it again there before the server does.
  */
-const seen = new Map<string, { row: ThreadDraftListItem; index: number }>();
+const seen = new Map<string, { row: DraftItem; index: number }>();
 const seenKey = (owner: string, documentId: string) => `${owner}\n${documentId}`;
 
 /** `editor`'s document's changes by Work; null when it closes. */
@@ -57,17 +57,13 @@ export function useTabChangeCounts(): Counts {
 }
 
 /** A row the server lists for its suggestions alone: no tree change or whole item. */
-const suggestionsOnly = (row: ThreadDraftListItem) => row.hasDraft && !row.wholeItem && !row.tree;
+const suggestionsOnly = (row: DraftItem) => row.textChanges > 0 && !row.wholeItem && !row.tree;
 
 /** `owner`'s rows as this tab's open editors hold their documents. */
-export function withTabChangeCounts(
-  items: ThreadDraftListItem[],
-  owner: string,
-  tab: Counts,
-): ThreadDraftListItem[] {
+export function withTabChangeCounts(items: DraftItem[], owner: string, tab: Counts): DraftItem[] {
   if (tab.size === 0) return items;
   let changed = false;
-  const next: ThreadDraftListItem[] = [];
+  const next: DraftItem[] = [];
   items.forEach((row, index) => {
     const held = tab.get(row.documentId);
     if (!held || !suggestionsOnly(row)) {

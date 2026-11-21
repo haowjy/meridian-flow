@@ -94,7 +94,7 @@ export function TreeVersionProvider({
   const { draftId: listedDraft, fileForDocument } = drafts;
   const project = useTreeList({ kind: "project", projectId });
   const account = useTreeList({ kind: "account", userId: accountId });
-  const { drafts: rows } = drafts;
+  const { data: rows } = drafts;
   const draftVersion = useDraftTreeVersion(listedDraft, work ? workLifecycleState(work) : "active");
   // The Work's tree changes, from the browser's replay of its view in each list its draft
   // spans: what the Changes list builds its folder groups from, including a change not yet

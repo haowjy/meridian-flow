@@ -50,7 +50,7 @@ export function ReviewNextAction({
       onClick={() => (next ? onOpenNext(next) : onShowLive())}
     >
       {next ? (
-        <Trans>Next draft</Trans>
+        <Trans>Next document</Trans>
       ) : draftOnly ? (
         <Trans>Close review</Trans>
       ) : (

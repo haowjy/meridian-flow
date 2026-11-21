@@ -14,11 +14,12 @@ id. `change=` names a suggestion id in that document.
 
 ## Lists
 
-- `ThreadDraftListItem` rows are current reviewable work only; completed review is not a
+- `DraftItem` rows are current reviewable work only; completed review is not a
   durable list receipt. Their `contextLocation` keeps the scheme and the path's leading slash.
 - `actorThreads` lists chats whose suggestions are in the item, newest first, then the creating
   chat if absent.
-- `hasDraft` reports whether the item holds suggestions; `textChanges` counts them.
+- `textChanges` counts the item's suggestions; 0 means it has none (a created, moved or deleted
+  document with no suggestions in its text).
 - A draft id the server has not stored yet (a Work or chat whose create is still on its way)
   lists as empty, so the browser reads the draft it minted at once. A press needs the stored draft.
 

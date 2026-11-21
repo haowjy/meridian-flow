@@ -78,10 +78,10 @@ describe("draftOnlyTarget", () => {
     document: { kind: "available", documentId: "document-id" },
   } as DocumentAddressResult;
   const group = (draftOnly: boolean) =>
-    ({ documentId: "document-id", draftOnly, draft: { itemKey: "draft-id" } }) as ReviewFileTarget;
+    ({ documentId: "document-id", draftOnly, item: { itemKey: "draft-id" } }) as ReviewFileTarget;
 
   it("opens a review answer for a page a draft created as that draft, never live", () => {
-    expect(draftOnlyTarget(resolved, "review", { files: [group(true)] })?.draft.itemKey).toBe(
+    expect(draftOnlyTarget(resolved, "review", { files: [group(true)] })?.item.itemKey).toBe(
       "draft-id",
     );
     expect(draftOnlyTarget(resolved, "review", { files: [group(false)] })).toBeUndefined();

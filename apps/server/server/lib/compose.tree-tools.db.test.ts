@@ -289,7 +289,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await edit("write", { command: "move", from: { path: "ch1" }, path: "part1/ch1-moved" });
       });
       const seen = await writer.item(CH1);
-      expect(seen).toMatchObject({ hasDraft: true, tree: { movedFrom: { path: "/ch1" } } });
+      expect(seen).toMatchObject({ tree: { movedFrom: { path: "/ch1" } } });
       expect(await writer.discard(CH1, { ends: "item" })).toMatchObject({
         status: "pressed",
         items: [{ node: CH1, tree: true, text: true }],
@@ -342,7 +342,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         status: "pressed",
         items: [{ node: CH1, tree: true }],
       });
-      expect(await writer.item(CH1)).toMatchObject({ hasDraft: true, tree: null });
+      expect(await writer.item(CH1)).toMatchObject({ tree: null });
       expect(await drafting.text("part1/ch1-moved")).toContain("Chapter ONE.");
 
       await draft({ command: "move", from: { path: "part1/ch1-moved" }, path: "ch1-c" });

@@ -1,6 +1,6 @@
 /** A strip row's own changes: a move or delete is its tree line; text is pressed whole. */
 
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import type { DraftChangesView } from "./draft-changes";
 import type { DraftRef } from "./review-command-types";
 import { listedItemChanges, targetOfChanges } from "./review-model";
@@ -16,7 +16,7 @@ export function useDraftView(
   }: {
     controller: Pick<WorkDraftCommands, "commandChange" | "dispositionLocked">;
     enabled?: boolean;
-    item?: ThreadDraftListItem;
+    item?: DraftItem;
   },
 ): DraftChangesView {
   const deleteLine = item?.tree?.deleted && !item.isNew ? treeLineOf(item) : null;

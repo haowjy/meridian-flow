@@ -21,7 +21,7 @@
  * A draft-created document is always on its draft: every way of opening one names it, and the
  * rule keeps it there with the toggle on Live.
  */
-import type { ThreadDraftListItem } from "@meridian/contracts/drafts";
+import type { DraftItem } from "@meridian/contracts/drafts";
 import { contextOwner, type ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -67,8 +67,8 @@ export type DocumentPaint = {
   view: DocumentView;
 };
 
-type Rows = { status: "loading" | "ready" | "failed"; rows: readonly ThreadDraftListItem[] };
-const NO_ROWS: readonly ThreadDraftListItem[] = [];
+type Rows = { status: "loading" | "ready" | "failed"; rows: readonly DraftItem[] };
+const NO_ROWS: readonly DraftItem[] = [];
 
 /** One owner's draft rows; a null owner has none. */
 export function useOwnerDraftRows(projectId: string, draftId: string | null): Rows {

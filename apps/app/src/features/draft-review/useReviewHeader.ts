@@ -1,6 +1,6 @@
 /**
  * useReviewHeader — everything a review header needs that is not layout: the
- * open review's changes, the next draft file, and the whole-draft commands that
+ * open review's changes, the next document, and the whole-draft commands that
  * move on to it.
  *
  * The identity row's controls and the phone header are two layouts over this one
@@ -37,7 +37,7 @@ export type ReviewHeaderModel = {
   draftOnly: boolean;
   /** Opens another draft of the Work in review (the presenting container's launcher). */
   openDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
-  /** The next draft in the switcher, if the Work has one. */
+  /** The draft's next document, if it has one. */
   next: ReviewFileTarget | null;
   locked: boolean;
   canApply: boolean;
@@ -66,7 +66,7 @@ export function useReviewHeader({
 
   // Only a file with suggestions has a review to move to: a move or delete alone has none.
   const next = nextReviewFile(
-    files.filter((file) => file.draft.hasDraft || file.documentId === documentId),
+    files.filter((file) => file.item.textChanges > 0 || file.documentId === documentId),
     documentId,
     null,
   );
@@ -87,7 +87,7 @@ export function useReviewHeader({
   // refusal shows on the draft the writer applied, so it must not move them first.
   const dispose = (mode: "apply" | "discard", takeFocus: boolean) => {
     if (locked) return;
-    const start = controller.startDraft(mode, { documentId, itemKey });
+    const start = controller.startItem(mode, { documentId, itemKey });
     if (!start.sent) return;
     void start.outcome.then((outcome) => {
       if (outcome.kind !== "done") return;

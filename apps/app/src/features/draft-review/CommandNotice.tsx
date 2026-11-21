@@ -200,7 +200,7 @@ function useNoticeUndo() {
       // Beside main the address is main's: only the document's view changes.
       else if (stays !== null && presented.isPresented(projectId, stays))
         setDocumentView(accountId, projectId, stays, {
-          pin: { draftId, itemKey: review.draft.itemKey },
+          pin: { draftId, itemKey: review.item.itemKey },
         });
     });
   };

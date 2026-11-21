@@ -277,7 +277,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
   const listRead = listedDrafts.status === "ready" || listedDrafts.status === "empty";
   const reviewedItem =
     address.itemKey && listRead
-      ? (listedDrafts.files?.find((file) => file.draft.itemKey === address.itemKey)?.draft ?? null)
+      ? (listedDrafts.files?.find((file) => file.item.itemKey === address.itemKey)?.item ?? null)
       : undefined;
   const reviewVersion = useDraftTreeVersion(reviewedItem?.draftId ?? null);
   const reviewsDelete = reviewedItem?.tree?.deleted === true;
@@ -394,7 +394,7 @@ export function ReadableProjectRoute({ project, user }: ReadableProjectRouteProp
         : undefined;
   const addressView = addressKind === "plain" ? "live" : "review";
   const draftOnly = draftOnlyTarget(documentResult, addressView, editorDrafts);
-  const reviewItemKey = address.itemKey ?? draftOnly?.draft.itemKey;
+  const reviewItemKey = address.itemKey ?? draftOnly?.item.itemKey;
   const addressedNow = addressedDocument(
     address,
     documentResult,

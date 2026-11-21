@@ -139,7 +139,7 @@ export function DraftSwitcher({
         )}
         {drafts.length > 0 ? <DropdownMenuSeparator /> : null}
         {scoped.map((draft) => (
-          <DraftItem key={draft.key} draft={draft} />
+          <DraftVersionItem key={draft.key} draft={draft} />
         ))}
         {scoped.length > 0 && others.length > 0 ? <DropdownMenuSeparator /> : null}
         {others.length > 0 ? <OtherDrafts drafts={others} folded={scoped.length > 0} /> : null}
@@ -203,12 +203,12 @@ function OtherDrafts({ drafts, folded }: { drafts: readonly DraftVersion[]; fold
         <DisclosureMark open={open} />
         <Trans>Other drafts</Trans>
       </DropdownMenuItem>
-      {open ? drafts.map((draft) => <DraftItem key={draft.key} draft={draft} />) : null}
+      {open ? drafts.map((draft) => <DraftVersionItem key={draft.key} draft={draft} />) : null}
     </>
   );
 }
 
-function DraftItem({ draft }: { draft: DraftVersion }) {
+function DraftVersionItem({ draft }: { draft: DraftVersion }) {
   return (
     <DropdownMenuItem
       selected={draft.current}
