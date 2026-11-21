@@ -30,18 +30,13 @@ import {
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import * as Y from "yjs";
+import { heldBlocks } from "../diff/fragments.js";
 import type { BlockRef } from "../handles.js";
 import { unwrapBlock, unwrapDoc } from "../handles.js";
 import type { EditOp, EditOpsResult } from "../ports/model.js";
 import { lowerBlock } from "../resolver/lower-block.js";
-import { getTopLevelXmlBlocks } from "./block-hash.js";
-import { readRepairedRoot } from "./schema-repair.js";
 import { suggestionAuthors } from "./stored-suggestions.js";
-import {
-  applyOps as applyRawOps,
-  fragmentOf,
-  type YProsemirrorDocumentModel,
-} from "./y-prosemirror.js";
+import { applyOps as applyRawOps, type YProsemirrorDocumentModel } from "./y-prosemirror.js";
 
 /** The model of `view` over `base`, the stored document; a write in a Work's view is by `author`. */
 export function suggestingModel(
@@ -89,16 +84,13 @@ export function suggestingModel(
       const before = stored(block);
       // Nothing in the block that the view hides or marks: view units are stored units.
       if (view.work === null && viewBlock(before, view) === before) {
-        const applied = base.applyOps(doc, block, ops);
-        written(unwrapBlock(block));
-        return applied;
+        return base.applyOps(doc, block, ops);
       }
       const authors = authorsOf(block);
       const out = rewritten(before, ops, view, author, authors, schema);
       if (typeof out === "string") return refused(out);
       const applied = applyRawOps(unwrapBlock(block), lowerBlock(before, out.node));
       if (applied.ok) recordStarted(out.tr, authors);
-      written(unwrapBlock(block), out.node);
       if (out.endChange) tails.set(unwrapBlock(block), out.endChange);
       return applied;
     },
@@ -139,7 +131,6 @@ export function suggestingModel(
       const after = out.doc.firstChild as PMNode;
       applyRawOps(unwrapBlock(block), lowerBlock(node, after));
       recordStarted(out, authors);
-      written(unwrapBlock(block), after);
     },
   };
 
@@ -276,51 +267,9 @@ function rawUnit(units: readonly Run[], unit: number, side: "start" | "end"): nu
   return lastEnd;
 }
 
-/**
- * Each document's stored blocks, suggestions and all, for its current state: the model reads them
- * per block, many times per write. Filled by one repaired read of the fragment; a block a write
- * changed or added is converted alone.
- */
-const projections = new WeakMap<Y.Doc, Map<Y.XmlElement, PMNode>>();
-
-function projectionsOf(doc: Y.Doc, schema: Schema): Map<Y.XmlElement, PMNode> {
-  let nodes = projections.get(doc);
-  if (!nodes) {
-    const root = readRepairedRoot("projectBlocks", fragmentOf(doc), schema);
-    const projected = new Map<Y.XmlElement, PMNode>();
-    getTopLevelXmlBlocks(doc).forEach((block, index) => {
-      projected.set(block, root.child(index));
-    });
-    nodes = projected;
-    projections.set(doc, nodes);
-    doc.once("afterTransaction", () => projections.delete(doc));
-  }
-  return nodes;
-}
-
-/**
- * A write inside the model's transaction, which `afterTransaction` has not seen yet: the block's
- * new stored node when the write knows it, else the next read converts that block alone.
- */
-function written(element: Y.XmlElement, node?: PMNode): void {
-  const nodes = projections.get(element.doc as Y.Doc);
-  if (!nodes) return;
-  if (node) nodes.set(element, node);
-  else nodes.delete(element);
-}
-
+/** A stored block, suggestions and all: the model reads it many times per write. */
 function storedNode(element: Y.XmlElement, schema: Schema): PMNode {
-  const nodes = projectionsOf(element.doc as Y.Doc, schema);
-  let node = nodes.get(element);
-  if (!node) {
-    // A block this write made or changed. The binding converts a fragment; a reused one would
-    // keep every deleted item and slow each read.
-    const scratch = new Y.Doc();
-    const fragment = scratch.getXmlFragment("block");
-    fragment.insert(0, [element.clone()]);
-    node = readRepairedRoot("projectBlocks", fragment, schema).child(0);
-    scratch.destroy();
-    nodes.set(element, node);
-  }
+  const node = heldBlocks(element.doc as Y.Doc, schema, "projectBlocks").of(element);
+  if (!node) throw new Error("The schema cannot build a block of the document");
   return node;
 }
