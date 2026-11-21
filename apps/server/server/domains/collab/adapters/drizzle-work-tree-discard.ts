@@ -5,14 +5,23 @@
 import type { DraftId, UserId } from "@meridian/contracts";
 import type { DocumentId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { discardDraft, pendingRecords, recordsOfItem } from "@meridian/project-tree";
+import {
+  discardDraft,
+  LIVE,
+  pendingRecords,
+  recordsOfItem,
+  trashAgain,
+} from "@meridian/project-tree";
 import type { TreeListStore } from "../../context/ports/tree-list-store.js";
 import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 
 /**
  * Settles the Work's pending tree records discarded, in every list it spans. With `documents`,
  * the records of those documents' items (and what stands on a node they create); without, all
- * of them. Returns the documents that had records, and the ones whose creation was discarded.
+ * of them. With `trash` (a press), what the Work created goes to live's Trash (`discardDraft`),
+ * and `again` (a Redo's: the deletes the press it repeats made) goes back to Trash
+ * (`trashAgain`). Returns the documents that had records, and the Trash deletes the press
+ * records for its Undo.
  */
 export async function discardTreeRecords(
   db: Database,
@@ -22,10 +31,12 @@ export async function discardTreeRecords(
     userId?: UserId;
     commandId: string;
     documents?: readonly DocumentId[];
+    trash?: boolean;
+    again?: readonly string[];
   },
-): Promise<{ had: Set<DocumentId>; created: Set<DocumentId> }> {
+): Promise<{ had: Set<DocumentId>; trashed: string[] }> {
   const had = new Set<DocumentId>();
-  const created = new Set<DocumentId>();
+  const trashed: string[] = [];
   const by = input.userId ? `user:${input.userId}` : "system";
   const { result } = await deps.treeLists.submit({
     lists: await treeListsOfDraft(db, input.draftId),
@@ -37,15 +48,24 @@ export async function discardTreeRecords(
         const only = items
           ? [...new Set(items.flatMap((id) => recordsOfItem(draft, pending, id)))]
           : pending;
-        const discarded = new Set(
-          discardDraft(
-            writer,
-            input.draftId,
-            by,
-            input.commandId,
-            items ? only.map((r) => r.id) : undefined,
-          ),
+        const done = discardDraft(
+          writer,
+          input.draftId,
+          by,
+          input.commandId,
+          items ? only.map((r) => r.id) : undefined,
+          { trash: input.trash === true },
         );
+        const discarded = new Set(done.discarded);
+        trashed.push(...done.trashed);
+        if (input.again?.length) {
+          const back = new Set(trashAgain(writer, by, input.again));
+          for (const entry of writer.view(LIVE).trash)
+            if (back.has(entry.id)) {
+              trashed.push(entry.id);
+              for (const node of [entry.node, ...entry.cascade]) had.add(node as DocumentId);
+            }
+        }
         // A discarded delete had what it covered in the Work's view, not what its author saw.
         return pending
           .filter((record) => discarded.has(record.id))
@@ -57,8 +77,7 @@ export async function discardTreeRecords(
   });
   for (const { record, covered } of result) {
     had.add(record.node as DocumentId);
-    if (record.type === "create") created.add(record.node as DocumentId);
     for (const id of covered) had.add(id as DocumentId);
   }
-  return { had, created };
+  return { had, trashed };
 }

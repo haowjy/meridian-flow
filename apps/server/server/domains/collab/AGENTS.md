@@ -23,8 +23,10 @@ marks in the Live document, plus its draft's tree records; Apply and Discard is 
 - A press's tree half is the project-tree package's `applyDraft` and `discardDraft`, run
   through `treeListStore.submit` in the press's command transaction (each list the Work spans);
   collab writes no tree row. The list's lock comes after the Works and
-  before any document's key (the lock order in `.context/CONTEXT.md`), and a Discard releases
-  no document: a discarded create stays in no view until retention purges it.
+  before any document's key (the lock order in `.context/CONTEXT.md`). A press's Discard puts
+  what the Work created in live's Trash, and its Undo is Trash's Restore
+  ([press](.context/press.md#discard-and-what-goes-to-trash)); Work purge's leaves it in no view
+  until retention purges it.
 - A model edit plans under the lock its append takes, on the one connection of its command (`modelEdits().write`). Nothing reachable from it may open a second connection or wait on one; see [model edits](.context/model-edits.md). Each tree tool call is such a command too.
 - `mergeCodeText` brings a base→target change into a code document: it takes the document's mutation lock (`lockDocument`) before it reads the live text, then merges and appends under that hold, against what it holds then, and keeps the live text where both changed the same text (an Agent package's Undo). It runs inside the caller's transaction (the coordinator's transaction path takes no process mutex, so the lock never waits behind one); a caller that must merge several documents sorts them by id.
 - Destination selection is explicit: don't infer live versus a Work's view from a thread mode.

@@ -76,8 +76,8 @@ unchanged, so words stay read-only.
 
 A `restore` target reads through Trash, so an undo by an old path is authorized where the
 document actually returns, not at the path it was shown at. A document in no view has no
-source and no facts: a restore of a discarded create is refused here, and the server's own
-Undo restores it.
+source and no facts: a restore of one (a purged Work's create) is refused here. A press's
+Discard puts the Work's created documents in live's Trash, so they restore as any other.
 
 Facts come from the view's relations (`TreeReader.lineages`): the source and folders the view
 places the document in, and `deleted` from live's Trash or the source. `survivingDraft` is a

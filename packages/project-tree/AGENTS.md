@@ -33,7 +33,10 @@ it may write, whether a node id is in use) comes in as plain inputs.
   and `rename`. Which types a client may state, and whether a type change stays in one Yjs
   schema, are the server's facts: they come in through `Connection`.
 - A Discard is final: `restoreDiscard` appends new pending copies on the draft it is given (`carries` names the original, `restores` the Discard,
-  `restoredBy` who restored it); the discarded records stay discarded.
+  `restoredBy` who restored it); the discarded records stay discarded. A Discard with `trash`
+  (the press's) puts the nodes the Work created in live's Trash and returns the deletes, which
+  the caller records; `restoreDiscard` given them takes them back, which is Trash's Restore, so
+  they come back in live and their drafted records stay discarded. `trashAgain` is the Redo.
 - Every record the package writes goes through `writable`, the reader that will read it back, and
   throws if that would drop it. A document's `create` states its `filetype`.
 - Who a delete covers is `deleteCovering` (rows, Trash, the tools), and a document's item in a

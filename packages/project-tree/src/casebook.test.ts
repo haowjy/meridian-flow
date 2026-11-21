@@ -299,7 +299,7 @@ describe("part 2: two authors inside one Work's draft", () => {
     const arc2 = both.folder("Arc", ROOT, D, CHAT);
     both.chapter("Scene", arc2, D, CHAT2);
     const create2 = recordsOf(both.doc).toArray()[0] as TreeRecord;
-    expect(discardDraft(both.w, "work-1", WRITER, cmd(), [create2.id])).toHaveLength(2);
+    expect(discardDraft(both.w, "work-1", WRITER, cmd(), [create2.id]).discarded).toHaveLength(2);
     // A discard that did not see the scene (two writers, or a scene written after the discard
     // was computed): only the folder's create is settled.
     t.doc.transact(() => t.w.settle(CHAT, [createArc.id], "discarded"));
@@ -384,7 +384,7 @@ describe("part 3: Apply, Discard and Undo on part of a draft", () => {
 
   it("20. discards 'create Arc': everything made in or moved into Arc goes with it, the rest stays", () => {
     const t = reorganisation();
-    const gone = discardDraft(t.w, "work-1", WRITER, cmd(), [t.idOf("create", t.arc)]);
+    const gone = discardDraft(t.w, "work-1", WRITER, cmd(), [t.idOf("create", t.arc)]).discarded;
     expect(gone).toHaveLength(3);
     expect(t.at(t.ch1, D)?.parent).toBe(ROOT);
     expect(t.at(t.arc, D)).toBeUndefined();
@@ -1779,7 +1779,7 @@ describe("two replicas of one list", () => {
     discardDraft(a, "w", WRITER, "cmd-1");
     purge(a, a.delete(LIVE, CHAT, arc));
     const result = restoreDiscard(a, "cmd-1", CHAT, "w", "restore-3");
-    expect(result).toEqual({ copies: [] });
+    expect(result).toEqual({ copies: [], back: [] });
   });
 
   it("a record id counts once: two copies that appended the same record merge to one act", () => {

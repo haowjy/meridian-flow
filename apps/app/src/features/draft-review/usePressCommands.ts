@@ -10,6 +10,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { CommandDriver } from "@meridian/command-driver";
+import type { CommandId } from "@meridian/contracts";
 import type {
   PressResult,
   ThreadDraftListItem,
@@ -37,6 +38,7 @@ import type { TreeListSession } from "@/core/tree-list/tree-list-session";
 import {
   useDraftCommandOwner,
   useLiveDocumentSessionRegistry,
+  useOptionalContextRemovalCoordinator,
   useOptionalTreeLists,
 } from "@/features/project/context/account-feature-context";
 import { type CommandOutcome, folderKey } from "./draft-command-owner";
@@ -83,6 +85,7 @@ export function usePressCommands({
   const driver = useCommandDriver();
   const registry = useLiveDocumentSessionRegistry();
   const treeLists = useOptionalTreeLists();
+  const removal = useOptionalContextRemovalCoordinator();
   const queryClient = useQueryClient();
   const locked = !draftId || !driver;
   return useMemo(() => {
@@ -190,6 +193,8 @@ export function usePressCommands({
         async () => (await entries.undo(null)).kind !== "failed",
       );
       place(pressed.placement);
+      // The press in force, which a Redo presses again.
+      let inForce = pressed.commandId;
       const port: PressPort = {
         unpress: async (commandId) => {
           const answer = await unpress(commandId);
@@ -198,10 +203,11 @@ export function usePressCommands({
         },
         redo: async () => {
           if (!driver) return "failed";
-          const again = await press(verdict, taken, driver);
+          const again = await press(verdict, taken, driver, inForce);
           if (again === "told") return null;
           if (again === "failed") return "failed";
           place(again.placement);
+          inForce = again.commandId;
           return { commandId: again.commandId };
         },
       };
@@ -232,6 +238,7 @@ export function usePressCommands({
       verdict: Verdict,
       items: readonly PressItem[] | "all",
       live: CommandDriver,
+      redoes?: string,
     ): Promise<Pressed | Unpressed> => {
       const listed = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.drafts(projectId, draftId),
@@ -275,6 +282,7 @@ export function usePressCommands({
           items: items === "all" ? "all" : [...items],
           ...(listed?.saw ? { saw: listed.saw } : {}),
           ...(open.length ? { seen: open } : {}),
+          ...(redoes ? { redoes: redoes as CommandId } : {}),
         });
         if (!record) return "told";
         const settled = await live.whenSettled(record.id);
@@ -310,6 +318,14 @@ export function usePressCommands({
       // Named as listed now: the press takes the rows out of the list as it is sent.
       const names = new Map(rows().map((row) => [row.documentId, nameOf(row.documentId)]));
       const named = (node: string) => names.get(node) ?? "";
+      // A document the Work created goes to Trash with its Discard: main leaves it first.
+      if (verdict === "discard") {
+        const taken = items === "all" ? null : new Set(items.map((item) => item.node));
+        const created = rows().flatMap((row) =>
+          row.isNew && (!taken || taken.has(row.documentId)) ? [row.documentId] : [],
+        );
+        if (created.length > 0) removal?.beginOwnRemoval(projectId, created);
+      }
       const outcome = press(verdict, items, driver).then((pressed): CommandOutcome => {
         if (pressed === "failed")
           notifyFailure({
@@ -443,6 +459,7 @@ export function usePressCommands({
     driver,
     registry,
     treeLists,
+    removal,
     queryClient,
     locked,
     projectId,
