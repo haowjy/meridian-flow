@@ -9,9 +9,16 @@ Schema 3.3.0 (`packages/prosemirror-schema`) holds it:
   `name--<hash>` (`yjsMarkKey`).
 - `sug` on a block that exists only as one Work's suggestion, `{ id, work }`. Every block inside
   it carries the same `sug`.
-- `sugAttrs` on a block: by Work, one layer per turn of a pending change to the block's
-  attributes (`{ id, work, attrs, remove? }`). `remove: true` is the Work removing the
-  whole block, which is how a block with no text is deleted.
+- `sugAttrs` on a block: the layers of pending changes to the block's attributes, by layer id
+  (`AttrLayer`, `{ id, draft, layer, order, attrs, remove? }`). `remove: true` is the draft
+  removing the whole block, which is how a block with no text is deleted. Yjs stores each layer
+  as its own element attribute, `sugAttrs--<layer id>`, and ProseMirror sees the one record:
+  `@meridian/prosemirror-schema` `layer-key.ts` folds and expands them, and the binding patch
+  and agent-edit's lowering apply that rule, comparing layers by content so a layer left alone
+  keeps its item. A draft's layers apply in `order`, then by layer id; an edit appends one layer
+  per block (merging only into a layer the same edit added) and never rewrites a layer another
+  edit wrote, so concurrent proposals on one block all stand. A layer key that is not a layer
+  reads as none (`layersOf`).
 - Who wrote each change, `{ chat, turn, by }` (`Author`), once per change id in the Y.Doc's
   `suggestion_authors` map beside the fragment. The pure code reads and writes it as `Authors`
   (`get`/`set`, a `Map` in tests); agent-edit's `suggestionAuthors(doc)` is the map on a Y.Doc,
@@ -100,11 +107,10 @@ where Live text separates its pieces; `pending` the turns and the Works
   without that, the same rewrite asked for after a card Undo, a Discard or an inline Reject
   matched the model's view and changed nothing. The withdraw only deletes view items the room has
   deleted or replaced: the write ships the view's own updates to the room. A block's attribute
-  layers, every Work's, share one item, which leaves the view only when every layer on it was
-  rejected (see Known limits). An accepted change stays in the view, whose text is the same
+  layer is one item of its change and leaves with the change's text. An accepted change stays in the view, whose text is the same
   either way, and a change an edit removed has no verdict and stays too, as Live text the writer
   removed after the model's read does. `suggestionItems` there is the item-level twin of
-  `pendingBy`: a change to how marks or `sug`/`sugAttrs` are stored updates both.
+  `pendingBy`: a change to how marks, `sug` or attribute layers are stored updates both.
 - Edit list: `read(format: "edits")` says `applied` or `discarded` from the verdicts of the
   changes a write's items carry (`writeVerdict`); with none, or both, it reads the text.
 - Resolving, everywhere: agent-edit's `resolveStored(doc, schema, verdict, filter)`
@@ -187,14 +193,12 @@ a later Work suggestion inside the range makes the change stop standing, and Und
 - A change the writer removed by typing (a pending AI insertion deleted, an applied one then
   deleted) has no verdict: an identical re-proposal from the same stale plan keeps the writer's
   deletion, as for Live text, and the next read shows the model the real text.
-- A block's attribute layers, every Work's, are one Yjs value. With turn 1 and turn 2 both
-  proposing a heading level, rejecting turn 2 alone writes the remaining layers anew in the room,
-  and the planning view keeps the old value (it can't hold the room's new one without writing):
-  the same level-2 rewrite then changes nothing. Taking the old value out of the view instead
-  would let the write set the block's layers to its own alone, racing the room's value on Yjs
-  client id and, about half the time, erasing other Works' layers. Concurrent attribute writes
-  by two peers on one block keep one value the same way. Per-layer items would fix both at the
-  cost of a stored-model change.
+- Accepting a later layer trims an earlier kept layer of the keys Live now has: the one write
+  that rewrites a layer in place. Two tabs accepting two later layers of one draft on one block
+  at once each trim the same earlier layer, and one trim wins, so the earlier layer keeps a value
+  Live already has and reads as still pending. Nothing is lost; the writer can discard it.
+- Each attribute edit appends a layer (about 120 bytes) until it is resolved: changing one
+  block's heading five times leaves five layers.
 - Rejecting an earlier turn's change first leaves a later turn's insertion over it standing
   beside the restored text ("Alpha one1"): the review lists it as that turn's own change, to
   discard. Kept on purpose: taking it with the earlier reject would drop a later turn's work

@@ -13,7 +13,7 @@ import {
 } from "prosemirror-transform";
 import { type Author, type Authors, newChangeId, type SuggestionAttrs } from "./change.js";
 import {
-  type AttrProposal,
+  type AttrLayer,
   blockKind,
   isSuggestionMark,
   kindOf,
@@ -56,6 +56,8 @@ type Writer = {
   author: Author;
   authors: Pick<Authors, "get">;
   started: Map<string, Author>;
+  /** The attribute layers this edit added: the only ones it extends. */
+  added: Set<string>;
 };
 
 /** Who wrote change `id`: one this edit started, or one the document records. */
@@ -150,7 +152,7 @@ export function rewrite(
   const writer: Writer | null =
     view.draft === null || !author
       ? null
-      : { draft: view.draft, author, authors, started: new Map() };
+      : { draft: view.draft, author, authors, started: new Map(), added: new Set() };
   const change = editChange(writer);
   const ranges = writer ? wholeBlockRanges(replaced, state.doc) : [...replaced];
   for (const range of [...ranges].reverse()) {
@@ -575,22 +577,10 @@ function proposeAttrs(
       set[key] = attrs[key];
   if (Object.keys(set).length === 0) return;
   const stored = out.doc.nodeAt(pos) as Node;
-  const layers = proposals(stored)[writer.draft] ?? [];
-  const id = change(layers.find((layer) => !layer.remove && sameAuthor(layer, writer))?.id ?? null);
-  setLayers(
-    out,
-    pos,
-    writer.draft,
-    addLayer(stored, layers, { id, draft: writer.draft, attrs: set }),
+  const continued = proposals(stored, writer.draft).find(
+    (layer) => !layer.remove && sameAuthor(layer, writer),
   );
-}
-
-/** Store a draft's layers on the block at `pos`; none drops its entry. */
-function setLayers(out: Transaction, pos: number, draft: string, layers: AttrProposal[]): void {
-  const entries = { ...proposals(out.doc.nodeAt(pos) as Node) };
-  if (layers.length > 0) entries[draft] = layers;
-  else delete entries[draft];
-  out.setNodeAttribute(pos, "sugAttrs", Object.keys(entries).length > 0 ? entries : null);
+  addLayer(out, pos, writer, { id: change(continued?.id ?? null), attrs: set });
 }
 
 /** `doc` with the view's pending attribute changes applied to the blocks in `[from, to)`. */
@@ -599,36 +589,53 @@ function withPending(doc: Node, from: number, to: number, view: View): Node {
   if (draft === null) return doc;
   const shown = new Transform(doc);
   doc.nodesBetween(from, Math.max(to, from + 1), (node, pos) => {
-    for (const [key, value] of Object.entries(layered(proposals(node)[draft] ?? [])))
+    for (const [key, value] of Object.entries(layered(proposals(node, draft))))
       shown.setNodeAttribute(pos, key, value);
   });
   return shown.doc;
 }
 
 /**
- * A draft's layers on a Live block once an edit adds `layer`: one change's layer per turn, so the
- * edit extends its turn's layer of the same change, or adds one. A lone layer that leaves the
- * block as Live has it is no change.
+ * Add an edit's layer of change `id` to the Live block at `pos`: merged into a layer this same
+ * edit added there, else appended after the draft's others under a fresh layer id. No layer
+ * another edit wrote is rewritten, so a layer written beside this edit stands. When the draft's
+ * layers would then set nothing Live doesn't have, and every one is this change's, they all go:
+ * the writer setting a heading and then body text again leaves no change.
  */
 function addLayer(
-  node: Node,
-  layers: readonly AttrProposal[],
-  layer: AttrProposal,
-): AttrProposal[] {
-  const next = [...layers];
-  const last = next.at(-1);
-  if (last && last.id === layer.id)
-    next[next.length - 1] = {
-      ...last,
-      attrs: { ...last.attrs, ...layer.attrs },
-      remove: last.remove || layer.remove,
-    };
-  else next.push(layer);
-  const attrs = layered(next);
+  out: Transaction,
+  pos: number,
+  writer: Writer,
+  layer: { id: string; attrs: Attrs; remove?: true },
+): void {
+  const node = out.doc.nodeAt(pos) as Node;
+  const own = proposals(node, writer.draft);
+  const last = own.at(-1);
+  const next: AttrLayer =
+    last && last.id === layer.id && writer.added.has(last.layer)
+      ? {
+          ...last,
+          attrs: { ...last.attrs, ...layer.attrs },
+          ...(last.remove || layer.remove ? { remove: true as const } : {}),
+        }
+      : {
+          id: layer.id,
+          draft: writer.draft,
+          layer: newChangeId(),
+          order: own.reduce((top, each) => Math.max(top, each.order), 0) + 1,
+          attrs: layer.attrs,
+          ...(layer.remove ? { remove: true as const } : {}),
+        };
+  writer.added.add(next.layer);
+  const after = [...own.filter((each) => each.layer !== next.layer), next];
+  const attrs = layered(after);
   const changes =
-    next.some((each) => each.remove) ||
+    after.some((each) => each.remove) ||
     Object.keys(attrs).some((key) => !sameValue(attrs[key], node.attrs[key]));
-  return changes || next.length > 1 ? next : [];
+  const entries: Record<string, AttrLayer> = { ...node.attrs.sugAttrs };
+  if (changes || after.some((each) => each.id !== layer.id)) entries[next.layer] = next;
+  else for (const each of after) delete entries[each.layer];
+  out.setNodeAttribute(pos, "sugAttrs", Object.keys(entries).length > 0 ? entries : null);
 }
 
 /** The nodes in `[from, to)` whose attributes alone differ in `after`; null when more differs. */
@@ -843,12 +850,7 @@ function suggestRemoval(
       (kind === "live" && "sug" in node.attrs) ||
       (kind === "own" && layers(node.attrs.sug, writer))
     )
-      setLayers(
-        out,
-        pos,
-        attrs.draft,
-        addLayer(node, proposals(node)[attrs.draft] ?? [], { ...attrs, attrs: {}, remove: true }),
-      );
+      addLayer(out, pos, writer, { id: attrs.id, attrs: {}, remove: true });
   }
   const map = since(out);
   for (const piece of removed.reverse()) {

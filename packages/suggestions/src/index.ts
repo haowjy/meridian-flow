@@ -27,9 +27,10 @@ export {
   STARTED_META,
 } from "./rewrite.js";
 export {
-  type AttrProposal,
+  type AttrLayer,
   blockKind,
   kindOf,
+  layersOf,
   liveView,
   proposals,
   type Run,

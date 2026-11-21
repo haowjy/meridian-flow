@@ -69,10 +69,11 @@ const idAttr = { default: null };
 
 /**
  * Suggestion mode (`@meridian/suggestions`): `sug` marks a block that exists only as one draft's
- * suggestion (`{ id, draft }`); `sugAttrs` holds, by draft, one layer per turn of a pending change
- * to a Live block: its attributes, or its removal (`{ id, draft, attrs, remove? }`). Who wrote each
- * change is kept once per change beside the fragment, not here. The binding drops marks on
- * blocks, so they are attributes.
+ * suggestion (`{ id, draft }`); `sugAttrs` holds the layers of pending changes to a Live block, by
+ * layer id: each sets attributes or removes the block (`{ id, draft, layer, order, attrs, remove? }`).
+ * Yjs stores each layer as its own element attribute (`layer-key.ts`). Who wrote each change is
+ * kept once per change beside the fragment, not here. The binding drops marks on blocks, so they
+ * are attributes.
  */
 const suggestionBlockAttrs = { sug: { default: null }, sugAttrs: { default: null } };
 
@@ -272,6 +273,7 @@ function suggestionMark(): MarkSpec {
 
 export * from "./block-id.js";
 export * from "./empty-document.js";
+export * from "./layer-key.js";
 export * from "./mark-key.js";
 export * from "./nesting.js";
 export { PROSEMIRROR_FRAGMENT_NAME } from "./protocol.js";

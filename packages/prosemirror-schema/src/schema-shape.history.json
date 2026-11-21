@@ -1800,7 +1800,7 @@
       "minor": 3,
       "patch": 0
     },
-    "compatibilityNote": "Adds `sugAttrs` (default null) to every block that has `sug`: a draft's pending change to a Live block's attributes. Additive. A 3.2 client must not edit a 3.3 head, since its binding would drop the attribute; the minor fence already refuses it.",
+    "compatibilityNote": "Adds `sugAttrs` (default null) to every block that has `sug`: the layers of pending changes to a Live block's attributes, stored as one Yjs element attribute per layer (`sugAttrs--<layer id>`, `layer-key.ts`). Additive. A 3.2 client must not edit a 3.3 head, since its binding would drop the attribute; the minor fence already refuses it.",
     "surface": {
       "fragmentName": "prosemirror",
       "nodes": {

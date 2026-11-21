@@ -2,27 +2,65 @@ import { type Attrs, Fragment, type Mark, type Node, Slice } from "prosemirror-m
 import type { SuggestionAttrs } from "./change.js";
 
 /**
- * One turn's layer of a draft's pending change to a block's attributes (a heading level, a list),
- * kept in the block's `sugAttrs` by draft, oldest first, each under its turn's change id. The block and
- * its text stay Live: accept sets the layers' attributes, reject drops layers, and nothing
- * anchored in the block moves. Rejecting a later turn leaves the earlier turn's layer, as a later
- * turn's deletion layered over an earlier insertion does for text.
+ * One layer of a draft's pending change to a Live block's attributes (a heading level, a list), or
+ * its removal of the block. A block keeps every draft's layers in `sugAttrs`, by layer id, and Yjs
+ * stores each as its own element attribute (`@meridian/prosemirror-schema` `layer-key.ts`), so one
+ * layer is added or taken back without rewriting another. A draft's layers apply in `order`, then
+ * by layer id: rejecting a later turn leaves an earlier turn's layer, as a later turn's deletion
+ * layered over an earlier insertion does for text. The block and its text stay Live: accept sets
+ * the layers' attributes, reject drops layers, and nothing anchored in the block moves.
  */
-export type AttrProposal = SuggestionAttrs & { attrs: Attrs; remove?: boolean };
+export type AttrLayer = SuggestionAttrs & {
+  /** Its own id, fresh when written, and its key in `sugAttrs`. */
+  layer: string;
+  /** Its place among its draft's layers on the block, from 1; never renumbered. */
+  order: number;
+  attrs: Attrs;
+  remove?: true;
+};
 
-/** A block's pending attribute changes: by draft, its layers. */
-export function proposals(node: Node): Record<string, AttrProposal[]> {
-  return (node.attrs.sugAttrs ?? {}) as Record<string, AttrProposal[]>;
+/**
+ * Every layer on a block, in order. Any client writes the element, so an entry that is not a
+ * layer reads as none.
+ */
+export function layersOf(node: Node): AttrLayer[] {
+  const stored = node.attrs.sugAttrs;
+  if (!stored || typeof stored !== "object") return [];
+  return Object.values(stored as Record<string, unknown>)
+    .filter(isLayer)
+    .sort(byOrder);
+}
+
+/** One draft's layers on a block, in order. */
+export function proposals(node: Node, draft: string): AttrLayer[] {
+  return layersOf(node).filter((layer) => layer.draft === draft);
+}
+
+function isLayer(value: unknown): value is AttrLayer {
+  if (!value || typeof value !== "object") return false;
+  const layer = value as Record<string, unknown>;
+  return (
+    typeof layer.id === "string" &&
+    typeof layer.draft === "string" &&
+    typeof layer.layer === "string" &&
+    typeof layer.order === "number" &&
+    !!layer.attrs &&
+    typeof layer.attrs === "object"
+  );
+}
+
+function byOrder(a: AttrLayer, b: AttrLayer): number {
+  return a.order - b.order || (a.layer < b.layer ? -1 : a.layer > b.layer ? 1 : 0);
 }
 
 /** Whether a view removes a block: one of its own layers on it proposes so. */
 export function removedIn(node: Node, view: View): boolean {
   if (view.draft === null) return false;
-  return (proposals(node)[view.draft] ?? []).some((layer) => layer.remove);
+  return proposals(node, view.draft).some((layer) => layer.remove);
 }
 
 /** What a draft's layers set, the later over the earlier. */
-export function layered(layers: readonly AttrProposal[]): Attrs {
+export function layered(layers: readonly AttrLayer[]): Attrs {
   return Object.assign({}, ...layers.map((layer) => layer.attrs));
 }
 
@@ -148,8 +186,8 @@ export function viewDoc(doc: Node, view: View): Node {
 /** A block's attributes in a view: Live's, with the view's own pending change applied. */
 export function viewAttrs(node: Node, view: View): Attrs {
   if (!("sug" in node.attrs)) return node.attrs;
-  const own = view.draft !== null ? proposals(node)[view.draft] : null;
-  return { ...node.attrs, ...layered(own ?? []), sug: null, sugAttrs: null };
+  const own = view.draft !== null ? proposals(node, view.draft) : [];
+  return { ...node.attrs, ...layered(own), sug: null, sugAttrs: null };
 }
 
 function carries(node: Node): boolean {

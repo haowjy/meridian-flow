@@ -3,11 +3,12 @@ import type { EditorState, Transaction } from "prosemirror-state";
 import { type Authors, changeAuthor, type SuggestionAttrs } from "./change.js";
 import { RAW_META } from "./rewrite.js";
 import {
-  type AttrProposal,
+  type AttrLayer,
   blockKind,
   isSuggestionMark,
   kindOf,
   layered,
+  layersOf,
   proposals,
   sameValue,
   type View,
@@ -49,7 +50,7 @@ function pendingBy(doc: Node, key: (attrs: SuggestionAttrs) => string | null): S
   };
   doc.descendants((node) => {
     note(node.attrs.sug);
-    for (const proposal of Object.values(proposals(node)).flat()) note(proposal);
+    for (const layer of layersOf(node)) note(layer);
     for (const mark of node.marks) if (isSuggestionMark(mark)) note(mark.attrs as SuggestionAttrs);
     return true;
   });
@@ -117,35 +118,42 @@ function resolve(state: EditorState, matches: Match, action: Verdict): Transacti
       // Later changes inside go with it: the filter's are decided too.
       block.descendants((node) => {
         fateOf(node.attrs.sug ?? null);
-        for (const layer of Object.values(proposals(node)).flat()) fateOf(layer);
+        for (const layer of layersOf(node)) fateOf(layer);
         for (const mark of node.marks)
           if (isSuggestionMark(mark)) fateOf(mark.attrs as SuggestionAttrs);
       });
       return false;
     }
     if (blockFate === "accept") set.push([blockPos, "sug", null]);
-    const pending = Object.entries(proposals(block));
-    if (pending.some(([, layers]) => layers.some((layer) => fateOf(layer)))) {
-      const left: Array<[string, AttrProposal[]]> = [];
-      for (const [draft, layers] of pending) {
+    const pending = layersOf(block);
+    if (pending.some((layer) => fateOf(layer))) {
+      // Each layer is its own item: a decided one goes, an earlier one that stays loses only what
+      // a later accepted one set (Live has that now), and every other stays the same object.
+      const entries: Record<string, AttrLayer> = { ...block.attrs.sugAttrs };
+      for (const draft of new Set(pending.map((layer) => layer.draft))) {
+        const layers = pending.filter((layer) => layer.draft === draft);
         const accepted = layers.filter((layer) => fateOf(layer) === "accept");
         // A block its container cannot do without (a cell's only block) stays, emptied.
         if (accepted.some((layer) => layer.remove) && parent?.canReplace(index, index + 1))
           remove.push([blockPos, blockPos + block.nodeSize]);
         for (const [key, value] of Object.entries(layered(accepted)))
           set.push([blockPos, key, value]);
-        // An earlier layer that stays loses what a later accepted one set: Live has that now.
-        const kept = layers.flatMap((layer, index) => {
-          if (fateOf(layer)) return [];
-          const later = layered(accepted.filter((each) => layers.indexOf(each) > index));
+        layers.forEach((layer, at) => {
+          if (fateOf(layer)) {
+            delete entries[layer.layer];
+            return;
+          }
+          const later = layered(accepted.filter((each) => layers.indexOf(each) > at));
+          if (!Object.keys(layer.attrs).some((key) => key in later)) return;
           const attrs = Object.fromEntries(
             Object.entries(layer.attrs).filter(([key]) => !(key in later)),
           );
-          return layer.remove || Object.keys(attrs).length > 0 ? [{ ...layer, attrs }] : [];
+          if (layer.remove || Object.keys(attrs).length > 0)
+            entries[layer.layer] = { ...layer, attrs };
+          else delete entries[layer.layer];
         });
-        if (kept.length > 0) left.push([draft, kept]);
       }
-      set.push([blockPos, "sugAttrs", left.length > 0 ? Object.fromEntries(left) : null]);
+      set.push([blockPos, "sugAttrs", Object.keys(entries).length > 0 ? entries : null]);
     }
     if (!block.isTextblock) return true;
     block.forEach((child, offset) => {
@@ -182,7 +190,7 @@ function fates(
   const superseded = new Set<string>();
   if (action === "accept")
     doc.descendants((node) => {
-      for (const proposal of [node.attrs.sug, ...Object.values(proposals(node)).flat()])
+      for (const proposal of [node.attrs.sug, ...layersOf(node)])
         if (matches(proposal)) chosen.add(proposal.id);
       const marks = node.marks.filter(isSuggestionMark);
       for (const mark of marks)
@@ -260,7 +268,7 @@ export function list(doc: Node, view: View, authors: Authors): Change[] {
     const owner = "sug" in block.attrs ? blockKind(block, view) : "live";
     if (owner === "hidden") return false;
     const end = blockPos + block.nodeSize;
-    const layers = proposals(block)[draft] ?? [];
+    const layers = proposals(block, draft);
     for (const id of new Set(layers.map((layer) => layer.id))) {
       const ofChange = layers.filter((layer) => layer.id === id);
       const attrs = shownChange(block, ofChange);
@@ -297,7 +305,7 @@ export function list(doc: Node, view: View, authors: Authors): Change[] {
 }
 
 /** What a draft's layers change on a block, compared with Live; null when they change nothing. */
-function shownChange(block: Node, layers: readonly AttrProposal[]): Attrs | null {
+function shownChange(block: Node, layers: readonly AttrLayer[]): Attrs | null {
   const attrs: Record<string, unknown> = { ...layered(layers) };
   for (const key of Object.keys(attrs))
     if (sameValue(attrs[key], block.attrs[key])) delete attrs[key];

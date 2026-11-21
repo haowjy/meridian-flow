@@ -1,5 +1,11 @@
 import type { ParsedContent } from "@meridian/markup";
-import { withBlockIds, withoutBlockIds, yjsMarkKey } from "@meridian/prosemirror-schema";
+import {
+  expandLayers,
+  layerWrites,
+  withBlockIds,
+  withoutBlockIds,
+  yjsMarkKey,
+} from "@meridian/prosemirror-schema";
 import type { Fragment, Mark, Node as PMNode, Schema } from "prosemirror-model";
 import * as Y from "yjs";
 import type { BlockRef } from "../handles.js";
@@ -184,7 +190,12 @@ export function applyOps(
   for (const { op, node } of of("text")) applyTextOp(node, op);
   for (const { op, node } of of("attrs"))
     for (const [key, value] of Object.entries(op.attrs)) {
-      if (value === null || value === undefined) node.removeAttribute(key);
+      // A block's attribute layers are one element attribute each (`layer-key.ts`).
+      if (key === "sugAttrs") {
+        const writes = layerWrites(node.getAttributes(), value as Record<string, unknown> | null);
+        for (const layerKey of writes.remove) node.removeAttribute(layerKey);
+        for (const [layerKey, layer] of writes.set) node.setAttribute(layerKey, layer as string);
+      } else if (value === null || value === undefined) node.removeAttribute(key);
       else node.setAttribute(key, value as string);
     }
   for (const { op, node, anchor } of of("insert"))
@@ -498,10 +509,8 @@ function clearText(type: Y.XmlElement | Y.XmlText): void {
 
 export function pmNodeToYElement(node: PMNode): Y.XmlElement {
   const element = new Y.XmlElement(node.type.name);
-  for (const key of Object.keys(node.attrs)) {
-    const value = node.attrs[key];
-    if (value !== null && key !== "ychange") element.setAttribute(key, value);
-  }
+  for (const [key, value] of Object.entries(expandLayers(node.attrs)))
+    if (value !== null && key !== "ychange") element.setAttribute(key, value as string);
   const children = normalizeContent(node).map((child) =>
     Array.isArray(child) ? textNodesToYText(child) : pmNodeToYElement(child),
   );

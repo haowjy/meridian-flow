@@ -195,7 +195,7 @@ function paintNode(block: PMNode, blockPos: number, paint: Paint, out: Decoratio
     return;
   }
   if (owner === "own") decorate(blockPos, end, added(block.attrs.sug?.id, true), "node");
-  const own = view.draft ? (proposals(block)[view.draft] ?? []) : [];
+  const own = view.draft ? proposals(block, view.draft) : [];
   if (removedIn(block, view))
     decorate(
       blockPos,

@@ -142,7 +142,11 @@ and remain quarantined until their retryable destroy ledger succeeds.
   `dist/index.js` and `dist/index.cjs` identically (`package.json` `exports` point only at `dist`;
   the shipped `src/` is not patched), then the two `.d.ts`/`.d.cts` declarations, then
   `pnpm patch-commit`. Every change carries a `Meridian patch` comment. The changes are the
-  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), the empty-fragment guard, the forced-render
+  text-run grouping, the id pairing with `movedIds`, the typed-run placement (`binding.edit`), the empty-fragment guard, the attribute layers (a block's
+  `sugAttrs` record folded from and expanded to one `sugAttrs--<layer id>` element attribute per
+  layer, compared by content, in `createNodeFromYElement`, `createTypeFromElementNode`,
+  `updateYFragment` and `equalYTypePNode`; the rule is `@meridian/prosemirror-schema`
+  `layer-key.ts`), the forced-render
   selection, `refreshProseMirrorDoc`, the Undo plugin's listener cleanup, the cell-selection
   capture and restore (`resolveRelativeCellSelection`), the gap-cursor restore (a remote edit
   used to turn the gap below a final table into a caret in its last cell), and `recoverSelectionEndpoint` trusting a
