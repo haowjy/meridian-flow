@@ -61,11 +61,14 @@ reads the owner's lifecycle.
 
 Every Discard of a document, a folder, a selection or the Work is one press with
 `verdict: "discard"`: it rejects the Work's suggestions there and discards the Work's tree changes
-(a document the Work created leaves every view). Trash has no entry for it. Its Undo is the
-press's `unpress`, as Apply's is (`PressEntries`): the notice's Undo, the sidebar's Undo step or
-Ctrl+Z in an open editor of its documents, once between them, in the tab that pressed. After a
-reload nothing offers it, and what it took is gone: the writer's own typing in the Work's view,
-and documents the Work created. A Discard of
+(a document or folder the Work created goes to Trash, an ordinary deleted document there). Trash
+has no entry for the rest. Its Undo is the press's `unpress`, as Apply's is (`PressEntries`): the
+notice's Undo, the sidebar's Undo step or Ctrl+Z in an open editor of its documents, once between
+them, in the tab that pressed. Undo, or Trash's Restore, brings a created document back in Live,
+not in the Work; whichever comes first, the other has nothing left to do
+([press](../../../../../server/server/domains/collab/.context/press.md#discard-and-what-goes-to-trash)).
+After a reload nothing offers the Undo, and the writer's own typing in the Work's view that it
+rejected is gone. A Discard of
 one change in the editor is an editor transaction, undone with Ctrl+Z.
 
 ### Notices

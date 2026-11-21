@@ -1779,7 +1779,7 @@ describe("two replicas of one list", () => {
     discardDraft(a, "w", WRITER, "cmd-1");
     purge(a, a.delete(LIVE, CHAT, arc));
     const result = restoreDiscard(a, "cmd-1", CHAT, "w", "restore-3");
-    expect(result).toEqual({ copies: [] });
+    expect(result).toEqual({ copies: [], back: [] });
   });
 
   it("a record id counts once: two copies that appended the same record merge to one act", () => {

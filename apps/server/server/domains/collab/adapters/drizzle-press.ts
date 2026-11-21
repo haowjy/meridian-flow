@@ -308,10 +308,11 @@ export function createDrizzlePress(
             } else {
               await lockDocuments(nodes);
               if (draftId && picked.tree.size > 0) {
-                const { had } = await discardTreeRecords(db, deps, {
+                const had = await discardTreeRecords(db, deps, {
                   draftId,
                   userId: envelope.accountId as UserId,
                   commandId: envelope.commandId,
+                  trash: true,
                   ...(request.items === "all"
                     ? {}
                     : { documents: [...picked.tree] as DocumentId[] }),
@@ -438,7 +439,8 @@ export function createDrizzlePress(
                         envelope.commandId,
                       );
                       if (restored !== "already")
-                        for (const copy of restored.copies) tree.add(copy.node);
+                        for (const record of [...restored.copies, ...restored.back])
+                          tree.add(record.node);
                       continue;
                     }
                     const scope = lists[at]?.kind;

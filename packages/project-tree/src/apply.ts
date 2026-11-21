@@ -1,8 +1,23 @@
 import * as Y from "yjs";
 import { assertNewCommand } from "./list-index.js";
-import { type Actor, newId, recordsOf, type Settlement, type TreeRecord } from "./record.js";
-import { lifts, placeIn, replay, type SkipReason, type TreeProjection } from "./replay.js";
-import { fingerprint } from "./shape.js";
+import {
+  type Actor,
+  isSourceRoot,
+  newId,
+  recordsOf,
+  type Settlement,
+  sourceRoot,
+  type TreeRecord,
+} from "./record.js";
+import {
+  lifts,
+  placeIn,
+  replay,
+  type SkipReason,
+  type TreeNode,
+  type TreeProjection,
+} from "./replay.js";
+import { descendantsOf, fingerprint } from "./shape.js";
 import { type NotUndone, takeBackAll } from "./undo.js";
 import { readStored, writable } from "./validate.js";
 import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
@@ -412,19 +427,90 @@ export function applyDraft(
   };
 }
 
-/** Discard, whole or in part: the chosen records and every drafted record that stands on them. */
+/**
+ * Discard, whole or in part: the chosen records and every drafted record that stands on them.
+ * With `trash`, each node whose create it discards goes to live's Trash, since it is a whole
+ * document or folder and not a change to one: created in live as the Work's view shows it (under
+ * a folder that stays in the Work, at the top of its source), then deleted, the topmost ones
+ * taking what they hold. Each delete names the Discard (`discards`), which `restoreDiscard` takes
+ * back: that is Trash's Restore too, so whichever comes first, the other finds nothing to do.
+ */
 export function discardDraft(
   writer: TreeWriter,
   draft: string,
   by: Actor,
   command: string,
   only?: readonly string[],
+  options: { trash?: boolean } = {},
 ): string[] {
   assertNewCommand(writer.doc, command);
   const pending = pendingRecords(writer.doc, draft);
   const chosen = only ? dependents(pending, only) : new Set(pending.map((record) => record.id));
-  writer.transact(() => writer.settle(by, [...chosen], "discarded", { command }));
+  const trashed = options.trash
+    ? toTrash(
+        writer,
+        draft,
+        by,
+        command,
+        pending.filter((record) => chosen.has(record.id) && record.type === "create"),
+      )
+    : [];
+  writer.transact(() => {
+    writer.settle(by, [...chosen], "discarded", { command });
+    if (trashed.length > 0) recordsOf(writer.doc).push(trashed);
+  });
   return [...chosen];
+}
+
+/** The live records that put the nodes these drafted creates made in Trash, read before they are discarded. */
+function toTrash(
+  writer: TreeWriter,
+  draft: string,
+  by: Actor,
+  command: string,
+  creates: readonly TreeRecord[],
+): TreeRecord[] {
+  const view = writer.view({ draft });
+  const live = writer.view(LIVE);
+  // A node live already has (a restored Discard of a create applied before) is not the Work's to trash.
+  const going = new Set(
+    creates.flatMap((record) =>
+      placeIn(view.nodes, record.node) && !live.nodes.has(record.node) ? [record.node] : [],
+    ),
+  );
+  const tops = [...going].filter((id) => !going.has(view.nodes.get(id)?.parent as string));
+  const made: TreeRecord[] = [];
+  for (const top of tops) {
+    const held = descendantsOf(view, top).filter((id) => going.has(id));
+    for (const id of [top, ...held]) {
+      const node = view.nodes.get(id) as TreeNode;
+      const { actor } = creates.find((record) => record.node === id) as TreeRecord;
+      const parent =
+        id !== top || isSourceRoot(node.parent) || placeIn(live.nodes, node.parent)
+          ? node.parent
+          : sourceRoot(node.source);
+      made.push(
+        writer.prepare(LIVE, actor, {
+          type: "create",
+          node: id,
+          kind: node.kind,
+          name: node.name,
+          parent,
+          source: node.source,
+          rank: node.rank,
+          ...(node.filetype ? { filetype: node.filetype } : {}),
+          ...(node.provisional ? { provisional: true as const } : {}),
+          ...(node.aliases ? { aliases: node.aliases } : {}),
+          ...(node.hasProperties ? { hasProperties: true as const } : {}),
+          ...(node.blob ? { blob: node.blob } : {}),
+        }),
+      );
+    }
+    made.push(
+      writer.prepare(LIVE, by, { type: "delete", node: top, cascade: held }, { discards: command }),
+    );
+  }
+  return made;
 }
 
 /** Why a restored record would have nothing to act on: what it stands on is gone. */
@@ -591,6 +677,11 @@ export function discardedBy(doc: Y.Doc, discarded: string): DiscardedBy {
  * the Discard and `restoredBy` who restored it, while `actor` stays who drafted it. A
  * record whose node cannot be acted on once the copies are in (purged, or its create is not in
  * force and no copy brings it back) is left out. Once.
+ *
+ * What the Discard put in live's Trash (`discards`) comes back in live, not in the Work: each
+ * such delete is taken back while it stands (Trash's Restore lifts it too), and the drafted
+ * records on its nodes stay discarded. A press Undo never takes a created node out of live
+ * again, as for an Apply: that Undo would leave it in Trash. `back` is the restores written.
  */
 export function restoreDiscard(
   writer: TreeWriter,
@@ -598,11 +689,18 @@ export function restoreDiscard(
   by: Actor,
   draft: string,
   command: string,
-): { copies: TreeRecord[] } | "already" {
+): { copies: TreeRecord[]; back: TreeRecord[] } | "already" {
   const { doc } = writer;
   assertNewCommand(doc, command);
-  const { records, restored } = discardedBy(doc, discarded);
-  if (restored || records.length === 0) return "already";
+  const { records: settled, restored } = discardedBy(doc, discarded);
+  if (restored || settled.length === 0) return "already";
+  const trashed = viewRecords(doc, LIVE).filter(
+    (record) => record.type === "delete" && record.discards === discarded,
+  );
+  const inTrash = new Set(
+    trashed.flatMap((record) => (record.type === "delete" ? [record.node, ...record.cascade] : [])),
+  );
+  const records = settled.filter((record) => !inTrash.has(record.node));
   // The node a copy acts on stands in its Work's view, or the Discard held its create and the
   // copy of that brings it back.
   const view = writer.view({ draft });
@@ -634,11 +732,19 @@ export function restoreDiscard(
   const overridden = pendingRecords(doc, draft)
     .filter((pending) => copies.some((copy) => overrides(copy, pending)))
     .map((pending) => pending.id);
+  const back: TreeRecord[] = [];
   writer.transact(() => {
     writer.settle(by, overridden, "discarded", { command });
     recordsOf(doc).push(copies);
+    const answers = takeBackAll(
+      writer,
+      by,
+      trashed.map((record) => ({ id: record.id, view: LIVE })),
+    );
+    for (const answer of answers.values())
+      if (typeof answer === "object" && "id" in answer) back.push(answer);
   });
-  return { copies };
+  return { copies, back };
 }
 
 /** The records a command settled with one of these, and nothing since has settled again. */

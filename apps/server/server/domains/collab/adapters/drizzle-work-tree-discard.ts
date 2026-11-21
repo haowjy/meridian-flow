@@ -12,7 +12,8 @@ import { treeListsOfDraft } from "./drizzle-draft-tree-lists.js";
 /**
  * Settles the Work's pending tree records discarded, in every list it spans. With `documents`,
  * the records of those documents' items (and what stands on a node they create); without, all
- * of them. Returns the documents that had records, and the ones whose creation was discarded.
+ * of them. With `trash` (a press), what the Work created goes to live's Trash (`discardDraft`).
+ * Returns the documents that had records.
  */
 export async function discardTreeRecords(
   db: Database,
@@ -22,10 +23,10 @@ export async function discardTreeRecords(
     userId?: UserId;
     commandId: string;
     documents?: readonly DocumentId[];
+    trash?: boolean;
   },
-): Promise<{ had: Set<DocumentId>; created: Set<DocumentId> }> {
+): Promise<Set<DocumentId>> {
   const had = new Set<DocumentId>();
-  const created = new Set<DocumentId>();
   const by = input.userId ? `user:${input.userId}` : "system";
   const { result } = await deps.treeLists.submit({
     lists: await treeListsOfDraft(db, input.draftId),
@@ -44,6 +45,7 @@ export async function discardTreeRecords(
             by,
             input.commandId,
             items ? only.map((r) => r.id) : undefined,
+            { trash: input.trash === true },
           ),
         );
         // A discarded delete had what it covered in the Work's view, not what its author saw.
@@ -57,8 +59,7 @@ export async function discardTreeRecords(
   });
   for (const { record, covered } of result) {
     had.add(record.node as DocumentId);
-    if (record.type === "create") created.add(record.node as DocumentId);
     for (const id of covered) had.add(id as DocumentId);
   }
-  return { had, created };
+  return had;
 }

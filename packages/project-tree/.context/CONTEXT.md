@@ -241,6 +241,16 @@ the replay uses them (package `AGENTS.md`).
   nothing) is settled discarded under the restoring command, so restoring that command brings it
   back as a copy that wins in turn. Nothing is refused. A Discard restores once (`discardedBy(...).restored`); `discardedBy` lists what a
   Discard settled, for the press's Undo.
+- **What a Discard created goes to live's Trash** when the caller asks (`discardDraft(..., { trash:
+  true })`, the press; Work purge does not). Read before the settlement, from the Work's view:
+  each node a discarded create made, that the view places and live has never had, gets a live
+  create as the view shows it (the drafted create's `actor`; a topmost node whose folder is not in
+  live goes to the top of its source), and each topmost one a live delete by the discarder with
+  the rest as its `cascade` and `discards` naming the command (server only). Restoring the
+  Discard leaves the records on those nodes discarded and takes each such delete back
+  (`takeBackAll`, the restore Trash's Restore writes): the nodes come back in live, never pending
+  in the Work, since taking a live create back is itself a Trash entry while the Work would show
+  the node pending. A delete Trash already lifted answers `already`, so the two never act twice.
 - **Settlements carry `command`** when a command made them, so Undo of an Apply and the restore
   of a Discard select by it.
 - **Every read of the list goes through `readStored`.** `replay`, `listRecords` (what `viewRecords`,

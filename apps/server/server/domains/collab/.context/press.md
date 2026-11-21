@@ -27,13 +27,13 @@ chat has its draft from its creation, so a press never makes one.
   between.
 - **Tree half.** Apply is the tree Apply (`createApplyTreeOperations`, the same judge, locks and
   `apply_command_trees` rows as an Apply click). Discard is `discardTreeRecords`.
-- **Text half.** For each selected document that stands in Live after the tree half,
-  `pressStored` (agent-edit) runs `accept` or `reject({ draft })` as one Yjs transaction, appends
+- **Text half.** For each selected document (for Apply, each that stands in Live after the tree
+  half), `pressStored` (agent-edit) runs `accept` or `reject({ draft })` as one Yjs transaction, appends
   it to the Live journal as `human:<account>`, and stores in `press_text_effects` the blocks it
   changed, before and after (ProseMirror JSON, as an AI write's receipt stores its `delta`), and
   the verdict entries the resolve wrote (`suggestion_verdicts` keys, each with the id of the map
-  item holding it), so its Undo takes them back with the text. A document the press leaves out of Live
-  (a discarded create) keeps its text untouched.
+  item holding it), so its Undo takes them back with the text. A document a Discard puts in
+  Trash is rejected too, so a Restore brings it back without the draft's suggestions.
 - **`seen`.** The pressing tab's state vector of every live room with typing the server hasn't
   acknowledged (`unsentStateVectors`), checked first, after the lists' keys and before the selection is read:
   until Live holds them all, the press is `PressUnsynced` (503, nothing stored), and the command
@@ -50,15 +50,25 @@ chat has its draft from its creation, so a press never makes one.
 - Lock order is the Apply click's: Works, draft, lists, documents in id order, then writes.
   Deliveries and the derivation hook run after commit.
 
-## Discard is not in Trash
+## Discard, and what goes to Trash
 
 A Discard rejects suggestions as Apply accepts them, and settles the Work's tree records
-discarded; Trash has no entry for it. Its only Undo is the press's `unpress`, as Apply's is, sent
+discarded; Trash has no entry for that. Its Undo is the press's `unpress`, as Apply's is, sent
 from the tab that pressed it: the notice's Undo, the sidebar's Undo step and Ctrl+Z in an open
-editor share one send. After a reload nothing offers it, and what it took is gone: the writer's own
-typing in the Work's view, and a document the Work created (no view shows it, and
-`purgeUnviewed` releases its content). That is the chosen cost: keeping it would need a store of
-its own.
+editor share one send. After a reload nothing offers it, and the writer's own typing in the Work's
+view that it rejected is gone. That is the chosen cost: keeping it would need a store of its own.
+
+A document or folder the Work created is a whole document, not a change, so a Discard puts it in
+Trash (`discardDraft` with `trash`): it is created in Live where the Work's view showed it (a
+child whose created folder stays in the Work lands at the top of its source), and deleted there by
+the presser, the topmost node taking what the Work put inside it. The delete names the press
+(`discards`), and the press's Undo is the Undo of that delete (`restoreDiscard`): the same restore
+record Trash's Restore writes, so whichever comes first, the other finds the delete lifted and does
+nothing. Either way the document comes back in Live, not in the Work: as on Undo of an Apply, a
+press never takes a created document out of Live again, because that delete would itself be a
+Trash entry while the Work showed the document pending. So Redo (pressing Discard again) leaves it
+standing: the Work no longer holds it. Work purge passes no `trash`: a purged Work's documents
+leave every view and `purgeUnviewed` releases them.
 
 ## Work purge
 
@@ -92,7 +102,7 @@ says it was resolved. It reads no deleted item: a checkpoint drops their content
 outlives a version restore too. The tab's Apply and Reject inside the text are a resolve on the
 editor's Y.Doc, undone by Ctrl+Z from the editor's own history. An effect whose notes are closed
 is marked taken back without changing its text. A document the press created stays in Live on
-Undo of Apply. There is no Redo command: pressing again is the Redo. Press and unpress rows are
+Undo of Apply, and one a Discard put in Trash comes back in Live on its Undo. There is no Redo command: pressing again is the Redo. Press and unpress rows are
 purged with discards after 30 days.
 
 ## The pending index
@@ -108,10 +118,9 @@ it only where its cut is current, and read the room for the rest.
 
 A document that exists only in a Work is the tree's drafted create; its text is plain in Live,
 not suggestions (`model-edit-write.ts`, `existsOnlyIn`). Applying the create makes it
-visible; discarding it hides it. The browser opens it in its Live room as plain text: the
-project's list does not have it, so the opener admits it as the Work's (`workOnly`) and the Yjs
-gateway admits the room through `documentSync.draftsHolding`. The tab follows the Work's row, so
-a Discard closes the room and its Undo opens it again.
+visible; a press's Discard puts it in Trash. The browser opens it in its Live room as plain text:
+the project's list does not have it, so the opener admits it as the Work's (`workOnly`) and the
+Yjs gateway admits the room through `documentSync.draftsHolding`.
 
 ## Not covered yet
 
