@@ -1,12 +1,6 @@
 import type { Cursor, LoroEventBatch, LoroMap } from "loro-crdt";
 import { Fragment, Slice } from "prosemirror-model";
-import {
-  type EditorState,
-  Plugin,
-  type StateField,
-  TextSelection,
-  type Transaction,
-} from "prosemirror-state";
+import { type EditorState, Plugin, type StateField, TextSelection } from "prosemirror-state";
 import type { EditorView } from "prosemirror-view";
 
 import { attachCompositionHold } from "./composition-hold";
