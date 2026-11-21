@@ -10,7 +10,17 @@
  */
 import { type Work, type WorkLifecycleState, workLifecycleState } from "@meridian/contracts/works";
 import { LIVE, pendingRecords } from "@meridian/project-tree";
-import { createContext, type ReactNode, useCallback, useContext, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
+import { enterScope } from "@/client/project-shell/document-views";
 import { useTreeVersionChoice, writeTreeVersionChoice } from "@/client/project-shell/store";
 import { useOwnerDrafts } from "@/client/query/useOwnerDrafts";
 import { useTreeList } from "@/client/query/useProjectTree";
@@ -90,6 +100,17 @@ export function TreeVersionProvider({
 }) {
   const accountId = useAccountId();
   const { draftId, work } = useScopeDraftOwner(projectId, chatThreadId);
+  // Whose drafts the scope shows changed hands: pages leave the drafts of the owner before
+  // (`enterScope`). "" is no owner known yet (no chat on screen, or its row still loading), which
+  // changes nothing. A layout effect, so the address's arrival after it in this commit wins.
+  const queryClient = useQueryClient();
+  const owner = useRef(draftId);
+  useLayoutEffect(() => {
+    if (!draftId) return;
+    if (owner.current && owner.current !== draftId)
+      enterScope(queryClient, accountId, projectId, draftId);
+    owner.current = draftId;
+  }, [queryClient, accountId, projectId, draftId]);
   const drafts = useOwnerDrafts(projectId, draftId);
   const { draftId: listedDraft, fileForDocument } = drafts;
   const project = useTreeList({ kind: "project", projectId });

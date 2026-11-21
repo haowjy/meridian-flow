@@ -146,30 +146,39 @@ export function setDocumentView(
 }
 
 /**
- * A Work pick: a view on one of the picked Work's drafts (`draftId`) stays on it; every other
- * view showing a draft returns to Live.
- * Returns whether a page live also has stayed on the Work's draft: the toggle then lands on Draft,
- * because the scope's drafts of such pages show only on Draft (`shownDraft`).
+ * The scope's draft owner became `draftId` (a Work pick, or under No Work another chat on
+ * screen): a view on one of its drafts stays on it, and so does a view on a document only its
+ * draft holds (Live has no version of it to return to); every other view showing a draft returns
+ * to Live, so no page keeps a draft, or a change focused in one, from the scope before.
+ * Returns whether a page stayed on the new owner's draft: a Work pick then puts the toggle on
+ * Draft, because the scope's drafts of such pages show only on Draft (`shownDraft`).
  */
-export function pickWorkViews(
+export function enterScope(
+  queryClient: QueryClient,
   accountId: string,
   projectId: string,
   draftId: string | null,
 ): boolean {
   const views = read(accountId, projectId);
   let changed = false;
-  let onWorkDraft = false;
+  let onScopeDraft = false;
   const next: Record<string, DocumentView> = {};
   for (const [documentId, view] of Object.entries(views)) {
-    const onWork = draftId !== null && view.pin?.draftId === draftId;
-    onWorkDraft ||= onWork;
-    if (view.version === "draft" && !onWork) {
+    const { pin } = view;
+    const onScope = draftId !== null && pin?.draftId === draftId;
+    onScopeDraft ||= onScope;
+    const created =
+      pin !== undefined &&
+      (cachedOwnerDrafts(queryClient, projectId, pin.draftId) ?? []).some(
+        (row) => row.itemKey === pin.itemKey && row.isNew,
+      );
+    if (view.version === "draft" && !onScope && !created) {
       changed = true;
       if (!view.showChanges) next[documentId] = { version: "live", showChanges: false };
     } else next[documentId] = view;
   }
   if (changed) write(accountId, projectId, next);
-  return onWorkDraft;
+  return onScopeDraft;
 }
 
 /**
