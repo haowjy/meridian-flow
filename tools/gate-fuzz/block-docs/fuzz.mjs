@@ -1,4 +1,5 @@
-// Seeded scripts against the block-docs model. This is under construction.
+// Seeded scripts against the block-docs model. `--seed N` replays one script; with GATE_TRACE=1 it prints,
+// after each step, every block where Live (L), the fork (F) and the Draft tab (T) differ, and the fork's overrides.
 import {Gen, randomEdit, TOKEN} from '../gen.mjs';
 import * as C from './codec.mjs';
 import * as M from './model.mjs';
@@ -20,7 +21,10 @@ const blockValues=(d)=>{
 };
 export function runScript(seed,{verbose=false}={}) {
   C.resetIds();const g=new Gen(seed), all=[], stats={edits:0,presses:0,pressUndos:0,resets:0,resetUndos:0,discards:0,discardUndos:0,restores:0,ctrlz:0,liveEdits:0,stale:0,lateDraft:0,unsyncedLive:0,boundarySameMarked:0,boundaryDisagree:0,boundarySampled:0,markerSplit:0,tokenSplit:0,resetCopyObserved:0,aiLazyForks:0,aiCreated:0,structureAfter:0,undoReapply:0,matchingChecks:0,kinds:{}}, outcomes=[],log=[];
-  const note=(s)=>{log.push(s);if(verbose)console.log(s)};
+  const row=(d,id)=>d&&visible(d.structure).has(id)?`${value(d.structure,'node',id)}<${value(d.structure,'parent',id)?.slice(0,4)??'-'}|${String(value(d.structure,'order',id)).slice(0,3)}>${JSON.stringify(attributes(d.structure,id))}[${d.texts.get(id)?.getText('t').toDelta().map(r=>r.attributes?`{${r.insert}:${Object.keys(r.attributes)}}`:r.insert).join('')??''}]`:'·';
+  const trace=()=>{const all=new Set();for(const d of [live,fork,tab])if(d)for(const id of visible(d.structure))all.add(id);for(const id of [...all].sort()){const l=row(live,id),f=row(fork,id),t=row(tab,id);if(l!==f||f!==t)console.log(`     ${id.slice(0,4)} L ${l}\n          F ${f}${t!==f?`\n          T ${t}`:''}`);}};
+  const overrides=()=>fork?['parent','order','node','attrs','comments'].flatMap(n=>[...fork.structure.getMap('d.'+n).entries()].map(([k,v])=>`${n}:${k.slice(0,4)}${k.includes('/')?k.slice(k.indexOf('/')):''}=${JSON.stringify(v)?.slice(0,12)}`)).join(' '):'';
+  const note=(s)=>{log.push(s);if(verbose){console.log(s);if(process.env.GATE_TRACE){trace();console.log('     overrides:',overrides());}}};
   const make=(peer)=>{const d=C.newDocument(peer);all.push(d);return d};
   const forkOf=(d,peer,draft=d.draft)=>{const f=C.forkDocument(d,peer,draft);all.push(f);return f};
   let peer=100;const next=()=>String(++peer);
@@ -51,11 +55,11 @@ export function runScript(seed,{verbose=false}={}) {
 
   function liveEdit(structure=g.chance(.3)){userEdit(liveTab,'l',{structure});stats.liveEdits++;if(g.chance(.8))syncLive();}
   function writerEdit(){ensure();const before=render(tab),r=userEdit(tab,'f');stats.edits++;
-    if(r?.changed.length&&g.chance(.18)){for(const rec of r.changed)M.invertCommit(rec.doc,rec.before,rec.after,next(),'ctrlz');stats.ctrlz++;check(render(tab)===before,'ctrlz','tab not back to before edit');}
+    if(r?.changed.length&&g.chance(.18)){for(const rec of r.changed)M.invertCommit(rec.doc,rec.before,rec.after,next(),'ctrlz');stats.ctrlz++;note('  CTRLZ');check(render(tab)===before,'ctrlz','tab not back to before edit');}
     if(g.chance(.6))syncTab();}
   function aiTurn(n){ensure();syncTab();const before=M.frontiers(fork),shadow=forkOf(fork,next()),work=C.lazyTurn(fork,next());
     try{for(let i=0;i<n;i++){userEdit(work,'a',{message:'turn'});stats.edits++;}stats.aiLazyForks+=work.forkTimes.size;stats.aiCreated+=work.ownedTexts.size-work.forkTimes.size;M.forward(work,fork);}finally{C.freeDocument(work);}setPeer(fork,next());M.forward(fork,tab);const turn={before,shadow};activeTurns.push(turn);return turn;}
-  function restore(turn){syncTab();M.forward(live,fork);M.forward(live,turn.shadow);const expected=render(turn.shadow),oldBlocks=blockValues(fork);M.restoreBeforeOnLive(live,fork,turn.before);M.forward(fork,tab);stats.restores++;const now=blockValues(fork),changed=[...new Set([...oldBlocks.keys(),...now.keys()])].filter(id=>oldBlocks.get(id)!==now.get(id));structureAfter(changed);check(render(fork)===expected,'restore',`fork differs from pre-turn state on Live: expected ${expected}, got ${render(fork)}`);}
+  function restore(turn){syncTab();M.forward(live,fork);M.forward(live,turn.shadow);const expected=render(turn.shadow),oldBlocks=blockValues(fork);M.restoreBeforeOnLive(live,fork,turn.before);M.forward(fork,tab);stats.restores++;note('  RESTORE');const now=blockValues(fork),changed=[...new Set([...oldBlocks.keys(),...now.keys()])].filter(id=>oldBlocks.get(id)!==now.get(id));structureAfter(changed);check(render(fork)===expected,'restore',`fork differs from pre-turn state on Live: expected ${expected}, got ${render(fork)}`);}
   function markerAttrs(d,id,token){const delta=d.texts.get(id).getText('t').toDelta(),text=delta.map(p=>p.insert).join(''),start=text.indexOf(token);if(start<0)return null;let offset=0;const attrs=[];for(const span of delta){for(let i=0;i<span.insert.length;i++,offset++)if(offset>=start&&offset<start+token.length)attrs.push(span.attributes??{});}return attrs;}
   function typeIn(d,id,token) {let position=null;C.read(d).descendants((node,pos)=>{if(node.isTextblock && node.attrs.id===id)position=pos+node.nodeSize-1;});if(position===null)return false;C.edit(d,tr=>tr.insertText(' '+token+' ',position),{rng:g.rng});return true;}
   function press(){syncLive();syncTab();const pending=M.changedBlocks(live,fork);if(!pending.length)return null;
@@ -64,25 +68,25 @@ export function runScript(seed,{verbose=false}={}) {
     const late=leaf?forkOf(fork,next()):null, draftToken=`x${seed}0${stats.presses}k`, liveToken=`y${seed}0${stats.presses}k`;
     const lateTyped=late&&typeIn(late,leaf,draftToken);
     const liveTyped=leaf&&typeIn(liveTab,leaf,liveToken);
-    const r=M.applyBlocks(live,fork,chosen);stats.presses++;check(render(fork)===fbefore,'apply','fork changed during Apply');
+    const r=M.applyBlocks(live,fork,chosen);stats.presses++;note(`  PRESS ${chosen.map(x=>x.slice(0,4))} -> ${r.chosen.map(x=>x.slice(0,4))}`);check(render(fork)===fbefore,'apply','fork changed during Apply');
     for(const id of chosen)check(!M.changedBlocks(live,fork).includes(id),'apply',`block ${id} still pending after Apply: live ${blockValues(live).get(id)} fork ${blockValues(fork).get(id)}`);
     structureAfter(r.chosen);const newBlocks=blockValues(live);for(const [id,b] of oldBlocks)if(!r.chosen.includes(id)&&newBlocks.has(id))check(b===newBlocks.get(id),'apply',`unchosen block ${id} changed`);
     check(M.applyBlocks(live,fork,chosen).changed.length===0,'apply','applying again was not a no-op');
     if(liveTyped){syncLive();stats.unsyncedLive++;const left=markerAttrs(live,leaf,liveToken),right=markerAttrs(fork,leaf,liveToken);if(left&&right){stats.boundarySampled++;if(!M.same(left,right))stats.boundaryDisagree++;else if(left.some(a=>Object.keys(a).some(k=>k.startsWith('comment_'))))stats.boundarySameMarked++;}const contains=(d)=>{const text=d.texts.get(leaf).getText('t').toString();let i=0;for(const ch of text)if(ch===liveToken[i])i++;return i===liveToken.length;};if(!left||!right)stats.markerSplit++;check(contains(live)&&contains(fork),'unsynced-live',`unsynced ${liveToken}: live ${JSON.stringify(tokenBlocks(live).get(liveToken))} fork ${JSON.stringify(tokenBlocks(fork).get(liveToken))} block live ${blockValues(live).get(leaf)} fork ${blockValues(fork).get(leaf)}`);}
     if(lateTyped){M.forward(late,fork);stats.lateDraft++;check(fork.texts.get(leaf).getText('t').toString().includes(draftToken)&&M.changedBlocks(live,fork).includes(leaf),'late-draft','typing after Apply not pending');touched.add(leaf);M.forward(fork,tab);}
     return {r,before,fbefore,chosen,liveTyped};}
-  function undoPress(p,liveSince){syncTab();M.forward(live,fork);const fb=render(fork);
-    for(const rec of p.r.changed){const bytes=M.invertCommit(rec.doc,rec.before,rec.after,next(),'undo press');if(rec.id!==null)M.returnToPending(fork.texts.get(rec.id),bytes);}for(const rec of p.r.forkChanged??[])M.invertCommit(rec.doc,rec.before,rec.after,next(),'undo override');M.forward(live,fork);
-    M.forward(live,liveTab);M.forward(fork,tab);stats.pressUndos++;undoCheck(p.r.chosen);
+  function undoPress(p,liveSince){syncTab();M.forward(live,fork);const fb=render(fork);note('  undo-press: start');
+    for(const rec of p.r.changed){const bytes=M.invertCommit(rec.doc,rec.before,rec.after,next(),'undo press');note(`  undo-press: inverted ${rec.id?.slice(0,4)??'structure'}`);if(rec.id!==null){M.returnToPending(fork.texts.get(rec.id),bytes);note(`  undo-press: returned ${rec.id.slice(0,4)}`);}}for(const rec of p.r.forkChanged??[]){M.invertCommit(rec.doc,rec.before,rec.after,next(),'undo override');note('  undo-press: inverted fork override');}M.forward(live,fork);note('  undo-press: forwarded');
+    M.forward(live,liveTab);M.forward(fork,tab);stats.pressUndos++;note('  UNDO PRESS');undoCheck(p.r.chosen);
     check(render(fork)===fb,'press-undo','fork changed by press Undo');if(!liveSince)check(render(live)===p.before,'press-undo','Live not back to before Apply');}
   function reset(all=false){syncTab();const p=M.changedBlocks(live,fork);if(!p.length)return null;const chosen=all?'all':[g.pick(p)],before=render(fork),pendingBefore=new Set(touched),oldBlocks=blockValues(fork),oldTextTokens=new Map([...fork.texts].map(([id,d])=>[id,new Set(d.getText('t').toString().match(TOKEN)??[])]));
-    const r=M.resetBlocks(live,fork,chosen,all?'discard':'reset');M.forward(fork,tab);if(all)stats.discards++;else stats.resets++;
+    const r=M.resetBlocks(live,fork,chosen,all?'discard':'reset');M.forward(fork,tab);note(`  ${all?'DISCARD':'RESET '+chosen.map(x=>x.slice(0,4))} -> ${r.chosen.map(x=>x.slice(0,4))}`);if(all)stats.discards++;else stats.resets++;
     if(all)check(render(fork)===render(live),'discard','fork differs from Live');else for(const id of chosen)check(!M.changedBlocks(live,fork).includes(id),'reset',`block ${id} still pending: live ${blockValues(live).get(id)} fork ${blockValues(fork).get(id)}`);
     const restoredDocs=new Set(r.changed.filter(x=>x.id!==null).map(x=>x.id));for(const id of restoredDocs){const before=oldTextTokens.get(id)??new Set(),after=fork.texts.get(id)?.getText('t').toString().match(TOKEN)??[],onLive=new Set(live.texts.get(id)?.getText('t').toString().match(TOKEN)??[]);for(const token of after)if(!before.has(token)&&onLive.has(token))resetRestored.set(token,id);}
     structureAfter(r.chosen);const newBlocks=blockValues(fork);for(const [id,b] of oldBlocks)if(!r.chosen.includes(id)&&newBlocks.has(id))check(b===newBlocks.get(id),'reset',`unchosen block ${id} changed`);
     for(const id of r.chosen)touched.delete(id);return {r,before,pendingBefore};}
   function undoReset(rec,kind,checkBefore=true){syncTab();for(const x of rec.r.changed)if(x.id!==null){for(const [token,id] of resetRestored)if(id===x.id)resetRestored.delete(token);}for(const x of rec.r.changed)M.invertCommit(x.doc,x.before,x.after,next(),`undo ${kind}`);M.forward(fork,tab);
-    for(const id of rec.pendingBefore)touched.add(id);if(kind==='reset')stats.resetUndos++;else stats.discardUndos++;if(checkBefore)check(render(fork)===rec.before,`${kind}-undo`,'fork not back to before reset');}
+    note(`  UNDO ${kind}`);for(const id of rec.pendingBefore)touched.add(id);if(kind==='reset')stats.resetUndos++;else stats.discardUndos++;if(checkBefore)check(render(fork)===rec.before,`${kind}-undo`,'fork not back to before reset');}
   try {
     C.write(live,C.withIds(g.initialDoc(),g.rng),{rng:g.rng,message:'init'});
     if(g.chance(.6)){const e=randomEdit(g,C.read(live),'s',{structure:false});if(e?.kind==='comment'||e?.kind==='comment2'){for(const [id,b] of e.comments)live.structure.getMap('comments').set(id,b);C.edit(live,e.build,{rng:g.rng});live.structure.commit();}}
