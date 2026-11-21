@@ -133,7 +133,7 @@ export async function handleDraftListRequest(
   input: { projectId: ProjectId; draft: string; userId: UserId },
 ): Promise<ThreadDraftListResponse> {
   const { draft, stored } = await draftOfProject(deps, input);
-  if (!stored) return { items: [], draftId: draft, folders: [], saw: {} };
+  if (!stored) return { items: [], folders: [], saw: {} };
   const listed = await deps.documentSync.draftReview.listItems({ draft });
   // Readable in the draft's view, where its created documents are (file-access §6); a
   // document deleted live is no longer readable anywhere, but stays the draft's item.
@@ -160,7 +160,6 @@ export async function handleDraftListRequest(
   );
   return {
     items: visible.map((item) => toWireItem(item, listed.threadTitles)),
-    draftId: listed.draftId,
     folders: listed.folders,
     saw: listed.saw,
   };

@@ -139,11 +139,6 @@ export interface DocumentDraftHintsResponse {
 
 export interface ThreadDraftListResponse {
   items: ThreadDraftListItem[];
-  /**
-   * The draft listed: the `draft` its tree records carry, which the browser replays as the
-   * draft's tree (a change to a folder alone lists no item).
-   */
-  draftId: DraftId;
   /** The folders the Work's tree changes (it has a row on). */
   folders: { id: string }[];
   /**

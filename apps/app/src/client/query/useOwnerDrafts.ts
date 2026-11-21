@@ -113,7 +113,7 @@ export function useOwnerDraftList(projectId: string, owner: string, enabled: boo
   });
   const created = useCreatedDrafts(
     projectId,
-    enabled ? (query.data?.draftId ?? null) : null,
+    enabled && query.data ? owner : null,
     query.data?.items,
   );
   const tab = useTabChangeCounts();
@@ -196,6 +196,6 @@ export function useOwnerDrafts(
     drafts: result.data,
     files,
     fileForDocument,
-    draftId: query.data?.draftId ?? null,
+    draftId: query.data ? owner : null,
   };
 }

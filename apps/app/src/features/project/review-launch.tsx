@@ -225,15 +225,14 @@ export function useOpenCreatedDocument(): (
 ) => Promise<void> {
   const shell = useShellTreeVersion();
   const { openAiDraft } = useAiDraftLauncher();
-  const shownDraft = shell?.version.view.draft ?? null;
-  const draftId = shell?.draftId ?? null;
+  const shown = shell?.version.view.draft ?? null;
   return useCallback(
     async (document, live, opened) => {
-      if (!shownDraft || !draftId) return live();
+      if (!shown) return live();
       openAiDraft({
-        draftId,
+        draftId: shown,
         documentId: document.documentId,
-        itemKey: draftItemKey(shownDraft as DraftId, document.documentId as DocumentId),
+        itemKey: draftItemKey(shown as DraftId, document.documentId as DocumentId),
         contextLocation: document.contextLocation,
         documentName: document.documentName,
         draftOnly: true,
@@ -241,7 +240,7 @@ export function useOpenCreatedDocument(): (
       });
       opened?.();
     },
-    [shownDraft, draftId, openAiDraft],
+    [shown, openAiDraft],
   );
 }
 

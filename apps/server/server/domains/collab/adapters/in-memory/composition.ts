@@ -277,8 +277,8 @@ function createInMemoryDraftStub(): CollabDrafts {
       async list() {
         return [];
       },
-      async listItems({ draft }) {
-        return { draftId: draft, items: [], folders: [], threadTitles: new Map(), saw: {} };
+      async listItems() {
+        return { items: [], folders: [], threadTitles: new Map(), saw: {} };
       },
       async pendingDocumentCount() {
         return 0;

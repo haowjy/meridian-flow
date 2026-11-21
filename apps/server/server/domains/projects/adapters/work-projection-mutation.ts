@@ -1,6 +1,6 @@
 /**
  * The application mutation boundary for Works: the one owner of Work-first lock order for
- * every lifecycle or structural write that holds a Work's draft, draft or document row, which
+ * every lifecycle or structural write that holds a Work's draft row, draft-tree row or document row, which
  * is how those writes order themselves against the Work's lifecycle transitions, and the
  * canonical transaction participant for every mutation visible in a Works snapshot. It owns
  * the Work's stored pending count (the badge): every Work a transaction locks through it is
@@ -71,7 +71,7 @@ export type WorkProjectionMutation = {
   /**
    * Owner-first order: the set's Works locked `FOR NO KEY UPDATE` in id order, then its
    * lineages' draft-owner locks in root order, in the caller's transaction, before it takes any
-   * draft, draft or document row. At commit each locked owner's drafts are recounted and
+   * draft row, draft-tree row or document row. At commit each locked owner's drafts are recounted and
    * stored; a Work whose total moved gets a revision, and it and every draft whose count moved
    * wake their owner with a `draft-hint`; unmoved counts get neither. Apart from the owners'
    * own lifecycle writers, nothing else in collab or projects locks an owner for a write.
@@ -410,8 +410,8 @@ export function createWorkProjectionMutation(input: {
         input.draftOwnerHints.publishDraftHints([draftHint(work.projectId, work.draftId)]);
     },
     /**
-     * The set's Works locked before `operation` takes any draft or draft row, so every
-     * structural draft write enters Work, then draft, then draft, the order Archive takes.
+     * The set's Works locked before `operation` takes any draft or draft-tree row, so every
+     * structural draft write enters Work, then draft row, then draft-tree rows, the order Archive takes.
      */
     mutate(set, operation, options) {
       return runInDrizzleTransaction(input.db, async () =>

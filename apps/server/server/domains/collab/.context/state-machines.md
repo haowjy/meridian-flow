@@ -1,7 +1,7 @@
 # Collab state machines
 
-The status columns collab owns. A draft holds one owner's pending tree records; a Work's text
-draft is its suggestion marks in Live, which have no status of their own.
+The status columns collab owns. A draft's tree records are rows; its text changes are suggestion
+marks in Live, which have no status of their own.
 
 ## Press text effect
 

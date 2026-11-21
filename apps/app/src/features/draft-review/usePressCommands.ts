@@ -131,10 +131,10 @@ export function usePressCommands({
      */
     const placementOf = (nodes: readonly string[]): Placement => {
       if (!treeLists) return [];
-      const listedDraft = queryClient.getQueryData<ThreadDraftListResponse>(
+      const listed = queryClient.getQueryData<ThreadDraftListResponse>(
         projectQueryKeys.drafts(projectId, draftId),
-      )?.draftId;
-      const view = listedDraft ? { draft: listedDraft } : LIVE;
+      );
+      const view = listed ? { draft: draftId } : LIVE;
       const project: TreeListRef = { kind: "project", projectId };
       const placement = [project, treeLists.account].flatMap((list) => {
         const handle = treeLists.acquire(list);
@@ -244,10 +244,10 @@ export function usePressCommands({
       const rowKeys = rows().flatMap((item) =>
         nodes.includes(item.documentId) ? [item.itemKey] : [],
       );
-      const folders = listed?.draftId
+      const folders = listed
         ? nodes
             .filter((node) => !rows().some((item) => item.documentId === node))
-            .map((node) => folderKey(listed.draftId as string, node))
+            .map((node) => folderKey(draftId, node))
         : [];
       // Discard all takes folders with only a tree change too: they have no row.
       const placement = placementOf(

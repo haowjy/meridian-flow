@@ -267,7 +267,7 @@ export type JournalEventType =
   | "credits.consumed"
   | "credits.exhausted"
   | "thread.created"
-  | "thread.drafted"
+  | "thread.branched"
   | "notification.delivered"
   | "file.written";
 

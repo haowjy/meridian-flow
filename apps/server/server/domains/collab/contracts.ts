@@ -402,7 +402,6 @@ export type DraftReviewApi = {
   list(input: { draft: DraftId }): Promise<ModelDraftRow[]>;
   /** The review list route's one read: the draft's listed items with live text tokens. */
   listItems(input: { draft: DraftId }): Promise<{
-    draftId: DraftId;
     items: DraftReviewItem[];
     /** The folders the draft has a row on. */
     folders: { id: string }[];

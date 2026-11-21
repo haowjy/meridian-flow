@@ -47,7 +47,7 @@ export type DocumentLinkAnswer =
         file?: { fileType: string; mimeType: string | null; sizeBytes: number | null };
       };
       inDraft: boolean;
-      /** Present iff `inDraft`: the draft containing the draft the chip opens (the reader's own if it uses it, else the oldest). */
+      /** Present iff `inDraft`: the draft holding the document the chip opens (the reader's own if it uses it, else the oldest). */
       draft?: { draftId: DraftId };
       /** An ahead ref answered through its settlement: it never answers by address again. */
       settled?: true;

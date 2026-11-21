@@ -50,7 +50,7 @@ export function createWorkDraftReviewService(input: {
           ...new Set(items.flatMap((item) => item.actorThreadIds)),
         ]);
         const folders = await input.folderIds(draftId);
-        return { draftId, items, folders, threadTitles, saw };
+        return { items, folders, threadTitles, saw };
       },
       pendingDocumentCount: (projectId) => input.pending.countPendingInProject(projectId),
       draftsChangingDocument: (command) => input.pending.listDraftsChangingDocument(command),

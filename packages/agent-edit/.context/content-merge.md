@@ -66,8 +66,8 @@ not list, or lists one it does not fire.
 
 | Rule | What it does | Code | Case |
 |---|---|---|---|
-| `draft-wins-text` | Both sides changed the same words differently: the draft's text stands. Covers a rewrite against a delete, and two insertions at one point that are versions of one text (each has words of its own, fewer than the words they share: the draft's copy of words live cut and then restored, with one changed; the union would read "bright dim") | the clash draft of `merge.ts` | `word-conflict`, `replace-vs-delete` |
-| `whole-block-unit` | A figure or table is one token, so a change on both sides is one clash and the draft's whole block stands | same draft | `table-column-vs-row` |
+| `draft-wins-text` | Both sides changed the same words differently: the draft's text stands. Covers a rewrite against a delete, and two insertions at one point that are versions of one text (each has words of its own, fewer than the words they share: the draft's copy of words live cut and then restored, with one changed; the union would read "bright dim") | the clash branch of `merge.ts` | `word-conflict`, `replace-vs-delete` |
+| `whole-block-unit` | A figure or table is one token, so a change on both sides is one clash and the draft's whole block stands | same branch | `table-column-vs-row` |
 | `containers-merged` | Both sides changed a table kept as the same shape: rows and cells merge one by one, at every depth. Falls back to `whole-block-unit` when the shapes differ or the result is not a rectangle | `mergeContainers` | `table-cells` |
 | `draft-wins-stretch` | One side removed a block the other changed, or both changed which blocks are at one place (a split, a join, a move-in): the draft's blocks stand there | `settleStretches` in `stretch.ts` | `id-far-addition` |
 | `block-attributes-merged` | A block both sides kept takes each attribute from the side that changed it, the draft's where both did | `mergeAttributes` | `heading-vs-heading` |
