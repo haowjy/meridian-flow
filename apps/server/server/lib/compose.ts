@@ -1547,7 +1547,12 @@ export function createInMemoryAppServices(
     expireAsks: () => asks.expireDue(),
   };
 
-  const documentSync: CollabDomain = createInMemoryCollabDomain();
+  // No Works in memory: a lineage's root chat is the only row that names a draft.
+  const documentSync: CollabDomain = createInMemoryCollabDomain(async (owner) => {
+    if (owner.kind !== "lineage") return null;
+    const root = await threadRepos.threads.findByIdIncludingDeleted(owner.rootThreadId);
+    return root?.draftId ? { id: root.draftId, projectId: root.projectId } : null;
+  });
   const unavailableWorkContext: WorkContextReader = {
     async renderForThread() {
       throw new Error("in-memory Work context is not configured");

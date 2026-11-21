@@ -9,7 +9,7 @@
  * Canonical history stays in the server admission/turn records.
  */
 
-import { isDraftId } from "@meridian/contracts";
+import { isDraftId, newDraftId } from "@meridian/contracts";
 import type { AgentSelection } from "@meridian/contracts/agents";
 import {
   readRunState,
@@ -188,7 +188,6 @@ function parseSubmission(value: unknown): ChatSubmission | null {
     (!isObject(creation) ||
       typeof value.projectId !== "string" ||
       typeof creation.title !== "string" ||
-      !isDraftId(creation.draftId) ||
       (creation.workId !== null && typeof creation.workId !== "string") ||
       !isAiWriteMode(creation.workAiWriteMode) ||
       (creation.aiWriteMode !== undefined && !isAiWriteMode(creation.aiWriteMode)) ||
@@ -229,6 +228,8 @@ function parseSubmission(value: unknown): ChatSubmission | null {
       ? {
           creation: {
             ...(creation as Omit<NonNullable<ChatSubmission["creation"]>, "overrides">),
+            // A record an older build stored has no draft id: the chat it creates gets one now.
+            draftId: isDraftId(creation.draftId) ? creation.draftId : newDraftId(),
             // A record from before the pair was one field parses to no overrides.
             overrides: threadOverridesSchema.safeParse(creation.overrides).data ?? NO_OVERRIDES,
           },

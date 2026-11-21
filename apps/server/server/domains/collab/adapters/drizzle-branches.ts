@@ -78,12 +78,6 @@ export function createDrizzleBranchStore(db: Database): BranchStore {
         );
       return named.flatMap((entry) => (entry.id ? [entry.id] : []));
     },
-    async delete(draftIds) {
-      if (draftIds.length === 0) return;
-      await tx()
-        .delete(drafts)
-        .where(inArray(drafts.id, [...draftIds]));
-    },
   };
 }
 

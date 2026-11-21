@@ -287,7 +287,9 @@ BEGIN
   ELSE
     names_draft := NEW.root_thread_id = NEW.id;
   END IF;
-  IF NOT names_draft THEN
+  -- A retried create whose row exists conflicts or does nothing: it mints nothing.
+  IF NOT names_draft OR EXISTS (SELECT 1 FROM works WHERE id = NEW.id)
+    OR EXISTS (SELECT 1 FROM threads WHERE id = NEW.id) THEN
     RETURN NEW;
   END IF;
   IF NEW.draft_id IS NULL THEN
@@ -302,6 +304,11 @@ BEGIN
   SELECT project_id INTO draft_project FROM drafts WHERE id = NEW.draft_id;
   IF draft_project <> NEW.project_id THEN
     RAISE EXCEPTION 'draft % belongs to another project', NEW.draft_id USING ERRCODE = 'check_violation';
+  END IF;
+  -- One row names a draft: the two unique columns cannot see each other.
+  IF EXISTS (SELECT 1 FROM works WHERE draft_id = NEW.draft_id)
+    OR EXISTS (SELECT 1 FROM threads WHERE draft_id = NEW.draft_id) THEN
+    RAISE EXCEPTION 'draft % is named by another row', NEW.draft_id USING ERRCODE = 'unique_violation';
   END IF;
   RETURN NEW;
 END;

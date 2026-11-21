@@ -63,16 +63,21 @@ async function requireProjectOwned(
  * The draft a request names, of this project. A deleted Work's draft still reads until the Work
  * is purged, which deletes the draft: it stays picked, with Restore.
  */
-export async function requireDraft(
+/**
+ * The draft, if it is this project's. A browser mints a draft id with the Work or chat it creates
+ * and reads its list before the create lands, so a list answers an id not stored yet as empty
+ * (`stored: false`); a press needs the stored draft.
+ */
+async function draftOfProject(
   deps: Pick<BranchRouteServices, "projects" | "documentSync">,
   input: { projectId: ProjectId; draft: string; userId: UserId },
-): Promise<DraftId> {
+): Promise<{ draft: DraftId; stored: boolean }> {
   await requireProjectOwned(deps, input);
   if (!isDraftId(input.draft)) throw createError({ statusCode: 400, message: "Invalid draft" });
   const found = await deps.documentSync.branches.ownerOf(input.draft);
-  if (found?.branch.projectId !== input.projectId)
+  if (found && found.branch.projectId !== input.projectId)
     throw createError({ statusCode: 404, message: "Draft not found" });
-  return input.draft;
+  return { draft: input.draft, stored: found !== null };
 }
 
 // --- Request bodies ----------------------------------------------------------------------------
@@ -127,7 +132,8 @@ export async function handleDraftListRequest(
   deps: BranchRouteServices,
   input: { projectId: ProjectId; draft: string; userId: UserId },
 ): Promise<ThreadDraftListResponse> {
-  const draft = await requireDraft(deps, input);
+  const { draft, stored } = await draftOfProject(deps, input);
+  if (!stored) return { items: [], branchId: draft, folders: [], saw: {} };
   const listed = await deps.documentSync.draftReview.listItems({ draft });
   // Readable in the draft's view, where its created documents are (file-access §6); a
   // document deleted live is no longer readable anywhere, but stays the draft's item.
@@ -266,7 +272,8 @@ export async function handlePressRequest(
 ): Promise<PressResult> {
   const { presses } = deps.documentSync;
   const request = parseBody(PressBody, input.request, "press");
-  await requireDraft(deps, { ...input, draft: request.draft });
+  const { stored } = await draftOfProject(deps, { ...input, draft: request.draft });
+  if (!stored) throw createError({ statusCode: 404, message: "Draft not found" });
   const envelope = pressEnvelope(input, "press", request.commandId, input.request);
   const first = await deps.documentSync.draftReview.awaitCommand(envelope);
   const recorded = storedAnswer<PressResult>(first, request.commandId);

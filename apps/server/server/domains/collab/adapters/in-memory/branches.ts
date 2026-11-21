@@ -1,15 +1,20 @@
 /**
- * In-memory drafts: the same resolver semantics over a map, for in-memory composition. There are
- * no Work or chat rows here to name a draft, so an owner's draft is minted the first time it is
- * asked for, under the owner's key.
+ * In-memory drafts: the same resolver semantics over a map, for in-memory composition. The rows
+ * that name a draft live in other in-memory stores, so the composition passes `namedDraft`, which
+ * reads the draft id the owner's row carries; an owner it doesn't know names no draft.
  */
-import { type DraftId, type DraftOwner, newDraftId } from "@meridian/contracts";
+import type { DraftId, DraftOwner, ProjectId } from "@meridian/contracts";
 import type { Branch, BranchStore, BranchWriteBoundary } from "../../domain/ports/branch-store.js";
+
+/** The draft an owner's row names, with that row's project; null for an owner with no row. */
+export type NamedDraft = (
+  owner: DraftOwner,
+) => Promise<{ id: DraftId; projectId: ProjectId } | null>;
 
 const ownerKey = (owner: DraftOwner) =>
   owner.kind === "work" ? `work:${owner.workId}` : `lineage:${owner.rootThreadId}`;
 
-export function createInMemoryBranchStore(): BranchStore {
+export function createInMemoryBranchStore(namedDraft: NamedDraft): BranchStore {
   const rows = new Map<DraftId, Branch>();
   const named = new Map<string, { draftId: DraftId; owner: DraftOwner }>();
   const ownerOfDraft = (draftId: DraftId) =>
@@ -20,11 +25,11 @@ export function createInMemoryBranchStore(): BranchStore {
       return branch ? { branch, owner: ownerOfDraft(draftId), handle: null } : null;
     },
     async ofOwner(owner) {
-      const existing = named.get(ownerKey(owner));
-      if (existing) return rows.get(existing.draftId) ?? null;
-      const branch: Branch = {
-        id: newDraftId(),
-        projectId: owner.kind === "lineage" ? owner.projectId : "",
+      const draft = await namedDraft(owner);
+      if (!draft) return null;
+      const branch = rows.get(draft.id) ?? {
+        id: draft.id,
+        projectId: draft.projectId,
         createdBy: "",
         createdAt: new Date(),
       };
@@ -43,10 +48,6 @@ export function createInMemoryBranchStore(): BranchStore {
             : lineageRootIds.includes(owner.rootThreadId),
         )
         .map((entry) => entry.draftId);
-    },
-    async delete(draftIds) {
-      for (const id of draftIds) rows.delete(id);
-      for (const [key, entry] of named) if (draftIds.includes(entry.draftId)) named.delete(key);
     },
   };
 }

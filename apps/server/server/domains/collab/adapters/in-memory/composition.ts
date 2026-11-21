@@ -36,13 +36,20 @@ import {
   createInMemoryJournal,
   type InMemoryJournal,
 } from "./agent-edit.js";
-import { createInMemoryBranchStore, createInMemoryBranchWriteBoundary } from "./branches.js";
+import {
+  createInMemoryBranchStore,
+  createInMemoryBranchWriteBoundary,
+  type NamedDraft,
+} from "./branches.js";
 import {
   createStaticDocumentLinkScopes,
   UNSUPPORTED_AHEAD_REFS,
 } from "./static-document-link-scopes.js";
 
-export function createInMemoryCollabDomain(): CollabDomain {
+/** `namedDraft` reads the draft a Work's or root chat's row names; by default nothing names one. */
+export function createInMemoryCollabDomain(
+  namedDraft: NamedDraft = async () => null,
+): CollabDomain {
   // Nothing in memory carries a filetype: every document is prose.
   const resolveDocumentFiletype = async () => null;
   const journal = createInMemoryJournal();
@@ -81,7 +88,7 @@ export function createInMemoryCollabDomain(): CollabDomain {
     observability: createAgentEditObservabilityOptions({}),
   });
   const branches = createBranches({
-    store: createInMemoryBranchStore(),
+    store: createInMemoryBranchStore(namedDraft),
     boundary: createInMemoryBranchWriteBoundary(),
   });
   const agentEdit = createAgentEditRouter({

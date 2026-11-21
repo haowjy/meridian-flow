@@ -45,8 +45,6 @@ export interface Branches {
   byIds(draftIds: readonly DraftId[]): Promise<Branch[]>;
   /** Purge only: the drafts a Work and these lineages' roots name. */
   namedBy(input: { workId: WorkId; lineageRootIds: readonly string[] }): Promise<DraftId[]>;
-  /** Purge only, caller's transaction, each draft locked and emptied: deletes the rows. */
-  delete(draftIds: readonly DraftId[]): Promise<void>;
 }
 
 /** An owner the write boundary locked names no draft: its row went between the read and the lock. */
@@ -86,6 +84,5 @@ export function createBranches(deps: {
     share: (draftId) => store.share(draftId),
     byIds: (draftIds) => store.byIds(draftIds),
     namedBy: (input) => store.namedBy(input),
-    delete: (draftIds) => store.delete(draftIds),
   };
 }

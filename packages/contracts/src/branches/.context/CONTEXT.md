@@ -19,6 +19,8 @@ id. `change=` names a suggestion id in that document.
 - `actorThreads` lists chats whose suggestions are in the item, newest first, then the creating
   chat if absent.
 - `hasDraft` reports whether the item holds suggestions; `textChanges` counts them.
+- A draft id the server has not stored yet (a Work or chat whose create is still on its way)
+  lists as empty, so the browser reads the draft it minted at once. A press needs the stored draft.
 
 ## Commands
 

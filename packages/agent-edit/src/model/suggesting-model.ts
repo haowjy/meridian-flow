@@ -177,12 +177,15 @@ function rewritten(
           ? target.pos
           : target.pos + 1 + rawUnit(runs(target.node, view), op.unit, "start");
       // The op changes some of what the view shows; the rest stays as the view shows it, the
-      // draft's pending attributes included, or `rewrite` would read it as taking them back.
+      // draft's pending attributes included, or `rewrite` would read it as taking them back. A key
+      // the op names is written even when stored already has it: setting a block back to Live is
+      // how a write withdraws the draft's pending value.
       const node = tr.doc.nodeAt(map(at));
-      const shown = node ? viewAttrs(node, view) : {};
-      for (const [key, value] of Object.entries({ ...shown, ...op.attrs }))
-        if (!SUGGESTION_ATTRS.includes(key) && node && node.attrs[key] !== value)
-          tr.setNodeAttribute(map(at), key, value);
+      if (!node) return "the write does not fit the block";
+      const shown = viewAttrs(node, view);
+      const kept = Object.entries(shown).filter(([key, value]) => node.attrs[key] !== value);
+      for (const [key, value] of [...kept, ...Object.entries(op.attrs)])
+        if (!SUGGESTION_ATTRS.includes(key)) tr.setNodeAttribute(map(at), key, value);
     } else {
       const units = runs(target.node, view);
       const start = target.pos + 1;

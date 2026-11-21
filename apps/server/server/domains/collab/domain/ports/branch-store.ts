@@ -30,8 +30,6 @@ export interface BranchStore {
   byIds(draftIds: readonly DraftId[]): Promise<Branch[]>;
   /** Purge only: the drafts a Work and these lineages' roots name. */
   namedBy(input: { workId: WorkId; lineageRootIds: readonly string[] }): Promise<DraftId[]>;
-  /** Purge only, caller's transaction: deletes the rows; their tree records go with them. */
-  delete(draftIds: readonly DraftId[]): Promise<void>;
 }
 
 /** The write boundary's transaction and owner lock. */
