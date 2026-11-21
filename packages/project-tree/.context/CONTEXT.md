@@ -99,12 +99,18 @@ the replay uses them (package `AGENTS.md`).
 - **`admit` stamps `dropped`** on a record in a closed draft, on a record of a dropped node or
   a create inside a dropped folder, and on a record whose addition changes a closed source. The
   server decides: its arrival order is the one shared by all clients. Admission compares the held
-  tree with the tree after the whole update and checks the added records' reported sources. Records
-  that cancel each other in one update (a move and its Undo) change nothing together, so none is
-  dropped, even when one alone would reach a closed source. If
-  that gate fails, it doubles prefixes and bisects to find the next record to judge, leaving each
-  dropped record out of later projections. A reported source can be a no-op, so the candidate is
-  checked against its own full projection before it is dropped. The diff counts both sources of a
+  tree with the tree after the whole update and checks the added records' reported sources (where
+  each record's own change lands as the replay reaches it). Records whose own changes stay out of
+  closed sources and that cancel each other in one update (a move and its Undo, where a held record
+  later moves the parent into a closed source) change nothing together, so none is dropped, even
+  when one alone would reach a closed source. If that gate fails, it doubles prefixes and bisects to
+  a run that passes the same gate followed by a record that would not, judges that record, and
+  leaves each dropped record out of later projections. The gate is not monotone over prefixes (a
+  run can cancel what one of its records alone would do), so the record dropped is one that changes
+  a closed source where it arrives, not always the first such record: which one is the search's
+  choice, and the property test checks these promises rather than one order of judging. A
+  reported source can be a no-op, so the candidate is checked against its own full projection
+  before it is dropped. The diff counts both sources of a
   move and changes to name, place, kind and shown state. In an in-process 300-record update against
   25,000 held records, no drop took 1.53 s and two replays; one closed-draft drop took 12.29 s
   and 24 replays. These single runs shared the machine with other workloads. Fallback replay cost
