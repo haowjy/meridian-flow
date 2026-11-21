@@ -74,17 +74,13 @@ export function EditorView(props: EditorViewProps) {
   // The review reads the editor once it holds the document: a pin restored against an editor
   // still empty would find none of its changes.
   const [constructed, setConstructed] = useState<Editor | null>(null);
-  const synced = useSyncExternalStore(
+  // Offline and reconnecting leave the text in place: dropping the editor then would unlist the
+  // tab's own changes the moment a peer's resolution arrives, and the page would fall to Live.
+  const held = useSyncExternalStore(
     (listener) => session?.subscribe(listener) ?? (() => undefined),
-    () => session?.getSnapshot().status === "synced",
+    () => session?.getSnapshot().contentHeld === true,
   );
-  // Once synced, the editor holds the document for the session's life: going offline or
-  // reconnecting leaves its text in place, and dropping it then would unlist the tab's own
-  // changes the moment a peer's resolution arrives (the page would fall back to Live).
-  const [heldSession, setHeldSession] = useState<DocumentSession | null>(null);
-  if (synced && session !== heldSession) setHeldSession(session);
-  const holds =
-    (session !== null && (synced || session === heldSession)) || props.localContentReady === true;
+  const holds = held || props.localContentReady === true;
   useEffect(() => {
     if (!constructed || !holds || !hostEditor) return;
     hostEditor.set(constructed);

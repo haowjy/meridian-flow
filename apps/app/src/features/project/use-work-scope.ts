@@ -69,12 +69,13 @@ export function useWorkScope(projectId: string): {
  * Whose drafts the scope holds: the picked Work's, or under No Work the chat on screen's, which
  * are its Work's when it has one and its own when it has none. The sidebar's toggle, Changes
  * and the Work chip all show these, so under No Work they follow the chat. `draftId` is "" when
- * there are none to show; `work` is the Work its commands act for.
+ * there are none to show; `work` is the Work its commands act for. `known` is false until the
+ * Works list has loaded: before that a picked Work's draft reads as "".
  */
 export function useScopeDraftOwner(
   projectId: string,
   chatThreadId: string | null,
-): { picked: Work | null; work: Work | null; draftId: string } {
+): { picked: Work | null; work: Work | null; draftId: string; known: boolean } {
   const { workId } = useWorkScope(projectId);
   const catalog = useWorks(projectId);
   const { works, deleted, noWork } = catalog;
@@ -89,14 +90,15 @@ export function useScopeDraftOwner(
   const creating = !picked && workId ? catalog.creations.get(workId)?.work.draftId : undefined;
   const chatWork = thread?.workId ? workFromSnapshot(snapshot, thread.workId) : null;
   const chatKey = picked || creating || !chatWork || !thread ? "" : draftOf(thread, chatWork);
+  const known = workId !== null;
   return useMemo(
     () =>
       picked
-        ? { picked, work: picked, draftId: picked.draftId ?? "" }
+        ? { picked, work: picked, draftId: picked.draftId ?? "", known }
         : creating
-          ? { picked: null, work: null, draftId: creating }
-          : { picked: null, work: chatKey ? chatWork : null, draftId: chatKey },
-    [picked, creating, chatWork, chatKey],
+          ? { picked: null, work: null, draftId: creating, known }
+          : { picked: null, work: chatKey ? chatWork : null, draftId: chatKey, known },
+    [picked, creating, chatWork, chatKey, known],
   );
 }
 

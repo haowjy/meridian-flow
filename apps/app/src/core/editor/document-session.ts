@@ -111,6 +111,11 @@ export type DocumentSessionSnapshot = {
   /** A read admission whose reason has not arrived yet: `closedWhy` may still change. */
   reasonPending: boolean;
   localPersistenceSynced: boolean;
+  /**
+   * The document has reached this session from the server once. It stays true offline and through
+   * reconnects, which leave the text in place.
+   */
+  contentHeld: boolean;
   schemaFence: SchemaFence | null;
   schemaRepairs: SchemaRepairEvent[];
   /**
@@ -290,6 +295,8 @@ export class DocumentSession {
   private localPersistenceSynced = false;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
   private transportInitialSyncComplete = false;
+  /** True after any transport's first `whenSynced`; a detach doesn't reset it. */
+  private contentHeld = false;
   /** Raw transport signal; the snapshot exposes it only while `status` is `synced`. */
   private transportAcknowledged = false;
   private status: DocumentSessionStatus = "detached";
@@ -754,6 +761,7 @@ export class DocumentSession {
       closedWhy: this.closedWhy,
       reasonPending: this.reasonPending,
       localPersistenceSynced: this.localPersistenceSynced,
+      contentHeld: this.contentHeld,
       schemaFence: this.schemaFence,
       schemaRepairs: this.schemaRepairs,
       holdsUndeliverableEdits: this.holdsUndeliverable,
@@ -1067,8 +1075,11 @@ export class DocumentSession {
     await provider.whenSynced;
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
+    const first = !this.contentHeld;
+    this.contentHeld = true;
     if (provider.whenSynced) this.establishContentInitialization();
     this.recomputeStatus();
+    if (first) this.emit();
   }
 
   /**

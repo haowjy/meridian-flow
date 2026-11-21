@@ -11,8 +11,9 @@ Work's draft. "The toggle" below means this state, whichever chip sets it.
 
 ## State
 
-- **choice** (`live` | `draft`): the writer's, kept per (account, project) in this browser tab
-  and seeded from the device (`client/project-shell/store.ts`, `tree-version`).
+- **choice** (`live` | `draft`): kept per (account, project) in this browser tab and seeded from
+  the device (`client/project-shell/store.ts`, `tree-version`). The writer sets it in a chip; a
+  change of the scope's draft owner sets it to `draft`, so a Live pick holds within one scope.
 - **offered**: the picked Work (or, under None, the chat on screen's: its Work's drafts, or its
   own when it has no Work) has an active draft with something pending: a drafted document in its list, or a pending tree record in the browser's
   copy (a folder change alone lists no document).
@@ -24,10 +25,11 @@ Work's draft. "The toggle" below means this state, whichever chip sets it.
 stateDiagram-v2
     [*] --> Live
     Live --> Draft: the Work's draft picked in a chip, or one of its drafts opened
-    Live --> Draft: scope's draft owner changes (Work pick, chat switch, new chat)
+    Live --> Draft: scope's draft owner changes (Work pick, chat switch, new chat), it has pending changes
+    Live --> ShownLive: scope's draft owner changes, nothing pending in the new scope
     Draft --> Live: Live picked in a chip
     Draft --> ShownLive: nothing pending (choice kept)
-    ShownLive --> Draft: something pending again
+    ShownLive --> Draft: something pending again, or the owner changes to a scope with pending changes
 ```
 
 ## Rules
@@ -65,7 +67,9 @@ stateDiagram-v2
   carries, ends when the owner changes. A Work pick writes it with the scope in `useWorkScope`, so
   the first render under the Work is already right. Every owner change, a Work pick's included,
   runs it again from `TreeVersionProvider`; after a pick that run finds nothing to change. A
-  reload is no owner change: the toggle stays as the writer left it. No chat on screen (the side
+  reload is no owner change: the owner is unknown until the Works list loads (`known` in
+  `useScopeDraftOwner`), and the first known owner is where the tab starts, so the toggle stays
+  as the writer left it. No chat on screen (the side
   closed or holding a document, the phone's document), or a chat whose row is still loading, is no
   owner known and changes nothing: a pin written then is checked at the next known owner. A No
   Work pick enters no owner (`null`), then the chat on screen's owner, whose drafts it shows.
