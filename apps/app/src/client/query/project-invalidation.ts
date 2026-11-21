@@ -37,16 +37,14 @@ export function invalidateProjectChatFeed(client: QueryClient, projectId: string
   });
 }
 
-/** Invalidates chats associated with one Work, or every Work in the project. */
+/** Invalidates the chats associated with one Work. */
 export function invalidateWorkThreads(
   client: QueryClient,
   projectId: string,
-  workId?: string,
+  workId: string,
 ): Promise<void> {
   return client.invalidateQueries({
-    queryKey: workId
-      ? projectQueryKeys.chatFeedFilter(projectId, { workId })
-      : projectQueryKeys.chatFeed(projectId),
-    exact: workId !== undefined,
+    queryKey: projectQueryKeys.chatFeedFilter(projectId, { workId }),
+    exact: true,
   });
 }
