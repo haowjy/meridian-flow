@@ -190,10 +190,9 @@ than relabeling them; a retired handle's room is closed. A document's history is
 version restore is a forward write (`restoreFromYDoc`, below), because a browser's copy can't tell
 one history from another (neither its room name nor its IndexedDB copy carries one). A copy that
 predates a replaced history would merge the old one into it on reconnect, showing the text twice,
-and would upload it to a server that has no record of the old one. The heads once carried an
-authority generation for that replacement; with nothing replacing history it was always 1 and is
-gone. Whatever needs to replace history (a rebuild) has to give copies a way to tell first, and a
-way for their unsent typing to land.
+and would upload it to a server that has no record of the old one. Whatever needs to replace
+history (a rebuild) has to give copies a way to tell first, and a way for their unsent typing to
+land.
 
 A checkpoint is a host-minted `CapturedCheckpointCut`, not a free state-vector
 and watermark pair and not warm-room bytes. It covers every journal row at or

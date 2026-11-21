@@ -76,7 +76,7 @@ export function MobileReviewHeader({
           completing={header.completing}
           next={header.next}
           draftOnly={header.draftOnly}
-          onOpenNext={header.openDraft}
+          onOpenNext={header.openItem}
           onShowLive={header.showLive}
         />
         {stepping ? (

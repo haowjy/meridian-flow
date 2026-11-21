@@ -77,7 +77,7 @@ export type DocumentRestorePointId = string;
 export const asDocumentRestorePointId = (s: string) => s as DocumentRestorePointId;
 export type EventJournalId = string;
 export const asEventJournalId = (s: string) => s as EventJournalId;
-/** Identity held by one durable document authority head across its fenced generations. */
+/** Identity of one durable document authority head; a handle bound to another id is retired. */
 export type DocumentAuthorityId = string;
 export const asDocumentAuthorityId = (s: string) => s as DocumentAuthorityId;
 export type DocumentRevision = string;

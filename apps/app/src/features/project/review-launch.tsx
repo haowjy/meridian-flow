@@ -177,12 +177,12 @@ function useOpenItem(): (target: ItemLaunchTarget) => Promise<OpenDocumentOutcom
 }
 
 export function useItemLauncher() {
-  const openDraft = useOpenItem();
+  const open = useOpenItem();
   const openItem = useCallback(
     (target: ItemLaunchTarget) => {
-      void openDraft(target);
+      void open(target);
     },
-    [openDraft],
+    [open],
   );
 
   /** Opens a listed item in review. An item with no address yet (still being written) has nothing to open. */
@@ -265,12 +265,12 @@ export type LinkPlacement = (
  */
 export function useLinkPlacement(projectId: string | null, draftId: string | null): LinkPlacement {
   const { fileForDocument } = useOwnerDrafts(projectId, draftId);
-  const openDraft = useOpenItem();
+  const openItem = useOpenItem();
   const place = useOptionalPlaceHere();
   return useCallback(
     (document, live, workId) => {
       if (document.review)
-        return openDraft({
+        return openItem({
           documentId: document.documentId,
           ...document.review,
           draftOnly: true,
@@ -278,7 +278,7 @@ export function useLinkPlacement(projectId: string | null, draftId: string | nul
       if (document.trashed) return live(document);
       const drafted = draftId ? fileForDocument(document.documentId) : null;
       if (draftId && drafted?.contextLocation)
-        return openDraft({
+        return openItem({
           draftId,
           documentId: document.documentId,
           itemKey: drafted.item.itemKey,
@@ -293,7 +293,7 @@ export function useLinkPlacement(projectId: string | null, draftId: string | nul
       } as const;
       return live(document, place ? () => place(placed) === "side" : undefined);
     },
-    [fileForDocument, draftId, openDraft, place],
+    [fileForDocument, draftId, openItem, place],
   );
 }
 

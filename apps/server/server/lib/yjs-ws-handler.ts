@@ -86,11 +86,6 @@ type SchemaAdmissionRefusal =
   | typeof WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED
   | typeof WS_CLOSE.DOCUMENT_SCHEMA_STALE;
 
-type YjsAdmissionTarget = {
-  kind: "live";
-  documentId: DocumentId;
-};
-
 /**
  * What the person may do in the room (file-access §7), decided when the socket opens; it ends
  * when `rooms` closes the socket.
@@ -100,7 +95,7 @@ type YjsRoomAccess = { level: "read"; why?: ClosedOwnerWhy } | { level: "edit" }
 type YjsConnectionAdmission =
   | {
       kind: "allowed";
-      target: YjsAdmissionTarget;
+      documentId: DocumentId;
       /** The file the room serves, asked again once the room is registered. */
       fileTarget: FileTarget;
       access: YjsRoomAccess;
@@ -122,7 +117,7 @@ type YjsConnectionContext = {
   clientSchemaVersion: CollabSchemaVersion;
   /** On a tree list's room: the list id the client's stored copy was made of (`?list=`). */
   storedListId: string | null;
-  admissionTarget?: YjsAdmissionTarget;
+  admittedDocumentId?: DocumentId;
   access?: YjsRoomAccess;
   /** Set on a tree list's room: its access and rate limit (`yjs-tree-room.ts`). */
   tree?: TreeRoomConnection;
@@ -374,7 +369,7 @@ async function classifyYjsConnectionAdmission(input: {
 
   return {
     kind: "allowed",
-    target: { kind: "live", documentId },
+    documentId,
     fileTarget,
     access: admitted.access,
     accessKeys: accessKeys(admitted.facts, documentId),
@@ -469,16 +464,10 @@ function carriesUpdate(syncType: number, payload: Uint8Array): boolean {
   return (syncType === messageYjsSyncStep2 || syncType === messageYjsUpdate) && payload.length > 0;
 }
 
-function admittedTargetForSync(
-  context: YjsConnectionContext,
-  documentName: string,
-): YjsAdmissionTarget {
-  const target = context.admissionTarget;
-  const room = parseRoomOrDeny(documentName);
-  if (!target || target.documentId !== room.documentId) {
+function assertAdmittedForSync(context: YjsConnectionContext, documentName: string): void {
+  if (context.admittedDocumentId !== parseRoomOrDeny(documentName).documentId) {
     throw permissionDenied("permission-denied");
   }
-  return target;
 }
 
 export function createHocuspocus(
@@ -523,7 +512,7 @@ export function createHocuspocus(
               ...admission,
             });
           }
-          context.admissionTarget = admission.target;
+          context.admittedDocumentId = admission.documentId;
           context.access = admission.access;
           // Hocuspocus sends this as the authenticated scope: `readonly` or `read-write`.
           connectionConfig.readOnly = admission.access.level === "read";
@@ -535,8 +524,7 @@ export function createHocuspocus(
           if (
             !settled ||
             settled.access.level !== admission.access.level ||
-            accessKeys(settled.facts, admission.target.documentId).join() !==
-              admission.accessKeys.join()
+            accessKeys(settled.facts, admission.documentId).join() !== admission.accessKeys.join()
           )
             refuse(accessChangedClose(closedOwnerWhy(settled?.facts)));
         });
@@ -562,7 +550,7 @@ export function createHocuspocus(
         }
         const room = anyRoom;
         await withRemovalRefusal(services, room, userId, context, async () => {
-          const target = admittedTargetForSync(context, documentName);
+          assertAdmittedForSync(context, documentName);
           const access = context.access;
           if (!access) throw permissionDenied("permission-denied");
           // Runs before Hocuspocus's own read-only check: a read connection's

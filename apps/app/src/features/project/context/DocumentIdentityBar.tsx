@@ -83,7 +83,7 @@ export function DocumentIdentityBar({
   // A review that has been entered but not yet painted is a review destination in flight:
   // it must not read as the live document's chip until its preview answers.
   const reviewPending = review?.documentId === document.documentId && !review.shown;
-  const openDraft = (row: ReviewFileTarget, takeFocus?: boolean) => {
+  const openItem = (row: ReviewFileTarget, takeFocus?: boolean) => {
     if (takeFocus) onFocusReview?.(row.item.itemKey);
     openReviewFile(row, controller.draftId);
   };
@@ -159,7 +159,7 @@ export function DocumentIdentityBar({
       document={document}
       documentId={document.documentId}
       itemKey={reviewItemKey ?? ""}
-      onOpenDraft={openDraft}
+      onOpenItem={openItem}
       onCloseDraftOnly={onCloseDraftOnly}
       onFocusDocument={() =>
         focusEditorProseOnceShown(document.documentId, onCloseDraftOnly !== undefined)

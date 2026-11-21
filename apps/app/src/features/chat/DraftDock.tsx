@@ -195,12 +195,7 @@ function DockFileLine({
 }) {
   const touch = useCoarsePointer();
   const view = useDraftView(
-    {
-      projectId: dock.projectId,
-      draftId: dock.draftId,
-      documentId: file.row.documentId,
-      itemKey: file.row.item.itemKey,
-    },
+    { documentId: file.row.documentId, itemKey: file.row.item.itemKey },
     { controller: dock.controller, enabled: !file.whole, item: file.row.item },
   );
   const own = new Set(file.changes.map((change) => change.id));

@@ -19,7 +19,6 @@ export type DraftReviewItem = {
   draftId: DraftId;
   itemKey: DraftItemKey;
   documentId: DocumentId;
-  /** Whether this item has text changes: the owner's suggestions in the Live document. */
   /** The text changes the document's derivation last counted; 0 without any. */
   textChanges: number;
   /** created: the draft has a `created` row; edited: text changes only. */

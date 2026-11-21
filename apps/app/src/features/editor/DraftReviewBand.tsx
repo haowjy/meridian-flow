@@ -39,8 +39,8 @@ export type DraftReviewBandProps = {
   itemKey: string;
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
-  /** Opens another draft of the Work in review (the editor's launcher); `takeFocus` as in `useReviewHeader`. */
-  onOpenDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
+  /** Opens another item of the draft in review (the editor's launcher); `takeFocus` as in `useReviewHeader`. */
+  onOpenItem: (row: ReviewFileTarget, takeFocus?: boolean) => void;
   /** Opens the identity row's rename field; absent when the document cannot be renamed. */
   onRename?: () => void;
   /** Puts the caret back in the document when the review closes under the writer's focus. */
@@ -173,7 +173,7 @@ export function DraftReviewBand({
         completing={header.completing}
         next={header.next}
         draftOnly={header.draftOnly}
-        onOpenNext={(row) => header.openDraft(row, focusInControls())}
+        onOpenNext={(row) => header.openItem(row, focusInControls())}
         onShowLive={header.showLive}
       />
       {finished ? null : (

@@ -22,10 +22,10 @@ type ReviewHeaderOptions = {
   /** Set for a draft-only document: closes its tab instead of returning to live. */
   onCloseDraftOnly?: () => void;
   /**
-   * Opens another draft of the Work in review (the presenting container's
+   * Opens another item of the draft in review (the presenting container's
    * launcher). `takeFocus`: the writer's focus was in the controls that open it.
    */
-  onOpenDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
+  onOpenItem: (row: ReviewFileTarget, takeFocus?: boolean) => void;
   /** A command run with focus in the controls ended this draft's changes without opening another. */
   onEndedWithFocus?: () => void;
 };
@@ -35,8 +35,8 @@ export type ReviewHeaderModel = {
   view: ReviewChangesView;
   /** A draft-only document has no live version: its way out closes the tab. */
   draftOnly: boolean;
-  /** Opens another draft of the Work in review (the presenting container's launcher). */
-  openDraft: (row: ReviewFileTarget, takeFocus?: boolean) => void;
+  /** Opens another item of the draft in review (the presenting container's launcher). */
+  openItem: (row: ReviewFileTarget, takeFocus?: boolean) => void;
   /** The draft's next document, if it has one. */
   next: ReviewFileTarget | null;
   locked: boolean;
@@ -58,7 +58,7 @@ export function useReviewHeader({
   documentId,
   itemKey,
   onCloseDraftOnly,
-  onOpenDraft,
+  onOpenItem,
   onEndedWithFocus,
 }: ReviewHeaderOptions): ReviewHeaderModel {
   const { controller, files, showLive: showDocumentLive } = useDraftReview();
@@ -92,7 +92,7 @@ export function useReviewHeader({
     void start.outcome.then((outcome) => {
       if (outcome.kind !== "done") return;
       if (mode === "apply" && next) {
-        if (shown.current === itemKey) onOpenDraft(next, takeFocus);
+        if (shown.current === itemKey) onOpenItem(next, takeFocus);
       } else if (takeFocus) onEndedWithFocus?.();
     });
   };
@@ -108,6 +108,6 @@ export function useReviewHeader({
     applyDraft: (takeFocus) => dispose("apply", takeFocus === true),
     discardDraft: (takeFocus) => dispose("discard", takeFocus === true),
     draftOnly: Boolean(onCloseDraftOnly),
-    openDraft: onOpenDraft,
+    openItem: onOpenItem,
   };
 }
