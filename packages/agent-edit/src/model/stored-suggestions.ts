@@ -84,8 +84,8 @@ export function resolveScope(doc: Y.Doc): [Y.XmlFragment, Y.Map<unknown>] {
  * Accept or reject a stored document's suggestions, as a client of the document would. The verdict
  * only deletes text and blocks and removes marks and attributes, and it is lowered to exactly that
  * (`lowerResolved`): every Yjs item that survives stays, so text typed inside a resolved word, a
- * comment's anchor and a cursor keep their place, and a Yjs undo of it (the press's Undo, Ctrl+Z in
- * the tab) takes back only what it did, its verdicts included. Call inside one transaction;
+ * comment's anchor and a cursor keep their place, and Ctrl+Z in the tab (a Yjs undo of it) takes
+ * back only what it did, its verdicts included. Call inside one transaction;
  * returns how it decided each change it changed (empty: nothing changed).
  */
 export function resolveStored(
@@ -183,8 +183,11 @@ export function writeVerdict(doc: Y.Doc, update: Uint8Array): "applied" | "disca
   return decided.has("accept") ? "applied" : "discarded";
 }
 
+/** A verdict entry a press wrote: its key and the id of the map item that holds it. */
+export type WrittenVerdict = { key: string; client: number; clock: number };
+
 /** What a press's one transaction did to a stored document: all its Undo needs, by content. */
-export type PressRecord = { delta: StoredDelta; verdicts: string[] };
+export type PressRecord = { delta: StoredDelta; verdicts: WrittenVerdict[] };
 
 /**
  * A press's text half: `resolveStored` as one transaction of its own, the blocks it changed before
@@ -204,18 +207,60 @@ export function pressStored(
     decided = resolveStored(doc, schema, verdict, filter);
   });
   const delta = decided.size ? captureDelta(before, readBlocks(fragment, schema)) : null;
-  return delta ? { delta, verdicts: [...decided].map(([id, fate]) => `${id}:${fate}`) } : null;
+  if (!delta) return null;
+  const verdicts: WrittenVerdict[] = [];
+  for (const [id, fate] of decided) {
+    const key = `${id}:${fate}`;
+    const written = standingItem(doc, key);
+    if (written) verdicts.push({ key, client: written.client, clock: written.clock });
+  }
+  return { delta, verdicts };
+}
+
+/** The id of the map item whose value `key` reads now. */
+function standingItem(doc: Y.Doc, key: string): Y.ID | undefined {
+  // Y.Map keeps each key's winning item in `_map`; its public API hides which client wrote it.
+  const item = doc.getMap<unknown>(VERDICTS_ROOT)._map.get(key);
+  return item && !item.deleted ? item.id : undefined;
 }
 
 /**
- * Deletes the verdict entries `keys` names that still stand, as the Undo of the resolve that wrote
- * them. Inside a transaction a write joins it. Whether any stood.
+ * The changes of `written` that another client has resolved the same way since, and whose entry
+ * is now that client's: a press's Undo leaves their text and verdict as they stand.
  */
-export function forgetVerdicts(doc: Y.Doc, keys: readonly string[]): boolean {
+export function resolvedElsewhere(doc: Y.Doc, written: readonly WrittenVerdict[]): Set<string> {
+  const out = new Set<string>();
+  for (const { key, client, clock } of written) {
+    const standing = standingItem(doc, key);
+    if (standing && (standing.client !== client || standing.clock !== clock))
+      out.add(changeOf(key));
+  }
+  return out;
+}
+
+const changeOf = (key: string) => key.slice(0, key.lastIndexOf(":"));
+
+/**
+ * Deletes each of `written` whose change is pending again (`pending`, by change id) and whose entry
+ * still holds the press's own write: another client's resolve of the same change keeps its verdict,
+ * and so does a change the Undo left standing. Inside a transaction a write joins it. Whether any
+ * was deleted.
+ */
+export function forgetVerdicts(
+  doc: Y.Doc,
+  written: readonly WrittenVerdict[],
+  pending: (changeId: string) => boolean,
+): boolean {
   const verdicts = doc.getMap<unknown>(VERDICTS_ROOT);
-  const standing = keys.filter((key) => verdicts.get(key) === true);
-  for (const key of standing) verdicts.delete(key);
-  return standing.length > 0;
+  let forgot = false;
+  for (const { key, client, clock } of written) {
+    const standing = standingItem(doc, key);
+    if (standing?.client !== client || standing.clock !== clock) continue;
+    if (!pending(changeOf(key))) continue;
+    verdicts.delete(key);
+    forgot = true;
+  }
+  return forgot;
 }
 
 /** Yjs item ids by client, as `[clock, len]` runs in clock order. */

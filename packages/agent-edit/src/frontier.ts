@@ -370,9 +370,14 @@ function contentSurvives(doc: Y.Doc, previous: Y.Snapshot, current: Y.Snapshot):
  * gone. A stored document's checkpoint runs it, so text the writer deleted, a rejected suggestion
  * included, leaves only item headers in the history every later load reads. Keeping what a
  * frontier shows lets a model that read before the deletion still plan on what it read
- * (`planningSnapshot` refuses one that can't).
+ * (`planningSnapshot` refuses one that can't). Returns the shape of the history it leaves: its
+ * structs, deleted ones included (what every load and copy walks), and the UTF-8 bytes of the
+ * text the document shows (what that history is a multiple of).
  */
-export function dropUnseenContent(doc: Y.Doc, frontiers: readonly Uint8Array[]): void {
+export function dropUnseenContent(
+  doc: Y.Doc,
+  frontiers: readonly Uint8Array[],
+): { structs: number; contentBytes: number } {
   const shown = frontiers.flatMap((bytes) => {
     const snapshot = decodeSnapshot(bytes);
     return snapshot ? [visibleAt(snapshot)] : [];
@@ -382,6 +387,16 @@ export function dropUnseenContent(doc: Y.Doc, frontiers: readonly Uint8Array[]):
     doc.store,
     (item) => item.content instanceof Y.ContentDeleted || !shown.some((visible) => visible(item)),
   );
+  const utf8 = new TextEncoder();
+  let structs = 0;
+  let contentBytes = 0;
+  for (const clientStructs of doc.store.clients.values()) {
+    structs += clientStructs.length;
+    for (const struct of clientStructs)
+      if (struct instanceof Y.Item && !struct.deleted && struct.content instanceof Y.ContentString)
+        contentBytes += utf8.encode(struct.content.str).length;
+  }
+  return { structs, contentBytes };
 }
 
 /** Whether some clock of an item is visible at `snapshot`: born before it and not deleted in it. */

@@ -31,8 +31,8 @@ chat has its draft from its creation, so a press never makes one.
   `pressStored` (agent-edit) runs `accept` or `reject({ draft })` as one Yjs transaction, appends
   it to the Live journal as `human:<account>`, and stores in `press_text_effects` the blocks it
   changed, before and after (ProseMirror JSON, as an AI write's receipt stores its `delta`), and
-  the verdict keys the resolve recorded (`suggestion_verdicts`), so its Undo takes them back with
-  the text. A document the press leaves out of Live
+  the verdict entries the resolve wrote (`suggestion_verdicts` keys, each with the id of the map
+  item holding it), so its Undo takes them back with the text. A document the press leaves out of Live
   (a discarded create) keeps its text untouched.
 - **`seen`.** The pressing tab's state vector of every live room with typing the server hasn't
   acknowledged (`unsentStateVectors`), checked first, after the lists' keys and before the selection is read:
@@ -82,9 +82,12 @@ below.
 (Apply) or `restoreDiscard` (Discard). The text half is by content, the card Undo's rule
 (`takeBack` in `domain/inverse-text.ts`): each change of the stored blocks that still stands in
 the document is taken back out, written through `writeBlocks` so every item it leaves alone
-keeps its identity, and the press's verdict keys are forgotten (`forgetVerdicts`), so the
-suggestions are pending again. A change the writer typed inside since stands no more and stays
-as they left it. It reads no deleted item: a checkpoint drops their content
+keeps its identity, and the verdicts of the changes now pending again are forgotten
+(`forgetVerdicts`). A change the writer typed inside since stands no more: its text and its
+verdict stay as they are. A change another client resolved the same way since, whose entry now
+holds that client's write (`resolvedElsewhere`), is left out of the take-back, text and verdict:
+undoing one of two identical resolves would otherwise show a change pending under a verdict that
+says it was resolved. It reads no deleted item: a checkpoint drops their content
 ([checkpoints](CONTEXT.md#authority-checkpoints-and-derivation)), and the content of an effect
 outlives a version restore too. The tab's Apply and Reject inside the text are a resolve on the
 editor's Y.Doc, undone by Ctrl+Z from the editor's own history. An effect whose notes are closed

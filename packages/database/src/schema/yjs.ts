@@ -296,9 +296,11 @@ export const applyCommandTrees = pgTable(
 
 /**
  * The text half of a press: what the press's one transaction did to this document, by content
- * (the blocks it changed, before and after, as ProseMirror JSON) and the verdict keys it wrote
- * (`suggestion_verdicts`). Its Undo takes each change that still stands back out by content and
- * forgets those verdicts, so it reads no deleted item: a checkpoint has dropped their content.
+ * (the blocks it changed, before and after, as ProseMirror JSON) and the verdict entries it wrote
+ * (`suggestion_verdicts` keys, each with the id of the map item that holds it). Its Undo takes
+ * each change that still stands back out by content and forgets the verdicts of the changes that
+ * are pending again and that no other client has since resolved, so it reads no deleted item: a
+ * checkpoint has dropped their content.
  */
 export const pressTextEffects = pgTable(
   "press_text_effects",
@@ -314,7 +316,7 @@ export const pressTextEffects = pgTable(
     delta: jsonb("delta")
       .$type<{ before: Record<string, unknown>[]; after: Record<string, unknown>[] }>()
       .notNull(),
-    verdicts: jsonb("verdicts").$type<string[]>().notNull(),
+    verdicts: jsonb("verdicts").$type<{ key: string; client: number; clock: number }[]>().notNull(),
     /** The Undo that took it back: a press is taken back once. */
     undoneBy: uuid("undone_by").$type<CommandId>(),
   },

@@ -16,6 +16,7 @@ import {
   forgetVerdicts,
   fragmentOf,
   pressStored,
+  resolvedElsewhere,
   type UpdateJournal,
 } from "@meridian/agent-edit/integration";
 import type { DocumentId, DraftId, ProjectId, UserId } from "@meridian/contracts";
@@ -52,7 +53,7 @@ import type { DocumentArrivals } from "../../context/ports/document-arrivals.js"
 import type { TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { Drafts } from "../domain/drafts.js";
-import { inverseSchema, takeBack } from "../domain/inverse-text.js";
+import { changeDrafts, inverseSchema, takeBack, withoutChanges } from "../domain/inverse-text.js";
 import type { LiveDocumentCoordinator } from "../domain/ports/live-document-coordinator.js";
 import { PressUnsynced, type TreeCut } from "../domain/press.js";
 import { storedDocument } from "../domain/stored-document.js";
@@ -478,7 +479,7 @@ export function createDrizzlePress(
               projectId: envelope.projectId,
               verdict: pressed.verdict,
               pressedAt: row.pressedAt,
-              documents: text.length,
+              documentIds: text,
             });
             return answer(text, [...tree]);
           },
@@ -513,7 +514,7 @@ export function createDrizzlePress(
 
   /**
    * One document's text back as before the press, appended: each change of the press that still
-   * stands taken out by content, and the verdicts it wrote forgotten. Content survives a version
+   * stands taken out by content, and its verdicts of the changes pending again forgotten. Content survives a version
    * restore and a checkpoint that dropped the deleted text, so an Undo never needs either.
    */
   async function undoText(effect: typeof pressTextEffects.$inferSelect): Promise<boolean> {
@@ -522,12 +523,15 @@ export function createDrizzlePress(
     const doc = storedDocument(snapshot);
     try {
       const fragment = fragmentOf(doc);
-      const back = takeBack(readBlocks(fragment, inverseSchema), [effect]);
+      // Another client's resolve of the same change stands: its text and verdict stay.
+      const delta = withoutChanges(effect.delta, resolvedElsewhere(doc, effect.verdicts));
+      const back = takeBack(readBlocks(fragment, inverseSchema), [{ delta }]);
       const before = Y.encodeStateVector(doc);
       let forgot = false;
       doc.transact(() => {
         if (back.taken.length) writeBlocks(fragment, inverseSchema, back.live);
-        forgot = forgetVerdicts(doc, effect.verdicts);
+        const pending = changeDrafts(back.live);
+        forgot = forgetVerdicts(doc, effect.verdicts, (id) => pending.has(id));
       });
       if (!back.taken.length && !forgot) return false;
       await deps.live.append(

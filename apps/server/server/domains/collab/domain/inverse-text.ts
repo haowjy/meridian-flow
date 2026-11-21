@@ -12,7 +12,7 @@ import {
 } from "@meridian/agent-edit/content-merge";
 import { DIFF_DELETE, DIFF_INSERT, wordDiff } from "@meridian/agent-edit/diff";
 import { buildDocumentSchema } from "@meridian/prosemirror-schema";
-import { liveView, type View, viewBlock } from "@meridian/suggestions";
+import { type View, viewBlock } from "@meridian/suggestions";
 import type { Node as PMNode } from "prosemirror-model";
 
 /** The one schema an inverse reads and writes blocks with: nodes of another instance don't compare. */
@@ -37,10 +37,10 @@ export function takeBack<P extends { delta: StoredDelta | null }>(
 }
 
 /**
- * The words one edit part changed, for the model's list of its edits: what it took out of Live's
- * text and what it put in, each block's runs joined by `…`, blocks by a line. Read from the part's
- * recorded delta, as the edit's view showed it (Live before; after, Live with the write's own
- * suggestions accepted), never from the document: a checkpoint drops the content of deleted items.
+ * The words one edit part changed, for the model's list of its edits: what it took out and what it
+ * put in, each block's runs joined by `…`, blocks by a line. Read from the part's recorded delta,
+ * both sides in the view the edit wrote in (its draft, or Live), so the draft's earlier pending
+ * changes are not credited to it; never from the document, whose deleted items a checkpoint drops.
  */
 export function deltaExcerpt(stored: StoredDelta | null): { before: string; after: string } {
   if (!stored) return { before: "", after: "" };
@@ -59,7 +59,7 @@ export function deltaExcerpt(stored: StoredDelta | null): { before: string; afte
     after.delete(idOf(block));
     const out: string[] = [];
     const put: string[] = [];
-    for (const [op, run] of wordDiff(text(block, liveView), next ? text(next, { draft }) : ""))
+    for (const [op, run] of wordDiff(text(block, { draft }), next ? text(next, { draft }) : ""))
       if (op === DIFF_DELETE) out.push(run);
       else if (op === DIFF_INSERT) put.push(run);
     line(removed, out);
@@ -71,8 +71,22 @@ export function deltaExcerpt(stored: StoredDelta | null): { before: string; afte
 
 const idOf = (block: PMNode) => block.attrs.id as string;
 
+/** `stored` without the blocks that carried one of `changes` before the edit. */
+export function withoutChanges(stored: StoredDelta, changes: ReadonlySet<string>): StoredDelta {
+  if (!changes.size) return stored;
+  const delta = readDelta(inverseSchema, stored);
+  const dropped = new Set(
+    delta.before
+      .filter((block) => [...changeDrafts([block]).keys()].some((id) => changes.has(id)))
+      .map(idOf),
+  );
+  const kept = (blocks: readonly PMNode[], json: StoredDelta["before"]) =>
+    json.filter((_, index) => !dropped.has(idOf(blocks[index])));
+  return { before: kept(delta.before, stored.before), after: kept(delta.after, stored.after) };
+}
+
 /** Each suggestion change the blocks carry, by id, with its draft. */
-function changeDrafts(blocks: readonly PMNode[]): Map<string, string> {
+export function changeDrafts(blocks: readonly PMNode[]): Map<string, string> {
   const out = new Map<string, string>();
   const note = (attrs: unknown) => {
     const { id, draft } = (attrs ?? {}) as { id?: unknown; draft?: unknown };

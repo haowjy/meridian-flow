@@ -20,14 +20,7 @@ import type { Node as PMNode } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
-import {
-  type IdRanges,
-  type PressRecord,
-  resolveScope,
-  resolveStored,
-  suggestionAuthors,
-  undoPressStored,
-} from "../../stored-suggestions.js";
+import { resolveScope, resolveStored, suggestionAuthors } from "../../stored-suggestions.js";
 import { fragmentOf } from "../../y-prosemirror.js";
 
 const seed0 = Number(process.env.FUZZ_SEED ?? Math.floor(Math.random() * 2 ** 31));
@@ -1110,6 +1103,37 @@ function fixup(
     }
   };
   walk(fragmentOf(fork));
+}
+
+/** Yjs item ids by client, as `[clock, len]` runs in clock order. */
+type IdRanges = Record<string, [number, number][]>;
+
+/** What a press's one transaction did, by Yjs ids: the gate's Undo is a Yjs undo of these. */
+type PressRecord = { insertions: IdRanges; deletions: IdRanges };
+
+/** Takes a press back by a Yjs undo of its ranges, as the tab's own `UndoManager` would. */
+function undoPressStored(doc: Y.Doc, record: PressRecord): boolean {
+  const setOf = (ranges: IdRanges) => {
+    const set = Y.createDeleteSet();
+    for (const [client, runs] of Object.entries(ranges))
+      set.clients.set(
+        Number(client),
+        runs.map(([clock, len]) => ({ clock, len }) as never),
+      );
+    return set;
+  };
+  const undo = new Y.UndoManager(resolveScope(doc), { trackedOrigins: new Set() });
+  try {
+    // Yjs 13 does not export its stack item; `undo` reads only these three fields.
+    undo.undoStack.push({
+      insertions: setOf(record.insertions),
+      deletions: setOf(record.deletions),
+      meta: new Map(),
+    } as unknown as (typeof undo.undoStack)[number]);
+    return undo.undo() !== null;
+  } finally {
+    undo.destroy();
+  }
 }
 
 function rangesOf(set: ReturnType<typeof Y.createDeleteSet>): IdRanges {

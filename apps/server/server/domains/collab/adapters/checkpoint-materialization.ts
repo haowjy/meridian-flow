@@ -6,9 +6,7 @@ import * as Y from "yjs";
 /** A materialized checkpoint, and the shape of the history it stores. */
 export type MaterializedCheckpoint = {
   state: Uint8Array;
-  /** Yjs structs the state holds, deleted ones included: what every load and copy walks. */
   structs: number;
-  /** UTF-8 bytes of the text the document shows: what the history is a multiple of. */
   contentBytes: number;
 };
 
@@ -37,20 +35,8 @@ export async function materializeCheckpoint(
     if (doc.store.pendingStructs || doc.store.pendingDs) {
       throw new Error("Cannot checkpoint unresolved Yjs journal dependencies");
     }
-    dropUnseenContent(doc, await frontiers());
-    let structs = 0;
-    let contentBytes = 0;
-    for (const clientStructs of doc.store.clients.values()) {
-      structs += clientStructs.length;
-      for (const struct of clientStructs)
-        if (
-          struct instanceof Y.Item &&
-          !struct.deleted &&
-          struct.content instanceof Y.ContentString
-        )
-          contentBytes += Buffer.byteLength(struct.content.str);
-    }
-    return { state: Y.encodeStateAsUpdate(doc), structs, contentBytes };
+    const shape = dropUnseenContent(doc, await frontiers());
+    return { state: Y.encodeStateAsUpdate(doc), ...shape };
   } finally {
     doc.destroy();
   }

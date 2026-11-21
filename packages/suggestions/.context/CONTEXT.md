@@ -128,13 +128,14 @@ where Live text separates its pieces; `pending` the turns and the Works
   only it; the binding then redraws the editor. Card Undo runs it with `{ turn }`.
 - **A verdict is undone with its text.** The tab's history
   (`apps/app/src/core/editor/editor-history.ts`) holds `resolveScope(doc)`, the fragment and the
-  verdicts map, and the press's Undo forgets the verdict keys its press recorded
-  (`forgetVerdicts`). So an entry exists exactly while its resolve stands. An Undo that left an
+  verdicts map, and the press's Undo forgets the entries its press wrote whose changes it made
+  pending again (`forgetVerdicts`), never another client's entry. So an entry exists exactly while
+  its resolve stands. An Undo that left an
   undone resolve's verdict standing would have the planning view withdraw a suggestion that is
   pending again.
 - Press: Apply or Discard on documents, folders or a Work is a server command
   (`domains/collab/adapters/drizzle-press.ts`). `pressStored` runs `resolveStored` as one Yjs
-  transaction and returns the blocks it changed, before and after, and the verdict keys it
+  transaction and returns the blocks it changed, before and after, and the verdict entries it
   wrote. Its Undo is by content, as the card's is: each change that still stands is taken back
   out (`takeBack` in collab's `inverse-text.ts`), so a change the writer typed inside since stays
   as they left it. It reads no deleted item, whose content a checkpoint drops. A whole-Work press finds its
