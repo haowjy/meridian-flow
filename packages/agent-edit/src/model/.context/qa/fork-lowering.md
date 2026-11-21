@@ -214,7 +214,8 @@ These are for the B design to settle; the probe counts them instead of failing.
 
 ## Last run: 2026-11-20, on `feat/suggestions-bg-gate` 50dbf59a7b
 
-Seeds 1 to 12, 1,000 scripts each, plus the 13 fixed cases in every run (measured on the code of 50dbf59a7b; that commit changed only the probe's header comment after the run). That makes 26,899
+Seeds 1 to 12, 1,000 scripts each, plus the 13 fixed cases in every run, on the code of
+50dbf59a7b before its formatting and header-comment edits. That makes 26,899
 Applies, 12,010 Undos (2,696 after a concurrent edit), 5,966 two-draft checks and 5,252
 concurrent Live edits. Every assertion passed. The median Live update was about 18.5 bytes per
 applied character, the largest 129.
