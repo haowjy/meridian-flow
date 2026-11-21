@@ -1,33 +1,29 @@
 // Structure values and the common visibility rule. Keys are ordered as strings,
 // with a block id as the deterministic tie-breaker.
 export const FIELDS = ['parent', 'order', 'node', 'attrs'];
-export const ids = (doc) => [...doc.getMap('order').keys()];
-
-export function visible(doc) {
-  const parent = doc.getMap('parent');
-  const order = doc.getMap('order');
-  const memo = new Map();
-  function visit(id, path) {
-    if (memo.has(id)) return memo.get(id);
-    if (path.has(id) || order.get(id) == null || parent.get(id) === undefined) return false;
-    const p = parent.get(id);
-    if (p !== null && typeof p !== 'string') return false;
-    path.add(id);
-    const result = p === null || visit(p, path);
-    path.delete(id);
-    memo.set(id, result);
-    return result;
-  }
-  return new Set(ids(doc).filter((id) => visit(id, new Set())));
+export function value(doc, name, key) {
+  const base=doc.getMap(name), override=doc.getMap('d.'+name);
+  const v=doc._draft ? override.get(key) : undefined;
+  return v===undefined ? base.get(key) : v;
 }
-
-export function children(doc, parentId, shown = visible(doc)) {
-  const parent = doc.getMap('parent');
-  const order = doc.getMap('order');
-  return [...shown].filter((id) => parent.get(id) === parentId).sort((a,b) => {
-    const x = order.get(a), y = order.get(b);
-    return x < y ? -1 : x > y ? 1 : a < b ? -1 : a > b ? 1 : 0;
-  });
+export const ids = doc => [...new Set([...doc.getMap('order').keys(),...(doc._draft?[...doc.getMap('d.order').keys()]:[])])];
+export function attributes(doc,id) {
+  const keys=new Set([...doc.getMap('attrs').keys(),...(doc._draft?[...doc.getMap('d.attrs').keys()]:[])]), out={};
+  for(const k of keys) if(k.startsWith(id+'/')) {const v=value(doc,'attrs',k);if(v!==null&&v!==undefined)out[k.slice(id.length+1)]=v;}
+  return out;
+}
+export function parents(doc) {
+  const all=ids(doc), known=new Set(all), result=new Map(all.map(id=>[id,value(doc,'parent',id)]));
+  for(const id of all) {let x=id,path=[],seen=new Map();while(typeof x==='string'&&known.has(x)) {if(seen.has(x)){const cycle=path.slice(seen.get(x));result.set(cycle.sort()[0],null);break;}seen.set(x,path.length);path.push(x);x=result.get(x);}}
+  return result;
+}
+export function visible(doc) {
+  const p=parents(doc),memo=new Map();
+  function visit(id) {if(memo.has(id))return memo.get(id);if(value(doc,'order',id)==null||!p.has(id)||p.get(id)===undefined){memo.set(id,false);return false;}const par=p.get(id);memo.set(id,false);const result=par===null||(typeof par==='string'&&visit(par));memo.set(id,result);return result;}
+  const shown=new Set(ids(doc).filter(visit));let changed=true;while(changed){changed=false;for(const id of [...shown]){const parent=p.get(id),type=value(doc,'node',id);const invalidParent=parent!==null&&!shown.has(parent);const empty=(type==='table'||type==='table_row')&&![...shown].some(k=>p.get(k)===id&&(type==='table'?value(doc,'node',k)==='table_row':['table_header','table_cell'].includes(value(doc,'node',k))));if(invalidParent||empty){shown.delete(id);changed=true;}}}return shown;
+}
+export function children(doc,parentId,shown=visible(doc)) {
+  const p=parents(doc);return [...shown].filter(id=>p.get(id)===parentId).sort((a,b)=>{const x=value(doc,'order',a),y=value(doc,'order',b);return x<y?-1:x>y?1:a<b?-1:a>b?1:0;});
 }
 
 const ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
@@ -64,4 +60,11 @@ export function orderKeys(list, current, rng) {
     lower=keyBetween(lower,upper,rng); result.set(list[i],lower);
   }
   return result;
+}
+export function sameOrderAsBase(doc,id) {
+  const override=doc.getMap('d.order').get(id),base=doc.getMap('order').get(id);
+  if(typeof override!=='string'||typeof base!=='string'||doc.getMap('parent').get(id)!==value(doc,'parent',id))return false;
+  const compare=(a,b,x,y)=>a<b?-1:a>b?1:x<y?-1:x>y?1:0;
+  for(const other of children(doc,value(doc,'parent',id)))if(other!==id){const key=value(doc,'order',other);if(compare(override,key,id,other)!==compare(base,key,id,other))return false;}
+  return true;
 }

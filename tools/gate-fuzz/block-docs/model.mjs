@@ -1,124 +1,48 @@
-// Block-doc operations. A document is { structure, texts, peer }.
-import { FIELDS, ids, visible } from './structure.mjs';
-
-const sorted = (v) => Array.isArray(v) ? v.map(sorted) : v && typeof v === 'object'
-  ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sorted(v[k])])) : v;
-export const same = (a,b) => JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
-const update = (source, target) => target.import(source.export({mode:'update',from:target.oplogVersion()}));
-const clone = (doc, peer, configure) => { const d=doc.fork(); d.setPeerId(peer); if (configure) configure(d); else d.configDefaultTextStyle({expand:'none'}); return d; };
-const carried = (doc) => {
-  const out=new Set();
-  if (doc) for (const span of doc.getText('t').toDelta())
-    for (const k of Object.keys(span.attributes ?? {})) if (k.startsWith('comment_')) out.add(k.slice(8));
-  return out;
-};
-export function forward(live, fork) {
-  update(live.structure, fork.structure);
-  for (const [id, doc] of live.texts) {
-    if (!fork.texts.has(id)) fork.texts.set(id, clone(doc, fork.peer, fork.configure));
-    else update(doc, fork.texts.get(id));
-  }
-}
-export function changedBlocks(live, fork) {
-  forward(live,fork);
-  const L=visible(live.structure), F=visible(fork.structure);
-  const all=new Set([...ids(live.structure),...ids(fork.structure)]);
-  const changes=[];
-  for (const id of all) {
-    let different=L.has(id)!==F.has(id);
-    if (!different && L.has(id)) {
-      different=FIELDS.some((k) => !same(live.structure.getMap(k).get(id),fork.structure.getMap(k).get(id)));
-      const a=live.texts.get(id), b=fork.texts.get(id);
-      different ||= !same(a?.getText('t').toDelta() ?? [],b?.getText('t').toDelta() ?? []);
-      for (const comment of new Set([...carried(a),...carried(b)]))
-        different ||= !same(live.structure.getMap('comments').get(comment),fork.structure.getMap('comments').get(comment));
-    }
-    if (different) changes.push(id);
-  }
-  return changes;
-}
-function put(map,key,value) { if (value === undefined) map.delete(key); else map.set(key,value); }
-function bodies(source,target,id) {
-  const from=source.structure.getMap('comments'), to=target.structure.getMap('comments');
-  for (const key of carried(source.texts.get(id))) {
-    const value=from.get(key);
-    if (!same(value,to.get(key))) put(to,key,value);
-  }
-}
-export function prune(doc) {
-  const keys=new Set();
-  for (const id of visible(doc.structure)) for (const k of carried(doc.texts.get(id))) keys.add(k);
-  const m=doc.structure.getMap('comments');
-  for (const k of m.keys()) if (!keys.has(k)) m.delete(k);
-}
-function setFields(from,to,id) {
-  for (const name of FIELDS) {
-    const src=from.structure.getMap(name), dst=to.structure.getMap(name);
-    let value=src.get(id); if (name==='order' && value === undefined) value=null;
-    if (!same(value,dst.get(id))) put(dst,id,value);
-  }
-}
-export function applyBlocks(live,fork,selected,message='apply') {
-  const pending=changedBlocks(live,fork); const chosen=selected==='all'?pending:pending.filter((id)=>selected.includes(id));
-  if (!chosen.length) return {chosen,changed:[]};
-  const records=[]; const before=live.structure.frontiers();
-  for (const id of chosen) {
-    setFields(fork,live,id);
-    const src=fork.texts.get(id);
-    if (src) {
-      let dst=live.texts.get(id);
-      if (!dst) { dst=clone(src,live.peer,live.configure); live.texts.set(id,dst); }
-      else {const b=dst.frontiers();update(src,dst);const a=dst.frontiers();if (!same(a,b)) records.push({id,doc:dst,before:b,after:a});}
-      bodies(fork,live,id);
-    }
-  }
-  prune(live); live.structure.commit({message});
-  const after=live.structure.frontiers();
-  if (!same(before,after)) records.unshift({id:null,doc:live.structure,before,after});
-  forward(live,fork); return {chosen,changed:records};
-}
-export function resetBlocks(live,fork,selected,message='reset') {
-  const pending=changedBlocks(live,fork); const chosen=selected==='all'?pending:pending.filter((id)=>selected.includes(id));
-  if (!chosen.length) return {chosen,changed:[]};
-  const records=[]; const before=fork.structure.frontiers();
-  for (const id of chosen) {
-    setFields(live,fork,id);
-    const src=live.texts.get(id), dst=fork.texts.get(id);
-    if (src && dst) {
-      const b=dst.frontiers(); dst.applyDiff(dst.diff(b,src.frontiers(),false)); dst.commit({message});
-      const a=dst.frontiers(); if (!same(a,b)) records.push({id,doc:dst,before:b,after:a});
-    }
-    bodies(live,fork,id);
-  }
-  prune(fork); fork.structure.commit({message}); const after=fork.structure.frontiers();
-  if (!same(before,after)) records.unshift({id:null,doc:fork.structure,before,after});
-  return {chosen,changed:records};
-}
-export function invertCommit(doc,before,after,peer,message='undo') {
-  const at=doc.forkAt(after); try {
-    at.setPeerId(peer); at.configDefaultTextStyle({expand:'none'});
-    at.applyDiff(at.diff(after,before,false)); at.commit({message});
-    const bytes=at.export({mode:'update',from:doc.oplogVersion()});doc.import(bytes);return bytes;
-  } finally {at.free();}
-}
-export function returnToPending(doc,bytes,message='return to pending') {
-  const before=doc.frontiers();doc.import(bytes);const after=doc.frontiers();
-  doc.applyDiff(doc.diff(after,before,false));doc.commit({message});
+import { attributes, children, ids, value, visible } from './structure.mjs';
+const sorted=v=>Array.isArray(v)?v.map(sorted):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,sorted(v[k])])):v;
+export const same=(a,b)=>JSON.stringify(sorted(a))===JSON.stringify(sorted(b));
+const update=(source,target)=>target.import(source.export({mode:'update',from:target.oplogVersion()}));
+const clone=(doc,peer,configure)=>{const d=doc.fork();d.setPeerId(peer);if(configure)configure(d);else d.configDefaultTextStyle({expand:'none'});return d;};
+export function forward(source,target){update(source.structure,target.structure);for(const [id,d] of source.texts){if(!target.texts.has(id)){target.texts.set(id,clone(d,target.peer,target.configure));if(!source.draft)for(const snapshot of target._frontierSnapshots??[])if(!snapshot.texts.has(id))snapshot.texts.set(id,d.frontiers());}else if(d!==target.texts.get(id))update(d,target.texts.get(id));}}
+export function carried(d,id){const out=new Set(),name=value(d.structure,'node',id);if(name==='code_block')return out;for(const x of d.texts.get(id)?.getText('t').toDelta()??[]){const a=x.attributes??{};if(a.code)continue;if(name==='jsx_leaf'&&a.inline&&[...x.insert].every(ch=>ch==='\ufffc'))continue;for(const k of Object.keys(a))if(k.startsWith('comment_'))out.add(k.slice(8));}return out;}
+function ordered(d){const out=[],seen=new Set(),shown=visible(d.structure);function visit(parent){for(const id of children(d.structure,parent,shown)){if(seen.has(id))continue;seen.add(id);out.push(id);visit(id);}}visit(null);return out;}
+function owners(d){const out=new Map();for(const id of ordered(d))for(const c of carried(d,id))if(!out.has(c))out.set(c,id);return out;}
+function delta(d,id){const name=value(d.structure,'node',id),out=[];for(const run of d.texts.get(id)?.getText('t').toDelta()??[]){for(const ch of run.insert){let a={...(run.attributes??{})};if(name==='code_block'){if(ch==='\ufffc'&&a.inline)continue;a={};}else if(name==='jsx_leaf'){if(ch==='\ufffc'&&a.inline)continue;if(a.code)a={code:a.code};}else{if(ch!=='\ufffc')delete a.inline;if(a.code)a={code:a.code,...(a.inline?{inline:a.inline}:{})};}out.push([ch,sorted(a)]);}}return out;}
+function moved(sourceBefore,sourceAfter,destBefore,destAfter){
+ const runs=text=>{const words=text.match(/[\p{L}\p{N}_]+/gu)??[],out=new Set();for(let i=0;i+4<=words.length;i++)out.add(words.slice(i,i+4).join('\0'));return out;};
+ const old=runs(sourceBefore),remaining=runs(sourceAfter),prior=runs(destBefore),now=runs(destAfter);
+ for(const run of old)if(!remaining.has(run)&&!prior.has(run)&&now.has(run))return true;return false;
 }
 
-export function restoreBeforeOnLive(live, fork, before, message='restore before') {
-  forward(live,fork);
-  const restore=(l,f,frontier)=>{
-    if(!frontier)return;
-    const vv=f.frontiersToVV(frontier).toJSON();
-    if(l) for(const [peer,n] of l.oplogVersion().toJSON())if((vv.get(peer)??0)<n)vv.set(peer,n);
-    const V=f.oplogVersion().constructor;
-    const target=f.vvToFrontiers(new V(vv));
-    f.applyDiff(f.diff(f.frontiers(),target,false));f.commit({message});
-  };
-  restore(live.structure,fork.structure,before.structure);
-  for(const [id,d] of fork.texts)restore(live.texts.get(id),d,before.texts.get(id));
+export function groups(live,fork){
+ forward(live,fork);const L=visible(live.structure),F=visible(fork.structure),all=new Set([...ids(live.structure),...ids(fork.structure)]),owner=owners(fork),changed=[];
+ for(const id of all){let diff=L.has(id)!==F.has(id);if(!diff&&L.has(id)){diff=['parent','order','node'].some(k=>!same(value(live.structure,k,id),value(fork.structure,k,id)))||!same(attributes(live.structure,id),attributes(fork.structure,id))||!same(delta(live,id),delta(fork,id));}
+ for(const [c,block] of owner)if(block===id&&!same(value(live.structure,'comments',c),value(fork.structure,'comments',c)))diff=true;if(diff)changed.push(id);}
+ const set=new Set(changed),p=new Map(changed.map(x=>[x,x]));const find=x=>p.get(x)===x?x:(p.set(x,find(p.get(x))),p.get(x));const join=(a,b)=>{a=find(a);b=find(b);if(a!==b)p.set(b,a);};
+ for(const id of changed)for(const d of [live,fork]){let par=value(d.structure,'parent',id),seen=new Set();while(typeof par==='string'&&!seen.has(par)){seen.add(par);if(set.has(par)&&L.has(par)!==F.has(par)){join(id,par);break;}par=value(d.structure,'parent',par);}}
+ for(const d of [live,fork]){const order=ordered(d);for(let i=0;i+1<order.length;i++){const a=order[i],b=order[i+1];if(!set.has(a)||!set.has(b)||value(d.structure,'parent',a)!==value(d.structure,'parent',b))continue;const Lshown=visible(live.structure),Fshown=visible(fork.structure),la=Lshown.has(a)?live.texts.get(a)?.getText('t').toString()??'':'',lb=Lshown.has(b)?live.texts.get(b)?.getText('t').toString()??'':'',fa=Fshown.has(a)?fork.texts.get(a)?.getText('t').toString()??'':'',fb=Fshown.has(b)?fork.texts.get(b)?.getText('t').toString()??'':'';if(moved(la,fa,lb,fb)||moved(lb,fb,la,fa))join(a,b);}}
+ const out=new Map();for(const id of changed){const root=find(id);if(!out.has(root))out.set(root,[]);out.get(root).push(id);}return [...out.values()];
 }
-export function frontiers(doc) {
-  return {structure:doc.structure.frontiers(),texts:new Map([...doc.texts].map(([id,d])=>[id,d.frontiers()]))};
+export function changedBlocks(live,fork){return groups(live,fork).flat();}
+function chosenGroups(live,fork,selected){return groups(live,fork).filter(g=>selected==='all'||g.some(id=>selected.includes(id))).flat();}
+function overrideKeys(s,id){const out=[];for(const name of ['parent','order','node','attrs'])for(const k of s.getMap('d.'+name).keys())if(name==='attrs'?k.startsWith(id+'/'):k===id)out.push([name,k]);return out;}
+export function applyBlocks(live,fork,selected,message='apply'){
+ const chosen=chosenGroups(live,fork,selected);if(!chosen.length)return {chosen,changed:[],forkChanged:[]};const records=[],forkChanged=[],lb=live.structure.frontiers(),fb=fork.structure.frontiers(),owner=owners(fork);
+ for(const id of chosen){for(const [name,key] of overrideKeys(fork.structure,id)){const v=fork.structure.getMap('d.'+name).get(key);live.structure.getMap(name).set(key,v);fork.structure.getMap('d.'+name).delete(key);}
+ for(const [comment,block] of owner)if(block===id){const v=fork.structure.getMap('d.comments').get(comment);if(v!==undefined){live.structure.getMap('comments').set(comment,v);fork.structure.getMap('d.comments').delete(comment);}}
+ const src=fork.texts.get(id);if(src){const dst=live.texts.get(id);if(!dst)live.texts.set(id,clone(src,live.peer,live.configure));else{const before=dst.frontiers();update(src,dst);const after=dst.frontiers();if(!same(before,after))records.push({id,doc:dst,before,after});}}}
+ live.structure.commit({message});fork.structure.commit({message});const la=live.structure.frontiers(),fa=fork.structure.frontiers();if(!same(lb,la))records.unshift({id:null,doc:live.structure,before:lb,after:la});if(!same(fb,fa))forkChanged.push({id:null,doc:fork.structure,before:fb,after:fa});forward(live,fork);return {chosen,changed:records,forkChanged};
 }
+export function resetBlocks(live,fork,selected,message='reset'){
+ const chosen=chosenGroups(live,fork,selected);if(!chosen.length)return {chosen,changed:[]};const records=[],before=fork.structure.frontiers(),owner=owners(fork);
+ for(const id of chosen){for(const [name,key] of overrideKeys(fork.structure,id))fork.structure.getMap('d.'+name).delete(key);if(value(live.structure,'order',id)===undefined)fork.structure.getMap('d.order').set(id,null);
+ for(const [comment,block] of owner)if(block===id)fork.structure.getMap('d.comments').delete(comment);
+ const src=live.texts.get(id),dst=fork.texts.get(id);if(src&&dst){const b=dst.frontiers();dst.applyDiff(dst.diff(b,src.frontiers(),false));dst.commit({message});const a=dst.frontiers();if(!same(a,b))records.push({id,doc:dst,before:b,after:a});}}
+ for(const [comment,block] of owners(fork))if(chosen.includes(block))fork.structure.getMap('d.comments').delete(comment);
+ fork.structure.commit({message});const after=fork.structure.frontiers();if(!same(before,after))records.unshift({id:null,doc:fork.structure,before,after});return {chosen,changed:records};
+}
+export function prune(){}
+export function invertCommit(doc,before,after,peer,message='undo'){const at=doc.forkAt(after);try{at.setPeerId(peer);at.configDefaultTextStyle({expand:'none'});at.applyDiff(at.diff(after,before,false));at.commit({message});const bytes=at.export({mode:'update',from:doc.oplogVersion()});doc.import(bytes);return bytes;}finally{at.free();}}
+export function returnToPending(doc,bytes,message='return to pending'){const before=doc.frontiers();doc.import(bytes);const after=doc.frontiers();doc.applyDiff(doc.diff(after,before,false));doc.commit({message});}
+export function restoreBeforeOnLive(live,fork,before,message='restore before'){forward(live,fork);const restore=(l,f,frontier)=>{if(!frontier)return;const vv=f.frontiersToVV(frontier).toJSON();if(l)for(const [peer,n] of l.oplogVersion().toJSON())if((vv.get(peer)??0)<n)vv.set(peer,n);const V=f.oplogVersion().constructor,target=f.vvToFrontiers(new V(vv));f.applyDiff(f.diff(f.frontiers(),target,false));f.commit({message});};restore(live.structure,fork.structure,before.structure);for(const [id,d] of fork.texts)restore(live.texts.get(id),d,before.texts.get(id));}
+export function frontiers(doc){const snapshot={structure:doc.structure.frontiers(),texts:new Map([...doc.texts].map(([id,d])=>[id,d.frontiers()]))};(doc._frontierSnapshots??=[]).push(snapshot);return snapshot;}
