@@ -38,7 +38,6 @@ import {
   SILENT_TURN_INVERSE_NOTICES,
   UNSUPPORTED_THREAD_CONTEXT_REVERSAL_COMMAND_DEPS,
 } from "./adapters/declared-stubs.js";
-import { createDrizzleAuthorityGenerationReplacement } from "./adapters/drizzle-authority-generation-replacement.js";
 import { createDrizzleBlockText } from "./adapters/drizzle-block-text.js";
 import { createDrizzleCollabLookups } from "./adapters/drizzle-collab-lookups.js";
 import { createDrizzleDiscardPurge } from "./adapters/drizzle-discard-purge.js";
@@ -373,19 +372,11 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     createDrizzleWorkCreates(deps.db, { documents: runtime.markdownDocuments }),
   );
 
-  const replaceAuthorityGeneration = createDrizzleAuthorityGenerationReplacement({
-    db: deps.db,
-    coordinator: liveCoordinator,
-    checkpoints: persistence.store,
-    disconnectGeneration: hocuspocusPersistence.disconnectLiveGeneration,
-    onReplaced: liveAdvanced,
-  });
   const checkpoints = createCheckpointService({
     coordinator: liveCoordinator,
     store: persistence.store,
     journal: persistence.journal,
     markdownDocuments: runtime.markdownDocuments,
-    replaceAuthorityGeneration,
   });
   const lineageStore = createDrizzleTurnLiveLineageStore(deps.db);
   // A card's Undo rejects the turn's suggestions; the Live inverse takes the rest.

@@ -53,7 +53,7 @@ stack.
 - [Scratch before compaction](../../apps/server/server/domains/runtime/.context/qa/scratch-compaction.md): zero to three calls, honest held results, summary, bypasses, cancellation and unchanged ownership.
 - [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the draft store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
 - [Editor schema notices](../../apps/app/src/features/editor/.context/qa/editor-notices.md): one-line repair and fence bars, the Details popover, copy refusals and Dismiss focus.
-- [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, generation replacement and opaque cuts.
+- [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, invalidation and opaque cuts.
 - [Document adoption across a reload](../../apps/app/src/features/project/.context/qa/document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
 - [Document open: commit first](../../apps/app/src/features/project/.context/qa/document-open.md): immediate main, side, and phone placement; one content open; transfer ownership; failures, removal, fencing, passages, projection readiness, streaming, and keystrokes.
 - [Tree sidebar](tree-sidebar.md): rename, move, delete and create across two tabs, offline and a fresh profile; the chat side panel's document path; list actions; folder deletion and Scratch lineage.

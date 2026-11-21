@@ -63,8 +63,8 @@ export function createAgentEditRuntime(input: {
   const storedModel = yProsemirrorModel(schema);
   // `model` is the Live view for every reader and writer of Live; it keeps every draft's
   // suggestions where they are. A draft's view is `draftView`, the one way the server reads a
-  // draft or writes its suggestions. A whole replacement (restore) through `model` keeps Live's
-  // text and drops the document's pending suggestions.
+  // draft or writes its suggestions. A version restore through `model` sets Live's text to the
+  // version's and leaves every draft's pending suggestions where they are.
   const model = suggestingModel(storedModel, liveView, null);
   /** A code document's text is one code block, not Markdown: its codec reads and writes it so. */
   const codecFor = async (documentId: DocumentId): Promise<AgentEditCodecFactory> => {

@@ -621,13 +621,11 @@ a repeat replaces it). A change with no words (a deletion, a format change) is d
   from it, so structs past a gap are never counted. The check covers inserts: a vector carries
   no deletions, so a peer's deletions released by a server frame go with the next handshake.
 - **A replaced room.** The server can replace a room's document with one that lacks items a mark
-  counts: a restore from a checkpoint (`CollabDomain.restore`, no caller yet) installs an older
-  state as a new generation, and a document with no authority head is reseeded empty. A handshake
-  whose vector does not cover the mark replaces it instead of merging. The client sees a
-  replacement only at its next handshake, whatever it is keyed on, so this is the same check a
-  generation id would give. Items the replaced room lost and a copy still holds stay within the mark
-  until then: the server had them, and the replacement dropped them. When a restore gets a
-  caller, it should tell open clients, so their marks are replaced before an offline purge.
+  counts: a document with no authority head is reseeded empty. A handshake whose vector does not
+  cover the mark replaces it instead of merging. Items the replaced room lost and a copy still holds
+  stay within the mark until then: the server had them, and the replacement dropped them. A
+  version restore replaces nothing: it is an edit every copy merges, so a copy's typing from before
+  it lands.
 - **Who drops from the mark.** A closing or removing retirement (`DocumentSessionTeardownOwner`'s
   `retiring`) reads its copy beyond its mark (`LocalDocumentCopies.beyondMark`); the
   copy has every write of the session's by then. Not at the reset: a session kept on screen still
