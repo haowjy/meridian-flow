@@ -96,7 +96,8 @@ that read stays deleted. That read has two sources:
   frontier saw, so the frontier can't be rebuilt. Each block a stored result showed in full
   (`{hash, body}`, latest showing wins) is the base; the model's command applied to that base is
   ours; the room now is theirs; the three-way content merge writes the result as a
-  whole-document replace. A shown hash counts only when it matches exactly one block visible at
+  whole-document replace. A rewrite of a block the room has deleted since answers `block_gone`
+  with the current text, as on a usable frontier, since the merge would bring the block back. A shown hash counts only when it matches exactly one block visible at
   the frontier, so a block made since the read can't take a shown body by prefix. It covers a
   `replace` with content and no `find`; `insert` and `remove` can't bring deleted text back, and
   `find` matches the room as it is now.
