@@ -40,6 +40,7 @@
  * saved" after an outage.
  */
 
+import { dropResolvedMarks } from "@meridian/agent-edit";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import {
   type ChangeEventWsMessage,
@@ -367,6 +368,7 @@ export class DocumentSession {
       this.destroyed ? null : (this.persistence?.db ?? null),
     );
     this.document.on("update", this.onDocumentUpdate);
+    this.document.on("afterTransaction", this.onAfterTransaction);
     this.persistSchemaFence = persistSchemaFence;
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
@@ -716,6 +718,14 @@ export class DocumentSession {
     this.differenceAnswered = false;
     provider.requestHandshake?.();
     this.recomputeStatus();
+  };
+
+  /**
+   * What the server, the copy or a peer tab brings in may end a mark another client re-opened
+   * inside a change resolved since: that mark goes, or it runs on over the words after it.
+   */
+  private readonly onAfterTransaction = (transaction: Y.Transaction): void => {
+    if (!transaction.local && this.access === "edit") dropResolvedMarks(this.document, transaction);
   };
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {

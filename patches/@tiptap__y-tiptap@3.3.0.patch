@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b5537746e 100644
+index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..1cfd64265cb099aa64382cca9e4863fb79938054 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -594,15 +594,99 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
@@ -327,7 +327,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -955,23 +1161,73 @@ const ytextTrans = (ytext) => {
+@@ -955,23 +1161,86 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -399,26 +399,39 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
 +    const owner = spans.find((span) => span.end >= index);
 +    owner.ytext.insert(index - owner.start, insert);
 +  }
++  // Meridian patch: format only the runs whose marks differ from what the text holds. Formatting a
++  // run deletes and re-inserts every format item inside it, so formatting every run on each edit
++  // moved the opening of a span that held no text any more (one a peer's resolve was concurrently
++  // deleting, closing item included) to a new item: once merged, it opened with nothing to close
++  // it, and the mark spread over all the text after it.
 +  let c = 0;
 +  let cOffset = 0;
-+  ytexts.forEach((ytext, i) => {
-+    const delta = [];
-+    for (let need = ytext.length; need > 0;) {
-+      const take = lib0_math.min(need, content[c].insert.length - cOffset);
-+      delta.push({ retain: take, attributes: Object.assign({}, trans[i].nAttrs, marksToAttributes(content[c].attributes, meta)) });
-+      need -= take;
-+      cOffset += take;
-+      if (cOffset === content[c].insert.length) {
-+        c++;
-+        cOffset = 0;
++  ytexts.forEach((ytext) => {
++    let at = 0;
++    for (const d of ytext.toDelta()) {
++      const have = d.attributes || {};
++      let left = typeof d.insert === "string" ? d.insert.length : 1;
++      while (left > 0) {
++        const take = lib0_math.min(left, content[c].insert.length - cOffset);
++        const want = marksToAttributes(content[c].attributes, meta);
++        const attributes = {};
++        for (const key in want) if (!equalAttrs({ v: want[key] }, { v: have[key] ?? null })) attributes[key] = want[key];
++        for (const key in have) if (!(key in want)) attributes[key] = null;
++        if (Object.keys(attributes).length > 0) ytext.format(at, take, attributes);
++        at += take;
++        left -= take;
++        cOffset += take;
++        if (cOffset === content[c].insert.length) {
++          c++;
++          cOffset = 0;
++        }
 +      }
 +    }
-+    if (delta.length > 0) ytext.applyDelta(delta);
 +  });
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1042,125 +1298,339 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1042,125 +1311,339 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -872,7 +885,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1195,6 +1665,10 @@ var ProsemirrorBinding = class {
+@@ -1195,6 +1678,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = (0, lib0_mutex.createMutex)();
  		this.isOMark = /* @__PURE__ */ new Map();
@@ -883,7 +896,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1281,7 +1755,6 @@ var ProsemirrorBinding = class {
+@@ -1281,7 +1768,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -891,7 +904,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1325,7 +1798,7 @@ var ProsemirrorBinding = class {
+@@ -1325,7 +1811,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = lib0_math.min(lib0_math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = lib0_math.min(lib0_math.max(sel.head, 0), tr.doc.content.size);
@@ -900,7 +913,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1426,8 +1899,14 @@ var ProsemirrorBinding = class {
+@@ -1426,8 +1912,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -915,7 +928,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1498,6 +1977,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1498,6 +1990,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -981,7 +994,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1633,14 +2171,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1633,14 +2184,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -1008,7 +1021,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1758,6 +2306,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1758,6 +2319,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -1035,7 +1048,7 @@ index 309e68f4a77be4ab8e7b2ca271a6098a9182a245..840a2d848887c36e8994c166ea4cbb4b
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1784,6 +2352,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
+@@ -1784,6 +2365,8 @@ exports.defaultSelectionBuilder = defaultSelectionBuilder;
  exports.findAbsolutePositionAfterStructuralChange = findAbsolutePositionAfterStructuralChange;
  exports.getRelativeSelection = getRelativeSelection;
  exports.initProseMirrorDoc = initProseMirrorDoc;
@@ -1147,7 +1160,7 @@ index cd119d0d4ccbf7c175052efb60907f98c6f93859..a25c38bac7ea41bb4eccb448a11325c6
  /** A selection stored as Yjs relative positions. */
  type CursorAwarenessSelection = {
 diff --git a/dist/index.js b/dist/index.js
-index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0ec06d0a74 100644
+index 64482faff4203574f1326cfab8f847cd00c2d850..5c1aeb6e48159c2bd92831dd6559452165f89f38 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -561,15 +561,99 @@ const isMisresolvedAfterStructuralChange = (oldDoc, newDoc, oldAbs, resolvedAbs)
@@ -1475,7 +1488,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  };
  //#endregion
  //#region src/lib/utils/reconciliation/mappedIdentity.ts
-@@ -922,23 +1128,73 @@ const ytextTrans = (ytext) => {
+@@ -922,23 +1128,86 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -1547,26 +1560,39 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
 +    const owner = spans.find((span) => span.end >= index);
 +    owner.ytext.insert(index - owner.start, insert);
 +  }
++  // Meridian patch: format only the runs whose marks differ from what the text holds. Formatting a
++  // run deletes and re-inserts every format item inside it, so formatting every run on each edit
++  // moved the opening of a span that held no text any more (one a peer's resolve was concurrently
++  // deleting, closing item included) to a new item: once merged, it opened with nothing to close
++  // it, and the mark spread over all the text after it.
 +  let c = 0;
 +  let cOffset = 0;
-+  ytexts.forEach((ytext, i) => {
-+    const delta = [];
-+    for (let need = ytext.length; need > 0;) {
-+      const take = math.min(need, content[c].insert.length - cOffset);
-+      delta.push({ retain: take, attributes: Object.assign({}, trans[i].nAttrs, marksToAttributes(content[c].attributes, meta)) });
-+      need -= take;
-+      cOffset += take;
-+      if (cOffset === content[c].insert.length) {
-+        c++;
-+        cOffset = 0;
++  ytexts.forEach((ytext) => {
++    let at = 0;
++    for (const d of ytext.toDelta()) {
++      const have = d.attributes || {};
++      let left = typeof d.insert === "string" ? d.insert.length : 1;
++      while (left > 0) {
++        const take = math.min(left, content[c].insert.length - cOffset);
++        const want = marksToAttributes(content[c].attributes, meta);
++        const attributes = {};
++        for (const key in want) if (!equalAttrs({ v: want[key] }, { v: have[key] ?? null })) attributes[key] = want[key];
++        for (const key in have) if (!(key in want)) attributes[key] = null;
++        if (Object.keys(attributes).length > 0) ytext.format(at, take, attributes);
++        at += take;
++        left -= take;
++        cOffset += take;
++        if (cOffset === content[c].insert.length) {
++          c++;
++          cOffset = 0;
++        }
 +      }
 +    }
-+    if (delta.length > 0) ytext.applyDelta(delta);
 +  });
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateMatchingYChild.ts
-@@ -1009,125 +1265,339 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
+@@ -1009,125 +1278,339 @@ const reconcileMappedChildren = (y, yDomFragment, pChildren, yChildren, meta, up
  };
  //#endregion
  //#region src/lib/utils/reconciliation/computeChildEqualityFactor.ts
@@ -2020,7 +2046,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  };
  //#endregion
  //#region src/lib/utils/binding/replaceChangedChildren.ts
-@@ -1162,6 +1632,10 @@ var ProsemirrorBinding = class {
+@@ -1162,6 +1645,10 @@ var ProsemirrorBinding = class {
  		this.prosemirrorView = null;
  		this.mux = createMutex();
  		this.isOMark = /* @__PURE__ */ new Map();
@@ -2031,7 +2057,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  		this.beforeTransactionSelection = null;
  		this._domSelectionInView = null;
  		this._invalidContentError = null;
-@@ -1248,7 +1722,6 @@ var ProsemirrorBinding = class {
+@@ -1248,7 +1735,6 @@ var ProsemirrorBinding = class {
  		this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  		const isPlaceholder = content.childCount === 0 && !this.hasSharedContent;
  		if (this.reportInvalidContent && !isPlaceholder && !topNodeType.validContent(content)) this.reportInvalidContent(/* @__PURE__ */ new RangeError("Shared content does not fit the document schema"));
@@ -2039,7 +2065,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  		return content;
  	}
  	/** Returns the projection error only when the content just stopped fitting the schema. */
-@@ -1292,7 +1765,7 @@ var ProsemirrorBinding = class {
+@@ -1292,7 +1778,7 @@ var ProsemirrorBinding = class {
  			if (sel) {
  				const clampedAnchor = math.min(math.max(sel.anchor, 0), tr.doc.content.size);
  				const clampedHead = math.min(math.max(sel.head, 0), tr.doc.content.size);
@@ -2048,7 +2074,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  			}
  			this.view.dispatch(tr.setMeta(ySyncPluginKey, {
  				isChangeOrigin: true,
-@@ -1393,8 +1866,14 @@ var ProsemirrorBinding = class {
+@@ -1393,8 +1879,14 @@ var ProsemirrorBinding = class {
  		if (this._invalidContentError !== null) return;
  		const syncState = getSyncPluginState(this.view.state);
  		if (syncState.snapshot != null || syncState.prevSnapshot != null) return;
@@ -2063,7 +2089,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  			this.hasSharedContent || (this.hasSharedContent = this.type.length > 0);
  			this.beforeTransactionSelection = getRelativeSelection(this, this.view.state);
  		}, ySyncPluginKey);
-@@ -1465,6 +1944,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
+@@ -1465,6 +1957,65 @@ const ySyncPlugin = (yXmlFragment, { colors = defaultColors, colorMapping = /* @
  			},
  			apply: (tr, pluginState) => {
  				const change = tr.getMeta(ySyncPluginKey);
@@ -2129,7 +2155,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  				if (change !== void 0) pluginState = Object.assign({}, pluginState, change);
  				if (tr.docChanged) pluginState.addToHistory = tr.getMeta("addToHistory") !== false;
  				pluginState.isChangeOrigin = change !== void 0 && !!change.isChangeOrigin;
-@@ -1600,14 +2138,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
+@@ -1600,14 +2151,24 @@ const yUndoPlugin = ({ protectedNodes = defaultProtectedNodes, trackedOrigins =
  	view: (view) => {
  		const syncState = getSyncPluginState(view.state);
  		const { undoManager: manager, destroyListeners } = getUndoPluginState(view.state);
@@ -2156,7 +2182,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  			manager.destroy();
  			destroyListeners.forEach((listener) => manager.doc.off("destroy", listener));
  			destroyListeners.clear();
-@@ -1725,6 +2273,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
+@@ -1725,6 +2286,26 @@ const yXmlFragmentToProseMirrorFragment = (yXmlFragment, schema) => {
  /** Converts Yjs XML content to the schema's top-level document node. */
  const yXmlFragmentToProseMirrorRootNode = (yXmlFragment, schema) => schema.topNodeType.create(null, yXmlFragmentToProseMirrorFragment(yXmlFragment, schema));
  //#endregion
@@ -2183,7 +2209,7 @@ index 64482faff4203574f1326cfab8f847cd00c2d850..8da903558367a414ee27ae38e916cd0e
  //#region src/lib/utils/conversion/initProseMirrorDoc.ts
  /** Creates the initial ProseMirror document and its Yjs node mapping. */
  const initProseMirrorDoc = (yXmlFragment, schema) => {
-@@ -1740,6 +2308,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
+@@ -1740,6 +2321,6 @@ const initProseMirrorDoc = (yXmlFragment, schema) => {
  	};
  };
  //#endregion
