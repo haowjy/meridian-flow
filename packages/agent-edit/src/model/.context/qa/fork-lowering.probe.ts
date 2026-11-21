@@ -353,7 +353,7 @@ function blockOf(doc: PMNode, name: string): string {
  */
 function liveInsertion(fork: Y.Doc, sv: Map<number, number>): boolean {
   let found = false;
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     for (let item = parent._start; item && !found; item = item.right) {
       if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
       const type = item.content.type;
@@ -393,7 +393,7 @@ type Unit = { client: number; clock: number; kind: "char" | "element" | "text" }
 /** Every visible unit of a document, at every depth: characters, elements and text runs. */
 function visibleUnits(doc: Y.Doc): Map<string, Unit> {
   const out = new Map<string, Unit>();
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     for (let item = parent._start; item; item = item.right) {
       if (item.deleted) continue;
       if (item.content instanceof Y.ContentType) {
@@ -465,7 +465,7 @@ function changeItems(fork: Y.Doc, change: string) {
   const chars = new Set<string>();
   const blocks = new Set<string>();
   const markId = (v: unknown) => (v as { id?: unknown } | null)?.id;
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     for (let item = parent._start; item; item = item.right) {
       if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
       const type = item.content.type;
@@ -511,7 +511,7 @@ function liveCopy(el: Y.XmlElement): Y.XmlElement {
 }
 
 /** Index of the visible child after `anchor` (an item id in `parent`), or 0 for none. */
-function indexAfter(parent: Y.AbstractType<unknown>, anchor: Y.ID | null): number {
+function indexAfter(parent: Y.AbstractType<any>, anchor: Y.ID | null): number {
   if (!anchor) return 0;
   let index = 0;
   for (let item = parent._start; item; item = item.right) {
@@ -544,7 +544,7 @@ type Gap = {
 };
 
 /** The ids of `len` visible units of `parent` from index `from`. */
-function idsAt(parent: Y.AbstractType<unknown>, from: number, len: number): Y.ID[] {
+function idsAt(parent: Y.AbstractType<any>, from: number, len: number): Y.ID[] {
   const out: Y.ID[] = [];
   let index = 0;
   for (let item = parent._start; item && out.length < len; item = item.right) {
@@ -577,7 +577,7 @@ function lowerIntoLive(
   const dress: Dress = { chars: [], blocks: [] };
   /** What the lowering copied into Live: the withdraw deletes exactly these from the fork. */
   const copied: ReturnType<typeof changeItems> = { chars: new Set(), blocks: new Set() };
-  const parentId = (type: Y.AbstractType<unknown>) => type._item?.id ?? null;
+  const parentId = (type: Y.AbstractType<any>) => type._item?.id ?? null;
 
   const lowerText = (lT: Y.XmlText, fT: Y.XmlText) => {
     let anchor: Y.ID | null = null;
@@ -805,7 +805,7 @@ function lowerIntoLive(
 
 /** Deletes the change's own inserted text and blocks from the fork, by id: Live's copies stand for them. */
 function deleteOwn(fork: Y.Doc, mine: ReturnType<typeof changeItems>): void {
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     let index = 0;
     for (let item = parent._start; item; item = item.right) {
       if (item.deleted || !item.countable) continue;
@@ -989,7 +989,7 @@ function forward(live: Y.Doc, fork: Y.Doc, update?: Uint8Array): void {
 /** The fork's own visible text, by id, with the attributes it reads with. */
 function forkOnlyAttrs(fork: Y.Doc, sv: Map<number, number>): Map<string, Attrs> {
   const out = new Map<string, Attrs>();
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     for (let item = parent._start; item; item = item.right) {
       if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
       const type = item.content.type;
@@ -1006,7 +1006,7 @@ function forkOnlyAttrs(fork: Y.Doc, sv: Map<number, number>): Map<string, Attrs>
 
 /** Live's format items cover the fork's own text too: it reads as it did before the forward. */
 function keepForkAttrs(fork: Y.Doc, own: Map<string, Attrs>): void {
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     for (let item = parent._start; item; item = item.right) {
       if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
       const type = item.content.type;
@@ -1046,7 +1046,7 @@ function fixup(
     !!fresh && (fresh.get(client) ?? []).some(([a, b]) => a <= clock && clock < b);
   const isRemoved = (client: number, clock: number) =>
     (removed.get(client) ?? []).some(([a, b]) => a <= clock && clock < b);
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     for (let item = parent._start; item; item = item.right) {
       if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
       const type = item.content.type;
@@ -1099,7 +1099,7 @@ function rangesOf(set: ReturnType<typeof Y.createDeleteSet>): IdRanges {
 }
 
 /** Runs `write` as one transaction under a recorder over `scope`; its id ranges and its update. */
-function recorded(doc: Y.Doc, scope: Y.AbstractType<unknown>[], write: () => void) {
+function recorded(doc: Y.Doc, scope: Y.AbstractType<any>[], write: () => void) {
   const origin = Symbol("press");
   const recorder = new Y.UndoManager(scope, {
     trackedOrigins: new Set([origin]),
@@ -1301,7 +1301,7 @@ function press(
   const struck = new Map<string, Attrs>();
   const removedBlocks: Press["removedBlocks"] = [];
   const gone = new Set(removed);
-  const collect = (parent: Y.AbstractType<unknown>) => {
+  const collect = (parent: Y.AbstractType<any>) => {
     for (let item = parent._start; item; item = item.right) {
       if (!(item.content instanceof Y.ContentType)) continue;
       const type = item.content.type;
@@ -1532,9 +1532,9 @@ function restoreOrder(live: Y.Doc, fork: Y.Doc, pressed: Press): number {
     }
   };
   let fixed = 0;
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     // Children of `parent` (in the pre-press fork), as ids now, in their order then.
-    const children: Array<{ id: Y.ID; type: Y.AbstractType<unknown> }> = [];
+    const children: Array<{ id: Y.ID; type: Y.AbstractType<any> }> = [];
     for (let item = parent._start; item; item = item.right)
       if (!item.deleted && item.content instanceof Y.ContentType) {
         const id = now(item.id);
@@ -1649,7 +1649,7 @@ function newFork(live: Y.Doc, clients: Set<number>): Y.Doc {
 
 /** A draft's edits in its fork, Live's typing between them, forwarded as B forwards it. */
 function dumpText(doc: Y.Doc, label: string, needle: string, sv: Map<number, number>): void {
-  const walk = (parent: Y.AbstractType<unknown>) => {
+  const walk = (parent: Y.AbstractType<any>) => {
     for (let item = parent._start; item; item = item.right) {
       if (!(item.content instanceof Y.ContentType)) continue;
       const t = item.content.type;
