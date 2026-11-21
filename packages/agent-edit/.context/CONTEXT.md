@@ -39,9 +39,9 @@ document's history, not its text. Code that reads the document again after each 
 changes (the suggestion model per block, a draft write's receipts per paragraph segment) reads
 through `heldBlocks` (`diff/fragments.ts`): the first read converts the whole fragment, repairs
 and all, and each transaction then forgets only the top-level blocks it changed, which the next
-read converts alone from a copy. Nodes are stored only between transactions: Yjs leaves a
-block created inside a transaction out of `transaction.changed`, so a node stored mid-transaction
-could go stale for good. `readBlocks` per change makes a 100-paragraph write read the whole
+read converts alone from a copy. Yjs leaves a block created inside a transaction out of
+`transaction.changed`, so inside a transaction a node is stored only for a block that existed
+before it and that it has not changed yet; a node stored for any other could go stale for good. `readBlocks` per change makes a 100-paragraph write read the whole
 document hundreds of times.
 
 ## Text runs

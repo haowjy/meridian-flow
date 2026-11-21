@@ -24,17 +24,28 @@ const heldByDoc = new WeakMap<Y.Doc, Map<Schema, Held>>();
  * transaction forgets the blocks it changed, and the next read converts a block it doesn't hold
  * alone, from a copy. A writer of one paragraph after another (a draft write's segments, their
  * receipts) then converts each paragraph it touched, not the whole document and every deleted
- * item in it. Nodes are stored only while no transaction is open: Yjs records a change to a
- * block in `transaction.changed` only when the block existed before the transaction, so a block
- * held from before is the only kind whose changes it sees. Inside a transaction, a block it has
- * changed, or one not held, is converted on every read. A read repairs the document as
+ * item in it. Yjs records a change to a block in `transaction.changed` only when the block
+ * existed before the transaction, so inside a transaction a node is stored only for a block that
+ * existed before it and that it has not changed yet; any other block is converted on every read
+ * until the transaction ends. A read repairs the document as
  * `readRepairedRoot` does, counted under `path`: the first read converts the whole fragment, and
  * a block whose copy needed repair is read with the whole fragment again.
  */
 export function heldBlocks(doc: Y.Doc, schema: Schema, path: Exclude<SchemaRepairPath, "editor">) {
   const held = heldOf(doc, schema);
   const fragment = doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME);
-  /** The whole fragment, repaired; stored when no transaction is open. */
+  /** Whether a node read now for `element` stays right until a transaction forgets it. */
+  const storable = (element: Y.XmlElement, changed: ReadonlySet<Y.XmlElement>) => {
+    const open = doc._transaction;
+    if (!open) return true;
+    const id = element._item?.id;
+    return !!id && id.clock < (open.beforeState.get(id.client) ?? 0) && !changed.has(element);
+  };
+  const changedNow = () => {
+    const open = doc._transaction;
+    return open ? changedBlocks(fragment, open) : NONE;
+  };
+  /** The whole fragment, repaired. */
   const readWhole = (): Map<Y.XmlElement, PMNode> => {
     const root = readRepairedRoot(path, fragment, schema);
     // The read deleted what it could not build: the elements left pair with its nodes.
@@ -44,10 +55,9 @@ export function heldBlocks(doc: Y.Doc, schema: Schema, path: Exclude<SchemaRepai
         `Projection lost alignment: ${elements.length} elements for ${root.childCount} nodes`,
       );
     const nodes = new Map(elements.map((element, index) => [element, root.child(index)]));
-    if (!doc._transaction) {
-      held.nodes = nodes;
-      held.filled = true;
-    }
+    const changed = changedNow();
+    held.nodes = new Map([...nodes].filter(([element]) => storable(element, changed)));
+    held.filled = true;
     return nodes;
   };
   const read = (elements: readonly Y.XmlElement[]): PMNode[] => {
@@ -56,8 +66,7 @@ export function heldBlocks(doc: Y.Doc, schema: Schema, path: Exclude<SchemaRepai
       return elements.flatMap((element) => whole.get(element) ?? []);
     };
     if (!held.filled) return fromWhole();
-    const open = doc._transaction;
-    const changed = open ? changedBlocks(fragment, open) : NONE;
+    const changed = changedNow();
     const nodes: PMNode[] = [];
     for (const element of elements) {
       let node = changed.has(element) ? undefined : held.nodes.get(element);
@@ -65,7 +74,7 @@ export function heldBlocks(doc: Y.Doc, schema: Schema, path: Exclude<SchemaRepai
         const alone = convertAlone(element, schema);
         if (!alone) return fromWhole();
         node = alone;
-        if (!open) held.nodes.set(element, node);
+        if (storable(element, changed)) held.nodes.set(element, node);
       }
       nodes.push(node);
     }
