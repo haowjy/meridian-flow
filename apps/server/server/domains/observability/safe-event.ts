@@ -18,7 +18,12 @@ const MAX_ARRAY_ITEMS = 20;
 const MAX_OBJECT_KEYS = 50;
 export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
 /** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
-const SAFE_METRIC_KEYS = new Set(["inputTokens", "outputTokens", "providerFirstOutputMs"]);
+const SAFE_METRIC_KEYS = new Set([
+  "contentBytes",
+  "inputTokens",
+  "outputTokens",
+  "providerFirstOutputMs",
+]);
 const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
   "byTurnId",
   "callbackKind",
@@ -139,6 +144,7 @@ const SAFE_PAYLOAD_ENUM_VALUES: Readonly<Record<string, ReadonlySet<string>>> = 
     "success",
   ]),
   transport: new Set(["gateway", "http", "thread_ws", "yjs"]),
+  verdict: new Set(["apply", "discard"]),
 };
 const SAFE_ERROR_CODES = new Set([
   "EACCES",
