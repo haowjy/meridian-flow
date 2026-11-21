@@ -23,7 +23,9 @@ the owner's draft list (`useOwnerDrafts`), which the server derives from the mar
 tree records; a row with text is listed whole (its count is `textChanges`), and a move or a delete
 is its tree line (`tree-line.ts`), listed before the text.
 
-The list is re-read when the server wakes the owner (`useProjectWake`). A pressed row leaves the
+The list is re-read when the server wakes the owner (`useProjectWake`), and in each of the
+account's tabs when a press or its Undo settles (`press-commands.ts`); both read the same
+things (`refreshDraftReads`). A pressed row leaves the
 list while the press is in flight (`DraftCommandOwner.hold`) and comes back with a pill if the
 press fails. Items never end on their own: a row leaves when a read no longer lists it.
 
