@@ -530,7 +530,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         // The Apply landed the move; the card's own Undo takes it back, as it takes back any reply's move.
         await cardUndo();
         expect((await placement(CH1))?.parentId).toBeNull();
-        expect(await placementsNamed("fresh")).toEqual([]);
+        // The discarded created document is in Trash, and the card's Undo leaves it there.
+        expect(await placementsNamed("fresh")).toEqual([
+          { id: created?.documentId, deletedAt: expect.any(Date) },
+        ]);
       });
 
       it("the card's Undo is refused, with the reason, when the Work was deleted", async () => {
