@@ -284,19 +284,24 @@ function viewEdit(
   doc: Y.Doc,
   view: View,
   author: Author | null,
-  structural = false,
+  make: (tr: Transaction) => string = (tr) => edit(tr),
 ): string | null {
+  lastSkip = null;
   const state = EditorState.create({ schema, doc: pmOf(doc) });
   const tr = state.tr;
   let name: string;
   try {
-    name = edit(tr, structural);
-  } catch {
+    name = make(tr);
+  } catch (error) {
+    lastSkip = `threw: ${(error as Error).message}`;
     return null;
   }
   const authors = suggestionAuthors(doc);
   const out = view.draft === null ? tr : rewrite(tr, state, view, author, authors);
-  if (!out.docChanged) return null;
+  if (!out.docChanged) {
+    lastSkip = "no change";
+    return null;
+  }
   const write = (target: Y.Doc) =>
     target.transact(() => {
       recordStarted(out, suggestionAuthors(target));
@@ -320,6 +325,7 @@ function viewEdit(
       if (leaked) t.leaked++;
       else if (lost) t.lostLiveItem++;
       else t.swapped++;
+      lastSkip = leaked ? "leaked" : lost ? "lost a Live item" : "swapped";
       const block = blockOf(state.doc, name);
       t.in[block] = (t.in[block] ?? 0) + 1;
       skipped.set(kind, t);
@@ -330,6 +336,9 @@ function viewEdit(
   write(doc);
   return name;
 }
+
+/** Why the last `viewEdit` made nothing, or null when it made its edit. */
+let lastSkip: string | null = null;
 
 /** Draft edits not made, by kind: their Live view changed (leaked), or a Live item went (lost). */
 const skipped = new Map<
@@ -1164,6 +1173,85 @@ function grown(doc: Y.Doc, sv: Map<number, number>) {
   return out;
 }
 
+/**
+ * A document's element attributes (by element id, values as JSON) and the ids of its format and
+ * attribute items still in force, with the text or element each sits in.
+ */
+function structsOf(doc: Y.Doc) {
+  const attrs = new Map<string, Map<string, string>>();
+  const formats = new Map<string, string>();
+  const attrItems = new Map<string, { el: string; attr: string }>();
+  const walk = (parent: Y.AbstractType<any>) => {
+    for (let item = parent._start; item; item = item.right) {
+      if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
+      const type = item.content.type;
+      const k = key(item.id.client, item.id.clock);
+      if (type instanceof Y.XmlText) {
+        for (let it = type._start; it; it = it.right)
+          if (!it.deleted && it.content instanceof Y.ContentFormat)
+            formats.set(key(it.id.client, it.id.clock), k);
+        continue;
+      }
+      const el = type as Y.XmlElement;
+      attrs.set(
+        k,
+        new Map(Object.entries(el.getAttributes()).map(([a, v]) => [a, JSON.stringify(v)])),
+      );
+      for (const [attr, it] of el._map)
+        if (!it.deleted) attrItems.set(key(it.id.client, it.id.clock), { el: k, attr });
+      walk(el);
+    }
+  };
+  walk(fragmentOf(doc));
+  return { attrs, formats, attrItems };
+}
+
+/**
+ * What the lowering may write besides characters and nodes, given Live before (`was`, from
+ * `structsOf`) and its clocks then: one attribute item per attribute of a new element and per
+ * attribute whose value changed; at most two format items (one closing, one reopening) per
+ * attribute that differs across each boundary of new text, deleted neighbours included, since Yjs
+ * may place the new text on either side of a deleted run; one text item per new text that holds something.
+ */
+function allowance(live: Y.Doc, was: ReturnType<typeof structsOf>, sv: Map<number, number>) {
+  let attrs = 0;
+  let formats = 0;
+  let texts = 0;
+  const isNew = (client: number, clock: number) => !isLiveId(sv, Y.createID(client, clock));
+  const now = structsOf(live);
+  for (const [k, values] of now.attrs) {
+    const before = was.attrs.get(k);
+    if (!before) attrs += values.size;
+    else for (const [a, v] of values) if (before.get(a) !== v) attrs++;
+  }
+  const walk = (parent: Y.AbstractType<any>) => {
+    for (let item = parent._start; item; item = item.right) {
+      if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
+      const type = item.content.type;
+      if (!(type instanceof Y.XmlText)) {
+        walk(type);
+        continue;
+      }
+      if (isNew(item.id.client, item.id.clock) && type.length > 0) texts++;
+      const units = textUnits(type);
+      const side = (i: number) => units[i] ?? { client: 0, clock: 0, attrs: {} as Attrs };
+      for (let i = -1; i < units.length; i++) {
+        const a = side(i);
+        const b = side(i + 1);
+        const fresh =
+          (i >= 0 && isNew(a.client, a.clock)) ||
+          (i + 1 < units.length && isNew(b.client, b.clock));
+        if (!fresh) continue;
+        for (const k of new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)]))
+          if (JSON.stringify(a.attrs[k] ?? null) !== JSON.stringify(b.attrs[k] ?? null))
+            formats += 2;
+      }
+    }
+  };
+  walk(fragmentOf(live));
+  return { attrs, formats, texts, now };
+}
+
 /** Text characters and non-text nodes of a ProseMirror document. */
 function sizes(doc: PMNode) {
   let chars = 0;
@@ -1206,12 +1294,9 @@ type Press = {
   liveSv: Map<number, number>;
   liveRecord: PressRecord;
   forkRecord: PressRecord;
-  forkUpdate: Uint8Array;
-  liveBefore: string;
-  forkBefore: string;
-  liveBeforeNode: PMNode;
-  forkBeforeNode: PMNode;
   verdictsBefore: string;
+  /** The Live units the Apply deleted. */
+  liveRemoved: Set<string>;
 };
 
 const tally = new Map<string, { pass: number; fail: number; cases: string[] }>();
@@ -1241,6 +1326,7 @@ function press(
   const liveBefore = pmOf(live);
   const liveSv = Y.decodeStateVector(Y.encodeStateVector(live)) as Map<number, number>;
   const liveVisible = visibleUnits(live);
+  const liveStructs = structsOf(live);
   const forkBefore = pmOf(fork);
   const forkCopyBefore = peek(fork);
   const verdictsBefore = stable(fork.getMap("suggestion_verdicts").toJSON());
@@ -1249,7 +1335,7 @@ function press(
   const want = viewDoc(pmOf(accepted), liveView);
   const wantDraft = viewDoc(pmOf(accepted), { draft });
 
-  if (only !== null && verbose)
+  if (verbose)
     process.stdout.write(
       `\n== press ${c} (${tag})\nfork:\n  ${outline(forkBefore).join("\n  ")}\nlive:\n  ${outline(liveBefore).join("\n  ")}\n`,
     );
@@ -1357,6 +1443,41 @@ function press(
     () =>
       `${tag} ${c}: grew ${JSON.stringify({ ...g, clients: g.clients.size })}, want chars ${wantChars} nodes ${wantNodes}; update ${lowered.update.byteLength} B`,
   );
+  const allowed = allowance(live, liveStructs, liveSv);
+  check(
+    "Live's new attribute, format and text structs are the accepted edit's",
+    g.attrs === allowed.attrs && g.formats <= allowed.formats && g.texts === allowed.texts,
+    () =>
+      `${tag} ${c}: grew attrs ${g.attrs} formats ${g.formats} texts ${g.texts}, allowed attrs ${allowed.attrs} formats <= ${allowed.formats} texts ${allowed.texts}`,
+  );
+  // Yjs drops a format item a deletion leaves redundant, so one may go where the accept deleted text.
+  const textsLosing = new Set<string>();
+  const findLosing = (parent: Y.AbstractType<any>) => {
+    for (let item = parent._start; item; item = item.right) {
+      if (!(item.content instanceof Y.ContentType)) continue;
+      const type = item.content.type;
+      if (type instanceof Y.XmlText) {
+        if (textUnits(type).some((u) => gone.has(key(u.client, u.clock))))
+          textsLosing.add(key(item.id.client, item.id.clock));
+      } else findLosing(type);
+    }
+  };
+  findLosing(fragmentOf(live));
+  const lostFormats = [...liveStructs.formats].filter(
+    ([k, text]) => !allowed.now.formats.has(k) && !gone.has(text) && !textsLosing.has(text),
+  );
+  const lostAttrs = [...liveStructs.attrItems].filter(
+    ([k, { el, attr }]) =>
+      !allowed.now.attrItems.has(k) &&
+      !gone.has(el) &&
+      allowed.now.attrs.get(el)?.get(attr) === liveStructs.attrs.get(el)?.get(attr),
+  );
+  check(
+    "Live keeps every format and attribute item the accept leaves as it was",
+    lostFormats.length + lostAttrs.length === 0,
+    () =>
+      `${tag} ${c}: formats ${lostFormats.slice(0, 4).map(([k]) => k)} attrs ${lostAttrs.slice(0, 4).map(([k, v]) => `${k} ${v.attr}`)}`,
+  );
   bytes.push({
     update: lowered.update.byteLength,
     chars: g.chars,
@@ -1404,6 +1525,19 @@ function press(
     json(viewDoc(forkNow, { draft })) === json(wantDraft),
     () => `${tag} ${c}:\n${diff(wantDraft, viewDoc(forkNow, { draft }))}`,
   );
+  const acceptedNode = pmOf(accepted);
+  check(
+    "fork's stored document (marks and all) == the accepted copy's",
+    json(forkNow) === json(acceptedNode),
+    () => `${tag} ${c}:\n${diff(acceptedNode, forkNow)}`,
+  );
+  const changes = (node: PMNode, doc: Y.Doc) =>
+    stable(list(node, { draft }, suggestionAuthors(doc)));
+  check(
+    "fork's pending changes == the accepted copy's",
+    changes(forkNow, fork) === changes(acceptedNode, accepted),
+    () => `${tag} ${c}`,
+  );
   const still = list(forkNow, { draft }, suggestionAuthors(fork)).some((ch) => ch.id === c);
   check("the change has nothing pending in the fork", !still, () => `${tag} ${c}`);
   check(
@@ -1425,12 +1559,8 @@ function press(
     liveSv,
     liveRecord: lowered.record,
     forkRecord: withdrawn.record,
-    forkUpdate,
-    liveBefore: json(liveBefore),
-    forkBefore: json(forkBefore),
-    liveBeforeNode: liveBefore,
-    forkBeforeNode: forkBefore,
     verdictsBefore,
+    liveRemoved: gone,
   };
 }
 
@@ -1628,11 +1758,19 @@ const counts = {
   reordered: 0,
   dressed: 0,
   replaced: 0,
+  fixedCases: 0,
   scripts: 0,
   presses: 0,
   undos: 0,
+  undosAfterConcurrent: 0,
+  /** Undos after a peer deleted some of what the Apply deleted: Yjs restores it anyway. */
+  undoRestoresPeerDeleted: 0,
   noChange: 0,
   twoDraft: 0,
+  /** Units of the other draft's suggestions Live took away: on Live text the Apply deleted... */
+  otherOnDeletedLive: 0,
+  /** ...or inside a Live block the Apply removed, as `resolve.ts` removes a block in one document. */
+  otherInRemovedBlock: 0,
   concurrent: 0,
 };
 
@@ -1697,6 +1835,55 @@ function suggestIn(live: Y.Doc, fork: Y.Doc, draft: string, edits: number, forks
   }
 }
 
+/**
+ * Every unit that carries one of a draft's pending suggestions in its fork, with what it carries:
+ * characters with the draft's marks, blocks with its `sug`, and its layers (`<block>#<attribute>`).
+ */
+function suggestionsOf(fork: Y.Doc, draft: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const ofDraft = (v: unknown) => (v as { draft?: unknown } | null)?.draft === draft;
+  const walk = (parent: Y.AbstractType<any>) => {
+    for (let item = parent._start; item; item = item.right) {
+      if (item.deleted || !(item.content instanceof Y.ContentType)) continue;
+      const type = item.content.type;
+      if (type instanceof Y.XmlText) {
+        for (const u of textUnits(type)) {
+          if (u.deleted) continue;
+          const marks = Object.entries(u.attrs).filter(
+            ([k, v]) => isSuggestionKey(k) && ofDraft(v),
+          );
+          if (marks.length) out.set(key(u.client, u.clock), stable(Object.fromEntries(marks)));
+        }
+        continue;
+      }
+      const k = key(item.id.client, item.id.clock);
+      for (const [a, v] of Object.entries((type as Y.XmlElement).getAttributes()))
+        if ((a === "sug" || a.startsWith("sugAttrs--")) && ofDraft(v))
+          out.set(a === "sug" ? k : `${k}#${a}`, stable(v));
+      walk(type);
+    }
+  };
+  walk(fragmentOf(fork));
+  return out;
+}
+
+/**
+ * Whether Live took the unit away: it is a Live unit now deleted (a suggestion on it is moot), or
+ * it sits inside one.
+ */
+function goneWithLive(fork: Y.Doc, k: string): "deleted" | "in a removed block" | null {
+  const [client, clock] = k.split("#")[0]!.split(":").map(Number) as [number, number];
+  const sv = liveSvOf(fork);
+  const item = Y.getItem(fork.store, Y.createID(client, clock));
+  if (item.deleted && isLiveId(sv, item.id)) return "deleted";
+  let type = item.parent as Y.AbstractType<any>;
+  for (let at = type._item; at; at = type._item) {
+    if (at.deleted && isLiveId(sv, at.id)) return "in a removed block";
+    type = at.parent as Y.AbstractType<any>;
+  }
+  return null;
+}
+
 function pending(fork: Y.Doc, draft: string): string[] {
   return list(pmOf(fork), { draft }, suggestionAuthors(fork)).map((ch) => ch.id);
 }
@@ -1718,17 +1905,201 @@ function reword(fork: Y.Doc, draft: string, word: string, replacement: string): 
   });
 }
 
-function script(index: number): void {
-  rng = (seed0 + index * 7919) >>> 0;
-  const tag = `script ${index} (FUZZ_SEED=${seed0} FUZZ_ONLY=${index})`;
+type Session = {
+  live: Y.Doc;
+  fork: Y.Doc;
+  other: Y.Doc | null;
+  forks: Y.Doc[];
+  forkClients: Set<number>;
+};
+
+/**
+ * Apply change `c` of the first draft and check it. `peerMake`: a structural Live edit a peer makes
+ * before it sees the Apply, merged after it. `undo`: take the Apply back, and check that too.
+ */
+function applyRound(
+  session: Session,
+  c: string,
+  tag: string,
+  peerMake: ((tr: Transaction) => string) | null,
+  undo: boolean,
+): void {
+  const { live, fork, other, forks, forkClients } = session;
+  // A Live peer's structural edit made before it saw the press, merged after it.
+  const peer = peerMake ? copy(live) : null;
+  let peerEdit: Uint8Array | null = null;
+  // What Live and the fork read as after an Undo: as before the press, with the peer's edit.
+  const expectLive = peek(live);
+  if (peer) {
+    const before = Y.encodeStateVector(peer);
+    if (viewEdit(peer, liveView, null, peerMake!)) {
+      peerEdit = Y.encodeStateAsUpdate(peer, before);
+      Y.applyUpdate(expectLive, peerEdit);
+    }
+  }
+  const otherBefore = other ? suggestionsOf(other, OTHER) : new Map<string, string>();
+  const pressed = press(live, fork, DRAFT, c, tag, forkClients);
+  counts.presses++;
+  if (other) {
+    forward(live, other);
+    const otherNow = suggestionsOf(other, OTHER);
+    const lost: string[] = [];
+    for (const [k, marks] of otherBefore) {
+      if (otherNow.get(k) === marks) continue;
+      const why = otherNow.has(k) ? null : goneWithLive(other, k);
+      if (why === "deleted") counts.otherOnDeletedLive++;
+      else if (why) counts.otherInRemovedBlock++;
+      else lost.push(k);
+    }
+    check(
+      "two drafts: the other fork's Live view == Live after the Apply",
+      json(viewDoc(pmOf(other), liveView)) === json(pmOf(live)),
+      () => `${tag}`,
+    );
+    check(
+      "two drafts: the other draft keeps every pending suggestion Live did not take away",
+      lost.length === 0,
+      () =>
+        `${tag}: ${lost.length} of ${otherBefore.size} changed, first ${lost[0]} ${otherBefore.get(lost[0]!)}`,
+    );
+    counts.twoDraft++;
+  }
+  if (peer && peerEdit) {
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(live, Y.encodeStateVector(peer)));
+    const u = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(live));
+    Y.applyUpdate(live, u);
+    for (const f of forks) forward(live, f);
+    check(
+      "concurrent Live edit: Live and the peer converge",
+      json(pmOf(peer)) === json(pmOf(live)),
+      () => `${tag}`,
+    );
+    check(
+      "concurrent Live edit: fork's Live view == Live",
+      json(viewDoc(pmOf(fork), liveView)) === json(pmOf(live)),
+      () => `${tag}:\n${diff(pmOf(live), viewDoc(pmOf(fork), liveView))}`,
+    );
+    const leaks = liveLeaks(live, forkClients);
+    check(
+      "concurrent Live edit: Live holds nothing of the fork",
+      leaks.length === 0,
+      () => `${tag}: ${leaks.slice(0, 4)}`,
+    );
+    counts.concurrent++;
+  }
+  peer?.destroy();
+  if (undo) {
+    // The fork before the press, given the peer's edit as any Live edit is forwarded.
+    const expectFork = peek(pressed.before);
+    liveSvs.set(expectFork, pressed.liveSv);
+    if (peerEdit) forward(expectLive, expectFork, peerEdit);
+    undoPress(live, fork, pressed);
+    if (other) forward(live, other);
+    counts.undos++;
+    if (peerEdit) counts.undosAfterConcurrent++;
+    const liveNow = pmOf(live);
+    const forkNow = pmOf(fork);
+    const liveWant = pmOf(expectLive);
+    const forkWant = pmOf(expectFork);
+    // A Yjs Undo restores what the Apply deleted even where the peer deleted it too, in one
+    // document as here: then only the fork's agreement with Live is checked below.
+    const peerDeleted = peerEdit ? Y.decodeUpdate(peerEdit).ds.clients : new Map();
+    const overlap = [...pressed.liveRemoved].some((k) => {
+      const [client, clock] = k.split(":").map(Number) as [number, number];
+      return (peerDeleted.get(client) ?? []).some(
+        (r: { clock: number; len: number }) => r.clock <= clock && clock < r.clock + r.len,
+      );
+    });
+    if (overlap) counts.undoRestoresPeerDeleted++;
+    check(
+      "Undo: the fork's Live view == Live",
+      json(viewDoc(forkNow, liveView)) === json(liveNow),
+      () => `${tag} ${c}:\n${diff(liveNow, viewDoc(forkNow, liveView))}`,
+    );
+    if (!overlap)
+      check(
+        "Undo: Live == Live before the press (with a concurrent edit, plus that edit)",
+        json(liveNow) === json(liveWant),
+        () =>
+          `${tag} ${c}${peerEdit ? " after a concurrent edit" : ""}:\n${diff(liveWant, liveNow)}`,
+      );
+    if (!overlap)
+      check(
+        "Undo: the fork's stored document (marks and all) == before the press (plus the edit)",
+        json(forkNow) === json(forkWant),
+        () =>
+          `${tag} ${c}${peerEdit ? " after a concurrent edit" : ""}:\n${diff(forkWant, forkNow)}`,
+      );
+    if (other)
+      check(
+        "Undo: the other fork's Live view == Live",
+        json(viewDoc(pmOf(other), liveView)) === json(liveNow),
+        () => `${tag} ${c}:\n${diff(liveNow, viewDoc(pmOf(other), liveView))}`,
+      );
+    check(
+      "Undo: the fork's verdicts == before the press",
+      stable(fork.getMap("suggestion_verdicts").toJSON()) === pressed.verdictsBefore,
+      () => `${tag} ${c}`,
+    );
+    const changesNow = stable(list(forkNow, { draft: DRAFT }, suggestionAuthors(fork)));
+    const changesWant = stable(list(forkWant, { draft: DRAFT }, suggestionAuthors(expectFork)));
+    if (!overlap)
+      check(
+        "Undo: the fork's pending changes == before the press (plus the edit), the change among them",
+        changesNow === changesWant && (!!peerEdit || pending(fork, DRAFT).includes(c)),
+        () =>
+          `${tag} ${c}${peerEdit ? " after a concurrent edit" : ""}: pending ${pending(fork, DRAFT)}`,
+      );
+    check(
+      "Undo: Live holds nothing of the fork",
+      liveLeaks(live, forkClients).length === 0,
+      () => `${tag} ${c}: ${liveLeaks(live, forkClients).slice(0, 4)}`,
+    );
+    expectFork.destroy();
+  }
+  expectLive.destroy();
+}
+
+/** Live from the start document, and one fork per draft. */
+function newSession(twoDrafts: boolean): Session {
   const live = new Y.Doc({ gc: false });
   live.clientID = freshClient();
   live.transact(() => writePM(live, startDoc()));
   const forkClients = new Set<number>();
   const fork = newFork(live, forkClients);
-  const twoDrafts = rnd(4) === 0;
   const other = twoDrafts ? newFork(live, forkClients) : null;
-  const forks = other ? [fork, other] : [fork];
+  return { live, fork, other, forks: other ? [fork, other] : [fork], forkClients };
+}
+
+function agree(session: Session, tag: string): void {
+  for (const f of session.forks) {
+    const draft = f === session.fork ? DRAFT : OTHER;
+    check(
+      "before the press: fork's Live view == Live",
+      json(viewDoc(pmOf(f), liveView)) === json(pmOf(session.live)),
+      () => `${tag} ${draft}:\n${diff(pmOf(session.live), viewDoc(pmOf(f), liveView))}`,
+    );
+  }
+}
+
+/** Apply one change of the second draft, then check the first draft's fork still reads Live. */
+function applyOther(session: Session, c: string, tag: string): void {
+  const { live, fork, other, forkClients } = session;
+  press(live, other!, OTHER, c, tag, forkClients);
+  counts.presses++;
+  forward(live, fork);
+  check(
+    "two drafts: the first fork's Live view == Live after the other draft's Apply",
+    json(viewDoc(pmOf(fork), liveView)) === json(pmOf(live)),
+    () => `${tag}:\n${diff(pmOf(live), viewDoc(pmOf(fork), liveView))}`,
+  );
+}
+
+function script(index: number): void {
+  rng = (seed0 + index * 7919) >>> 0;
+  const tag = `script ${index} (FUZZ_SEED=${seed0} FUZZ_ONLY=${index})`;
+  const session = newSession(rnd(4) === 0);
+  const { live, fork, other, forks } = session;
   if (other) {
     // Both drafts rewrite the same Live word first (s4's case), then make edits of their own.
     reword(fork, DRAFT, "beta", "ALPHA");
@@ -1736,14 +2107,7 @@ function script(index: number): void {
   }
   suggestIn(live, fork, DRAFT, 4 + rnd(10), forks);
   if (other) suggestIn(live, other, OTHER, 4 + rnd(6), forks);
-  for (const f of forks) {
-    const draft = f === fork ? DRAFT : OTHER;
-    check(
-      "before the press: fork's Live view == Live",
-      json(viewDoc(pmOf(f), liveView)) === json(pmOf(live)),
-      () => `${tag} ${draft}:\n${diff(pmOf(live), viewDoc(pmOf(f), liveView))}`,
-    );
-  }
+  agree(session, tag);
   for (let round = 0; round < 2; round++) {
     const ids = pending(fork, DRAFT);
     if (ids.length === 0) {
@@ -1751,104 +2115,246 @@ function script(index: number): void {
       break;
     }
     const c = ids[rnd(ids.length)]!;
-    // A Live peer's structural edit made before it saw the press, merged after it.
-    const peer = rnd(4) === 0 ? copy(live) : null;
-    let peerEdit: Uint8Array | null = null;
-    if (peer) {
-      const before = Y.encodeStateVector(peer);
-      if (viewEdit(peer, liveView, null, true)) peerEdit = Y.encodeStateAsUpdate(peer, before);
-    }
-    const otherBefore = other ? pending(other, OTHER) : [];
-    const pressed = press(live, fork, DRAFT, c, `${tag} round ${round}`, forkClients);
-    counts.presses++;
-    if (other) {
-      forward(live, other);
-      const otherNow = pending(other, OTHER);
-      check(
-        "two drafts: the other fork's Live view == Live after the Apply",
-        json(viewDoc(pmOf(other), liveView)) === json(pmOf(live)),
-        () => `${tag}`,
-      );
-      check(
-        "two drafts: the other draft loses no pending insertion",
-        otherNow.every((id) => otherBefore.includes(id)),
-        () => `${tag}: before ${otherBefore} now ${otherNow}`,
-      );
-      counts.twoDraft++;
-    }
-    if (peer && peerEdit) {
-      Y.applyUpdate(peer, Y.encodeStateAsUpdate(live, Y.encodeStateVector(peer)));
-      const u = Y.encodeStateAsUpdate(peer, Y.encodeStateVector(live));
-      Y.applyUpdate(live, u);
-      for (const f of forks) forward(live, f);
-      check(
-        "concurrent Live edit: Live and the peer converge",
-        json(pmOf(peer)) === json(pmOf(live)),
-        () => `${tag}`,
-      );
-      check(
-        "concurrent Live edit: fork's Live view == Live",
-        json(viewDoc(pmOf(fork), liveView)) === json(pmOf(live)),
-        () => `${tag}:\n${diff(pmOf(live), viewDoc(pmOf(fork), liveView))}`,
-      );
-      const leaks = liveLeaks(live, forkClients);
-      check(
-        "concurrent Live edit: Live holds nothing of the fork",
-        leaks.length === 0,
-        () => `${tag}: ${leaks.slice(0, 4)}`,
-      );
-      counts.concurrent++;
-      peer.destroy();
-      continue;
-    }
-    peer?.destroy();
-    if (rnd(2) === 0) {
-      undoPress(live, fork, pressed);
-      if (other) forward(live, other);
-      counts.undos++;
-      const liveNow = json(pmOf(live));
-      const forkNow = pmOf(fork);
-      check(
-        "Undo: Live == Live before the press",
-        liveNow === pressed.liveBefore,
-        () => `${tag} ${c}:\n${diff(pressed.liveBeforeNode, pmOf(live))}`,
-      );
-      check(
-        "Undo: the fork's stored document (marks and all) == before the press",
-        json(forkNow) === pressed.forkBefore,
-        () => `${tag} ${c}:\n${diff(pressed.forkBeforeNode, forkNow)}`,
-      );
-      check(
-        "Undo: the fork's verdicts == before the press",
-        stable(fork.getMap("suggestion_verdicts").toJSON()) === pressed.verdictsBefore,
-        () => `${tag} ${c}`,
-      );
-      check(
-        "Undo: the change is pending again",
-        pending(fork, DRAFT).includes(c),
-        () => `${tag} ${c}`,
-      );
-      check(
-        "Undo: Live holds nothing of the fork",
-        liveLeaks(live, forkClients).length === 0,
-        () => `${tag} ${c}: ${liveLeaks(live, forkClients).slice(0, 4)}`,
-      );
-    }
+    const peerMake = rnd(4) === 0 ? (tr: Transaction) => edit(tr, true) : null;
+    applyRound(session, c, `${tag} round ${round}`, peerMake, rnd(2) === 0);
   }
   if (other) {
     const ids = pending(other, OTHER);
-    if (ids.length) {
-      press(live, other, OTHER, ids[rnd(ids.length)]!, `${tag} second draft`, forkClients);
-      counts.presses++;
-    }
+    if (ids.length) applyOther(session, ids[rnd(ids.length)]!, `${tag} second draft`);
   }
   counts.scripts++;
   for (const f of forks) f.destroy();
   live.destroy();
 }
 
+// ---------- Fixed cases: every case the gate names, each of which must reach an Apply ----------
+
+/** Where `text` starts in a document, and the textblock holding it. */
+function textAt(doc: PMNode, text: string): number {
+  let at = -1;
+  doc.descendants((node, pos) => {
+    if (at < 0 && node.isText && node.text!.includes(text)) at = pos + node.text!.indexOf(text);
+    return at < 0;
+  });
+  if (at < 0) throw new Error(`no "${text}" in the document`);
+  return at;
+}
+function blockAt(doc: PMNode, text: string): { start: number; end: number } {
+  const $at = doc.resolve(textAt(doc, text));
+  return { start: $at.before(), end: $at.after() };
+}
+const added = (text: string) => withBlockIds(p(text));
+
+type Step = { by?: "other"; turn: number; make: (tr: Transaction) => string };
+const step = (turn: number, make: (tr: Transaction) => void, by?: "other"): Step => ({
+  turn,
+  by,
+  make: (tr) => {
+    make(tr);
+    return "fixed";
+  },
+});
+
+const fixedCases: Array<{ name: string; steps: Step[]; peer?: (tr: Transaction) => string }> = [
+  {
+    name: "adjacent new blocks, two changes",
+    steps: [
+      step(0, (tr) =>
+        tr.insert(blockAt(tr.doc, "alpha beta").start, [added("new one"), added("new two")]),
+      ),
+      step(1, (tr) => tr.insert(blockAt(tr.doc, "alpha beta").start, added("new three"))),
+    ],
+  },
+  {
+    name: "new blocks in Live containers: after a child, first in a container, in a table cell",
+    steps: [
+      step(0, (tr) => tr.insert(blockAt(tr.doc, "aside one").end, added("inside aside"))),
+      step(1, (tr) => tr.insert(blockAt(tr.doc, "note one").start, added("first in note"))),
+      step(2, (tr) => tr.insert(blockAt(tr.doc, "cell b").end, added("in cell"))),
+    ],
+  },
+  {
+    name: "a new block inside another change's new block",
+    steps: [
+      step(0, (tr) =>
+        tr.insert(
+          blockAt(tr.doc, "last para").start,
+          withBlockIds(n.jsx_container.create({ name: "Box" }, [p("box one")])),
+        ),
+      ),
+      step(1, (tr) => tr.insert(blockAt(tr.doc, "box one").end, added("inner"))),
+    ],
+  },
+  {
+    name: "inline atoms in a new block",
+    steps: [
+      step(0, (tr) =>
+        tr.insert(
+          blockAt(tr.doc, "last para").start,
+          withBlockIds(
+            n.paragraph.create(null, [
+              schema.text("pic "),
+              n.image.create({ src: "b.png" }),
+              n.hard_break.create(),
+              schema.text("after"),
+            ]),
+          ),
+        ),
+      ),
+    ],
+  },
+  {
+    name: "a comment on suggested text",
+    steps: [
+      step(0, (tr) => tr.insertText(" fresh words", blockAt(tr.doc, "alpha beta").end - 1)),
+      step(1, (tr) => {
+        const at = textAt(tr.doc, "fresh words");
+        tr.addMark(at, at + 11, m.comment.create({ id: "cm-new" }));
+      }),
+    ],
+  },
+  { name: "split a Live paragraph", steps: [step(0, (tr) => tr.split(textAt(tr.doc, "gamma")))] },
+  {
+    name: "join two Live list items",
+    steps: [step(0, (tr) => tr.join(blockAt(tr.doc, "second item").start))],
+  },
+  {
+    name: "layers: heading level, list, block removal",
+    steps: [
+      step(0, (tr) => tr.setNodeAttribute(blockAt(tr.doc, "alpha beta").start, "level", 2)),
+      step(1, (tr) => {
+        const at = blockAt(tr.doc, "last para").start;
+        tr.setNodeAttribute(at, "path", "-");
+        tr.setNodeAttribute(at, "kind", "bullet");
+        tr.setNodeAttribute(at, "marker", "item");
+      }),
+      step(2, (tr) => {
+        const { start, end } = blockAt(tr.doc, "aside one");
+        tr.delete(start, end);
+      }),
+    ],
+  },
+  {
+    name: "table cell text",
+    steps: [
+      step(0, (tr) => tr.insertText("X", textAt(tr.doc, "cell b") + 6)),
+      step(1, (tr) => tr.delete(textAt(tr.doc, "a1"), textAt(tr.doc, "a1") + 2)),
+    ],
+  },
+  {
+    name: "a new code block, typed in",
+    steps: [
+      step(0, (tr) =>
+        tr.insert(
+          blockAt(tr.doc, "last para").start,
+          withBlockIds(n.code_block.create(null, schema.text("let y = 2;"))),
+        ),
+      ),
+      step(0, (tr) => tr.insertText(" // ok", textAt(tr.doc, "let y = 2;") + 10)),
+    ],
+  },
+  {
+    name: "Live text: replace, delete inside bold, bold",
+    steps: [
+      step(0, (tr) =>
+        tr.replaceWith(textAt(tr.doc, "beta"), textAt(tr.doc, "beta") + 4, schema.text("BETA")),
+      ),
+      step(1, (tr) => tr.delete(textAt(tr.doc, "words") + 2, textAt(tr.doc, "words") + 8)),
+      step(2, (tr) =>
+        tr.addMark(textAt(tr.doc, "gamma"), textAt(tr.doc, "gamma") + 5, m.strong.create()),
+      ),
+    ],
+  },
+  {
+    name: "two drafts reword one word",
+    steps: [
+      step(0, (tr) =>
+        tr.replaceWith(textAt(tr.doc, "beta"), textAt(tr.doc, "beta") + 4, schema.text("ALPHA")),
+      ),
+      step(
+        0,
+        (tr) =>
+          tr.replaceWith(textAt(tr.doc, "beta"), textAt(tr.doc, "beta") + 4, schema.text("BETA")),
+        "other",
+      ),
+      step(1, (tr) => tr.insert(blockAt(tr.doc, "alpha").end, added("other's block")), "other"),
+    ],
+  },
+  {
+    name: "a Live peer removes a block while the draft's block beside it is applied",
+    steps: [step(0, (tr) => tr.insert(blockAt(tr.doc, "alpha beta").end, added("beside")))],
+    peer: (tr) => {
+      const { start, end } = blockAt(tr.doc, "alpha beta");
+      tr.delete(start, end);
+      return "delete block alpha beta";
+    },
+  },
+];
+
+/**
+ * One fixed case: its draft edits must all be made, then every change is applied in turn, the
+ * first with the peer's edit (if any) and an Undo, then again; the second draft's after.
+ */
+function fixedCase(index: number): void {
+  const { name, steps, peer } = fixedCases[index]!;
+  rng = (0x5eed + index * 7919) >>> 0;
+  const tag = `fixed case "${name}" (FUZZ_CASE=${index})`;
+  const session = newSession(steps.some((s) => s.by === "other"));
+  for (const [i, s] of steps.entries()) {
+    const doc = s.by === "other" ? session.other! : session.fork;
+    const made = viewEdit(doc, { draft: s.by === "other" ? OTHER : DRAFT }, author(s.turn), s.make);
+    check(
+      "fixed cases: every draft edit is made",
+      made !== null,
+      () => `${tag} step ${i}: ${lastSkip}`,
+    );
+  }
+  agree(session, tag);
+  let applied = 0;
+  for (let guard = 0; guard < 12; guard++) {
+    const ids = pending(session.fork, DRAFT);
+    if (ids.length === 0) break;
+    if (guard === 0) applyRound(session, ids[0]!, `${tag} first change, Undo`, peer ?? null, true);
+    else {
+      applyRound(session, ids[0]!, `${tag} change ${applied}`, null, false);
+      applied++;
+    }
+  }
+  if (session.other)
+    for (let guard = 0; guard < 12; guard++) {
+      const ids = pending(session.other, OTHER);
+      if (ids.length === 0) break;
+      applyOther(session, ids[0]!, `${tag} second draft`);
+      applied++;
+    }
+  check(
+    "fixed cases: every change applied, nothing left pending",
+    applied > 0 &&
+      pending(session.fork, DRAFT).length === 0 &&
+      (!session.other || pending(session.other, OTHER).length === 0),
+    () => `${tag}: applied ${applied}, pending ${pending(session.fork, DRAFT)}`,
+  );
+  counts.fixedCases++;
+  for (const f of session.forks) f.destroy();
+  session.live.destroy();
+}
+
 it("one change of a fork applies into Live by id-anchored lowering", () => {
-  const indices = only !== null ? [only] : Array.from({ length: scripts }, (_, i) => i);
+  const caseOnly = process.env.FUZZ_CASE ? Number(process.env.FUZZ_CASE) : null;
+  if (only === null)
+    for (const [i] of fixedCases.entries())
+      if (caseOnly === null || caseOnly === i)
+        try {
+          fixedCase(i);
+        } catch (error) {
+          check(
+            "script runs without throwing",
+            false,
+            () => `fixed case ${i}: ${(error as Error).stack?.split("\n").slice(0, 4).join(" | ")}`,
+          );
+        }
+  const indices =
+    only !== null ? [only] : caseOnly !== null ? [] : Array.from({ length: scripts }, (_, i) => i);
   for (const i of indices) {
     try {
       script(i);
