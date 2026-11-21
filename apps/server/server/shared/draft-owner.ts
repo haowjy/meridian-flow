@@ -6,7 +6,7 @@
  */
 import type { DraftOwner } from "@meridian/contracts";
 import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
-import { threads } from "@meridian/database/schema";
+import { drafts, threads } from "@meridian/database/schema";
 import { inArray, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDb } from "./drizzle-transaction.js";
 
@@ -58,15 +58,18 @@ export function chatOwner(
 }
 
 /**
- * Who names a draft, as SQL over a draft id expression: the Work whose `draft_id` it is, or the
- * root chat whose lineage it is, and the handle the writer knows it by (`w3`, `c12`). A draft
+ * Who names a draft, as SQL over a query that reads `drafts`: the Work whose `draft_id` it is, or
+ * the root chat whose lineage it is, and the handle the writer knows it by (`w3`, `c12`). A draft
  * names no owner itself; this is the one reverse read, for labels and the AI-write lifecycle.
  */
-export function draftOwnerSql(draftId: SQLWrapper): {
+export function draftOwnerSql(): {
   workId: SQL<string | null>;
   rootThreadId: SQL<string | null>;
   handle: SQL<string | null>;
 } {
+  // Qualified by hand: Drizzle renders a lone table's column bare, which inside these subqueries
+  // would name the subquery's own `id`.
+  const draftId = sql`${drafts}.${sql.identifier("id")}`;
   return {
     workId: sql<string | null>`(SELECT ow.id FROM works ow WHERE ow.draft_id = ${draftId})`,
     rootThreadId: sql<string | null>`(SELECT ot.id FROM threads ot WHERE ot.draft_id = ${draftId})`,

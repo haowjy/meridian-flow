@@ -481,7 +481,7 @@ async function readBranchOwner(
   db: Database,
   draftId: DraftId,
 ): Promise<{ holder: BranchHolder; facts: FileBranchOwnerFacts } | null> {
-  const named = draftOwnerSql(drafts.id);
+  const named = draftOwnerSql();
   const [draft] = await currentDrizzleDb(db)
     .select({
       projectId: drafts.projectId,

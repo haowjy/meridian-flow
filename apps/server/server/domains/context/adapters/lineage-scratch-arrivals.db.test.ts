@@ -134,7 +134,7 @@ describe.skipIf(!enabled)("lineage restore arrivals", () => {
       if (door === "chat") {
         await db
           .update(works)
-          .set({ isNoWork: true, name: "No Work", handle: null })
+          .set({ isNoWork: true, name: "No Work", handle: null, draftId: null })
           .where(eq(works.id, work));
         await threadRepo.setTrashState(root as never, "deleted");
       } else await workRepo.softDelete(work as never);

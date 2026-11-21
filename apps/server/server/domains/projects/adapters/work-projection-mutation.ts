@@ -317,7 +317,7 @@ export function createWorkProjectionMutation(input: {
   async function resolveOwners(set: WorkWriteSet) {
     const draftIds = [...new Set(set.branches ?? [])];
     // A draft's owner is whoever names it: its Work, or its lineage's root chat.
-    const named = draftOwnerSql(drafts.id);
+    const named = draftOwnerSql();
     const owned =
       draftIds.length === 0
         ? []

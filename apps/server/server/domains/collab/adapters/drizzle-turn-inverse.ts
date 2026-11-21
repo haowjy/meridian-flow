@@ -417,7 +417,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     const branchIds = [
       ...new Set(admittedRequirements.flatMap((r) => (r.branchId ? [r.branchId] : []))),
     ];
-    const owner = draftOwnerSql(drafts.id);
+    const owner = draftOwnerSql();
     const holders = branchIds.length
       ? await db()
           .select({ draftId: drafts.id, handle: owner.handle })

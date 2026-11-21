@@ -112,7 +112,7 @@ export async function readTurnTreeTargets(
   },
   known: readonly TurnEditedDocumentId[],
 ): Promise<TurnEditedDocumentId[]> {
-  const owner = draftOwnerSql(drafts.id);
+  const owner = draftOwnerSql();
   const rows = await db
     .selectDistinct({
       documentId: treeEditReceiptNodes.nodeId,

@@ -296,7 +296,7 @@ export function createDrizzleTreeListStore(deps: {
     if (liveChangedUnder.length > 0) deps.liveChangedUnder?.(liveChangedUnder);
     for (const documentId of reassigned) await deps.fileAccessChanges?.publish({ documentId });
     if (changedBranches.length > 0 && deps.recountAfterCommit) {
-      const named = draftOwnerSql(drafts.id);
+      const named = draftOwnerSql();
       const owners = await tx
         .select({ work: named.workId, root: named.rootThreadId })
         .from(drafts)

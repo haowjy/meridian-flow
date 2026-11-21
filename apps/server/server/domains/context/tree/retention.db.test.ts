@@ -110,12 +110,16 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
 
   it("keeps a trashed document an archived Work still has suggestions in", async () => {
     const id = (await seed.document(SOURCE, "live.md")) as DocumentId;
-    // The document's derivation counted one change of the Work's.
+    const [work] = await db
+      .select({ draftId: works.draftId })
+      .from(works)
+      .where(eq(works.id, WORK));
+    // The document's derivation counted one change of the Work's draft.
     await db.insert(documentBlockRooms).values({
       documentId: id,
       blockOrder: [],
       wordCount: 0,
-      pendingChanges: { [`work:${WORK}`]: { changes: 1, chats: [], writer: true } },
+      pendingChanges: { [`${work?.draftId}`]: { changes: 1, chats: [], writer: true } },
       documentHash: Buffer.alloc(32),
       cutGeneration: -1n,
       cutAdmissionSeq: -1n,

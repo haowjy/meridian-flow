@@ -39,7 +39,7 @@ export function createDrizzleBranchStore(db: Database): BranchStore {
       return found ?? null;
     },
     async ownerOf(draftId) {
-      const owner = draftOwnerSql(drafts.id);
+      const owner = draftOwnerSql();
       const [found] = await tx()
         .select({
           ...draftColumns,
