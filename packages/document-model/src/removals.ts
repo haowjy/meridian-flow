@@ -3,7 +3,8 @@ import { inMap, scoped } from "./handles.js";
 import { structureValues } from "./read.js";
 import type { RoomDocs } from "./room-docs.js";
 import { type BlockId, overrideMap } from "./shape.js";
-import { holdsUnread, isOrderKey, type Removal, removalOf, StructureView } from "./structure.js";
+import { isOrderKey, type Removal, removalOf, StructureView } from "./structure.js";
+import { docCovers, docVersion } from "./version.js";
 import { commitStructure, type DocChange, StructureWriter } from "./write.js";
 
 /**
@@ -45,7 +46,7 @@ export function answerRemovals(docs: RoomDocs, before: Frontiers): DocChange | n
   const unread = removed.filter(([id, removal]) =>
     under(id).some((key) => {
       const doc = docs.textOf(key);
-      return doc !== undefined && holdsUnread(doc, removal.seen[key]);
+      return doc !== undefined && !docCovers(removal.seen.get(key), docVersion(doc));
     }),
   );
   return unread.length > 0

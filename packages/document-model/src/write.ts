@@ -22,8 +22,9 @@ import {
   sameValue,
   storedAttrs,
 } from "./shape.js";
-import { encodeRemoval, type ReadVersion, readVersionOf, StructureView } from "./structure.js";
+import { encodeRemoval, StructureView } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
+import { type DocVersion, plainVersion } from "./version.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
 export interface DocChange {
@@ -97,10 +98,12 @@ export class StructureWriter {
    * they remove. `at` is given when a removal is written again (`restampRemovals`).
    */
   remove(id: BlockId, at = this.view.order(id) as string): void {
-    const seen: Record<DocKey, ReadVersion> = {};
+    const seen = new Map<DocKey, DocVersion>();
     for (const key of this.view.textKeysUnder(id)) {
       const doc = this.docs.textOf(key);
-      if (doc) seen[key] = readVersionOf(doc);
+      // The version the copy shows, not its oplog's: a view checked out at a read (`RoomDocs.at`)
+      // holds ops it never showed.
+      if (doc) seen.set(key, plainVersion(doc.version()));
     }
     this.set("order", id, encodeRemoval({ at, seen }));
   }

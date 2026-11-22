@@ -1,6 +1,7 @@
 import type { LoroDoc } from "loro-crdt";
 import { inMap } from "./handles.js";
 import { compareOrder } from "./order-key.js";
+import type { PeerId } from "./peer.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
   type Attrs,
@@ -11,14 +12,11 @@ import {
   STRUCTURE_MAPS,
   type StructureMap,
 } from "./shape.js";
-import { docVersion } from "./version.js";
+import type { DocVersion } from "./version.js";
 
 const NONE: ReadonlySet<BlockId> = new Set();
 
 type MapValues = Readonly<Record<string, unknown>>;
-
-/** A text doc's version as `{ peer: counter }`: what a removal records it read of the doc. */
-export type ReadVersion = Readonly<Record<string, number>>;
 
 /**
  * A removed block's `order` (design §1, "Removed blocks"), stored as JSON text: the key the block
@@ -27,7 +25,7 @@ export type ReadVersion = Readonly<Record<string, number>>;
  */
 export interface Removal {
   at: string;
-  seen: Readonly<Record<DocKey, ReadVersion>>;
+  seen: ReadonlyMap<DocKey, DocVersion>;
 }
 
 /**
@@ -39,30 +37,35 @@ export function isOrderKey(value: unknown): value is string {
   return typeof value === "string" && !value.startsWith("{");
 }
 
+type StoredRemoval = { at?: unknown; seen?: Record<DocKey, Record<PeerId, number>> };
+
 /** The record an `order` value holds, or null: a key, or a removal written without one. */
 export function removalOf(value: unknown): Removal | null {
   if (typeof value !== "string" || isOrderKey(value)) return null;
-  let parsed: unknown;
+  let parsed: StoredRemoval;
   try {
-    parsed = JSON.parse(value);
+    parsed = (JSON.parse(value) ?? {}) as StoredRemoval;
   } catch {
     return null;
   }
-  const { at, seen } = (parsed ?? {}) as Partial<Removal>;
-  return isOrderKey(at) && seen !== null && typeof seen === "object" ? { at, seen } : null;
+  const { at, seen } = parsed;
+  if (!isOrderKey(at) || seen === null || typeof seen !== "object") return null;
+  return {
+    at,
+    seen: new Map(
+      Object.entries(seen).map(([key, version]) => [
+        key,
+        new Map(Object.entries(version)) as DocVersion,
+      ]),
+    ),
+  };
 }
 
-export const encodeRemoval = (removal: Removal): string => JSON.stringify(removal);
-
-/** What a removal records of a text doc: its oplog version. */
-export function readVersionOf(doc: LoroDoc): ReadVersion {
-  return Object.fromEntries(docVersion(doc));
-}
-
-/** Whether `doc` holds an op, by any peer, that a removal which read `seen` of it did not count. */
-export function holdsUnread(doc: LoroDoc, seen: ReadVersion | undefined): boolean {
-  return [...docVersion(doc)].some(([peer, counter]) => counter > (seen?.[peer] ?? 0));
-}
+export const encodeRemoval = ({ at, seen }: Removal): string =>
+  JSON.stringify({
+    at,
+    seen: Object.fromEntries([...seen].map(([key, version]) => [key, Object.fromEntries(version)])),
+  });
 
 /**
  * One read of a structure doc (design §1): the effective value of every key (a fork's override

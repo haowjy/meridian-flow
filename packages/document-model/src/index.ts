@@ -64,7 +64,6 @@ export {
 } from "./shape.js";
 export {
   isOrderKey,
-  type ReadVersion,
   type Removal,
   removalOf,
   StructureView,

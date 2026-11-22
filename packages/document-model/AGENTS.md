@@ -32,7 +32,8 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   compared, and a read keeps `since`'s object for every block that reads as it did. Pass them
   only with what the docs read as now; with neither, both work on the whole document.
 - A removal is a record in `order[id]`, JSON text of `{ at, seen }`: the key the block had and the
-  version (`{ peer: counter }`) the remover read of every text doc under it. `StructureWriter.remove`
+  `DocVersion` the remover's copy showed of every text doc under it (its state's, not its oplog's:
+  a view checked out at a read holds ops it never showed). `StructureWriter.remove`
   is its one writer, on the topmost removed block only. What shows is the structure doc's alone: a
   block shows when its `order` is a key (`isOrderKey`, a first-character test; no read parses a
   record) and its ancestors show. A removed block comes back only by a write of its key:

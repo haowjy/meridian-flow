@@ -537,7 +537,7 @@ function run(seed: number): string | null {
       for (const key of view.textKeysUnder(id))
         for (const e of [a, b]) {
           const typedTo = e.typed.get(key) ?? 0;
-          const read = removal.seen[key]?.[e.docs.peer] ?? 0;
+          const read = removal.seen.get(key)?.get(e.docs.peer) ?? 0;
           if (typedTo > read)
             return `${id} stands removed without reading ${e.name}'s typing in ${key} (${read} < ${typedTo})`;
         }
