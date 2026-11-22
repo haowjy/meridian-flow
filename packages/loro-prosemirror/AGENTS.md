@@ -24,9 +24,15 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   comments it showed bodies of, the doc keys the batch changed) and keeps every other node. Both
   lean on the invariant above: a `previous` or `since.doc` that is not what the docs read as
   writes or shows the wrong thing.
+- Ctrl+Z is `UndoHistory` (`history.ts`), passed to the plugin as `history`: one Loro
+  `UndoManager` per doc the copy writes, and editor steps over them. Don't build an inverse of our
+  own: Loro's manager keeps inverses as positions carried through later edits, which is what a
+  chain of dependent steps needs (design §6). A manager records only commits made after it
+  exists, so it is created at the doc's first write (`RoomDocs.beforeTextWrite`); every local
+  write into the copy that no Ctrl+Z should take back commits under `UNTRACKED_ORIGIN`, or it
+  becomes an item that blocks the steps below it on that doc. `destroy()` the history before
+  freeing the docs: each manager is WASM memory.
 - Destroy the `EditorView` before freeing its `RoomDocs`: destroying it releases held batches into
   docs still alive.
 
-Not yet mounted: phase 1c adds the app's mount, Ctrl+Z on `onLocalWrite`'s doc changes, cursors
-in the UI and the caret rule for a block a peer removed. Probe:
-[round-trip](.context/qa/round-trip.md).
+Probes: [round-trip](.context/qa/round-trip.md), [two-editors](.context/qa/two-editors.md).

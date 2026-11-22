@@ -118,6 +118,7 @@ export class RoomDocs {
   readonly live: RoomDocs | null;
   /** A copy of Live this copy made for itself (`fork`, `at`), freed with it. */
   private ownedLive: RoomDocs | null = null;
+  private readonly textWriteListeners = new Set<(id: BlockId, doc: LoroDoc) => void>();
   private freed = false;
 
   private constructor(shape: ShapeSchema, peer: PeerId, structure: LoroDoc, live: RoomDocs | null) {
@@ -263,12 +264,26 @@ export class RoomDocs {
    */
   writableText(id: BlockId): { doc: LoroDoc; before: Frontiers } {
     const own = this.texts.get(id);
-    if (own) return { doc: own, before: own.frontiers() };
-    const base = this.live?.textOf(id);
-    const doc = this.adopt(base ? base.fork() : new LoroDoc());
-    const before = base ? base.frontiers() : doc.frontiers();
-    this.texts.set(id, doc);
-    return { doc, before };
+    let written: { doc: LoroDoc; before: Frontiers };
+    if (own) written = { doc: own, before: own.frontiers() };
+    else {
+      const base = this.live?.textOf(id);
+      const doc = this.adopt(base ? base.fork() : new LoroDoc());
+      written = { doc, before: base ? base.frontiers() : doc.frontiers() };
+      this.texts.set(id, doc);
+    }
+    for (const listener of this.textWriteListeners) listener(id, written.doc);
+    return written;
+  }
+
+  /**
+   * Calls `listener` with the doc each time a local write is about to go into a text doc (every
+   * `writableText`), before its first op: a Loro `UndoManager` records only commits made after it
+   * exists, so an Undo history starts watching a doc here. Returns the stop.
+   */
+  beforeTextWrite(listener: (id: BlockId, doc: LoroDoc) => void): () => void {
+    this.textWriteListeners.add(listener);
+    return () => this.textWriteListeners.delete(listener);
   }
 
   /** The owned doc of `key`. */
@@ -388,6 +403,7 @@ export class RoomDocs {
     for (const doc of this.texts.values()) doc.free();
     this.texts.clear();
     this.ownedLive?.free();
+    this.textWriteListeners.clear();
     this.freed = true;
   }
 

@@ -22,9 +22,11 @@ the headless seams here.
   publication.
 - The editor shows Live only. Drafts, suggestion paint and peer marks are gone until 1e
   brings drafts back as Loro forks; don't add a second attribute view.
-- Undo is ours (`editor-history.ts`): each step inverts its own changes at their frontier, so
-  Ctrl+Z after a collaborator's edit undoes only the writer's. A doc-changing transaction marked
-  `addToHistory: false` closes the open step.
+- Undo is Loro's `UndoManager`, one per doc the tab changes, grouped into editor steps by the
+  binding's `UndoHistory` (`editor-history.ts` wraps it), so Ctrl+Z after a collaborator's edit
+  undoes only the writer's. A doc-changing transaction marked `addToHistory: false` commits under
+  `UNTRACKED_ORIGIN` and closes the open step; any other local write into the session's docs
+  outside the editor must commit under it too, or the next Ctrl+Z on that doc stops at it.
 - Positions that must survive remote writes are Loro cursors (`loro-points.ts`), and nodes are
   found by block id (`findBlock`), never by a stored offset.
 - Reading memory persists only account-stamped Loro cursors and dimensionless

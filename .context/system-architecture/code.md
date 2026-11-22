@@ -196,9 +196,9 @@ No React and no browser or Node globals. `createThreadSync` never fetches, and t
 
 ## loro-prosemirror
 
-Our binding of ProseMirror to the Loro document shape: the codec both ways, the editor plugin and the composition guard.
+Our binding of ProseMirror to the Loro document shape: the codec both ways, the editor plugin, the composition guard, and the editor's Ctrl+Z (`UndoHistory`: one Loro `UndoManager` per doc a tab changes, grouped into editor steps).
 
-Every peer batch enters a tab through `importRemoteUpdate`, never `doc.import`. Not yet imported by the app or the server: phase 1c of the Loro build mounts it.
+Every peer batch enters a tab through `importRemoteUpdate`, never `doc.import`. The app's editor mounts it; the server and agent-edit use its codec.
 
 - Kind: package
 - Paths: `packages/loro-prosemirror/src`
@@ -208,7 +208,7 @@ Every peer batch enters a tab through `importRemoteUpdate`, never `doc.import`. 
 
 A document as Loro docs: one structure doc of value maps and one text doc per block, the read normalizer, the writes, `applyOps`, the envelope, peer ids, and the `DocumentRooms` door with an in-memory adapter.
 
-No ProseMirror at runtime: the binding hands it the schema's facts. Not yet imported by the app or the server.
+No ProseMirror at runtime: the binding hands it the schema's facts. The app, the server and agent-edit all read and write documents through it.
 
 - Kind: package
 - Paths: `packages/document-model/src`

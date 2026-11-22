@@ -20,7 +20,9 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   the same on every peer and a write-back emits nothing for it. Don't read the maps or a text's
   delta raw to decide what a document shows. Every text write goes through `replaceText`, which
   addresses shown units; the unstored empty paragraph is `derivedEmptyParent` / `isDerivedEmpty`
-  for every writer, and only when it is its container's one block (`storedOf`).
+  for every writer, and only when it is its container's one block (`storedOf`). A local write
+  into a text doc takes the doc from `writableText`, which tells `beforeTextWrite` listeners
+  first: the editor's Undo starts its Loro `UndoManager` for the doc there.
 - `writeDocument`'s `previous` and `readDocument`'s `since` make a write or a read cost what
   changed: a block that is the same object as in `previous` (under the same parent) is not
   compared, and a read keeps `since`'s object for every block that reads as it did. Pass them

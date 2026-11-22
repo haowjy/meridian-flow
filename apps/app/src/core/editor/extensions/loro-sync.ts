@@ -7,8 +7,7 @@ export type LoroSyncOptions = { copy: EditorCopy | null; history: DocumentHistor
 
 /**
  * The binding (`@meridian/loro-prosemirror`) on the session's copy. Every write it makes leaves
- * by the session's `publish` and is recorded in the document's Undo, with the state the
- * transaction started from (its selection is what Undo puts back).
+ * by the session's `publish`, and the binding records it in the document's Undo (`history.steps`).
  */
 export const LoroSyncExtension = Extension.create<LoroSyncOptions>({
   name: "loroSync",
@@ -20,9 +19,10 @@ export const LoroSyncExtension = Extension.create<LoroSyncOptions>({
     return [
       loroSyncPlugin({
         docs: copy.docs,
-        onLocalWrite: (changes, tr) => {
+        history: history?.steps,
+        onLocalWrite: (changes) => {
           copy.publish(changes);
-          history?.record(changes, tr, editor.view.state, editor);
+          history?.changed(editor);
         },
       }),
     ];

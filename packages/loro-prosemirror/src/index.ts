@@ -23,10 +23,15 @@ export {
 export {
   cursorAt,
   type DocCursor,
+  resolveCursor,
+  type SelectionCursors,
+  selectionCursors,
+} from "./cursors.js";
+export { type HistoryRun, UNTRACKED_ORIGIN, UndoHistory } from "./history.js";
+export {
   type LoroSyncOptions,
   type LoroSyncState,
   loroSyncKey,
   loroSyncPlugin,
   REMOTE_META,
-  resolveCursor,
 } from "./sync-plugin.js";
