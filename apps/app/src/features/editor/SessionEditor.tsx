@@ -79,13 +79,21 @@ type SessionEditorProps = {
 };
 
 export function SessionEditor(props: SessionEditorProps) {
-  const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
+  const [snapshot, setSnapshot] = useState(() => viewOf(props.session.getSnapshot()));
   const [bindHorizon, setBindHorizon] = useState<EditorBindHorizonResult | null>(null);
   const requiresFirstServerSync = !(
     props.identity.detached || props.surfaceOptions.localContentReady
   );
 
-  useEffect(() => props.session.subscribe(setSnapshot), [props.session]);
+  // Not on every save-status change: the first edit after a pause flips it, and a render of the
+  // whole editor view then lands inside that keystroke.
+  useEffect(
+    () =>
+      props.session.subscribe((next) =>
+        setSnapshot((shown) => (sameView(shown, next) ? shown : viewOf(next))),
+      ),
+    [props.session],
+  );
   useEffect(() => {
     let active = true;
     const firstServerSync = requiresFirstServerSync ? props.session.whenSynced() : undefined;
@@ -122,8 +130,26 @@ export function SessionEditor(props: SessionEditorProps) {
   );
 }
 
+/** What the editor view reads of its session: the rest (the save status) is `SyncStatus`'s. */
+type SessionView = Pick<DocumentSessionSnapshot, "connectionState" | "schemaFence" | "access">;
+
+const viewOf = ({
+  connectionState,
+  schemaFence,
+  access,
+}: DocumentSessionSnapshot): SessionView => ({
+  connectionState,
+  schemaFence,
+  access,
+});
+
+const sameView = (shown: SessionView, next: DocumentSessionSnapshot) =>
+  shown.connectionState === next.connectionState &&
+  shown.schemaFence === next.schemaFence &&
+  shown.access === next.access;
+
 type ActiveSessionEditorViewProps = SessionEditorProps & {
-  snapshot: DocumentSessionSnapshot;
+  snapshot: SessionView;
   evidenceDegraded: boolean;
 };
 
