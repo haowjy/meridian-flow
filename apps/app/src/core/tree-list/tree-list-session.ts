@@ -116,6 +116,11 @@ export class TreeListSession {
           return;
         }
         const loaded = await store.read();
+        // `close()` frees the doc: after an await, nothing touches it once the session closed.
+        if (this.isClosed) {
+          void store.close();
+          return;
+        }
         const snapshot = loaded.snapshots.get(LIST);
         const batches = [
           snapshot,
