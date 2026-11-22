@@ -19,6 +19,7 @@ export {
   importRemoteUpdate,
   listenToImports,
   notifyChanged,
+  type PublishWrite,
 } from "./composition-hold.js";
 export {
   cursorAt,

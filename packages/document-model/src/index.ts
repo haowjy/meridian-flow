@@ -1,5 +1,6 @@
 export { type ApplyOpsResult, applyOps, type ShapeOp } from "./apply-ops.js";
 export { decodeEnvelope, type Envelope, EnvelopeError, encodeEnvelope } from "./envelope.js";
+export { inMap, inText, scoped } from "./handles.js";
 export { compareOrder, keyBetween, orderKeys, type Random } from "./order-key.js";
 export {
   freshPeerId,
@@ -24,8 +25,15 @@ export {
   visibleComments,
 } from "./read.js";
 export {
+  removedOnPath,
+  restampRemovals,
+  restore,
+  UNTRACKED_ORIGIN,
+} from "./removals.js";
+export {
   CorruptDocBytesError,
   HistoryCutoffError,
+  type Imported,
   RoomDocs,
   RoomDocsFreedError,
 } from "./room-docs.js";
@@ -54,7 +62,12 @@ export {
   storedAttrs,
   TEXT_KEY,
 } from "./shape.js";
-export { StructureView } from "./structure.js";
+export {
+  isOrderKey,
+  type Removal,
+  removalOf,
+  StructureView,
+} from "./structure.js";
 export { replaceText, type TextRules } from "./text.js";
 export {
   type DocVersion,
@@ -72,9 +85,9 @@ export {
   withVector,
 } from "./version.js";
 export {
-  changeUpdate,
   commitStructure,
   type DocChange,
+  encodeChanges,
   StructureWriter,
   setCommentBody,
   type WriteOptions,

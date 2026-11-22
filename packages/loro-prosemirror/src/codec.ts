@@ -1,4 +1,5 @@
 import {
+  type BlockId,
   COMMENT_MARK,
   COMMENT_STYLE_PREFIX,
   type DocKey,
@@ -213,12 +214,19 @@ export interface ProseMirrorSince {
 /**
  * What the editor shows for these docs: the normalized read, as a ProseMirror document. With
  * `since`, only what changed is read again, and every block that reads as it did is the node
- * `since.doc` already holds.
+ * `since.doc` already holds. `kept` shows removed blocks the editor keeps for its caret
+ * (`readDocument`).
  */
-export function readProseMirror(docs: RoomDocs, schema: Schema, since?: ProseMirrorSince): Node {
+export function readProseMirror(
+  docs: RoomDocs,
+  schema: Schema,
+  since?: ProseMirrorSince,
+  kept?: ReadonlySet<BlockId>,
+): Node {
   const blocks = readDocument(
     docs,
     since && { blocks: blocksOf(since.doc), comments: since.comments, changed: since.changed },
+    kept,
   );
   return docOf(schema, blocks);
 }

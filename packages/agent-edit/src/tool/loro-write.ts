@@ -695,16 +695,19 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
       .top()
       .filter((block) => changed.includes(planDoc.hashOf(block.id)))
       .map((block) => block.id);
-    const deletedKeys = planned
+    const removedKeys = planned
       .filter((block) => deleted.includes(block.hash))
       .map((block) => block.key);
     const exported = (planDoc === copy ? copy.docs : planDoc.docs).exportSince(since);
     if (exported.size === 0)
       return withEvidence(edit.links, read, copy, docId, context, formatUnchangedSuccess());
-    const batch = encodeEnvelope(exported);
+    let batch = encodeEnvelope(exported);
     // The echo, the delta and the frontier show the write merged into the room as this call read
-    // it, the writer's surviving words included.
-    if (planDoc !== copy) copy.docs.importBatch(decodeEnvelope(batch));
+    // it, the writer's surviving words included. A removal of text the model never read comes
+    // back in the room's copy (design §1, "Removed blocks", rule 1): the saved batch carries that
+    // restore, and the receipt does not call the block deleted.
+    if (planDoc !== copy && copy.docs.importBatch(decodeEnvelope(batch)).restore)
+      batch = encodeEnvelope(copy.docs.exportSince(since));
     copy.forget();
     const textAfter = blocksOf(copy);
     await rooms.save(read.room, batch, {
@@ -722,6 +725,8 @@ export function createLoroEditCore(options: LoroEditCoreOptions): LoroEditCore {
     });
     context.frontiers?.reply?.append(docId, [batch]);
     const echoProjected = model.projectBlocks(toLoroHandle(copy));
+    const shown = new Set(echoProjected.map((block) => block.key));
+    const deletedKeys = removedKeys.filter((key) => !shown.has(key));
     const result = renderReceipt(
       {
         commandName: command.command,

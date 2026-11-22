@@ -1,4 +1,5 @@
 import type { Delta, LoroDoc } from "loro-crdt";
+import { inMap, inText } from "./handles.js";
 import type { RoomDocs } from "./room-docs.js";
 import {
   type Attrs,
@@ -17,7 +18,6 @@ import {
   STRUCTURE_KEY,
   sameValue,
   storedAttrs,
-  TEXT_KEY,
 } from "./shape.js";
 import { StructureView } from "./structure.js";
 
@@ -107,13 +107,20 @@ export interface ReadSince {
  * `since`'s own object (so a caller can tell unchanged blocks by identity): a batch that touched
  * only text docs re-reads those blocks' text and no structure; one that touched the structure
  * reads the structure and the text docs in `changed`. The result is the same as a full read.
+ *
+ * `kept` names removed blocks to show at their record's key though they are removed (the
+ * editor's caret rule, design §1); `since.blocks` must then be the read with the same `kept`.
  */
-export function readDocument(docs: RoomDocs, since?: ReadSince): ShapeBlock[] {
+export function readDocument(
+  docs: RoomDocs,
+  since?: ReadSince,
+  kept?: ReadonlySet<BlockId>,
+): ShapeBlock[] {
   if (since && !since.changed.has(STRUCTURE_KEY)) {
     const texts = readTexts(docs, since);
     if (texts) return texts;
   }
-  return readBlocks(docs, new StructureView(docs.structure, docs.draft, docs.shape), since);
+  return readBlocks(docs, new StructureView(docs, kept), since);
 }
 
 function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): ShapeBlock[] {
@@ -201,8 +208,9 @@ const sameSet = <T>(a: ReadonlySet<T>, b: ReadonlySet<T>) =>
 /** The comments this reader sees a body of (Live's `comments`, or a draft's override of it). */
 export function visibleComments(docs: RoomDocs): Set<string> {
   const { structure } = docs;
-  const keys = new Set(structure.getMap("comments").keys());
-  if (docs.draft) for (const key of structure.getMap(overrideMap("comments")).keys()) keys.add(key);
+  const keys = new Set(inMap(structure, "comments", (map) => map.keys()));
+  if (docs.draft)
+    for (const key of inMap(structure, overrideMap("comments"), (map) => map.keys())) keys.add(key);
   const visible = commentVisibility(structureValues(docs));
   return new Set([...keys].filter(visible));
 }
@@ -222,10 +230,11 @@ export function commentVisibility(
 
 /** `StructureView.value` read key by key from the doc, for a write that reads a few keys. */
 export function structureValues(docs: RoomDocs): Pick<StructureView, "value"> {
+  const get = (name: string, key: string) => inMap(docs.structure, name, (map) => map.get(key));
   return {
     value(name, key) {
-      const override = docs.draft ? docs.structure.getMap(overrideMap(name)).get(key) : undefined;
-      return override === undefined ? docs.structure.getMap(name).get(key) : override;
+      const override = docs.draft ? get(overrideMap(name), key) : undefined;
+      return override === undefined ? get(name, key) : override;
     },
   };
 }
@@ -328,7 +337,7 @@ export function textUnits(
   if (!doc) return [];
   const units: TextUnit[] = [];
   let pos = 0;
-  for (const part of doc.getText(TEXT_KEY).toDelta() as Delta<string>[]) {
+  for (const part of inText(doc, (text) => text.toDelta()) as Delta<string>[]) {
     if (part.insert === undefined) continue;
     const stored = part.attributes ?? {};
     const style = inlineStyle(stored[INLINE_STYLE]);

@@ -11,9 +11,11 @@ import {
   type DocKey,
   decodeEnvelope,
   decodeRoomVersion,
+  encodeChanges,
   encodeEnvelope,
   encodeRoomVersion,
   freshServerPeerId,
+  type Imported,
   RoomDocs,
   type ShapeSchema,
 } from "@meridian/document-model";
@@ -235,7 +237,7 @@ export function createPostgresDocumentRooms(input: {
         room,
         name,
         docs,
-        dirty: new Set(docs.forward()),
+        dirty: new Set(docs.forward().changed),
         firstDirtyAt: 0,
         saveTimer: null,
         settleSave: null,
@@ -300,18 +302,30 @@ export function createPostgresDocumentRooms(input: {
       listener({ room, batch, origin });
   }
 
-  /** What a loaded room does with every batch it imports: tell subscribers, forward forks, save. */
+  /**
+   * What a loaded room does with every import: save, tell subscribers, forward forks. A restore
+   * the room's copy wrote on the import (design §1, "Removed blocks", rule 1) follows the batch as
+   * the room's own. A fork forwarded hears nothing of Live's batch, only its own restore.
+   */
   function imported(
     loaded: Loaded,
-    changed: readonly DocKey[],
-    batch: Uint8Array,
+    { changed, restore }: Imported,
+    batch: Uint8Array | null,
     origin: RoomOrigin,
   ) {
     if (changed.length === 0) return;
     markDirty(loaded, changed);
-    emitTo(loaded.room, batch, origin);
+    if (batch) emitTo(loaded.room, batch, origin);
+    if (restore) emitTo(loaded.room, encodeChanges([restore]), "server:restore");
     if (loaded.room.kind === "live")
-      for (const fork of forksOf(loaded.room.documentId)) markDirty(fork, fork.docs.forward());
+      for (const fork of forksOf(loaded.room.documentId))
+        imported(fork, fork.docs.forward(), null, origin);
+  }
+
+  function importInto(loaded: Loaded, batch: Uint8Array, origin: RoomOrigin) {
+    const result = loaded.docs.importBatch(decodeEnvelope(batch));
+    imported(loaded, result, batch, origin);
+    return result;
   }
 
   function markDirty(loaded: Loaded, keys: Iterable<DocKey>) {
@@ -368,6 +382,7 @@ export function createPostgresDocumentRooms(input: {
     const before = docs.version();
     const { changed } = docs.importBatch(new Map(rows.map((row) => [row.docKey, row.snapshot])));
     if (changed.length === 0) return null;
+    // The delta holds the copy's own restore too, if the import wrote one.
     return { changed, delta: encodeEnvelope(docs.exportSince(before)) };
   }
 
@@ -443,7 +458,8 @@ export function createPostgresDocumentRooms(input: {
             merged = true;
             // What the merge brings reaches the room's sockets and forks like any batch: a tab
             // rejoining resends only what the room lacks, so nobody else would ever get it.
-            imported(loaded, merge.changed, merge.delta, "server:merge");
+            const result = { changed: merge.changed, pending: false, restore: null };
+            imported(loaded, result, merge.delta, "server:merge");
           }
           // Taken here, after the merge and right before the export, so a batch landing during
           // the awaits above is in this save and one landing after it stays dirty for the next.
@@ -698,9 +714,7 @@ export function createPostgresDocumentRooms(input: {
     },
 
     async write(room, batch, origin) {
-      const loaded = await load(room);
-      const { changed, pending } = loaded.docs.importBatch(decodeEnvelope(batch));
-      imported(loaded, changed, batch, origin);
+      const { pending } = importInto(await load(room), batch, origin);
       return { pending };
     },
 
@@ -709,16 +723,20 @@ export function createPostgresDocumentRooms(input: {
         const entries = decodeEnvelope(batch);
         await lockRoom(tx, room);
         const copy = await copyInTransaction(tx, room, freshServerPeerId());
+        let restore: Uint8Array | null = null;
         try {
-          const { changed } = copy.importBatch(entries);
-          await writeRows(tx, room, copy, changed);
+          const result = copy.importBatch(entries);
+          if (result.restore) restore = encodeChanges([result.restore]);
+          await writeRows(tx, room, copy, result.changed);
         } finally {
           copy.free();
         }
         const land = () => {
           const loaded = rooms.get(loroRoomName(room));
-          if (!loaded || loaded.unloading) return emitTo(room, batch, origin);
-          imported(loaded, loaded.docs.importBatch(decodeEnvelope(batch)).changed, batch, origin);
+          // A loaded room answers the batch on its own copy, as `importBatch` does everywhere.
+          if (loaded && !loaded.unloading) return void importInto(loaded, batch, origin);
+          emitTo(room, batch, origin);
+          if (restore) emitTo(room, restore, "server:restore");
         };
         deferUntilDrizzleCommit(land);
       }),
@@ -737,7 +755,7 @@ export function createPostgresDocumentRooms(input: {
         const land = () => {
           const loaded = rooms.get(name);
           if (!loaded || loaded.unloading) return emitTo(room, snapshots, "server:seed");
-          imported(loaded, loaded.docs.importBatch(entries).changed, snapshots, "server:seed");
+          importInto(loaded, snapshots, "server:seed");
         };
         deferUntilDrizzleCommit(land);
       }),

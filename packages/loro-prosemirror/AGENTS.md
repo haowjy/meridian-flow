@@ -3,11 +3,16 @@
 Our binding of ProseMirror to the document shape in `@meridian/document-model`. Design:
 `loro-build/design.md` §6 in the docs repository.
 
-- Between transactions the editor's document is what the docs read as (`readProseMirror`). Start
-  an editor's state from that read, and keep it true: every local write is computed against it.
+- Between transactions the editor's document is the docs' read plus the removed blocks it keeps
+  for its caret (`readProseMirror` with `LoroSyncState.kept`, almost always empty). Start an
+  editor's state from the read, and keep it true: every local write is computed against it, and
+  every read or write the binding makes while blocks are kept passes them (`kept`).
 - Import a peer's batch with `importRemoteUpdate`, never `RoomDocs.importBatch` or `doc.import`.
   It holds the batch while an editor on the room is composing (an import mid-composition doubles
-  or drops the composed text) and forwards a Live batch into the room's open drafts.
+  or drops the composed text), and forwards a Live batch into the room's open drafts. The import
+  answers a removal the batch brings that did not read this copy's typing before any editor reads
+  it; the caller's `publish` sends that restore, and a draft's forward restore goes out through
+  the `publish` its editor registered (`listenToImports`).
 - Every block the editor hands the binding has a unique `id`. The app's block-id fixer gives a
   split or a paste its ids inside the same transaction; the binding throws on a missing or
   duplicate id rather than inventing one.
@@ -32,6 +37,14 @@ Our binding of ProseMirror to the document shape in `@meridian/document-model`. 
   write into the copy that no Ctrl+Z should take back commits under `UNTRACKED_ORIGIN`, or it
   becomes an item that blocks the steps below it on that doc. `destroy()` the history before
   freeing the docs: each manager is WASM memory.
+- The caret rule (design §1, "Removed blocks"): when a peer's batch removes the block holding the
+  selection's head, or a block above it, the editor keeps every removed block on that path in its
+  document. A local transaction with a step inside a kept block restores them (`restore`, which
+  publishes) and then writes as usual; any other write leaves them removed in the docs. The head
+  leaving them ends it, and `appendTransaction` reads them off the screen. A local import
+  (`notifyChanged`: an Undo, a command) keeps nothing new. After an Undo or Redo run changes the
+  structure, `UndoHistory` writes again every removal record the run replayed
+  (`restampRemovals`), in the run's batch.
 - Destroy the `EditorView` before freeing its `RoomDocs`: destroying it releases held batches into
   docs still alive.
 

@@ -15,6 +15,10 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   `forkAt`: it works after the history cutoff and frees like any copy. Export its writes with
   `view.exportSince(docs.shownVersion())`; the view's own `version()` ships a block it forked from
   Live with that block's whole history.
+- Every container and cursor Loro returns is a WASM handle that no garbage collector frees: use it
+  inside `scoped`, `inText` or `inMap` (`handles.ts`) and never keep one past its call; `DocCursor`
+  holds a cursor's bytes. Versions are plain values (`version.ts`, below). Run the two-editors probe
+  with `HANDLES=1` after touching code that makes handles: it names any left unfreed.
 - Every reader goes through the read normalizer (`readDocument`, `readInline`, `StructureView`,
   `textUnits`), and every writer compares against it, so a merged state the schema forbids reads
   the same on every peer and a write-back emits nothing for it. Don't read the maps or a text's
@@ -27,6 +31,18 @@ A Meridian document as Loro docs, shared by the browser, the server and agent-ed
   changed: a block that is the same object as in `previous` (under the same parent) is not
   compared, and a read keeps `since`'s object for every block that reads as it did. Pass them
   only with what the docs read as now; with neither, both work on the whole document.
+- A removal is a record in `order[id]`, JSON text of `{ at, seen }`: the key the block had and the
+  `DocVersion` the remover's copy showed of every text doc under it (its state's, not its oplog's:
+  a view checked out at a read holds ops it never showed). `StructureWriter.remove`
+  is its one writer, on the topmost removed block only. What shows is the structure doc's alone: a
+  block shows when its `order` is a key (`isOrderKey`, a first-character test; no read parses a
+  record) and its ancestors show. A removed block comes back only by a write of its key:
+  `restore`, Undo's replay, or rule 1, which `RoomDocs.importBatch` and `forward` run on every
+  import, before any reader: they return the restore the copy wrote (`Imported.restore`), and its
+  holder sends and saves it like a local write (`encodeChanges`). They are the only ways ops enter
+  a copy; never import into one of its docs directly. `removals.ts` holds the rule's functions; `UNTRACKED_ORIGIN` commits keep them out of
+  every Undo history. Never move the record into a second map: an Undo can then delete it while
+  another peer's removal stands.
 - A batch is an envelope of `(docKey, bytes)` (`encodeEnvelope`); a room's version is the same
   shape with version vectors (`encodeRoomVersion`). In code a version is plain peer counters
   (`DocVersion`, `RoomVersion`, `version.ts`), never a Loro `VersionVector`: a vector is WASM

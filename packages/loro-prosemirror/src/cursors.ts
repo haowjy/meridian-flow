@@ -1,12 +1,16 @@
-import { type RoomDocs, shownUnits, TEXT_KEY, textUnits } from "@meridian/document-model";
-import type { Cursor } from "loro-crdt";
+import { inText, type RoomDocs, scoped, shownUnits, textUnits } from "@meridian/document-model";
+import { Cursor } from "loro-crdt";
 import type { Node, ResolvedPos } from "prosemirror-model";
 import type { EditorState } from "prosemirror-state";
 
-/** A place in a textblock as a Loro cursor in the block's text doc, which survives anyone's edits. */
+/**
+ * A place in a textblock as a Loro cursor in the block's text doc, which survives anyone's edits.
+ * The cursor is its encoded bytes, a plain value: Loro's `Cursor` is a WASM handle, made and freed
+ * around each use.
+ */
 export interface DocCursor {
   block: string;
-  cursor: Cursor;
+  cursor: Uint8Array;
   /** The cursor holds the unit before a caret, which is one past it. */
   after: boolean;
 }
@@ -28,7 +32,10 @@ export function cursorAt(docs: RoomDocs, $pos: ResolvedPos): DocCursor | null {
   const units = shownUnits(doc, rule, docs.shape);
   const offset = $pos.parentOffset;
   const unit = units[offset > 0 ? offset - 1 : offset];
-  const cursor = doc.getText(TEXT_KEY).getCursor(unit ? unit.pos : 0);
+  const cursor = inText(doc, (text) => {
+    const made = text.getCursor(unit ? unit.pos : 0);
+    return made && scoped(made, (each) => each.encode());
+  });
   return cursor ? { block: id, cursor, after: offset > 0 && unit !== undefined } : null;
 }
 
@@ -61,13 +68,14 @@ export function resolveCursor(docs: RoomDocs, doc: Node, at: DocCursor): number 
   const found = text && textblockOf(doc, at.block);
   const rule = found && docs.shape.node(found.node.type.name);
   if (!text || !found || !rule) return null;
-  const position = text.getCursorPos(at.cursor);
+  const position = scoped(Cursor.decode(at.cursor), (cursor) => text.getCursorPos(cursor));
   if (!position) return null;
+  const held = at.after && position.update === undefined;
+  position.update?.free();
   let shown = 0;
   for (const unit of textUnits(text, rule, docs.shape)) {
     if (unit.pos >= position.offset) break;
     if (!unit.hidden) shown++;
   }
-  const held = at.after && position.update === undefined;
   return found.start + Math.min(shown + (held ? 1 : 0), found.node.content.size);
 }

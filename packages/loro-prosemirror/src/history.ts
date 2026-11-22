@@ -2,19 +2,19 @@ import {
   type DocChange,
   type DocKey,
   type RoomDocs,
+  restampRemovals,
   STRUCTURE_KEY,
+  UNTRACKED_ORIGIN,
 } from "@meridian/document-model";
-import { type Cursor, type LoroDoc, UndoManager } from "loro-crdt";
+import { Cursor, type LoroDoc, UndoManager } from "loro-crdt";
 import type { EditorState } from "prosemirror-state";
 import { type SelectionCursors, selectionCursors } from "./cursors.js";
 
 /**
- * The commit origin of a local write no Ctrl+Z takes back: a transaction marked
- * `addToHistory: false`, or a write made outside the editor. Every local writer of a copy with
- * an `UndoHistory` that isn't the editor's own tracked write commits under it, or its commit
- * lands in the Undo stack of the doc it wrote.
+ * Every local writer of a copy with an `UndoHistory` that isn't the editor's own tracked write
+ * commits under `UNTRACKED_ORIGIN`, or its commit lands in the Undo stack of the doc it wrote.
  */
-export const UNTRACKED_ORIGIN = "untracked";
+export { UNTRACKED_ORIGIN };
 
 /** Writes closer than this join one step. */
 const GROUP_MS = 500;
@@ -54,7 +54,9 @@ export class UndoHistory {
   /** What a commit pushed now is tagged with: the step being written, undone or redone. */
   private tag: { step: number; selection: SelectionCursors } | null = null;
   /** The cursors each selection end came back with from the items popped in a run. */
-  private readonly popped = new Map<End, Cursor>();
+  private readonly popped = new Map<End, Uint8Array>();
+  /** The cursors the last push handed to Loro: still ours to free. */
+  private pushed: Cursor[] = [];
   private ids = 0;
   private readonly stopWatching: () => void;
 
@@ -134,6 +136,7 @@ export class UndoHistory {
 
   destroy(): void {
     this.stopWatching();
+    this.freePushed();
     for (const { manager } of this.watched.values()) manager.free();
     this.watched.clear();
     this.undoSteps.length = 0;
@@ -168,6 +171,11 @@ export class UndoHistory {
       }
       this.tag = null;
       if (changes.length === 0) continue;
+      // A removal the run replayed says what the first removal read: read it again now, and send
+      // it with the run, or a peer could answer the old record first.
+      const structure = changes.find((change) => change.key === STRUCTURE_KEY);
+      if (structure && restampRemovals(this.docs, structure.before))
+        structure.after = this.docs.structure.frontiers();
       const selection = this.restored(step.selection);
       step.selection = now;
       to.push(step);
@@ -184,6 +192,11 @@ export class UndoHistory {
       return at && cursor ? { ...at, cursor } : at;
     };
     return { anchor: end("anchor"), head: end("head") };
+  }
+
+  private freePushed(): void {
+    for (const cursor of this.pushed) cursor.free();
+    this.pushed = [];
   }
 
   private clearRedo(): void {
@@ -213,15 +226,19 @@ export class UndoHistory {
           const at = tag?.selection[name];
           if (at?.block !== key) continue;
           ends.push(name);
-          cursors.push(at.cursor);
+          cursors.push(Cursor.decode(at.cursor));
         }
+        // Loro copies these once this callback returns, so the next push frees them.
+        this.freePushed();
+        this.pushed = cursors;
         return { value: tag ? ({ step: tag.step, ends } satisfies Tag) : null, cursors };
       },
       onPop: (_isUndo, { value, cursors }) => {
         const ends = (value as Tag | null)?.ends ?? [];
-        ends.forEach((name, i) => {
-          const cursor = cursors[i];
-          if (cursor) this.popped.set(name, cursor);
+        cursors.forEach((cursor, i) => {
+          const name = ends[i];
+          if (name) this.popped.set(name, cursor.encode());
+          cursor.free();
         });
       },
     });

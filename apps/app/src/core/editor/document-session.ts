@@ -24,11 +24,11 @@ import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { WS_CLOSE } from "@meridian/contracts/protocol";
 import {
-  changeUpdate,
   type DocChange,
   type DocKey,
   type DocVersion,
   decodeRoomVersion,
+  encodeChanges,
   encodeEnvelope,
   encodeRoomVersion,
   freshPeerId,
@@ -278,12 +278,7 @@ export class DocumentSession {
    */
   publish(changes: readonly DocChange[]): void {
     if (this.destroyed || changes.length === 0) return;
-    const entries = new Map<DocKey, Uint8Array>();
-    // One envelope key per doc: a doc a transaction wrote twice sends from its first `before`.
-    for (const change of changes)
-      if (!entries.has(change.key))
-        entries.set(change.key, changeUpdate(change.doc, change.before));
-    this.publishBatch(encodeEnvelope(entries));
+    this.publishBatch(encodeChanges(changes));
   }
 
   /**
@@ -320,7 +315,7 @@ export class DocumentSession {
   private importRemote(batch: Uint8Array, store = true): void {
     if (this.destroyed || this.docs.isFreed) return;
     try {
-      importRemoteUpdate(this.docs, batch);
+      importRemoteUpdate(this.docs, batch, (changes) => this.publish(changes));
     } catch (error) {
       reportError(error);
       return;

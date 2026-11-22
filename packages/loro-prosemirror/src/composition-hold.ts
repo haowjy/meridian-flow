@@ -1,4 +1,5 @@
 import {
+  type DocChange,
   type DocKey,
   decodeEnvelope,
   type Envelope,
@@ -10,8 +11,8 @@ import type { EditorView } from "prosemirror-view";
  * The composition guard and the one door for remote batches (design §6). A peer's batch is held,
  * as bytes, while any editor on the room is in an IME composition, and imported in order once the
  * last composition ends. Holding the batch itself, not just the editor's view of it, keeps the
- * binding's invariant: between transactions the editor's document is what the docs read as, and
- * every local write is computed against that. Gate 1: 24 of 24 compositions with a remote update
+ * binding's invariant: between transactions the editor's document is the docs' read plus the
+ * blocks it keeps for its caret, and every local write is computed against that. Gate 1: 24 of 24 compositions with a remote update
  * mid-composition, against 12 of 24 unguarded.
  *
  * A Draft editor binds to the fork's docs, which read Live's text for blocks the draft has not
@@ -21,15 +22,22 @@ import type { EditorView } from "prosemirror-view";
 export interface EditorListener {
   /** Called before a batch is imported, while the editor and the docs still agree. */
   before(): void;
-  /** Called after, with the doc keys that changed in the docs this listener is bound to. */
-  after(changed: ReadonlySet<DocKey>): void;
+  /**
+   * Called after, with the doc keys that changed in the docs this listener is bound to, and
+   * whether a peer's batch changed them (else a local write outside the editor, `notifyChanged`).
+   */
+  after(changed: ReadonlySet<DocKey>, remote: boolean): void;
 }
+
+/** Sends a write the copy made itself on an import (a restore, `RoomDocs.importBatch`) as a local one. */
+export type PublishWrite = (changes: DocChange[]) => void;
 
 interface Hold {
   views: Set<EditorView>;
-  queued: { docs: RoomDocs; batch: Envelope }[];
+  queued: { docs: RoomDocs; batch: Envelope; publish: PublishWrite }[];
   releasing: boolean;
-  drafts: Set<RoomDocs>;
+  /** Each registered draft's fork, with what sends a restore its forward writes. */
+  drafts: Map<RoomDocs, PublishWrite>;
   listeners: Map<RoomDocs, Set<EditorListener>>;
 }
 
@@ -43,7 +51,7 @@ function holdFor(docs: RoomDocs): Hold {
       views: new Set(),
       queued: [],
       releasing: false,
-      drafts: new Set(),
+      drafts: new Map(),
       listeners: new Map(),
     };
     holds.set(root, hold);
@@ -55,18 +63,23 @@ function holdFor(docs: RoomDocs): Hold {
  * Import a peer's batch into `docs` (a Live copy or a draft's fork), or hold it while an editor on
  * the room is composing. Returns null when held, else what the import changed and whether some of
  * it waits on ops not yet seen. Throws on bytes that are not an envelope, before holding anything.
+ *
+ * A removal the batch brings that did not read typing this copy holds is answered by the import,
+ * before any editor reads it (design §1, rule 1), so the block never leaves the typist's screen;
+ * `publish` sends that restore.
  */
 export function importRemoteUpdate(
   docs: RoomDocs,
   bytes: Uint8Array,
+  publish: PublishWrite,
 ): { changed: DocKey[]; pending: boolean } | null {
   const batch = decodeEnvelope(bytes);
   const hold = holdFor(docs);
   if (hold.queued.length > 0 || composing(hold)) {
-    hold.queued.push({ docs, batch });
+    hold.queued.push({ docs, batch, publish });
     return null;
   }
-  return apply(hold, docs, batch);
+  return apply(hold, docs, batch, publish);
 }
 
 /** How many batches are held for this room right now. */
@@ -82,32 +95,35 @@ export function notifyChanged(docs: RoomDocs, changed: Iterable<DocKey>) {
   const hold = holdFor(docs);
   const keys = new Set(changed);
   for (const listener of hold.listeners.get(docs) ?? []) listener.before();
-  deliver(hold, docs, keys);
+  deliver(hold, docs, keys, false);
 }
 
-function apply(hold: Hold, docs: RoomDocs, batch: Envelope) {
-  for (const draft of hold.drafts) if (draft.isFreed) hold.drafts.delete(draft);
-  const targets = docs.live ? [docs] : [docs, ...hold.drafts];
+function apply(hold: Hold, docs: RoomDocs, batch: Envelope, publish: PublishWrite) {
+  for (const draft of hold.drafts.keys()) if (draft.isFreed) hold.drafts.delete(draft);
+  const targets = docs.live ? [docs] : [docs, ...hold.drafts.keys()];
   for (const target of targets)
     for (const listener of hold.listeners.get(target) ?? []) listener.before();
   const result = docs.importBatch(batch);
+  if (result.restore) publish([result.restore]);
   const changed = new Set(result.changed);
-  deliver(hold, docs, changed);
+  deliver(hold, docs, changed, true);
   if (!docs.live)
-    for (const draft of hold.drafts) {
+    for (const [draft, publishDraft] of hold.drafts) {
       // The draft reads Live's text for blocks it has not written, and its structure fork follows
       // Live's structure once forwarded.
+      const forwarded = draft.forward();
+      if (forwarded.restore) publishDraft([forwarded.restore]);
       const keys = new Set([
-        ...draft.forward(),
+        ...forwarded.changed,
         ...[...changed].filter((key) => !draft.texts.has(key)),
       ]);
-      deliver(hold, draft, keys);
+      deliver(hold, draft, keys, true);
     }
-  return result;
+  return { changed: result.changed, pending: result.pending };
 }
 
-function deliver(hold: Hold, docs: RoomDocs, changed: ReadonlySet<DocKey>) {
-  for (const listener of hold.listeners.get(docs) ?? []) listener.after(changed);
+function deliver(hold: Hold, docs: RoomDocs, changed: ReadonlySet<DocKey>, remote: boolean) {
+  for (const listener of hold.listeners.get(docs) ?? []) listener.after(changed, remote);
 }
 
 function composing(hold: Hold): boolean {
@@ -117,9 +133,14 @@ function composing(hold: Hold): boolean {
 
 /**
  * Register a listener for imports into `docs`; returns the unregister. A draft's fork with a
- * listener is forwarded on every Live batch imported here.
+ * listener is forwarded on every Live batch imported here, and `publish` sends what the forward
+ * restores.
  */
-export function listenToImports(docs: RoomDocs, listener: EditorListener): () => void {
+export function listenToImports(
+  docs: RoomDocs,
+  publish: PublishWrite,
+  listener: EditorListener,
+): () => void {
   const hold = holdFor(docs);
   let set = hold.listeners.get(docs);
   if (!set) {
@@ -127,7 +148,7 @@ export function listenToImports(docs: RoomDocs, listener: EditorListener): () =>
     hold.listeners.set(docs, set);
   }
   set.add(listener);
-  if (docs.live) hold.drafts.add(docs);
+  if (docs.live) hold.drafts.set(docs, publish);
   return () => {
     set.delete(listener);
     if (set.size > 0) return;
@@ -169,6 +190,6 @@ export function attachCompositionHold(docs: RoomDocs, view: EditorView) {
 function release(hold: Hold) {
   while (hold.queued.length > 0 && !composing(hold)) {
     const next = hold.queued.shift();
-    if (next && !next.docs.isFreed) apply(hold, next.docs, next.batch);
+    if (next && !next.docs.isFreed) apply(hold, next.docs, next.batch, next.publish);
   }
 }

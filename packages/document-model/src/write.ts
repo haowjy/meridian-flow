@@ -1,4 +1,6 @@
 import type { Frontiers, LoroDoc } from "loro-crdt";
+import { encodeEnvelope } from "./envelope.js";
+import { inMap, inText } from "./handles.js";
 import { orderKeys, type Random } from "./order-key.js";
 import {
   commentVisibility,
@@ -20,10 +22,10 @@ import {
   type StructureMap,
   sameValue,
   storedAttrs,
-  TEXT_KEY,
 } from "./shape.js";
-import { StructureView } from "./structure.js";
+import { encodeRemoval, StructureView } from "./structure.js";
 import { patchStyles, replaceUnits, type TextRules, wantedUnits } from "./text.js";
+import { type DocVersion, plainVersion } from "./version.js";
 
 /** One doc a write changed, with its frontiers either side: what an Undo record holds. */
 export interface DocChange {
@@ -33,8 +35,19 @@ export interface DocChange {
   after: Frontiers;
 }
 
-/** A doc's update from `before` on: the ops one change wrote, to publish. */
-export function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
+/**
+ * The batch that sends `changes`: per doc, the update from its first change's `before` on (a doc
+ * a transaction wrote twice sends once).
+ */
+export function encodeChanges(changes: readonly DocChange[]): Uint8Array {
+  const entries = new Map<DocKey, Uint8Array>();
+  for (const change of changes)
+    if (!entries.has(change.key)) entries.set(change.key, changeUpdate(change.doc, change.before));
+  return encodeEnvelope(entries);
+}
+
+/** A doc's update from `before` on: the ops one change wrote. */
+function changeUpdate(doc: LoroDoc, before: Frontiers): Uint8Array {
   if (before.length === 0) return doc.export({ mode: "update" });
   const from = doc.frontiersToVV(before);
   try {
@@ -56,6 +69,11 @@ export interface WriteOptions {
    * known to read as written and is not compared again, so a write costs what it changed.
    */
   previous?: readonly ShapeBlock[];
+  /**
+   * Removed blocks the caller's document still shows (the editor's caret rule, design §1): the
+   * write reads the docs as `readDocument` does with them, so it leaves them as they are.
+   */
+  kept?: ReadonlySet<BlockId>;
 }
 
 /**
@@ -74,20 +92,32 @@ export class StructureWriter {
     const { structure, draft } = this.docs;
     const base = this.view.baseValue(name, key);
     if (!draft) {
-      if (!sameValue(base, value)) structure.getMap(name).set(key, value as never);
+      if (!sameValue(base, value)) inMap(structure, name, (map) => map.set(key, value as never));
       return;
     }
-    const overrides = structure.getMap(overrideMap(name));
     const override = this.view.override(name, key);
     const baseRead = name === "attrs" ? (base ?? null) : base;
     if (sameValue(baseRead, value)) {
-      if (override !== undefined) overrides.delete(key);
-    } else if (!sameValue(override, value)) overrides.set(key, value as never);
+      if (override !== undefined) inMap(structure, overrideMap(name), (map) => map.delete(key));
+    } else if (!sameValue(override, value))
+      inMap(structure, overrideMap(name), (map) => map.set(key, value as never));
   }
 
-  /** Remove a block (and what shows under it reads as removed with it): `order` to null. */
-  remove(id: BlockId): void {
-    this.set("order", id, null);
+  /**
+   * Remove a block, and with it what is under it: `order` becomes a record of the key it had (`at`)
+   * and what this copy read of every text doc under it, so a write the removal did not read can
+   * bring it back (design §1, "Removed blocks"). Writers remove only the topmost block of what
+   * they remove. `at` is given when a removal is written again (`restampRemovals`).
+   */
+  remove(id: BlockId, at = this.view.order(id) as string): void {
+    const seen = new Map<DocKey, DocVersion>();
+    for (const key of this.view.textKeysUnder(id)) {
+      const doc = this.docs.textOf(key);
+      // The version the copy shows, not its oplog's: a view checked out at a read (`RoomDocs.at`)
+      // holds ops it never showed.
+      if (doc) seen.set(key, plainVersion(doc.version()));
+    }
+    this.set("order", id, encodeRemoval({ at, seen }));
   }
 
   /**
@@ -126,13 +156,15 @@ export class StructureWriter {
   dropMatchingOverrides(ids: Iterable<BlockId>) {
     if (!this.docs.draft) return;
     const { structure } = this.docs;
-    const after = new StructureView(structure, true, this.docs.shape);
-    const orders = structure.getMap(overrideMap("order"));
-    for (const id of ids) if (sameOrderAsBase(after, id)) orders.delete(id);
-    const comments = structure.getMap(overrideMap("comments"));
-    for (const key of after.overrideKeys("comments"))
-      if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
-        comments.delete(key);
+    const after = new StructureView(this.docs, this.view.kept);
+    inMap(structure, overrideMap("order"), (orders) => {
+      for (const id of ids) if (sameOrderAsBase(after, id)) orders.delete(id);
+    });
+    inMap(structure, overrideMap("comments"), (comments) => {
+      for (const key of after.overrideKeys("comments"))
+        if (sameValue(after.baseValue("comments", key), after.override("comments", key)))
+          comments.delete(key);
+    });
   }
 }
 
@@ -169,10 +201,10 @@ export function setCommentBody(
   body: CommentBody | null,
   options: WriteOptions = {},
 ) {
-  const view = new StructureView(docs.structure, docs.draft, docs.shape);
+  const view = new StructureView(docs);
   const before = docs.structure.frontiers();
   const writer = new StructureWriter(docs, view);
-  if (body === null && !docs.draft) docs.structure.getMap("comments").delete(comment);
+  if (body === null && !docs.draft) inMap(docs.structure, "comments", (map) => map.delete(comment));
   else writer.set("comments", comment, body);
   return commitStructure(docs, before, options);
 }
@@ -181,7 +213,8 @@ export function setCommentBody(
  * Write a whole document as the editor (or a seed) has it (design §6): diff it against the
  * normalized read and write only what differs. Blocks pair by `id`, so there is nothing to
  * reconcile: changed values are set, only blocks whose relative order changed are re-keyed, shown
- * blocks that left are tombstoned, and a textblock's text doc gets a splice and a style patch.
+ * blocks that left are tombstoned (the topmost of each removed subtree), and a textblock's text doc
+ * gets a splice and a style patch.
  * Because the comparison is against the normalized read, a broken cycle, a hidden container or a
  * filled empty cell writes nothing by itself, and after the write the docs read as `blocks`.
  * With `options.previous`, blocks unchanged since it are skipped. Returns the docs it changed,
@@ -199,7 +232,7 @@ export function writeDocument(
   let view: StructureView | undefined;
   let writer: StructureWriter | undefined;
   const read = () => {
-    view ??= new StructureView(docs.structure, docs.draft, shape);
+    view ??= new StructureView(docs, options.kept);
     return view;
   };
   const structure = () => {
@@ -234,7 +267,9 @@ export function writeDocument(
           return [block.id, typeof order === "string" ? order : undefined] as const;
         }),
       );
-      for (const [id, key] of orderKeys(ids, current, random)) structure().set("order", id, key);
+      // A key as read is left as stored: a kept block's is the key its record holds.
+      for (const [id, key] of orderKeys(ids, current, random))
+        if (key !== current.get(id)) structure().set("order", id, key);
     }
     for (const block of stored) {
       const moved =
@@ -268,7 +303,13 @@ export function writeDocument(
   walk(blocks, null);
   const left = !known || [...known.blocks.keys()].some((id) => !written.has(id));
   if (docs.draft || writer || left) structure().dropMatchingOverrides(written);
-  if (left) for (const id of read().shown) if (!written.has(id)) structure().remove(id);
+  if (left)
+    for (const id of read().shown) {
+      // A block under a removed block hides with it, and comes back with it.
+      const parent = read().parent(id);
+      const goesWithParent = typeof parent === "string" && !written.has(parent);
+      if (!written.has(id) && !goesWithParent) structure().remove(id);
+    }
   const committed = commitStructure(docs, before, options);
   if (committed) changes.unshift(committed);
   return changes;
@@ -338,7 +379,7 @@ export function writeText(
     splice.index + splice.remove,
     wanted.slice(splice.index, splice.index + splice.insert),
   );
-  patchStyles(doc.getText(TEXT_KEY), shownUnits(doc, rules.rule, rules.shape), wanted, rules);
+  inText(doc, (text) => patchStyles(text, shownUnits(doc, rules.rule, rules.shape), wanted, rules));
   doc.commit({ message: options.message, origin: options.origin });
   const after = doc.frontiers();
   return sameValue(before, after) ? null : { key: id, doc, before, after };

@@ -1,6 +1,7 @@
 import { decodeImportBlobMeta, type Frontiers, LoroDoc } from "loro-crdt";
 import type { Envelope } from "./envelope.js";
 import type { PeerId } from "./peer.js";
+import { answerRemovals } from "./removals.js";
 import {
   type BlockId,
   configureDoc,
@@ -16,6 +17,15 @@ import {
   type RoomVersion,
   withVector,
 } from "./version.js";
+import type { DocChange } from "./write.js";
+
+/** What an import did to a copy (`RoomDocs.importBatch`). */
+export interface Imported {
+  changed: DocKey[];
+  pending: boolean;
+  /** The copy's own restore of removals the import brought (design §1, rule 1), to send and save. */
+  restore: DocChange | null;
+}
 
 /** A `RoomDocs` used after `free()`: a bug in the caller's order (destroy the editor, then free). */
 export class RoomDocsFreedError extends Error {
@@ -353,16 +363,22 @@ export class RoomDocs {
    * (`HistoryCutoffError`) imports nothing and creates no doc. A doc key this copy has no doc for (a
    * block another copy created or first wrote) gets one: in a draft a fork of Live's doc of that
    * key when Live has one, else empty, so a fork's first write into a block lands rather than
-   * staying pending (design §4). Returns the keys that changed and whether any import is pending
-   * on ops not yet seen.
+   * staying pending (design §4).
+   *
+   * Every import into a copy comes here, so every copy answers a removal before anything reads
+   * it (design §1, "Removed blocks", rule 1): a removal the batch brought that did not read text
+   * this copy holds is restored. Returns the keys that changed, whether any import is pending on
+   * ops not yet seen, and the restore this copy wrote, which its holder sends and saves like a
+   * local write.
    */
-  importBatch(batch: Envelope): { changed: DocKey[]; pending: boolean } {
+  importBatch(batch: Envelope): Imported {
     this.alive();
     for (const [key, bytes] of batch) {
       const meta = checkBytes(key, bytes, false);
       const target = this.doc(key) ?? this.live?.textOf(key);
       if (target) checkCutoff(key, target, bytes, meta);
     }
+    const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
     let pending = false;
     for (const [key, bytes] of batch) {
@@ -372,37 +388,42 @@ export class RoomDocs {
         doc = this.adopt(base ? base.fork() : new LoroDoc());
         this.texts.set(key, doc);
       }
-      const before = doc.oplogFrontiers();
+      const at = doc.oplogFrontiers();
       const status = doc.import(bytes);
       if (status.pending) pending = true;
-      if (!sameFrontiers(doc.oplogFrontiers(), before)) changed.push(key);
+      if (!sameFrontiers(doc.oplogFrontiers(), at)) changed.push(key);
     }
-    return { changed, pending };
+    return { changed, pending, restore: this.answer(before, changed) };
   }
 
   /**
    * Bring a draft's fork up to Live (design §2, "Forwarding"): Live's structure into the structure
    * fork, and each Live text into the fork's own fork of it. A block the fork reads from Live
-   * needs nothing. Returns the doc keys that changed.
+   * needs nothing. An import like any other (`importBatch`); it never waits on ops.
    */
-  forward(): DocKey[] {
+  forward(): Imported {
     const live = this.live;
-    if (!live) return [];
+    if (!live) return { changed: [], pending: false, restore: null };
+    const before = this.structureDoc.frontiers();
     const changed: DocKey[] = [];
     const pull = (key: DocKey, from: LoroDoc, into: LoroDoc) => {
-      const before = into.oplogFrontiers();
+      const at = into.oplogFrontiers();
       const update = withVector(docVersion(into), (vector) =>
         from.export({ mode: "update", from: vector }),
       );
       into.import(update);
-      if (!sameFrontiers(into.oplogFrontiers(), before)) changed.push(key);
+      if (!sameFrontiers(into.oplogFrontiers(), at)) changed.push(key);
     };
     pull(STRUCTURE_KEY, live.structure, this.structure);
     for (const [id, doc] of this.texts) {
       const base = live.textOf(id);
       if (base) pull(id, base, doc);
     }
-    return changed;
+    return { changed, pending: false, restore: this.answer(before, changed) };
+  }
+
+  private answer(before: Frontiers, changed: readonly DocKey[]): DocChange | null {
+    return changed.includes(STRUCTURE_KEY) ? answerRemovals(this, before) : null;
   }
 
   free(): void {
