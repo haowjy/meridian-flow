@@ -4,13 +4,13 @@
  * Undo writes nothing to the list.
  */
 
+import { LoroDoc } from "loro-crdt";
 import { expect, it } from "vitest";
-import * as Y from "yjs";
 import { LIVE, TreeWriter, undoChange, undoReports } from "./index.js";
 
 const closed = (s: string) => s === "B";
 function setup() {
-  const doc = new Y.Doc({ gc: false });
+  const doc = new LoroDoc();
   const w = new TreeWriter(doc);
   const P = w.create(LIVE, "system", { parent: "source:B", name: "P", kind: "folder" });
   const X = w.create(LIVE, "system", { parent: P.node, name: "X", kind: "folder" });
@@ -21,7 +21,8 @@ it("independent: held parent move, child rename in the same moved folder", () =>
   const { w, P, X } = setup();
   const r1 = w.rename(LIVE, "system", X.node, "Y");
   const r2 = w.move(LIVE, "system", P.node, "source:A");
-  const before = Y.encodeStateVector(w.doc);
+  const appended = () => w.doc.getList("ops").length + w.doc.getList("settle").length;
+  const before = appended();
   const reports = undoReports(w, inLive(r2.id, r1.id), closed);
   expect(reports.get(r1.id)?.sources.some(closed)).toBe(false);
   expect(reports.get(r2.id)?.sources.some(closed)).toBe(true);
@@ -30,9 +31,8 @@ it("independent: held parent move, child rename in the same moved folder", () =>
   const back = undoChange(w, LIVE, "system", r1.id, closed);
   expect(typeof back).toBe("object");
   expect("closed" in (back as object)).toBe(false);
-  const diff = Y.encodeStateAsUpdate(w.doc, before);
-  expect(Y.decodeUpdate(diff).ds.clients.size).toBe(0);
-  expect(Y.decodeUpdate(diff).structs.length).toBe(1);
+  // Only the rename's Undo was written: the held move left nothing in the list.
+  expect(appended() - before).toBe(1);
 });
 it("dependent: child's way back goes into the parent, which stays out", () => {
   const { w, P, X } = setup();

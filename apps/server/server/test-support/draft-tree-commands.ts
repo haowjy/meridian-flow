@@ -4,10 +4,9 @@ import type { DraftItem } from "@meridian/contracts/drafts";
 import type { ResolvedWorkAuthority, WorkHandle } from "@meridian/contracts/works";
 import { works } from "@meridian/database/schema";
 import { walkLinkOccurrences } from "@meridian/markup/links";
-import { buildDocumentSchema, PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
+import { buildDocumentSchema } from "@meridian/prosemirror-schema";
 import { eq } from "drizzle-orm";
 import type { Node as PMNode, Schema } from "prosemirror-model";
-import * as Y from "yjs";
 import { writerEdit } from "../domains/collab/test-support/live-room-text.js";
 import {
   contextPortForThread,
@@ -125,18 +124,6 @@ export function itemFor(items: readonly DraftItem[], documentId: DocumentId): Dr
   const item = items.find((candidate) => candidate.documentId === documentId);
   if (!item) throw new Error(`no review item for ${documentId}`);
   return item;
-}
-
-/** A review-room edit that appends one paragraph linking `href` by `ahead:<aheadId>`. */
-export function typeLink(href: string, aheadId: string) {
-  return (doc: Y.Doc) => {
-    const paragraph = new Y.XmlElement("paragraph");
-    paragraph.setAttribute("id", "p");
-    const text = new Y.XmlText();
-    text.insert(0, "Kael", { link: { href, ref: `ahead:${aheadId}`, title: null } });
-    paragraph.insert(0, [text]);
-    doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME).push([paragraph]);
-  };
 }
 
 function uri(path: string): string {

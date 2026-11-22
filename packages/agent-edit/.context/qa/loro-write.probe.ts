@@ -7,7 +7,7 @@ import {
   createAgentEditCodecFactory,
   createLoroEditCore,
   createReplyMutations,
-  createStaticLoroDocumentLinks,
+  createStaticDocumentLinks,
   type ObservationFrontier,
   renderAgentEditResult,
   type WriteContext,
@@ -70,10 +70,10 @@ function chat(threadId: string, turnId: string) {
 const host = createInMemoryLoroHost(schema);
 const core = createLoroEditCore({
   rooms: host.agentRooms,
-  journal: host.journal,
+  ordinals: host.ordinals,
   schema,
   codec,
-  links: createStaticLoroDocumentLinks(undefined, { preloaded: true }),
+  links: createStaticDocumentLinks(undefined, { preloaded: true }),
   documentEdits: host.documentEdits,
   authorOfTurn: async (turn) => (turn === "t-other" ? "agent (c7)" : null),
 });

@@ -339,7 +339,7 @@ export function diffKeys(a: readonly string[], b: readonly string[]): Array<[num
 }
 
 /** A string as the word, space and punctuation segments the review tokenizer uses; they concatenate back to it. */
-export const splitWords = (text: string): string[] => segmentText(text).map((s) => s.segment);
+const splitWords = (text: string): string[] => segmentText(text).map((s) => s.segment);
 
 const wordKeys = new WeakMap<PMNode, string[]>();
 /** A block's words in order (a non-text block is one pseudo-word: its key). */
@@ -410,7 +410,7 @@ export function similarity(a: PMNode, b: PMNode, inPlace = false, floor = 0): nu
 
 /**
  * Diff at word granularity over the review's own segments, as `[op, text]` runs. The AI write lowering
- * and the Yjs writer both read it, so one edit has one set of unchanged words; the write then refines
+ * and the room writer both read it, so one edit has one set of unchanged words; the write then refines
  * a changed run that only gained characters by character (`retainShared`).
  */
 export function wordDiff(a: string, b: string): Array<[number, string]> {

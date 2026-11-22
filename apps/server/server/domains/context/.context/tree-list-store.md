@@ -7,9 +7,9 @@ The list (`@meridian/project-tree`: `ops` and `settle` lists in one Loro documen
 and per account for `user://`) is stored as one `document_snapshots` row, room key
 `tree:<list id>` and doc key `s`, rewritten whole by every change. The **list id** is the
 `tree_list_id` of its project, or of its account, a column of its own made with the owner, never
-the owner's id and never a node's or a document's. The list's `document_yjs_heads` row (kind
-`tree_list`, made with the owner by trigger) is only the identity `tree_nodes` and `tree_node_ids`
-hang from by foreign key, until the cutover drops that table; it holds no journal. A trigger
+the owner's id and never a node's or a document's. The list's `tree_lists` row (made with the owner by
+trigger) is only the identity `tree_node_ids` hangs from by foreign key, so a list's nodes go with
+its owner. A trigger
 deletes the snapshot row with its project or account.
 
 ## One function

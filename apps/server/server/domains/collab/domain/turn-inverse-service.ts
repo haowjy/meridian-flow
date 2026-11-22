@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { setImmediate } from "node:timers/promises";
 import type { StoredDelta } from "@meridian/agent-edit/content-merge";
-import { type EditKind, type EditTarget, editHandle } from "@meridian/agent-edit/integration";
+import { editHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId, EditOrigin, ThreadId, TurnId, UserId } from "@meridian/contracts";
 import type {
   DocumentRemovalRecord,
@@ -19,6 +19,10 @@ import type { InverseDestination, InverseStep } from "./inverse-stream.js";
 import { takeBack } from "./inverse-text.js";
 import { createModelInversePolicy } from "./model-inverse-policy.js";
 import { createCapturedReversalPlanner } from "./model-reversal-planner.js";
+
+type EditKind = "write" | "undo" | "revert";
+/** A part an undo or revert part takes back. */
+export type EditTarget = { editId: string; ordinal: number };
 
 /** A stored edit part, without its update bytes. */
 export type StoredInversePart = {

@@ -4,7 +4,7 @@
  * take too), the one history of a node `undo` and `revert` choose from, and the Works
  * whose drafts outlive a delete.
  */
-import type { UpdateJournal } from "@meridian/agent-edit/integration";
+import type { WriteOrdinals } from "@meridian/agent-edit/integration";
 import { editHandle } from "@meridian/agent-edit/integration";
 import type { DocumentId, ThreadId, TurnId } from "@meridian/contracts";
 import {
@@ -21,7 +21,7 @@ import { boundCommandId } from "./drizzle-document-edits.js";
 
 export function createDrizzleTreeHistory(
   db: Database,
-  journal: Pick<UpdateJournal, "reserveWriteOrdinal">,
+  ordinals: WriteOrdinals,
   /** The text engine's own stack of a document for a chat: ordinals of what Undo would take. */
   textStack: (
     threadId: string,
@@ -105,8 +105,8 @@ export function createDrizzleTreeHistory(
       let handle = 0;
       const reserved: (typeof treeEditReceiptNodes.$inferInsert)[] = [];
       for (const node of nodes) {
-        const wId = await journal.reserveWriteOrdinal(
-          node.nodeId as Parameters<typeof journal.reserveWriteOrdinal>[0],
+        const wId = await ordinals.reserveWriteOrdinal(
+          node.nodeId as Parameters<typeof ordinals.reserveWriteOrdinal>[0],
           input.threadId,
         );
         if (node.nodeId === input.subject) handle = wId;

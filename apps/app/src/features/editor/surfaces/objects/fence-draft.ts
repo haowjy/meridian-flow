@@ -4,7 +4,7 @@
  * A `<textarea>` reports a whole string, not an edit. Diffing that string
  * against the *current* document is wrong the moment anyone else is typing:
  * text a peer added since the pane rendered was never in the writer's textarea,
- * so the diff reads it as a deletion and Yjs merges that faithfully. The
+ * so the diff reads it as a deletion and the CRDT merges that faithfully. The
  * collaborator's line disappears, and nothing about the transaction says it was
  * an accident.
  *
@@ -77,7 +77,7 @@ export type TextPatch = { from: number; to: number; text: string };
 /**
  * The smallest edit that turns `current` into `next`.
  *
- * A pane that replaced the whole fence on every keystroke would hand Yjs a
+ * A pane that replaced the whole fence on every keystroke would hand the room a
  * delete-and-reinsert of the entire diagram per character: peer carets inside
  * it would be flung to the end, and the edit would read as a rewrite.
  * Common prefix and suffix is all it takes to make the edit look like what the

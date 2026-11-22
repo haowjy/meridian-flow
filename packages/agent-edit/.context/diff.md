@@ -1,20 +1,17 @@
-# agent-edit diff: block diff, correspondence and the Yjs block writer
+# agent-edit diff: block diff and correspondence
 
 `src/diff/` is the pure text model: which block of one version is which block of the other
 (`correspond`), what changed between two block lists (`diffBlocks`), some of those changes applied
-to the base (`composeHunks`), and the minimal Yjs writer (`writeBlocks`). It depends on ProseMirror
-and Yjs only, so the browser and the server import the same functions. The three-way merge in
+to the base (`composeHunks`). It depends on ProseMirror only, so the browser and the server import
+the same functions. The three-way merge in
 `src/content-merge/` ([page](content-merge.md)) builds on it.
 
 Who uses it now:
 
 - The Live turn inverse (`content-merge/stands.ts`, server `inverse-text.ts`): `editChanges` cuts an
   AI edit's recorded delta into changes with `changeGroups` and `composeHunks`.
-- The server's document writes (`writeBlocks`, `readBlocks`): a Work-created document's first text,
-  the turn inverse's writes.
 - The browser: `countWords` (word count), `wordDiff`/`diffKeys` (a saved edit's diff in chat).
 
-Review of a Work's changes reads suggestion marks (`packages/suggestions`), not this diff.
 
 ## Hunks and changes
 
@@ -63,20 +60,10 @@ are diffed by `boundedDiff` (Myers, exact up to 1,000 edit operations, about 500
 cost bounded by that distance, not by size), so one typo in a 10,000-word paragraph is one small
 hunk. Past 1,000 operations it is one replacement of what its ends do not share.
 
-## The Yjs writer
-
-`writeBlocks(fragment, schema, target)` writes target blocks as per-word edits, so every item the
-target leaves alone keeps its identity and a peer's concurrent edit to it survives. A block paired
-by id is edited in place through the model's lowering (`lowerBlock`, `applyOps`); a block that
-moved, or whose id now names another type of element, is deleted where it was and inserted where it
-is, with its one id. Before editing a gap the writer splits existing word boundaries in
-client-clock order (`splitTextBoundaries`), which avoids repeated shifts of Yjs's struct arrays
-during the backwards block write and allocates no clocks.
-
 ## Block correspondence: by id
 
 Every block has a permanent `id` (`@meridian/prosemirror-schema` `block-id.ts`: set where the block
-is made, kept through split, join, paste and undo), so the merge and the writer do not guess which
+is made, kept through split, join, paste and undo), so the merge does not guess which
 block is which: `correspond(old, next, { byId: true })`.
 
 1. A block pairs with the block of the other side that has its id and a compatible kind (text
@@ -96,6 +83,6 @@ block is which: `correspond(old, next, { byId: true })`.
    `same-block-added-twice`). Two similar but unequal paragraphs typed on both sides are two blocks.
 
 **Guess mode** (`correspond(old, next)`) is what the model's write (its Markdown has no ids) and a
-block with no id use; `diffBlocks` and the Yjs writer call the id mode and guess only for blocks
+block with no id use; `diffBlocks` calls the id mode and guesses only for blocks
 without an id. The ends and anchors pair first, then each gap by same content, then the share of
 words in common; a gap too large to score is cut at its similar pairs.

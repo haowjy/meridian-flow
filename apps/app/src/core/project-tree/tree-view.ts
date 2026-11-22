@@ -20,7 +20,7 @@ import {
   type Filetype,
   type ProjectContextTreeScheme,
   readSegment,
-  type YjsTrackedSchemaType,
+  type TrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import {
   isSourceRoot,
@@ -59,7 +59,7 @@ type TreeFileBase = {
 };
 
 export type TreeFile =
-  | (TreeFileBase & { editable: true; filetype: Filetype; schemaType: YjsTrackedSchemaType })
+  | (TreeFileBase & { editable: true; filetype: Filetype; schemaType: TrackedSchemaType })
   | (TreeFileBase & {
       editable: false;
       disposition: "binary" | "custom";

@@ -16,11 +16,9 @@ last drafted delete or restore before the record, so the folder lands as it stoo
 was drafted (a card Undo of its restore then finds it in live). A folder's delete drafted after
 the document left it, or after the record, stays pending. Earlier records on the same facts come
 too. The press carries `saw`: the cut the draft list read its rows at (each list's id and
-state vector, read before the rows; `treeCutOf`). A record admitted after it stays pending
+version vector, read before the rows; `treeCutOf`). A record admitted after it stays pending
 (`after_press`); a cut naming another list (one rebuilt under a new id) is no cut, and a scope left
-out is the server's own cut. A cut ahead of the server is a 503 that stores nothing. A text-only
-item (`half` absent and no tree record named) leaves a pending move or delete pending, except a creation only the Work shows: the tree half
-runs for any item with a pending create, which lands whole.
+out is the server's own cut. A cut ahead of the server is a 503 that stores nothing.
 
 ## Owners
 

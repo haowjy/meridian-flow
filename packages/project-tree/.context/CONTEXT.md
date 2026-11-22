@@ -1,6 +1,6 @@
 # project-tree
 
-The records, the replay, Apply, Discard, Undo and the guard on what a client sends of the project tree. The
+The records, the replay, Apply, Discard, Undo and the server's admission of what a client sends of the project tree. The
 design is `work/project-tree-design/design.md` in the docs repository (sections 2 to 6); this
 page says where each part lives and what the code decided where the design left a choice.
 
@@ -17,7 +17,7 @@ page says where each part lives and what the code decided where the design left 
 | `shape.ts` | `childrenOf`, `descendantsOf`, `rankAt`, `fingerprint`, `treeViolations` |
 | `writer.ts` | `TreeWriter`: makes records in one copy of the list |
 | `apply.ts`, `undo.ts` | Apply, Discard, restoring a Discard, Undo of an Apply; Undo of one change |
-| `admission.ts` | `guard` (the faults that close a copy), `clientMayWrite`, `admit`: guard, integrate, stamp `dropped` |
+| `admission.ts` | `admit`: integrate the update as sent, stamp `dropped` |
 | `rows.ts` | `projectedRows`, `draftRows`, `changedRows`: what to write to SQL after a replay, with each node's type and extension |
 
 ## The rules
@@ -40,12 +40,12 @@ Each is in `replay.ts` and has a named case in `casebook.test.ts`.
    applied deletes, and a live delete that takes back one of its drafted records (an Un-Apply of
    its create), so that create shows pending again.
 10. A purge is final wherever it sits in the list: no later restore, and no record placed after
-    it by Yjs, brings the node back. It takes exactly the nodes it names (`nodes`, what the server
+    it by the merge, brings the node back. It takes exactly the nodes it names (`nodes`, what the server
     found its delete covering and released); any other node standing under a purged one at the
     end of the replay goes to the top of its source, arriving there at that purge.
 11. A document create or rename to a type that is not a tracked document is skipped
     (`type-not-editable`).
-12. A rename to a type of another Yjs schema is skipped (`type-across-schemas`).
+12. A rename to a type of another document schema is skipped (`type-across-schemas`).
 13. A name is `normalEntryName(kind, typed)` for the node's kind, in every create and rename;
     nothing is refused for its name.
 14. Of shown siblings with one name, every one but the first to arrive (`arrivedAt`, then
@@ -88,8 +88,7 @@ the replay uses them (package `AGENTS.md`).
   source it was made in, so rule 6 and the admission check know it. A record that names a
   source as its node is skipped (`missing-node`); a create cannot name one at all.
 - **`purge`** marks the nodes it names `purged`: later records on them are skipped with reason
-  `purged`, and they are in no Trash entry. Its `nodes` is a server-only field, so the guard
-  covers it, and the release set, the rows and every replay read that one set: no replay works out
+  `purged`, and they are in no Trash entry. Its `nodes` is a server-only field: the release set, the rows and every replay read that one set: no replay works out
   coverage again from cascades that later records changed. A purged node is absent from every view, for placement as for
   display (`placeIn`): a create into it takes rule 6's outcome and a move into it is skipped
   (`missing-parent`).
@@ -102,12 +101,6 @@ the replay uses them (package `AGENTS.md`).
   (a node that is not there, a folder inside itself, a name already taken) is skipped, or stands
   as a twin, by the rules, the same in every replay; the writer keeps it in the list. The server writes one
   verdict, `dropped` (admission, below).
-- **`guard` closes a copy that does what an honest client never does**: a deletion, content
-  outside `ops`, a struct whose position cannot be decided (a gap in a writer's own clock, a
-  pending struct), a client id below 1,000, a record kind or field only the server writes
-  (`clientMayWrite`: `purge`, a file create, `carries`, `blob`), more than
-  `MAX_RECORDS` records. It throws `CopyFault`; nothing is stored, and the room closes the
-  connection with the one terminal code. Names, sources, drafts and types are not its business.
 - **`admit` stamps `dropped`** on a record in a closed draft, on a record of a dropped node or
   a create inside a dropped folder, and on a record whose addition changes a closed source. The
   server decides: its arrival order is the one shared by all clients. Admission compares the held
@@ -132,7 +125,7 @@ the replay uses them (package `AGENTS.md`).
   server's own records are never admitted. `viewValues` leaves dropped records out;
   `droppedRecords` reads their reason from the settle log for the browser.
 - **Parts of one client's offline history** arrive in causal order and are admitted in order
-  (the room queues a connection's messages); an honest client's parts are never a fault.
+  (the room queues a connection's messages).
 - **An Undo settles only its own node.** Replay skips an Undo whose target is a change on another node. Each taken change reports `sources`: the node's sources before and after that record, for Apply and Un-Apply, which append records.
 - **A record is in force unless a later record in force undoes it** (`standingOf`;
   `projection.inForce`). An Undo names the root (`carries ?? id`) of the record it takes back in
@@ -179,8 +172,7 @@ the replay uses them (package `AGENTS.md`).
   sources: a record into a closed source is never pushed or written and answers `{ closed: source }`,
   so what the steps after it read is the tree without it, and a held Undo leaves no trace in the
   list, which has no deletions and no server writes but real records. Never append and take back:
-  the Yjs delete set it leaves is journaled and broadcast, and admission refuses a copy that has
-  one. The records that landed are written at the end in one transaction (`appendAll`), and the open
+  the list never deletes, so a taken-back record stays in its history and reaches every copy. The records that landed are written at the end in one transaction (`appendAll`), and the open
   replays are kept as the writer's views. The estimate is the same walk with nothing written, so it
   equals its press only on the same steps in the same order: each caller builds both from one list
   of steps. A Work's view is live then its pending records, so the Work's replay is started again
@@ -296,9 +288,9 @@ the replay uses them (package `AGENTS.md`).
 
 ## What the server must do
 
-- Put the server's Yjs copy under one client id below 1,000, and call `admit` under the list's
-  lock; it changes that copy in place, so reload the copy from the journal if anything throws
-  (`CopyFault` included). Write the records and the `dropped` stamps to the journal and the rows.
+- Give each server copy a fresh server peer id, and call `admit` under the list's lock; it
+  changes that copy in place, so reload the copy from storage if anything throws. Write the list's
+  snapshot row and the rows in the same transaction.
 - Fill `Connection` with the open drafts and the closed Works' sources: the package knows no Work.
 - Nothing moves between two lists (a project's and the account's): a list is the unit of
   history, so between two the server copies, and the copy is new nodes in the list it lands in.

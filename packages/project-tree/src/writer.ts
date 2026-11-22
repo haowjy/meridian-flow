@@ -1,6 +1,6 @@
 import type { ContextSiblingPosition } from "@meridian/contracts/protocol";
-import type * as Y from "yjs";
-import { listOf, type TreeDoc } from "./list-doc.js";
+import type { LoroDoc } from "loro-crdt";
+import { listOf } from "./list-doc.js";
 import { shownName } from "./names.js";
 import {
   type Actor,
@@ -37,16 +37,16 @@ function indexOf(kids: readonly { id: string }[], place: MovePlace): number {
 /**
  * Makes records in one copy of the list, against what that copy's own view shows. The browser
  * writes its own records this way; the server writes Apply, Discard, Undo and an AI tool's
- * records on a copy at the journal's head, and sends the Yjs update the copy emits.
+ * records on its copy of the list, and sends the update the copy emits.
  */
-export class TreeWriter<D extends TreeDoc = Y.Doc> {
+export class TreeWriter {
   /**
    * `known` answers a view from a projection the caller already holds, current with `doc`, or
    * null for a view it does not hold: the browser's session replays once per change, and a
    * writer that replayed again would pay the whole list for each record.
    */
   constructor(
-    readonly doc: D,
+    readonly doc: LoroDoc,
     private readonly origin: string = "local",
     private readonly known?: (view: View) => TreeProjection | null,
   ) {}

@@ -1,4 +1,5 @@
 import type { ResponseAuthorship } from "@meridian/contracts";
+import type { SpliceFallback } from "../links/find-splice.js";
 // Engine-facing read and write contract types for the agent editing core.
 
 import type { LinkView } from "@meridian/contracts";
@@ -144,3 +145,14 @@ export type WriteFunction = (
   command: WriteCommand,
   context?: WriteContext,
 ) => Promise<WriteOutcome>;
+
+export interface LinkSpliceFallbackDetail {
+  documentId: string;
+  reason: SpliceFallback;
+}
+
+/** An observation frontier could not be computed; the result goes out without it. */
+export interface ObservationFailedDetail {
+  documentId: string;
+  cause: unknown;
+}

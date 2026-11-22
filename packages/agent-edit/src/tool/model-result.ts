@@ -242,7 +242,7 @@ export function isAgentEditResultEnvelope(input: unknown): input is AgentEditRes
   return result.phase === undefined;
 }
 
-export function isWriteStatus(status: unknown): status is WriteStatus {
+function isWriteStatus(status: unknown): status is WriteStatus {
   switch (status) {
     case "success":
     case "returned":

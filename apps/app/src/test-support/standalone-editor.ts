@@ -2,7 +2,7 @@
  * One editor over its own document: the cheap tier beside `collab-editors.ts`.
  *
  * Reach for this unless a claim names a peer. A collab pair exists for one
- * hazard — y-prosemirror rebuilding the whole ProseMirror document out from
+ * hazard — the Loro binding rebuilding the whole ProseMirror document out from
  * under a surface — and a local test that pays for it inherits the binding's
  * mount sequence, so a change to collaboration setup breaks behavior that
  * never collaborated.

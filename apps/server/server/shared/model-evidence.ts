@@ -38,7 +38,7 @@ export interface ShownLinkShowing {
   links: readonly SpelledLinkFact[];
 }
 
-/** The room of the names a result showed of the tree; its rows are not Yjs snapshots. */
+/** The room of the names a result showed of the tree; its rows are not document snapshots. */
 export const TREE_NAMES_ROOM = "tree";
 
 /** Host-only: what one result showed the model; its frontiers are recorded under the result's block. */

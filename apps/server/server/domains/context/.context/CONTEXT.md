@@ -15,7 +15,7 @@ create by `documentFilenameAt`; every later naming path follows the stored kind 
 the project tree's `shownName` take the filetype). A client that creates a node itself (`./mf doc put`, the app)
 states the kind in its create record. A prose document or a stored file at an Agent path is read
 as a problem, not as an Agent (`adapters/agent-level-files.ts`, whose text cache is keyed on the
-head's admission sequence: every admitted update moves it, a checkpoint need not come first); Copy keeps the source's kind, so a
+document's `content_seq`: every save of its Live room moves it); Copy keeps the source's kind, so a
 prose document copied there reads as unavailable until phase 3 converts it.
 
 ## URI and ownership
@@ -93,7 +93,7 @@ Scheme capabilities are declared in `ports/context-adapter.ts`. Uploads
 authority is separate from `UploadIntake`: uploads are flat
 binary intake, while Scratch is the writable authoring space and accepts
 nested paths. Text creates and writes resolve the persisted filetype and call
-collab's document-aware engine; they never seed a Y.Doc with an assumed
+collab's document-aware engine; they never seed a document with an assumed
 Markdown schema. Binary documents are storage-backed and are read through
 storage, not the text engine. A whole-file `write` overwrites a living document and
 answers `not_found` at an empty path: it never creates (W52); creation is
@@ -139,8 +139,8 @@ writer text (`term`; the app's door finds the passage again with it).
 
 The tree module supplies `LIVE_TREE` and `{ kind: "draft", draftId }`. ContextFS
 uses that view for `stat`, `read`, `list`, `grep`, and `locate`; a draft's
-document or folder that exists only in that Work's draft appears only there. A draft create has an
-empty live Y.Doc and text in its draft until Apply. Readers compose `visibleDocuments(view)` and
+document or folder that exists only in that Work's draft appears only there. A draft create's text is
+plain Live text (phase 1 has no text drafts). Readers compose `visibleDocuments(view)` and
 `visibleFolders(view)` ([tree](../tree/AGENTS.md)); there is no hidden row to filter.
 
 `DocumentRevisions.current` resolves the thread's current primary Work, asks file access
@@ -161,7 +161,7 @@ Stable IDs never become capabilities without a policy check.
 path resolution. List and identity reads admit only a currently restorable
 delete: visible rather than hidden, not removed by a Work cascade, unpurged,
 and still under a live source and project. The list returns removal metadata;
-the identity read adds the document's Markdown, serialized from its frozen Yjs on request. Both authorize
+the identity read adds the document's Markdown, serialized from its retained room on request. Both authorize
 through the project before exposing the tombstone or its text. The hourly
 purge releases content after the shared 30-day retention period while keeping
 the tombstone and incoming identity links. It takes the Work, draft,
@@ -187,7 +187,7 @@ document keys; a caller holds no document or namespace key when it submits. `con
   locks the draft (`runInDraft`). A port built with a `destination` (a person's write, an Undo, a
   tool call holding its grants) places every write there and ignores the chat's mode. Scratch content writes stay live in draft mode, while its tree
   writes are drafted, so one drafted move can cross Scratch and a drafted source. A draft never
-  seeds live Yjs: whole-file seed is a live-only command.
+  seeds Live text: whole-file seed is a live-only command.
 - **Text reads take the document's destination.** A document's address scheme is where it was found;
   a draft move can leave its content in another source. Grep's `readable` returns each document's
   decision (`level` and `destination`) and ContextFS reads each text there; the model's read tool
@@ -195,7 +195,7 @@ document keys; a caller holds no document or namespace key when it submits. `con
   decider (`sourceDestination` in `placementFor` and `ContextFS.threadView()` with no decision)
   remains only where no document has been decided: a create, and `port.read` of a path for a person
   opening a thread's context.
-- **Create.** The record, the document's first Yjs state and its arrival are one unit
+- **Create.** The record, the document's first text and its arrival are one unit
   (`documentCreation.createDocumentAtomically`; `live-create.ts`). A create never replaces or
   joins another document, and is never refused for a name: beside a node of that name it makes a
   twin (rule 14), and the answer's URI is the path it landed at (`Landed`, spelled by the router),
@@ -203,9 +203,7 @@ document keys; a caller holds no document or namespace key when it submits. `con
   and readers alike (`childAtSegment`, the SQL walk), so a create there lands under the name. The
   model's `create` reuses the empty document its path reaches; one with text makes a twin
   (agent-edit marks the write `occupied`, and the host ensures again with `beside`). A text document created in a
-  Work's version gets its Yjs authority and its Work text draft from the list store, in the
-  transaction that admits the create (`draftCreatedDocuments`, wired in `lib/compose.ts`): the
-  writer's records through the list's room and the AI's through `submit` take the same path.
+  Work's version needs nothing more: its Live room starts empty, and its text lands there.
 - **Move and rename.** Within a list a move, rename or reorder is a record of a tree command
   (`port.treeCommand`; the model's `move`, the browser's own records). A move writes no document
   bytes. A move stays in one list: a project's files are one, the account's `user://` another.
@@ -290,13 +288,12 @@ one source's tree contributes.
   arrive at the end of the destination parent. An explicit position places the roots as one
   run: the first there, each next one after the previous.
 - Content is bound for the address each copy will have (`bindCopiedBlocks`, a fresh holder,
-  so it lands only in an empty document) and encoded to its first Yjs state
+  so it lands only in an empty document) and encoded to its first state
   (`encodeSeed`) outside the lock. A copy into a Work's draft view creates an empty live
   authority and draft through admission, then appends the bound blocks to that draft through
   the draft coordinator (`writeCreatedDraftContent`); it is not a live arrival. The live insert is one `submit` of `create` records
   (`SourceTree.insertTree`, ranks from `generateNKeysBetween`); the creation aggregate
-  (`createDocumentsAtomically`) persists the identities, `InitialDocumentSeeds` writes the heads and
-  seed checkpoints, and every arrival settles once, so ahead refs pointing at a copy's new address
+  (`createDocumentsAtomically`) persists the identities, `installSeeds` writes the seeds' Live rows (`encodeSeed`'s states), and every arrival settles once, so ahead refs pointing at a copy's new address
   settle. Projections and link rows are derived after the transaction commits, four documents at a
   time (`refreshDocumentProjection`), and the answer does not wait for them: a successful answer
   means the rows are committed, not derived. A derivation that fails is logged and the stale sweep
@@ -315,19 +312,19 @@ one source's tree contributes.
   What is still an error and stores nothing: `invalid_operation` for the source root or a
   placement destination that cannot take a copy; `permission_denied` for a destination the
   writer cannot command; uploads as the destination (by path or by folder identity), a malformed
-  path or state vector, and a vector sent for a folder, which the route refuses before the domain
+  path or room version, and a version sent for a folder, which the route refuses before the domain
   runs. A draft view names its Work and no chat: the server reads the document through that Work's
-  view of Live (Live with the Work's suggestions taken); a Work outside the project is refused
+  view of Live (Live, until phase 2 brings the Work's text drafts); a Work outside the project is refused
   as `work_missing`. A draft source reads the Work's tree by id, so a folder copies with the
   documents the Work places in it, a document only the Work has included, and a node the Work
   does not place is left out as purged. The one name outcome left to the address-model
   research is `conflict` (a copy id another row holds).
-- A client-held source sends its Yjs state vector with a document source (a folder source
+- A client-held source sends its room version (`roomVersion`) with a document source (a folder source
   with a vector is a 400). The vector is compared with the document's Live room, whichever view
   is read: a Work's view has no room of its own. When the cut lacks updates it names, the read waits up to 2 s for the room to
   catch up, then answers a 503 `io_error` with `reason: "source_behind"` ("The source has edits the
   server has not received yet"): retryable and never recorded, so the same id may be sent
-  again, and distinct from a transport failure. The browser sends the vector of every open document (`openStateVector` on the session
+  again, and distinct from a transport failure. The browser sends the version of every open document (`openRoomVersion` on the session
   registry: its Live room) and sends
   the same Copy again, backing off from 0.5 s to 5 s, for as long as the answer is
   `source_behind` (`execute-copy.ts`): typing a tab holds always reaches the server
@@ -364,7 +361,7 @@ is a twin.
 
 ## Document content and filetype rules
 
-`ContextFS` resolves filetype before constructing Yjs content. Existing text
+`ContextFS` resolves filetype before constructing document content. Existing text
 uses persisted classification; path-driven filetype changes happen only in a
 location commit within the same tracked schema. Document/code or tracked/
 binary conversion is refused until an explicit conversion seam exists.
@@ -400,8 +397,7 @@ a later occupant never captures it, nothing rebinds it, and a paste copies it
 as is. A draft's hidden create and a deleted row are no arrival. Lineage
 registrations compare the root id as well as the path, so two chats cannot
 capture each other's waiting refs; a soft-deleted Work keeps its identity and
-its files until the purge, so refs to its address bind while it is deleted. Refs in a Work's suggestions, or in a
-document only a Work has, register globally and best effort: an agent's mint at its write, and
+its files until the purge, so refs to its address bind while it is deleted. Refs in a document only a Work has, register globally and best effort: an agent's mint at its write, and
 a link the writer types when the document's derivation runs (`registerUnregistered`, any
 document a view still shows); a failed registration never fails the write. The context link-scope adapter must receive the same scope instance as
 collab, whose [document authority notes](../../collab/.context/document-authority-and-schema.md)
@@ -445,7 +441,7 @@ Notice names the previous Scratch root. Work purge ends the nodes of its sources
 `purge` record in the project's list, releases their documents through `release-document-content.ts`
 (a purged tombstone stays), then removes the source rows, memberships and blobs.
 
-`unfiled://` is project-owned storage with the same ContextFS, Yjs authority,
+`unfiled://` is project-owned storage with the same ContextFS, Live rooms,
 availability, and identity-preserving move rules as Manuscript and
 KB. Its membership means not yet filed; a name does not change membership.
 

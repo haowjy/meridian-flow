@@ -6,7 +6,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { captureDelta } from "@meridian/agent-edit/content-merge";
-import { editHandle, type UpdateJournal } from "@meridian/agent-edit/integration";
+import { editHandle, type WriteOrdinals } from "@meridian/agent-edit/integration";
 import type { DocumentId, DraftId, UserId } from "@meridian/contracts";
 import type { DocumentRoom } from "@meridian/contracts/protocol";
 import { type Database, documentEditParts, documentEdits, drafts } from "@meridian/database";
@@ -59,7 +59,7 @@ import { createTurnTreeInverse, NO_TREE_STEPS } from "./drizzle-turn-tree-invers
 type Dependencies = {
   db: Database;
   /** The write ordinals the model's inverses take; the tree history reads it too. */
-  journal: UpdateJournal;
+  ordinals: WriteOrdinals;
   /** Live's text: what an inverse reads and commits into. */
   rooms: DocumentRooms<DrizzleDb>;
   resolveDocumentUri(documentId: string): Promise<string | null>;
@@ -112,7 +112,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
           id: documentEditParts.id,
           editId: documentEditParts.editId,
           ordinal: documentEditParts.ordinal,
-          effect: documentEditParts.effect,
           targets: documentEditParts.targets,
           delta: documentEditParts.delta,
           origin: documentEditParts.origin,
@@ -442,7 +441,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
     // The model's inverse is an edit on its stack: it takes the next write ordinal, as a write
     // does, and records its delta, which a later Undo or revert reads back.
     const wId = query.model
-      ? await input.journal.reserveWriteOrdinal(documentId, query.threadId)
+      ? await input.ordinals.reserveWriteOrdinal(documentId, query.threadId)
       : undefined;
     await recordDocumentEdit(db(), {
       documentId,
@@ -461,8 +460,6 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
       actionId: step.actionId,
       receipts: [
         {
-          update: batch,
-          effect: { inserted: [], deleted: [] },
           origin: { kind: "live" },
           targets: back.taken.map((part) => ({ editId: part.editId, ordinal: part.ordinal })),
           delta: query.model ? captureDelta(before, blocksIn(docs)) : null,
@@ -499,7 +496,7 @@ export function createDrizzleTurnInverseService(input: Dependencies) {
   }
 
   const service = createTurnInverseService(store);
-  const treeHistory = createDrizzleTreeHistory(input.db, input.journal, (threadId, documentId) =>
+  const treeHistory = createDrizzleTreeHistory(input.db, input.ordinals, (threadId, documentId) =>
     service.modelStack(documentId as DocumentId, threadId),
   );
   return service;

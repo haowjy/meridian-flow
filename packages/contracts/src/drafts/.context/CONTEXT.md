@@ -25,7 +25,7 @@ id. `change=` names a suggestion id in that document.
 
 ## Commands
 
-A press (`press.ts`) is `{ draft, verdict, items | "all", saw?, seen? }`, addressed by the draft
+A press (`press.ts`) is `{ draft, verdict, items | "all", saw? }`, addressed by the draft
 id, which every Work and root chat carries from its creation.
 Its Undo names the press's command id. The authenticated scope and whole body are part of the
 request digest. The server side is [the press](../../../../../apps/server/server/domains/collab/.context/press.md).

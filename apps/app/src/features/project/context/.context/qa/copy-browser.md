@@ -32,8 +32,8 @@ Move… that stopped working because Copy joined them. This recipe drives the br
    to `/context/copy`: the server refuses it, the rows never appear, and a toast at the top right
    says "Couldn't copy Prologue to Templates." with the route's reason when it gave one. Retry
    sends the Copy again as a new Copy and the rows appear.
-5. **Unsynced edits.** `execute-copy.ts` sends the state vector of each open live document
-   (`sources[].stateVector`), so the server never copies less than the tab saw.
+5. **Unsynced edits.** `execute-copy.ts` sends the room version of each open live document
+   (`sources[].roomVersion`), so the server never copies less than the tab saw.
 
    Open a document, patch `WebSocket.prototype.send` to drop frames, type an edit, copy the
    document. The server waits about 2 s and answers a 503 `source_behind`; the browser sends the same

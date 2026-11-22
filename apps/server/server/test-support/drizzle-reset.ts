@@ -229,9 +229,8 @@ export async function deleteDrizzleRows(db: Database, tables: readonly unknown[]
 export const DOCUMENT_RUNTIME_RESET_TABLES: readonly unknown[] = [
   schema.pendingNotices,
   schema.agentEditWidCounters,
-  schema.documentYjsCheckpoints,
-  schema.documentYjsHeads,
-  schema.documentYjsUpdates,
+  schema.documentSnapshots,
+  schema.treeLists,
   schema.modelResponses,
   schema.threadWorks,
   schema.turns,

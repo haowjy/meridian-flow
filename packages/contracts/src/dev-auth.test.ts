@@ -52,7 +52,7 @@ describe("devAuthAppliesToRequest", () => {
     ],
     [
       "same-origin WebSocket",
-      new Request("https://server.app.meridian.localhost/ws/yjs", {
+      new Request("https://server.app.meridian.localhost/ws/loro", {
         headers: {
           host: "server.app.meridian.localhost",
           origin: "https://app.meridian.localhost",

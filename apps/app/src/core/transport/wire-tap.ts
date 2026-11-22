@@ -1,4 +1,9 @@
-/** Late-bound observer seam for thread WebSocket lifecycle and final string frames. */
+/**
+ * Late-bound observer seams for the thread WebSocket and the Loro room sockets. The transports
+ * call a tap inline, so a tap catches its own failures and never throws.
+ */
+
+import type { ProtocolMessage } from "loro-protocol";
 
 export type WireDirection = "client_to_server" | "server_to_client";
 
@@ -19,19 +24,11 @@ export function notifyThreadFrame(
   data: string,
   socketEpoch: number,
 ): void {
-  try {
-    currentThreadTap?.onStringFrame(direction, data, socketEpoch);
-  } catch {
-    // Observability must never affect thread transport behavior.
-  }
+  currentThreadTap?.onStringFrame(direction, data, socketEpoch);
 }
 
 export function notifyThreadSocketOpen(socketEpoch: number): void {
-  try {
-    currentThreadTap?.onSocketOpen(socketEpoch);
-  } catch {
-    // Observability must never affect thread transport behavior.
-  }
+  currentThreadTap?.onSocketOpen(socketEpoch);
 }
 
 export function notifyThreadSocketClose(
@@ -39,9 +36,45 @@ export function notifyThreadSocketClose(
   code: number,
   wasClean: boolean,
 ): void {
-  try {
-    currentThreadTap?.onSocketClose(socketEpoch, code, wasClean);
-  } catch {
-    // Observability must never affect thread transport behavior.
-  }
+  currentThreadTap?.onSocketClose(socketEpoch, code, wasClean);
+}
+
+/** Late-bound observer seam for each Loro room socket: its lifecycle and every decoded message. */
+export interface LoroWireTap {
+  onMessage(
+    direction: WireDirection,
+    roomId: string,
+    message: ProtocolMessage,
+    bytes: number,
+  ): void;
+  onSocketOpen(roomId: string, attempt: number): void;
+  onSocketClose(roomId: string, attempt: number, code: number, wasClean: boolean): void;
+}
+
+let currentLoroTap: LoroWireTap | null = null;
+
+export function setLoroWireTap(tap: LoroWireTap): void {
+  currentLoroTap = tap;
+}
+
+export function notifyLoroMessage(
+  direction: WireDirection,
+  roomId: string,
+  message: ProtocolMessage,
+  bytes: number,
+): void {
+  currentLoroTap?.onMessage(direction, roomId, message, bytes);
+}
+
+export function notifyLoroSocketOpen(roomId: string, attempt: number): void {
+  currentLoroTap?.onSocketOpen(roomId, attempt);
+}
+
+export function notifyLoroSocketClose(
+  roomId: string,
+  attempt: number,
+  code: number,
+  wasClean: boolean,
+): void {
+  currentLoroTap?.onSocketClose(roomId, attempt, code, wasClean);
 }

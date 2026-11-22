@@ -6,7 +6,7 @@
  * module, so there is one answer to "what is in flight here" and no second
  * registry can appear beside it.
  *
- * Messages carry no steps, so a percent is not an edit: it never reaches Yjs,
+ * Messages carry no steps, so a percent is not an edit: it never reaches the room,
  * the wire, or anyone's undo history.
  */
 
@@ -53,7 +53,7 @@ declare module "@tiptap/core" {
  *
  * The transform that leaves a link behind runs before the transaction exists,
  * so its positions arrive with the paste itself and are carried here until the
- * settled state can pin them: inside `apply` the Yjs binding may still be
+ * settled state can pin them: inside `apply` the Loro binding may still be
  * describing the document the transaction replaced.
  */
 export type LandingImports = { imports: readonly PastedImageImport[]; range: AnchorRange };
@@ -141,7 +141,7 @@ export function patchUpload(
 }
 
 /**
- * Tell the document about a pending picture. Meta only: no step reaches Yjs, so
+ * Tell the document about a pending picture. Meta only: no step reaches the room, so
  * a percent is not an edit and never enters anyone's undo history.
  */
 

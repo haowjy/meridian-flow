@@ -66,4 +66,4 @@ tree's own drag is [Row selection and drag](../../../../../../../../docs/qa/row-
 
 An archived Work's Scratch source asks with Move disabled ("Can't move these from here"); a draft document
 whose copy must include edits the writer has not yet synced (the Copy request carries no draft-room
-state vector); Firefox (a draggable inside a `<button>` may not start a drag there).
+version); Firefox (a draggable inside a `<button>` may not start a drag there).

@@ -1,12 +1,31 @@
-import type { DocumentRoom } from "@meridian/contracts/protocol";
+import type { DocumentRemovalRecord, DocumentRoom } from "@meridian/contracts/protocol";
 import type { RoomDocs } from "@meridian/document-model";
 import type { DocumentRooms, RoomOrigin } from "@meridian/document-model/rooms";
 import type { PMNode } from "@meridian/markup";
-import type { HolderLinkScope } from "@meridian/markup/links";
 import type { StoredDelta } from "../content-merge/stands.js";
 import type { MutationActor, ReadCommand, WriteStatus } from "../tool/types.js";
 import type { DocumentEditRequest, ModelInverseCommand } from "./document-edits.js";
-import type { DocumentLinksPort } from "./document-links.js";
+
+export class DocumentNotFoundError extends Error {
+  readonly docId: string;
+  /** The document's removal record, when it is missing because it was removed. */
+  readonly removal?: DocumentRemovalRecord;
+
+  constructor(
+    docId: string,
+    message = `Document not found: ${docId}`,
+    options: { removal?: DocumentRemovalRecord } = {},
+  ) {
+    super(message);
+    this.name = "DocumentNotFoundError";
+    this.docId = docId;
+    if (options.removal) this.removal = options.removal;
+  }
+}
+
+export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFoundError {
+  return cause instanceof DocumentNotFoundError;
+}
 
 /** A call's copy of the room it reads, named by the room. The caller frees `docs`. */
 export interface AgentRoomRead {
@@ -64,8 +83,8 @@ export interface AgentEditRoomsHost<Tx> {
   transaction(): Tx;
   /** The origin saves are imported under (`server:turn:<id>`), never an author. */
   origin: RoomOrigin;
-  /** Store a write's record in `tx`, beside its batch (`batch`, the envelope `save` committed). */
-  recordWrite(tx: Tx, record: AgentWriteRecord, batch: Uint8Array): Promise<void>;
+  /** Store a write's record in `tx`, beside its committed batch. */
+  recordWrite(tx: Tx, record: AgentWriteRecord): Promise<void>;
 }
 
 export function agentEditRooms<Tx>(
@@ -80,18 +99,10 @@ export function agentEditRooms<Tx>(
     async save(room, batch, record) {
       const tx = host.transaction();
       await rooms.commit(tx, room, batch, host.origin);
-      if (record) await host.recordWrite(tx, record, batch);
+      if (record) await host.recordWrite(tx, record);
     },
   };
 }
-
-/**
- * The link port on Loro: the revision names a cut by its room version and the blocks it shows,
- * not a Yjs document.
- */
-export type LoroLinksPort = Omit<DocumentLinksPort, "revision"> & {
-  revision(cut: DocumentCut, scope: HolderLinkScope): string;
-};
 
 /** One cut of a document as agent-edit rendered it. */
 export interface DocumentCut {

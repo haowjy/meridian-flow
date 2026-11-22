@@ -1,17 +1,11 @@
-/**
- * The guard against updates an honest client never sends, and the one verdict the server still
- * writes (a create raced into a closed Work).
- *
- * Pins implementation decisions (rewrite or delete these cases when one changes):
- * - the guard's fault list (4.2, 4.3 of the never-refuse plan)
- */
+/** What admission takes as sent, and the one verdict the server writes (a create raced into a closed Work). */
+import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import * as Y from "yjs";
-import { admit as admitTo, type Connection, CopyFault } from "./admission.js";
+import { admit as admitTo, type Connection } from "./admission.js";
 import {
   LIVE,
   lastSettlements,
-  recordsOf,
+  listRecords,
   replayView,
   sourceRoot,
   type TreeRecord,
@@ -30,8 +24,8 @@ const connection: Connection = {
 
 /** The server's list: two sources the account may write, one it may not, some nodes. */
 function server() {
-  const doc = new Y.Doc({ gc: false });
-  doc.clientID = 7;
+  const doc = new LoroDoc();
+  doc.setPeerId(7);
   const w = new TreeWriter(doc);
   const arc = w.create(LIVE, "system", {
     kind: "folder",
@@ -56,18 +50,26 @@ function server() {
   return doc;
 }
 
-function admit(doc: Y.Doc, update: Uint8Array, conn: Connection) {
+function admit(doc: LoroDoc, update: Uint8Array, conn: Connection) {
   return admitTo(new TreeWriter(doc), update, conn);
 }
 
 /** A client's copy, and the update it would send after `change`. */
-function client(doc: Y.Doc, change: (copy: Y.Doc) => void, clientID = 5000) {
-  const copy = new Y.Doc({ gc: false });
-  copy.clientID = clientID;
-  Y.applyUpdate(copy, Y.encodeStateAsUpdate(doc));
-  const before = Y.encodeStateVector(copy);
+function client(doc: LoroDoc, change: (copy: LoroDoc) => void, peer = 5000) {
+  const copy = new LoroDoc();
+  copy.setPeerId(peer);
+  copy.import(doc.export({ mode: "update" }));
+  const before = copy.oplogVersion();
   change(copy);
-  return { copy, update: Y.encodeStateAsUpdate(copy, before) };
+  copy.commit();
+  return { copy, update: copy.export({ mode: "update", from: before }) };
+}
+
+/** Appends raw values to a copy's records, as a client's own list would hold them. */
+function append(doc: LoroDoc, ...values: unknown[]) {
+  const ops = doc.getList("ops");
+  for (const value of values) ops.push(JSON.parse(JSON.stringify(value)));
+  doc.commit();
 }
 
 const rid = () => `r${Math.random().toString(36).slice(2)}`;
@@ -89,95 +91,13 @@ const record = (over: Record<string, unknown> = {}): TreeRecord =>
   }) as unknown as TreeRecord;
 const push =
   (...ops: unknown[]) =>
-  (copy: Y.Doc) =>
-    copy.getArray("ops").push(ops);
+  (copy: LoroDoc) =>
+    append(copy, ...ops);
 
-/** The fault an update earns, with the server's copy untouched. */
-function faultOf(change: (copy: Y.Doc) => void, clientID?: number) {
-  const doc = server();
-  const before = Y.encodeStateAsUpdate(doc);
-  const { update } = client(doc, change, clientID);
-  let why = "";
-  try {
-    admit(doc, update, connection);
-  } catch (cause) {
-    if (!(cause instanceof CopyFault)) throw cause;
-    why = cause.why;
-  }
-  expect(why).not.toBe("");
-  // Nothing was stored: the server's copy is byte for byte what it was.
-  expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
-  return why;
-}
-
-describe("a copy the guard turns away, storing nothing", () => {
-  it("a deletion from the list", () => {
-    expect(faultOf((copy) => copy.getArray("ops").delete(2, 1))).toBe("a deletion");
-  });
-  it("a write to the settlements, which only the server appends", () => {
-    expect(
-      faultOf((copy) =>
-        copy.getArray("settle").push([{ id: "s", actor: ME, targets: ["x"], to: "applied" }]),
-      ),
-    ).toBe("not the list");
-  });
-  it("a new shared type, a map entry, a nested type, text in the list", () => {
-    expect(faultOf((copy) => copy.getMap("extra").set("k", 1))).toBe("a map entry");
-    expect(faultOf((copy) => copy.getArray("other").push([record({})]))).toBe("not the list");
-    expect(faultOf((copy) => copy.getArray("ops").push([new Y.Map() as unknown]))).toBe(
-      "not plain records",
-    );
-    expect(faultOf((copy) => copy.getText("ops2").insert(0, "hello"))).toBe("not the list");
-  });
-  it("a client id the server keeps for itself", () => {
-    expect(faultOf(push(record({})), 12)).toBe("a reserved client id");
-  });
-  it("a kind or field only the server writes, from a client id of 1,000 or more", () => {
-    for (const over of [
-      { type: "purge", delete: "x", node: "ch1" },
-      { kind: "file" },
-      { carries: "x" },
-      { appliedBy: ME },
-      { fromDraft: "my-work" },
-      { restores: "x" },
-      { restoredBy: ME },
-      { blob: { storageKey: "k", mime: "x", size: 1 } },
-      { aliases: ["x"] },
-      { hasProperties: true },
-    ])
-      expect(faultOf(push(record(over)))).toBe("a kind or field only the server writes");
-  });
-  it("a struct anchored on a clock the server has not written: it would sit pending and could land in the settle array", () => {
-    const doc = server();
-    const ahead = new Y.Doc({ gc: false });
-    ahead.clientID = 7;
-    Y.applyUpdate(ahead, Y.encodeStateAsUpdate(doc));
-    ahead.getArray("settle").push([{ id: "s1", actor: "system", targets: ["x"], to: "applied" }]);
-    const { update } = client(ahead, (copy) =>
-      copy.getArray("settle").push([{ id: "forged", actor: ME, targets: ["y"], to: "applied" }]),
-    );
-    expect(() => admit(doc, update, connection)).toThrow(CopyFault);
-    // Nor does it wait in the server's copy for the clock to arrive.
-    Y.applyUpdate(doc, Y.encodeStateAsUpdate(ahead, Y.encodeStateVector(doc)));
-    expect(doc.getArray("settle").toArray()).toHaveLength(1);
-  });
-  it("a gap in the writer's own clock", () => {
-    const doc = server();
-    const { copy } = client(doc, push(record({})));
-    const second = client(copy, push(record({})));
-    expect(() => admit(doc, second.update, connection)).toThrow(CopyFault);
-  });
-  it("more records than one update may hold", () => {
-    expect(faultOf(push(...Array.from({ length: 2001 }, () => record({}))))).toBe(
-      "too many records",
-    );
-  });
-});
-
-describe("what the guard lets through", () => {
+describe("what admission takes as sent", () => {
   it("a record nobody can read, a forged actor, a source named as a node, a create into a document", () => {
     const doc = server();
-    const before = recordsOf(doc).length;
+    const before = doc.getList("ops").length;
     const { update } = client(
       doc,
       push(
@@ -189,13 +109,13 @@ describe("what the guard lets through", () => {
     );
     const admitted = admit(doc, update, connection);
     expect(admitted.dropped).toEqual([]);
-    expect(recordsOf(doc).length).toBe(before + 4);
+    expect(doc.getList("ops").length).toBe(before + 4);
     expect(replayView(doc, LIVE).skipped.map((skip) => skip.reason)).toContain("unreadable");
   });
 });
 
 describe("a create raced into a closed Work is stamped dropped", () => {
-  const dropped = (doc: Y.Doc) =>
+  const dropped = (doc: LoroDoc) =>
     [...lastSettlements(doc)].filter(([, settle]) => settle.to === "dropped").map(([id]) => id);
 
   it("a create whose draft is not open, with its reason; one in an open Work or live stands", () => {
@@ -255,7 +175,7 @@ describe("a create raced into a closed Work is stamped dropped", () => {
     });
     const folder = record({ kind: "folder", filetype: undefined, node: "f" });
     const offline = client(doc, push(folder), 1000);
-    doc.clientID = 2000;
+    doc.setPeerId(2000);
     const move = record({
       type: "move",
       node: "x",
@@ -267,16 +187,10 @@ describe("a create raced into a closed Work is stamped dropped", () => {
       name: undefined,
       source: undefined,
     });
-    recordsOf(doc).push([move]);
+    append(doc, move);
     expect(admit(doc, offline.update, connection).dropped).toEqual([folder.id]);
-    expect(
-      recordsOf(doc)
-        .toArray()
-        .findIndex((r) => r.id === folder.id),
-    ).toBeLessThan(
-      recordsOf(doc)
-        .toArray()
-        .findIndex((r) => r.id === move.id),
+    expect(listRecords(doc).findIndex((r) => r.id === folder.id)).toBeLessThan(
+      listRecords(doc).findIndex((r) => r.id === move.id),
     );
     expect(replayView(doc, LIVE).nodes.get("x")?.source).toBe("old-scratch");
   });
@@ -298,22 +212,22 @@ describe("a create raced into a closed Work is stamped dropped", () => {
     const open: Connection = { drafts: connection.drafts, closed: () => false };
     // Two copies of one list, neither seeing the other's move of Ch1; the server orders a's first.
     const a = client(doc, (copy) => new TreeWriter(copy).move(LIVE, ME, "ch1", "kept"), 5000);
-    const offline = new Y.Doc({ gc: false });
-    offline.clientID = 6000;
-    Y.applyUpdate(offline, Y.encodeStateAsUpdate(doc));
+    const offline = new LoroDoc();
+    offline.setPeerId(6000);
+    offline.import(doc.export({ mode: "update" }));
     const b = new TreeWriter(offline);
-    let since = Y.encodeStateVector(offline);
+    let since = offline.oplogVersion();
     const move = b.move(LIVE, ME, "ch1", "p");
     admit(doc, a.update, open);
-    admit(doc, Y.encodeStateAsUpdate(offline, since), open);
+    admit(doc, offline.export({ mode: "update", from: since }), open);
     expect(replayView(doc, LIVE).nodes.get("ch1")?.parent).toBe("p");
     // The Work closes. b's Undo carries Arc, where b saw Ch1; the server's list sends it to Kept.
-    since = Y.encodeStateVector(offline);
+    since = offline.oplogVersion();
     const back = undoChange(b, LIVE, ME, move.id) as TreeRecord;
     expect(back).toMatchObject({ type: "move", parent: "arc" });
-    expect(admit(doc, Y.encodeStateAsUpdate(offline, since), connection).dropped).toEqual([
-      back.id,
-    ]);
+    expect(admit(doc, offline.export({ mode: "update", from: since }), connection).dropped).toEqual(
+      [back.id],
+    );
     expect(replayView(doc, LIVE).nodes.get("ch1")?.parent).toBe("p");
   });
 
@@ -355,10 +269,10 @@ describe("a create raced into a closed Work is stamped dropped", () => {
         (copy) => new TreeWriter(copy).move(LIVE, ME, "arc", source("old-scratch")),
         2000,
       );
-      Y.applyUpdate(doc, moving.update);
+      doc.import(moving.update);
       const result = admit(doc, offline.update, connection);
       expect(result.dropped).toHaveLength(1);
-      const ops = recordsOf(doc).toArray();
+      const ops = listRecords(doc);
       const inserted = ops.findIndex((op) => op.id === result.dropped[0]);
       const moved = ops.findIndex((op) => op.type === "move" && op.node === "arc");
       expect(inserted).toBeLessThan(moved);

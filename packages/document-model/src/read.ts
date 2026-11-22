@@ -116,7 +116,7 @@ export function readDocument(docs: RoomDocs, since?: ReadSince): ShapeBlock[] {
   return readBlocks(docs, new StructureView(docs.structure, docs.draft, docs.shape), since);
 }
 
-export function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): ShapeBlock[] {
+function readBlocks(docs: RoomDocs, view: StructureView, since?: ReadSince): ShapeBlock[] {
   const shape = docs.shape;
   const visibleComment = commentVisibility(view);
   const previous = since ? blocksById(since.blocks) : new Map<BlockId, ShapeBlock>();

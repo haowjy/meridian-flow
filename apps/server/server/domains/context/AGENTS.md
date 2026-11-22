@@ -15,7 +15,7 @@ rest of the contracts: [context contracts](.context/CONTEXT.md).
   separate from `UploadIntake`; uploads are flat while Scratch accepts nested
   intake paths.
 - Text creation and writes resolve filetype and use the collab document engine;
-  never seed a Y.Doc with an assumed Markdown schema.
+  never seed a document with an assumed Markdown schema.
 - A move writes no document content. Stable links re-spell on read, and every
   arrival settles ahead refs once against its final tree.
 - A Copy (`copy/`) reads, plans names and binds refs before taking any lock, then

@@ -3,17 +3,17 @@
 ## Why parity matters
 
 The server never renders TipTap DOM, but it parses, diffs, mirrors and serializes the same
-Yjs documents. A server schema narrower than the editor's lets the shared y-tiptap binding decode on
-one side and fail on the other, so this package follows the editor's structural surface.
+Loro documents. A server schema narrower than the editor's lets the shared binding
+(`@meridian/loro-prosemirror`) decode on one side and fail on the other, so this package follows
+the editor's structural surface.
 
 ## Contracts
 
 - `CollabSchemaVersion` strings are the boundary form; packed integers are SQL-only and
   adapters pack or unpack them.
 - `collabSchemaKeyTag()` partitions persisted client state by major and minor, not patch.
-- The WebSocket carrier is one `meridian.collab.{major}.{minor}.{patch}` subprotocol grammar:
-  the client offers exactly one token, and absent, zero or multiple matches resolve to the
-  `0.0.0` sentinel.
+- A room's Join carries the client's version in its `auth` (`encodeLoroJoinAuth` in
+  `@meridian/contracts/protocol`).
 
 ## Surface decisions
 
@@ -29,7 +29,7 @@ one side and fail on the other, so this package follows the editor's structural 
   Removing the list and quote nodes was part of collab schema 3.0.0.
 
 - Every block node, table row and table cell (`table_cell` and `table_header`) has an `id`
-  attribute. This permanent identity lets the merge, review and Yjs writer match the same
+  attribute. This permanent identity lets the merge, review and room writer match the same
   block across edits. It is set once where a block is made and copied with its other
   attributes on a move; a copied block gets a new ID. Markdown never carries IDs, so content
   parsed from the model's Markdown has the schema's default, null. Stored blocks must have
@@ -40,20 +40,14 @@ one side and fail on the other, so this package follows the editor's structural 
   dev database. This deletes that database's data. There is no backfill, and the minor version
   does not stop the server from reading older stored documents.
 
-- Suggestion mode (3.2.0 and 3.3.0) adds the `suggest_ins`, `suggest_del` and `comment` marks and
-  the `sug` and `sugAttrs` block attributes; `@meridian/suggestions` owns what they mean. The
-  marks may overlap (`excludes: ""`), so the binding stores each under `yjsMarkKey`; a server
-  writer that keys a mark by its bare name overwrites another draft's mark on the same text.
-  A mark holds only `{ id, draft }`: each changed word carries it twice and history keeps it for
-  good. `sugAttrs` is one record to ProseMirror and one Yjs element attribute per layer
-  (`sugAttrs--<layer id>`, `layer-key.ts`): a schema can't declare a key per layer, and the
-  binding drops an undeclared key, so every element ↔ node conversion folds or expands by
-  `layer-key.ts`, and the y-tiptap patch carries a copy of the rule. Who wrote a change lives once per change in the Y.Doc's `suggestion_authors` map
-  (agent-edit's `stored-suggestions.ts`), outside the schema.
+- Schema 4.0.0 removed suggestion mode (the `suggest_ins` and `suggest_del` marks and the `sug`
+  and `sugAttrs` block attributes) with the move to Loro: drafts come back in phase 2 as fork
+  rooms, outside the schema. `comment` stays; its marks may overlap (`excludes: ""`), so the Loro
+  model stores each under its own key (`comment_<id>`).
 
 - `align` is `null`, `"center"` or `"right"`. There is no `"left"`: unaligned is the default,
   and a second spelling would be a ghost state the markup codec must reject. Markup carries it
   as a `Layout` wrapper, so an alignable node gains no markup until a writer aligns it.
-- `image` takes no marks (MDAST has none). `uploadToken` is ephemeral Yjs-only upload identity,
+- `image` takes no marks (MDAST has none). `uploadToken` is ephemeral document-only upload identity,
   absent from Markdown and MDX. A link, image or figure `ref` is stored state only, never in
   Markdown, HTML, MDX or the DOM; `href` or `src` is the fallback spelling.

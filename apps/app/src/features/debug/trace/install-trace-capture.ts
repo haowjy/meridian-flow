@@ -1,9 +1,10 @@
-/** Installs dev-only client trace capture before the thread socket is created. */
+/** Installs dev-only client trace capture before the thread and room sockets are created. */
 
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { setThreadWireTap } from "@/core/transport/wire-tap";
+import { setLoroWireTap, setThreadWireTap } from "@/core/transport/wire-tap";
 
 import { meridianTraceAPI } from "./agent-trace-api";
+import { createLoroWireTap, createLoroWireTapState, type LoroWireTapState } from "./loro-wire-tap";
 import {
   createThreadWireTap,
   createThreadWireTapState,
@@ -13,6 +14,7 @@ import { appendTraceEvent, noteTapError } from "./trace-store";
 
 type HotData = {
   threadWireTapState?: ThreadWireTapState;
+  loroWireTapState?: LoroWireTapState;
 };
 
 export function installTraceCapture(): void {
@@ -22,9 +24,12 @@ export function installTraceCapture(): void {
 
   const hotData = import.meta.hot?.data as HotData | undefined;
   const threadState = hotData?.threadWireTapState ?? createThreadWireTapState();
+  const loroState = hotData?.loroWireTapState ?? createLoroWireTapState();
   if (hotData) {
     hotData.threadWireTapState = threadState;
+    hotData.loroWireTapState = loroState;
   }
 
   setThreadWireTap(createThreadWireTap(appendTraceEvent, noteTapError, threadState));
+  setLoroWireTap(createLoroWireTap(appendTraceEvent, noteTapError, loroState));
 }

@@ -126,7 +126,7 @@ export function createEffectiveDocumentReader(input: {
             version: view ? "draft" : "live",
             revision: viewRevision(cutRevision({ version, blocks }, scope), view),
             holderUri: scope.holder.uri,
-            stateVector: version,
+            roomVersion: version,
             aheadSettlements: settledAheads(blocks, scope),
           };
         },

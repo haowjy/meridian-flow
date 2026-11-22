@@ -16,7 +16,7 @@
  * It runs two Portless children: the server on `<prefix>.server.meridian`, and an app on
  * `<prefix>.app.meridian` (both run on Node by `shared-db-serve.mjs`: they host Nitro and Vite, which
  * production runs on Node and which fail on Bun) whose `MERIDIAN_API_ORIGIN` is that server. A tab needs its own app:
- * the app's Vite proxy sends every `/ws/yjs` upgrade to its one `MERIDIAN_API_ORIGIN` whatever the
+ * the app's Vite proxy sends every `/ws/loro` upgrade to its one `MERIDIAN_API_ORIGIN` whatever the
  * tab's host. Nitro and Vite build into directories of their own, so both share a checkout with a
  * running dev stack. Ctrl-C, SIGINT or SIGTERM stops both.
  */

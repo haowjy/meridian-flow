@@ -6,7 +6,6 @@ import type {
   CollabDrafts,
   CollabLifecycle,
   CollabTransport,
-  DocumentAttribution,
   DocumentProjectionRefresher,
   EffectiveDocumentReader,
   MarkdownDocumentStore,
@@ -24,7 +23,6 @@ export type CollabFacadeServices = {
   documents: MarkdownDocumentStore;
   projections: DocumentProjectionRefresher;
   lineage: TurnLiveLineageAccess;
-  attribution: DocumentAttribution;
   effectiveReader: EffectiveDocumentReader;
   drafts: CollabDrafts;
   draftResolver: CollabDraftResolver;
@@ -41,7 +39,6 @@ export function createCollabFacade(services: CollabFacadeServices): CollabDomain
     ...services.documents,
     ...services.projections,
     ...services.lineage,
-    ...services.attribution,
     ...services.effectiveReader,
     ...services.drafts,
     ...services.draftResolver,

@@ -48,6 +48,7 @@ describe.skipIf(!enabled || !process.env.DATABASE_URL)("retention (postgres)", (
     objectStore: { delete: async () => ({ ok: true as const, value: undefined }) } as never,
     eventSink: { emit() {}, emitBatch() {}, async flush() {} },
     purges: createDrizzleDocumentPurgeDisposal(db, { closeRemovedRooms: async () => {} }),
+    endRooms: async () => {},
     tree: treeLists,
   });
 

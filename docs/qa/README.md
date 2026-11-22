@@ -28,7 +28,7 @@ stack.
 - [The model's move and delete](../../apps/server/server/domains/collab/.context/qa/model-move-delete.md): tool rows, the turn card's lines and Undo beside a namesake, absorbed-folder Undo, and a stopped reply's rollback, in the browser on the mock model.
 - [Model-owned chat actions](../../apps/server/server/domains/runtime/.context/qa/model-agent-actions.md): Work switch during a reply, next-reply write mode, out-of-lineage background messaging, and read-Agent refusals.
 - [Crash test of the model's edits](../../apps/server/server/domains/collab/.context/qa/model-edit-crash.md): a composed server killed (`SIGKILL`) or held at named steps of a chat turn, a second process recovering, rows asserted, over a scratch database; five probes: kills, takeover, tree, evidence, locks.
-- [Document existence admission](../../apps/server/server/domains/collab/.context/qa/document-existence-admission.md): live frames and saves against a removal, head creation only by create or repair, with the pause controller.
+- [Document existence admission](../../apps/server/server/domains/collab/.context/qa/document-existence-admission.md): model writes and typing against a removal, with the pause controller.
 - [Direct upload canary](../../apps/server/server/domains/storage/.context/qa/direct-put.md): signed PUT length and type, copy, ranged reads, CORS and expiry against MinIO or R2, with a browser PUT.
 - [Runtime protocols](../../apps/server/server/domains/runtime/.context/qa/runtime-probes.md): RP-1 through RP-21, server protocol checks driven with `./mf`; RP-17 runs `./mf` beside the browser. They don't verify the app.
 - [Project chrome and shell](../../apps/app/src/features/project/.context/qa/project-chrome-manual.md): the browser checks that replaced nine slow DOM tests in `apps/app`.
@@ -41,7 +41,6 @@ stack.
 - [History compaction](../../apps/server/server/domains/collab/rooms/.context/qa/history-compaction.md): a Live room and its fork cut on unload at their seven-day marks, with lowered bounds on a scratch database: smaller rows, unchanged text and `content_seq`, the fork still importing Live, a stale tab refused. No stack.
 - [Loro round trip](../../packages/loro-prosemirror/.context/qa/round-trip.md): real-schema fixtures through the Loro document shape, the envelope, `loro-protocol` frames, `applyOps`, the editor binding and the in-memory rooms, with doc → ProseMirror → doc identity. Node, no stack; run it by hand when `document-model` or `loro-prosemirror` changes.
 - [Two editors](../../packages/loro-prosemirror/.context/qa/two-editors.md): two editors on two copies of a Loro room, random structural edits, Ctrl+Z, Redo and batches; each editor must equal a full read of its docs after every step, an Undo must keep the other editor's words, a burst of steps undone and redone must give back each document exactly, and the copies must converge. Node, no stack; run it by hand when the binding's write or read path or its Undo changes.
-- [Fork lowering](../../packages/agent-edit/src/model/.context/qa/fork-lowering.md): the gate for separate draft rooms; random scripts suggest in a fork of a real-schema document through y-tiptap and `rewrite`, apply one change into Live by Yjs id, withdraw it from the fork, and take it back; Live must equal the accepted view and hold nothing of the fork. Vitest, no stack; a harness, not shipped code.
 - [Unsent edits hold a live session](../../apps/app/src/core/editor/.context/qa/unsent-edits-session-hold.md): offline edit, tab closed, reconnect without reopening, and the removal exit; plus the two-draft Apply and untitled-document probes.
 - [Browser state envelopes](../../apps/app/.context/qa/browser-state-envelopes.md): reload all browser-persisted surfaces and reject transplanted ownership.
 - [Settled chat Markdown](../../apps/app/src/features/chat/.context/qa/chat-markdown.md): manuscript parity, list rhythm, highlighting and code copy.
@@ -50,11 +49,9 @@ stack.
 - [Folder mentions](../../apps/app/src/features/links/.context/qa/folder-mentions.md): the `@` Mention row, composer and Editor folder chips, the drill-in menu a folder chip opens, and rename or delete then click.
 - [Chat Files menu](../../apps/app/src/features/chat/.context/qa/chat-files.md): shared nested Scratch plus chat uploads; search, rename, move, delete, fork source and phone parity.
 - [#871 cells](../../apps/app/src/features/draft-review/.context/qa/871-cells.md): the writer types into a passage while the AI rewrites it, four cells in auto-apply and draft mode, in the browser; what is kept, what is lost to ancestor delete, and how the result names the user.
-- [Model text reversal](../../apps/server/server/domains/collab/.context/qa/model-revert.md): model Undo, Redo and Revert by Yjs identity, including partial changes, destination routing, repeated text and a revert of a revert, in auto-apply and draft mode.
+- [Model text reversal](../../apps/server/server/domains/collab/.context/qa/model-revert.md): model Undo and Revert by recorded delta, including partial changes, destination routing, repeated text and a revert of a revert, in auto-apply and draft mode.
 - [Scratch before compaction](../../apps/server/server/domains/runtime/.context/qa/scratch-compaction.md): zero to three calls, honest held results, summary, bypasses, cancellation and unchanged ownership.
-- [Frontier survives compaction](frontier-survives-compaction.md): a Yjs snapshot restores after the draft store folds the journal, fails loudly on a gc-on origin, and containment refuses a re-fork; pure Yjs, one command.
 - [Editor schema notices](../../apps/app/src/features/editor/.context/qa/editor-notices.md): one-line repair and fence bars, the Details popover, copy refusals and Dismiss focus.
-- [Journal checkpoint coverage](checkpoint-coverage.md): durable admission, compaction, invalidation and opaque cuts.
 - [Document adoption across a reload](../../apps/app/src/features/project/.context/qa/document-adoption-reload.md): New file reloaded inside the adoption commit window, desktop and the phone's three document branches.
 - [Document open: commit first](../../apps/app/src/features/project/.context/qa/document-open.md): immediate main, side, and phone placement; one content open; transfer ownership; failures, removal, fencing, passages, projection readiness, streaming, and keystrokes.
 - [Tree sidebar](tree-sidebar.md): rename, move, delete and create across two tabs, offline and a fresh profile; the chat side panel's document path; list actions; folder deletion and Scratch lineage.
@@ -295,7 +292,7 @@ Three harness artifacts have produced false defects. Rule them out first.
 
 - **Persistence.** Before judging whether an edit saved, wait until the
   server route's `/readyz` returns 200 and the browser's authenticated
-  `/ws/yjs` WebSocket upgrades with 101 (CDP `Network.webSocket*` events).
+  `/ws/loro` WebSocket upgrades with 101 (CDP `Network.webSocket*` events).
   Read the result back with `./mf doc read <uri>` or a fresh browser profile,
   never the browser that made the edit: its IndexedDB shows the edit whether or
   not the server has it. A stack restarted after a port collision is the usual

@@ -22,13 +22,10 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { byteaColumn, createdAt, idColumn } from "./_shared";
+import { createdAt, idColumn } from "./_shared";
 import { threads, turns } from "./agent-threads";
 import { documents } from "./content";
 import { users } from "./users";
-
-type Range = { client: number; clock: number; len: number };
-type Effect = { inserted: Range[]; deleted: Range[] };
 
 export type { EditOrigin } from "@meridian/contracts";
 export const documentEdits = pgTable(
@@ -78,8 +75,6 @@ export const documentEditParts = pgTable(
       .notNull()
       .references(() => documentEdits.id, { onDelete: "cascade" }),
     ordinal: integer("ordinal").notNull(),
-    update: byteaColumn("update").notNull(),
-    effect: jsonb("effect").$type<Effect>().notNull(),
     targets: jsonb("targets")
       .$type<{ editId: string; ordinal: number }[]>()
       .notNull()
@@ -152,7 +147,7 @@ export const treeEditReceipts = pgTable(
 
 /**
  * A node a tree receipt changed, in the chat's one history of that node: `w_id` is the write
- * ordinal reserved on the node's counter (`agent_edit_wid_counters`), the same sequence the node's
+ * ordinal reserved on the node's counter (`agentEditWidCounters`), the same sequence the node's
  * text edits take, so Undo, Redo and `revert` order text and tree changes by it. `before_at` and
  * `after_at` are the node's address before and after (null for a node the call created or
  * deleted), for the turn's change viewer. `copied_from` is the source address of a copy.

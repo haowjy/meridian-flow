@@ -268,7 +268,7 @@ describe.runIf(enabled)("import resume", () => {
     await sweepImportObjects(repository, objects, {
       importId: input.importId,
       texts: {
-        discardUnborn: (ids) => ports.documentSync.discardUnbornDocuments(ids as never),
+        discardUnborn: (ids) => ports.documentSync.endDocumentRooms(ids as never),
       },
     });
     expect(await written()).toEqual([]);

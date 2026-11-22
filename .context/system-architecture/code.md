@@ -1,7 +1,7 @@
 # Code
 
 The apps, and the packages under them. An arrow means "calls code from". The page shows layers,
-not a path, so no arrow is numbered. No package imports an app, and `prosemirror-schema`, `suggestions`, `yjs-inspect` and
+not a path, so no arrow is numbered. No package imports an app, and `prosemirror-schema` and
 `design-tokens` import no workspace code. `gateway` is not in this repository: it is
 the `@meridian-flow/runtime/gateway` entry of [`@meridian-flow/runtime`](https://github.com/haowjy/meridian-runtime/tree/main/src/gateway) from npm. Where the code breaks its written rules is on
 [dependencies](dependencies.md). `./mf` lives in `tools/`, outside these layers: see
@@ -14,7 +14,6 @@ flowchart TB
   www["www<br/><small>the landing site</small>"]:::module
   thread-client["thread-client<br/><small>chat events into a view model</small>"]:::package
   agent-edit["agent-edit<br/><small>the model's document reads and writes</small>"]:::package
-  suggestions["suggestions<br/><small>a Work's draft as marks in Live</small>"]:::package
   project-tree["project-tree<br/><small>the project tree's records and replay</small>"]:::package
   command-driver["command-driver<br/><small>one delivery loop for commands</small>"]:::package
   loro-prosemirror["loro-prosemirror<br/><small>the editor bound to a Loro document</small>"]:::package
@@ -25,13 +24,9 @@ flowchart TB
   contracts["contracts<br/><small>the shapes that cross the wire</small>"]:::package
   design-tokens["design-tokens<br/><small>the one place for colours</small>"]:::package
   gateway["gateway<br/><small>one port to the model providers, from npm</small>"]:::external
-  yjs-inspect["yjs-inspect<br/><small>safe summaries of sync traffic</small>"]:::package
   app -->|"follows a chat with"| thread-client
   server -->|"applies the model's edits with"| agent-edit
-  agent-edit -->|"rewrites a Work's write with"| suggestions
-  app -->|"shows and rewrites a view with"| suggestions
-  app -->|"applies and rejects suggestions with"| agent-edit
-  server -->|"chooses Live's or a Work's view with"| suggestions
+  app -->|"binds the editor to a room with"| loro-prosemirror
   server -->|"saves everything with"| database
   agent-edit -->|"reads and writes text with"| markup
   markup -->|"builds documents from"| prosemirror-schema
@@ -39,11 +34,12 @@ flowchart TB
   contracts -->|"takes usage and mock-script shapes from"| gateway
   server -->|"calls the models through"| gateway
   www -->|"takes colours from"| design-tokens
-  app -->|"debug overlay reads sync with"| yjs-inspect
+  app -->|"replays the project tree with"| project-tree
   server -->|"writes and replays the project tree with"| project-tree
   app -->|"delivers commands with"| command-driver
   loro-prosemirror -->|"reads and writes the document shape with"| document-model
-  agent-edit -->|"will plan and save on Loro rooms with"| document-model
+  agent-edit -->|"plans and saves on Loro rooms with"| document-model
+  server -->|"keeps documents' rooms with"| document-model
   document-model -->|"names rooms with"| contracts
   note1["markup turns text into a document and back. The app uses it for the writer's text, and agent-edit uses it for the model's reads and writes."]:::note
   note1 -.- markup
@@ -144,29 +140,20 @@ A change to a node, mark or attribute updates `meridian-extensions.ts` in the ap
 
 ## agent-edit
 
-The Yjs editing core for the model's document `read` and `write`.
+The Loro editing core for the model's document `read` and `write`.
 
-Plans, lowers and describes one model write on a document room, and builds the inverses Undo applies. It owns no Postgres, routes or auth: the server supplies the journal and does the durable save.
+Plans, lowers and describes one model write on a document room, and builds the inverses Undo applies. It owns no Postgres, routes or auth: the server supplies the room and does the durable save.
 
 - Kind: package
 - Paths: `packages/agent-edit/src`
 - Docs: [CONTEXT](../../packages/agent-edit/.context/CONTEXT.md), [AGENTS](../../packages/agent-edit/AGENTS.md)
 
-## suggestions
-
-A Work's draft, stored as suggestion marks inside the Live document.
-
-One decision table (`kindOf`) says what a view shows and what an edit there does; `rewrite` applies it to any ProseMirror transaction, so the editor's typing and the model's writes take the same path. Discard is `reject`. Imports no workspace code and no Yjs: agent-edit's `resolveStored` writes a verdict to a Y.Doc, the same way in the tab, the press and card Undo.
-
-- Kind: package
-- Paths: `packages/suggestions/src`
-- Docs: [CONTEXT](../../packages/suggestions/.context/CONTEXT.md), [AGENTS](../../packages/suggestions/AGENTS.md)
 
 ## project-tree
 
-The project tree as an append-only list of records in a Yjs document, and the replay that turns it into a tree.
+The project tree as an append-only list of records in a Loro document, and the replay that turns it into a tree.
 
-The records, the replay and its rules, Apply, Discard and Undo, the server's check of a client's update, and the rows to write after a replay. It owns no database or access rules: the server supplies what only it knows. Not yet imported by the server or the app.
+The records, the replay and its rules, Apply, Discard and Undo, the server's check of a client's update, and the rows to write after a replay. It owns no database or access rules: the server supplies what only it knows.
 
 - Kind: package
 - Paths: `packages/project-tree/src`
@@ -214,12 +201,3 @@ No ProseMirror at runtime: the binding hands it the schema's facts. The app, the
 - Paths: `packages/document-model/src`
 - Docs: [AGENTS](../../packages/document-model/AGENTS.md)
 
-## yjs-inspect
-
-Turns binary Hocuspocus and Yjs messages into metadata-only summaries.
-
-No export may return writer text; a canary test checks it.
-
-- Kind: package
-- Paths: `packages/yjs-inspect/src`
-- Docs: [CONTEXT](../../packages/yjs-inspect/.context/CONTEXT.md), [AGENTS](../../packages/yjs-inspect/AGENTS.md)

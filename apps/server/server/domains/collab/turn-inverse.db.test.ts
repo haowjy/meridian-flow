@@ -23,7 +23,6 @@ it("a document in no view (deleted after its edit) does not stop another documen
   const { harness, view, context } = await fixture();
   try {
     const betaContext = { ...context, grant: testFileGrant({ kind: "live" }, BETA_ID) };
-    await view.provisionDraft(BETA_ID);
     await view.collab.agentEdit().read(
       { file: "beta.md", documentId: BETA_ID },
       {

@@ -2289,5 +2289,418 @@
         }
       }
     }
+  },
+  {
+    "version": {
+      "major": 4,
+      "minor": 0,
+      "patch": 0
+    },
+    "compatibilityNote": "Documents move from Yjs to Loro (local-first design §1, §7): a document is a structure doc and a text doc per block, with no ProseMirror fragment, so the surface has no `fragmentName`. Suggestion mode goes with it: the `suggest_ins` and `suggest_del` marks and the `sug` and `sugAttrs` block attributes are removed, since a draft is a fork of the document's room, not marks in Live. Human decision: no converter and no retained Yjs data; every database is reset (`pnpm db:reset`) on checkout, and nothing deployed holds documents. A 3.x client cannot join a 4.0 room: the major fence refuses it.",
+    "surface": {
+      "nodes": {
+        "code_block": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "language": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "text*"
+        },
+        "doc": {
+          "attrs": {},
+          "content": "block+"
+        },
+        "figure": {
+          "attrs": {
+            "alt": {
+              "hasDefault": true,
+              "default": null
+            },
+            "caption": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "label": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "src": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            },
+            "uploadToken": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "hard_break": {
+          "attrs": {},
+          "content": null
+        },
+        "horizontal_rule": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "image": {
+          "attrs": {
+            "alt": {
+              "hasDefault": true,
+              "default": null
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "src": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "title": {
+              "hasDefault": true,
+              "default": null
+            },
+            "uploadToken": {
+              "hasDefault": true,
+              "default": null
+            },
+            "width": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "jsx_container": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "name": {
+              "hasDefault": false
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "props": {
+              "hasDefault": true,
+              "default": {}
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "block+"
+        },
+        "jsx_leaf": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "name": {
+              "hasDefault": false
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "props": {
+              "hasDefault": true,
+              "default": {}
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "text*"
+        },
+        "paragraph": {
+          "attrs": {
+            "align": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "level": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "inline*"
+        },
+        "table": {
+          "attrs": {
+            "align": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "kind": {
+              "hasDefault": true,
+              "default": null
+            },
+            "loose": {
+              "hasDefault": true,
+              "default": null
+            },
+            "marker": {
+              "hasDefault": true,
+              "default": null
+            },
+            "path": {
+              "hasDefault": true,
+              "default": null
+            },
+            "start": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "table_row+"
+        },
+        "table_cell": {
+          "attrs": {
+            "alignment": {
+              "hasDefault": true,
+              "default": null
+            },
+            "colspan": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "colwidth": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "rowspan": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "block+"
+        },
+        "table_header": {
+          "attrs": {
+            "alignment": {
+              "hasDefault": true,
+              "default": null
+            },
+            "colspan": {
+              "hasDefault": true,
+              "default": 1
+            },
+            "colwidth": {
+              "hasDefault": true,
+              "default": null
+            },
+            "id": {
+              "hasDefault": true,
+              "default": null
+            },
+            "rowspan": {
+              "hasDefault": true,
+              "default": 1
+            }
+          },
+          "content": "block+"
+        },
+        "table_row": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": "(table_header | table_cell)+"
+        },
+        "text": {
+          "attrs": {},
+          "content": null
+        }
+      },
+      "marks": {
+        "code": {
+          "attrs": {},
+          "content": null
+        },
+        "comment": {
+          "attrs": {
+            "id": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "em": {
+          "attrs": {},
+          "content": null
+        },
+        "link": {
+          "attrs": {
+            "href": {
+              "hasDefault": true,
+              "default": ""
+            },
+            "ref": {
+              "hasDefault": true,
+              "default": null
+            },
+            "title": {
+              "hasDefault": true,
+              "default": null
+            }
+          },
+          "content": null
+        },
+        "strike": {
+          "attrs": {},
+          "content": null
+        },
+        "strong": {
+          "attrs": {},
+          "content": null
+        }
+      }
+    }
   }
 ]

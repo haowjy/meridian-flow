@@ -233,7 +233,7 @@ export function createImportOrganizer(deps: OrganizerDeps) {
         };
       }
       const stagedBytes = state.byteLength + Buffer.byteLength(JSON.stringify(ahead), "utf8");
-      // A Yjs seed is indivisible. If one seed exceeds the batch cap, write it alone;
+      // A seed is indivisible. If one seed exceeds the batch cap, write it alone;
       // otherwise the import could never advance past that document.
       if (batch.length && bytes + stagedBytes > BUILD_BYTES) break;
       batch.push(node);

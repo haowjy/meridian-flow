@@ -18,7 +18,6 @@ import {
   type TreeWriter,
   type View,
 } from "@meridian/project-tree";
-import type { LoroDoc } from "loro-crdt";
 import { createDrizzleTreeListStore } from "../domains/context/adapters/drizzle-tree-list-store.js";
 import { treeListOfSource } from "../domains/context/adapters/tree-list-facts.js";
 import type { TreeListStore } from "../domains/context/ports/tree-list-store.js";
@@ -59,7 +58,7 @@ function segmentsOf(path: string): string[] {
 
 /** Folders along `dir` in the view: the ones that exist are reused, the rest made. */
 function ensureDir(
-  writer: TreeWriter<LoroDoc>,
+  writer: TreeWriter,
   view: View,
   actor: string,
   sourceId: string,
@@ -86,7 +85,7 @@ export function treeSeeder(db: Database, deps: { documentSync?: DocumentSeeds } 
   async function submitIn<T>(
     sourceId: string,
     options: SeedOptions,
-    make: (writer: TreeWriter<LoroDoc>, view: View, actor: string) => T,
+    make: (writer: TreeWriter, view: View, actor: string) => T,
   ): Promise<T> {
     const store = options.store ?? defaultStore;
     const { result } = await store.submit({

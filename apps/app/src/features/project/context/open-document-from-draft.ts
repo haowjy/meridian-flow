@@ -5,7 +5,7 @@
  * still has them) have no context-tree entry until Apply, so the
  * route→tab auto-open (ContextPaneController → findContextFile) has nothing
  * to match and review lands on an empty pane (#153). The document itself is
- * real — its `documents` row and Yjs state exist from write time — only the
+ * real — its `documents` row and Live room exist from write time — only the
  * tree manifest entry is missing, so review entry builds the tab from draft
  * metadata instead. The tab is only the document's descriptor: which draft it
  * shows is its view's pin, and whether live lacks it is the host's
@@ -29,7 +29,7 @@ export function openDocumentFromDraftGroup(group: {
   const { scheme, path } = location;
   const filetype = filetypeForPath(path);
   const classification = classifyFiletype(filetype);
-  // Draft review only exists for Yjs-tracked editable documents; a path that
+  // Draft review only exists for tracked editable documents; a path that
   // doesn't resolve to a schema has no editor surface to synthesize.
   if (classification.kind !== "tracked") return null;
   // Tab names are the path basename, the stored name (tree `nameFromPath`

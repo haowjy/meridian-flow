@@ -7,7 +7,6 @@
 
 import { createDb } from "@meridian/database";
 import { LIVE, type TreeWriter } from "@meridian/project-tree";
-import type { LoroDoc } from "loro-crdt";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { grantInProject, testFileGrant } from "../../test-support/file-grants.js";
 import { grepQuery } from "../../test-support/grep-query.js";
@@ -39,7 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("collab image paths (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
+    const { createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {
@@ -53,7 +52,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       sourceId: async () => SOURCE_ID,
     });
     /** A live edit of the tree (rename, delete), as a person's would be. */
-    async function liveEdit(edit: (writer: TreeWriter<LoroDoc>) => unknown) {
+    async function liveEdit(edit: (writer: TreeWriter) => unknown) {
       await seeder.store.submit({
         lists: [await treeListOfSource(db, SOURCE_ID)],
         make: ([{ writer }]) => edit(writer),
@@ -95,7 +94,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("shares search paths across chapters in a thread view", async () => {
       const links = createTestDocumentLinkScopes(db);
       const collab = createTestCollab(links);
-      collab.bindHocuspocus(hocuspocus as never);
       await seedChapterWithMap(collab);
       const secondDocumentId = "00000000-0000-4000-8000-000000000713";
       await seeder.document(SOURCE_ID, "chapter-two", { id: secondDocumentId });

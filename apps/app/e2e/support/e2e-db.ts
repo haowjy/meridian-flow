@@ -122,7 +122,7 @@ async function postJson(request: APIRequestContext, path: string, data: unknown)
   }
 }
 
-// Documents are created through the project's tree list on the Yjs socket, which `./mf doc put`
+// Documents are created through the project's tree list on the Loro socket, which `./mf doc put`
 // drives; no HTTP route makes one.
 function createFixtureDocument(
   projectId: string,

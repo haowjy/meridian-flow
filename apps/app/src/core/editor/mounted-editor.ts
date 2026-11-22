@@ -12,7 +12,7 @@
  *   `EditorSurfaceOptions` and reaches the running editor through TipTap's own
  *   `setOptions` sync (plus `setEditable`, which that sync deliberately skips).
  */
-import type { Filetype, YjsTrackedSchemaType } from "@meridian/contracts/protocol";
+import type { Filetype, TrackedSchemaType } from "@meridian/contracts/protocol";
 import { Editor, type EditorOptions } from "@tiptap/core";
 import type { Transaction } from "@tiptap/pm/state";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -34,7 +34,7 @@ type EditorMountBase = {
   projectId?: string;
   /** The Work the viewer is in; a draft-only picture is signed through it. */
   viewingOwner?: string;
-  schemaType: YjsTrackedSchemaType;
+  schemaType: TrackedSchemaType;
   /** A code document's filetype: the language its fence is painted in. */
   filetype?: Filetype;
   /** CollaborationCaret is an extension, so toggling peers needs a new editor. */

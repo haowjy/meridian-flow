@@ -150,7 +150,7 @@ opened or closed into, else the open document's folder, else the top.
 
 A rename is a `rename` record, appended at once (`useRenameEntryForm`, `TreeActions.rename`): the
 list numbers the name when the clash is visible in its copy, and the tree, headers, tabs and routes
-show the new name from the same replay. Nothing is sent or retried by the UI: Yjs carries the record.
+show the new name from the same replay. Nothing is sent or retried by the UI: the list's Loro room carries the record.
 
 Nothing refuses a rename, move or delete. The one thing the server turns back is a change to a
 Work that was closed (archived or deleted): a create, rename, move, delete or restore in its draft

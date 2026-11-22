@@ -95,9 +95,7 @@ export class TreeList {
    * records and its stamps on them in one transaction, so that copy has each record, and a
    * `dropped` stamp is the server's whole answer for a record, with its reason.
    */
-  async append(
-    make: (writer: TreeWriter<LoroDoc>) => readonly TreeRecord[],
-  ): Promise<TreeRecord[]> {
+  async append(make: (writer: TreeWriter) => readonly TreeRecord[]): Promise<TreeRecord[]> {
     const { main } = this;
     const records = [...make(new TreeWriter(main.doc))];
     const update = main.doc.export({ mode: "update", from: main.sent });

@@ -10,8 +10,6 @@ import type { ClosedOwnerWhy } from "@meridian/contracts/commands";
 /** One admitted room of a socket; `revoke` ends it so the client rejoins. */
 export type RoomRegistration = { revoke(why?: ClosedOwnerWhy): void };
 
-export type RoomAccessIndex = ReturnType<typeof createRoomAccessIndex>;
-
 export function createRoomAccessIndex() {
   const byOwner = new Map<string, Set<RoomRegistration>>();
   const ownersOf = new Map<RoomRegistration, readonly string[]>();

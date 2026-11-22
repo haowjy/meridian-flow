@@ -30,7 +30,6 @@ import {
 } from "@meridian/project-tree";
 import { eq } from "drizzle-orm";
 import { generateNKeysBetween } from "fractional-indexing";
-import type { LoroDoc } from "loro-crdt";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { DocumentCreationMetadata } from "../../document-metadata.js";
@@ -95,7 +94,7 @@ function pathOf(projection: TreeProjection, id: string): string[] {
  * segment's name (beside a document of that name, as its twin); each made is pushed to `made`.
  */
 function ensureFolders(
-  writer: TreeWriter<LoroDoc>,
+  writer: TreeWriter,
   target: TreeWriteTarget,
   dir: readonly string[],
   from: string,
@@ -320,7 +319,7 @@ export function createSourceTree(deps: {
           ...(input.kind === "document"
             ? { filetype: input.filetype as Filetype }
             : { blob: input.blob }),
-        } as Parameters<TreeWriter<LoroDoc>["create"]>[2]);
+        } as Parameters<TreeWriter["create"]>[2]);
         const shown = writer.view(target.view);
         return Ok({
           id: created.node,

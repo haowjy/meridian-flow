@@ -1,7 +1,7 @@
 /**
  * Tree half of Apply: the drafted records of the click's items become live copies in the lists
  * that hold them (`applyDraft`), in the click's transaction, and the command keeps what Un-Apply
- * needs of each list (`apply_command_trees`). It reports facts, per item, read from the lists
+ * needs of each list (`apply_command_trees`). It reports which items landed, read from the lists
  * under their keys; the caller (`drizzle-apply-click.ts`) decides every answer and the text half.
  *
  * Lock order, as `collab/.context/CONTEXT.md` has it: the caller holds the Work and the draft;
@@ -21,7 +21,7 @@ import {
 } from "@meridian/project-tree";
 import { lockDocumentMutation } from "../../../shared/document-mutation-lock.js";
 import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
-import type { SourceFate, TreeJudge } from "../../../shared/tree-owners.js";
+import type { TreeJudge } from "../../../shared/tree-owners.js";
 import type { DocumentArrivals } from "../../context/ports/document-arrivals.js";
 import type { ListWriter, TreeList, TreeListStore } from "../../context/ports/tree-list-store.js";
 import { PressUnsynced, type TreeCut } from "../domain/press.js";
@@ -34,16 +34,6 @@ export type TreeApplyItem = {
   list: TreeList | null;
   /** The click includes the node's tree records. */
   tree: boolean;
-};
-
-/** What the tree half did for one item, read after its records are in. */
-export type TreeItemFacts = {
-  /** A record of the item this command chose (`recordsOfItem`) landed as a live copy. */
-  landed: boolean;
-  /** It stands in live (not in Trash, not only in the draft). */
-  standsInLive: boolean;
-  /** Its document stands in notes that take no change (closed, or purged): its text takes no write. */
-  textClosed: SourceFate | null;
 };
 
 const sameList = (a: TreeList, b: TreeList) =>
@@ -80,8 +70,8 @@ export function createApplyTreeOperations(input: {
   /**
    * Lands what the Work has pending on each item whose tree half runs: its own records, the
    * delete that covers it, the drafted creates they stand on and the earlier records of the same
-   * facts, as one `applyDraft` per list, limited to `saw`. A document live has in Trash stays
-   * there: its text takes no Apply until the writer restores it.
+   * facts, as one `applyDraft` per list, limited to `saw`. Returns the items one of whose
+   * chosen records landed as a live copy.
    */
   async function apply(click: {
     draftId: DraftId;
@@ -91,14 +81,12 @@ export function createApplyTreeOperations(input: {
     items: readonly TreeApplyItem[];
     /** Under the owners' locks: what each source takes. */
     judge: TreeJudge;
-  }): Promise<Map<string, TreeItemFacts>> {
+  }): Promise<Set<string>> {
     const { draftId, items } = click;
     const lists: TreeList[] = [];
     for (const { list } of items) if (list && !lists.includes(list)) lists.push(list);
-    const facts = new Map<string, TreeItemFacts>();
-    for (const it of items)
-      facts.set(it.node, { landed: false, standsInLive: false, textClosed: null });
-    if (lists.length === 0) return facts;
+    const landed = new Set<string>();
+    if (lists.length === 0) return landed;
     // The documents among the items, as the Work's view or live has them.
     const documents = new Set<DocumentId>();
     const actor = `user:${click.userId}`;
@@ -133,13 +121,6 @@ export function createApplyTreeOperations(input: {
               pending.some((record) => record.type === "create" && record.node === it.node);
             recordsOf.set(it.node, ran ? recordsOfItem(draft, pending, it.node) : []);
           }
-          // A document in a closed owner's notes takes no text.
-          const placedIn = (node: string) => writer.view(LIVE).nodes.get(node)?.source;
-          for (const it of mine) {
-            const source = placedIn(it.node);
-            (facts.get(it.node) as TreeItemFacts).textClosed =
-              source === undefined ? null : click.judge.fate(source);
-          }
           const chosen = [...recordsOf.values()].flat();
           const applied = chosen.length
             ? applyDraft(
@@ -153,15 +134,13 @@ export function createApplyTreeOperations(input: {
               )
             : null;
           const copied = new Set((applied?.copies ?? []).map((copy) => copy.carries));
-          const live = writer.view(LIVE);
-          for (const it of mine) {
-            const one = facts.get(it.node) as TreeItemFacts;
-            one.landed = (recordsOf.get(it.node) ?? []).some((record) =>
-              copied.has(record.carries ?? record.id),
-            );
-            const node = live.nodes.get(it.node);
-            one.standsInLive = node !== undefined && !node.trashed;
-          }
+          for (const it of mine)
+            if (
+              (recordsOf.get(it.node) ?? []).some((record) =>
+                copied.has(record.carries ?? record.id),
+              )
+            )
+              landed.add(it.node);
           if (!applied) continue;
           const { copies } = applied;
           rows.push({
@@ -193,7 +172,7 @@ export function createApplyTreeOperations(input: {
       for (const documentId of documents)
         deferUntilDrizzleCommit(() => input.onCommitted(documentId));
     }
-    return facts;
+    return landed;
   }
 
   return { lockItems, apply };

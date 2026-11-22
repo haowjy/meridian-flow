@@ -35,17 +35,17 @@ A `drafts` row is one draft. A Work names it (`works.draft_id`) or a root chat d
 (`threads.draft_id`), minted in the same insert; the draft names no owner.
 `drafts.pending_document_count` and `pending_folder_count` are its own counts;
 `works` carries the sums over its drafts.
-A draft's text is suggestion marks in the Live document; `press_text_effects` keeps each
-press's text change for its Undo, by content (the changed blocks before and after, and the
-verdict keys it wrote). `commands` holds one row
+A draft is its tree records; phase 1 has no text drafts, and phase 2 brings them back as fork
+rooms (`document_forks`). `commands` holds one row
 per command sent as a request, of any kind (documents, Work, project), inserted first in the
 effect transaction with its final outcome. Only the account is a foreign key: the row outlives
 its project and chat, so a resend of a create cannot create twice.
 
-`document_snapshots` and `document_forks` are the Loro storage that replaces the Yjs tables in
-the Loro build; both tables sit beside them, unused, until the cutover. A snapshot row is one doc of
-one room (`room_key`, `doc_key`), so a save writes only the docs that changed; fork rooms' rows have
-no foreign key and are deleted by `room_key` prefix with their `document_forks` row.
+`document_snapshots` holds every room's text: a row is one doc of one room (`room_key`,
+`doc_key`), so a save writes only the docs that changed. Rows have no foreign key, so a document's
+text can exist before its `documents` row (an import); the `*_delete_room_snapshots` triggers
+delete a room's rows with its document, fork, project or account. `document_forks` names a
+draft's fork of a document (unused in phase 1).
 
 A stored object (`documents.storage_url`) requires a MIME type. Text documents
 need neither column; purge clears both. Export chooses the output format rather
@@ -73,8 +73,7 @@ JSON-looking scalar strings into other values.
 
 Undo records an inverse as a new edit rather than rewriting history. Immutable
 `document_edits` and `document_edit_parts` retain the original edit, its author
-and the inverse needed to take it back. Every part is a Live edit (`origin` is `live`): a drafted
-write's suggestions are marks in the Live document.
+and the inverse needed to take it back. Every part is a Live edit (`origin` is `live`).
 
 Works retire by archive or by soft delete with a 30-day restore window; the
 hourly purge job disposes of expired Works. `deleted_by_work_id` markers on
@@ -84,31 +83,20 @@ explicitly. Drafts carry no marker: soft delete leaves them alone and
 purge disposes of them. Each project has a locked Work row for the UI's
 “None” selection; it cannot be archived or deleted.
 
-`document_yjs_heads` is the identity of a Yjs document, of one `kind`: its journal rows
-(`document_yjs_updates`, `document_yjs_checkpoints`) cascade from it, not from `documents`, so
-a document's text can exist before its `documents` row (an import). A `document` head's id is
-a `documents.id`; the `documents_delete_yjs_head` trigger deletes it with the document, and
-`initializeHead` refuses an existing head of another kind. A `tree_list` head is a project's
-or an account's tree list: its id is the owner's `tree_list_id`, a column of its own made with
-the owner, and the `projects_` / `users_create_tree_list_head` triggers make the head in the
-same statement. `project_id` / `user_id` name the owner, whose delete takes the head, and a
-list is written with no document. So no document's or node's id is ever a list's.
-`latest_checkpoint_id` has no FK: checkpoints reference their head, and a cycle gives the
-focused resets no delete order.
+`tree_lists` is the identity of a project's or an account's tree list: its id is the owner's
+`tree_list_id`, a column of its own made with the owner, and the `projects_` /
+`users_create_tree_list` triggers insert the row in the same statement. `project_id` / `user_id`
+name the owner, whose delete takes the row. So no document's or node's id is ever a list's; the
+list's records are the `tree:<list id>` room's snapshot row.
+`agent_edit_wid_counters` mints each document's `e<N>` write handles for the model: a counter per
+document, bumped in the write's transaction.
 `tree_node_ids` holds the claim on every node id any list has made: its primary key is the
 claim, taken by one insert in the admitting transaction, and `tree_nodes` / `draft_tree_nodes`
 reference `(id, list_id)` in it, so a row cannot be written for another list's id. They are the
-project tree's rows, written only by the tree list store (domains/context). Live journal rows are deleted only by a
-purge. A checkpoint row with `background` set (a room store, or an empty
-seed's placeholder) deletes the document's other background rows in its own transaction;
-seeds with content and explicit checkpoints survive until document
-cascade. Retention reads the column, never `reason`, which is free text. Lazy checkpoint cuts validate their captured authority
-after fetching inputs and again under the persistence lock. Schema versions are packed
-only inside Drizzle adapters and must use the shared packer (no second literal);
-a `COLLAB_SCHEMA_VERSION` bump updates both Postgres column defaults and regenerates
-the baseline. The checkpoint range capture function stays one SQL
-statement: a client-managed savepoint spanning awaits can roll back sibling
-operations queued on the same connection.
+project tree's rows, written only by the tree list store (domains/context). A Live room's rows
+are deleted only by a purge. Schema versions are packed only inside Drizzle adapters and must use
+the shared packer (no second literal); a `COLLAB_SCHEMA_VERSION` bump updates the `documents.schema_version` default and regenerates
+the baseline.
 
 `observation_frontiers` and `thread_shown_links` are collab's tables (what the model was shown
 of documents). A frontier is keyed by the transcript block that showed the model a document

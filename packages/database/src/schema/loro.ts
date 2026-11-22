@@ -1,6 +1,6 @@
 /**
  * Loro document storage (design §4, §2 of `loro-build`): a row per doc of a room, and a row per
- * draft fork of a document. Beside the Yjs tables until the cutover drops them.
+ * draft fork of a document.
  */
 import type { DocumentId } from "@meridian/contracts";
 import { index, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";

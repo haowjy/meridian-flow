@@ -134,7 +134,7 @@ export function createContextCopyPort(deps: ContextCopyPortDeps) {
         view: source.view ?? { kind: "live" },
         expected: source.expected,
         ...(source.copyId ? { copyId: source.copyId } : {}),
-        ...(source.stateVector ? { stateVector: source.stateVector } : {}),
+        ...(source.roomVersion ? { roomVersion: source.roomVersion } : {}),
       });
     }
 

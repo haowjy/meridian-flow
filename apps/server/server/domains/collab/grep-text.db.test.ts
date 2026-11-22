@@ -35,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 } else {
   describe("grep text (postgres)", () => {
     const db = createDb(DATABASE_URL, { max: 4 });
-    const { hocuspocus, createTestCollab, reset, dispose } = createWorkDraftFixture(db);
+    const { createTestCollab, reset, dispose } = createWorkDraftFixture(db);
     beforeEach(reset);
     afterEach(dispose);
     afterAll(async () => {
@@ -44,7 +44,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("stores the text the effective hashline read computes", async () => {
       const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
       for (const [index, shape] of SHAPES.entries()) {
         const documentId = `00000000-0000-4000-8000-0000000008${String(index).padStart(2, "0")}`;
         await treeSeeder(db).document(SOURCE_ID, shape.filetype ? `${shape.name}.ts` : shape.name, {
@@ -76,7 +75,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("rewrites only the blocks a save changed, and the order only when it moved", async () => {
       const collab = createTestCollab();
-      collab.bindHocuspocus(hocuspocus as never);
       const documentId = "00000000-0000-4000-8000-000000000900";
       await treeSeeder(db).document(SOURCE_ID, "diff", { id: documentId });
       const save = async (markdown: string) => {

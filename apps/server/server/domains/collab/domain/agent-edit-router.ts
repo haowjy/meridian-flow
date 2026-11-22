@@ -1,51 +1,17 @@
-/** The model's reads: Live, or Live through the reading chat's draft view. */
+/** The model's reads: Live (drafts are off until phase 2 rebuilds them on forks). */
 import type { ReadCommand, WriteOutcome } from "@meridian/agent-edit/integration";
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import type { LiveAgentEditCore, RoutedReadContext } from "./agent-edit-cores.js";
-import type { DraftViews } from "./agent-edit-runtime.js";
 import { runWithInversePrincipal } from "./inverse-principal.js";
 
 export type AgentEditRouter = {
   read(command: ReadCommand, context: RoutedReadContext): Promise<WriteOutcome>;
 };
 
-export function createAgentEditRouter(input: {
-  liveCore: LiveAgentEditCore;
-  /** A drafted read is Live through the draft's view; its links spell in the draft's tree. */
-  draftView: DraftViews;
-}): AgentEditRouter {
+export function createAgentEditRouter(input: { liveCore: LiveAgentEditCore }): AgentEditRouter {
   return {
     async read(command, routed) {
       const { grant, liveVersion, ...context } = routed;
-      const version = liveVersion ? "live" : grant.destination.kind;
-      if (version === "draft" && grant.destination.kind === "draft") {
-        const destination = grant.destination;
-        const outcome = await input.draftView
-          .core(destination.draftId, {
-            chat: context.threadId ?? null,
-            turn: null,
-            by: "agent",
-          })
-          .read(command, {
-            ...context,
-            linkView: { kind: "draft", draftId: destination.draftId },
-            ...(command.format === "edits" ? { frontiers: undefined } : {}),
-          });
-        const read = !outcome.isError ? outcome.result.read : undefined;
-        return read
-          ? {
-              ...outcome,
-              result: {
-                ...outcome.result,
-                read: {
-                  ...read,
-                  version: "draft" as const,
-                  draftWork: destination.ownerHandle ?? "/",
-                },
-              },
-            }
-          : outcome;
-      }
       // A move out of a never-drafted source (Scratch) shows live text at a path only the Work's
       // draft has; the grant's facts say so, so the label needs no lookup.
       const parsed = parseUnifiedContextUri(command.file);

@@ -139,7 +139,7 @@ export type AdapterLocatedDocument = { documentId: string; path: string; name: s
 
 /** One list's copy handed to a tree command: the writer on it, the view it acts in, and the source's top. */
 export type TreeScope = {
-  writer: import("@meridian/project-tree").TreeWriter<import("loro-crdt").LoroDoc>;
+  writer: import("@meridian/project-tree").TreeWriter;
   view: import("@meridian/project-tree").View;
   actor: import("@meridian/project-tree").Actor;
   root: string;

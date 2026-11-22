@@ -1,6 +1,5 @@
-import { LoroDoc, VersionVector } from "loro-crdt";
-import * as Y from "yjs";
-import { listOf, loroCovers, type TreeDoc } from "./list-doc.js";
+import { type LoroDoc, VersionVector } from "loro-crdt";
+import { listOf } from "./list-doc.js";
 import { assertNewCommand } from "./list-index.js";
 import {
   type Actor,
@@ -20,7 +19,7 @@ import {
 } from "./replay.js";
 import { fingerprint } from "./shape.js";
 import { type NotUndone, type TakenBack, takeBackAll } from "./undo.js";
-import { readStored, writable } from "./validate.js";
+import { writable } from "./validate.js";
 import { LIVE, lastSettlements, listRecords, pendingRecords, viewRecords } from "./view.js";
 import type { TreeWriter } from "./writer.js";
 
@@ -218,35 +217,29 @@ const standingShape = (projection: TreeProjection) =>
  * The ids of the records in the structs of the list a copy at state `saw` lacks: what was
  * admitted after the press. Read from the encoded update without applying it.
  */
-export function recordsAdmittedAfter(doc: TreeDoc, saw: Uint8Array): Set<string> {
-  const ids = new Set<string>();
-  const add = (value: unknown) => {
-    const read = readStored(value);
-    if (read.ok) ids.add(read.record.id);
-  };
-  if (doc instanceof LoroDoc) {
-    // The records the copy held at `saw`, against what it holds now: the list never deletes.
-    const then = doc.forkAt(doc.vvToFrontiers(VersionVector.decode(saw)));
-    try {
-      const had = new Set(listRecords(then).map((record) => record.id));
-      for (const record of listRecords(doc)) if (!had.has(record.id)) ids.add(record.id);
-    } finally {
-      then.free();
-    }
-    return ids;
+export function recordsAdmittedAfter(doc: LoroDoc, saw: Uint8Array): Set<string> {
+  // The records the copy held at `saw`, against what it holds now: the list never deletes.
+  const at = VersionVector.decode(saw);
+  const then = doc.forkAt(doc.vvToFrontiers(at));
+  at.free();
+  try {
+    const had = new Set(listRecords(then).map((record) => record.id));
+    return new Set(listRecords(doc).flatMap((record) => (had.has(record.id) ? [] : [record.id])));
+  } finally {
+    then.free();
   }
-  for (const item of Y.decodeUpdate(Y.encodeStateAsUpdate(doc, saw)).structs)
-    if (item instanceof Y.Item && item.content instanceof Y.ContentAny)
-      for (const value of item.content.getContent()) add(value);
-  return ids;
 }
 
-/** Whether the copy `doc` holds has everything a copy at state `saw` held. */
-export function covers(doc: TreeDoc, saw: Uint8Array): boolean {
-  if (doc instanceof LoroDoc) return loroCovers(doc, saw);
-  for (const [client, clock] of Y.decodeStateVector(saw))
-    if (Y.getState(doc.store, client) < clock) return false;
-  return true;
+/** Whether the copy `doc` holds has everything a copy at version `saw` held. */
+export function covers(doc: LoroDoc, saw: Uint8Array): boolean {
+  const have = doc.oplogVersion().toJSON();
+  const at = VersionVector.decode(saw);
+  try {
+    for (const [peer, counter] of at.toJSON()) if ((have.get(peer) ?? 0) < counter) return false;
+    return true;
+  } finally {
+    at.free();
+  }
 }
 
 const whyNotInView = (reason: SkipReason): LeftWhy =>
@@ -258,7 +251,7 @@ const whyNotInView = (reason: SkipReason): LeftWhy =>
  * It never refuses: what cannot land is in `left` with a `why` and stays pending.
  *
  * A record cannot land when the Work's view skips it (a move that would put a folder inside
- * itself, a node that is gone), when it was admitted after `saw` (the list's state vector at the
+ * itself, a node that is gone), when it was admitted after `saw` (the list's version vector at the
  * press: the writer had not seen it), or when it stands on one of those. A move or rename of a
  * node in Trash in live and in the Work's view is not applied and is not `left`: it waits in the
  * Work until the node is restored. A move or rename of a node the Work's view brings back from Trash
@@ -267,7 +260,7 @@ const whyNotInView = (reason: SkipReason): LeftWhy =>
  * `needs`.
  */
 export function applyDraft(
-  writer: TreeWriter<TreeDoc>,
+  writer: TreeWriter,
   draft: string,
   appliedBy: Actor,
   command: string,
@@ -451,7 +444,7 @@ export function applyDraft(
  * back, which is what Trash's Restore writes too, so whichever comes first the other does nothing.
  */
 export function discardDraft(
-  writer: TreeWriter<TreeDoc>,
+  writer: TreeWriter,
   draft: string,
   by: Actor,
   command: string,
@@ -487,7 +480,7 @@ export function discardDraft(
  * that is not going, which is a topmost one in turn if anything below it goes.
  */
 function toTrash(
-  writer: TreeWriter<TreeDoc>,
+  writer: TreeWriter,
   draft: string,
   by: Actor,
   creates: readonly TreeRecord[],
@@ -551,7 +544,7 @@ const GONE: ReadonlySet<SkipReason> = new Set(["purged", "missing-node", "missin
  * applied. A copy a later record undid is among them: `undoApply` tries it and `undoChange` answers
  * `already`, and a copy of the Apply's own Undo record may bring it back in force on the way.
  */
-function appliedBy(doc: TreeDoc, applied: string) {
+function appliedBy(doc: LoroDoc, applied: string) {
   const settled = settledBy(doc, applied, "applied", "superseded");
   const all = new Map(listRecords(doc).map((record) => [record.id, record]));
   const landed = new Set(
@@ -572,7 +565,7 @@ function appliedBy(doc: TreeDoc, applied: string) {
 }
 
 /** The live copies an Apply command made, whether or not they still stand. */
-export function madeBy(doc: TreeDoc, applied: string): TreeRecord[] {
+export function madeBy(doc: LoroDoc, applied: string): TreeRecord[] {
   return appliedBy(doc, applied).copies;
 }
 
@@ -597,7 +590,7 @@ export type UndoApplyResult = {
  * is the Work's again.
  */
 export function undoApply(
-  writer: TreeWriter<TreeDoc>,
+  writer: TreeWriter,
   applied: string,
   by: Actor,
   command: string,
@@ -672,7 +665,7 @@ export type DiscardedBy = {
 };
 
 /** The records a Discard command settled. */
-export function discardedBy(doc: TreeDoc, discarded: string): DiscardedBy {
+export function discardedBy(doc: LoroDoc, discarded: string): DiscardedBy {
   const last = lastSettlements(doc);
   const all = listRecords(doc);
   const records = all.filter((record) => {
@@ -700,7 +693,7 @@ export function discardedBy(doc: TreeDoc, discarded: string): DiscardedBy {
  * two never act twice. `back` is the records written in live.
  */
 export function restoreDiscard(
-  writer: TreeWriter<TreeDoc>,
+  writer: TreeWriter,
   discarded: string,
   by: Actor,
   draft: string,
@@ -785,7 +778,7 @@ export function restoreDiscard(
 }
 
 /** The records a command settled with one of these, and nothing since has settled again. */
-function settledBy(doc: TreeDoc, command: string, ...to: Settlement[]) {
+function settledBy(doc: LoroDoc, command: string, ...to: Settlement[]) {
   return [...lastSettlements(doc)]
     .filter(([, settle]) => settle.command === command && to.includes(settle.to))
     .map(([id, settle]) => [id, settle.to] as const);

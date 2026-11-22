@@ -220,10 +220,7 @@ export function ChangesSource({
   const everyItem = refsOf(files);
   const applyAll = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
     hold();
-    void controller.applyMany(
-      refsOf(targets).map((item) => ({ item, target: { kind: "draft" as const } })),
-      folders,
-    );
+    void controller.applyMany(refsOf(targets), folders);
   };
   const startApply = (targets: readonly ReviewFileTarget[], folders: readonly string[]) => {
     const deleting = targets.filter((file) => file.item.tree?.deleted === true);

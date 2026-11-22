@@ -106,7 +106,7 @@ describe("process shutdown hooks", () => {
       expect(await exited).toEqual([0, null]);
       expect(Date.now() - signalledAt).toBeGreaterThanOrEqual(75);
       expect(new Set((await readFile(tracePath, "utf8")).trim().split("\n"))).toEqual(
-        new Set(["runtime-drain-start", "yjs-drain-start"]),
+        new Set(["runtime-drain-start", "rooms-drain-start"]),
       );
     });
   });

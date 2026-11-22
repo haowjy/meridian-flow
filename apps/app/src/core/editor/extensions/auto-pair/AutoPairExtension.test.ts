@@ -143,7 +143,7 @@ describe("typing the closer steps over the one that was written", () => {
     const editor = openEditor();
     type(editor, "[");
 
-    // What every remote collab edit does: y-prosemirror rebuilds the document,
+    // What every remote collab edit does: the Loro binding rebuilds the document,
     // so every tracked position is reported deleted and nothing may be stepped.
     editor.commands.setContent("<p>[]</p>");
     caretAt(editor, 1);

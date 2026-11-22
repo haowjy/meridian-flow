@@ -1,52 +1,31 @@
 /**
- * The server's `DocumentLinksPort` for one agent-edit core: the core names a
- * document and its write context, and this turns them into a holder and view
- * over the operation's document-link scope (contract §4.3–4.4).
+ * The server's `DocumentLinksPort` for agent-edit's core: the core names a document and its write
+ * context, and this turns them into a holder in Live (drafts are off) over the operation's
+ * document-link scope (contract §4.3–4.4).
  */
-import { createHash } from "node:crypto";
-import type {
-  AheadMint,
-  DocumentLinksPort,
-  LoroLinksPort,
-  WriteContext,
-} from "@meridian/agent-edit/integration";
-import { type LinkView, parseLinkRef } from "@meridian/contracts";
-import { extractStoredLinks } from "@meridian/markup/stored-links";
-import { PROSEMIRROR_FRAGMENT_NAME } from "@meridian/prosemirror-schema";
-import * as Y from "yjs";
-import { cutRevision, viewRevision } from "./document-revision.js";
+import type { AheadMint, DocumentLinksPort } from "@meridian/agent-edit/integration";
+import { parseLinkRef } from "@meridian/contracts";
+import { cutRevision } from "./document-revision.js";
 import { inLockedWrite } from "./locked-write.js";
-import type {
-  AheadRefRegistrar,
-  DocumentLinkScopes,
-  HolderLinkScope,
-} from "./ports/document-link-scope.js";
+import type { AheadRefRegistrar, DocumentLinkScopes } from "./ports/document-link-scope.js";
 
 export function createScopedDocumentLinks(input: {
   scopes: DocumentLinkScopes;
   registrar: AheadRefRegistrar;
-  /** The view a command on this document reads and writes in. */
-  viewFor(documentId: string, context: WriteContext | undefined): LinkView;
-  /** The draft whose view of Live the core reads; null for Live's. */
-  draft: string | null;
 }): DocumentLinksPort {
   const { scopes } = input;
-  const holder = (documentId: string, context: WriteContext | undefined) => ({
-    documentId,
-    view: input.viewFor(documentId, context),
-  });
+  const holder = (documentId: string) => ({ documentId, view: { kind: "live" } as const });
   return {
     prepare: (request) =>
       scopes.prepare({
-        holders: [holder(request.documentId, request.context)],
-        docs: request.docs,
+        holders: [holder(request.documentId)],
         written: request.written,
         ...(request.context?.uploadsChat ? { uploadsChat: request.context.uploadsChat } : {}),
         stored: request.stored,
         refs: [...(request.shown ?? []).map((showing) => showing.ref), ...(request.refs ?? [])],
         addresses: request.addresses,
       }),
-    scopeFor: (documentId, context) => scopes.holder(holder(documentId, context)),
+    scopeFor: (documentId) => scopes.holder(holder(documentId)),
     async registerAhead(mints) {
       if (mints.length === 0) return;
       const registrations = aheadRegistrations(mints);
@@ -54,49 +33,8 @@ export function createScopedDocumentLinks(input: {
       if (inLockedWrite()) await input.registrar.registerInCommand(registrations);
       else await input.registrar.register(registrations);
     },
-    revision: (doc, scope) => viewRevision(yjsRevision(doc, scope), input.draft),
-  };
-}
-
-/** The same port for the Loro core, which reads and writes Live only (drafts are off). */
-export function createScopedLoroDocumentLinks(input: {
-  scopes: DocumentLinkScopes;
-  registrar: AheadRefRegistrar;
-}): LoroLinksPort {
-  return {
-    ...createScopedDocumentLinks({ ...input, viewFor: liveViewFor, draft: null }),
     revision: cutRevision,
   };
-}
-
-/**
- * The Yjs core's revision: `y2:` + sha256 over the Yjs snapshot, the holder's URI and how every
- * ref-bearing link and `asset:` source spells. It goes with the Yjs core; the Loro one's is
- * `cutRevision`.
- */
-function yjsRevision(doc: Y.Doc, scope: HolderLinkScope): string {
-  const triples = new Set<string>();
-  for (const occurrence of extractStoredLinks(doc.getXmlFragment(PROSEMIRROR_FRAGMENT_NAME))) {
-    const asset = occurrence.kind !== "link" && occurrence.href.startsWith("asset:");
-    if (occurrence.ref === null && !asset) continue;
-    const spelled =
-      occurrence.kind === "link"
-        ? scope.spellLink({ href: occurrence.href, ref: occurrence.ref })
-        : scope.spellSource({ src: occurrence.href, ref: occurrence.ref });
-    triples.add(JSON.stringify([occurrence.ref, occurrence.href, spelled.href]));
-  }
-  return `y2:${createHash("sha256")
-    .update(Y.encodeSnapshot(Y.snapshot(doc)))
-    .update(Uint8Array.of(0))
-    .update(scope.holder.uri ?? "", "utf8")
-    .update(Uint8Array.of(0))
-    .update(JSON.stringify([...triples].sort()), "utf8")
-    .digest("base64url")}`;
-}
-
-/** The live utility core: every command reads and writes the live tree. */
-export function liveViewFor(_documentId: string, _context: WriteContext | undefined): LinkView {
-  return { kind: "live" };
 }
 
 /**

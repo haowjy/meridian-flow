@@ -130,7 +130,7 @@ HTTP clients, query hooks and the thread store.
 
 The server.
 
-HTTP, the thread socket and the Yjs socket.
+HTTP, the thread socket and the Loro socket.
 
 - Kind: context
 - See: [server](system.md#server)

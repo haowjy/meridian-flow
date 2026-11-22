@@ -20,7 +20,7 @@ import type { ContextRemovalCoordinator } from "../context-removal-coordinator";
 import { revealPlaced } from "../tree-reveal";
 import type { EntryRef } from "./entry";
 import type { EntryActions } from "./entry-actions";
-import { copyRows, type StateVectorOf } from "./execute-copy";
+import { copyRows, type RoomVersionOf } from "./execute-copy";
 import { moveRows } from "./execute-move";
 import type { ReadyCopy, ReadyMove } from "./move-plan";
 import { type EntrySelection, leaveSelections } from "./selection";
@@ -36,9 +36,9 @@ export type EntryContext = {
   notice?: { notices: DraftNotices; at: "tree" | "main" } | null;
 };
 
-/** What a Copy needs beyond a Move: the state vector of a document's open session in this tab. */
+/** What a Copy needs beyond a Move: the room version of a document's open session in this tab. */
 export type CopyContext = EntryContext & {
-  stateVectorOf: StateVectorOf;
+  roomVersionOf: RoomVersionOf;
 };
 
 /** A Copy the route refused: it has its own key, and Retry runs it again unless it is final. */
@@ -108,7 +108,7 @@ export async function runCopy(
   copy: ReadyCopy,
   selection: EntrySelection | null,
 ): Promise<void> {
-  const { copies, answered } = copyRows(context.projectId, copy, context.stateVectorOf);
+  const { copies, answered } = copyRows(context.projectId, copy, context.roomVersionOf);
   revealPlaced(copy.into, copies, selection);
   try {
     const settled = await answered;

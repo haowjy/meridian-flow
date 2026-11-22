@@ -1,5 +1,2 @@
-/**
- * Immutable receipt origin: Live. `seq` is the Yjs journal row the edit's update was stored in,
- * for an edit made before the move to Loro; a Loro edit's update is its part's own `update`.
- */
-export type EditOrigin = { kind: "live"; seq?: number };
+/** Immutable receipt origin: Live. A part's update is its own `update`, the batch it committed. */
+export type EditOrigin = { kind: "live" };

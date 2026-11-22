@@ -60,8 +60,8 @@ export type ContextOperationCommand = {
 };
 
 /**
- * One root as the receipt remembers it. The client's state vector is deliberately absent:
- * a replay after more typing carries a newer vector, and that is the same Copy.
+ * One root as the receipt remembers it. The client's room version is deliberately absent:
+ * a replay after more typing carries a newer version, and that is the same Copy.
  */
 export type CopyContextEntryCommandSource = Pick<CopyContextEntrySource, "view" | "copyId"> & {
   uri: string;

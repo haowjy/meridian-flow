@@ -1,13 +1,13 @@
 /**
- * Proof-of-concept property test for the Yjs file-tree log. Several replicas edit the live tree
- * and two drafts at once, apply and discard drafts whole or in part, undo, and exchange Yjs
+ * Proof-of-concept property test for the file-tree log. Several replicas edit the live tree
+ * and two drafts at once, apply and discard drafts whole or in part, undo, and exchange Loro
  * updates in random orders (including out of causal order). After every action the acting
  * replica's views must be valid trees; at the end every replica must show the same tree in
  * every view, and no created node may be missing or wrongly in the trash.
  */
+import { LoroDoc } from "loro-crdt";
 import { describe, expect, it } from "vitest";
-import * as Y from "yjs";
-import { admit, type Connection, changedSources, clientMayWrite } from "./admission.js";
+import { admit, type Connection, changedSources } from "./admission.js";
 import {
   applyDraft,
   childrenOf,
@@ -37,7 +37,7 @@ import { undoChange } from "./undo-open.js";
 // is dropped is the search's choice, not a promise: a walk judging one record at a time can drop
 // another (seed 104039).
 function admissionProblems(
-  doc: Y.Doc,
+  doc: LoroDoc,
   added: readonly TreeRecord[],
   dropped: readonly string[],
   connection: Connection,
@@ -133,6 +133,30 @@ function rng(seed: number) {
   };
 }
 
+/** A server copy of the list holding `records`, as peer `peer`. */
+function listCopy(peer: number, records: readonly TreeRecord[]): LoroDoc {
+  const doc = new LoroDoc();
+  doc.setPeerId(peer);
+  const ops = doc.getList("ops");
+  for (const record of records) ops.push(JSON.parse(JSON.stringify(record)));
+  doc.commit();
+  return doc;
+}
+
+/** A client copy of `server` that inserted `records` at `index`, and the update it sends. */
+function sentAfter(server: LoroDoc, index: number, records: readonly TreeRecord[]) {
+  const copy = new LoroDoc();
+  copy.setPeerId(2000);
+  copy.import(server.export({ mode: "update" }));
+  const vector = copy.oplogVersion();
+  const ops = copy.getList("ops");
+  records.forEach((record, at) => {
+    ops.insert(index + at, JSON.parse(JSON.stringify(record)));
+  });
+  copy.commit();
+  return { copy, update: copy.export({ mode: "update", from: vector }) };
+}
+
 type Replica = {
   writer: TreeWriter;
   outbox: Uint8Array[];
@@ -141,20 +165,18 @@ type Replica = {
 
 function makeReplicas(): Replica[] {
   return Array.from({ length: REPLICAS }, (_, index) => {
-    const doc = new Y.Doc({ gc: false });
-    doc.clientID = index + 1;
+    const doc = new LoroDoc();
+    doc.setPeerId(index + 1);
     const replica: Replica = { writer: new TreeWriter(doc), outbox: [], delivered: new Map() };
-    doc.on("update", (update: Uint8Array, origin: unknown) => {
-      if (origin !== "remote") {
-        replica.outbox.push(update);
-      }
+    doc.subscribeLocalUpdates((update) => {
+      replica.outbox.push(update);
     });
     return replica;
   });
 }
 
 /** Every view's tree is valid, holds every node its replay created, and trashes only what a delete named. */
-function viewProblems(doc: Y.Doc, view: View): string[] {
+function viewProblems(doc: LoroDoc, view: View): string[] {
   const projection = replayView(doc, view);
   const ops = viewRecords(doc, view);
   // Rule 15: a node may leave the view only while a withdrawal in force names it. That another
@@ -196,7 +218,6 @@ function runSeed(seed: number): {
   ops: number;
   skipped: number;
   kept: number;
-  repaired: number;
   undone: number;
   undoneAny: number;
   leftPending: number;
@@ -214,10 +235,10 @@ function runSeed(seed: number): {
     to.delivered.set(fromIndex, seen);
     const waiting = from.outbox.map((_, index) => index).filter((index) => !seen.has(index));
     if (waiting.length === 0) return;
-    // Out of order on purpose: Yjs must hold an update whose dependencies haven't arrived.
+    // Out of order on purpose: Loro must hold an update whose dependencies haven't arrived.
     const index = pick(waiting);
     seen.add(index);
-    Y.applyUpdate(to.writer.doc, from.outbox[index] as Uint8Array, "remote");
+    to.writer.doc.import(from.outbox[index] as Uint8Array);
   };
 
   for (let step = 0; step < STEPS; step += 1) {
@@ -414,26 +435,11 @@ function runSeed(seed: number): {
     for (const to of replicas)
       for (const from of [...replicas].sort(() => random() - 0.5))
         if (from !== to) for (let n = 0; n < from.outbox.length; n += 1) deliver(from, to);
-  const clocks = (doc: Y.Doc) =>
-    [...Y.decodeStateVector(Y.encodeStateVector(doc))].sort(([a], [b]) => a - b);
-  // Yjs 13.6.31 and 13.6.33 can leave a causally complete set of updates pending when single-struct
-  // updates arrive out of order; production rooms receive each client's updates in order. A state-vector exchange, what y-protocols does on every connect,
-  // repairs it; count how often it was needed.
-  let repaired = 0;
-  for (const to of replicas) {
-    if (!to.writer.doc.store.pendingStructs && !to.writer.doc.store.pendingDs) continue;
-    repaired += 1;
-    for (const from of replicas)
-      if (from !== to)
-        Y.applyUpdate(
-          to.writer.doc,
-          Y.encodeStateAsUpdate(from.writer.doc, Y.encodeStateVector(to.writer.doc)),
-          "remote",
-        );
-  }
+  const clocks = (doc: LoroDoc) =>
+    [...doc.oplogVersion().toJSON()].sort(([a], [b]) => (a < b ? -1 : 1));
   for (const replica of replicas)
     expect(clocks(replica.writer.doc), `seed ${seed} every update delivered`).toEqual(
-      clocks(replicas[0]?.writer.doc as Y.Doc),
+      clocks(replicas[0]?.writer.doc as LoroDoc),
     );
 
   for (const view of VIEWS) {
@@ -442,7 +448,7 @@ function runSeed(seed: number): {
     for (const replica of replicas)
       expect(viewProblems(replica.writer.doc, view), `seed ${seed}`).toEqual([]);
   }
-  const doc = replicas[0]?.writer.doc as Y.Doc;
+  const doc = replicas[0]?.writer.doc as LoroDoc;
   for (const view of VIEWS) {
     const records = viewRecords(doc, view);
     if (records.length === 0) continue;
@@ -478,56 +484,44 @@ function runSeed(seed: number): {
             `seed ${seed} record ${JSON.stringify(inserted)} change ${JSON.stringify([...sources])} node ${id} before ${JSON.stringify(shown(without, id))} after ${JSON.stringify(shown(withRecord, id))} records ${JSON.stringify(records.filter((r) => r.node === id || r.node === inserted.node))}`,
           ).toBe(true);
     }
-    if (clientMayWrite(inserted) && inserted.draft === view.draft) {
+    if (inserted.draft === view.draft) {
       const closed = [...sources][0] ?? "not-a-source";
-      const server = new Y.Doc({ gc: false });
-      server.clientID = 7;
-      server.getArray("ops").push(records.filter((r) => r.id !== inserted.id));
-      const copy = new Y.Doc({ gc: false });
-      copy.clientID = 2000;
-      Y.applyUpdate(copy, Y.encodeStateAsUpdate(server));
-      const vector = Y.encodeStateVector(copy);
-      copy.getArray("ops").insert(records.indexOf(inserted), [inserted]);
-      const result = admit(new TreeWriter(server), Y.encodeStateAsUpdate(copy, vector), {
+      const server = listCopy(
+        7,
+        records.filter((r) => r.id !== inserted.id),
+      );
+      const { copy, update } = sentAfter(server, records.indexOf(inserted), [inserted]);
+      const result = admit(new TreeWriter(server), update, {
         drafts: new Set(["w1", "w2"]),
         closed: (source) => source === closed,
       });
       expect(result.dropped.includes(inserted.id), `seed ${seed} closed ${closed}`).toBe(
         sources.has(closed),
       );
-      copy.destroy();
-      server.destroy();
+      copy.free();
+      server.free();
     }
   }
   const all = viewRecords(doc, LIVE);
   if (all.length > 0) {
     const start = Math.floor(random() * all.length);
     const added: TreeRecord[] = [];
-    for (const record of all.slice(start, start + 8)) {
-      if (!clientMayWrite(record)) break;
-      added.push(record);
-    }
+    added.push(...all.slice(start, start + 8));
     if (added.length > 0) {
-      const server = new Y.Doc({ gc: false });
-      server.clientID = 7;
-      server.getArray("ops").push([...all.slice(0, start), ...all.slice(start + added.length)]);
-      const copy = new Y.Doc({ gc: false });
-      copy.clientID = 2000;
-      Y.applyUpdate(copy, Y.encodeStateAsUpdate(server));
-      const vector = Y.encodeStateVector(copy);
-      copy.getArray("ops").insert(start, added);
+      const server = listCopy(7, [...all.slice(0, start), ...all.slice(start + added.length)]);
+      const { copy, update } = sentAfter(server, start, added);
       const closed = pick(["manuscript", "not-a-source"]);
       const connection = {
         drafts: new Set(["w1", "w2"]),
         closed: (source: string) => source === closed,
       };
-      const result = admit(new TreeWriter(server), Y.encodeStateAsUpdate(copy, vector), connection);
+      const result = admit(new TreeWriter(server), update, connection);
       expect(
         admissionProblems(copy, added, result.dropped, connection),
         `seed ${seed} closed ${closed} added ${JSON.stringify(added)} all ${JSON.stringify(all)} `,
       ).toEqual([]);
-      copy.destroy();
-      server.destroy();
+      copy.free();
+      server.free();
     }
   }
   const views = VIEWS.map((view) => replayView(doc, view));
@@ -536,7 +530,6 @@ function runSeed(seed: number): {
     skipped: views.flatMap((view) => view.skipped).filter((s) => s.reason === "cycle").length,
     kept: views.flatMap((view) => [...view.nodes.values()]).filter((node) => node.keptByChild)
       .length,
-    repaired,
     undone,
     undoneAny,
     leftPending,
@@ -548,7 +541,6 @@ describe("file tree log under random concurrent edits", () => {
     let ops = 0;
     let skipped = 0;
     let kept = 0;
-    let repaired = 0;
     let undone = 0;
     let undoneAny = 0;
     let leftPending = 0;
@@ -565,7 +557,6 @@ describe("file tree log under random concurrent edits", () => {
       ops += result.ops;
       skipped += result.skipped;
       kept += result.kept;
-      repaired += result.repaired;
       undone += result.undone;
       undoneAny += result.undoneAny;
       leftPending += result.leftPending;
@@ -579,12 +570,12 @@ describe("file tree log under random concurrent edits", () => {
       expect(undoneAny).toBeGreaterThan(0);
     }
     console.info(
-      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${repaired} replicas left with stuck pending updates and repaired by a state-vector sync, ${undone} Applies undone at once, ${undoneAny} changes undone from a random earlier record, ${leftPending} Applies that left records that could not land`,
+      `tree property: ${SEEDS} seeds, ${ops} live ops, ${skipped} cycle skips, ${kept} folders kept by a child, ${undone} Applies undone at once, ${undoneAny} changes undone from a random earlier record, ${leftPending} Applies that left records that could not land`,
     );
   }, 600_000);
 
   it("replays a large project quickly enough to recompute on every change", () => {
-    const doc = new Y.Doc({ gc: false });
+    const doc = new LoroDoc();
     const writer = new TreeWriter(doc);
     const random = rng(7);
     const folders = [ROOT];
@@ -619,7 +610,7 @@ describe("file tree log under random concurrent edits", () => {
     const elapsed = performance.now() - started;
     expect(treeViolations(projection)).toEqual([]);
     expect(childrenOf(projection, ROOT).length).toBeGreaterThan(0);
-    const bytes = Y.encodeStateAsUpdate(doc).byteLength;
+    const bytes = doc.export({ mode: "snapshot" }).byteLength;
     console.info(
       `2,000 nodes, 22,000 ops: replay ${elapsed.toFixed(0)} ms, doc ${(bytes / 1024).toFixed(0)} KiB`,
     );

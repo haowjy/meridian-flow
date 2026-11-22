@@ -6,13 +6,11 @@ import type { DocumentAddress } from "../document-address.js";
 import type { BlockRef, DocHandle } from "../handles.js";
 import type { AgentEditModel } from "../ports/model.js";
 import {
-  documentRevision,
   type ResolveWriteContext,
   type ResolveWriteParams,
   type ResolveWriteResult,
   resolveWrite,
 } from "../resolver/resolve.js";
-import { validateSemanticEditIRV1 } from "../semantic-edit-ir.js";
 import { applyEdits } from "./apply-edits.js";
 import type { ApplyTransactionOrigin } from "./types.js";
 
@@ -26,19 +24,12 @@ export function resolveOverwrite(
   written: Pick<ResolveWriteParams, "content" | "parsedContent" | "blocks">,
   empty: boolean,
 ): ResolveWriteResult {
-  const result = resolveWrite(
+  return resolveWrite(
     ctx,
     empty
       ? { command: "remove", documentAddress, wholeDocument: true }
       : { command: "replace", documentAddress, ...written, wholeDocument: true },
   );
-  if (result.ok) {
-    validateSemanticEditIRV1(result.ir, {
-      expectedDocumentId: documentAddress.documentId,
-      expectedInputRevision: documentRevision(ctx),
-    });
-  }
-  return result;
 }
 
 /**
@@ -53,7 +44,7 @@ export function overwriteWithAssigned(input: {
   model: AgentEditModel;
   codec: AgentEditCodec;
   documentId: string;
-  /** Source of `blocks`, for the overwrite's semantic IR only; never reparsed. */
+  /** Source of `blocks`; never reparsed. */
   content: string;
   blocks: readonly Block[];
   origin?: ApplyTransactionOrigin;

@@ -238,7 +238,7 @@ function OpenPicker({
       {
         actions,
         projectId,
-        stateVectorOf: (documentId) => registry?.openRoomVersion(documentId as DocumentId) ?? null,
+        roomVersionOf: (documentId) => registry?.openRoomVersion(documentId as DocumentId) ?? null,
       },
       plan,
       selection,

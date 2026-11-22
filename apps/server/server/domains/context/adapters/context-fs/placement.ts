@@ -3,7 +3,7 @@ import type { DraftId } from "@meridian/contracts";
  * Where a ContextFS adapter's writes land, as a strategy (contract §2.3, §6.1). The port factory
  * decides the placement once (`placementFor`); ContextFS delegates the commands whose meaning
  * differs: reads' tree view, `ensureTrackedDocument`, `writeBinary`, and the
- * refusals a draft placement makes (a draft never seeds live Yjs). A drafted write is a record
+ * refusals a draft placement makes (a draft never seeds Live text). A drafted write is a record
  * of the Work's draft (`{ draft: draftId }`), which the command transaction ensures and
  * locks; a live one is a live record.
  */

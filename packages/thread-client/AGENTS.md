@@ -8,7 +8,7 @@ decision between the server and the screen is headed here, never into `apps/app`
 - Platform differences enter through injected ports. No React, stores, browser or Node
   globals at module evaluation, `import.meta.env`, or DOM types in the public surface.
   Depend on `@meridian/contracts` and the light `@meridian/markup/links` subpath, never
-  app or server code, Yjs or ProseMirror.
+  app or server code, Loro or ProseMirror.
 - Hosts give ports and adapt storage, editor and printing; they never re-implement a rule
   that lives here. Clients own HTTP, auth, persistence and printing.
 - `createThreadSync` never fetches: every completed read comes back through `receive`.

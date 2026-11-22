@@ -20,7 +20,7 @@ the headless seams here.
 - Only `local-presence.ts` writes the presence `EphemeralStore`; don't expose the raw store
   to an extension. Cursor colors are design tokens, resolved to concrete RGB hex before
   publication.
-- The editor shows Live only. Drafts, suggestion paint and peer marks are gone until 1e
+- The editor shows Live only. Drafts, suggestion paint and peer marks are gone until phase 2
   brings drafts back as Loro forks; don't add a second attribute view.
 - Undo is Loro's `UndoManager`, one per doc the tab changes, grouped into editor steps by the
   binding's `UndoHistory` (`editor-history.ts` wraps it), so Ctrl+Z after a collaborator's edit

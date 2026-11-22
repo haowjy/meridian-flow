@@ -13,7 +13,7 @@ removal host. Project-scoped files retain the Editor's Work context.
 content opens: every door opens in main. An ID absent from the in-memory resource projection
 waits for one identity lookup; its available answer is consumed once by the destination.
 The destination alone opens local content, admits the live room, and presents Retry. Read-only
-Context files still open a viewer without live Yjs admission. Closing or replacing a
+Context files still open a viewer without joining a Live room. Closing or replacing a
 destination discards its unconsumed answer.
 Scratch documents open in main owned by their resolved Work, or by their lineage
 (`rootThreadId` and the handle its URI spells) when they are a No Work chat's notes.
@@ -35,7 +35,7 @@ refused while removal is suspended or disposed.
 A project's tree is an append-only list of records, replayed into a tree. The browser holds one
 copy per list (the project's and the account's, for `user://`) in a `TreeListSession`, and is
 the writer of its own records: `TreeActions` appends a create, rename, move, delete or restore to
-the copy, the replay shows it at once, and Yjs carries it to the server. Nothing waits on a
+the copy, the replay shows it at once, and the list's Loro room carries it to the server. Nothing waits on a
 request, and nothing else remembers placement: sidebar, tabs, identity bar, pickers, mentions,
 Recents, folder chips and Trash membership read `useProjectTreeViews` / `useProjectTrees`, which cut
 the session's replay to a source. Those read live unless they name a version; the sidebar names the
@@ -111,7 +111,7 @@ date and retention come from the server's read of the document, else from the `k
 entry.
 It takes no tab; the strip shows it as an untabbed chip, as it does an address that names nothing. Main follows the document out of Trash, whichever
 Restore brought it back, by opening it in place. The record reads the server's Markdown,
-serialized from the document's frozen Yjs, and composes `ReadOnlyViewerFrame` with `TextViewer`;
+serialized from the document's retained room, and composes `ReadOnlyViewerFrame` with `TextViewer`;
 it never uses the live path-based read. Stable-ID navigation confirms a deleted document through
 that endpoint before opening it. Every restore is a `restore` record appended to the list
 (`DocumentTrashRestoreProvider`); the entry leaves the Trash snapshot at once, the replay owns the

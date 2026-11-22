@@ -80,10 +80,10 @@ export function linkAtSelection(editor: Editor): LinkSelection | null {
 /** The link mark covering `pos`, whole. What a right-click hit. */
 export function linkAt(state: EditorState, pos: number): LinkSelection | null {
   const linkType = state.schema.marks.link;
-  // Callers arrive with positions a Yjs relative position resolved to, which
-  // can sit at the very end of the document, and with the character after
-  // them. Resolving off the end throws inside a Yjs update handler, where the
-  // throw is swallowed and the editor quietly stops applying peer writes.
+  // Callers arrive with positions a stored cursor resolved to, which can sit
+  // at the very end of the document, and with the character after them.
+  // Resolving off the end throws inside the binding's update handler, and the
+  // editor stops applying peer writes.
   if (!linkType || pos < 0 || pos > state.doc.content.size) return null;
   const range = getMarkRange(state.doc.resolve(pos), linkType);
   if (!range) return null;

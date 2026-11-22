@@ -1,21 +1,20 @@
 /**
  * The editor owns Mod-z / Mod-y / Mod-Shift-z.
  *
- * Mounted editor history interleaves native Yjs segments with editor-originated
- * Apply boundaries. Meridian binds the keys itself, at a priority above every
- * other extension, because undo is
- * the writer's recovery over LLM writes: the keys are a named
- * part of the editor rather than a default inherited from a dependency that
- * another extension's keymap could shadow. Mount it only where collaborative
- * history exists — a standalone editor has no undo command to bind to.
+ * The keys drive the document session's history (`editor-history.ts`): the writer's own
+ * steps, kept by Loro's `UndoManager`. Meridian binds the keys itself, at a priority above
+ * every other extension, because undo is the writer's recovery over LLM writes: the keys are
+ * a named part of the editor rather than a default inherited from a dependency that another
+ * extension's keymap could shadow. Mount it only where a document session exists — a
+ * standalone editor has no undo command to bind to.
  */
 import { Extension } from "@tiptap/core";
 import { type DocumentHistory, redoEditorHistory, undoEditorHistory } from "../editor-history";
 
 export const UndoRedoKeymapExtension = Extension.create({
   name: "meridianUndoRedoKeymap",
-  // Above the collaboration extension's own 1000, so these keys resolve here
-  // first and no extension added later can quietly take them.
+  // Above every other extension's priority, so these keys resolve here first and no
+  // extension added later can quietly take them.
   priority: 1100,
 
   addOptions() {
@@ -38,9 +37,8 @@ export const UndoRedoKeymapExtension = Extension.create({
 
   // Every binding consumes its key whether or not the stack had anything left.
   // Ownership that lapses on an empty stack is not ownership: the key would
-  // fall through to the collaboration extension's own binding and then to the
-  // browser, and a writer at the bottom of their history would find Mod-z
-  // doing whatever the page does.
+  // fall through to the browser, and a writer at the bottom of their history
+  // would find Mod-z doing whatever the page does.
   addKeyboardShortcuts() {
     return {
       "Mod-z": () => {

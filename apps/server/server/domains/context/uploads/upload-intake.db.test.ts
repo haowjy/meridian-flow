@@ -5,7 +5,6 @@
  * - MIME and extension precedence for canonical upload names and Markdown conversion
  */
 
-import { Hocuspocus } from "@hocuspocus/server";
 import { createDb, type Database } from "@meridian/database";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
@@ -261,13 +260,6 @@ if (!RUN) {
           fileAccess: createAllowAllFileAccess(),
           workProjectionMutation: createTestWorkProjectionMutation(db),
         });
-        collab.bindHocuspocus(
-          new Hocuspocus({
-            yDocOptions: { gc: false, gcFilter: () => true },
-            onStoreDocument: ({ documentName, document }) =>
-              collab.storeHocuspocusDocument(documentName, document),
-          }),
-        );
         const contextPorts = createProductionUnifiedContextPortFactory({
           sourceHints: NO_PROJECT_HINTS,
           treeLists: createDrizzleTreeListStore({ db }),
@@ -350,7 +342,7 @@ if (!RUN) {
       }
     });
 
-    it("finalizes tracked Yjs content and catalog identity in the authoritative boundary", async () => {
+    it("finalizes tracked content and catalog identity in the authoritative boundary", async () => {
       await seed();
       const collab = createInMemoryCollabDomain();
       const contextPorts = createProductionUnifiedContextPortFactory({

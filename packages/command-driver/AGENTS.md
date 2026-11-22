@@ -2,7 +2,7 @@
 
 The one client driver for every command the server may or may not have received. It keeps the
 writer's intent in a journal and delivers it until the server's stored outcome is known. It
-owns no UI, query cache, Yjs or server state: what the screen shows of a command stays with
+owns no UI, query cache, CRDT or server state: what the screen shows of a command stays with
 each domain, which projects the account's unsettled records over its own data.
 
 - Framework-free. The browser's journal (IndexedDB), delivery lock (Web Locks), channel

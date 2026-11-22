@@ -22,8 +22,8 @@ DB suites share a worker module cache and an owned database clone. Depth:
   through their thread). Add no TRUNCATE or bespoke reset helper.
 - Detached work: runtime harnesses and manually composed DB-test runtimes inject
   the shared `processDetachedWork` tracker; production passes `backgroundTasks`.
-  Before the next fixture reset a composed runtime must unload rooms, shut down
-  background app work and drain `documentSync.drainHocuspocusPersistence()`. A
+  Before the next fixture reset a composed runtime must shut down background app
+  work and close its rooms (`collab.lifecycle.dispose`, which saves what they hold). A
   collab producer is the exception: it stops through `collab.lifecycle.dispose`,
   and one that escapes it gets its own shutdown, not a second owner in
   `processDetachedWork`.
